@@ -1,0 +1,471 @@
+local cstdio = terralib.includec("stdio.h")
+local cstring = terralib.includec("string.h")
+local cstdlib = terralib.includec("stdlib.h")
+
+function table_print (tt, indent, done)
+  done = done or {}
+  indent = indent or 0
+  if type(tt) == "table" then
+    local sb = {}
+    local first = true
+    for key, value in pairs (tt) do
+      table.insert(sb, string.rep (" ", indent)) -- indent it
+      if type (value) == "table" and not done [value] then
+        done [value] = true
+	table.insert(sb, key);
+	table.insert(sb, "=");
+--        table.insert(sb, "{"..tostring(value).."\n");
+--        if first then comma="";first=false end
+        table.insert(sb, "{\n");
+        table.insert(sb, table_print (value, indent + 2, done))
+        table.insert(sb, string.rep (" ", indent)) -- indent it
+        local comma = ","
+        table.insert(sb, "}");
+      elseif "number" == type(key) then
+        table.insert(sb, string.format("\"%s\"", tostring(value)))
+      else
+        table.insert(sb, string.format(
+            "%s = %s", tostring (key), tostring(value)))
+      end
+      table.insert(sb,",\n")
+    end
+    sb[#sb] = nil -- delete comma
+    return table.concat(sb)
+  else
+    return tostring(tt) .. "\n"
+  end
+end
+
+function to_string( tbl )
+    if  "nil"       == type( tbl ) then
+        return tostring(nil)
+    elseif  "table" == type( tbl ) then
+        return tostring(tbl).." "..table_print(tbl)
+    elseif  "string" == type( tbl ) then
+        return tbl
+    else
+        return tostring(tbl)
+    end
+end
+
+function serialize(tbl) print(to_string(tbl)) end
+
+
+function deepcopy(object)
+    local lookup_table = {}
+    local function _copy(object)
+        if type(object) ~= "table" then
+            return object
+        elseif lookup_table[object] then
+            return lookup_table[object]
+        end
+        local new_table = {}
+        lookup_table[object] = new_table
+        for index, value in pairs(object) do
+            new_table[_copy(index)] = _copy(value)
+        end
+        return setmetatable(new_table, getmetatable(object))
+    end
+    return _copy(object)
+end
+
+
+function explode(div,str) -- credit: http://richard.warburton.it
+  if (div=='') then return false end
+  local pos,arr = 0,{}
+  -- for each divider found
+  for st,sp in function() return string.find(str,div,pos,true) end do
+    table.insert(arr,string.sub(str,pos,st-1)) -- Attach chars left of current divider
+    pos = sp + 1 -- Jump past current divider
+  end
+  table.insert(arr,string.sub(str,pos)) -- Attach chars right of last divider
+  return arr
+end
+
+-- append elements in 'src' to 'dest'
+-- both have to have only numeric keys
+function appendTable(dest,src)
+  for k,v in ipairs(src) do
+    assert(type(k)=="number")
+    table.insert(dest,v)
+  end
+end
+
+function appendSet(dest,src)
+  for k,v in pairs(src) do
+    dest[k]=v
+  end
+end
+
+function joinSet(dest,src)
+  local t = {}
+
+  for k,v in pairs(dest) do
+    t[k]=v
+  end
+
+  for k,v in pairs(src) do
+    if t[k]~=nil then
+      print("duplicate",k)
+      assert(false)
+    end
+    t[k]=v
+  end
+
+  return t
+end
+
+function joinTables(A,B)
+  local T = {}
+  for k,v in ipairs(A) do table.insert(T,v) end
+  for k,v in ipairs(B) do table.insert(T,v) end
+  return T
+end
+
+function keycount(t)
+  assert(type(t)=="table")
+  local tot = 0
+  for k,v in pairs(t) do tot=tot+1 end
+  return tot
+end
+
+-- takes an array of values to a hash where the values are keys
+function invertTable(t)
+--  for k,v in pairs(t) do assert(type(k)=="number") end
+
+  local out = {}
+  for k,v in pairs(t) do
+    assert(out[v]==nil)  -- no duplicates
+    out[v]=k
+  end
+
+  return out
+end
+
+-- dedup t. no guarantee on the behavior of the keys
+function dedup(t)
+  local invT = {}
+  for k,v in pairs(t) do 
+    assert(type(k)=="number") 
+    invT[v] = 1
+  end
+
+  local res = {}
+  for k,_ in pairs(invT) do
+    res[#res+1]=k
+  end
+
+  return res
+end
+
+function pack(...)
+  local arg = {...}
+  return arg
+end
+
+
+function explode(div,str) -- credit: http://richard.warburton.it
+ if (div=='') then return false end
+  local pos,arr = 0,{}
+  -- for each divider found
+  for st,sp in function() return string.find(str,div,pos,true) end do
+    table.insert(arr,string.sub(str,pos,st-1)) -- Attach chars left of current divider
+    pos = sp + 1 -- Jump past current divider
+  end
+  table.insert(arr,string.sub(str,pos)) -- Attach chars right of last divider
+  return arr
+end
+
+-- round x up to the next largest number that has 'roundto' as a factor
+function upToNearest(roundto,x)
+  assert(type(x)=="number")
+  --if x < 0 then orion.error("uptoNearest x<=0 "..x) end
+
+  if x % roundto == 0 or roundto==0 then return x end
+  
+  local ox
+
+  ox = x + (roundto-x%roundto)
+
+  assert(ox > x)
+  assert( (ox % roundto) == 0)
+  return ox
+end
+
+function downToNearest(roundto,x)
+  assert(type(x)=="number")
+  assert(roundto>=0)
+  --assert(x>=0)
+
+  if x % roundto == 0 or roundto == 0 then return x end
+
+  local ox
+  if x < 0 then
+    ox = x - x%roundto
+  else
+    ox = x - x%roundto 
+  end
+  assert(ox < x and ox % roundto == 0 and math.abs(x-ox)<=roundto)
+  return ox
+end
+
+
+terra upToNearestTerra(roundto : int,x: int)
+  if x % roundto == 0 or roundto==0 then return x end
+  
+  var ox : int
+  if x < 0 then
+    ox = x - (x%roundto)
+  else
+    ox = x + (roundto-x%roundto)
+  end
+
+  return ox
+end
+
+
+terra downToNearestTerra(roundto:int,x:int)
+  if x % roundto == 0 or roundto == 0 then return x end
+
+  var ox :int
+  if x < 0 then
+    ox = x - (roundto+x%roundto)
+  else
+    ox = x - x%roundto
+  end
+
+  return ox
+end
+
+local Ctmp = terralib.includecstring [[
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <assert.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <inttypes.h>
+
+  double CurrentTimeInSeconds() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + tv.tv_usec / 1000000.0;
+                                 }
+
+                                   ]]
+
+darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
+
+terra orionAssert(cond : bool, str : &int8)
+  if cond==false then
+    cstdio.printf("ASSERTT fail %s\n", str)
+    cstdlib.exit(1)
+  end
+end
+
+
+function isModuleAvailable(name)
+  if package.loaded[name] then
+    return true
+  else
+    for _, searcher in ipairs(package.searchers or package.loaders) do
+      local loader = searcher(name)
+      if type(loader) == 'function' then
+        package.preload[name] = loader
+        return true
+      end
+    end
+    return false
+  end
+end
+
+-- a % b
+-- stupid C mod doesn't treat negative numbers as you'd hope
+terra fixedModulus(a : int,b : int)
+  while a < 0 do a = a+b end
+  return a % b
+end
+
+-- a/b
+-- makes it floor 'correctly' with negative numbers:
+-- (usual integer divide rounds down for positive numbers, up for negative numbers)
+-- -7/7 = -1, -3/7=-1, -8/7 = -2
+-- assumes b is positive
+terra floorDivide(a : int, b: int)
+  return terralib.select(a<0, (a-b+1)/b, a/b)
+end
+
+function nearestPowerOf2(x)
+  local r = math.pow(2, math.ceil(math.log(x)/math.log(2)))
+  assert(r>=x)
+  assert(math.log(r)/math.log(2) == math.ceil(math.log(r)/math.log(2)))
+  return r
+end
+
+function gcd(a,b)
+  assert(type(a)=="number")
+  assert(type(b)=="number")
+  if b ~= 0 then
+    return gcd(b, a % b)
+  else
+    return math.abs(a)
+  end
+end
+
+function ratioFactor(a,b)
+  local g = gcd(a,b)
+  return a/g, b/g
+end
+
+function map(t,f)
+  assert(type(t)=="table")
+  assert(type(f)=="function")
+  local res = {}
+  for k,v in pairs(t) do res[k] = f(v,k) end
+  return res
+end
+
+-- if idx={a,b,c} this does
+-- t[a][b][c] = t[a][b][c] or value
+-- returns t[a][b][c]
+-- (and also makes the intermediate tables if necessary)
+function deepsetweak(t,idx,value)
+  assert(type(t)=="table")
+  assert(type(idx)=="table")
+
+  local T = t
+  for k,v in ipairs(idx) do
+    if #idx==k then
+      T[v] = T[v] or value
+      return T[v]
+    else
+      T[v] = T[v] or {}
+      T = T[v]
+    end
+  end
+end
+
+-- if idx={a,b,c} this does
+-- return t[a][b][c]
+-- but returns nil if any of the indexing fails, doesn't error out
+function index(t,idx)
+  assert(type(t)=="table")
+  assert(type(idx)=="table")
+  local T = t
+  for k,v in ipairs(idx) do
+    T = T[v]
+    if type(T)~="table" then return nil end
+  end
+  return T
+end
+
+function concat(t1,t2)
+  assert(type(t1)=="table")
+  assert(type(t2)=="table")
+  local t = {}
+  for k,v in ipairs(t1) do table.insert(t,v) end
+  for k,v in ipairs(t2) do table.insert(t,v) end
+  return t
+end
+
+function reverse(t)
+  local r = {}
+  for k,v in ipairs(t) do r[#t-k+1] = v end
+  return t
+end
+
+function filter(t,f)
+  local r = {}
+  for k,v in pairs(t) do
+    if f(v) then r[k] = v end
+  end
+  return r
+end
+
+function foldt(t, f, base)
+  if #t==0 then return base end
+  if #t==1 then return f(t[1]) end
+  if #t==2 then return f(t[1],t[2]) end
+
+  local res = {}
+  local i=1
+  while t[i] do
+    table.insert(res, f(t[i],t[i+1]))
+    i = i + 2
+  end
+  while t[i] do
+    table.insert(res, t[i])
+    i = i + 1
+  end
+
+  return res
+end
+
+function range(a,b)
+  assert(type(a)=="number")
+  assert(type(b)=="number" or b==nil)
+  if b==nil then a,b = 1,a end
+  local t = {}
+  for i=a,b do table.insert(t,i) end
+  return t
+end
+
+-- takes table m this is a key,value table,
+-- removes the keys and turns it into an array
+function mapToArray(m)
+  local t = {}
+  for k,v in pairs(m) do
+    table.insert(t,v)
+  end
+  return t
+end
+
+stripkeys = mapToArray
+
+function invertAndStripKeys(t)
+  local r = {}
+  for k,v in pairs(t) do table.insert(r,k) end
+  return r
+end
+
+function sel(cond,a,b)
+  if cond then return a else return b end
+end
+
+-- unlike lua's in place sort, this returns the sorted table
+function sort( a, f )
+  assert(type(a)=="table")
+  local t = {}
+  for k,v in pairs(a) do t[k] = v end
+  table.sort( t, f )
+  return t
+end
+
+function foldl( fn, base, t )
+  assert(type(fn)=="function")
+  assert(type(t)=="table")
+  assert(#t==keycount(t))
+  
+  if #t==0 then return base end
+
+--  assert(type(base)==type(t[1]))
+
+  local res = base
+  for k,v in ipairs(t) do
+    res = fn(res,v)
+  end
+
+  return res
+end
+
+function andop(a,b) return a and b end
+
+-- returns first i elements of the list t
+function take(t,i)
+  assert(type(t)=="table")
+  local r = {}
+  for k,v in ipairs(t) do
+    if k<=i then table.insert( r, v ) end
+  end
+  return r
+end
