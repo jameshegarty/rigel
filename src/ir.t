@@ -1,10 +1,10 @@
 -- this is the base class for all our compiler IR
 
-darkroom.IR = {}
+IR = {}
 
-IRFunctions = {}
+IR.IRFunctions = {}
 
-function IRFunctions:visitEach(func)
+function IR.IRFunctions:visitEach(func)
   local seen = {}
   local value = {}
 
@@ -12,7 +12,7 @@ function IRFunctions:visitEach(func)
     if seen[node]~=nil then return value[node] end
 
     local argList = {}
-    for k,v in node:inputs() do
+    for k,v in pairs(node.inputs) do
       argList[k]=trav(v)
     end
 
@@ -24,54 +24,56 @@ function IRFunctions:visitEach(func)
   return trav(self)
 end
 
+function IR.IRFunctions:process( func )
+  return self:visitEach( 
+    function( n, inputs )
+      local r = n:shallowcopy()
+      for k,v in pairs(n.inputs) do r.inputs[k] = inputs[k] end
+      local res = func( r )
+      if getmetatable(res)==getmetatable(n) then
+        return res
+      elseif res~=nil then
+        assert(false)
+      end
+      setmetatable( r, getmetatable(n) )
+      return r
+    end)
+end
+
 -- this basically only copies the actual entires of the table,
 -- but doesn't copy children/parents, so 
 -- you still have to call darkroom.ast.new on it
-function IRFunctions:shallowcopy()
-  local newir = {}
+function IR.IRFunctions:shallowcopy()
+  local newir = {inputs={}}
 
   for k,v in pairs(self) do
-    newir[k]=v
+    if k=="inputs" then
+      for kk,vv in pairs(v) do newir.inputs[kk] = vv end
+    else
+      newir[k]=v
+    end
   end
 
   return newir
 end
 
--- like pairs(), but only return the k,v pairs where the v is another IR node
--- by defn, this function only returns v's that have the same metatable as self
--- note that this can return the same value under different keys!
-function IRFunctions:inputs()
-  local f, s, varr = pairs(self)
-
-  local function filteredF(s,varr)
-    while 1 do
-      local k,v = f(s,varr)
-      varr = k
-      if k==nil then return nil,nil end
-      if darkroom.IR.isIR(v) and getmetatable(self)==getmetatable(v) then return k,v end
-    end
-  end
-
-  return filteredF,s,varr
-end
-
-darkroom.IR._parentsCache=setmetatable({}, {__mode="k"})
-function darkroom.IR.buildParentCache(root)
-  assert(darkroom.IR._parentsCache[root]==nil)
-  darkroom.IR._parentsCache[root]=setmetatable({}, {__mode="k"})
-  darkroom.IR._parentsCache[root][root]=setmetatable({}, {__mode="k"})
+IR._parentsCache=setmetatable({}, {__mode="k"})
+function IR.buildParentCache(root)
+  assert(IR._parentsCache[root]==nil)
+  IR._parentsCache[root]=setmetatable({}, {__mode="k"})
+  IR._parentsCache[root][root]=setmetatable({}, {__mode="k"})
 
   local visited={}
   local function build(node)
     if visited[node]==nil then
-      for k,child in node:inputs() do
-        if darkroom.IR._parentsCache[root][child]==nil then
-          darkroom.IR._parentsCache[root][child]={}
+      for k,child in node.inputs do
+        if IR._parentsCache[root][child]==nil then
+          IR._parentsCache[root][child]={}
         end
 
         -- notice that this is a multimap: node can occur
         -- multiple times with different keys
-        table.insert(darkroom.IR._parentsCache[root][child],setmetatable({node,k},{__mode="v"}))
+        table.insert(IR._parentsCache[root][child],setmetatable({node,k},{__mode="v"}))
         build(child)
       end
       visited[node]=1
@@ -84,20 +86,20 @@ end
 -- returns k,v in this order:  parentNode, key in parentNode to access self
 -- NOTE: there may be multiple keys per parentNode! A node can hold
 -- the same AST multiple times with different keys.
-function IRFunctions:parents(root)
-  assert(darkroom.IR.isIR(root))
+function IR.IRFunctions:parents(root)
+  assert(IR.isIR(root))
 
-  if darkroom.IR._parentsCache[root]==nil then
+  if IR._parentsCache[root]==nil then
     -- need to build cache
-    darkroom.IR.buildParentCache(root)
+    IR.buildParentCache(root)
   end
 
   -- maybe this node isn't reachable from the root?
-  assert(type(darkroom.IR._parentsCache[root][self])=="table")
+  assert(type(IR._parentsCache[root][self])=="table")
 
   -- fixme: I probably didn't implement this correctly
 
-  local list = darkroom.IR._parentsCache[root][self]
+  local list = IR._parentsCache[root][self]
 
   local function filteredF(s)
     assert(type(s)=="table")
@@ -112,31 +114,25 @@ function IRFunctions:parents(root)
 
 end
 
-function IRFunctions:inputCount()
-  local cc=0
-  for k,v in self:inputs() do cc=cc+1 end
-  return cc
-end
-
-function IRFunctions:parentCount(root)
+function IR.IRFunctions:parentCount(root)
   local pc=0
   for k,v in self:parents(root) do pc=pc+1 end
   return pc
 end
 
-darkroom.IR._original=setmetatable({}, {__mode="k"})
+IR._original=setmetatable({}, {__mode="k"})
 
-function darkroom.IR.new(node)
+function IR.new(node)
   assert(getmetatable(node)==nil)
 
-  darkroom.IR._original[node]=setmetatable({}, {__mode="kv"})
+  IR._original[node]=setmetatable({}, {__mode="kv"})
   for k,v in pairs(node) do
-    darkroom.IR._original[node][k]=v
+    IR._original[node][k]=v
   end
 
 end
 
-function darkroom.IR.isIR(v)
+function IR.isIR(v)
   local mt = getmetatable(v)
   if type(mt)~="table" then return false end
   if type(mt.__index)~="table" then return false end
@@ -145,5 +141,7 @@ function darkroom.IR.isIR(v)
 
   local t = mmt.__index
 
-  return t==IRFunctions
+  return t==IR.IRFunctions
 end
+
+return IR

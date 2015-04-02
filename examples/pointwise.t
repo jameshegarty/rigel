@@ -1,27 +1,28 @@
 local d = require "darkroom"
-local image = require "image"
+local Im = require "image"
 local ffi = require("ffi")
+local types = require("types")
 
 W = 128
 H = 64
 
-plus100 = d.leaf( terra( out : &uint8, a : &uint8 ) @out =  @a+100 end, darkroom.type.uint(8), d.input( darkroom.type.uint(8) ) )
+plus100 = d.lift( types.uint(8), types.uint(8) , terra( a : &uint8, out : &uint8  ) @out =  @a+100 end )
 
-inp = d.input( darkroom.type.array( darkroom.type.uint(8), {W*H} ) )
-out = d.apply( inp, d.map( "plus100",plus100, inp ) )
-fn = d.fn( out, inp )
+inp = d.input( types.array2d( types.uint(8), W, H ) )
+out = d.apply( "plus100", d.map( plus100 ), inp )
+fn = d.lambda( inp, out )
 
-local res = d.compile( fn )
+local res = fn:compile()
 res:printpretty(false)
 --save(res(load("frame_128.bmp")), "out.bmp")
 
 terra doit()
-  var imIn : Image
+  var imIn : Im
   imIn:load("frame_128.bmp")
-  var imOut : Image
+  var imOut : Im
   imOut:load("frame_128.bmp")
 
-  res( [&uint8[W*H]](imOut.data), [&uint8[W*H]](imIn.data) )
+  res( [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
   imOut:save("out/pointwise.bmp")
 end
 
