@@ -4,7 +4,7 @@ local types = require("types")
 
 W = 128
 H = 64
-P = 4 -- parallelism
+T = 4 -- throughput
 ConvRadius = 3
 ConvWidth = ConvRadius*2+1
 ConvArea = math.pow(ConvWidth,2)
@@ -13,13 +13,13 @@ ConvArea = math.pow(ConvWidth,2)
 partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32), 
                   terra( a : &tuple(uint8,uint8), out : &int32 )
                     @out = [int32](a._0)*[int32](a._1)
-                  end )
+                  end, 1 )
 -------------
-touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end )
+touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end, 1 )
 -------------
-reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end )
+reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------
-inp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
+inp = d.input( d.Handshake( types.array2d( types.uint(8), ConvWidth, ConvWidth ) ) )
 r = d.constant( "convkernel", range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth) )
 
 conv = d.apply( "partial", d.map( partial ), d.tuple("tpart", {inp,r}) )
@@ -28,10 +28,11 @@ conv = d.apply( "touint8", touint8, conv )
 
 convolve = d.lambda( inp, conv )
 -------------
-inp = d.input( types.array2d( types.uint(8), P ) )
+inp = d.input( darkroom.StatefulHandshake(types.array2d( types.uint(8), T )) )
 
-convstencils = d.apply( "convtencils", d.linebuffer( -ConvWidth, -ConvWidth ), inp)
-convpipe = d.apply( "conv", d.map( convolve ), convstencils )
+convLB = d.apply( "convLB", d.linebuffer( T, W,H, -ConvWidth+1, 0, 0, -ConvWidth+1 ), inp)
+convstencils = d.apply( "convstencils", d.threadState( d.unpackStencil(ConvWidth,ConvWidth,T) ), convLB )
+convpipe = d.apply( "conv", d.threadState( d.map( convolve ) ), convstencils )
 
 convpipe = d.lambda( inp, convpipe )
 -------------

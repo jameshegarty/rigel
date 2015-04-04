@@ -16,17 +16,25 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     return tostring(ty.over).."["..table.concat(ty.size,",").."]"
   elseif ty.kind=="tuple" then
     return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
+  elseif ty.kind=="opaque" then
+    return "opaque_"..ty.str
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
   assert(false)
 end}
 
-types._bool=setmetatable({type="bool"}, TypeMT)
+types._bool=setmetatable({kind="bool"}, TypeMT)
 function types.bool() return types._bool end
 
-types._null=setmetatable({type="null"}, TypeMT)
+types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
+
+types._opaque={}
+function types.opaque(str)
+  types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
+  return types._opaque[str]
+end
 
 types._uint={}
 function types.uint(prec)
@@ -62,7 +70,8 @@ types._array={}
 function types.array2d( _type, w, h )
   assert( types.isType(_type) )
   assert( type(w)=="number" or types.isShape(w))
-  assert( type(h)=="number" or types.isShape(h))
+  assert( type(h)=="number" or types.isShape(h) or h==nil)
+  if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
 
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
@@ -520,9 +529,8 @@ function TypeFunctions:toC()
   end
 end
 
-function TypeFunctions:isArray()
-  return self.kind=="array"
-end
+function TypeFunctions:isArray()  return self.kind=="array" end
+function TypeFunctions:isTuple()  return self.kind=="tuple" end
 
 function TypeFunctions:arrayOver()
   assert(self.kind=="array")

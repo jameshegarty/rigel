@@ -1,8 +1,8 @@
-IR = require("IR")
-types = require("types")
-cstring = terralib.includec("string.h")
-cstdlib = terralib.includec("stdlib.h")
-cstdio = terralib.includec("stdio.h")
+local IR = require("IR")
+local types = require("types")
+local cstring = terralib.includec("string.h")
+local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 
 -----------------------
@@ -15,6 +15,37 @@ local ffi = require("ffi")
 -----------------------
 
 darkroom = {}
+
+darkroom.State = types.opaque("state")
+function darkroom.Handshake(A) return types.tuple({A,types.bool()}) end
+function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
+function darkroom.StatefulHandshake(A) return darkroom.Stateful(darkroom.Handshake(A)) end
+
+darkroom.data = macro(function(i) return `i._0 end)
+local data = darkroom.data
+darkroom.valid = macro(function(i) return `i._1 end)
+local valid = darkroom.valid
+
+function darkroom.isHandshake( a )
+  if a:isTuple()==false then return false end
+  if a.list[2]~=types.bool() then return false end
+  return true
+end
+
+function darkroom.extractHandshake( a, loc )
+  if darkroom.isHandshake(a)==false then error("Not a handshake input, "..loc) end
+  return a.list[1]
+end
+
+function darkroom.extractStateful( a, loc )
+  if a:isTuple()==false then error("Not a stateful input, "..loc) end
+  if a.list[2]~=darkroom.State then error("Not a stateful input, "..loc) end
+  return a.list[1]
+end
+
+function darkroom.extractStatefulHandshake( a, loc )
+  return darkroom.extractHandshake( darkroom.extractStateful(a), loc )
+end
 
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
@@ -46,14 +77,23 @@ function darkroomIRFunctions:typecheck()
       elseif n.kind=="tuple" then
         local tt = {}
         local sz
+        local wasHandshook = false
         for _,v in pairs(n.inputs) do
-          if v.type:isArray()==false then error("input to tuple must be an array, "..n.loc) end
-          if sz==nil then sz=v.type:arrayLength() 
-          elseif sz~=v.type:arrayLength() then error("inputs to tuple must have same size,"..n.loc) end
-          table.insert( tt, v.type:arrayOver() )
+          print("TUPLEINPT",v.type)
+          local o = v.type
+          if darkroom.isHandshake(v.type) then
+            wasHandshook = true
+            o = darkroom.extractHandshake( v.type, n.loc)
+          end
+          if o:isArray()==false then error("input to tuple must be an array, "..n.loc) end
+          if sz==nil then sz=o:arrayLength() 
+          elseif sz~=o:arrayLength() then error("inputs to tuple must have same size,"..n.loc) end
+          table.insert( tt, o:arrayOver() )
         end
 
         n.type = types.array2d( types.tuple(tt), sz[1], sz[2] )
+        if wasHandshook then n.type = darkroom.Handshake(n.type) end
+        print("TUPLEOUT",n.type)
         return darkroom.newIR(n)
       else
         print(n.kind)
@@ -75,19 +115,34 @@ function darkroom.map( f )
 
   local res = { kind="map", fn = f }
   res.typecheck = function( self, inputType, loc )
-    if inputType:isArray()==false then error("Map input must be array, "..loc) end
-    local res = self.fn:typecheck( inputType:arrayOver(), loc )
-    return types.array2d( res, (inputType:arrayLength())[1], (inputType:arrayLength())[2] )
+    local o = darkroom.extractHandshake( inputType, loc )
+    if o:isArray()==false then error("Map input must be array but is "..tostring(o)..", "..loc) end
+    local res = self.fn:typecheck( darkroom.Handshake(o:arrayOver()), loc )
+    local reso = darkroom.extractHandshake(res)
+    local r= darkroom.Handshake( types.array2d( reso, (o:arrayLength())[1], (o:arrayLength())[2] )) 
+    print("MAPIN",inputType,r,o:arrayOver(),res)
+    return r
   end
 
   res.compile = function( self, inputType, outputType )
-    local f = self.fn:compile( inputType:arrayOver(), outputType:arrayOver() )
-    local N = inputType:channels()
+    local it = darkroom.extractHandshake(inputType)
+    local fnInputType = darkroom.Handshake(it:arrayOver())
+    local fnOutputType = self.fn:typecheck( fnInputType )
+    local f = self.fn:compile( fnInputType )
+    local N = it:channels()
     local inp = symbol( &inputType:toTerraType(), "input" )
     local out = symbol( &outputType:toTerraType(), "output" )
     local terra mapf( [inp], [out] )
-      for i=0,N do 
-        f( &((@inp)[i]), &((@out)[i])  )
+      cstdio.printf("MAP\n")
+      valid(out) = false
+      for i=0,N do
+        var I : fnInputType:toTerraType()
+        var O : fnOutputType:toTerraType()
+        data(I) = (data(inp))[i]
+        valid(I) = valid(inp)
+        f( &I, &O  )
+        (data(out))[i] = data(O)
+        valid(out) = valid(out) or valid(O)
       end
     end
     mapf:printpretty()
@@ -139,17 +194,86 @@ function darkroom.extractStencils( xmin, xmax, ymin, ymax )
   return darkroom.newFunction(res)
 end
 
+function darkroom.linebuffer( T, w, h, l, r, t, b )
+  map({T,w,h,l,r,t,b}, function(i) assert(type(i)=="number") end)
+  assert(T>=1); assert(w>0); assert(h>0);
+  assert(l<r)
+  assert(b<t)
+  assert(r==0)
+  assert(t==0)
+
+  local res = {kind="linebuffer", T=T, w=w, h=h, l=l,r=r,t=t,b=b}
+
+  res.typecheck = function( self, inputType, loc )
+    local over = darkroom.extractStatefulHandshake( inputType, loc )
+    -- over should be type A[T]
+    if over:isArray()==false or (over:arrayLength())[1]~=T or (over:arrayLength())[2]~=1 then error("input to linebuffer must be type A[T], "..loc) end
+
+    local ty = types.array2d( over:arrayOver(), -self.l+self.T, -self.b+1 )
+    return darkroom.StatefulHandshake( ty )
+  end
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.unpackStencil( stencilW, stencilH, T )
+  assert(type(stencilW)=="number")
+  assert(stencilW>0)
+  assert(type(stencilH)=="number")
+  assert(stencilH>0)
+  assert(type(T)=="number")
+  assert(T>0)
+
+  local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
+  res.typecheck = function( self, inputType, loc )
+    if inputType:isArray()==false or (inputType:arrayLength())[1]~=self.stencilW+self.T-1 or (inputType:arrayLength())[1]~=self.stencilW+self.T-1 then
+      error("unpackStencil input type should be A[stencilW+T-1,stencilH] but is "..tostring(inputType)..", "..loc) end
+    local ty = types.array2d( inputType:arrayOver(), self.stencilW, self.stencilH )
+    return types.array2d( ty, T )
+  end
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.threadState( f )
+  assert( darkroom.isFunction(f) )
+  local res = { kind="threadState", fn = f }
+  res.typecheck = function( self, inputType, loc )
+    print("TS",inputType)
+    local o = darkroom.extractStateful( inputType, loc )
+    local r = self.fn:typecheck( o, loc )
+    return darkroom.Stateful(r)
+  end
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.makeHandshake( f )
+  assert( darkroom.isFunction(f) )
+  local res = { kind="makeHandshake", fn = f }
+  res.typecheck = function( self, inputType, loc )
+    local ty = darkroom.extractHandshake( inputType )
+    local r = self.fn:typecheck( ty, loc )
+    if darkroom.isHandshake(r)==false then r=darkroom.Handshake(r) end
+    return r
+  end
+
+  return darkroom.newFunction(res)
+end
+
 function darkroom.reduce( f )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
   
   local res = {kind="reduce", fn = f}
 
-  res.typecheck = function( self, inputType )
-    if inputType:isArray()==false then error("Reduce input must be an array") end
-    local finput = types.tuple({inputType:arrayOver(),inputType:arrayOver()})
-    local foutput = self.fn:typecheck( finput )
-    if foutput~=inputType:arrayOver() then error("Reduction function f must be of type {A,A}->A") end
-    return inputType:arrayOver()
+  res.typecheck = function( self, inputType, loc )
+    local ty = darkroom.extractHandshake( inputType )
+    if ty:isArray()==false then error("Reduce input must be an array but is "..tostring(inputType)..", "..loc) end
+    local finput = darkroom.Handshake( types.tuple({ty:arrayOver(),ty:arrayOver()}) )
+    print("FINPT",finput,inputType)
+    local foutput = self.fn:typecheck( finput, loc )
+    if foutput~=darkroom.Handshake(ty:arrayOver()) then error("Reduction function f must be of type {A,A}->A, "..loc) end
+    return darkroom.Handshake( ty:arrayOver() )
   end
 
   res.compile = function ( self, inputType, outputType )
@@ -259,10 +383,18 @@ function darkroom.lift( inputType, outputType, terraFunction )
   assert( types.isType(outputType ) )
   local res = { kind="lift", inputType = inputType, outputType = outputType, terraFunction = terraFunction }
   res.typecheck = function( self, inputType, loc )
-    if inputType~=self.inputType then error("lifted function input type doesn't match. Should be "..tostring(self.inputType).." but is "..tostring(inputType)..", "..loc) end
-    return self.outputType
+    local ty = darkroom.extractHandshake( inputType, loc )
+    if ty~=self.inputType then error("lifted function input type doesn't match. Should be "..tostring(self.inputType).." but is "..tostring(ty)..", "..loc) end
+    return darkroom.Handshake(self.outputType)
   end
-  res.compile = function() return terraFunction end
+  local fnInputType = darkroom.Handshake(inputType)
+  local fnOutputType = darkroom.Handshake(outputType)
+  local terra wrappedFn( inp : &fnInputType:toTerraType(), out: &fnOutputType:toTerraType() )
+    valid(out) = valid(inp)
+    terraFunction( &data(inp), &data(out) )
+  end
+  wrappedFn:printpretty()
+  res.compile = function() return wrappedFn end
 
   return darkroom.newFunction( res )
 end

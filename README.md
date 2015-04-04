@@ -1,6 +1,7 @@
 Types
 =====
 
+State = opaque
 Stateful(A) = {A,State}
 
 Tmux(A, int T) = {A,validbit}
@@ -21,6 +22,7 @@ higher-order functions
 map
 ---
 map :: (A -> B) -> (A[w,h] -> B[w,h])
+map :: (Tmux(A) -> Tmux(B)) -> (Tmux(A[w,h]) -> Tmux(B[w,h]))
 
 stencil
 -------
@@ -71,6 +73,10 @@ unpackPyramid
 concrete functions
 ==================
 
+threadState
+-----
+threadState :: (A->B) => ( Stateful(A) -> Stateful(B) )
+
 stateCompose
 ------------
 stateCompose :: { {A,State1}->{B,State1}, {B,State2}->{C,state2} } -> ( {A,{State1,State2}} -> {C,{State1,State2}} )
@@ -80,13 +86,14 @@ scanlSeq
 scanSeq :: { (Stateful(A)->Stateful(Tmux(B,T))), A[n], InitialState} -> B[n*T]
 scanSeq {f, scanSeq {g, a, InitialG}, InitialF } === scanSeq { stateCompose {f,g}, a, {InitialF, InitialG} }
 
+look at sequence, forM
 
 inputC
 ------
 
 downSeq
 -------
-downSeq :: {T,w,h,x,y} -> ( Stateful(A[T]) -> Tmux(Stateful(A[T], 1/(x*y)) )
+downSeq :: {T,w,h,x,y} -> ( Stateful(A[T],DownState) -> Stateful( Tmux(A[T], 1/(x*y)),DownState) )
 s.t. (down {x,y}) a === concat (scanlSeq {downSeq {R,w,h,x,y},a,InitialState}) given a : A[w,h]
 s.t. down {x,y} === downSeq {w*h,w,h,x,y} given a : A[w,h] (purely wiring)
 
@@ -95,14 +102,14 @@ downSeq = stateCompose {sparseFifo, downModule }
 
 reduceSeq
 ---------
-reduceSeq :: {f,T} -> ( Stateful(A) -> Tmux(Stateful(A),T) )
+reduceSeq :: {f,T} -> ( Stateful(A,ReduceState) -> Stateful(Tmux(A,T),ReduceState) )
 s.t. (reduce f) a === scanlSeq {reduceSeq {f,T}, (split a T), InitialState} given a : A[n*m]
 
 T=1/n means that this produces 1 output for every n inputs, reduced using reduction function.
 
 unpackStencil
 -------------
-unpackStencil :: {w-1,h,N} -> ( A[w+N,h] -> A[w,h][N] )
+unpackStencil :: {w,h,N} -> ( A[w+N-1,h] -> A[w,h][N] )
 
 Neighboring stencils overlap. This takes N stencils that have been compressed into 1 array back into N arrays. Purely wiring.
 
@@ -113,12 +120,12 @@ s.t. (stencil {l,r,t,b}) a === concat (unpackStencil (scanlSeq {linebuffer {T,w,
 
 cat2dXSeq
 --------
-cat2dXSeq :: T -> ( Stateful(A[w,h]) -> Stateful(Tmux(A[w/T,h],T) )
+cat2dXSeq :: T : int => ( Stateful(A[w,h]) -> Stateful(Tmux(A[w/T,h],T) ) 
 s.t. a = scanlSeq {cat2dXSeq T, splitX a 1/T, Initial}
 
 linebufferPartial
 ----------
-linebufferPartial :: {T,w,h,l,r,t,b} -> ( {A,State} -> Tmux(Stateful(A[(r-l+1)*T,(t-b+1)*T]),1/T) )
+linebufferPartial :: {T : int, w : int,h,l,r,t,b} -> ( {A,State} -> Tmux(Stateful(A[(r-l+1)*T,(t-b+1)*T]),1/T) )
 
 This is like a linebuffer, but instead of producing N stencils per pixels, it produces a substencil of size N per pixel.
 (linebuffer {1,w,h,l,r,t,b}) a === scanSeq {(cat2dXSeq T).(linebufferPartial {T,w,h,l,r,t,b}), , Initial} given a : A[1]
