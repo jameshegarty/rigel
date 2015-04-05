@@ -425,4 +425,44 @@ function darkroom.tuple( name, t )
   return darkroom.newIR( r )
 end
 
+local Im = require "image"
+
+function darkroom.scanlHarness( tfn, 
+                                inputFilename, inputType, inputWidth, inputHeight, 
+                                outputFilename, outputType, outputWidth, outputHeight )
+
+  return terra()
+    cstdio.printf("DOIT\n")
+    var imIn : Im
+    imIn:load( inputFilename )
+    var imOut : Im
+    imOut:allocateDarkroomFormat(outputWidth, outputHeight, 1, 1, 8, false, false, false)
+
+    var inp : inputType:toTerraType()
+    valid(inp) = true
+    var out : outputType:toTerraType()
+
+    var delayCycles : int = 0
+    var inpAddr = 0
+    var outAddr = 0
+    
+    while inpAddr<inputWidth*inputHeight and outAddr<outputWidth*outputHeight do
+      cstring.memcpy(&data(inp), [&uint8](imIn.data)+inpAddr, T)
+      inpAddr = inpAddr + T
+      tfn( &inp, &out )
+      
+      if valid(out) then 
+        cstring.memcpy([&uint8](imOut.data)+outAddr, &data(out), T)
+        outAddr = outAddr+T; 
+      else
+        delayCycles = delayCycles + 1
+      end
+    end
+
+    imOut:save( outputFilename )
+
+    cstdio.printf("Delay Cycles %d\n", delayCycles)
+  end
+end
+
 return darkroom
