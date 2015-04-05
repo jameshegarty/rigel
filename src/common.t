@@ -459,6 +459,7 @@ function foldl( fn, base, t )
 end
 
 function andop(a,b) return a and b end
+function andopterra(a,b) return `a and b end
 
 -- returns first i elements of the list t
 function take(t,i)

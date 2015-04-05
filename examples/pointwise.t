@@ -8,9 +8,9 @@ local cstring = terralib.includec("string.h")
 W = 128
 H = 64
 
-plus100 = d.lift( types.uint(8), types.uint(8) , terra( a : &uint8, out : &uint8  ) @out =  @a+100 end )
+plus100 = d.lift( types.uint(8), types.uint(8) , terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, 1 )
 
-ITYPE = darkroom.Handshake( types.array2d( types.uint(8), W, H ) )
+ITYPE = types.array2d( types.uint(8), W, H )
 inp = d.input( ITYPE )
 out = d.apply( "plus100", d.map( plus100 ), inp )
 fn = d.lambda( inp, out )
@@ -27,13 +27,7 @@ terra doit()
   var imOut : Im
   imOut:load("frame_128.bmp")
 
-  var inp : ITYPE:toTerraType()
-  d.valid(inp) = true
-  cstring.memcpy(&d.data(inp), imIn.data, W*H)
-  var out : ITYPE:toTerraType()
-
-  res( &inp, &out )
-  cstring.memcpy(imOut.data, &d.data(out), W*H)
+  res( [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
 
   imOut:save("out/pointwise.bmp")
 end

@@ -162,6 +162,9 @@ tuple
 -----
 A[n],B[n],C[n] -> {A,B,C}[n]
 
+tuple must have valid bits on some (but not necessarily all) of its inputs. Then the type is eg:
+Tmux(A[N]),B[n],C[n] -> Tmux({A,B,C}[n])
+
 index
 -----
 

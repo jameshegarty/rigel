@@ -1,5 +1,6 @@
 local IR = require("IR")
 local types = require("types")
+local simmodules = require("simmodules")
 local cstring = terralib.includec("string.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
@@ -25,6 +26,10 @@ darkroom.data = macro(function(i) return `i._0 end)
 local data = darkroom.data
 darkroom.valid = macro(function(i) return `i._1 end)
 local valid = darkroom.valid
+
+local dataOptional = function (v, ty) if darkroom.isHandshake(ty) then return `data(v) else return `@v end end
+local validOptional = function (v, ty) if darkroom.isHandshake(ty) then return `valid(v) else return `true end end
+
 
 function darkroom.isHandshake( a )
   if a:isTuple()==false then return false end
@@ -115,35 +120,20 @@ function darkroom.map( f )
 
   local res = { kind="map", fn = f }
   res.typecheck = function( self, inputType, loc )
-    local o = darkroom.extractHandshake( inputType, loc )
-    if o:isArray()==false then error("Map input must be array but is "..tostring(o)..", "..loc) end
-    local res = self.fn:typecheck( darkroom.Handshake(o:arrayOver()), loc )
-    local reso = darkroom.extractHandshake(res)
-    local r= darkroom.Handshake( types.array2d( reso, (o:arrayLength())[1], (o:arrayLength())[2] )) 
-    print("MAPIN",inputType,r,o:arrayOver(),res)
+    if inputType:isArray()==false then error("Map input must be array but is "..tostring(inputType)..", "..loc) end
+    local res = self.fn:typecheck( inputType:arrayOver(), loc )
+    local r = types.array2d( res, (inputType:arrayLength())[1], (inputType:arrayLength())[2] )
     return r
   end
-
+  res.delay = function( self, inputType ) return self.fn:delay(inputType) end
   res.compile = function( self, inputType, outputType )
-    local it = darkroom.extractHandshake(inputType)
-    local fnInputType = darkroom.Handshake(it:arrayOver())
-    local fnOutputType = self.fn:typecheck( fnInputType )
-    local f = self.fn:compile( fnInputType )
-    local N = it:channels()
+    local f = self.fn:compile( inputType:arrayOver(), outputType:arrayOver() )
+    local N = inputType:channels()
     local inp = symbol( &inputType:toTerraType(), "input" )
     local out = symbol( &outputType:toTerraType(), "output" )
-    local terra mapf( [inp], [out] )
+    local terra mapf( simstate : &opaque, [inp], [out] )
       cstdio.printf("MAP\n")
-      valid(out) = false
-      for i=0,N do
-        var I : fnInputType:toTerraType()
-        var O : fnOutputType:toTerraType()
-        data(I) = (data(inp))[i]
-        valid(I) = valid(inp)
-        f( &I, &O  )
-        (data(out))[i] = data(O)
-        valid(out) = valid(out) or valid(O)
-      end
+      for i=0,N do f( nil, &((@inp)[i]), &((@out)[i])  ) end
     end
     mapf:printpretty()
     return mapf
@@ -178,7 +168,7 @@ function darkroom.extractStencils( xmin, xmax, ymin, ymax )
     local inp = symbol( &inputType:toTerraType(), "input" )
     local out = symbol( &outputType:toTerraType(), "output" )
 
-    local terra stencil( [inp], [out] )
+    local terra stencil( simstate : &opaque, [inp], [out] )
       for i=0,N do
         for y = self.ymin, self.ymax+1 do
           for x = self.xmin, self.xmax+1 do
@@ -257,6 +247,28 @@ function darkroom.makeHandshake( f )
     if darkroom.isHandshake(r)==false then r=darkroom.Handshake(r) end
     return r
   end
+  res.simState = function( self, inputType )
+    return 
+  end
+  res.compile = function( self, inputType, outputType ) 
+    local tfn = self.fn:compile( darkroom.extractHandshake(inputType), darkroom.extractHandshake(outputType) )
+    local delay = self.fn:delay( darkroom.extractHandshake(inputType) )
+    local SimState = simmodules.makeFifo( inputType:toTerraType(), delay )
+    local terra makeHandshakefn( simstate : &opaque, inp : &inputType:toTerraType(), out : &outputType:toTerraType() )
+      var simst = [&SimState](simstate)
+      if simst:size()==delay then
+        var I = simst:popFront()
+        if valid(I) then
+          tfn( nil, &data(I), &data(out) )
+          valid(out) = true
+        else
+          valid(out) = false
+        end
+      end
+      simst:pushBack(inp)
+    end
+    return makeHandshakefn, SimState
+  end
 
   return darkroom.newFunction(res)
 end
@@ -267,13 +279,12 @@ function darkroom.reduce( f )
   local res = {kind="reduce", fn = f}
 
   res.typecheck = function( self, inputType, loc )
-    local ty = darkroom.extractHandshake( inputType )
-    if ty:isArray()==false then error("Reduce input must be an array but is "..tostring(inputType)..", "..loc) end
-    local finput = darkroom.Handshake( types.tuple({ty:arrayOver(),ty:arrayOver()}) )
+    if inputType:isArray()==false then error("Reduce input must be an array but is "..tostring(inputType)..", "..loc) end
+    local finput = types.tuple({ty:arrayOver(),ty:arrayOver()})
     print("FINPT",finput,inputType)
     local foutput = self.fn:typecheck( finput, loc )
-    if foutput~=darkroom.Handshake(ty:arrayOver()) then error("Reduction function f must be of type {A,A}->A, "..loc) end
-    return darkroom.Handshake( ty:arrayOver() )
+    if foutput~=ty:arrayOver() then error("Reduction function f must be of type {A,A}->A, "..loc) end
+    return ty:arrayOver()
   end
 
   res.compile = function ( self, inputType, outputType )
@@ -283,7 +294,7 @@ function darkroom.reduce( f )
     local inp = symbol( &inputType:toTerraType(), "input" )
     local out = symbol( &outputType:toTerraType(), "output" )
 
-    local terra reduce( [inp], [out] )
+    local terra reduce( simstate : &opaque, [inp], [out] )
       var res : outputType:toTerraType() = (@inp)[0]
       for i=1,N do
         var tinp : fninptype:toTerraType() = {res, (@inp)[i]}
@@ -316,9 +327,24 @@ function darkroom.lambda( input, output )
     if inputType~=self.input.type then error("lambda input type doesn't match. Should be "..tostring(self.input.type).." but is "..tostring(inputType)..", "..loc) end
     return self.output.type
   end
+
+  res.delay = function( self, inputType )
+    assert( darkroom.isHandshake(inputType) == false )
+    return self.output:visitEach(
+      function(n, inputs)
+        if n.kind=="input" or n.kind=="constant" then
+          return 0
+        elseif n.kind=="apply" then
+          return inputs[1] + n.fn:delay( n.inputs[1].type )
+        else
+          assert(false)
+        end
+      end)
+  end
   
   local function docompile( fn )
     local stats = {}
+    local initstats = {}
     local inputSymbol = symbol( &fn.input.type:toTerraType(), "lambdainput" )
     local outputSymbol = symbol( &fn.output.type:toTerraType(), "lambdaoutput" )
 
@@ -343,9 +369,14 @@ function darkroom.lambda( input, output )
         if n.kind=="input" then
           return inputSymbol
         elseif n.kind=="apply" then
-          local fn = n.fn:compile( n.inputs[1].type, n.type )
-          map(inputs,print)
-          table.insert(stats, quote fn( [inputs[1]], out ) end )
+          local fn, SimState = n.fn:compile( n.inputs[1].type, n.type )
+          local simstate = `nil
+          if SimState~=nil then
+            local g = global(SimState)
+            table.insert(initstats, quote g:init() end)
+            simstate = `&g
+          end
+          table.insert(stats, quote fn( [simstate], [inputs[1]], out ) end )
           return out
         elseif n.kind=="constant" then
           if n.type:isArray() then
@@ -356,7 +387,13 @@ function darkroom.lambda( input, output )
 
           return out
         elseif n.kind=="tuple" then
-          table.insert( stats, quote for i=0,[n.type:channels()] do (@out)[i] = {[map(inputs, function(m) return `(@m)[i] end)]} end end)
+          table.insert( stats, 
+                        quote
+                          for i=0,[darkroom.extractHandshake(n.type):channels()] do 
+                            data(out)[i] = {[map(n.inputs, function(m,k) return `([dataOptional(inputs[k],m.type)])[i] end)]} 
+                          end
+                          valid(out) = [foldl(andopterra, true, map(n.inputs, function(m,k) return validOptional(inputs[k],m.type) end) ) ]
+                        end)
           return out
         else
           print(n.kind)
@@ -364,10 +401,10 @@ function darkroom.lambda( input, output )
         end
       end)
 
-    return terra( [inputSymbol], [outputSymbol] )
+    return terra( simstate : &opaque, [inputSymbol], [outputSymbol] )
 --        cstdio.printf([fn.name.."\n"])
       [stats]
-    end
+           end, terra() [initstats] end
   end
 
   local compiledfn = docompile(res)
@@ -378,23 +415,21 @@ function darkroom.lambda( input, output )
   return darkroom.newFunction( res )
 end
 
-function darkroom.lift( inputType, outputType, terraFunction )
+function darkroom.lift( inputType, outputType, terraFunction, delay )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
+  assert( type(delay)=="number" )
   local res = { kind="lift", inputType = inputType, outputType = outputType, terraFunction = terraFunction }
   res.typecheck = function( self, inputType, loc )
-    local ty = darkroom.extractHandshake( inputType, loc )
-    if ty~=self.inputType then error("lifted function input type doesn't match. Should be "..tostring(self.inputType).." but is "..tostring(ty)..", "..loc) end
-    return darkroom.Handshake(self.outputType)
+    if inputType~=self.inputType then error("lifted function input type doesn't match. Should be "..tostring(self.inputType).." but is "..tostring(inputType)..", "..loc) end
+    return self.outputType
   end
-  local fnInputType = darkroom.Handshake(inputType)
-  local fnOutputType = darkroom.Handshake(outputType)
-  local terra wrappedFn( inp : &fnInputType:toTerraType(), out: &fnOutputType:toTerraType() )
-    valid(out) = valid(inp)
-    terraFunction( &data(inp), &data(out) )
+  res.delay = function( self, inputType ) return delay end
+  res.compile = function( self, inputType, outputType ) 
+    return terra(ss:&opaque, inp : &inputType:toTerraType(), out : &outputType:toTerraType())
+      terraFunction(inp,out)
+           end
   end
-  wrappedFn:printpretty()
-  res.compile = function() return wrappedFn end
 
   return darkroom.newFunction( res )
 end
@@ -449,7 +484,7 @@ function darkroom.scanlHarness( tfn,
     while inpAddr<inputWidth*inputHeight and outAddr<outputWidth*outputHeight do
       cstring.memcpy(&data(inp), [&uint8](imIn.data)+inpAddr, T)
       inpAddr = inpAddr + T
-      tfn( &inp, &out )
+      tfn( nil, &inp, &out )
       
       if valid(out) then 
         cstring.memcpy([&uint8](imOut.data)+outAddr, &data(out), T)

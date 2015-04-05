@@ -29,7 +29,7 @@ conv = d.apply( "touint8", touint8, conv )
 
 convolve = d.lambda( inp, conv )
 -------------
-inp = d.input( types.uint(8) )
+inp = d.input( darkroom.StatefulHandshake(types.uint(8)) )
 
 convstencils = d.apply( "convtencils", d.linebufferPartial( -ConvWidth, -ConvWidth,  T), inp)
 convpipe = d.apply( "conv", convolve, convstencils )
