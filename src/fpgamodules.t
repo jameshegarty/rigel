@@ -2,17 +2,6 @@ systolic = require("systolic")
 statemachine = require("statemachine")
 local modules = {}
 
-__memoizedModules = {}
-function memoize(f)
-  return function(...)
-    map({...}, function(v) assert(type(v)=="number" or darkroom.type.isType(v) or type(v)=="table" or type(v)=="string") end)
-    __memoizedModules[f] = __memoizedModules[f] or {}
-    local t = index(__memoizedModules[f],{...})
-    if t~=nil then return t end
-    return deepsetweak( __memoizedModules[f], {...}, f(...) )
-  end
-end
-
 function modules.reduceVerilog( op, cnt, datatype, argminVars)
   assert(type(op)=="string")
   assert(darkroom.type.isType(datatype))

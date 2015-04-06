@@ -15,7 +15,7 @@ partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32),
                     @out = [int32](a._0)*[int32](a._1)
                   end, 1 )
 -------------
-touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end, 1 )
+touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / [(ConvWidth*ConvWidth*(ConvWidth*ConvWidth+1))/2]) end, 1 )
 -------------
 reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------
@@ -26,30 +26,18 @@ conv = d.apply( "partial", d.map( partial ), d.tuple("tpart", {inp,r}) )
 conv = d.apply( "sum", d.reduce( reduceSumInt32 ), conv )
 conv = d.apply( "touint8", touint8, conv )
 
-convolve = d.lambda( inp, conv )
+convolve = d.lambda( "convolve", inp, conv )
 -------------
-inp = d.input( d.Stateful(types.array2d( types.uint(8), T )) )
+ITYPE = d.Stateful(types.array2d( types.uint(8), T ))
+inp = d.input( ITYPE )
 
 convLB = d.apply( "convLB", d.linebuffer( T, W,H, -ConvWidth+1, 0, 0, -ConvWidth+1 ), inp)
 convstencils = d.apply( "convstencils", d.statePassthrough( d.unpackStencil(ConvWidth,ConvWidth,T) ), convLB )
 convpipe = d.apply( "conv", d.statePassthrough( d.map( convolve ) ), convstencils )
 
-convpipe = d.lambda( inp, convpipe )
+convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
-convolve = convpipe:compile()
-
-terra doit()
-  var imIn : Image
-  imIn:load("frame_128.bmp")
-  var imOut : Image
-  imOut:load("frame_128.bmp")
-
-  for i=0,(W*H/P) do
-    convolve( &([&uint8[P]](imIn.data)[i]), &([&uint8[P]](&imOut.data)[i]) )
-  end
-
-  imOut:save("conv.bmp")
-end
-
+convolve, SimState, State = convpipe:compile()
+doit = darkroom.scanlHarness( convolve, SimState, State, T, "frame_128.bmp", ITYPE, W, H, "out/conv_wide.bmp", ITYPE, W, H)
 doit()

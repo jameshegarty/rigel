@@ -13,9 +13,10 @@ plus100 = d.lift( types.uint(8), types.uint(8) , terra( a : &uint8, out : &uint8
 ITYPE = types.array2d( types.uint(8), W, H )
 inp = d.input( ITYPE )
 out = d.apply( "plus100", d.map( plus100 ), inp )
-fn = d.lambda( inp, out )
+fn = d.lambda( "pointwise", inp, out )
 
-local res = fn:compile()
+local res, SimState, State = fn:compile()
+
 res:printpretty()
 --save(res(load("frame_128.bmp")), "out.bmp")
 print("HERE")
@@ -26,8 +27,9 @@ terra doit()
   imIn:load("frame_128.bmp")
   var imOut : Im
   imOut:load("frame_128.bmp")
+  var SS : SimState
 
-  res( [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
+  res( &SS, [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
 
   imOut:save("out/pointwise.bmp")
 end

@@ -578,6 +578,8 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = (self.over:toTerraType())[self:channels()]
   elseif self.kind=="tuple" then
     ttype = tuple( unpack(map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
+  elseif self.kind=="opaque" then
+    ttype = &opaque
   else
     print(self)
     print(debug.traceback())

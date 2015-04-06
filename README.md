@@ -2,7 +2,8 @@ Types
 =====
 
 State = opaque
-Stateful(A) = {A,State}
+Stateful(A) = {A,State} -- 1 state context
+Stateful(A,N) = {A,State[N]} -- N state contexts
 
 Tmux(A, int T) = {A,validbit}
 
@@ -141,13 +142,21 @@ sparseFifo :: int n -> (Sparse(A) -> A[n])
 
 Take a sparse array and densify it.
 
+linebufferTmux
+--------------
+linebufferTmux :: {T,N,[w],[h],[l],[r],[t],[b]} -> ( Stateful(A[T],N) -> Stateful(A[r-l+T,t-b+1],N) )
+
+linebufferTmux takes N state contexts (with different stencil sizes etc) and multiplexes them onto one piece of hardware
+
 tmux
 ----
-tmux :: {f, inoutMap, Gs} -> ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
+tmux :: {f, N, extInputs, passthroughFn} -> ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
 
 f is the function to time multiplex.
-inoutMap is a list of numbers or x. {x,0,1,2} means input 0 is an input of the resulting function, input 1 is fed by output 0, etc.
-Gs is a list of (stateful) functions that are applied to the inputs before being processed. G={g1,g2,g3} Then, f.g1, f.g2 is computed by the tmux.
+N is the number of inputs
+extInputs is a list of inputs that are external
+passthroughfn is a (potentially stateful) function from the outputs to the internal inputs
+
 
 IR
 ==

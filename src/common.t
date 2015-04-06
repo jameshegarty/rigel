@@ -470,3 +470,16 @@ function take(t,i)
   end
   return r
 end
+
+__memoized = {}
+function memoize(f)
+  assert(type(f)=="function")
+  return function(...)
+    map({...}, function(v) assert(type(v)=="number" or type(v)=="table" or type(v)=="string") end)
+    __memoized[f] = __memoized[f] or {}
+    local t = index(__memoized[f],{...})
+    if t~=nil then return t end
+    return deepsetweak( __memoized[f], {...}, f(...) )
+  end
+end
+

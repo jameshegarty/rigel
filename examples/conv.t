@@ -25,26 +25,17 @@ conv = d.apply( "partial", d.map( partial ), d.tuple("tpart", {inp,r}) )
 conv = d.apply( "sum", d.reduce( reduceSumInt32 ), conv )
 conv = d.apply( "touint8", touint8, conv )
 
-convolve = d.lambda( inp, conv )
+convolve = d.lambda( "convolve", inp, conv )
 -------------
-inp = d.input( types.array2d( types.uint(8), W,H ) )
+ITYPE = types.array2d( types.uint(8), W,H )
+inp = d.input( ITYPE )
 
 convstencils = d.apply( "convtencils", d.extractStencils( -ConvRadius, ConvRadius, -ConvRadius, ConvRadius ), inp)
 convpipe = d.apply( "conv", d.map( convolve ), convstencils )
 
-convpipe = d.lambda( inp, convpipe )
+convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
-convolve = convpipe:compile()
-
-terra doit()
-  var imIn : Image
-  imIn:load("frame_128.bmp")
-  var imOut : Image
-  imOut:load("frame_128.bmp")
-
-  convolve( [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
-  imOut:save("out/conv.bmp")
-end
-
+res, SimState, State = convpipe:compile()
+doit = d.scanlHarness(res, SimState, State, W*H, "frame_128.bmp", ITYPE,W,H, "out/conv.bmp", ITYPE, W, H)
 doit()
