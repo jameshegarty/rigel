@@ -13,28 +13,33 @@ T = 1/ConvWidth
 partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32), 
                   terra( a : &tuple(uint8,uint8), out : &int32 )
                     @out = [int32](a._0)*[int32](a._1)
-                  end )
+                  end, 1 )
 -------------
-touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end )
+touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end, 1 )
 -------------
-reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end )
+reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------
-inp = d.input( types.array2d( types.uint(8), ConvWidth*T, ConvWidth ) )
-r = d.apply( "convKernel", d.constSeq( range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth), T ) )
+inp = d.input( darkroom.Stateful(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )) )
+r = d.apply( "convKernel", d.constSeq( split(range(ConvArea),ConvWidth), types.array2d( types.uint(8), ConvWidth, ConvWidth), T ), d.index("getstate",inp,1) )
 
-conv = d.apply( "partial", d.map( partial ), d.tuple("tpart", {inp,r}) )
-conv = d.apply( "sum", d.reduce( reduceSumInt32 ), conv )
+conv = d.apply( "partial", d.statePassthrough(d.map( partial )), d.tuple("tpart", {inp,r}) )
+conv = d.apply( "sum", d.statePassthrough(d.reduce( reduceSumInt32 )), conv )
 conv = d.apply( "sumseq", d.reduceSeq( reduceSumInt32, T ), conv )
-conv = d.apply( "touint8", touint8, conv )
 
-convolve = d.lambda( inp, conv )
+convseq = d.lambda( "convseq", inp, conv )
+-------------
+inp = d.input( darkroom.StatefulHandshake(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )) )
+conv = d.apply( "convseqapply", d.makeHandshake(convseq), inp)
+conv = d.apply( "touint8", d.makeHandshake(d.statePassthrough(touint8)), conv )
+
+convolve = d.lambda( "convolve", inp, conv )
 -------------
 inp = d.input( darkroom.StatefulHandshake(types.uint(8)) )
 
 convstencils = d.apply( "convtencils", d.linebufferPartial( -ConvWidth, -ConvWidth,  T), inp)
 convpipe = d.apply( "conv", convolve, convstencils )
 
-convpipe = d.lambda( inp, convpipe )
+convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 convolve = convpipe:compile()

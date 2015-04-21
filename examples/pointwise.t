@@ -12,12 +12,12 @@ plus100 = d.lift( types.uint(8), types.uint(8) , terra( a : &uint8, out : &uint8
 
 ITYPE = types.array2d( types.uint(8), W, H )
 inp = d.input( ITYPE )
-out = d.apply( "plus100", d.map( plus100 ), inp )
+out = d.apply( "plus100", d.map( plus100, W, H ), inp )
 fn = d.lambda( "pointwise", inp, out )
 
-local res, SimState, State = fn:compile()
+local Module = fn:compile()
 
-res:printpretty()
+--res:printpretty()
 --save(res(load("frame_128.bmp")), "out.bmp")
 print("HERE")
 
@@ -27,12 +27,15 @@ terra doit()
   imIn:load("frame_128.bmp")
   var imOut : Im
   imOut:load("frame_128.bmp")
-  var SS : SimState
-
-  res( &SS, [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
+  var module : Module
+  module:process( [&uint8[W*H]](imIn.data), [&uint8[W*H]](imOut.data) )
 
   imOut:save("out/pointwise.bmp")
 end
 doit:printpretty()
 print("ROFL")
 doit()
+
+doit2 = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, "out/pointwise2.bmp", ITYPE, W, H)
+doit2:printpretty()
+doit2()

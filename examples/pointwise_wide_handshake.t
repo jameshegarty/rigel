@@ -21,9 +21,15 @@ ITYPE = types.array2d( types.uint(8), T )
 inp = d.input( ITYPE )
 out = d.apply( "plus100", d.map( p200, T ), inp )
 fn = d.lambda( "pointwise_wide", inp, out )
+------------
+ITYPE = d.StatefulHandshake(ITYPE)
+inp = d.input( ITYPE )
+out = d.apply( "hs", d.makeHandshake(d.makeStateful(fn)), inp)
+hsfn = d.lambda( "pointwise_wide_hs", inp, out )
+------------
 
 --local res, SimState, State = fn:compile()
-Module = fn:compile()
---res:printpretty()
-doit = d.scanlHarness( Module, T, "frame_128.bmp", ITYPE,W,H, "out/pointwise_wide.bmp", ITYPE, W, H)
+Module = hsfn:compile()
+res:printpretty()
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/pointwise_wide_handshake.bmp", ITYPE, W, H)
 doit()

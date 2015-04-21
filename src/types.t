@@ -85,7 +85,7 @@ function types.tuple( list )
   list = map( list, function(n) assert( types.isType(n) ); return n end )
   types._tuples[#list] = types._tuples[#list] or {}
   local tup = setmetatable( {kind="tuple", list = list }, TypeMT )
-  return deepsetweak( types._tuples, list, tup )
+  return deepsetweak( types._tuples[#list], list, tup )
 end
 
 function types.fromTerraType(ty, linenumber, offset, filename)

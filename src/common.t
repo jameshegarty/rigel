@@ -258,11 +258,11 @@ darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
 
 terra orionAssert(cond : bool, str : &int8)
   if cond==false then
-    cstdio.printf("ASSERTT fail %s\n", str)
+    cstdio.printf("ASSERT fail %s\n", str)
     cstdlib.exit(1)
   end
 end
-
+darkroomAssert = orionAssert
 
 function isModuleAvailable(name)
   if package.loaded[name] then
@@ -483,3 +483,14 @@ function memoize(f)
   end
 end
 
+
+function split(t,n)
+  assert(#t % n == 0)
+  local r = {}
+  for k,v in ipairs(t) do 
+    local i = math.floor((k-1)/n)+1
+    r[i] = r[i] or {}
+    table.insert(r[i], v) 
+  end
+  return r
+end

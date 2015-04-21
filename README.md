@@ -4,10 +4,13 @@ Types
 State = opaque
 Stateful(A) = {A,State} -- 1 state context
 Stateful(A,N) = {A,State[N]} -- N state contexts
+StatefulHandshake(A) = {A,State,bool}
 
 Tmux(A, int T) = {A,validbit}
 
 Sparse(A, int W, int H) = {A,validbit}[w,h]
+
+Having a function from Stateful->StatefulHandshake is potentially valid, but then this module would have to have its own (infinite) buffer inside it (b/c on the input it might get data every cycle, but its output is stalled, so the data has to go somewhere). Instead, we currently only have StatefulHandshake->StatefulHandshake. In this case, no buffering is needed, and we get correct behavior. The stalls propagate all the way to the front of the pipe. We can insert explicit fifos to hide stalls. In particular, we can make a fifo of type Stateful->StatefulHandshake to represent this buffer, if this is the behavior we want. Fifos can also be of type StatefulHandshake->StatefulHandshake if they are just there to hide stalls.
 
 functions
 =========
@@ -22,7 +25,7 @@ higher-order functions
 
 map
 ---
-map :: (A -> B) -> (A[w,h] -> B[w,h])
+map :: (A -> B, int w, int h) -> (A[w,h] -> B[w,h])
 map :: (Tmux(A) -> Tmux(B)) -> (Tmux(A[w,h]) -> Tmux(B[w,h]))
 
 stencil
@@ -74,9 +77,27 @@ unpackPyramid
 concrete functions
 ==================
 
-threadState
------
-threadState :: (A->B) => ( Stateful(A) -> Stateful(B) )
+makeStateful
+------------
+makeStateful :: (A->B) => ( Stateful(A) -> Stateful(B) )
+
+State passthrough.
+
+makeHandshake
+-------------
+makeHandshake :: (Stateful(A)->Stateful(B)) => ( StatefulHandshake(A) -> StatefulHandshake(B) )
+
+Take a retimed module that has no valids and wrap it in a RV interface.
+
+liftPureHandshake
+-----------------
+liftPureHandshake :: (f : Stateful(A) -> Stateful({B,bool,bool})) => (StatefulHandshake(A)->StatefulHandshake(B))
+
+liftHandshake
+-----------------
+liftHandshake :: (f : Stateful({A,bool}) -> Stateful({B,bool,bool})) => (StatefulHandshake(A)->StatefulHandshake(B))
+
+This means wrap the retimed module in a RV interface. The input bool is input_valid_in_this_cycle. If this bool is false, then the input will be garbage and should be ignored. The two output bools are valid_this_cycle, and ready_next_cycle. Ready is initially set to false (in the cycle before f runs at all).
 
 stateCompose
 ------------
@@ -98,8 +119,10 @@ downSeq :: {T,w,h,x,y} -> ( Stateful(A[T],DownState) -> Stateful( Tmux(A[T], 1/(
 s.t. (down {x,y}) a === concat (scanlSeq {downSeq {R,w,h,x,y},a,InitialState}) given a : A[w,h]
 s.t. down {x,y} === downSeq {w*h,w,h,x,y} given a : A[w,h] (purely wiring)
 
+downModule :: {A,T,w,h,downX,downY} => ( Stateful(A[T]) -> Stateful(Sparse(A,T) )
+
 implementation:
-downSeq = stateCompose {sparseFifo, downModule }
+downSeq = liftPureHandshake(stateCompose {sparseFifo, downModule })
 
 reduceSeq
 ---------
@@ -131,6 +154,13 @@ linebufferPartial :: {T : int, w : int,h,l,r,t,b} -> ( {A,State} -> Tmux(Statefu
 This is like a linebuffer, but instead of producing N stencils per pixels, it produces a substencil of size N per pixel.
 (linebuffer {1,w,h,l,r,t,b}) a === scanSeq {(cat2dXSeq T).(linebufferPartial {T,w,h,l,r,t,b}), , Initial} given a : A[1]
 
+SSR
+---
+
+SSRPartial
+----------
+SSRPartial :: {A, t, xmin, ymin} => ( 
+
 constSeq
 --------
 constSeq :: {A[w,h],T} -> ( Stateful(nil) -> Stateful(A[w*T,h]) )
@@ -138,7 +168,7 @@ s.t. a === scanSeq { constSeq {A,T}, broadcast nil 1/T, Initial }
 
 sparseFifo
 ------------
-sparseFifo :: int n -> (Sparse(A) -> A[n])
+sparseFifo :: {A, int n, int w, int h} => (Stateful(Sparse(A,w,h)) -> StatefulHandshake(A[w,h]))
 
 Take a sparse array and densify it.
 
