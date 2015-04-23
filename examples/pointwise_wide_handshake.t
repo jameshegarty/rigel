@@ -30,6 +30,6 @@ hsfn = d.lambda( "pointwise_wide_hs", inp, out )
 
 --local res, SimState, State = fn:compile()
 Module = hsfn:compile()
-res:printpretty()
+--res:printpretty()
 doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/pointwise_wide_handshake.bmp", ITYPE, W, H)
 doit()

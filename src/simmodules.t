@@ -42,7 +42,7 @@ end
 function M.shiftRegister( T, size )
   local FIFO = M.fifo( T, size )
   local struct SR { fifo : FIFO }
-  terra SR:init() self.fifo:init() end
+  terra SR:reset() self.fifo:reset() end
   terra SR:pushBack( inp : &T )
     self.fifo:pushBack(inp)
     if self.fifo:size()>size then self.fifo:popFront() end
@@ -52,6 +52,17 @@ function M.shiftRegister( T, size )
   -- idx=-1 is the second most recent thing pushBack'ed
   terra SR:peekBack(idx:int) return self.fifo:peekBack(idx) end
   return SR
+end
+
+function M.HandshakeStub(T)
+  assert(terralib.types.istype(T))
+  local struct HandshakeStub {d:T;hasData:bool}
+  terra HandshakeStub:reset() self.hasData=false end
+  terra HandshakeStub:ready() return self.hasData==false end
+  terra HandshakeStub:valid() return self.hasData end
+  terra HandshakeStub:push(inp:&T) darkroomAssert(self.hasData==false, "stub full"); self.hasData=true; self.d=@inp end
+  terra HandshakeStub:pop(out:&T) darkroomAssert(self.hasData, "stub empty"); self.hasData=false;@out=self.d; end
+  return HandshakeStub
 end
 
 return M
