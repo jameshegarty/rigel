@@ -83,21 +83,48 @@ makeStateful :: (A->B) => ( Stateful(A) -> Stateful(B) )
 
 State passthrough.
 
+
+The difference between handshakes of retimed (pure or stateful) modules and real handshake interfaces is that for retimed modules, the whole pipeline stalls at once if any units stall. For real retimed modules connected together, some of them call stall while others continue to work.
+
 makeHandshake
 -------------
 makeHandshake :: (Stateful(A)->Stateful(B)) => ( StatefulHandshake(A) -> StatefulHandshake(B) )
 
 Take a retimed module that has no valids and wrap it in a RV interface.
 
-liftPureHandshake
------------------
-liftPureHandshake :: (f : Stateful(A) -> Stateful({B,bool,bool})) => (StatefulHandshake(A)->StatefulHandshake(B))
 
 liftHandshake
 -----------------
-liftHandshake :: (f : Stateful({A,bool}) -> Stateful({B,bool,bool})) => (StatefulHandshake(A)->StatefulHandshake(B))
+liftHandshake :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
 
-This means wrap the retimed module in a RV interface. The input bool is input_valid_in_this_cycle. If this bool is false, then the input will be garbage and should be ignored. The two output bools are valid_this_cycle, and ready_next_cycle. Ready is initially set to false (in the cycle before f runs at all).
+This means wrap the retimed module in a RV interface. The input bool is input_valid_in_this_cycle. If this bool is false, then the input will be garbage and should be ignored. The two output bools are valid_this_cycle, and ready_next_cycle. Ready is initially set to false (in the cycle before f runs at all). Ready must have pipeline delay 0.
+
+liftHandshakeAmplify
+-----------------
+liftHandshakeAmplify :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
+
+Ready must have pipeline delay 0. Example: stencil linebuffer partial. This has to run even when there is no valid data (due to ready=false). So it takes an explicit bool for valid data in the input.
+
+liftHandshakeDecimate
+-----------------
+liftHandshakeDecimate :: (f : Stateful(A) -> StatefulV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
+
+This is like lift handshake, but ready=true always. This works well for modules that decimate data only. Example: sequential reduce.
+
+liftStateful :: (f : Stateful(A) -> Stateful(B)) => (Stateful(A)->StatefulV(B))
+valid=true always.
+
+liftDecimate
+------------
+liftDecimate :: (f : Stateful(A) -> StatefulV(B)) => (StatefulV(A)->StatefulRV(B))
+R=true always. f only runs if input is valid.
+
+
+RPassthrough :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulRV(A) -> StatefulRV(B))
+              R's are anded
+
+RVPassthrough :: (f : Stateful(A) -> Stateful(B)) => (StatefulRV(A) -> StatefulRV(B))
+=== RPassthrough(liftDecimate(liftStateful(f)))
 
 stateCompose
 ------------
@@ -180,7 +207,7 @@ linebufferTmux takes N state contexts (with different stencil sizes etc) and mul
 
 tmux
 ----
-tmux :: {f, N, extInputs, passthroughFn} -> ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
+tmux :: {f, N, extInputs, passthroughFn} => ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
 
 f is the function to time multiplex.
 N is the number of inputs

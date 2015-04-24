@@ -34,32 +34,45 @@ darkroom = {}
 DEFAULT_FIFO_SIZE = 2048
 
 darkroom.State = types.opaque("state")
+darkroom.Handshake = types.opaque("handshake")
 function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
-function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, types.bool() }) end
+function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}), darkroom.State}) end
+function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool(), types.bool()}),darkroom.State}) end
+function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
 
 struct EmptyState {}
 terra EmptyState:init() end
 
 darkroom.data = macro(function(i) return `i._0 end)
 local data = darkroom.data
-darkroom.valid = macro(function(i) return `i._2 end)
+darkroom.valid = macro(function(i) return `i._1 end)
 local valid = darkroom.valid
-darkroom.state = macro(function(i) return `i._1 end)
-local state = darkroom.state
+darkroom.ready = macro(function(i) return `i._2 end)
+local ready = darkroom.ready
 
-local function getData(i, ty) if darkroom.isStatefulHandshake(ty) or darkroom.isStateful(ty) then return `data(i) else return i end end
-local function getValid(i, ty) if darkroom.isStatefulHandshake(ty) then return `valid(i) else return true end end 
-local function setValid(i, ty, value) if darkroom.isStatefulHandshake(ty) then return quote valid(i) = value end else return quote end end end
-local function setState(i, ty, value) if darkroom.isStatefulHandshake(ty) or darkroom.isStateful(ty) then return quote state(i) = value end else return quote end end end
 
 function darkroom.isStateful( a ) return a:isTuple() and a.list[2]==darkroom.State end
-function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==types.bool() end
+function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
+function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool()  end
+function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==types.bool() end
 function darkroom.expectPure( A, er ) if darkroom.isStateful(A) or darkroom.isStatefulHandshake(A) then error(er or "type should be pure") end end
 function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false then error(er or "type should be stateful") end end
+function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
+function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
 
 function darkroom.extractStateful( a, loc )
   if darkroom.isStateful(a)==false then error("Not a stateful input, "..loc) end
   return a.list[1]
+end
+
+function darkroom.extractV( a, loc )
+  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, "..loc) end
+  return a.list[1].list[1]
+end
+
+function darkroom.extractRV( a, loc )
+  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, "..loc) end
+  return a.list[1].list[1]
 end
 
 function darkroom.extract( a, loc )
@@ -107,6 +120,8 @@ function darkroomIRFunctions:typecheck()
         if n.idx>=#n.inputs[1].type.list then error("index to tuple goes over end of tuple, "..n.loc) end
         n.type = n.inputs[1].type.list[n.idx+1]
         return darkroom.newIR(n)
+      elseif n.kind=="extractState" then
+        if darkroom.isStateful(n.inputs[1].type)==false then error("input to extractState must be stateful") end
       elseif n.kind=="tuple" then
         local tt = {}
         local sz
@@ -139,6 +154,105 @@ end
 
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
+
+function darkroom.liftStateful(f)
+  local res = {kind="liftStateful", fn = f}
+  darkroom.expectStateful(f.inputType)
+  darkroom.expectStateful(f.outputType)
+  res.inputType = darkroom.Stateful(darkroom.extract(f.inputType))
+  res.outputType = darkroom.StatefulV(darkroom.extract(f.outputType))
+  res.delay = f.delay
+  local struct LiftStateful { inner : f.terraModule}
+  terra LiftStateful:reset() self.inner:reset() end
+  terra LiftStateful:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    self.inner:process(inp,&data(out))
+    valid(out) = true
+  end
+  res.terraModule = LiftStateful
+  return darkroom.newFunction(res)
+end
+
+function darkroom.liftDecimate(f)
+  assert(darkroom.isFunction(f))
+  local res = {kind="liftDecimate", fn = f}
+  darkroom.expectStateful(f.inputType)
+  darkroom.expectStatefulV(f.outputType)
+  res.inputType = darkroom.StatefulV(darkroom.extract(f.inputType))
+  res.outputType = darkroom.StatefulRV(darkroom.extractV(f.outputType))
+  res.delay = f.delay
+  local struct LiftDecimate { inner : f.terraModule}
+  terra LiftDecimate:reset() self.inner:reset() end
+  terra LiftDecimate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if valid(inp) then
+--      var inpp : darkroom.extract(f.inputType):toTerraType() = data(inp)
+      self.inner:process(&data(inp),[&darkroom.extract(f.outputType):toTerraType()](out))
+    end
+  end
+  terra LiftDecimate:ready( inp:bool ) return true end
+  res.terraModule = LiftDecimate
+  return darkroom.newFunction(res)
+end
+
+function darkroom.RPassthrough(f)
+  local res = {kind="RPassthrough", fn = f}
+  darkroom.expectStatefulV(f.inputType)
+  darkroom.expectStatefulRV(f.outputType)
+  res.inputType = darkroom.StatefulRV(darkroom.extractV(f.inputType))
+  res.outputType = darkroom.StatefulRV(darkroom.extractRV(f.outputType))
+  res.delay = f.delay
+  local struct RPassthrough { inner : f.terraModule}
+  terra RPassthrough:reset() self.inner:reset() end
+  terra RPassthrough:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    self.inner:process([&darkroom.extract(f.inputType):toTerraType()](inp),out)
+  end
+  terra RPassthrough:ready( inp:bool) return inp and self.inner:ready() end
+  res.terraModule = RPassthrough
+  return darkroom.newFunction(res)
+end
+
+function darkroom.RVPassthrough(f)
+  return darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftStateful(f)))
+end
+
+function darkroom.liftHandshake(f)
+  local res = {kind="liftHandshake", fn=f}
+  darkroom.expectStatefulV(f.inputType)
+  darkroom.expectStatefulRV(f.outputType)
+  res.inputType = darkroom.StatefulRV(darkroom.extractV(f.inputType))
+  res.outputType = darkroom.StatefulRV(darkroom.extractRV(f.outputType))
+  assert(f.delay>0)
+
+  local struct LiftHandshake{ delaysr: simmodules.fifo( res.outputType:toTerraType(), delay),
+                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
+                              inner: f.terraModule}
+
+  terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
+
+
+  terra LiftHandshake:process( inp : &darkroom.extract(f.inputType):toTerraType(), inpValid : bool, 
+                               out : &darkroom.extract(f.outputType):toTerraType(), outValid : &bool)
+    if inpValid then
+      self.fifo:pushBack(inp)
+    end
+
+    if self.delaysr:size()==delay then
+      var ot = self.delaysr:popFront()
+      @outValid = valid(ot)
+      @out = data(ot)
+    else
+      @outValid=false
+    end
+
+    var tinp : res.inputType:toTerraType()
+    valid(tinp) = inpValid
+    data(tinp) = @inp
+    self.delaysr:pushBack(&tinp)
+  end
+  res.terraModule = LiftHandshake
+
+  return darkroom.newFunction(res)
+
+end
 
 -- arrays: A[W][H]. Row major
 -- array index A[y] yields type A[W]. A[y][x] yields type A
@@ -269,8 +383,36 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   assert(T<1); 
   assert((-xmin+1)*T==math.floor((-xmin+1)*T))
   local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin }
-  res.inputType = darkroom.StatefulHandshake(types.array2d(A,1,-ymin+1))
-  res.outputType = darkroom.StatefulHandshake(types.array2d(A,(-xmin+1)*T,-ymin+1))
+  res.inputType = darkroom.StatefulV(types.array2d(A,1,-ymin+1))
+  res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
+  res.delay=0
+  local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]}
+  terra SSRPartial:reset() self.phase=0; self.wroteLastColumn=true end
+  terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if self.wroteLastColumn==false then
+      var W = [(-xmin+1)*T]
+      for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][x+self.phase*W] end end
+      valid(out)=true
+      if self.phase==[1/T]-1 then self.wroteLastColumn=true end
+    else
+      valid(out)=false
+    end
+
+    if valid(inp) then
+      darkroomAssert(self.phase==[1/T]-1, "SSRPartial set when not in right phase")
+      self.wroteLastColumn=false
+      -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
+      var SStride = 1
+      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
+      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = data(inp)[y*SStride+(x+xmin)] end end
+      self.phase = 0
+    else
+      if self.phase<[1/T]-1 then self.phase = self.phase + 1 end
+    end
+
+  end
+  terra SSRPartial:ready() return self.phase==[1/T]-1 end
+  res.terraModule = SSRPartial
   return darkroom.newFunction(res)
 end
 
@@ -287,14 +429,14 @@ function darkroom.stencilLinebuffer( A, w, h, T, xmin, xmax, ymin, ymax )
 end
 
 function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
-  map({A,T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<1); assert(w>0); assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
   assert(xmax==0)
   assert(ymax==0)
 
-  return darkroom.compose("stencilLinebuffer", darkroom.SSRPartial( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, 1, ymin ) )
+  return darkroom.compose("stencilLinebufferPartial", darkroom.SSRPartial( A, T, xmin, ymin), darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin )) )
 end
 
 -- purely wiring
@@ -350,7 +492,8 @@ function darkroom.makeHandshake( f )
 
   local delay = f.delay
   assert(delay>0)
-  local struct MakeHandshake{ delaysr: simmodules.fifo( res.outputType:toTerraType(), delay),
+  -- we don't need an input fifo here b/c ready is always true
+  local struct MakeHandshake{ delaysr: simmodules.fifo( tuple(darkroom.extract(res.outputType):toTerraType(),bool), delay),
 --                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
                               inner: f.terraModule}
 
@@ -368,10 +511,10 @@ function darkroom.makeHandshake( f )
       @outValid=false
     end
 
-    var tinp : res.inputType:toTerraType()
-    valid(tinp) = inpValid
-    data(tinp) = @inp
-    self.delaysr:pushBack(&tinp)
+    var tout : tuple(darkroom.extract(res.outputType):toTerraType(),bool)
+    valid(tout) = inpValid
+    if inpValid then self.inner:process(inp,&data(tout)) end -- don't bother if invalid
+    self.delaysr:pushBack(&tout)
   end
   res.terraModule = MakeHandshake
 
@@ -412,40 +555,32 @@ function darkroom.reduceSeq( f, T )
   assert(T<1)
 
   local res = {kind="reduceSeq", fn=f}
-  function res:typecheck( inputType, loc )
-    local o = darkroom.extractStateful( inputType )
-    if o:isArray() then error("ReduceSeq input must be a scalar but is "..tostring(o)..", "..loc) end
-    return darkroom.StatefulHandshake(o)
-  end
-  res.delay=function() return 0 end
-  function res:compile( inputType, outputType )
-    local OT = darkroom.extractStatefulHandshake(outputType)
-    local finput = types.tuple({OT,OT})
-    local f = self.fn:compile( finput, OT )
-    local struct ReduceSeqState {phase : int; data : OT:toTerraType()}
-    terra ReduceSeqState:init() self.phase=0 end
-    local terra reduceSeq(ss : &opaque, inp : &inputType:toTerraType(), out : &outputType:toTerraType() )
-      var s = [&ReduceSeqState](state(inp))
+  darkroom.expectPure(f.outputType)
+  res.inputType = darkroom.Stateful(f.outputType)
+  res.outputType = darkroom.StatefulV(f.outputType)
+  res.delay = 0
+  local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
+  terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
+  terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
+    if self.phase==0 then 
+      self.result = @inp
+      self.phase = self.phase + 1
       valid(out) = false
-      if s.phase==0 then 
-        s.data = data(inp)
-        s.phase = s.phase + 1
+    else
+      var v = {self.result, @inp}
+      self.inner:process(&v,&self.result)
+      
+      if self.phase==[1/T]-1 then
+        self.phase = 0
+        valid(out) = true
+        data(out) = self.result
       else
-        var v = {s.data, data(inp)}
-        f( nil, &v, &s.data )
-
-        if s.phase==[1/T] then
-          s.phase = 0
-          valid(out) = true
-          data(out) = s.data
-        else
-          s.phase = s.phase + 1
-        end
+        self.phase = self.phase + 1
+        valid(out) = false
       end
-
     end
-    return reduceSeq, EmptyState, ReduceSeqState
   end
+  res.terraModule = ReduceSeq
 
   return darkroom.newFunction( res )
 end
@@ -521,6 +656,8 @@ function darkroom.lambda( name, input, output )
   assert( input.kind=="input" )
   assert( darkroom.isIR( output ) )
 
+  print("LAMBDA",name)
+
   if darkroom.isStatefulHandshake(input.type) then
     return darkroom.lambdaHandshake( name, input, output )
   end
@@ -534,7 +671,7 @@ function darkroom.lambda( name, input, output )
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
         return 0
-      elseif n.kind=="index" then
+      elseif n.kind=="index" or n.kind=="extractState" then
         print("DIDX",inputs[1])
         return inputs[1]
       elseif n.kind=="tuple" then
@@ -591,8 +728,10 @@ function darkroom.lambda( name, input, output )
           table.insert( stats, quote for i=0,[n.type:channels()] do (@out)[i] = {[map(inputs, function(m) return `(@m)[i] end)]} end end)
           return out
         elseif n.kind=="index" then
-          table.insert( state, quote @out = @([inputs[1]]).["_"..n.idx] end)
+          table.insert( stats, quote @out = @([inputs[1]]).["_"..n.idx] end)
           return out
+        elseif n.kind=="extractState" then
+          return `nil
         else
           print(n.kind)
           assert(false)
@@ -637,37 +776,30 @@ function darkroom.apply( name, fn, input )
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
 end
 
-function darkroom.constSeq( value, ty, T )
+function darkroom.constSeq( value, A, w, h, T )
   assert(type(value)=="table")
   assert(type(value[1])=="table")
   assert(type(value[1][1])=="number")
-  assert(ty:isArray())
   assert(T<1)
+  assert( types.isType(A) )
+  assert(type(w)=="number")
+  assert(type(h)=="number")
 
-  local res = { kind="constSeq", type = ty, value=value, T=T}
-  function res:typecheck( inputType, loc )
-    if inputType~=darkroom.State then error("constSeq should be State, but has input type "..tostring(inputType)..", "..loc) end
-    local W = (self.type:arrayLength())[1] * self.T
-    if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
-    return darkroom.Stateful(types.array2d(self.type:arrayOver(),W, (self.type:arrayLength())[2] ))
+  local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
+  res.inputType = darkroom.State
+  local W = w*T
+  if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
+  res.outputType = darkroom.Stateful(types.array2d(A,W,h))
+  res.delay = 0
+  local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
+  terra ConstSeqState:reset() self.phase = 0 end
+  terra ConstSeqState:process( inp : &res.inputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    var res = self.data[self.phase]
+    self.phase = self.phase + 1
+    if self.phase == [1/T] then self.phase = 0 end
+    return res
   end
-  res.delay = function() return 0 end
-  function res:compile( inputType, outputType )
-    local OT = darkroom.extractStateful(outputType)
-    local struct ConstSeqState {phase : int; data : (OT:arrayOver():toTerraType())[OT:channels()][1/T] }
-    terra ConstSeqState:init()
-      self.phase = 0
-    end
-
-    local terra constSeq(ss : &opaque, inp : &inputType:toTerraType(), out : &outputType:toTerraType() )
-      var s = [&ConstSeqState](inp)
-      var res = s.data[s.phase]
-      s.phase = s.phase + 1
-      if s.phase == [1/T] then s.phase = 0 end
-      return res
-    end
-    return constSeq, EmptyState, ConstSeqState
-  end
+  res.terraModule = ConstSeqState
 
   return darkroom.newFunction( res )
 end
@@ -691,6 +823,11 @@ function darkroom.index( name, input, idx )
   assert(type(name)=="string")
   assert(darkroom.isIR( input ) )
   return darkroom.newIR( {kind="index", name=name, loc=getloc(), idx=idx, inputs={input}} )
+end
+
+function darkroom.extractState( name, input )
+  assert(darkroom.isIR( input ) )
+  return darkroom.newIR( {kind="extractState", name=name, loc=getloc(), inputs={input}, type=darkroom.State} )
 end
 
 local Im = require "image"
