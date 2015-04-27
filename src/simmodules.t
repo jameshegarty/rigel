@@ -1,9 +1,10 @@
 local M = {}
 
-function M.fifo( T, reqMaxSize )
+function M.fifo( T, reqMaxSize, name )
   assert(terralib.types.istype(T))
   assert(type(reqMaxSize)=="number")
   local maxSize = reqMaxSize + 1 -- if we alloc reqMaxSize, we can't distinguish between empty and full
+  assert(type(name)=="string")
 
   local struct FIFO {
     data : T[maxSize];
@@ -17,6 +18,7 @@ function M.fifo( T, reqMaxSize )
   end
 
   terra FIFO:pushBack( inp : &T ) 
+    darkroomAssert( self:size() <= reqMaxSize, ["FIFO overflow "..name] )
     self.data[self.backAddr % maxSize] = @inp
     self.backAddr = self.backAddr + 1
   end
@@ -39,8 +41,8 @@ function M.fifo( T, reqMaxSize )
   return FIFO
 end
 
-function M.shiftRegister( T, size )
-  local FIFO = M.fifo( T, size )
+function M.shiftRegister( T, size, name )
+  local FIFO = M.fifo( T, size, name )
   local struct SR { fifo : FIFO }
   terra SR:reset() self.fifo:reset() end
   terra SR:pushBack( inp : &T )

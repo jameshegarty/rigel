@@ -53,7 +53,7 @@ local ready = darkroom.ready
 
 function darkroom.isStateful( a ) return a:isTuple() and a.list[2]==darkroom.State end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
-function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool()  end
+function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
 function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==types.bool() end
 function darkroom.expectPure( A, er ) if darkroom.isStateful(A) or darkroom.isStatefulHandshake(A) then error(er or "type should be pure") end end
 function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false then error(er or "type should be stateful") end end
@@ -66,12 +66,12 @@ function darkroom.extractStateful( a, loc )
 end
 
 function darkroom.extractV( a, loc )
-  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, "..loc) end
+  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, ") end
   return a.list[1].list[1]
 end
 
 function darkroom.extractRV( a, loc )
-  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, "..loc) end
+  if darkroom.isStatefulRV(a)==false then error("Not a statefulRV input, ") end
   return a.list[1].list[1]
 end
 
@@ -186,9 +186,11 @@ function darkroom.liftDecimate(f)
     if valid(inp) then
 --      var inpp : darkroom.extract(f.inputType):toTerraType() = data(inp)
       self.inner:process(&data(inp),[&darkroom.extract(f.outputType):toTerraType()](out))
+    else
+      valid(out) = false
     end
   end
-  terra LiftDecimate:ready( inp:bool ) return true end
+  terra LiftDecimate:ready() return true end
   res.terraModule = LiftDecimate
   return darkroom.newFunction(res)
 end
@@ -205,7 +207,7 @@ function darkroom.RPassthrough(f)
   terra RPassthrough:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     self.inner:process([&darkroom.extract(f.inputType):toTerraType()](inp),out)
   end
-  terra RPassthrough:ready( inp:bool) return inp and self.inner:ready() end
+  terra RPassthrough:ready( inp:bool ) return inp and self.inner:ready() end
   res.terraModule = RPassthrough
   return darkroom.newFunction(res)
 end
@@ -218,24 +220,21 @@ function darkroom.liftHandshake(f)
   local res = {kind="liftHandshake", fn=f}
   darkroom.expectStatefulV(f.inputType)
   darkroom.expectStatefulRV(f.outputType)
-  res.inputType = darkroom.StatefulRV(darkroom.extractV(f.inputType))
-  res.outputType = darkroom.StatefulRV(darkroom.extractRV(f.outputType))
+  res.inputType = darkroom.StatefulHandshake(darkroom.extractV(f.inputType))
+  res.outputType = darkroom.StatefulHandshake(darkroom.extractRV(f.outputType))
   assert(f.delay>0)
 
-  local struct LiftHandshake{ delaysr: simmodules.fifo( res.outputType:toTerraType(), delay),
-                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
+  local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), f.delay, "liftHandshake"),
+                              fifo: simmodules.fifo( darkroom.extract(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
                               inner: f.terraModule}
-
   terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
-
-
-  terra LiftHandshake:process( inp : &darkroom.extract(f.inputType):toTerraType(), inpValid : bool, 
-                               out : &darkroom.extract(f.outputType):toTerraType(), outValid : &bool)
+  terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), inpValid : bool, 
+                               out : &darkroom.extract(res.outputType):toTerraType(), outValid : &bool)
     if inpValid then
       self.fifo:pushBack(inp)
     end
 
-    if self.delaysr:size()==delay then
+    if self.delaysr:size()==f.delay then
       var ot = self.delaysr:popFront()
       @outValid = valid(ot)
       @out = data(ot)
@@ -243,10 +242,16 @@ function darkroom.liftHandshake(f)
       @outValid=false
     end
 
-    var tinp : res.inputType:toTerraType()
-    valid(tinp) = inpValid
-    data(tinp) = @inp
-    self.delaysr:pushBack(&tinp)
+    var tinp : darkroom.extract(f.inputType):toTerraType()
+    var tout : darkroom.extract(f.outputType):toTerraType()
+    valid(tinp) = false
+    if self.fifo:hasData() and self.inner:ready() then
+      data(tinp) = @(self.fifo:popFront())
+      valid(tinp) = true
+    end
+    cstdio.printf("CALLINNER %d\n",valid(tinp))
+    self.inner:process(&tinp,&tout)
+    self.delaysr:pushBack(&tout)
   end
   res.terraModule = LiftHandshake
 
@@ -334,7 +339,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   res.inputType = darkroom.Stateful(types.array2d(A,T))
   res.outputType = darkroom.Stateful(types.array2d(A,T,-ymin+1))
   res.delay = 0
-  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T)}
+  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
   terra Linebuffer:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
@@ -387,7 +392,7 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
   res.delay=0
   local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]}
-  terra SSRPartial:reset() self.phase=0; self.wroteLastColumn=true end
+  terra SSRPartial:reset() self.phase=[1/T]-1; self.wroteLastColumn=true end
   terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.wroteLastColumn==false then
       var W = [(-xmin+1)*T]
@@ -398,8 +403,9 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
       valid(out)=false
     end
 
+    --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
     if valid(inp) then
-      darkroomAssert(self.phase==[1/T]-1, "SSRPartial set when not in right phase")
+      darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
       self.wroteLastColumn=false
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
@@ -409,9 +415,8 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
     else
       if self.phase<[1/T]-1 then self.phase = self.phase + 1 end
     end
-
   end
-  terra SSRPartial:ready() return self.phase==[1/T]-1 end
+  terra SSRPartial:ready()  return self.phase==[1/T]-1 end
   res.terraModule = SSRPartial
   return darkroom.newFunction(res)
 end
@@ -436,7 +441,7 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(xmax==0)
   assert(ymax==0)
 
-  return darkroom.compose("stencilLinebufferPartial", darkroom.SSRPartial( A, T, xmin, ymin), darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin )) )
+  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.SSRPartial( A, T, xmin, ymin)), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
 end
 
 -- purely wiring
@@ -493,13 +498,10 @@ function darkroom.makeHandshake( f )
   local delay = f.delay
   assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
-  local struct MakeHandshake{ delaysr: simmodules.fifo( tuple(darkroom.extract(res.outputType):toTerraType(),bool), delay),
+  local struct MakeHandshake{ delaysr: simmodules.fifo( tuple(darkroom.extract(res.outputType):toTerraType(),bool), delay, "makeHandshake"),
 --                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
                               inner: f.terraModule}
-
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
-
-  print("MAKE HANDHSKAE",delay)
   terra MakeHandshake:process( inp : &darkroom.extract(f.inputType):toTerraType(), inpValid : bool, 
                                out : &darkroom.extract(f.outputType):toTerraType(), outValid : &bool)
     
@@ -621,6 +623,7 @@ function darkroom.lambdaHandshake( name, input, output )
         if n.kind=="input" then
           return {`@inputSymbol, inputValidSymbol}
         elseif n.kind=="apply" then
+          print("APPLYHS",n.fn.terraModule)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           local I = inputs[1][1]
           local Ivalid = inputs[1][2]
@@ -690,6 +693,9 @@ function darkroom.lambda( name, input, output )
     local outputSymbol = symbol( &darkroom.extract(fn.output.type):toTerraType(), "lambdaoutput" )
 
     local stats = {}
+    local resetStats = {}
+    local readyStats = {}
+    local readyInput = symbol(bool, "readyinput")
     local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
     Module.entries = terralib.newlist( {} )
     local mself = symbol( &Module, "module self" )
@@ -709,13 +715,17 @@ function darkroom.lambda( name, input, output )
         end
 
         if n.kind=="input" then
-          return inputSymbol
+          return {inputSymbol, readyInput}
         elseif n.kind=="apply" then
           print("APPLY",n.fn.kind, n.inputs[1].type, n.type)
           print("APP",n.name, n.fn.terraModule)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          table.insert(stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
-          return out
+          table.insert( resetStats, quote mself.[n.name]:reset() end )
+          local readyOut = symbol( bool, "ready_"..n.name )
+          if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
+          elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
+          table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
+          return {out,readyOut}
         elseif n.kind=="constant" then
           if n.type:isArray() then
             map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
@@ -725,25 +735,32 @@ function darkroom.lambda( name, input, output )
 
           return out
         elseif n.kind=="tuple" then
-          table.insert( stats, quote for i=0,[n.type:channels()] do (@out)[i] = {[map(inputs, function(m) return `(@m)[i] end)]} end end)
-          return out
+          table.insert( stats, quote for i=0,[n.type:channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
+          return {out}
         elseif n.kind=="index" then
-          table.insert( stats, quote @out = @([inputs[1]]).["_"..n.idx] end)
-          return out
+          table.insert( stats, quote @out = @([inputs[1][1]]).["_"..n.idx] end)
+          return {out}
         elseif n.kind=="extractState" then
-          return `nil
+          return {`nil}
         else
           print(n.kind)
           assert(false)
         end
       end)
 
-    callOnEntries(Module,"reset")
+--    callOnEntries(Module,"reset")
 
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] )
 --        cstdio.printf([fn.name.."\n"])
       [stats]
     end
+    terra Module.methods.reset( [mself] ) [resetStats] end
+    if darkroom.isStatefulRV(res.inputType) then
+      terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [out[2]] end
+    else
+      terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
+    end
+
     Module.methods.process:printpretty()
     return Module
   end
@@ -872,6 +889,8 @@ function darkroom.scanlHarnessHandshake( Module, T,
   assert(type(T)=="number")
   assert(darkroom.isStatefulHandshake(inputType))
 
+  local throttle = 1
+  if T<1 then throttle=1/T;T=1 end
   return terra()
     cstdio.printf("DOIT\n")
     var imIn : Im
@@ -883,6 +902,9 @@ function darkroom.scanlHarnessHandshake( Module, T,
     module:reset()
 
     var delayCycles : int = 0
+    var validCycles = 0
+    var invalidCycles = 0
+    var started = false
     var inpAddr = 0
     var outAddr = 0
     var output : darkroom.extract(outputType):toTerraType()
@@ -890,16 +912,27 @@ function darkroom.scanlHarnessHandshake( Module, T,
     var inputValid = true
     var outputValid = true
 
-    while inpAddr<inputWidth*inputHeight and outAddr<outputWidth*outputHeight do
+    var TH : int = 0
+    while inpAddr<inputWidth*inputHeight or outAddr<outputWidth*outputHeight do
       cstdio.printf("ITER %d %d\n",inpAddr,outAddr)
-
-      module:process( [&uint8[T]]([&uint8](imIn.data)+inpAddr), inputValid, &output, &outputValid)
-      inpAddr = inpAddr + T
+      
+      if TH==0 then
+        module:process( [&uint8[T]]([&uint8](imIn.data)+inpAddr), inputValid, &output, &outputValid)
+        inpAddr = inpAddr + T
+      else
+        module:process( [&uint8[T]](nil), false, &output, &outputValid)
+      end
+      TH = TH + 1
+      if TH>=throttle then TH=0 end
 
       if outputValid then
         @[&uint8[T]]([&uint8](imOut.data)+outAddr) = output
         outAddr = outAddr+T; 
-      else
+        started = true
+        validCycles = validCycles + 1
+      elseif started then
+        invalidCycles = invalidCycles + 1
+      elseif started==false then
         delayCycles = delayCycles + 1
       end
     end
@@ -907,6 +940,7 @@ function darkroom.scanlHarnessHandshake( Module, T,
     imOut:save( outputFilename )
 
     cstdio.printf("Delay Cycles %d\n", delayCycles)
+    cstdio.printf("valid percent: %f\n",[float](validCycles*100)/[float](invalidCycles+validCycles))
   end
 end
 
