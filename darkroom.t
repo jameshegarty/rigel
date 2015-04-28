@@ -222,9 +222,11 @@ function darkroom.liftHandshake(f)
   darkroom.expectStatefulRV(f.outputType)
   res.inputType = darkroom.StatefulHandshake(darkroom.extractV(f.inputType))
   res.outputType = darkroom.StatefulHandshake(darkroom.extractRV(f.outputType))
-  assert(f.delay>0)
+  print("LIFT HANDSHAKE",f.outputType,res.outputType)
+  --assert(f.delay>0)
+  local delay = math.max(1, f.delay)
 
-  local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), f.delay, "liftHandshake"),
+  local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), delay, "liftHandshake"),
                               fifo: simmodules.fifo( darkroom.extract(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
                               inner: f.terraModule}
   terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
@@ -234,7 +236,7 @@ function darkroom.liftHandshake(f)
       self.fifo:pushBack(inp)
     end
 
-    if self.delaysr:size()==f.delay then
+    if self.delaysr:size()==delay then
       var ot = self.delaysr:popFront()
       @outValid = valid(ot)
       @out = data(ot)
@@ -560,6 +562,7 @@ function darkroom.reduceSeq( f, T )
   darkroom.expectPure(f.outputType)
   res.inputType = darkroom.Stateful(f.outputType)
   res.outputType = darkroom.StatefulV(f.outputType)
+  assert(f.delay==0)
   res.delay = 0
   local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
@@ -587,6 +590,42 @@ function darkroom.reduceSeq( f, T )
   return darkroom.newFunction( res )
 end
 
+
+function darkroom.cat2d( A,T,w,h )
+  assert(types.isType(A))
+  assert(A:isArray()==false)
+  assert(T<1)
+  assert(type(w)=="number")
+  assert(type(h)=="number")
+  local res = {kind="cat2d"}
+  res.inputType=darkroom.Stateful(types.array2d(A,w*T,h))
+  res.outputType=darkroom.StatefulV(types.array2d(A,w,h))
+  res.delay=0
+  local struct Cat2d { phase:int; result: (A:toTerraType())[w*h] }
+  terra Cat2d:reset() self.phase=0 end
+  local W = w*T
+  terra Cat2d:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
+    for y=0,h do
+      for X=0,W do
+        var x = X+self.phase*W
+        self.result[y*w+x] = (@inp)[y*W+X]
+      end
+    end
+
+    if self.phase==[1/T]-1 then
+      data(out) = self.result
+      valid(out) = true
+      self.phase=-1
+    else
+      valid(out) = false
+    end
+
+    self.phase = self.phase+1
+  end
+  res.terraModule = Cat2d
+  return darkroom.newFunction( res )
+end
+
 -- function argument
 function darkroom.input( type )
   assert( types.isType( type ) )
@@ -606,7 +645,7 @@ function darkroom.lambdaHandshake( name, input, output )
   res.inputType = input.type
   res.outputType = output.type
 
-  local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
+  local Module = terralib.types.newstruct("lambda"..name.."_module")
 --  Module.entries = terralib.newlist( {{field="__input",type=simmodules.HandshakeStub(darkroom.extract(input.type):toTerraType())}} )
   Module.entries = terralib.newlist({})
 
@@ -733,9 +772,9 @@ function darkroom.lambda( name, input, output )
             assert(false)
           end
 
-          return out
+          return {out}
         elseif n.kind=="tuple" then
-          table.insert( stats, quote for i=0,[n.type:channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
+          table.insert( stats, quote for i=0,[darkroom.extract(n.type):channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
           return {out}
         elseif n.kind=="index" then
           table.insert( stats, quote @out = @([inputs[1][1]]).["_"..n.idx] end)
@@ -795,8 +834,8 @@ end
 
 function darkroom.constSeq( value, A, w, h, T )
   assert(type(value)=="table")
-  assert(type(value[1])=="table")
-  assert(type(value[1][1])=="number")
+  assert(type(value[1])=="number")
+--  assert(type(value[1][1])=="number")
   assert(T<1)
   assert( types.isType(A) )
   assert(type(w)=="number")
@@ -809,12 +848,23 @@ function darkroom.constSeq( value, A, w, h, T )
   res.outputType = darkroom.Stateful(types.array2d(A,W,h))
   res.delay = 0
   local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
-  terra ConstSeqState:reset() self.phase = 0 end
+  local mself = symbol(&ConstSeqState,"mself")
+  local initstats = {}
+--  map( value, function(m,i) table.insert( initstats, quote mself.data[[(i-1)]][] = m end ) end )
+  for C=0,(1/T)-1 do
+    for y=0,h-1 do
+      for x=0,W-1 do
+        print("C",C,"X",x,"Y",y,"w",w,"h",h,"#",#value,value[x+y*w+C*W+1])
+--        local I = 
+        table.insert( initstats, quote mself.data[C][y*W+x] = [value[x+y*w+C*W+1]] end )
+      end
+    end
+  end
+  terra ConstSeqState.methods.reset([mself]) mself.phase = 0; [initstats] end
   terra ConstSeqState:process( inp : &res.inputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    var res = self.data[self.phase]
+    @out = self.data[self.phase]
     self.phase = self.phase + 1
     if self.phase == [1/T] then self.phase = 0 end
-    return res
   end
   res.terraModule = ConstSeqState
 
@@ -891,6 +941,12 @@ function darkroom.scanlHarnessHandshake( Module, T,
 
   local throttle = 1
   if T<1 then throttle=1/T;T=1 end
+
+  print("OUTPUTTYPE",outputType)
+  assert(darkroom.extract(outputType):isArray())
+  local outputTileW = (darkroom.extract(outputType):arrayLength())[1]
+  local outputTileH = (darkroom.extract(outputType):arrayLength())[2]
+
   return terra()
     cstdio.printf("DOIT\n")
     var imIn : Im
@@ -906,15 +962,16 @@ function darkroom.scanlHarnessHandshake( Module, T,
     var invalidCycles = 0
     var started = false
     var inpAddr = 0
-    var outAddr = 0
+    var outAddrX = 0
+    var outAddrY = 0
     var output : darkroom.extract(outputType):toTerraType()
 
     var inputValid = true
     var outputValid = true
 
     var TH : int = 0
-    while inpAddr<inputWidth*inputHeight or outAddr<outputWidth*outputHeight do
-      cstdio.printf("ITER %d %d\n",inpAddr,outAddr)
+    while inpAddr<inputWidth*inputHeight or outAddrY<outputHeight do
+      cstdio.printf("ITER %d outX %d outY %d\n",inpAddr,outAddrX, outAddrY)
       
       if TH==0 then
         module:process( [&uint8[T]]([&uint8](imIn.data)+inpAddr), inputValid, &output, &outputValid)
@@ -926,8 +983,19 @@ function darkroom.scanlHarnessHandshake( Module, T,
       if TH>=throttle then TH=0 end
 
       if outputValid then
-        @[&uint8[T]]([&uint8](imOut.data)+outAddr) = output
-        outAddr = outAddr+T; 
+--        @[&uint8[T]]([&uint8](imOut.data)+outAddr) = output
+        for y=0,outputTileH do
+          for x=0,outputTileW do
+            @([&uint8](imOut.data)+outAddrX+x+(outAddrY+y)*outputWidth) = output[y*outputTileW+x]
+          end
+        end
+
+        outAddrX = outAddrX+outputTileW; 
+        if outAddrX>=outputWidth then
+          outAddrY = outAddrY + outputTileH
+          outAddrX = 0
+        end
+
         started = true
         validCycles = validCycles + 1
       elseif started then
