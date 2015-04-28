@@ -1156,6 +1156,36 @@ terra Image:deepcopyUnstride()
   return out
 end
 
+terra Image:crop(L:int, R:int, B:int, T:int)
+  darkroomAssert(L>=0,"Image:expand L<0")
+  darkroomAssert(R>=0,"Image:expand R<0")
+  darkroomAssert(B>=0,"Image:expand B<0")
+  darkroomAssert(T>=0,"Image:expand T<0")
+
+  self.data = [&uint8](self.data)+L+self.width*B
+  self.width = self.width-L-R
+  self.height = self.height-B-T
+  var N =  self:deepcopyUnstride()
+  self:free()
+  @self = N
+  return self
+end
+
+terra Image:expand(L:int, R:int, B:int, T:int)
+  darkroomAssert(L>=0,"Image:expand L<0")
+  darkroomAssert(R>=0,"Image:expand R<0")
+  darkroomAssert(B>=0,"Image:expand B<0")
+  darkroomAssert(T>=0,"Image:expand T<0")
+  self.data = [&uint8](self.data)-L-self.width*B
+  self.width = self.width+L+R
+  self.height = self.height+B+T
+
+  var N = self:deepcopyUnstride()
+  self:free()
+  @self = N
+  return self
+end
+
 terra Image:save(filename : &int8)
   var ext = filename + cstring.strlen(filename) - 3
   --cstdio.printf("EXT %s\n",ext)

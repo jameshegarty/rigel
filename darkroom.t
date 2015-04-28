@@ -4,6 +4,7 @@ local simmodules = require("simmodules")
 local cstring = terralib.includec("string.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
+local cmath = terralib.includec("math.h")
 local ffi = require("ffi")
 
 -----------------------
@@ -124,7 +125,7 @@ function darkroomIRFunctions:typecheck()
         if darkroom.isStateful(n.inputs[1].type)==false then error("input to extractState must be stateful") end
       elseif n.kind=="tuple" then
         local tt = {}
-        local sz
+--        local sz
         local isStateful
         for _,v in pairs(n.inputs) do
           print("TUPLEINPT",v.type)
@@ -135,13 +136,15 @@ function darkroomIRFunctions:typecheck()
           else
             if isStateful==true then error("Either all or none of the inputs to tuple must be stateful, "..n.loc) end
           end
-          if o:isArray()==false then error("input to tuple must be an array, "..n.loc) end
-          if sz==nil then sz=o:arrayLength() 
-          elseif sz~=o:arrayLength() then error("inputs to tuple must have same size,"..n.loc) end
-          table.insert( tt, o:arrayOver() )
+--          if o:isArray()==false then error("input to tuple must be an array, "..n.loc) end
+--          if sz==nil then sz=o:arrayLength() 
+--          elseif sz~=o:arrayLength() then error("inputs to tuple must have same size,"..n.loc) end
+--          table.insert( tt, o:arrayOver() )
+          table.insert( tt, o )
         end
 
-        n.type = types.array2d( types.tuple(tt), sz[1], sz[2] )
+--        n.type = types.array2d( types.tuple(tt), sz[1], sz[2] )
+        n.type = types.tuple(tt)
         if isStateful==true then n.type = darkroom.Stateful(n.type) end
         print("TUPLEOUT",n.type)
         return darkroom.newIR(n)
@@ -154,6 +157,48 @@ end
 
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
+
+function darkroom.packTupleArrays(W,H, typelist)
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(type(typelist)=="table")
+
+  local res = {kind="packTupleArrays", W=W,H=H}
+
+  res.inputType = types.tuple( map(typelist, function(t) return types.array2d(t,W,H) end) )
+  res.outputType = types.array2d(types.tuple(typelist),W,H)
+  res.delay = 0
+  local struct PackTupleArrays { }
+  terra PackTupleArrays:reset() end
+  terra PackTupleArrays:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for c = 0, [W*H] do
+      (@out)[c] = { [map(range(0,#typelist-1), function(i) return `(inp.["_"..i])[c] end ) ] }
+    end
+  end
+  res.terraModule = PackTupleArrays
+  return darkroom.newFunction(res)
+end
+
+function darkroom.crop(A,W,H,L,R,B,T,value)
+  map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
+  local res = {kind="crop",L=L,R=R,T=T,B=B,value=value}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = res.inputType
+  res.delay = 0
+  local struct Crop {}
+  terra Crop:reset() end
+  terra Crop:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for y=0,H do for x=0,W do 
+        if x<L or y<B or x>=W-R or y>=H-T then
+          (@out)[y*W+x] = [value]
+        else
+          (@out)[y*W+x] = (@inp)[y*W+x]
+        end
+    end end
+  end
+  res.terraModule = Crop
+  return darkroom.newFunction(res)
+end
 
 function darkroom.liftStateful(f)
   local res = {kind="liftStateful", fn = f}
@@ -285,6 +330,73 @@ function darkroom.map( f, w, h )
     for i=0,w*h do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.scale( A, w, h, scaleX, scaleY )
+  assert(types.isType(A))
+  assert(type(w)=="number")
+  assert(type(h)=="number")
+  assert(type(scaleX)=="number")
+  assert(type(scaleY)=="number")
+
+  local res = { kind="scale", scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, w, h )
+  res.outputType = types.array2d( A, w*scaleX, h*scaleY )
+  res.delay = 0
+  local struct ScaleModule {}
+  terra ScaleModule:reset() end
+  terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for y=0,[h*scaleY] do 
+      for x=0,[w*scaleX] do
+        var idx = [int](cmath.floor([float](x)*[float](scaleX)))
+        var idy = [int](cmath.floor([float](y)*[float](scaleY)))
+        (@out)[y*[h*scaleY]+x] = (@inp)[idy*w+idx]
+      end
+    end
+  end
+  res.terraModule = ScaleModule
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.packPyramid( A, w, h, levels, human )
+  assert(types.isType(A))
+  assert(type(w)=="number")
+  assert(type(h)=="number")
+  assert(type(levels)=="number")
+  assert(type(human)=="boolean")
+
+  local totalW = 0
+  local typelist = {}
+  if human then
+    for i=1,levels do 
+      totalW = totalW + w/math.pow(2,i-1) 
+      table.insert( typelist, types.array2d(A, w/math.pow(2,i-1), h/math.pow(2,i-1)))
+    end
+  else
+    assert(false)
+  end
+
+  local res = { kind="packPyramid", levels=levels}
+  res.inputType = types.tuple(typelist)
+  res.outputType = types.array2d( A, totalW, h)
+  res.delay = 0
+  local struct PackPyramidModule {}
+  terra PackPyramidModule:reset() end
+  terra PackPyramidModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for l=0,levels do
+      for y=0,h/([int](cmath.pow(2,l))) do 
+        for x=0,w/[int](cmath.pow(2,l)) do
+--          var idx = [int](cmath.floor([float](x)*[float](scaleX)))
+--          var idy = [int](cmath.floor([float](y)*[float](scaleY)))
+--          (@out)[y*[h*scaleY]+x] = (@inp)[idy*w+idx]
+        end
+      end
+    end
+  end
+  res.terraModule = PackPyramidModule
 
   return darkroom.newFunction(res)
 end
@@ -774,7 +886,8 @@ function darkroom.lambda( name, input, output )
 
           return {out}
         elseif n.kind=="tuple" then
-          table.insert( stats, quote for i=0,[darkroom.extract(n.type):channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
+--          table.insert( stats, quote for i=0,[darkroom.extract(n.type):channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
+          table.insert( stats, quote @out = {[map(inputs, function(m) return `@[m[1]] end)]} end)
           return {out}
         elseif n.kind=="index" then
           table.insert( stats, quote @out = @([inputs[1][1]]).["_"..n.idx] end)
@@ -901,17 +1014,23 @@ local Im = require "image"
 
 function darkroom.scanlHarness( Module, T,
                                 inputFilename, inputType, inputWidth, inputHeight, 
-                                outputFilename, outputType, outputWidth, outputHeight )
+                                outputFilename, outputType, outputWidth, outputHeight,
+                                L,R,B,Top)
   assert(terralib.types.istype(Module))
   assert(type(T)=="number")
   assert(darkroom.isStatefulHandshake(inputType)==false)
   assert(type(inputFilename)=="string")
   assert(type(outputFilename)=="string")
+  assert(type(Top)=="number")
 
   return terra()
     cstdio.printf("DOIT\n")
     var imIn : Im
     imIn:load( inputFilename )
+    imIn:expand( L,R,B,Top)
+    darkroomAssert(imIn.width==inputWidth,"input image width isn't correct")
+    darkroomAssert(imIn.height==inputHeight,"input image height isn't correct")
+
     var imOut : Im
     imOut:allocateDarkroomFormat(outputWidth, outputHeight, 1, 1, 8, false, false, false)
 
@@ -927,7 +1046,8 @@ function darkroom.scanlHarness( Module, T,
 --      module:process( [&uint8[T]](imIn.data), [&uint8[T]](imOut.data) )
     end
 
-    imOut:save( outputFilename )
+--    imOut:save( outputFilename )
+    imOut:crop(L,R,B,Top):save( outputFilename )
   end
 end
 
