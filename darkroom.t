@@ -445,6 +445,53 @@ function darkroom.compose(name,f,g)
   return darkroom.lambda(name,inp,darkroom.apply(name.."_f",f,darkroom.apply(name.."_g",g,inp)))
 end
 
+function darkroom.posSeq( W, H, T )
+  assert(W>0); assert(H>0); assert(T>=1);
+  local res = {kind="posSeq", T=T, W=W, H=H }
+  res.inputType = darkroom.State
+  res.outputType = darkroom.Stateful(types.array2d(types.tuple({types.int(32),types.int(32)}),T))
+  res.delay = 0
+  local struct PosSeq { x:int, y:int }
+  terra PosSeq:reset() self.x=0; self.y=0 end
+  terra PosSeq:process( inp : &res.inputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    for i=0,T do 
+      (@out)[i] = {self.x,self.y}
+      self.x = self.x + 1
+      if self.x==W then self.x=0; self.y=self.y+1 end
+    end
+  end
+  res.terraModule = PosSeq
+  return darkroom.newFunction(res)
+end
+
+function darkroom.liftXYSeq( inpType, outType, W, H, T, tfn, delay )
+  map({W,H,delay},function(n) assert(type(n)=="number") end)
+
+  local inp = darkroom.input( darkroom.Stateful( types.array2d(inpType,T) ) )
+
+  local twrap = darkroom.lift( types.tuple( {inpType, types.tuple({types.int(32),types.int(32)})} ), outType,
+                                terra( a :&tuple(inpType:toTerraType(),tuple(int,int)), out : &outType:toTerraType() )
+                                  var x,y = a._1._0, a._1._1
+                                  tfn(x,y, &a._0, out)
+                                end,delay )
+
+  local p = darkroom.apply("p", darkroom.posSeq(W,H,T), darkroom.extractState("e",inp) )
+  local packed = darkroom.apply( "packedtup", darkroom.makeStateful(darkroom.packTupleArrays(T,1,{types.uint(8),types.tuple({types.int(32),types.int(32)})})), darkroom.tuple("ptup", {inp,p}) )
+  local out = darkroom.apply("m", darkroom.makeStateful(darkroom.map( twrap, T )), packed )
+  return darkroom.lambda( "cropSeq", inp, out )
+end
+
+function darkroom.cropSeq( A, W, H, T, L, R, B, Top, Value )
+  map({W,H,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+
+  return darkroom.liftXYSeq( A, A, W, H, T,
+                                terra( x:int, y:int, a :&A:toTerraType(), out : &A:toTerraType() )
+                                  if x<L or y<B or x>=W-R or y>=H-Top then @out = [Value]
+                                  else @out = @a end
+                                end, 1 )
+
+end
+
 function darkroom.linebuffer( A, w, h, T, ymin )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
@@ -1006,6 +1053,7 @@ function darkroom.index( name, input, idx )
 end
 
 function darkroom.extractState( name, input )
+  assert(type(name)=="string")
   assert(darkroom.isIR( input ) )
   return darkroom.newIR( {kind="extractState", name=name, loc=getloc(), inputs={input}, type=darkroom.State} )
 end

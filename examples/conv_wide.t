@@ -2,12 +2,13 @@ local d = require "darkroom"
 local Image = require "image"
 local types = require("types")
 
-W = 128
-H = 64
 T = 4 -- throughput
 --ConvRadius = 1
 ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
+
+W = 128+ConvWidth
+H = 64+ConvWidth
 
 -------------
 partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32), 
@@ -22,7 +23,8 @@ reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int
 inp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
 r = d.constant( "convkernel", range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth) )
 
-conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), d.tuple("tpart", {inp,r}) )
+packed = d.apply( "packedtup", d.packTupleArrays(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
+conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), packed )
 conv = d.apply( "sum", d.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = d.apply( "touint8", touint8, conv )
 
@@ -31,7 +33,8 @@ convolve = d.lambda( "convolve", inp, conv )
 ITYPE = d.Stateful(types.array2d( types.uint(8), T ))
 inp = d.input( ITYPE )
 
-convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
+I = d.apply("crop", d.cropSeq(types.uint(8),W,H,T,ConvWidth,0,ConvWidth,0,0), inp)
+convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), I)
 convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ) ), convLB )
 convpipe = d.apply( "conv", d.makeStateful( d.map( convolve, T ) ), convstencils )
 
@@ -39,5 +42,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 Module = convpipe:compile()
-doit = darkroom.scanlHarness( Module, T, "frame_128.bmp", ITYPE, W, H, "out/conv_wide.bmp", ITYPE, W, H)
+doit = darkroom.scanlHarness( Module, T, "frame_128.bmp", ITYPE, W, H, "out/conv_wide.bmp", ITYPE, W, H,ConvWidth,0,ConvWidth,0)
 doit()
