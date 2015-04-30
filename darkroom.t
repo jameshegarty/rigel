@@ -1102,10 +1102,12 @@ end
 
 function darkroom.scanlHarnessHandshake( Module, T,
                                 inputFilename, inputType, inputWidth, inputHeight, 
-                                outputFilename, outputType, outputWidth, outputHeight )
+                                outputFilename, outputType, outputWidth, outputHeight,
+                                L,R,B,Top)
   assert(terralib.types.istype(Module))
   assert(type(T)=="number")
   assert(darkroom.isStatefulHandshake(inputType))
+  assert(type(Top)=="number")
 
   local throttle = 1
   if T<1 then throttle=1/T;T=1 end
@@ -1119,6 +1121,7 @@ function darkroom.scanlHarnessHandshake( Module, T,
     cstdio.printf("DOIT\n")
     var imIn : Im
     imIn:load( inputFilename )
+    imIn:expand( L, R, B, Top)
     var imOut : Im
     imOut:allocateDarkroomFormat(outputWidth, outputHeight, 1, 1, 8, false, false, false)
 
@@ -1173,7 +1176,7 @@ function darkroom.scanlHarnessHandshake( Module, T,
       end
     end
 
-    imOut:save( outputFilename )
+    imOut:crop(L,R,B,Top):save( outputFilename )
 
     cstdio.printf("Delay Cycles %d\n", delayCycles)
     cstdio.printf("valid percent: %f\n",[float](validCycles*100)/[float](invalidCycles+validCycles))
