@@ -334,6 +334,8 @@ function darkroom.map( f, w, h )
   return darkroom.newFunction(res)
 end
 
+-- if scaleX,Y > 1 then this is upsample
+-- if scaleX,Y < 1 then this is downsample
 function darkroom.scale( A, w, h, scaleX, scaleY )
   assert(types.isType(A))
   assert(type(w)=="number")
@@ -350,9 +352,10 @@ function darkroom.scale( A, w, h, scaleX, scaleY )
   terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for y=0,[h*scaleY] do 
       for x=0,[w*scaleX] do
-        var idx = [int](cmath.floor([float](x)*[float](scaleX)))
-        var idy = [int](cmath.floor([float](y)*[float](scaleY)))
-        (@out)[y*[h*scaleY]+x] = (@inp)[idy*w+idx]
+        var idx = [int](cmath.floor([float](x)/[float](scaleX)))
+        var idy = [int](cmath.floor([float](y)/[float](scaleY)))
+--        cstdio.printf("SCALE outx %d outy %d, inx %d iny %d\n",x,y,idx,idy)
+        (@out)[y*[w*scaleX]+x] = (@inp)[idy*w+idx]
       end
     end
   end
@@ -385,17 +388,18 @@ function darkroom.packPyramid( A, w, h, levels, human )
   res.delay = 0
   local struct PackPyramidModule {}
   terra PackPyramidModule:reset() end
-  terra PackPyramidModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for l=0,levels do
-      for y=0,h/([int](cmath.pow(2,l))) do 
-        for x=0,w/[int](cmath.pow(2,l)) do
---          var idx = [int](cmath.floor([float](x)*[float](scaleX)))
---          var idy = [int](cmath.floor([float](y)*[float](scaleY)))
---          (@out)[y*[h*scaleY]+x] = (@inp)[idy*w+idx]
-        end
-      end
-    end
+  local stats = {}
+  local insymb = symbol(&res.inputType:toTerraType(),"inp")
+  local outsymb = symbol(&res.outputType:toTerraType(),"out")
+  local X = 0
+  for l=1,levels do
+    local thisW = w/math.pow(2,l-1)
+    table.insert(stats, quote for y=0,[h/math.pow(2,l-1)] do for x=0,thisW do
+                       (@outsymb)[y*totalW+x+X] = ((@insymb).["_"..(l-1)])[y*thisW+x]
+                                                             end end end)
+    X = X + thisW
   end
+  terra PackPyramidModule:process( [insymb], [outsymb] ) cstring.memset(outsymb,0,[res.outputType:sizeof()]); stats end
   res.terraModule = PackPyramidModule
 
   return darkroom.newFunction(res)
@@ -788,7 +792,7 @@ end
 -- function argument
 function darkroom.input( type )
   assert( types.isType( type ) )
-  return darkroom.newIR( {kind="input", type = type, name="input", inputs={}} )
+  return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}} )
 end
 
 function callOnEntries( T, fnname )
@@ -913,10 +917,12 @@ function darkroom.lambda( name, input, output )
         end
 
         if n.kind=="input" then
+          print("N",n,n.type,"FNINP",fn.input,fn.input.type)
+          if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
           return {inputSymbol, readyInput}
         elseif n.kind=="apply" then
           print("APPLY",n.fn.kind, n.inputs[1].type, n.type)
-          print("APP",n.name, n.fn.terraModule)
+          print("APP",n.name, n.fn.terraModule, "inputtype",n.fn.inputType,"outputtype",n.fn.outputType)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           table.insert( resetStats, quote mself.[n.name]:reset() end )
           local readyOut = symbol( bool, "ready_"..n.name )
@@ -933,8 +939,8 @@ function darkroom.lambda( name, input, output )
 
           return {out}
         elseif n.kind=="tuple" then
---          table.insert( stats, quote for i=0,[darkroom.extract(n.type):channels()] do (@out)[i] = {[map(inputs, function(m) return `(@[m[1]])[i] end)]} end end)
-          table.insert( stats, quote @out = {[map(inputs, function(m) return `@[m[1]] end)]} end)
+--          table.insert( stats, quote @out = {[map(inputs, function(m) return `@[m[1]] end)]} end)
+         map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[n.type.list[i]:sizeof()]) end) end)
           return {out}
         elseif n.kind=="index" then
           table.insert( stats, quote @out = @([inputs[1][1]]).["_"..n.idx] end)
@@ -959,8 +965,11 @@ function darkroom.lambda( name, input, output )
     else
       terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
     end
-
+    Module:printpretty()
+    Module.methods.process:printpretty(false)
+    print("PP")
     Module.methods.process:printpretty()
+    print("PPDONE")
     return Module
   end
 
@@ -1060,9 +1069,9 @@ end
 
 local Im = require "image"
 
-function darkroom.scanlHarness( Module, T,
-                                inputFilename, inputType, inputWidth, inputHeight, 
-                                outputFilename, outputType, outputWidth, outputHeight,
+function darkroom.scanlHarness( Module, 
+                                inputT, inputFilename, inputType, inputWidth, inputHeight, 
+                                outputT, outputFilename, outputType, outputWidth, outputHeight,
                                 L,R,B,Top)
   assert(terralib.types.istype(Module))
   assert(type(T)=="number")
@@ -1088,9 +1097,9 @@ function darkroom.scanlHarness( Module, T,
     var module : Module
     module:reset()
 
-    for i=0,inputWidth*inputHeight,T do
+    for i=0,inputWidth*inputHeight,inputT do
       cstdio.printf("ITER %d\n",i)
-      module:process( [&uint8[T]]([&uint8](imIn.data)+i), [&uint8[T]]([&uint8](imOut.data)+i) )
+      module:process( [&uint8[inputT]]([&uint8](imIn.data)+i), [&uint8[outputT]]([&uint8](imOut.data)+i) )
 --      module:process( [&uint8[T]](imIn.data), [&uint8[T]](imOut.data) )
     end
 

@@ -16,44 +16,46 @@ partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32),
                     @out = [int32](a._0)*[int32](a._1)
                   end,1 )
 -------------
-touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 45) end, 1 )
+touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 1200) end, 1 )
 -------------
 reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------
-inp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
+cinp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
 r = d.constant( "convkernel", range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth) )
 
-packed = d.apply( "packedtup", d.packTupleArrays(7,7,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
+packed = d.apply( "packedtup", d.packTupleArrays(7,7,{types.uint(8),types.uint(8)}), d.tuple("ptup", {cinp,r}) )
 conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), packed)
 conv = d.apply( "sum", d.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = d.apply( "touint8", touint8, conv )
 
-convolve = d.lambda( "convolve", inp, conv )
+convolve = d.lambda( "convolve", cinp, conv )
 
 function downsample(W,H)
-  inp = d.input( types.array2d( types.uint(8), W,H ) )
+  local dinp = d.input( types.array2d( types.uint(8), W,H ) )
   
-  local convstencils = d.apply( "convtencils", d.stencil( types.uint(8), W, H, -ConvRadius, ConvRadius, -ConvRadius, ConvRadius ), inp)
+  local convstencils = d.apply( "convtencils", d.stencil( types.uint(8), W, H, -ConvRadius, ConvRadius, -ConvRadius, ConvRadius ), dinp)
   local convpipe = d.apply( "conv", d.map( convolve, W, H ), convstencils )
   convpipe = d.apply( "convdown", d.scale( types.uint(8),W,H,1/2,1/2), convpipe )
   
-  local downsample = d.lambda( "dowsamp", inp, convpipe )
+  local downsample = d.lambda( "dowsamp", dinp, convpipe )
   return downsample
 end
 -------------
-inp = d.input( types.array2d( types.uint(8), W, H ) )
+ITYPE = types.array2d( types.uint(8), W, H )
+inp = d.input( ITYPE )
 
 local totalW = W
 local outs = {inp}
 for l=2,Levels do
-  totalW = totalW + W/math.pow(2,l-2)
+  totalW = totalW + W/math.pow(2,l-1)
   outs[l] = d.apply("blur"..l, downsample(W/math.pow(2,l-2),H/math.pow(2,l-2)), outs[l-1])
 end
 
 -------------
 fin = d.apply("pyrpack", d.packPyramid(types.uint(8),W,H,Levels,true), d.tuple("pyr",outs))
 fin = d.lambda( "fin", inp, fin )
-module = fin:compile()
+Module = fin:compile()
+print("TOTALW",totalW,fin.outputType)
 
-doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, "out/gaussianpyramid.bmp", ITYPE, totalW, H)
+doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, totalW*H, "out/gaussianpyramid.bmp", fin.outputType, totalW, H,0,0,0,0)
 doit()
