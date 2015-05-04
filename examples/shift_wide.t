@@ -25,5 +25,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 Module = convpipe:compile()
-doit = d.scanlHarness( Module, T, "frame_128.bmp", ITYPE,W,H, "out/shift_wide.bmp", ITYPE, W, H)
+doit = d.scanlHarness( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/shift_wide.bmp", ITYPE, W, H, 0,0,0,0)
 doit()

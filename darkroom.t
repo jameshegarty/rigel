@@ -771,6 +771,7 @@ function darkroom.makeStateful( f )
   return darkroom.newFunction(res)
 end
 
+-- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo
 function darkroom.makeHandshake( f )
   assert( darkroom.isFunction(f) )
   local res = { kind="makeHandshake", fn = f }
@@ -782,24 +783,24 @@ function darkroom.makeHandshake( f )
   local delay = f.delay
   assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
-  local struct MakeHandshake{ delaysr: simmodules.fifo( tuple(darkroom.extract(res.outputType):toTerraType(),bool), delay, "makeHandshake"),
+  local struct MakeHandshake{ delaysr: simmodules.fifo( darkroom.extract(res.outputType):toTerraType(), delay, "makeHandshake"),
 --                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
                               inner: f.terraModule}
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
-  terra MakeHandshake:process( inp : &darkroom.extract(f.inputType):toTerraType(), inpValid : bool, 
-                               out : &darkroom.extract(f.outputType):toTerraType(), outValid : &bool)
+  terra MakeHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), 
+                               out : &darkroom.extract(res.outputType):toTerraType())
     
     if self.delaysr:size()==delay then
       var ot = self.delaysr:popFront()
-      @outValid = valid(ot)
-      @out = data(ot)
+      valid(out) = valid(ot)
+      data(out) = data(ot)
     else
-      @outValid=false
+      valid(out)=false
     end
 
-    var tout : tuple(darkroom.extract(res.outputType):toTerraType(),bool)
-    valid(tout) = inpValid
-    if inpValid then self.inner:process(inp,&data(tout)) end -- don't bother if invalid
+    var tout : darkroom.extract(res.outputType):toTerraType()
+    valid(tout) = valid(inp)
+    if valid(inp) then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
     self.delaysr:pushBack(&tout)
   end
   res.terraModule = MakeHandshake
