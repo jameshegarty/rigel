@@ -31,5 +31,5 @@ convpipeHS = d.liftHandshake(d.liftDecimate(convpipe))
 OTYPE = convpipeHS.outputType
 
 Module = convpipeHS:compile()
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/conv_mux_test.bmp", OTYPE, W*ConvWidth, H*ConvWidth,0,0,0,0)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/conv_mux_test.bmp", OTYPE, W*ConvWidth, H*ConvWidth,0,0,0,0)
 doit()

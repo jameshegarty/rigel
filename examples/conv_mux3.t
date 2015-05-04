@@ -27,7 +27,7 @@ for i=1,ConvArea do V[i] = 0 end
 V[2] = 255
 r = d.apply( "convKernel", d.constSeq( V, types.uint(8), ConvWidth, ConvWidth, T ), d.extractState("inext", inp) )
 
-packed = d.apply( "packedtup", d.makeStateful(d.packTupleArrays(ConvWidth*T,ConvWidth,{types.uint(8),types.uint(8)})), d.tuple("ptup", {inp,r}) )
+packed = d.apply( "packedtup", d.packTupleArraysStateful(ConvWidth*T,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
 conv = d.apply( "partial", d.makeStateful(d.map( partial, ConvWidth*T, ConvWidth )), packed )
 --conv = d.apply( "sum", d.makeStateful( d.reduce( reduceSumInt32, ConvWidth*T, ConvWidth )), conv )
 --conv = d.apply( "sum", d.makeStateful( d.reduce( reduceSumInt32, ConvWidth*T, ConvWidth )), r )
@@ -53,5 +53,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 ITYPE = darkroom.StatefulHandshake(ITYPE)
 convpipeHS = d.liftHandshake(convpipe)
 Module = convpipeHS:compile()
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/conv_mux3.bmp", convpipeHS.outputType, W/T, H/T, 0,0,0,0)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H,T, "out/conv_mux3.bmp", convpipeHS.outputType, W/T, H/T, 0,0,0,0)
 doit()

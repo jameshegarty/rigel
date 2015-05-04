@@ -53,7 +53,7 @@ for l=2,Levels do
 end
 
 -------------
-fin = d.apply("pyrpack", d.packPyramidSeq(types.uint(8),W,H,Levels,true), d.tuple("pyr",outs))
+fin = d.apply("pyrpack", d.packPyramidSeq(types.uint(8),W,H,T,Levels,true), d.tuple("pyr",outs))
 fin = d.lambda( "fin", inp, fin )
 Module = fin:compile()
 print("TOTALW",totalW,fin.outputType)

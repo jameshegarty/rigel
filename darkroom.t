@@ -78,10 +78,14 @@ function darkroom.extractRV( a, loc )
 end
 
 function darkroom.extract( a, loc )
-  if darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then return a end
   if darkroom.isStatefulHandshake(a) then
     return types.tuple({a.list[1],types.bool()})
   end
+  if a:isTuple() and darkroom.isStateful(a.list[1]) then
+    return types.tuple(map(a.list, function(n) assert(darkroom.isStateful(n)); return darkroom.extract(n) end))
+  end
+  if darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then return a end
+
   return a.list[1]
 end
 
@@ -128,29 +132,7 @@ function darkroomIRFunctions:typecheck()
       elseif n.kind=="extractState" then
         if darkroom.isStateful(n.inputs[1].type)==false then error("input to extractState must be stateful") end
       elseif n.kind=="tuple" then
-        local tt = {}
---        local sz
-        local isStateful
-        for _,v in pairs(n.inputs) do
-          print("TUPLEINPT",v.type)
-          local o = v.type
-          if darkroom.isStateful(v.type) then
-            isStateful = true
-            o = darkroom.extractStateful( v.type, n.loc)
-          else
-            if isStateful==true then error("Either all or none of the inputs to tuple must be stateful, "..n.loc) end
-          end
---          if o:isArray()==false then error("input to tuple must be an array, "..n.loc) end
---          if sz==nil then sz=o:arrayLength() 
---          elseif sz~=o:arrayLength() then error("inputs to tuple must have same size,"..n.loc) end
---          table.insert( tt, o:arrayOver() )
-          table.insert( tt, o )
-        end
-
---        n.type = types.array2d( types.tuple(tt), sz[1], sz[2] )
-        n.type = types.tuple(tt)
-        if isStateful==true then n.type = darkroom.Stateful(n.type) end
-        print("TUPLEOUT",n.type)
+        n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
         return darkroom.newIR(n)
       else
         print(n.kind)
@@ -162,19 +144,23 @@ end
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
-function darkroom.packTupleArrays(W,H, typelist)
+function darkroom.packTupleArrays(W,H, typelist, stateful)
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(typelist)=="table")
+  assert(stateful==nil or type(stateful)=="boolean")
 
   local res = {kind="packTupleArrays", W=W,H=H}
 
-  res.inputType = types.tuple( map(typelist, function(t) return types.array2d(t,W,H) end) )
+  res.inputType = types.tuple( map(typelist, function(t) return sel( stateful, darkroom.Stateful(types.array2d(t,W,H)), types.array2d(t,W,H) ) end) )
   res.outputType = types.array2d(types.tuple(typelist),W,H)
+  if stateful then res.outputType = darkroom.Stateful(res.outputType) end
   res.delay = 0
   local struct PackTupleArrays { }
   terra PackTupleArrays:reset() end
-  terra PackTupleArrays:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+  print("IP",res.inputType,darkroom.extract(res.inputType))
+  print("oP",res.outputType,darkroom.extract(res.outputType))
+  terra PackTupleArrays:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     for c = 0, [W*H] do
       (@out)[c] = { [map(range(0,#typelist-1), function(i) return `(inp.["_"..i])[c] end ) ] }
     end
@@ -182,6 +168,8 @@ function darkroom.packTupleArrays(W,H, typelist)
   res.terraModule = PackTupleArrays
   return darkroom.newFunction(res)
 end
+
+function darkroom.packTupleArraysStateful(W,H, typelist) return darkroom.packTupleArrays(W,H,typelist,true) end
 
 function darkroom.crop(A,W,H,L,R,B,T,value)
   map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
@@ -469,17 +457,17 @@ function darkroom.packPyramid( A, w, h, levels, human )
   return darkroom.newFunction(res)
 end
 
-function darkroom.packPyramidSeq( A, T, levels, human )
+function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   assert(types.isType(A))
+  assert(type(W)=="number")
+  assert(type(H)=="number")
   assert(type(T)=="number")
   assert(type(levels)=="number")
   assert(type(human)=="boolean")
 
-  local totalW = 0
   local typelist = {}
   if human then
     for i=1,levels do 
-      totalW = totalW + w/math.pow(2,i-1) 
       table.insert( typelist, darkroom.StatefulHandshake(types.array2d(A, T)))
     end
   else
@@ -488,10 +476,52 @@ function darkroom.packPyramidSeq( A, T, levels, human )
 
   local res = { kind="packPyramid", levels=levels}
   res.inputType = types.tuple(typelist)
-  res.outputType = darkroom.StatefulHandshake(types.array2d( A, T))
+  res.outputType = darkroom.StatefulHandshake(types.array2d( A, T ))
   res.delay = 0
-  local struct PackPyramidSeq {}
+  local struct PackPyramidSeq { fifos : (simmodules.fifo( types.array2d(A,T):toTerraType(), DEFAULT_FIFO_SIZE, "packPyramidfifo"))[levels]; sm:int[2]}
 
+--  for i=1,levels do 
+--    table.insert(PackPyramidSeq.entries, {field="fifo"..i, type = simmodules.fifo( types.array2d(A,T), DEFAULT_FIFO_SIZE, "packPyramidfifo"..i)})
+--  end
+  
+  assert(W%(T*math.pow(2,levels-1))==0)
+  local SM = coroutine.wrap(function()
+                              for y=0,H-1 do for i=0,levels-1 do
+                                  for x=0,(W/math.pow(2,i))-1,T do coroutine.yield(ffi.new("int[2]",{i,sel(y>H/math.pow(2,i),1,0)})) end
+                              end end end)
+  SM = terralib.cast({}->&int, SM)
+
+  terra PackPyramidSeq:reset() for i=0,levels do self.fifos[i]:reset() end; self.sm=@([&int32[2]](SM())) end
+
+  local stats = {}
+  local mself = symbol(&PackPyramidSeq,"self")
+  local insymb = symbol(&darkroom.extract(res.inputType):toTerraType(),"inp")
+  local outsymb = symbol(&darkroom.extract(res.outputType):toTerraType(),"out")
+  
+  for i=0,levels-1 do
+    table.insert(stats, quote if valid(insymb.["_"..i]) then mself.fifos[i]:pushBack(&data(insymb.["_"..i])) end end)
+  end
+
+  terra PackPyramidSeq.methods.process( [mself], [insymb], [outsymb] ) 
+    stats;
+    if mself.sm[1]==1 then -- zero fill
+      valid(outsymb) = true
+      for i=0,T do data(outsymb)[i] = 0 end
+      mself.sm = @([&int32[2]](SM()))
+    elseif mself.fifos[mself.sm[0]]:size()>=T then
+      -- we have enough data to proceed
+      valid(outsymb) = true
+      data(outsymb) = @(mself.fifos[mself.sm[0]]:popFront())
+      mself.sm = @([&int32[2]](SM()))
+    else
+      valid(outsymb) = false
+    end
+  end
+
+  res.terraModule = PackPyramidSeq
+
+  return darkroom.newFunction(res)
+  
 end
 
 -- broadcast : ( v : A , n : number ) -> A[n]
@@ -569,7 +599,7 @@ function darkroom.liftXYSeq( inpType, outType, W, H, T, tfn, delay )
                                 end,delay )
 
   local p = darkroom.apply("p", darkroom.posSeq(W,H,T), darkroom.extractState("e",inp) )
-  local packed = darkroom.apply( "packedtup", darkroom.makeStateful(darkroom.packTupleArrays(T,1,{inpType,types.tuple({types.int(32),types.int(32)})})), darkroom.tuple("ptup", {inp,p}) )
+  local packed = darkroom.apply( "packedtup", darkroom.packTupleArraysStateful(T,1,{inpType,types.tuple({types.int(32),types.int(32)})}), darkroom.tuple("ptup", {inp,p}) )
   local out = darkroom.apply("m", darkroom.makeStateful(darkroom.map( twrap, T )), packed )
   return darkroom.lambda( "cropSeq", inp, out )
 end
@@ -897,43 +927,52 @@ function darkroom.lambdaHandshake( name, input, output )
   res.inputType = input.type
   res.outputType = output.type
 
-  local Module = terralib.types.newstruct("lambda"..name.."_module")
---  Module.entries = terralib.newlist( {{field="__input",type=simmodules.HandshakeStub(darkroom.extract(input.type):toTerraType())}} )
-  Module.entries = terralib.newlist({})
 
   local function docompile( fn )
+    local Module = terralib.types.newstruct("lambda"..name.."_module")
+    Module.entries = terralib.newlist({})
+
     local inputSymbol = symbol( &darkroom.extract(fn.input.type):toTerraType(), "lambdainput" )
     local outputSymbol = symbol( &darkroom.extract(fn.output.type):toTerraType(), "lambdaoutput" )
     local stats = {}
+    local resetStats = {}
     local mself = symbol( &Module, "module self" )
 
     local out = fn.output:visitEach(
       function(n, inputs)
+        local out
+
+        if n==fn.output then
+          out = outputSymbol
+        elseif n.kind~="input" then
+          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=darkroom.extract(n.type):toTerraType()} )
+          out = `&mself.["simstateoutput_"..n.name]
+        end
+
         if n.kind=="input" then
-          return `@inputSymbol
+          return inputSymbol
         elseif n.kind=="apply" then
           print("APPLYHS",n.fn.terraModule)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           local I = inputs[1]
-          local O = symbol( darkroom.extract(n.type):toTerraType(), "output_"..n.name)
           local this = `mself.[n.name]
-          table.insert(stats, quote var [O]; this:process( &I, &O ) end)
-          return O
+          table.insert(stats, quote this:process( I, out ) end)
+          table.insert( resetStats, quote mself.[n.name]:reset() end )
+          return out
+        elseif n.kind=="tuple" then
+          map(inputs, function(m,i) table.insert( stats, quote cstring.memcpy(&(@out.["_"..(i-1)]),[m],[n.type.list[i]:sizeof()]) end) end)
+          return out
         else
           print(n.kind)
           assert(false)
         end
       end)
-
-      table.insert( stats, quote @outputSymbol=[out]; end )
-      return terra( [mself], [inputSymbol], [outputSymbol] ) [stats] end
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
+    terra Module.methods.reset( [mself] ) [resetStats] end
+    return Module
   end
                                      
-  Module.methods.process = docompile( res )
-
-  callOnEntries( Module, "reset" )
-
-  res.terraModule = Module
+  res.terraModule = docompile(res)
 
   return darkroom.newFunction( res )
 end
@@ -948,15 +987,16 @@ function darkroom.lambda( name, input, output )
 
   print("LAMBDA",name)
 
-  if darkroom.isStatefulHandshake(input.type) then
-    return darkroom.lambdaHandshake( name, input, output )
-  end
+--  if darkroom.isStatefulHandshake(input.type) then
+--    return darkroom.lambdaHandshake( name, input, output )
+--  end
 
   local output = output:typecheck()
   local res = {kind = "lambda", name=name, input = input, output = output }
   res.inputType = input.type
   res.outputType = output.type
 
+  if darkroom.isStatefulHandshake( input.type ) == false then
   res.delay = output:visitEach(
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
@@ -974,6 +1014,7 @@ function darkroom.lambda( name, input, output )
         assert(false)
       end
     end)
+  end
 
   local function docompile( fn )
     local inputSymbol = symbol( &darkroom.extract(fn.input.type):toTerraType(), "lambdainput" )
@@ -1194,12 +1235,13 @@ function darkroom.scanlHarness( Module,
 end
 
 
-function darkroom.scanlHarnessHandshake( Module, T,
-                                inputFilename, inputType, inputWidth, inputHeight, 
-                                outputFilename, outputType, outputWidth, outputHeight,
+function darkroom.scanlHarnessHandshake( Module, 
+                                inputT, inputFilename, inputType, inputWidth, inputHeight, 
+                                outputT, outputFilename, outputType, outputWidth, outputHeight,
                                 L,R,B,Top)
   assert(terralib.types.istype(Module))
-  assert(type(T)=="number")
+  assert(type(inputT)=="number")
+  assert(types.isType(outputType))
   assert(darkroom.isStatefulHandshake(inputType))
   assert(type(Top)=="number")
 
