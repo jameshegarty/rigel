@@ -23,7 +23,8 @@ reduceSumInt32_0cyc = d.lift( types.tuple { types.int(32), types.int(32) }, type
 inp = d.input( darkroom.Stateful(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )) )
 r = d.apply( "convKernel", d.constSeq( range(ConvArea), types.uint(8), ConvWidth, ConvWidth, T ), d.extractState("inext", inp) )
 
-conv = d.apply( "partial", d.makeStateful(d.map( partial, ConvWidth*T, ConvWidth )), d.tuple("tpart", {inp,r}) )
+packed = d.apply( "packedtup", d.makeStateful(d.packTupleArrays(ConvWidth*T,ConvWidth,{types.uint(8),types.uint(8)})), d.tuple("ptup", {inp,r}) )
+conv = d.apply( "partial", d.makeStateful(d.map( partial, ConvWidth*T, ConvWidth )), packed )
 conv = d.apply( "sum", d.makeStateful( d.reduce( reduceSumInt32, ConvWidth*T, ConvWidth )), conv )
 
 convseq = d.lambda( "convseq", inp, conv )
@@ -46,5 +47,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 --ITYPE = darkroom.StatefulHandshake(ITYPE)
 --convpipeHS = d.liftHandshake(convpipe)
 Module = convpipe:compile()
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/conv_mux2.bmp", ITYPE, W, H)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, "out/conv_mux2.bmp", ITYPE, W, H, 0,0,0,0)
 doit()

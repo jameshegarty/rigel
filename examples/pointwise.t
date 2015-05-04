@@ -36,6 +36,6 @@ doit:printpretty()
 print("ROFL")
 doit()
 
-doit2 = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, "out/pointwise2.bmp", ITYPE, W, H,0,0,0,0)
+doit2 = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, W*H,"out/pointwise2.bmp", ITYPE, W, H,0,0,0,0)
 doit2:printpretty()
 doit2()

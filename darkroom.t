@@ -79,6 +79,9 @@ end
 
 function darkroom.extract( a, loc )
   if darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then return a end
+  if darkroom.isStatefulHandshake(a) then
+    return types.tuple({a.list[1],types.bool()})
+  end
   return a.list[1]
 end
 
@@ -273,21 +276,20 @@ function darkroom.liftHandshake(f)
   local delay = math.max(1, f.delay)
 
   local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), delay, "liftHandshake"),
-                              fifo: simmodules.fifo( darkroom.extract(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
+                              fifo: simmodules.fifo( darkroom.extractStatefulHandshake(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
                               inner: f.terraModule}
   terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
-  terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), inpValid : bool, 
-                               out : &darkroom.extract(res.outputType):toTerraType(), outValid : &bool)
-    if inpValid then
-      self.fifo:pushBack(inp)
+  terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if valid(inp) then
+      self.fifo:pushBack(&data(inp))
     end
 
     if self.delaysr:size()==delay then
       var ot = self.delaysr:popFront()
-      @outValid = valid(ot)
-      @out = data(ot)
+      valid(out) = valid(ot)
+      data(out) = data(ot)
     else
-      @outValid=false
+      valid(out) = false
     end
 
     var tinp : darkroom.extract(f.inputType):toTerraType()
@@ -901,34 +903,30 @@ function darkroom.lambdaHandshake( name, input, output )
 
   local function docompile( fn )
     local inputSymbol = symbol( &darkroom.extract(fn.input.type):toTerraType(), "lambdainput" )
-    local inputValidSymbol = symbol(bool, "lambdainputvalid")
     local outputSymbol = symbol( &darkroom.extract(fn.output.type):toTerraType(), "lambdaoutput" )
-    local outputValidSymbol = symbol(&bool, "lambdaoutputvalid")
     local stats = {}
     local mself = symbol( &Module, "module self" )
 
     local out = fn.output:visitEach(
       function(n, inputs)
         if n.kind=="input" then
-          return {`@inputSymbol, inputValidSymbol}
+          return `@inputSymbol
         elseif n.kind=="apply" then
           print("APPLYHS",n.fn.terraModule)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          local I = inputs[1][1]
-          local Ivalid = inputs[1][2]
+          local I = inputs[1]
           local O = symbol( darkroom.extract(n.type):toTerraType(), "output_"..n.name)
-          local Ovalid = symbol( bool, "outputvalid_"..n.name )
           local this = `mself.[n.name]
-          table.insert(stats, quote var [O]; var [Ovalid]; this:process( &I, Ivalid, &O, &Ovalid) end)
-          return {O,Ovalid}
+          table.insert(stats, quote var [O]; this:process( &I, &O ) end)
+          return O
         else
           print(n.kind)
           assert(false)
         end
       end)
 
-      table.insert( stats, quote @outputSymbol=[out[1]]; @outputValidSymbol = [out[2]]; end )
-      return terra( [mself], [inputSymbol], [inputValidSymbol], [outputSymbol], [outputValidSymbol] ) [stats] end
+      table.insert( stats, quote @outputSymbol=[out]; end )
+      return terra( [mself], [inputSymbol], [outputSymbol] ) [stats] end
   end
                                      
   Module.methods.process = docompile( res )
@@ -1161,7 +1159,7 @@ function darkroom.scanlHarness( Module,
                                 outputT, outputFilename, outputType, outputWidth, outputHeight,
                                 L,R,B,Top)
   assert(terralib.types.istype(Module))
-  assert(type(T)=="number")
+  assert(type(inputT)=="number")
   assert(darkroom.isStatefulHandshake(inputType)==false)
   assert(type(inputFilename)=="string")
   assert(type(outputFilename)=="string")
@@ -1209,9 +1207,9 @@ function darkroom.scanlHarnessHandshake( Module, T,
   if T<1 then throttle=1/T;T=1 end
 
   print("OUTPUTTYPE",outputType)
-  assert(darkroom.extract(outputType):isArray())
-  local outputTileW = (darkroom.extract(outputType):arrayLength())[1]
-  local outputTileH = (darkroom.extract(outputType):arrayLength())[2]
+  assert(darkroom.extractStatefulHandshake(outputType):isArray())
+  local outputTileW = (darkroom.extractStatefulHandshake(outputType):arrayLength())[1]
+  local outputTileH = (darkroom.extractStatefulHandshake(outputType):arrayLength())[2]
 
   return terra()
     cstdio.printf("DOIT\n")
@@ -1233,27 +1231,31 @@ function darkroom.scanlHarnessHandshake( Module, T,
     var outAddrY = 0
     var output : darkroom.extract(outputType):toTerraType()
 
-    var inputValid = true
-    var outputValid = true
+    var packedInp : darkroom.extract(inputType):toTerraType()
+--    var inputValid = true
+--    var outputValid = true
 
     var TH : int = 0
     while inpAddr<inputWidth*inputHeight or outAddrY<outputHeight do
       cstdio.printf("ITER %d outX %d outY %d\n",inpAddr,outAddrX, outAddrY)
       
       if TH==0 then
-        module:process( [&uint8[T]]([&uint8](imIn.data)+inpAddr), inputValid, &output, &outputValid)
+        data(packedInp) = @[&uint8[T]]([&uint8](imIn.data)+inpAddr)
+        valid(packedInp) = true
+        module:process( &packedInp, &output)
         inpAddr = inpAddr + T
       else
-        module:process( [&uint8[T]](nil), false, &output, &outputValid)
+        valid(packedInp) = false
+        module:process( &packedInp, &output )
       end
       TH = TH + 1
       if TH>=throttle then TH=0 end
 
-      if outputValid then
+      if valid(output) then
 --        @[&uint8[T]]([&uint8](imOut.data)+outAddr) = output
         for y=0,outputTileH do
           for x=0,outputTileW do
-            @([&uint8](imOut.data)+outAddrX+x+(outAddrY+y)*outputWidth) = output[y*outputTileW+x]
+            @([&uint8](imOut.data)+outAddrX+x+(outAddrY+y)*outputWidth) = data(output)[y*outputTileW+x]
           end
         end
 

@@ -42,5 +42,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 Module = convpipe:compile()
-doit = darkroom.scanlHarness( Module, T, "frame_128.bmp", ITYPE, W, H, "out/conv_wide.bmp", ITYPE, W, H,ConvWidth,0,ConvWidth,0)
+doit = darkroom.scanlHarness( Module, T, "frame_128.bmp", ITYPE, W, H, T, "out/conv_wide.bmp", ITYPE, W, H,ConvWidth,0,ConvWidth,0)
 doit()

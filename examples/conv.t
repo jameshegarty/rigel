@@ -39,5 +39,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 Module = convpipe:compile()
-doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, "out/conv.bmp", ITYPE, W, H, ConvRadius,ConvRadius,ConvRadius,ConvRadius)
+doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, W*H, "out/conv.bmp", ITYPE, W, H, ConvRadius,ConvRadius,ConvRadius,ConvRadius)
 doit()

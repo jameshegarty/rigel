@@ -21,7 +21,7 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 
 Module = convpipe:compile()
-doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, "out/shift.bmp", ITYPE, W, H)
+doit = d.scanlHarness( Module, W*H, "frame_128.bmp", ITYPE,W,H, W*H,"out/shift.bmp", ITYPE, W, H, 0,0,0,0)
 doit()
 --[=[
 terra doit()
