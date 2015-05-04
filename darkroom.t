@@ -40,6 +40,7 @@ function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
 function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}), darkroom.State}) end
 function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool(), types.bool()}),darkroom.State}) end
 function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
+function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
 struct EmptyState {}
 terra EmptyState:init() end
@@ -364,6 +365,67 @@ function darkroom.scale( A, w, h, scaleX, scaleY )
   return darkroom.newFunction(res)
 end
 
+-- this expects f to be a stateful function
+function darkroom.filterStateful( A, T, f )
+  assert(types.isType(A))
+  assert(type(T)=="number")
+  assert(T>=1)
+  assert( darkroom.isFunction(f) )
+
+  local res = { kind="filterStateful", A=A,T=T,f=f}
+  if f.inputType ~= darkroom.Stateful(types.array2d(types.null(),T)) then error("filter function input type should be nil array") end
+  if f.outputType ~= darkroom.Stateful(types.array2d(types.bool(),T)) then error("filter function output type should be bool array") end
+  res.inputType = darkroom.Stateful(types.array2d( A, T ))
+  res.outputType = darkroom.Stateful(darkroom.Sparse(A,T))
+  res.delay = 0
+  local struct FilterStateful { inner: f.terraModule}
+  terra FilterStateful:reset() self.inner:reset() end
+  terra FilterStateful:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    var bout : bool[T]
+    self.inner:process(nil, &bout)
+    for i=0,T do data((@out)[i]) = (@inp)[i]; valid((@out)[i]) = bout[i] end
+    
+  end
+  res.terraModule = FilterStateful
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.densify( A, T )
+  assert(T>=1);
+  local res = {kind="densify", T=T }
+  res.inputType = darkroom.Stateful(darkroom.Sparse(A,T))
+  res.outputType = darkroom.StatefulV(types.array2d(A,T))
+  res.delay = 0
+  local struct Densify { fifo : simmodules.fifo( A:toTerraType(), T*2, "densifyfifo") }
+  terra Densify:reset() self.fifo:reset() end
+  terra Densify:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    for i=0,T do 
+      if valid((@inp)[i]) then self.fifo:pushBack(&data((@inp)[i])) end
+    end
+
+    if self.fifo:size()>=T then
+      valid(out)=true
+      for i=0,T do (data(out))[i] = @(self.fifo:popFront()) end
+    else
+      valid(out) = false
+    end
+  end
+  res.terraModule = Densify
+  return darkroom.newFunction(res)
+end
+
+function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
+  map({W,H,T,scaleX,scaleY},function(n) assert(type(n)=="number") end)
+  assert(scaleX<=1)
+  assert(scaleY<=1)
+  local f = darkroom.liftXYSeq( types.null(), types.bool(), W,H,T,
+                                terra(x:int,y:int,a:&(types.null():toTerraType()), b:&bool)
+                                  @b = (x%[1/scaleX])==0 and (y%[1/scaleY])==0
+                                end, 0)
+  return darkroom.compose("downsampleSeq",darkroom.densify(A,T),darkroom.filterStateful( A,T,f))
+end
+
 function darkroom.packPyramid( A, w, h, levels, human )
   assert(types.isType(A))
   assert(type(w)=="number")
@@ -403,6 +465,31 @@ function darkroom.packPyramid( A, w, h, levels, human )
   res.terraModule = PackPyramidModule
 
   return darkroom.newFunction(res)
+end
+
+function darkroom.packPyramidSeq( A, T, levels, human )
+  assert(types.isType(A))
+  assert(type(T)=="number")
+  assert(type(levels)=="number")
+  assert(type(human)=="boolean")
+
+  local totalW = 0
+  local typelist = {}
+  if human then
+    for i=1,levels do 
+      totalW = totalW + w/math.pow(2,i-1) 
+      table.insert( typelist, darkroom.StatefulHandshake(types.array2d(A, T)))
+    end
+  else
+    assert(false)
+  end
+
+  local res = { kind="packPyramid", levels=levels}
+  res.inputType = types.tuple(typelist)
+  res.outputType = darkroom.StatefulHandshake(types.array2d( A, T))
+  res.delay = 0
+  local struct PackPyramidSeq {}
+
 end
 
 -- broadcast : ( v : A , n : number ) -> A[n]
@@ -480,7 +567,7 @@ function darkroom.liftXYSeq( inpType, outType, W, H, T, tfn, delay )
                                 end,delay )
 
   local p = darkroom.apply("p", darkroom.posSeq(W,H,T), darkroom.extractState("e",inp) )
-  local packed = darkroom.apply( "packedtup", darkroom.makeStateful(darkroom.packTupleArrays(T,1,{types.uint(8),types.tuple({types.int(32),types.int(32)})})), darkroom.tuple("ptup", {inp,p}) )
+  local packed = darkroom.apply( "packedtup", darkroom.makeStateful(darkroom.packTupleArrays(T,1,{inpType,types.tuple({types.int(32),types.int(32)})})), darkroom.tuple("ptup", {inp,p}) )
   local out = darkroom.apply("m", darkroom.makeStateful(darkroom.map( twrap, T )), packed )
   return darkroom.lambda( "cropSeq", inp, out )
 end
