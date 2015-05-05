@@ -32,7 +32,7 @@ local ffi = require("ffi")
 
 darkroom = {}
 
-DEFAULT_FIFO_SIZE = 2048
+DEFAULT_FIFO_SIZE = 2048*16
 
 darkroom.State = types.opaque("state")
 darkroom.Handshake = types.opaque("handshake")
@@ -372,7 +372,8 @@ function darkroom.filterStateful( A, T, f )
   terra FilterStateful:reset() self.inner:reset() end
   terra FilterStateful:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     var bout : bool[T]
-    self.inner:process(nil, &bout)
+    var fakeinp : darkroom.extract(f.inputType):toTerraType()
+    self.inner:process(&fakeinp, &bout)
     for i=0,T do data((@out)[i]) = (@inp)[i]; valid((@out)[i]) = bout[i] end
     
   end
@@ -486,9 +487,10 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   
   assert(W%(T*math.pow(2,levels-1))==0)
   local SM = coroutine.wrap(function()
+                              while true do
                               for y=0,H-1 do for i=0,levels-1 do
                                   for x=0,(W/math.pow(2,i))-1,T do coroutine.yield(ffi.new("int[2]",{i,sel(y>H/math.pow(2,i),1,0)})) end
-                              end end end)
+                                             end end end end)
   SM = terralib.cast({}->&int, SM)
 
   terra PackPyramidSeq:reset() for i=0,levels do self.fifos[i]:reset() end; self.sm=@([&int32[2]](SM())) end
@@ -922,62 +924,6 @@ function callOnEntries( T, fnname )
   T.methods[fnname] = terra([TS]) [ssStats] end
 end
 
-function darkroom.lambdaHandshake( name, input, output )
-  local output = output:typecheck()
-  local res = {kind = "lambda", name=name, input = input, output = output }
-  res.inputType = input.type
-  res.outputType = output.type
-
-
-  local function docompile( fn )
-    local Module = terralib.types.newstruct("lambda"..name.."_module")
-    Module.entries = terralib.newlist({})
-
-    local inputSymbol = symbol( &darkroom.extract(fn.input.type):toTerraType(), "lambdainput" )
-    local outputSymbol = symbol( &darkroom.extract(fn.output.type):toTerraType(), "lambdaoutput" )
-    local stats = {}
-    local resetStats = {}
-    local mself = symbol( &Module, "module self" )
-
-    local out = fn.output:visitEach(
-      function(n, inputs)
-        local out
-
-        if n==fn.output then
-          out = outputSymbol
-        elseif n.kind~="input" then
-          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=darkroom.extract(n.type):toTerraType()} )
-          out = `&mself.["simstateoutput_"..n.name]
-        end
-
-        if n.kind=="input" then
-          return inputSymbol
-        elseif n.kind=="apply" then
-          print("APPLYHS",n.fn.terraModule)
-          table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          local I = inputs[1]
-          local this = `mself.[n.name]
-          table.insert(stats, quote this:process( I, out ) end)
-          table.insert( resetStats, quote mself.[n.name]:reset() end )
-          return out
-        elseif n.kind=="tuple" then
-          map(inputs, function(m,i) table.insert( stats, quote cstring.memcpy(&(@out.["_"..(i-1)]),[m],[n.type.list[i]:sizeof()]) end) end)
-          return out
-        else
-          print(n.kind)
-          assert(false)
-        end
-      end)
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
-    terra Module.methods.reset( [mself] ) [resetStats] end
-    return Module
-  end
-                                     
-  res.terraModule = docompile(res)
-
-  return darkroom.newFunction( res )
-end
-
 -- function definition
 -- output, inputs
 function darkroom.lambda( name, input, output )
@@ -1066,8 +1012,8 @@ function darkroom.lambda( name, input, output )
 
           return {out}
         elseif n.kind=="tuple" then
---          table.insert( stats, quote @out = {[map(inputs, function(m) return `@[m[1]] end)]} end)
-         map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[n.type.list[i]:sizeof()]) end) end)
+          map(inputs, function(m,i) local ty = darkroom.extract(darkroom.extract(n.type).list[i])
+              table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[ty:sizeof()]) end) end)
           return {out}
         elseif n.kind=="index" then
           table.insert( stats, quote @out = @([inputs[1][1]]).["_"..n.idx] end)
