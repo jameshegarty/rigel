@@ -243,6 +243,7 @@ function darkroom.RPassthrough(f)
   res.delay = f.delay
   local struct RPassthrough { inner : f.terraModule}
   terra RPassthrough:reset() self.inner:reset() end
+  terra RPassthrough:stats( name : &int8 ) end
   terra RPassthrough:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     self.inner:process([&darkroom.extract(f.inputType):toTerraType()](inp),out)
   end
@@ -680,7 +681,7 @@ function darkroom.SSR( A, T, xmin, ymin )
 end
 
 function darkroom.SSRPartial( A, T, xmin, ymin )
-  assert(T<1); 
+  assert(T<=1); 
   assert((-xmin+1)*T==math.floor((-xmin+1)*T))
   local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin }
   res.inputType = darkroom.StatefulV(types.array2d(A,1,-ymin+1))
@@ -730,7 +731,7 @@ end
 
 function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T<1); assert(w>0); assert(h>0);
+  assert(T<=1); assert(w>0); assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
   assert(xmax==0)
@@ -850,7 +851,7 @@ end
 
 
 function darkroom.reduceSeq( f, T )
-  assert(T<1)
+  assert(T<=1)
 
   local res = {kind="reduceSeq", fn=f}
   darkroom.expectPure(f.outputType)
@@ -861,7 +862,11 @@ function darkroom.reduceSeq( f, T )
   local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
   terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
-    if self.phase==0 then 
+    if self.phase==0 and T==1 then -- passthrough
+      self.phase = 0
+      valid(out) = true
+      data(out) = @inp
+    elseif self.phase==0 then 
       self.result = @inp
       self.phase = self.phase + 1
       valid(out) = false
@@ -1090,7 +1095,7 @@ function darkroom.constSeq( value, A, w, h, T )
   assert(type(value)=="table")
   assert(type(value[1])=="number")
 --  assert(type(value[1][1])=="number")
-  assert(T<1)
+  assert(T<=1)
   assert( types.isType(A) )
   assert(type(w)=="number")
   assert(type(h)=="number")
@@ -1205,7 +1210,7 @@ function darkroom.scanlHarnessHandshake( Module,
   assert(type(Top)=="number")
 
   local throttle = 1
-  if T<1 then throttle=1/T;T=1 end
+  if inputT<1 then throttle=1/inputT;inputT=1 end
 
   print("OUTPUTTYPE",outputType)
   assert(darkroom.extractStatefulHandshake(outputType):isArray())
@@ -1241,10 +1246,10 @@ function darkroom.scanlHarnessHandshake( Module,
       cstdio.printf("ITER %d outX %d outY %d\n",inpAddr,outAddrX, outAddrY)
       
       if TH==0 then
-        data(packedInp) = @[&uint8[T]]([&uint8](imIn.data)+inpAddr)
+        data(packedInp) = @[&uint8[inputT]]([&uint8](imIn.data)+inpAddr)
         valid(packedInp) = true
         module:process( &packedInp, &output)
-        inpAddr = inpAddr + T
+        inpAddr = inpAddr + inputT
       else
         valid(packedInp) = false
         module:process( &packedInp, &output )

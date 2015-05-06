@@ -7,7 +7,7 @@ H = 64
 --ConvRadius = 3
 ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
-T = 1/ConvWidth
+if rawget(_G,"T")==nil then T = 1/ConvWidth end
 W = W + ConvWidth
 H = H + ConvWidth
 -------------
@@ -54,5 +54,5 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 ITYPE = darkroom.StatefulHandshake(ITYPE)
 convpipeHS = d.liftHandshake(convpipe)
 Module = convpipeHS:compile()
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/conv_mux.bmp", convpipeHS.outputType, W, H, ConvWidth, 0, ConvWidth, 0)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/conv_mux_"..(1/T)..".bmp", convpipeHS.outputType, W, H, ConvWidth, 0, ConvWidth, 0)
 doit()
