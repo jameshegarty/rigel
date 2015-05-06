@@ -10,17 +10,20 @@ function M.fifo( T, reqMaxSize, name )
     data : T[maxSize];
     frontAddr : int; -- always >=0
     backAddr : int; -- always >=0
+    maxSeen : int;
   }
 
   terra FIFO:reset()
     self.frontAddr = 0
     self.backAddr = 0
+    self.maxSeen = 0
   end
 
   terra FIFO:pushBack( inp : &T ) 
     darkroomAssert( self:size() <= reqMaxSize, ["FIFO overflow "..name] )
     self.data[self.backAddr % maxSize] = @inp
     self.backAddr = self.backAddr + 1
+    if self:size()>self.maxSeen then self.maxSeen=self:size() end
   end
 
   -- expects idx <=0
@@ -38,6 +41,7 @@ function M.fifo( T, reqMaxSize, name )
   terra FIFO:hasData() return self.backAddr > self.frontAddr end
   terra FIFO:size() return self.backAddr-self.frontAddr end
 
+  terra FIFO:maxSizeSeen() return self.maxSeen end
   return FIFO
 end
 

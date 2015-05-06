@@ -38,7 +38,7 @@ function downsample(W,H)
   local convpipe = d.apply( "conv", d.makeStateful( d.map( convolve, T ) ), convstencils )
   convpipe = d.apply( "convdown", d.downsampleSeq( types.uint(8), W, H, T, 1/2, 1/2 ), convpipe )
   
-  local downsample = d.lambda( "dowsamp", dinp, convpipe )
+  local downsample = d.lambda( "dowsamp_"..W, dinp, convpipe )
   return d.liftHandshake(d.liftDecimate(downsample))
 end
 -------------

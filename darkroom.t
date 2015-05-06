@@ -217,14 +217,16 @@ function darkroom.liftDecimate(f)
   res.inputType = darkroom.StatefulV(darkroom.extract(f.inputType))
   res.outputType = darkroom.StatefulRV(darkroom.extractV(f.outputType))
   res.delay = f.delay
-  local struct LiftDecimate { inner : f.terraModule}
-  terra LiftDecimate:reset() self.inner:reset() end
+  local struct LiftDecimate { inner : f.terraModule; idleCycles:int, activeCycles:int}
+  terra LiftDecimate:reset() self.inner:reset(); self.idleCycles = 0; self.activeCycles=0; end
+  terra LiftDecimate:stats(name:&int8) cstdio.printf("LiftDecimate %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
   terra LiftDecimate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if valid(inp) then
---      var inpp : darkroom.extract(f.inputType):toTerraType() = data(inp)
       self.inner:process(&data(inp),[&darkroom.extract(f.outputType):toTerraType()](out))
+      self.activeCycles = self.activeCycles + 1
     else
       valid(out) = false
+      self.idleCycles = self.idleCycles + 1
     end
   end
   terra LiftDecimate:ready() return true end
@@ -267,6 +269,10 @@ function darkroom.liftHandshake(f)
                               fifo: simmodules.fifo( darkroom.extractStatefulHandshake(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
                               inner: f.terraModule}
   terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
+  terra LiftHandshake:stats(name:&int8) 
+    cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
+    self.inner:stats(name) 
+end
   terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if valid(inp) then
       self.fifo:pushBack(&data(inp))
@@ -494,6 +500,9 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   SM = terralib.cast({}->&int, SM)
 
   terra PackPyramidSeq:reset() for i=0,levels do self.fifos[i]:reset() end; self.sm=@([&int32[2]](SM())) end
+  terra PackPyramidSeq:stats(name:&int8) 
+    for i=0,levels do cstdio.printf("PackPyramidSeq %s fifo %d max: %d\n",name,i,self.fifos[i]:maxSizeSeen()) end
+  end
 
   local stats = {}
   local mself = symbol(&PackPyramidSeq,"self")
@@ -970,6 +979,7 @@ function darkroom.lambda( name, input, output )
     local stats = {}
     local resetStats = {}
     local readyStats = {}
+    local statStats = {}
     local readyInput = symbol(bool, "readyinput")
     local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
     Module.entries = terralib.newlist( {} )
@@ -998,6 +1008,7 @@ function darkroom.lambda( name, input, output )
           print("APP",n.name, n.fn.terraModule, "inputtype",n.fn.inputType,"outputtype",n.fn.outputType)
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           table.insert( resetStats, quote mself.[n.name]:reset() end )
+          table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
           local readyOut = symbol( bool, "ready_"..n.name )
           if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
           elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
@@ -1033,6 +1044,7 @@ function darkroom.lambda( name, input, output )
       [stats]
     end
     terra Module.methods.reset( [mself] ) [resetStats] end
+    terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
     if darkroom.isStatefulRV(res.inputType) then
       terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [out[2]] end
     else
@@ -1267,6 +1279,8 @@ function darkroom.scanlHarnessHandshake( Module,
 
     cstdio.printf("Delay Cycles %d\n", delayCycles)
     cstdio.printf("valid percent: %f\n",[float](validCycles*100)/[float](invalidCycles+validCycles))
+
+    module:stats("root")
   end
 end
 
