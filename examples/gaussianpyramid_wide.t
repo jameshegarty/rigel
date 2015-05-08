@@ -4,8 +4,8 @@ local types = require("types")
 
 W = 128
 H = 64
-ConvRadius = 3
-ConvWidth = ConvRadius*2+1
+--ConvRadius = 3
+ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
 T = 4
 
@@ -16,7 +16,7 @@ partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32),
                     @out = [int32](a._0)*[int32](a._1)
                   end,1 )
 -------------
-touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 1200) end, 1 )
+touint8 = d.lift( types.int(32), types.uint(8), terra( a : &int32, out : &uint8 ) @out = [uint8](@a / 130) end, 1 )
 -------------
 reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------

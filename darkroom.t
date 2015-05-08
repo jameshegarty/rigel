@@ -243,7 +243,7 @@ function darkroom.RPassthrough(f)
   res.delay = f.delay
   local struct RPassthrough { inner : f.terraModule}
   terra RPassthrough:reset() self.inner:reset() end
-  terra RPassthrough:stats( name : &int8 ) end
+  terra RPassthrough:stats( name : &int8 ) self.inner:stats(name) end
   terra RPassthrough:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     self.inner:process([&darkroom.extract(f.inputType):toTerraType()](inp),out)
   end
@@ -687,8 +687,9 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   res.inputType = darkroom.StatefulV(types.array2d(A,1,-ymin+1))
   res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
   res.delay=0
-  local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]}
-  terra SSRPartial:reset() self.phase=[1/T]-1; self.wroteLastColumn=true end
+  local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int}
+  terra SSRPartial:reset() self.phase=[1/T]-1; self.wroteLastColumn=true;self.activeCycles=0;self.idleCycles=0; end
+  terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
   terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.wroteLastColumn==false then
       var W = [(-xmin+1)*T]
@@ -702,6 +703,8 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
     --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
     if valid(inp) then
       darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
+      darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
+      self.activeCycles = self.activeCycles + 1
       self.wroteLastColumn=false
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
@@ -709,7 +712,12 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
       for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = data(inp)[y*SStride+(x+xmin)] end end
       self.phase = 0
     else
-      if self.phase<[1/T]-1 then self.phase = self.phase + 1 end
+      if self.phase<[1/T]-1 then 
+        self.phase = self.phase + 1 
+        self.activeCycles = self.activeCycles + 1
+      else
+        self.idleCycles = self.idleCycles + 1
+      end
     end
   end
   terra SSRPartial:ready()  return self.phase==[1/T]-1 end
