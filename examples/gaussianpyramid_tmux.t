@@ -16,7 +16,7 @@ partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32),
                     @out = [int32](a._0)*[int32](a._1)
                   end,1 )
 -------------
-touint8 = d.lift( types.int(32), types.array2d(types.uint(8),1), terra( a : &int32, out : &uint8[1] ) (@out)[1] = [uint8](@a / 130) end, 1 )
+touint8 = d.lift( types.int(32), types.array2d(types.uint(8),1), terra( a : &int32, out : &uint8[1] ) (@out)[0] = [uint8](@a / 130) end, 1 )
 -------------
 reduceSumInt32 = d.lift( types.tuple { types.int(32), types.int(32) }, types.int(32), terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, 1 )
 -------------
@@ -79,5 +79,5 @@ fin = d.lambda( "fin", inp, fin )
 Module = fin:compile()
 print("TOTALW",totalW,fin.outputType)
 
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/gaussianpyramid_wide.bmp", fin.outputType, totalW, H,0,0,0,0)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/gaussianpyramid_tmux.bmp", fin.outputType, totalW, H,0,0,0,0)
 doit()

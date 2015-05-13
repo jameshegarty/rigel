@@ -89,7 +89,7 @@ function darkroom.extractRV( a, loc )
 end
 
 function darkroom.extract( a, loc )
-  if darkroom.isStatefulHandshake(a) then
+  if darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeRegistered(a) then
     return types.tuple({a.list[1],types.bool()})
   end
   if a:isTuple() and darkroom.isStateful(a.list[1]) then
@@ -103,6 +103,35 @@ end
 function darkroom.extractStatefulHandshake( a, loc )
   if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, "..loc) end
   return a.list[1]
+end
+
+function darkroom.print(TY,inp)
+  local stats = {}
+  local TY = darkroom.extract(TY)
+  if TY:isTuple() then
+    table.insert(stats,quote cstdio.printf("{") end)
+    for i=1,#TY.list do
+      table.insert(stats,darkroom.print(TY.list[i],`&inp.["_"..(i-1)]))
+      table.insert(stats,quote cstdio.printf(",") end)
+    end
+    table.insert(stats,quote cstdio.printf("}") end)
+  elseif TY:isArray() then
+    table.insert(stats,quote cstdio.printf("[") end)
+    for i=0,TY:channels()-1 do
+      table.insert(stats,darkroom.print(TY:arrayOver(),`&(@inp)[i]))
+      table.insert(stats,quote cstdio.printf(",") end)
+    end
+    table.insert(stats,quote cstdio.printf("]") end)
+  elseif TY:isBool() then
+    table.insert(stats,quote if @inp then cstdio.printf("true") else cstdio.printf("false") end end)
+  elseif TY:isInt() or TY:isUint() then
+    table.insert(stats,quote cstdio.printf("%d",@inp) end)
+  elseif TY==types.null() then
+  else
+    print(TY)
+    assert(false)
+  end
+  return quote stats; end
 end
 
 darkroomFunctionFunctions = {}
@@ -536,6 +565,12 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   end
 
   terra PackPyramidSeq.methods.process( [mself], [insymb], [outsymb] ) 
+    escape
+      for i=0,levels-1 do
+        emit quote if valid(insymb.["_"..i]) then cstdio.printf("PackPyramid Validin %d\n",i) end end
+      end
+    end
+
     stats;
     cstdio.printf("PP %d %d\n",mself.sm[0],mself.sm[1])
     if mself.sm[1]==1 then -- zero fill
@@ -551,6 +586,7 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
       data(outsymb) = @(mself.fifos[mself.sm[0]]:popFront())
       mself.sm = @([&int32[2]](SM()))
     else
+      cstdio.printf("PackPyramidInvalid waiting on %d\n",mself.sm[0])
       mself.idleCycles = mself.idleCycles + 1
       valid(outsymb) = false
     end
@@ -573,9 +609,10 @@ function darkroom.tmux( f, inputList )
   res.outputType = types.tuple( otypelist )
 
   local struct Tmux { fifos : (simmodules.fifo( f.inputType:toTerraType(), DEFAULT_FIFO_SIZE, "tmuxfifo"))[#inputList]; 
-                    inner : f.terraModule}
-  terra Tmux:reset() for i=0,[#inputList] do self.fifos[i]:reset() end; end
-  terra Tmux:stats(name:&int8) end
+                    inner : f.terraModule; idleCycles:int, activeCycles:int}
+  terra Tmux:reset() for i=0,[#inputList] do self.fifos[i]:reset() end;
+    self.idleCycles = 0; self.activeCycles=0; end
+  terra Tmux:stats(name:&int8) cstdio.printf("Tmux %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
 
   terra Tmux:store( inp : &darkroom.extract(res.inputType):toTerraType() )
 --    cstdio.printf("TMUXSTORE\n")
@@ -589,19 +626,30 @@ self.fifos[i]:pushBack(&data(inp.["_"..i])) end end
   terra Tmux:load( out : &darkroom.extract(res.outputType):toTerraType() )
 
     escape for i=0,#inputList-1 do
-      emit quote valid(out.["_"..i]) = false end
+      emit quote 
+        cstdio.printf("TMUXCLEAR %d\n",i)
+valid(out.["_"..i]) = false end
     end end
     escape --for i=0,#inputList-1 do
       local i=#inputList-1
       while i>=0 do
       emit quote if self.fifos[i]:hasData() then 
           cstdio.printf("TMUXLOAD %d %d\n",i,[#inputList-1])
-          valid(out.["_"..i])=true; self.inner:process(self.fifos[i]:popFront(), &data(out.["_"..i]) ); return end end
+          valid(out.["_"..i])=true; 
+          self.inner:process(self.fifos[i]:popFront(), &data(out.["_"..i]) );
+          self.activeCycles = self.activeCycles + 1
+          return
+                 else
+            cstdio.printf("TMUXLOAD NODATA %d\n",i)
+                 end end
       i=i-1
       end 
     end
+          self.idleCycles = self.idleCycles + 1
+--    [darkroom.print(res.outputType, out)]
   end
-
+--Tmux.methods.load:printpretty()
+--assert(false)
   res.terraModule = Tmux
 
   return darkroom.newFunction(res)
@@ -1042,7 +1090,7 @@ function darkroom.lambda( name, input, output )
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
         return 0
-      elseif n.kind=="index" or n.kind=="extractState" then
+      elseif n.kind=="extractState" then
         print("DIDX",inputs[1])
         return inputs[1]
       elseif n.kind=="tuple" then
@@ -1081,7 +1129,8 @@ function darkroom.lambda( name, input, output )
 
         if n==fn.output then
           out = outputSymbol
-        elseif n.kind~="input" and usedNames[n.name]==nil then
+        elseif n.kind=="applyRegStore" then
+        elseif n.kind~="input" then
           table.insert( Module.entries, {field="simstateoutput_"..n.name, type=darkroom.extract(n.type):toTerraType()} )
           out = `&mself.["simstateoutput_"..n.name]
         end
@@ -1100,19 +1149,24 @@ function darkroom.lambda( name, input, output )
           if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
           elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
           table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
+
+--          table.insert( stats, quote [darkroom.print(n.type, out)]; cstdio.printf("\n") end)
           return {out,readyOut}
         elseif n.kind=="applyRegLoad" then
           if usedNames[n.name]==nil then
             table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           end
           usedNames[n.name] = 1
+          table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
           table.insert( stats, quote mself.[n.name]:load( out ) end )
+--          table.insert( stats, quote cstdio.printf("applyRegLoad %s: ",n.name);[darkroom.print(n.type, out)]; cstdio.printf("\n") end)
           return {out}
         elseif n.kind=="applyRegStore" then
           if usedNames[n.name]==nil then
             table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           end
           usedNames[n.name] = 1
+          table.insert( resetStats, quote mself.[n.name]:reset() end )
           table.insert( stats, quote mself.[n.name]:store( [inputs[1][1]] ) end )
           return {`nil}
         elseif n.kind=="constant" then
@@ -1127,9 +1181,9 @@ function darkroom.lambda( name, input, output )
           map(inputs, function(m,i) local ty = darkroom.extract(darkroom.extract(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[ty:sizeof()]) end) end)
           return {out}
-        elseif n.kind=="index" then
-          table.insert( stats, quote @out = [inputs[1][1]].["_"..n.idx] end)
-          return {out}
+--        elseif n.kind=="index" then
+--          table.insert( stats, quote @out = [inputs[1][1]].["_"..n.idx] end)
+--          return {out}
         elseif n.kind=="extractState" then
           return {`nil}
         elseif n.kind=="catState" then
