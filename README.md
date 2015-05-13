@@ -5,12 +5,21 @@ State = opaque
 Stateful(A) = {A,State} -- 1 state context
 Stateful(A,N) = {A,State[N]} -- N state contexts
 StatefulHandshake(A) = {A,State,bool}
+StatefulHandshakeRegistered(A) = {A,State,bool}
 
 Tmux(A, int T) = {A,validbit}
 
 Sparse(A, int W, int H) = {A,validbit}[w,h]
 
 Having a function from Stateful->StatefulHandshake is potentially valid, but then this module would have to have its own (infinite) buffer inside it (b/c on the input it might get data every cycle, but its output is stalled, so the data has to go somewhere). Instead, we currently only have StatefulHandshake->StatefulHandshake. In this case, no buffering is needed, and we get correct behavior. The stalls propagate all the way to the front of the pipe. We can insert explicit fifos to hide stalls. In particular, we can make a fifo of type Stateful->StatefulHandshake to represent this buffer, if this is the behavior we want. Fifos can also be of type StatefulHandshake->StatefulHandshake if they are just there to hide stalls.
+
+operators
+=========
+
+lambda
+------
+
+When defining a function that has as input a tuple of StatefulHandshake, you have to declare the SDF rate of each StatefulHandshake explicitly. In the case of a single StatefulHandshake, you can just set the rate to 1, and calculate the resulting rate based on propegation. But for tuples, we can't solve for the rates without doing global constraint solving. Example, something that has input rates {1,1} may result in a valid output rate, but won't mean the same thing as declaring the input rate to be {1,1/2}, when we go to compose it with other functions.
 
 functions
 =========
@@ -201,25 +210,34 @@ Take a sparse array and densify it.
 
 linebufferTmux
 --------------
-linebufferTmux :: {T,N,[w],[h],[l],[r],[t],[b]} -> ( Stateful(A[T],N) -> Stateful(A[r-l+T,t-b+1],N) )
+linebufferTmux :: {T,N,[w],[h],[l],[r],[t],[b]} -> ( {StatefulHandshake(A[T]),StatefulHandshake(A[T]),...} -> {StatefulHandshake(A[r-l+T,t-b+1],N),} )
 
 linebufferTmux takes N state contexts (with different stencil sizes etc) and multiplexes them onto one piece of hardware
 
 tmux
 ----
-tmux :: {f, N, extInputs, passthroughFn} => ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
+tmux :: {f, N, internalRouting} => ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
 
 f is the function to time multiplex.
 N is the number of inputs
-extInputs is a list of inputs that are external
-passthroughfn is a (potentially stateful) function from the outputs to the internal inputs
+internalRouting is a table of size N. if entry _i_ is 'x', this is an extern input. If _i_ is a table, this is driven by an output of the tmux - the table should have format {j,passthroughFn}. j is the output port to drive this with, passthroughFn is a stateful function that will be applied to this input.
 
+tmux :: {f, inputlist} -> ( {StatefulHandshakeRegistered(A), StatefulHandshakeRegistered(A),...} -> {StatefulHandshakeRegistered(B), StatefulHandshakeRegistered(B), ... } ) given pure f : A->B 
+
+inputlist is a table of SDF rates, one for each input/output of the tmux.
+
+To solve SDF for the tmux, at least one of its inputs must have a determined SDF rate (eg be driven by a lambda parameter). Until this rate hits the tmux, the tmux's rate is set to undetermined. This will require multiple iterations to convergence.
+
+It's possible to connect a tmux output to its inputs, creating an infinite loop. You can construct a graph like this in SDF, but it's malformed. We can detect this case in the SDF solver. If we have an iteration where the # of nodes with undetermined rates doesn't change relative to the last iteration, it's stalled, and we can error out.
 
 IR
 ==
 
 apply
 -----
+
+applyRegStore, applyRegLoad
+-----------------------
 
 input (value)
 -----
