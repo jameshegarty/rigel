@@ -520,12 +520,9 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   assert(type(human)=="boolean")
 
   local typelist = {}
-  if human then
-    for i=1,levels do 
-      table.insert( typelist, darkroom.StatefulHandshake(types.array2d(A, T)))
-    end
-  else
-    assert(false)
+
+  for i=1,levels do 
+    table.insert( typelist, darkroom.StatefulHandshake(types.array2d(A, T)))
   end
 
   local res = { kind="packPyramid", levels=levels}
@@ -547,6 +544,17 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
                               for y=0,H-1 do for i=0,levels-1 do
                                   for x=0,(W/math.pow(2,i))-1,T do coroutine.yield(ffi.new("int[2]",{i,sel(y>H/math.pow(2,i),1,0)})) end
                                              end end end end)
+
+  if human==false then
+    SM = coroutine.wrap(function()
+                              while true do
+                                for l=0,levels-1 do
+                                  for y=0,math.pow(2,levels-1-l)-1 do 
+                                    for x=0,(W/math.pow(2,l))-1,T do coroutine.yield(ffi.new("int[2]",{l,0})) end
+                                  end 
+                                end end end)
+  end
+
   SM = terralib.cast({}->&int, SM)
 
   terra PackPyramidSeq:reset() for i=0,levels do self.fifos[i]:reset() end; self.sm=@([&int32[2]](SM())); self.activeCycles=0; self.idleCycles=0; end
@@ -612,7 +620,8 @@ function darkroom.tmux( f, inputList )
                     inner : f.terraModule; idleCycles:int, activeCycles:int}
   terra Tmux:reset() for i=0,[#inputList] do self.fifos[i]:reset() end;
     self.idleCycles = 0; self.activeCycles=0; end
-  terra Tmux:stats(name:&int8) cstdio.printf("Tmux %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
+  terra Tmux:stats(name:&int8) cstdio.printf("Tmux %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) 
+    for i=0,[#inputList] do cstdio.printf("Tmux %s fifo %d max: %d\n",name,i,self.fifos[i]:maxSizeSeen()) end end
 
   terra Tmux:store( inp : &darkroom.extract(res.inputType):toTerraType() )
 --    cstdio.printf("TMUXSTORE\n")
@@ -627,20 +636,20 @@ self.fifos[i]:pushBack(&data(inp.["_"..i])) end end
 
     escape for i=0,#inputList-1 do
       emit quote 
-        cstdio.printf("TMUXCLEAR %d\n",i)
+--        cstdio.printf("TMUXCLEAR %d\n",i)
 valid(out.["_"..i]) = false end
     end end
     escape --for i=0,#inputList-1 do
       local i=#inputList-1
       while i>=0 do
       emit quote if self.fifos[i]:hasData() then 
-          cstdio.printf("TMUXLOAD %d %d\n",i,[#inputList-1])
+--          cstdio.printf("TMUXLOAD %d %d\n",i,[#inputList-1])
           valid(out.["_"..i])=true; 
           self.inner:process(self.fifos[i]:popFront(), &data(out.["_"..i]) );
           self.activeCycles = self.activeCycles + 1
           return
-                 else
-            cstdio.printf("TMUXLOAD NODATA %d\n",i)
+--                 else
+--            cstdio.printf("TMUXLOAD NODATA %d\n",i)
                  end end
       i=i-1
       end 

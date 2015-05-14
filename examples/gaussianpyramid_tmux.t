@@ -8,7 +8,7 @@ H = 64
 ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
 T=1
-
+human = false
 Levels = 4
 -------------
 partial = d.lift( types.tuple {types.uint(8),types.uint(8)}, types.int(32), 
@@ -60,24 +60,30 @@ local tmux = d.tmux( convolve, inputList )
 local tmuxOutputs = d.applyRegLoad( "tmux", tmux, d.extractState("tmuxouts", inp ) )
 
 local totalW = W
+local totalH = H
+if human==false then totalH = H/math.pow(2,Levels-1); totalW=W*math.pow(2,Levels-1) end
+
 local tmuxInputs = {d.apply("ST0",st(W,H),inp)}
 local outs = {inp}
 local internalRouting = {'x'}
 for l=2,Levels do
-  totalW = totalW + W/math.pow(2,l-1)
+  totalW = totalW + (W/math.pow(2,l-1))*math.pow(2,Levels-l)
   local ip = d.apply( "idx"..l, d.index( darkroom.stripRegistered(tmux.outputType), l-2), tmuxOutputs )
   outs[l] = d.apply("ds"..l, downsample(W/math.pow(2,l-2),H/math.pow(2,l-2)), ip )
   table.insert( tmuxInputs, d.apply("st"..l, st(W/math.pow(2,l-2),H/math.pow(2,l-2)), outs[l]) )
 end
 
+print(totalW,totalH)
+--assert(false)
+
 local tmuxInputs = d.applyRegStore( "tmux", tmux, d.tuple("tmxi",tmuxInputs) )
 
 -------------
-fin = d.apply("pyrpack", d.packPyramidSeq(types.uint(8),W,H,T,Levels,true), d.tuple("pyr",outs))
+fin = d.apply("pyrpack", d.packPyramidSeq(types.uint(8),W,H,T,Levels,false), d.tuple("pyr",outs))
 fin = d.catState("cats", fin, tmuxInputs)
 fin = d.lambda( "fin", inp, fin )
 Module = fin:compile()
 print("TOTALW",totalW,fin.outputType)
 
-doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/gaussianpyramid_tmux.bmp", fin.outputType, totalW, H,0,0,0,0)
+doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T, "out/gaussianpyramid_tmux.bmp", fin.outputType, totalW, totalH,0,0,0,0)
 doit()
