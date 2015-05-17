@@ -12,27 +12,28 @@ disable pipelining on this ast
 AST:verilog()
 convert this ast into verilog code. Used internally.
 
-AST:retime()
+AST:pipeline()
 Takes AST with no timing (all happens in one cycle), and inserts explicit registers to decrease clock cycle. Returns a table of delays for each function.
 
 AST:toTerra()
 converts this AST into a terra struct
 
 systolic.parameter( name, type )
+The formal parameter of a function
 
-systolic.index( expr, idx )
-Indexes into array or tuple expr with index idx (0 based)
+systolic.index( expr, idx, idy )
+expr is a tuple or an array2d. idx,idy should be a number. if expr is a tuple, idy should be nil
 
 systolic.cast( expr, type )
 casts expr to type
 
-systolic.constant( value )
+systolic.constant( value, type )
 makes a constant
 
 systolic.tuple( {expr} )
 Turns a list of asts into a tuple.
 
-systolic.array( {expr} )
+systolic.array2d( {expr}, w, h )
 MACRO: a composition of systolic.tuple and a cast to array type. Types must match!
 
 systolic.select( cond, a, b )
@@ -50,9 +51,11 @@ Functions
 =========
 
 
-Fn = systolic.makeFunction( name, input, output, valid )
+Fn = systolic.lambda( name, input, valid )
 
-If input, output, and valid are nil, then this function will always run (valid bit will be wired to true). Similar to a verilog always@1 block.
+If valid is 'true' (lua boolean), then this function will always run (valid bit will be wired to true). Similar to a verilog always@ block.
+valid can also be a boolean parameter, if you want to explicitly refer to it.
+if valid is nil, then the compiler will create a valid bit and wire it up using the default behavior.
 
 Fn:addPipeline(ast)
 
@@ -61,7 +64,7 @@ Syntax sugar for adding pipeline ast and wiring conast to its valid bits
 
 Fn:addAssert( cond, str, ... )
 
-Fn:return(ast)
+Fn:returnValue(ast)
 
 Fn:isPure()
 Returns true if this function doesn't modify state (ie only has a :return)
@@ -70,27 +73,31 @@ Modules
 =======
 
 Module Options:
-coherent: This determines the semantics of calling different functions on this modules. 
-If coherent==false, there is no guarantee about the timing of calling different functions. Ex: if you have a :valid() and a :get() function, you'd better make sure that your valid and get are called in the came clock. In practice, this means that :valid must not be pipelined, and :get must be the first thing in the pipe. The module documentation should tell you any inter-function semantics.
-If coherent==true, we guarantee that all calls to a module happen in the same cycle, if the calls to these calls happen in the same cycle. So, if we call :set in one function A, and :get in another function B, if A and B are called in the same cycle, then :get and :set will be called in the same cycle, regardless of where they appear in the pipeline. The information from :set will propagate to the :get (like as if there is a direct wire). Examples: registers, DRAM
 
 inst = M:instantiate( name, options )
 returns an Instance
 
 Instantiation Options:
+These instantiation options will inheret the defaults of the module if not provided.
+
 callArbitrate = {nil, "valid", "values" }
 nil => Can only call each function on this instance once
 'valid' => can call functions multiple times, but only one valid bit can be true
 'value' => can call functions multiple times, and multiple valid bits must be true, but values must match
 
-:verilog()
+coherent: This determines the semantics of calling different functions on this modules. 
+If coherent==false, there is no guarantee about the timing of calling different functions. Ex: if you have a :valid() and a :get() function, you'd better make sure that your valid and get are called in the came clock. In practice, this means that :valid must not be pipelined, and :get must be the first thing in the pipe. The module documentation should tell you any inter-function semantics.
+If coherent==true, we guarantee that all calls to a module happen in the same cycle, if the calls to these calls happen in the same cycle. So, if we call :set in one function A, and :get in another function B, if A and B are called in the same cycle, then :get and :set will be called in the same cycle, regardless of where they appear in the pipeline. The information from :set will propagate to the :get (like as if there is a direct wire). Examples: registers, DRAM
+
+:toVerilog()
 memoized. returns the verilog for defining this module. 
 
 :toTerra()
 returns terra Struct for simulator for this module.
 
-:lower()
-Takes a module and lowers its definition to an AST. Used internally to implement :verilog(). 
+:complete()
+Checks whether functions refer to valid instances. Pipelines. Takes the module and lowers its definition to an AST. Used internally to implement :verilog(). 
+Function delays are unavailable until :complete() is called. Once :complete() is called, the module can't be modified.
 
 Module Constructors
 ===================
@@ -115,7 +122,8 @@ systolic.reg(T)
 has functions:
 :read() -- pure
 :write( value )
-:writeBy( fn, value )
+:writeBy( module, value )
+          module:process :: {A,B} -> A, not pipelined. A is type of register, B is type of value
 
 systolic.ram128()
 --------------

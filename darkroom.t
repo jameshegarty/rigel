@@ -6,6 +6,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local cmath = terralib.includec("math.h")
 local ffi = require("ffi")
+local S = require("systolic")
 
 -----------------------
 -- Semantics of the simulator:
@@ -53,7 +54,6 @@ darkroom.valid = macro(function(i) return `i._1 end)
 local valid = darkroom.valid
 darkroom.ready = macro(function(i) return `i._2 end)
 local ready = darkroom.ready
-
 
 function darkroom.isStateful( a ) return a:isTuple() and a.list[2]==darkroom.State end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
@@ -138,6 +138,7 @@ darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
 
 function darkroomFunctionFunctions:compile() return self.terraModule end
+function darkroomFunctionFunctions:toVerilog() return S.getDefinitions()..self.systolicModule:toVerilog() end
 
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
@@ -355,25 +356,33 @@ end
 
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
-function darkroom.map( f, w, h )
+function darkroom.map( f, W, H )
   assert( darkroom.isFunction(f) )
-  assert(type(w)=="number")
-  assert(type(h)=="number" or h==nil)
-  if h==nil then h=1 end
+  assert(type(W)=="number")
+  assert(type(H)=="number" or H==nil)
+  if H==nil then H=1 end
 
-  local res = { kind="map", fn = f, w=w, h=h }
+  local res = { kind="map", fn = f, W=W, H=H }
   darkroom.expectPure( f.inputType, "mapped function must be a pure function")
   darkroom.expectPure( f.outputType, "mapped function must be a pure function")
-  res.inputType = types.array2d( f.inputType, w, h )
-  res.outputType = types.array2d( f.outputType, w, h )
+  res.inputType = types.array2d( f.inputType, W, H )
+  res.outputType = types.array2d( f.outputType, W, H )
   res.delay = f.delay
   local struct MapModule {fn:f.terraModule}
   terra MapModule:reset() self.fn:reset() end
   terra MapModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     cstdio.printf("MAP\n")
-    for i=0,w*h do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
+    for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
+  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name)
+  local inp = S.parameter("inp", res.inputType )
+  local out = {}
+  for i=0,W*H-1 do 
+    local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
+    table.insert( out, inst:process( S.index( inp, i ) ) )
+  end
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ) ) )
 
   return darkroom.newFunction(res)
 end
@@ -916,6 +925,7 @@ function darkroom.makeStateful( f )
   assert(types.isType(res.inputType))
   res.delay = f.delay
   res.terraModule = f.terraModule
+  res.systolicModule = f.systolicModule
   return darkroom.newFunction(res)
 end
 
@@ -953,6 +963,9 @@ function darkroom.makeHandshake( f )
     self.delaysr:pushBack(&tout)
   end
   res.terraModule = MakeHandshake
+
+  res.systolicModule = S.module("MakeHandshake_"..f.systolicModule.name)
+  local sfifo = res.systolicModule:add( fpgamodules.fifo( darkroom.extract(res.outputType) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1227,10 +1240,37 @@ function darkroom.lambda( name, input, output )
 
   res.terraModule = docompile(res)
 
+  local function makeSystolic( fn )
+    local module = S.moduleConstructor( fn.name )
+    local inp = S.parameter( "out", fn.inputType )
+
+    local out = fn.output:visitEach(
+      function(n, inputs)
+        if n.kind=="input" then
+          return {inp}
+        elseif n.kind=="apply" then
+          print("APPLY",n.fn.kind)
+          local I = n.fn.systolicModule:instantiate(n.name)
+          module:add(I)
+          return {I:process(inputs[1][1])}
+        else
+          print(n.kind)
+          assert(false)
+        end
+      end)
+
+    local fn = S.lambda( "process", inp, out[1] )
+    local process = module:addFunction( fn )
+
+    return module
+  end
+  res.systolicModule = makeSystolic(res)
+  res.systolicModule:toVerilog()
+
   return darkroom.newFunction( res )
 end
 
-function darkroom.lift( inputType, outputType, terraFunction, delay )
+function darkroom.lift( inputType, outputType, delay, terraFunction, systolicModule )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
@@ -1238,7 +1278,7 @@ function darkroom.lift( inputType, outputType, terraFunction, delay )
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end
   terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
-  local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule }
+  local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule }
   return darkroom.newFunction( res )
 end
 

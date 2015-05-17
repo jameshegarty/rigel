@@ -1,3 +1,6 @@
+require("common")
+local IR = require("ir")
+
 types = {}
 
 TypeFunctions = {}
@@ -158,13 +161,23 @@ function types.valueToType(v)
   return nil -- fail
 end
 
+local boolops = {["or"]=1,["and"]=1} -- bool -> bool -> bool
+local cmpops = {["=="]=1,["~="]=1,["<"]=1,[">"]=1,["<="]=1,[">="]=1} -- number -> number -> bool
+local binops = {["|"]=1,["^"]=1,["&"]=1,["<<"]=1,[">>"]=1,["+"]=1,["-"]=1,["%"]=1,["*"]=1,["/"]=1}
+-- these binops only work on ints
+local intbinops = {["<<"]=1,[">>"]=1,["and"]=1,["or"]=1,["^"]=1}
+-- ! does a logical not in C, use 'not' instead
+-- ~ does a bitwise not in C
+local unops = {["not"]=1,["-"]=1}
+appendSet(binops,boolops)
+appendSet(binops,cmpops)
+
 -- returns resultType, lhsType, rhsType
 -- ast is used for error reporting
 function types.meet( a, b, op, ast)
   assert(types.isType(a))
   assert(types.isType(b))
   assert(type(op)=="string")
-  assert(darkroom.IR.isIR(ast))
   
   assert(getmetatable(a)==TypeMT)
   assert(getmetatable(b)==TypeMT)
@@ -221,9 +234,9 @@ function types.meet( a, b, op, ast)
     local prec = math.max(a.precision,b.precision)
     local thistype = types.uint(prec)
     
-    if darkroom.cmpops[op] then
+    if cmpops[op] then
       return types.bool(), thistype, thistype
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.float(32)
@@ -381,7 +394,6 @@ end
 function types.checkExplicitCast(from, to, ast)
   assert(from~=nil)
   assert(to~=nil)
-  assert(darkroom.ast.isAST(ast))
 
   if from==to then
     -- obvously can return true...
@@ -393,11 +405,12 @@ function types.checkExplicitCast(from, to, ast)
     end
 
     return types.checkExplicitCast(from.over, to.over,ast)
-
-  elseif (from:isStruct()==false and from:isArray()==false) and to:isArray() then
+  elseif from:isTuple() and to:isArray() then
+    return #from.list==to:channels()
+  elseif (from:isTuple()==false and from:isArray()==false) and to:isArray() then
+    -- broadcast
     return types.checkExplicitCast(from, to.over, ast )
-
-  elseif from:isArray() and (to:isArray()==false and to:isStruct()==false) then
+  elseif from:isArray() and (to:isArray()==false and to:isTuple()==false) then
     if from:arrayOver():isBool() and from:channels()==to:sizeof()*8 then
       -- casting an array of bools to a type with the same number of bits is OK
       return true
@@ -408,16 +421,6 @@ function types.checkExplicitCast(from, to, ast)
 
     darkroom.error("Can't cast an array type to a non-array type. "..tostring(from).." to "..tostring(to), ast:linenumber(), ast:offset(), ast:filename() )
     return false
-  elseif from:isStruct() and to:isStruct()==false and keycount(from.kvs)==1 then
-    for k,v in pairs(from.kvs) do
-      return types.checkExplicitCast(v,to,ast)
-    end
-  elseif from:isStruct() and to:isStruct() and keycount(from.kvs)==keycount(to.kvs) then
-    for k,v in pairs(from.kvs) do
-      if to.kvs[k]==nil then return false end
-      if types.checkExplicitCast(v,to.kvs[k],ast)==false then return false end
-    end
-    return true
   elseif from.kind=="uint" and to.kind=="uint" then
     return true
   elseif from.kind=="int" and to.kind=="int" then
@@ -483,19 +486,6 @@ function types.checkImplicitCast(from, to, ast)
     if to.precision >= from.precision then
       return true
     end
-  elseif from:isStruct() and to:isStruct()==false and keycount(from.kvs)==1 then
-    -- convert a struct of one entry to the type of that entry
-    -- terrible, terrible language design
-    for k,v in pairs(from.kvs) do
-      return types.checkImplicitCast(v,to,ast)
-    end
-  elseif from:isStruct() and to:isStruct() and keycount(from.kvs)==keycount(to.kvs) then
-    for k,v in pairs(from.kvs) do
-      if to.kvs[k]==nil then print("A");return false end
-      local r = types.checkImplicitCast(v,to.kvs[k],ast)
-      if r==false then return false end
-    end
-    return true
   end
 
   return false
@@ -606,6 +596,10 @@ function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
 
+function TypeFunctions:bits()
+  return self:sizeof()*8
+end
+
 function TypeFunctions:isFloat()
   return self.kind=="float"
 end
@@ -622,9 +616,6 @@ function TypeFunctions:isUint()
   return self.kind=="uint"
 end
 
-function TypeFunctions:isStruct()
-  return self.kind=="struct"
-end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"

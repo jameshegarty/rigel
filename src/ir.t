@@ -66,7 +66,7 @@ function IR.buildParentCache(root)
   local visited={}
   local function build(node)
     if visited[node]==nil then
-      for k,child in node.inputs do
+      for k,child in pairs(node.inputs) do
         if IR._parentsCache[root][child]==nil then
           IR._parentsCache[root][child]={}
         end

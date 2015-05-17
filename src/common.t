@@ -254,7 +254,7 @@ local Ctmp = terralib.includecstring [[
 
                                    ]]
 
-darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
+--darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
 
 terra orionAssert(cond : bool, str : &int8)
   if cond==false then
@@ -493,4 +493,8 @@ function split(t,n)
     table.insert(r[i], v) 
   end
   return r
+end
+
+function err(asst, str)
+  if asst==false then error(str) end
 end
