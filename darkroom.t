@@ -376,13 +376,13 @@ function darkroom.map( f, W, H )
   end
   res.terraModule = MapModule
   res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name)
-  local inp = S.parameter("inp", res.inputType )
+  local inp = S.parameter("process_input", res.inputType )
   local out = {}
   for i=0,W*H-1 do 
     local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
     table.insert( out, inst:process( S.index( inp, i ) ) )
   end
-  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ) ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output" ) )
 
   return darkroom.newFunction(res)
 end
@@ -1242,7 +1242,7 @@ function darkroom.lambda( name, input, output )
 
   local function makeSystolic( fn )
     local module = S.moduleConstructor( fn.name )
-    local inp = S.parameter( "out", fn.inputType )
+    local inp = S.parameter( "process_input", fn.inputType )
 
     local out = fn.output:visitEach(
       function(n, inputs)
@@ -1259,7 +1259,7 @@ function darkroom.lambda( name, input, output )
         end
       end)
 
-    local fn = S.lambda( "process", inp, out[1] )
+    local fn = S.lambda( "process", inp, out[1], "process_output" )
     local process = module:addFunction( fn )
 
     return module

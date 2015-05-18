@@ -185,17 +185,18 @@ function systolic.isFunction(t)
   return getmetatable(t)==systolicFunctionMT or getmetatable(t)==systolicFunctionConstructorMT
 end
 
-function systolic.lambda( name, input, output, pipelines, valid )
+function systolic.lambda( name, input, output, outputName, pipelines, valid )
   err( systolicAST.isSystolicAST(input), "input must be a systolic AST" )
   err( systolicAST.isSystolicAST(output), "output must be a systolic AST" )
   err( input.kind=="parameter", "input must be a parameter" )
+  err( type(outputName)=="string", "output name must be a string")
   
   if pipelines==nil then pipelines={} end
-  if valid==nil then valid = systolic.parameter("valid", types.bool()) end
+  if valid==nil then valid = systolic.parameter(name.."_valid", types.bool()) end
   output = output:addValid( valid )
   pipelines = map( pipelines, function(n) return n:addValid(valid) end )
 
-  local t = { name=name, input=input, output = output, pipelines=pipelines, valid=valid }
+  local t = { name=name, input=input, output = output, outputName=outputName, pipelines=pipelines, valid=valid }
 
   return setmetatable(t,systolicFunctionMT)
 end
@@ -427,13 +428,13 @@ function systolicASTFunctions:toVerilog( options, scopes )
         systolic.addDefinition( n.inst.module )
         
         if n.func:isPure()==false then
-          table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_valid = "..args[2].."; // call valid\n")
+          table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_valid = "..args[2].."; // call valid")
         end
         
-        table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.." = "..args[1].."; // call input\n") 
+        table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_"..n.func.input.name.." = "..args[1].."; // call input") 
         
         if n.func.output~=nil then
-          finalResult =  n.inst.name.."_"..n.func.output.name
+          finalResult =  n.inst.name.."_"..n.func.outputName
         else
           finalResult =  "__NILVALUE_ERROR"
         end        
@@ -447,7 +448,8 @@ function systolicASTFunctions:toVerilog( options, scopes )
         end
         finalResult = "("..cconst(n.type,n.value)..")"
       elseif n.kind=="fndefn" then
-        table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()).."\n")
+        table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
+        table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";")
         finalResult = "_ERR_NULL_FNDEFN"
       elseif n.kind=="module" then
         finalResult = "__ERR_NULL_MODULE"
@@ -458,7 +460,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
           finalResult = args[1].."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."]"
         elseif n.inputs[1].type:isUint() or n.inputs[1].type:isInt() then
           table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
-          table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index\n")
+          table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index")
           finalResult = n:cname(c)
         else
           print(n.expr.type)
@@ -492,10 +494,16 @@ function systolicASTFunctions:toVerilog( options, scopes )
             end
           end
 
-          if n.type:isArray() and n.inputs[1].type:isArray()==false then
+          if n.type:isArray() and n.inputs[1].type:isTuple()==true then
+            err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
+            for k,v in pairs(n.inputs[1].type.list) do
+              err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type")
+            end
+            expr = args[1] 
+          elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
             expr = "{"..table.concat( map(range(n.type:channels()), function(n) return args[1] end),",").."}" -- broadcast
             cmt = " // broadcast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
-          elseif n.expr.type:isArray() and n.type:isArray()==false and n.expr.type:arrayOver():isBool() and (n.type:isUint() or n.type:isInt()) then
+          elseif n.inputs[1].type:isArray() and n.type:isArray()==false and n.inputs[1].type:arrayOver():isBool() and (n.type:isUint() or n.type:isInt()) then
             assert(false)
             -- casting an array of bools (bitfield) to an int or uint
             expr = "}"
@@ -504,25 +512,25 @@ function systolicASTFunctions:toVerilog( options, scopes )
               expr = inputs.expr[c]..expr
             end
             expr = "{"..expr
-          elseif n.type:isArray() and n.expr.type:isArray() and n.type:baseType()==n.expr.type:baseType() then
+          elseif n.type:isArray() and n.inputs[1].type:isArray() and n.type:baseType()==n.inputs[1].type:baseType() then
             assert(false)
             assert(n.type:channels() == n.expr.type:channels())
             expr = inputs.expr[c]
             cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
-          elseif n.type:isArray() and n.expr.type:isArray()  then
+          elseif n.type:isArray() and n.inputs[1].type:isArray()  then
             assert(false)
             assert(n.type:arrayLength() == n.expr.type:arrayLength())
             -- same shape arrays, different base types
             expr = dobasecast( inputs.expr[c], n.expr.type:baseType(), n.type:baseType() )
           else
-            expr = dobasecast( inputs.expr[c], n.expr.type, n.type )
+            expr = dobasecast( args[1], n.inputs[1].type, n.type )
           end
 
-          
---          table.insert(resDeclarations, declareWire( n.type:baseType(), callsite..n:cname(c), "",cmt))
---          table.insert(resDeclarations, "assign "..callsite..n:cname(c).." = "..expr..";"..cmt.."\n")
---          res = callsite..n:cname(c)
           finalResult = expr
+      elseif n.kind=="parameter" then
+        finalResult = n.name
+      elseif n.kind=="array" then
+        assert(false)
       else
         local resTable = {}
         for c=0,n.type:channels()-1 do
@@ -533,9 +541,9 @@ function systolicASTFunctions:toVerilog( options, scopes )
 
             if n.op=="<" or n.op==">" or n.op=="<=" or n.op==">=" then
               if n.type:baseType():isBool() and n.lhs.type:baseType():isInt() and n.rhs.type:baseType():isInt() then
-                res = "($signed("..args[1]..sub..")"..n.op.."$signed("..inputs.rhs[c]..sub.."));\n"
+                res = "($signed("..args[1]..sub..")"..n.op.."$signed("..inputs.rhs[c]..sub.."));"
               elseif n.type:baseType():isBool() and n.lhs.type:baseType():isUint() and n.rhs.type:baseType():isUint() then
-                res = "(("..args[1]..")"..n.op.."("..inputs.rhs[c].."));\n"
+                res = "(("..args[1]..")"..n.op.."("..inputs.rhs[c].."));"
               else
                 print( n.type:baseType():isBool() , n.lhs.type:baseType():isInt() , n.rhs.type:baseType():isInt(),n.type:baseType():isBool() , n.lhs.type:baseType():isUint() , n.rhs.type:baseType():isUint())
                 assert(false)
@@ -543,7 +551,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
             elseif n.type:isBool() then
               local op = binopToVerilogBoolean[n.op]
               if type(op)~="string" then print("OP_BOOLEAN",n.op); assert(false) end
-              addstat(n.pipeline, callsite..n:name().."_c"..c, inputs.lhs[c]..op..inputs.rhs[c]..";\n")
+              addstat(n.pipeline, callsite..n:name().."_c"..c, inputs.lhs[c]..op..inputs.rhs[c]..";")
             else
               local op = binopToVerilog[n.op]
               if type(op)~="string" then print("OP",n.op); assert(false) end
@@ -562,7 +570,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
           if n.op=="abs" then
             if n.type:baseType():isInt() then
               table.insert(resDeclarations, declareReg( n.type:baseType(), callsite..n:cname(c) ))
-              table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs\n")
+              table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs")
               res = callsite..n:cname(c)
             else
               return inputs.expr[c] -- must be unsigned
@@ -570,7 +578,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
           elseif n.op=="-" then
             assert(n.type:baseType():isInt())
             table.insert(resDeclarations, declareReg(n.type:baseType(), callsite..n:cname(c)))
-            table.insert(resClockedLogic, callsite..n:cname(c).." <= -"..inputs.expr[c].."; // unary sub\n")
+            table.insert(resClockedLogic, callsite..n:cname(c).." <= -"..inputs.expr[c].."; // unary sub")
             res = callsite..n:cname(c)
           else
             print(n.op)
@@ -594,12 +602,6 @@ function systolicASTFunctions:toVerilog( options, scopes )
           --table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.cond[condC]..")?("..inputs.a[c].."):("..inputs.b[c].."); // "..n.kind.."\n")
           addstat( n.pipeline, callsite..n:cname(c), "("..inputs.cond[condC]..")?("..inputs.a[c].."):("..inputs.b[c].."); // "..n.kind.."\n") 
           res = callsite..n:cname(c)
-        elseif n.kind=="array" then
-          map( range(n.type:channels()), function(c) addInput("expr"..c) end )
-          getInputs()
-          res = inputs["expr"..c][1]
-        elseif n.kind=="parameter" then
-          res = n.name
         else
           print(n.kind)
           assert(false)
@@ -621,7 +623,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
     end)
 
   local fin = table.concat(declarations,"\n")
-  fin = fin.."always @(posedge CLK) begin\n"
+  fin = fin.."\nalways @(posedge CLK) begin\n"
   fin = fin..table.concat(clockedLogic,"\n")
   fin = fin.."end\n"
   return fin
@@ -669,23 +671,23 @@ setmetatable(userModuleFunctions,{__index=systolicModuleFunctions})
 userModuleMT={__index=userModuleFunctions}
 
 function userModuleFunctions:instanceToVerilog( instance )
-    local wires = {}
-    local arglist = {}
+  local wires = {}
+  local arglist = {}
     
-    for fnname,fn in pairs(self.functions) do
-      table.insert( wires, declareWire( types.bool(), instance.name.."_"..fnname.."_valid" ))
-      table.insert( arglist, ", ."..fnname.."_valid("..instance.name.."_"..fnname.."_valid)") 
+  for fnname,fn in pairs(self.functions) do
+    table.insert( wires, declareWire( types.bool(), instance.name.."_"..fnname.."_valid" ))
+    table.insert( arglist, ", ."..fnname.."_valid("..instance.name.."_"..fnname.."_valid)") 
 
-      table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fn.input.name )); 
-      table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fn.input.name..")")
+    table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fn.input.name )); 
+    table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fn.input.name..")")
 
-      if fn.output~=nil then
-        table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fn.output.name))
-        table.insert(arglist,", ."..fn.output.name.."("..instance.name.."_"..fn.output.name..")")
-      end
+    if fn.output~=nil then
+      table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fn.outputName))
+      table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
     end
+  end
 
-    return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..self.name..[[")) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n\n"
+  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n\n"
 end
 
 function userModuleFunctions:lower()
@@ -709,9 +711,9 @@ function userModuleFunctions:toVerilog()
     table.insert(t,"module "..self.name.."(input CLK")
   
     for fnname,fn in pairs(self.functions) do
-      if fn:isPure()==false then table.insert(t,", input "..fnname.."_valid") end
-      table.insert(t,", input ["..(fn.input.type:sizeof()*8-1)..":0] "..fnname)
-      if fn.output~=nil then table.insert(t,", "..declarePort( fn.output.type, fn.output.name, false ))  end
+      if fn:isPure()==false then table.insert(t,", input "..fn.valid.name) end
+      table.insert(t,", input ["..(fn.input.type:sizeof()*8-1)..":0] "..fn.input.name)
+      if fn.output~=nil then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
 
     table.insert(t,");\n")
@@ -748,8 +750,19 @@ function systolic.module.new( name, fns, instances, options )
     print("Module name ",name, "already used")
     assert(false)
   end
-
   __usedModuleNames[name]=1
+
+  -- We let users choose whatever parameter names they want. Check for duplicate variable names in functions.
+  local _usedPname = {}
+  for _,v in pairs(fns) do
+    err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" )
+    _usedPname[v.outputName]=1
+    err( _usedPname[v.input.name]==nil, "input name "..v.input.name.." used somewhere else in module" )
+    _usedPname[v.input.name]=1
+    err( _usedPname[v.valid.name]==nil, "valid bit name "..v.valid.name.." used somewhere else in module" )
+    _usedPname[v.valid.name]=1
+  end
+
   local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, options=options,isComplete=false}
   map( instances, function(i) t.instanceMap[i]=1; t.usedInstanceNames[i.name]=1 end )
   setmetatable(t,userModuleMT)
