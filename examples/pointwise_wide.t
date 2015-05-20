@@ -37,7 +37,7 @@ f = d.seqMap( top, W, H, T )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
-io.output("out/pointwise_wide.v")
+io.output("out/pointwise_wide.sim.v")
 io.write(fn:toVerilog())
 io.close()
 

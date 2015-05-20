@@ -259,8 +259,8 @@ __index = function(tab,key)
       return function(self, inp, valid)
         err( inp==nil or systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         
-        --tab.callsites[fn.name] = tab.callsites[fn.name] or {}
-        --table.insert(tab.callsites[fn.name],1)
+        tab.callsites[fn.name] = tab.callsites[fn.name] or {}
+        table.insert(tab.callsites[fn.name],1)
 
         if inp~=nil then err( inp.type==fn.input.type, "Error, input type to function incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) ) end
 
@@ -857,14 +857,23 @@ setmetatable(fileModuleFunctions,{__index=systolicModuleFunctions})
 fileModuleMT={__index=fileModuleFunctions}
 
 function fileModuleFunctions:instanceToVerilog( instance )
-  return "FILELOL"
+--  return "FILELOL"
+  if instance.callsites.read~=nil and instance.callsites.write==nil then
+    return [[integer ]]..instance.name..[[_file;
+reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_read_out;
+initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
+always @ (posedge CLK) begin if (]]..instance.name..[[_read_valid) begin ]]..instance.name..[[_read_out = 0; end end
+]]
+  else
+    assert(false)
+  end
 end
 function fileModuleFunctions:toVerilog() return "" end
 
 function systolic.module.file( filename, ty)
   local res = {filename=filename, type=ty}
   res.functions={}
-  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="FREAD_OUTPUT"}
+  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="read_out"}
   res.functions.read.isPure = function() return false end
 
   return setmetatable(res, fileModuleMT)
