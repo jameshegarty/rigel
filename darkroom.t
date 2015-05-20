@@ -1,4 +1,4 @@
-local IR = require("IR")
+local IR = require("ir")
 local types = require("types")
 local simmodules = require("simmodules")
 local cstring = terralib.includec("string.h")
@@ -1242,14 +1242,14 @@ function darkroom.lambda( name, input, output )
 
   local function makeSystolic( fn )
     local module = S.moduleConstructor( fn.name )
-    local inp = S.parameter( "process_input", fn.inputType )
+    local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
 
     local out = fn.output:visitEach(
       function(n, inputs)
         if n.kind=="input" then
           return {inp}
         elseif n.kind=="apply" then
-          print("APPLY",n.fn.kind)
+          print("systolic APPLY",n.fn.kind)
           local I = n.fn.systolicModule:instantiate(n.name)
           module:add(I)
           return {I:process(inputs[1][1])}
@@ -1383,6 +1383,69 @@ function darkroom.catState( name, input, state )
   assert(darkroom.isIR( input ) )
   assert(darkroom.isIR( state ) )
   return darkroom.newIR( {kind="catState", name=name, loc=getloc(), inputs={input,state}} )
+end
+
+function darkroom.freadSeq( filename, ty)
+  err( type(filename)=="string", "filename must be a string")
+  err( types.isType(ty), "type must be a type")
+  darkroom.expectPure(ty)
+  local res = {kind="freadSeq", filename=filename, type=darkroom.Stateful(ty), inputType=darkroom.Stateful(types.null()), outputType=darkroom.Stateful(ty), delay=0}
+  local struct FreadSeq { file : &cstdio.FILE }
+  terra FreadSeq:reset() 
+    self.file = cstdio.fopen(filename, "rb") 
+    darkroomAssert(self.file~=nil, ["file "..filename.." doesnt exist"])
+  end
+  terra FreadSeq:process(inp : &types.null():toTerraType(), out : &ty:toTerraType())
+    cstdio.fread(out,[ty:sizeof()],1,self.file)
+  end
+  res.terraModule = FreadSeq
+  res.systolicModule = S.moduleConstructor("freadSeq")
+  local sfile = res.systolicModule:add( S.module.file( filename, ty ):instantiate("freadfile") )
+  local inp = S.parameter("process_input", types.null() )
+  res.systolicModule:addFunction( S.lambda("process", inp, sfile:read(), "process_output" ) )
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.fwriteSeq( filename, ty)
+  err( type(filename)=="string", "filename must be a string")
+  err( types.isType(ty), "type must be a type")
+  darkroom.expectPure(ty)
+  local res = {kind="freadSeq", filename=filename, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
+  local struct FwriteSeq { file : &cstdio.FILE }
+  terra FwriteSeq:reset() 
+    self.file = cstdio.fopen(filename, "wb") 
+    darkroomAssert( self.file~=nil, ["Error opening "..filename.." for writing"] )
+  end
+  terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
+    cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
+    @out = @inp
+  end
+  res.terraModule = FwriteSeq
+  res.systolicModule = S.moduleConstructor("fwriteSeq")
+  local inp = S.parameter("process_input", ty )
+  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output" ) )
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.seqMap( f, W, H, T )
+  err( darkroom.isFunction(f), "fn must be a function")
+  err( type(W)=="number", "W must be a number")
+  err( type(H)=="number", "H must be a number")
+  err( type(T)=="number", "T must be a number")
+  darkroom.expectStateful(f.inputType)
+  darkroom.expectStateful(f.outputType)
+  local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
+  local struct SeqMap { inner: f.terraModule}
+  terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+    var o : darkroom.extract(f.outputType):toTerraType()
+    for i=0,W*H do self.inner:process(nil,&o) end
+  end
+  res.terraModule = SeqMap
+
+  return darkroom.newFunction(res)
 end
 
 local Im = require "image"

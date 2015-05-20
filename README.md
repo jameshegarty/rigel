@@ -230,6 +230,29 @@ To solve SDF for the tmux, at least one of its inputs must have a determined SDF
 
 It's possible to connect a tmux output to its inputs, creating an infinite loop. You can construct a graph like this in SDF, but it's malformed. We can detect this case in the SDF solver. If we have an iteration where the # of nodes with undetermined rates doesn't change relative to the last iteration, it's stalled, and we can error out.
 
+freadSeq
+--------
+freadSeq :: {filename, type} => nil -> Stateful(type)
+Read from the file at 'filename' in chunks of type:sizeof()
+
+freadHandshake
+--------
+freadHandshake :: {filename, type, T} => nil -> Stateful(type)
+Read from the file at 'filename' in chunks of type:sizeof(). If T<1 then this throttles the input rate to the pipe.
+
+fwriteSeq
+---------
+fwriteSeq :: {filename, type} => type -> type
+This is a passthrough, so that you can put it in the middle of a pipe
+
+seqMap
+------
+seqMap :: {f,W,H,T} => A[W,H] -> B[W,H] given f:Stateful(A[T])->Stateful(B[T])
+
+seqMapHandshake
+---------------
+
+
 IR
 ==
 

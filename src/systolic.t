@@ -173,7 +173,7 @@ function valueToVerilog(value,ty)
 end
 
 function systolicModuleFunctions:instantiate(name)
-  assert(type(name)=="string")
+  err( type(name)=="string", "instantiation name must be a string")
   return systolicInstance.new({kind="module",module=self,name=name,callsites={}})
 end
 
@@ -259,12 +259,12 @@ __index = function(tab,key)
       return function(self, inp, valid)
         err( inp==nil or systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         
-        tab.callsites[fn.name] = tab.callsites[fn.name] or {}
-        table.insert(tab.callsites[fn.name],1)
+        --tab.callsites[fn.name] = tab.callsites[fn.name] or {}
+        --table.insert(tab.callsites[fn.name],1)
 
         if inp~=nil then err( inp.type==fn.input.type, "Error, input type to function incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) ) end
 
-        local t = { kind="call", inst=self, func=fn, type=fn.output.type, callsiteid = #tab.callsites[fn.name], loc=getloc(), inputs={inp,valid} }
+        local t = { kind="call", inst=self, func=fn, type=fn.output.type, loc=getloc(), inputs={inp,valid} }
         
         return systolicAST.new(t)
              end
@@ -430,8 +430,8 @@ function systolicASTFunctions:toVerilog( options, scopes )
         if n.func:isPure()==false then
           table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_valid = "..args[2].."; // call valid")
         end
-        
-        table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_"..n.func.input.name.." = "..args[1].."; // call input") 
+
+        if n.func.input.type~=types.null() then table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_"..n.func.input.name.." = "..args[1].."; // call input") end
         
         if n.func.output~=nil then
           finalResult =  n.inst.name.."_"..n.func.outputName
@@ -660,7 +660,7 @@ end
 -- Module Definitions
 --------------------------------------------------------------------
 function systolic.isModule(t)
-  return getmetatable(t)==userModuleMT
+  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT
 end
 
 systolic.module = {}
@@ -851,6 +851,24 @@ wire []]..addrbits..[[:0] ]]..self.name..[[_addr_B;
 ]]..table.concat(fixedBram(conf))
 end
 function systolic.module.bram( ) return __bram end
+--------------------
+fileModuleFunctions={}
+setmetatable(fileModuleFunctions,{__index=systolicModuleFunctions})
+fileModuleMT={__index=fileModuleFunctions}
+
+function fileModuleFunctions:instanceToVerilog( instance )
+  return "FILELOL"
+end
+function fileModuleFunctions:toVerilog() return "" end
+
+function systolic.module.file( filename, ty)
+  local res = {filename=filename, type=ty}
+  res.functions={}
+  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="FREAD_OUTPUT"}
+  res.functions.read.isPure = function() return false end
+
+  return setmetatable(res, fileModuleMT)
+end
 
 --------------------------------------------------------------------
 -- Syntax sugar for incrementally defining a function
