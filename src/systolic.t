@@ -415,7 +415,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
         if n.func.input.type~=types.null() then table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_"..n.func.input.name.." = "..args[1].."; // call input") end
         
         if n.func.output~=nil then
-          finalResult =  n.inst.name.."_"..n.func.outputName
+          finalResult =  n.inst.name.."_"..n.func.name.."_"..n.func.outputName
         else
           finalResult =  "__NILVALUE_ERROR"
         end        
@@ -448,7 +448,7 @@ function systolicASTFunctions:toVerilog( options, scopes )
           assert(false)
         end
       elseif n.kind=="tuple" then
-        finalResult="{"..table.concat(args,",").."}"
+        finalResult="{"..table.concat(reverse(args),",").."}"
       elseif n.kind=="cast" then
 
           local expr
@@ -660,13 +660,13 @@ function userModuleFunctions:instanceToVerilog( instance )
     table.insert( arglist, ", ."..fnname.."_valid("..instance.name.."_"..fnname.."_valid)") 
 
     if fn.input.type~=types.null() then
-     table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fn.input.name )); 
-      table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fn.input.name..")")
+     table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fnname.."_"..fn.input.name )); 
+      table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fnname.."_"..fn.input.name..")")
     end
 
     if fn.output~=nil then
-      table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fn.outputName))
-      table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
+      table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fnname.."_"..fn.outputName))
+      table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fnname.."_"..fn.outputName..")")
     end
   end
 
@@ -885,12 +885,12 @@ always @ (posedge CLK) begin if (]]..instance.name..[[_read_valid) begin ]]..ass
   elseif instance.callsites.read==nil and instance.callsites.write~=nil then
     local assn = ""
     for i=0,self.type:sizeof()-1 do
-      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.name.."_read_out["..((i+1)*8-1)..":"..(i*8).."] ); "
+      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.name.."_write_input["..((i+1)*8-1)..":"..(i*8).."] ); "
     end
 
     return [[integer ]]..instance.name..[[_file;
 wire ]]..instance.name..[[_write_valid;
-wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_read_out;
+wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_write_input;
 initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
 always @ (posedge CLK) begin if (]]..instance.name..[[_write_valid) begin ]]..assn..[[ end end
 ]]
@@ -904,9 +904,9 @@ function fileModuleFunctions:getDependenciesLL() return {} end
 function systolic.module.file( filename, ty)
   local res = {kind="file",filename=filename, type=ty}
   res.functions={}
-  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="read_out"}
+  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="out"}
   res.functions.read.isPure = function() return false end
-  res.functions.write={name="write",output={type=types.null()},input={name="read_input",type=ty},outputName="write_out"}
+  res.functions.write={name="write",output={type=types.null()},input={name="input",type=ty},outputName="out"}
   res.functions.write.isPure = function() return false end
 
   return setmetatable(res, fileModuleMT)

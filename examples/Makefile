@@ -3,6 +3,7 @@ RES = $(patsubst %.t,out/%.bmp,$(SRCS))
 RES += $(patsubst %.t,out/%.bmp.correct.txt,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
+SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
 
@@ -13,13 +14,19 @@ all: $(RES)
 clean:
 	rm -Rf out/*
 
-out/%.bmp out/%.sim.v: %.t
+out/%.raw out/%.sim.v: %.t
 	terra $<
 
 out/%.sim.raw: out/%.sim.v
 	cd out; vlogcomp $*.sim.v
 	cd out; fuse -o $* -lib $* -top sim
 	cd out; echo "run all" | ./$*
+
+out/%.sim.bmp: out/%.sim.raw
+	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua
+
+out/%.bmp: out/%.raw
+	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua
 
 out/%.bmp.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff

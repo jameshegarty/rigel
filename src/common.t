@@ -371,7 +371,7 @@ end
 function reverse(t)
   local r = {}
   for k,v in ipairs(t) do r[#t-k+1] = v end
-  return t
+  return r
 end
 
 function filter(t,f)

@@ -41,6 +41,7 @@ io.output("out/pointwise_wide.sim.v")
 io.write(f:toVerilog())
 io.close()
 
+d.writeMetadata("out/pointwise_wide.metadata.lua",W,H,1,1)
 --local res, SimState, State = fn:compile()
 --Module = fn:compile()
 --res:printpretty()
