@@ -6,16 +6,20 @@ SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
 
+RES += $(SIM)
+
 all: $(RES)
 
 clean:
-	rm out/*
+	rm -Rf out/*
 
 out/%.bmp out/%.sim.v: %.t
 	terra $<
 
 out/%.sim.raw: out/%.sim.v
-	vlogcomp out/$*.sim.v; fuse -o $* -lib $* -top sim
+	cd out; vlogcomp $*.sim.v
+	cd out; fuse -o $* -lib $* -top sim
+	cd out; echo "run all" | ./$*
 
 out/%.bmp.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff

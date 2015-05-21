@@ -28,9 +28,9 @@ out = d.apply( "plus100", d.map( p200, T ), inp )
 fn = d.lambda( "pointwise_wide", inp, out )
 -------------
 inp = d.input( d.Stateful(types.null()) )
-out = d.apply("fread",d.freadSeq("frame_128.raw",ITYPE),inp)
+out = d.apply("fread",d.freadSeq("frame_128.raw",ITYPE,"../frame_128.raw"),inp)
 out = d.apply("pointwise_wide",d.makeStateful(fn),out)
-out = d.apply("fwrite",d.fwriteSeq("out/pointwise_wide.raw",ITYPE),out)
+out = d.apply("fwrite",d.fwriteSeq("out/pointwise_wide.raw",ITYPE,"pointwise_wide.sim.raw"),out)
 top = d.lambda( "top", inp, out )
 -------------
 f = d.seqMap( top, W, H, T )
@@ -38,7 +38,7 @@ Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
 io.output("out/pointwise_wide.sim.v")
-io.write(fn:toVerilog())
+io.write(f:toVerilog())
 io.close()
 
 --local res, SimState, State = fn:compile()

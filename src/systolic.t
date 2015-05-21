@@ -33,23 +33,6 @@ function checkReserved(k)
   end
 end
 
-local definitionCache = {}
-function systolic.addDefinition(X)
-  assert( systolic.isModule(X) )
-  if definitionCache[X]==nil then
-    definitionCache[X] = X:toVerilog()
-  end
-end
-
-function systolic.getDefinitions()
-  local r = ""
-  for k,v in pairs(definitionCache) do
-    r = r..v
-  end
-
-  return r
-end
-
 local binopToVerilog={["+"]="+",["*"]="*",["<<"]="<<<",[">>"]=">>>",["pow"]="**",["=="]="==",["and"]="&",["-"]="-",["<"]="<",[">"]=">",["<="]="<=",[">="]=">="}
 
 local binopToVerilogBoolean={["=="]="==",["and"]="&&",["~="]="!=",["or"]="||"}
@@ -424,8 +407,6 @@ function systolicASTFunctions:toVerilog( options, scopes )
       local finalResult
 
       if n.kind=="call" then
-        -- record that this module was used
-        systolic.addDefinition( n.inst.module )
         
         if n.func:isPure()==false then
           table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_valid = "..args[2].."; // call valid")
@@ -678,8 +659,10 @@ function userModuleFunctions:instanceToVerilog( instance )
     table.insert( wires, declareWire( types.bool(), instance.name.."_"..fnname.."_valid" ))
     table.insert( arglist, ", ."..fnname.."_valid("..instance.name.."_"..fnname.."_valid)") 
 
-    table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fn.input.name )); 
-    table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fn.input.name..")")
+    if fn.input.type~=types.null() then
+     table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fn.input.name )); 
+      table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fn.input.name..")")
+    end
 
     if fn.output~=nil then
       table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fn.outputName))
@@ -695,6 +678,10 @@ function userModuleFunctions:lower()
 
   for _,fn in pairs(self.functions) do
     local node = { kind="fndefn", fn=fn,type=types.null(), valid=fn.valid, inputs={fn.output} }
+    for k,pipe in pairs(fn.pipelines) do
+      table.insert( node.inputs, pipe )
+    end
+
     node = systolicAST.new(node)
     table.insert( mod.inputs, node )
   end
@@ -704,7 +691,9 @@ function userModuleFunctions:lower()
 end
 
 function userModuleFunctions:toVerilog()
-  if self.verilog==nil then
+  if self.verilog==nil and type(self.options.verilog)=="string" then
+    self.verilog = self.options.verilog
+  elseif self.verilog==nil then
     local astv = self.ast:toVerilog()
     local t = {}
 
@@ -712,7 +701,7 @@ function userModuleFunctions:toVerilog()
   
     for fnname,fn in pairs(self.functions) do
       if fn:isPure()==false then table.insert(t,", input "..fn.valid.name) end
-      table.insert(t,", input ["..(fn.input.type:sizeof()*8-1)..":0] "..fn.input.name)
+      if fn.input.type~=types.null() then table.insert(t,", input ["..(fn.input.type:sizeof()*8-1)..":0] "..fn.input.name) end
       if fn.output~=nil then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
 
@@ -730,6 +719,29 @@ function userModuleFunctions:toVerilog()
   end
 
   return self.verilog
+end
+
+function userModuleFunctions:getDependenciesLL()
+  local dep = {}
+  local depMap = {}
+
+  for _,i in pairs(self.instances) do
+print(i.module.name,i.module.kind)
+    local deplist = i.module:getDependenciesLL()
+    for _,D in pairs(deplist) do
+      if depMap[D[1]]==nil then table.insert(dep, D) end
+      depMap[D[1]]=1
+    end
+    if depMap[i.module]==nil then
+      table.insert(dep,{i.module,i.module:toVerilog()})
+      depMap[i.module]=1
+    end
+  end
+  return dep
+end
+
+function userModuleFunctions:getDependencies()
+  return table.concat(map(self:getDependenciesLL(), function(n) return n[2] end),"")
 end
 
 function userModuleFunctions:getDelay( fn )
@@ -859,22 +871,43 @@ fileModuleMT={__index=fileModuleFunctions}
 function fileModuleFunctions:instanceToVerilog( instance )
 --  return "FILELOL"
   if instance.callsites.read~=nil and instance.callsites.write==nil then
+    local assn = ""
+    for i=0,self.type:sizeof()-1 do
+      assn = assn .. instance.name.."_read_out["..((i+1)*8-1)..":"..(i*8).."] = $fgetc("..instance.name.."_file); "
+    end
+
     return [[integer ]]..instance.name..[[_file;
+wire ]]..instance.name..[[_read_valid;
 reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_read_out;
 initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
-always @ (posedge CLK) begin if (]]..instance.name..[[_read_valid) begin ]]..instance.name..[[_read_out = 0; end end
+always @ (posedge CLK) begin if (]]..instance.name..[[_read_valid) begin ]]..assn..[[ end end
+]]
+  elseif instance.callsites.read==nil and instance.callsites.write~=nil then
+    local assn = ""
+    for i=0,self.type:sizeof()-1 do
+      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.name.."_read_out["..((i+1)*8-1)..":"..(i*8).."] ); "
+    end
+
+    return [[integer ]]..instance.name..[[_file;
+wire ]]..instance.name..[[_write_valid;
+wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_read_out;
+initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
+always @ (posedge CLK) begin if (]]..instance.name..[[_write_valid) begin ]]..assn..[[ end end
 ]]
   else
     assert(false)
   end
 end
 function fileModuleFunctions:toVerilog() return "" end
+function fileModuleFunctions:getDependenciesLL() return {} end
 
 function systolic.module.file( filename, ty)
-  local res = {filename=filename, type=ty}
+  local res = {kind="file",filename=filename, type=ty}
   res.functions={}
   res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="read_out"}
   res.functions.read.isPure = function() return false end
+  res.functions.write={name="write",output={type=types.null()},input={name="read_input",type=ty},outputName="write_out"}
+  res.functions.write.isPure = function() return false end
 
   return setmetatable(res, fileModuleMT)
 end

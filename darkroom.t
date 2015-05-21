@@ -138,7 +138,7 @@ darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
 
 function darkroomFunctionFunctions:compile() return self.terraModule end
-function darkroomFunctionFunctions:toVerilog() return S.getDefinitions()..self.systolicModule:toVerilog() end
+function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
@@ -1385,11 +1385,12 @@ function darkroom.catState( name, input, state )
   return darkroom.newIR( {kind="catState", name=name, loc=getloc(), inputs={input,state}} )
 end
 
-function darkroom.freadSeq( filename, ty)
+function darkroom.freadSeq( filename, ty, filenameVerilog)
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
-  local res = {kind="freadSeq", filename=filename, type=darkroom.Stateful(ty), inputType=darkroom.Stateful(types.null()), outputType=darkroom.Stateful(ty), delay=0}
+  if filenameVerilog==nil then filenameVerilog=filename end
+  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=darkroom.Stateful(ty), inputType=darkroom.Stateful(types.null()), outputType=darkroom.Stateful(ty), delay=0}
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:reset() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -1400,18 +1401,19 @@ function darkroom.freadSeq( filename, ty)
   end
   res.terraModule = FreadSeq
   res.systolicModule = S.moduleConstructor("freadSeq")
-  local sfile = res.systolicModule:add( S.module.file( filename, ty ):instantiate("freadfile") )
+  local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
   res.systolicModule:addFunction( S.lambda("process", inp, sfile:read(), "process_output" ) )
 
   return darkroom.newFunction(res)
 end
 
-function darkroom.fwriteSeq( filename, ty)
+function darkroom.fwriteSeq( filename, ty, filenameVerilog)
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
-  local res = {kind="freadSeq", filename=filename, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
+  if filenameVerilog==nil then filenameVerilog=filename end
+  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 
@@ -1423,8 +1425,9 @@ function darkroom.fwriteSeq( filename, ty)
   end
   res.terraModule = FwriteSeq
   res.systolicModule = S.moduleConstructor("fwriteSeq")
+  local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("fwritefile") )
   local inp = S.parameter("process_input", ty )
-  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", {sfile:write(inp)} ) )
 
   return darkroom.newFunction(res)
 end
@@ -1444,6 +1447,24 @@ function darkroom.seqMap( f, W, H, T )
     for i=0,W*H do self.inner:process(nil,&o) end
   end
   res.terraModule = SeqMap
+
+  res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
+reg CLK = 0;
+integer i = 0;
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(1'b1));
+   initial begin
+      while(i<]]..(W*H)..[[) begin
+//         $display("LOLrt_");
+         CLK = 0;
+         #10
+         CLK = 1;
+         #10
+         i = i + 1;
+      end
+      $finish();
+   end
+endmodule
+]]})
 
   return darkroom.newFunction(res)
 end
