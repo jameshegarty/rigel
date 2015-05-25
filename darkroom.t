@@ -378,11 +378,14 @@ function darkroom.map( f, W, H )
   res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name)
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
+  local resetPipelines={}
   for i=0,W*H-1 do 
     local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
     table.insert( out, inst:process( S.index( inp, i ) ) )
+    table.insert( resetPipelines, inst:reset() )
   end
   res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1171,8 +1174,6 @@ function darkroom.lambda( name, input, output )
           if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
           elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
           table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
-
---          table.insert( stats, quote [darkroom.print(n.type, out)]; cstdio.printf("\n") end)
           return {out,readyOut}
         elseif n.kind=="applyRegLoad" then
           if usedNames[n.name]==nil then
@@ -1181,7 +1182,6 @@ function darkroom.lambda( name, input, output )
           usedNames[n.name] = 1
           table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
           table.insert( stats, quote mself.[n.name]:load( out ) end )
---          table.insert( stats, quote cstdio.printf("applyRegLoad %s: ",n.name);[darkroom.print(n.type, out)]; cstdio.printf("\n") end)
           return {out}
         elseif n.kind=="applyRegStore" then
           if usedNames[n.name]==nil then
@@ -1243,6 +1243,7 @@ function darkroom.lambda( name, input, output )
   local function makeSystolic( fn )
     local module = S.moduleConstructor( fn.name )
     local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
+    local resetPipelines = {}
 
     local out = fn.output:visitEach(
       function(n, inputs)
@@ -1252,6 +1253,7 @@ function darkroom.lambda( name, input, output )
           print("systolic APPLY",n.fn.kind)
           local I = n.fn.systolicModule:instantiate(n.name)
           module:add(I)
+          table.insert( resetPipelines, I:reset() )
           return {I:process(inputs[1][1])}
         else
           print(n.kind)
@@ -1261,6 +1263,7 @@ function darkroom.lambda( name, input, output )
 
     local fn = S.lambda( "process", inp, out[1], "process_output" )
     local process = module:addFunction( fn )
+    module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
 
     return module
   end
@@ -1270,7 +1273,8 @@ function darkroom.lambda( name, input, output )
   return darkroom.newFunction( res )
 end
 
-function darkroom.lift( inputType, outputType, delay, terraFunction, systolicModule )
+function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput )
+  assert( type(name)=="string" )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
@@ -1278,6 +1282,12 @@ function darkroom.lift( inputType, outputType, delay, terraFunction, systolicMod
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end
   terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
+
+  local systolicModule = S.moduleConstructor(name)
+  systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
+  local nip = S.parameter("nip",types.null())
+  systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
+
   local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule }
   return darkroom.newFunction( res )
 end
@@ -1403,7 +1413,9 @@ function darkroom.freadSeq( filename, ty, filenameVerilog)
   res.systolicModule = S.moduleConstructor("freadSeq")
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
+  local nilinp = S.parameter("process_nilinp", types.null() )
   res.systolicModule:addFunction( S.lambda("process", inp, sfile:read(), "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1413,7 +1425,7 @@ function darkroom.fwriteSeq( filename, ty, filenameVerilog)
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
   if filenameVerilog==nil then filenameVerilog=filename end
-  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
+  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 
@@ -1427,7 +1439,9 @@ function darkroom.fwriteSeq( filename, ty, filenameVerilog)
   res.systolicModule = S.moduleConstructor("fwriteSeq")
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("fwritefile") )
   local inp = S.parameter("process_input", ty )
+  local nilinp = S.parameter("process_nilinp", types.null() )
   res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", {sfile:write(inp)} ) )
+  res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1451,8 +1465,17 @@ function darkroom.seqMap( f, W, H, T )
   res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
 reg CLK = 0;
 integer i = 0;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(1'b1));
+reg RST = 1;
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(1'b1),.reset(RST));
    initial begin
+      // clock in reset bit
+      CLK = 0;
+      #10
+      CLK = 1;
+      #10
+      RST = 0;
+
+      i=0;
       while(i<]]..(W*H/T)..[[) begin
 //         $display("LOLrt_");
          CLK = 0;

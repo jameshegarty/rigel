@@ -10,11 +10,9 @@ W = 128
 H = 64
 T = 4
 
-p100 = S.moduleConstructor( "plus100" )
-inp = S.parameter("process_input",types.uint(8))
-process = p100:addFunction( S.lambda( "process", inp, inp + S.constant( 100, types.uint(8) ), "process_output" ) )
 
-plus100 = d.lift( types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, p100 )
+inp = S.parameter("process_input",types.uint(8))
+plus100 = d.lift( "p100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 
 ------------
 inp = d.input( types.uint(8) )
