@@ -1466,22 +1466,21 @@ function darkroom.seqMap( f, W, H, T )
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(1'b1),.reset(RST));
+reg valid = 0;
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(valid),.reset(RST));
    initial begin
       // clock in reset bit
-      CLK = 0;
-      #10
-      CLK = 1;
-      #10
+      while(i<100) begin
+        CLK = 0; #10; CLK = 1; #10;
+        i = i + 1;
+      end
+
       RST = 0;
+      valid = 1;
 
       i=0;
-      while(i<]]..(W*H/T)..[[) begin
-//         $display("LOLrt_");
-         CLK = 0;
-         #10
-         CLK = 1;
-         #10
+      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
+         CLK = 0; #10; CLK = 1; #10;
          i = i + 1;
       end
       $finish();

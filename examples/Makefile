@@ -28,6 +28,10 @@ out/%.sim.bmp: out/%.sim.raw
 out/%.bmp: out/%.raw
 	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua
 
+out/%.sim.correct.txt : out/%.sim.bmp
+	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
+	test ! -s out/$*.sim.diff && touch $@
+
 out/%.bmp.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff
 	test ! -s out/$*.diff && touch $@

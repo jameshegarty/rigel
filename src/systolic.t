@@ -484,7 +484,6 @@ function systolicASTFunctions:toVerilog( options, scopes )
           table.insert( declarations, decl )
         else
           if n.func:isPure()==false then
-            print("n.fun",n.func.name,n.inst.name)
             table.insert(declarations, "assign "..n.inst.name.."_"..n.func.valid.name.." = "..args[2].."; // call valid")
           end
           
@@ -810,7 +809,6 @@ function userModuleFunctions:getDependenciesLL()
   local depMap = {}
 
   for _,i in pairs(self.instances) do
-    print("userModuleFunctions:getDepende",i.module.name,i.module.kind)
     local deplist = i.module:getDependenciesLL()
     for _,D in pairs(deplist) do
       if depMap[D[1]]==nil then table.insert(dep, D) end
@@ -882,7 +880,6 @@ function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, valid
   if fnname=="delay" then
     local decl = declareReg(self.type, instance.name, self.initial)
     decl = decl.."always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
-    print("DELAY",instance.name,inputVar)
     return instance.name, decl, true
   else
     print("regModuleFunctions:instanceToVerilog",fnname)
@@ -1115,6 +1112,11 @@ function systolicModuleConstructor:complete()
     self.module = systolic.module.new( self.name, self.functions, self.instances, self.options )
     self.isComplete = true
   end
+end
+
+function systolicModuleConstructor:getDelay( fnname )
+  self:complete()
+  return self.module:getDelay( fnname )
 end
 
 function systolicModuleConstructor:toVerilog()
