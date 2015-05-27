@@ -279,7 +279,7 @@ function systolic.index( expr, idx, idy )
   assert(systolicAST.isSystolicAST(expr))
   err( type(idx)=="number", "idx should be a number" )
   if idy==nil then idy=0 end
-  return typecheck({kind="index", idx=idx, idy=idy, inputs={expr}})
+  return typecheck({kind="index", idx=idx, idy=idy, inputs={expr}, loc=getloc()})
 end
 
 function systolic.cast( expr, ty )
@@ -523,6 +523,10 @@ function systolicASTFunctions:toVerilog( options, scopes )
           table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
           table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index")
           finalResult = n:cname(c)
+        elseif n.inputs[1].type:isTuple() then
+          local lowbit = 0
+          for k,v in pairs(n.inputs[1].type.list) do if k-1<n.idx then lowbit = lowbit + v:bits() end end
+          finalResult = args[1].."["..(lowbit+n.inputs[1].type.list[n.idx+1]:bits()-1)..":"..lowbit.."]"
         else
           print(n.expr.type)
           assert(false)

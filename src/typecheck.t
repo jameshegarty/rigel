@@ -153,28 +153,26 @@ return function( ast )
     
   elseif ast.kind=="index" then
     local expr = ast.inputs[1]
-    
-    if expr.type:isArray()==false and expr.type:isUint()==false and expr.type:isInt()==false then
-      darkroom.error("Error, you can only index into an array type! Type is "..tostring(expr.type),origast:linenumber(),origast:offset(), origast:filename())
-      os.exit()
-    end
+
+    err(expr.type:isArray() or expr.type:isUint() or expr.type:isInt() or expr.type:isTuple(), "Error, you can not index into an this type! Type is "..tostring(expr.type)..ast.loc)    
     
     if expr.type:isUint() or expr.type:isInt() then 
       local maxIdx = expr.type.precision 
       err( ast.idy~=nil, "idy should be nil")
       err( ast.idx<maxIdx, "idx is out of bounds")
+      ast.type = darkroom.type.bool()
     elseif expr.type:isArray() then
       err( ast.idx < (expr.type:arrayLength())[1], "idx is out of bounds, "..tostring(ast.idx).." but should be "..tostring((expr.type:arrayLength())[1]))
       err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2], "idy is out of bounds")
+      ast.type = expr.type:arrayOver()
+    elseif expr.type:isTuple() then
+      err( ast.idx < #expr.type.list, "idx is out of bounds of tuple "..ast.loc)
+      err( ast.idy==nil or ast.idy==0, "idy should be nil "..ast.loc)
+      ast.type = expr.type.list[ast.idx+1]
     else
       assert(false)
     end
     
-    if expr.type:isUint() or expr.type:isInt() then
-      ast.type = darkroom.type.bool()
-    else
-      ast.type = expr.type:arrayOver()
-    end
   elseif ast.kind=="transform" then
     ast.expr = inputs["expr"]
     

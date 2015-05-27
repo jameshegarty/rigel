@@ -64,6 +64,7 @@ function darkroom.expectPure( A, er ) if darkroom.isStateful(A) or darkroom.isSt
 function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false then error(er or "type should be stateful") end end
 function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
 function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
+function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandshake(A)==false then error(er or "type should be stateful handshake") end end
 
 -- takes StatefulHandshakeRegistered to StatefulHandshake
 function darkroom.stripRegistered( a, loc )
@@ -932,7 +933,7 @@ function darkroom.makeStateful( f )
   return darkroom.newFunction(res)
 end
 
--- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo
+-- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
 function darkroom.makeHandshake( f )
   assert( darkroom.isFunction(f) )
   local res = { kind="makeHandshake", fn = f }
@@ -967,8 +968,12 @@ function darkroom.makeHandshake( f )
   end
   res.terraModule = MakeHandshake
 
-  res.systolicModule = S.module("MakeHandshake_"..f.systolicModule.name)
-  local sfifo = res.systolicModule:add( fpgamodules.fifo( darkroom.extract(res.outputType) ) )
+  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {CE=true} )
+  local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
+  local pvalid = S.parameter("valid", types.bool())
+  local pinp = S.parameter("process_input", darkroom.extract(f.inputType) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(pinp), pvalid}), "process_output",{},pvalid) ) 
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {}, S.parameter("reset",types.bool()) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1254,7 +1259,11 @@ function darkroom.lambda( name, input, output )
           local I = n.fn.systolicModule:instantiate(n.name)
           module:add(I)
           table.insert( resetPipelines, I:reset() )
-          return {I:process(inputs[1][1])}
+          if darkroom.isStatefulHandshake(n.fn.inputType) then
+            return {I:process( S.index(inputs[1][1],0), S.index(inputs[1][1],1) )}
+          else
+            return {I:process(inputs[1][1])}
+          end
         else
           print(n.kind)
           assert(false)
@@ -1463,6 +1472,59 @@ function darkroom.seqMap( f, W, H, T )
   res.terraModule = SeqMap
 
   res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
+reg CLK = 0;
+integer i = 0;
+reg RST = 1;
+reg valid = 0;
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(valid),.reset(RST));
+   initial begin
+      // clock in reset bit
+      while(i<100) begin
+        CLK = 0; #10; CLK = 1; #10;
+        i = i + 1;
+      end
+
+      RST = 0;
+      valid = 1;
+
+      i=0;
+      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
+         CLK = 0; #10; CLK = 1; #10;
+         i = i + 1;
+      end
+      $finish();
+   end
+endmodule
+]]})
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.seqMapHandshake( f, W, H, T )
+  err( darkroom.isFunction(f), "fn must be a function")
+  err( type(W)=="number", "W must be a number")
+  err( type(H)=="number", "H must be a number")
+  err( type(T)=="number", "T must be a number")
+  darkroom.expectStatefulHandshake(f.inputType)
+  darkroom.expectStatefulHandshake(f.outputType)
+  local res = {kind="seqMapHandshake", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
+  local struct SeqMap { inner: f.terraModule}
+  terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+    var inp : darkroom.extract(f.inputType):toTerraType()
+    valid(inp)=true
+    var o : darkroom.extract(f.outputType):toTerraType()
+    var inpAddr = 0
+    var outAddr = 0
+    while inpAddr<W*H or outAddr<W*H do
+      self.inner:process(&inp,&o)
+      inpAddr = inpAddr + T
+      if valid(o) then outAddr = outAddr + T end
+    end
+  end
+  res.terraModule = SeqMap
+
+  res.systolicModule = S.module.new("SeqMapHandshake_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
