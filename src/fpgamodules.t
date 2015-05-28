@@ -1,5 +1,5 @@
 systolic = require("systolic")
-statemachine = require("statemachine")
+--statemachine = require("statemachine")
 local modules = {}
 
 function modules.reduceSystolic( op, cnt, datatype, argminVars)

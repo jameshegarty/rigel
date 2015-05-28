@@ -1073,8 +1073,8 @@ function fileModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local decl = nil
   local fn = self.functions[fnname]
-  if fn.output~=nil and fn.output.type~=types.null() then
-    decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
+  if fnname=="read" then
+    decl = declareReg( fn.output.type, instance.name.."_"..fn.outputName)
   end
   return instance.name.."_"..fn.outputName, decl, true
 end
@@ -1093,11 +1093,12 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       RST = "if ("..instance.verilogCompilerState[module].reset[2]..") begin r=$fseek("..instance.name.."_file,0,0); end"
     end
 
+--  reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_out;
+
     return [[integer ]]..instance.name..[[_file,r;
-  reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_out;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
   always @ (posedge CLK) begin 
-    if (]]..instance.name..[[_read_valid ]]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 
+    if (]]..instance.verilogCompilerState[module].read[2]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
   end
 ]]

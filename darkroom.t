@@ -1507,7 +1507,7 @@ reg CLK = 0;
 integer i = 0;
 reg RST = 1;
 reg valid = 0;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(valid),.reset(RST));
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.CE(1'b1),.process_valid(valid),.reset(RST));
    initial begin
       // clock in reset bit
       while(i<100) begin
