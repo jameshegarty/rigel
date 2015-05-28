@@ -179,6 +179,29 @@ function modules.fifonoop(ty)
 end
 --modules.fifo = memoize(modules.fifonoop)
 
+function modules.shiftRegister( ty, size, name, options )
+  local M = systolic.moduleConstructor( name, options )
+  local pipelines = {}
+  local out
+  local inp = systolic.parameter("sr_input", ty)
+  local regs = {}
+  for i=1,size do
+    local I = M:add( systolic.module.reg( ty ):instantiate("SR"..i) )
+    table.insert( regs, I )
+    if i==1 then
+      table.insert(pipelines, I:set(inp) )
+    else
+      table.insert(pipelines, I:set(regs[i]:get()) )
+    end
+    if i==size then out=I:get() end
+  end
+  if size==0 then out=inp end
+
+  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines) )
+
+  return M
+end
+
 function modules.xygen( minX, maxX, minY, maxY )
   assert(type(minX)=="number")
   assert(type(maxX)=="number")

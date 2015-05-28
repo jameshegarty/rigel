@@ -1,6 +1,7 @@
 local IR = require("ir")
 local types = require("types")
 local simmodules = require("simmodules")
+local fpgamodules = require("fpgamodules")
 local cstring = terralib.includec("string.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
@@ -376,7 +377,7 @@ function darkroom.map( f, W, H )
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
-  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name)
+  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name,{CE=true})
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
   local resetPipelines={}
@@ -968,12 +969,15 @@ function darkroom.makeHandshake( f )
   end
   res.terraModule = MakeHandshake
 
-  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {CE=true} )
+  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeSR_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pvalid = S.parameter("valid", types.bool())
   local pinp = S.parameter("process_input", darkroom.extract(f.inputType) )
-  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(pinp), pvalid}), "process_output",{},pvalid) ) 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {}, S.parameter("reset",types.bool()) ) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(pinp), SR:pushPop(pvalid, S.constant(true,types.bool()))}), "process_output",{},pvalid) ) 
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "reset_out", {}, S.parameter("reset",types.bool()) ) )
+  local pready = S.parameter("ready_downstream", types.bool())
+  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready_out", {inner:CE(pready),SR:CE(pready)} ) )
 
   return darkroom.newFunction(res)
 end
@@ -1235,21 +1239,22 @@ function darkroom.lambda( name, input, output )
     else
       terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
     end
-    Module:printpretty()
-    Module.methods.process:printpretty(false)
-    print("PP")
-    Module.methods.process:printpretty()
-    print("PPDONE")
+    --Module:printpretty()
+    --Module.methods.process:printpretty(false)
+    --print("PP")
+    --Module.methods.process:printpretty()
+    --print("PPDONE")
     return Module
   end
 
   res.terraModule = docompile(res)
 
   local function makeSystolic( fn )
-    local module = S.moduleConstructor( fn.name )
+    local module = S.moduleConstructor( fn.name, {CE=sel(darkroom.isStatefulHandshake(fn.inputType),false,true), onlyWire=sel(darkroom.isStatefulHandshake(fn.inputType),true,false)} )
     local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
     local resetPipelines = {}
 
+    local instanceMap = {}
     local out = fn.output:visitEach(
       function(n, inputs)
         if n.kind=="input" then
@@ -1257,6 +1262,7 @@ function darkroom.lambda( name, input, output )
         elseif n.kind=="apply" then
           print("systolic APPLY",n.fn.kind)
           local I = n.fn.systolicModule:instantiate(n.name)
+          instanceMap[n] = I
           module:add(I)
           table.insert( resetPipelines, I:reset() )
           if darkroom.isStatefulHandshake(n.fn.inputType) then
@@ -1270,9 +1276,34 @@ function darkroom.lambda( name, input, output )
         end
       end)
 
-    local fn = S.lambda( "process", inp, out[1], "process_output" )
-    local process = module:addFunction( fn )
+
+    local processfn = S.lambda( "process", inp, out[1], "process_output" )
+    local process = module:addFunction( processfn )
     module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
+
+    if darkroom.isStatefulHandshake( fn.inputType ) then
+      local readyinp = S.parameter( "ready_downstream", types.bool() )
+      local readyout
+      fn.output:visitEachReverse(
+        function(n, inputs)
+          local input = foldt( stripkeys(inputs), function(a,b) return S.__and(a,b) end, readyinp )
+
+          if n.kind=="input" then
+            assert(readyout==nil)
+            readyout = input
+            return nil
+          elseif n.kind=="apply" then
+            print("systolic ready APPLY",n.fn.kind)
+            return instanceMap[n]:ready(input)
+          else
+            print(n.kind)
+            assert(false)
+          end
+        end)
+
+      local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready_out", {} ) )
+      assert( readyfn:isPure() )
+    end
 
     return module
   end
@@ -1292,7 +1323,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   terra LiftModule:stats( name : &int8 )  end
   terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
 
-  local systolicModule = S.moduleConstructor(name)
+  local systolicModule = S.moduleConstructor(name,{CE=true})
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
   local nip = S.parameter("nip",types.null())
   systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
@@ -1419,7 +1450,7 @@ function darkroom.freadSeq( filename, ty, filenameVerilog)
     cstdio.fread(out,[ty:sizeof()],1,self.file)
   end
   res.terraModule = FreadSeq
-  res.systolicModule = S.moduleConstructor("freadSeq")
+  res.systolicModule = S.moduleConstructor("freadSeq",{CE=true})
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
   local nilinp = S.parameter("process_nilinp", types.null() )
@@ -1445,7 +1476,7 @@ function darkroom.fwriteSeq( filename, ty, filenameVerilog)
     @out = @inp
   end
   res.terraModule = FwriteSeq
-  res.systolicModule = S.moduleConstructor("fwriteSeq")
+  res.systolicModule = S.moduleConstructor("fwriteSeq",{CE=true})
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("fwritefile") )
   local inp = S.parameter("process_input", ty )
   local nilinp = S.parameter("process_nilinp", types.null() )
@@ -1541,7 +1572,7 @@ reg valid = 0;
       valid = 1;
 
       i=0;
-      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
+      while(i<]]..(W*H/T)..[[) begin
          CLK = 0; #10; CLK = 1; #10;
          i = i + 1;
       end

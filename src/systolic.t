@@ -8,6 +8,28 @@ systolicModuleMT={__index=systolicModuleFunctions}
 
 systolicInstanceFunctions = {}
 
+systolicAST = {}
+function systolicAST.isSystolicAST(ast)
+  return getmetatable(ast)==systolicASTMT
+end
+
+local __usedNameCnt = 0
+function systolicAST.new(tab)
+  assert(type(tab)=="table")
+  if tab.scaleN1==nil then tab.scaleN1=0 end
+  if tab.scaleD1==nil then tab.scaleD1=0 end
+  if tab.scaleN2==nil then tab.scaleN2=0 end
+  if tab.scaleD2==nil then tab.scaleD2=0 end
+  assert(type(tab.inputs)=="table")
+  assert(#tab.inputs==keycount(tab.inputs))
+  if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
+  assert(types.isType(tab.type))
+  if tab.pipelined==nil then tab.pipelined=true end
+  IR.new(tab)
+  return setmetatable(tab,systolicASTMT)
+end
+
+
 local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
 end
@@ -49,9 +71,9 @@ function declareReg(ty, name, initial, comment)
   end
 
   if ty:isBool() then
-    return "reg "..name..initial..";"..comment.."\n"
+    return "reg "..name..initial..";"..comment
   else
-    return "reg ["..(ty:sizeof()*8-1)..":0] "..name..initial..";"..comment.."\n"
+    return "reg ["..(ty:verilogBits()-1)..":0] "..name..initial..";"..comment
  end
 end
 
@@ -67,10 +89,11 @@ function declareWire(ty, name, str, comment)
     str = " = "..str
   end
 
+  assert( ty~=types.null() )
   if ty:isBool() then
-    return "wire "..name..str..";"..comment.."\n"
+    return "wire "..name..str..";"..comment
   else
-    return "wire ["..(ty:sizeof()*8-1)..":0] "..name..str..";"..comment.."\n"
+    return "wire ["..(ty:verilogBits()-1)..":0] "..name..str..";"..comment
   end
 end
 
@@ -80,8 +103,9 @@ function declarePort( ty, name, isInput )
   local t = "input "
   if isInput==false then t = "output " end
 
+  assert( ty~=types.null() )
   if ty:isBool()==false then
-    t = t .."["..(ty:sizeof()*8-1)..":0] "
+    t = t .."["..(ty:verilogBits()-1)..":0] "
   end
   t = t..name
   
@@ -171,6 +195,7 @@ end
 function systolic.lambda( name, input, output, outputName, pipelines, valid )
   err( systolicAST.isSystolicAST(input), "input must be a systolic AST" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
+  err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
   err( input.kind=="parameter", "input must be a parameter" )
   err( type(outputName)=="string", "output name must be a string")
   
@@ -189,14 +214,18 @@ function systolicInstanceFunctions:getDelay( fn )
   return self.module:getDelay( fn )
 end
 
-function systolicInstanceFunctions:toVerilog()
-  return self.module:instanceToVerilog(self)
+function systolicInstanceFunctions:toVerilog( module )
+  return self.module:instanceToVerilog( self, module)
 end
 
 -- some functions don't modify state. These do not need a valid bit
 function systolicFunctionFunctions:isPure()
-  return false
---  return foldl( andop, true, map( self.assignments, function(n) return n.dst.kind=="output" end ) )
+  local purePipes = true
+  -- it's possible for pipelines to end up being a noop, which are pure
+  map( self.pipelines, function(n) purePipes = purePipes and n:isPure(self.valid) end )
+
+  if self.output==nil then return purePipes end
+  return self.output:isPure(self.valid) and purePipes
 end
 
 function systolicFunctionFunctions:isAccessor()
@@ -240,12 +269,13 @@ __index = function(tab,key)
     local fn = rawget(tab,"module").functions[key]
     if fn~=nil then
       return function(self, inp, valid)
-        err( inp==nil or systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
+        if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
+        err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         
         tab.callsites[fn.name] = tab.callsites[fn.name] or {}
         table.insert(tab.callsites[fn.name],1)
 
-        if inp~=nil then err( inp.type==fn.input.type, "Error, input type to function incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) ) end
+        err( inp.type==fn.input.type, "Error, input type to function incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) )
 
         local otype = types.null()
         if fn.output~=nil then otype = fn.output.type end
@@ -300,6 +330,9 @@ function systolic.tuple( tab )
   map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
   return typecheck(res)
 end
+
+local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={}})
+function systolic.null() return __NULLTAB end
 
 function systolic.select( cond, a, b )
   cond, a, b = convert(cond), convert(a), convert(b)
@@ -370,6 +403,24 @@ function systolicASTFunctions:checkInstances( instMap )
     end)
 end
 
+-- does this need a valid bit?
+function systolicASTFunctions:isPure( validbit )
+  assert( systolicAST.isSystolicAST(validbit) )
+
+  return self:visitEach(
+    function( n, inputs )
+      if n.kind=="call" then
+        return n.func:isPure()
+      elseif n.kind=="parameter" then
+        return n.key~=validbit.key -- explicitly used valid bit
+      elseif n.kind=="fndefn" then
+          assert(false) -- we shouldn't call isPure on lowered ASTs
+      else
+        return foldl( andop, true, inputs )
+      end
+    end)
+end
+
 function systolicASTFunctions:disablePipelining()
   return self:S("*"):process(
     function(n)
@@ -407,7 +458,7 @@ function systolicASTFunctions:pipeline()
       for k,v in pairs(args) do n.inputs[k] = v[1] end
       n = systolicAST.new(n)
 
-      if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" then
+      if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" or n.kind=="null" then
         return {n, 0}
       elseif n.kind=="index" or n.kind=="cast" then
         -- passthrough, no pipelining
@@ -459,15 +510,18 @@ function systolicASTFunctions:addValid( validbit )
   assert( systolicAST.isSystolicAST(validbit) )
   return self:process(
     function(n)
-      if n.kind=="call" and n.inputs[2]==nil then
+      if n.kind=="call" and n.inputs[2]==nil and n.func:isPure()==false then
+        -- don't add valid bit to pure functions
+        assert( systolicAST.isSystolicAST(n.inputs[1]) )
         n.inputs[2] = validbit
         return systolicAST.new(n)
       end
     end)
 end
 
-function systolicASTFunctions:toVerilog( options, scopes )
-  local clockedLogic = {}
+function systolicASTFunctions:toVerilog( module )
+  assert( systolic.isModule(module))
+  --local clockedLogic = {}
   local declarations = {}
 
   local finalOut = self:visitEach(
@@ -478,24 +532,24 @@ function systolicASTFunctions:toVerilog( options, scopes )
       local wire = false
 
       if n.kind=="call" then
-        if n.inst.module.options.lateInstantiation then
+--        if n.inst.module.options.lateInstantiation then
           local decl
-          finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, n.func.name, args[1], args[2] )
+          finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
           table.insert( declarations, decl )
-        else
+--[=[        else
           if n.func:isPure()==false then
             table.insert(declarations, "assign "..n.inst.name.."_"..n.func.valid.name.." = "..args[2].."; // call valid")
           end
           
-          if n.func.input.type~=types.null() then table.insert(declarations, "assign "..n.inst.name.."_"..n.func.name.."_"..n.func.input.name.." = "..args[1].."; // call input") end
+          if n.func.input.type~=types.null() then table.insert(declarations, "assign "..n.inst.name.."_"..n.func.input.name.." = "..args[1].."; // call input") end
           
           if n.func.output~=nil then
-            finalResult =  n.inst.name.."_"..n.func.name.."_"..n.func.outputName
+            finalResult =  n.inst.name.."_"..n.func.outputName
             wire = true
           else
             finalResult =  "__NILVALUE_ERROR"
           end     
-        end
+      end]=]
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
@@ -506,18 +560,22 @@ function systolicASTFunctions:toVerilog( options, scopes )
         end
         finalResult = "("..cconst(n.type,n.value)..")"
       elseif n.kind=="fndefn" then
-        table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
+        --table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
         if n.fn.output~=nil then table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";") end
         finalResult = "_ERR_NULL_FNDEFN"
       elseif n.kind=="module" then
         for _,v in pairs(n.module.functions) do
-          table.insert( declarations,"  // function: "..v.name.." delay="..n.module:getDelay(v.name) )
+          if n.module.options.onlyWire then
+            table.insert( declarations,"// function: "..v.name.." pure="..tostring(v:isPure()).." ONLY WIRE" )
+          else
+            table.insert( declarations,"// function: "..v.name.." pure="..tostring(v:isPure()).." delay="..n.module:getDelay(v.name) )
+          end
         end
         finalResult = "__ERR_NULL_MODULE"
       elseif n.kind=="index" then
         if n.inputs[1].type:isArray() then
           local flatIdx = (n.inputs[1].type:arrayLength())[1]*n.idy+n.idx
-          local sz = n.inputs[1].type:arrayOver():bits()
+          local sz = n.inputs[1].type:arrayOver():verilogBits()
           finalResult = args[1].."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."]"
         elseif n.inputs[1].type:isUint() or n.inputs[1].type:isInt() then
           table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
@@ -525,8 +583,8 @@ function systolicASTFunctions:toVerilog( options, scopes )
           finalResult = n:cname(c)
         elseif n.inputs[1].type:isTuple() then
           local lowbit = 0
-          for k,v in pairs(n.inputs[1].type.list) do if k-1<n.idx then lowbit = lowbit + v:bits() end end
-          finalResult = args[1].."["..(lowbit+n.inputs[1].type.list[n.idx+1]:bits()-1)..":"..lowbit.."]"
+          for k,v in pairs(n.inputs[1].type.list) do if k-1<n.idx then lowbit = lowbit + v:verilogBits() end end
+          finalResult = args[1].."["..(lowbit+n.inputs[1].type.list[n.idx+1]:verilogBits()-1)..":"..lowbit.."]"
         else
           print(n.expr.type)
           assert(false)
@@ -595,13 +653,15 @@ function systolicASTFunctions:toVerilog( options, scopes )
       elseif n.kind=="parameter" then
         finalResult = n.name
         wire = true
+      elseif n.kind=="null" then
+        finalResult = ""
       elseif n.kind=="array" then
         assert(false)
       else
         local resTable = {}
         for c=0,n.type:channels()-1 do
           local res
-          local sub = "["..((c+1)*n.type:baseType():bits()-1)..":"..(c*n.type:baseType():bits()).."]" 
+          local sub = "["..((c+1)*n.type:baseType():verilogBits()-1)..":"..(c*n.type:baseType():verilogBits()).."]" 
 
           if n.kind=="binop" then
 
@@ -688,38 +748,19 @@ function systolicASTFunctions:toVerilog( options, scopes )
       end
     end)
 
-  local fin = table.concat(declarations,"\n")
-  fin = fin.."\nalways @(posedge CLK) begin\n"
-  fin = fin..table.concat(clockedLogic,"\n")
-  fin = fin.."end\n"
+  declarations = map(declarations, function(i) return "  "..i end )
+  local fin = table.concat(declarations,"\n").."\n"
+  --fin = fin.."\nalways @(posedge CLK) begin\n"
+  --fin = fin..table.concat(clockedLogic,"\n")
+  --fin = fin.."end\n"
   return fin
-end
-
-systolicAST = {}
-function systolicAST.isSystolicAST(ast)
-  return getmetatable(ast)==systolicASTMT
-end
-
-local __usedNameCnt = 0
-function systolicAST.new(tab)
-  assert(type(tab)=="table")
-  if tab.scaleN1==nil then tab.scaleN1=0 end
-  if tab.scaleD1==nil then tab.scaleD1=0 end
-  if tab.scaleN2==nil then tab.scaleN2=0 end
-  if tab.scaleD2==nil then tab.scaleD2=0 end
-  assert(type(tab.inputs)=="table")
-  if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
-  assert(types.isType(tab.type))
-  if tab.pipelined==nil then tab.pipelined=true end
-  IR.new(tab)
-  return setmetatable(tab,systolicASTMT)
 end
 
 function systolic.parameter( name, ty )
   assert(type(name)=="string")
   checkReserved(name)
   assert( types.isType(ty) )
-  return systolicAST.new({kind="parameter",name=name,type=ty,inputs={}})
+  return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={}})
 end
 
 --------------------------------------------------------------------
@@ -736,26 +777,51 @@ userModuleFunctions={}
 setmetatable(userModuleFunctions,{__index=systolicModuleFunctions})
 userModuleMT={__index=userModuleFunctions}
 
-function userModuleFunctions:instanceToVerilog( instance )
+function userModuleFunctions:instanceToVerilogStart( instance, module )
+  instance.verilogCompilerState = instance.verilogCompilerState or {}
+  assert(instance.verilogCompilerState[module]==nil)
+  instance.verilogCompilerState[module] = {}
+end
+
+function userModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  instance.verilogCompilerState[module][fnname]={datavar,validvar}
+  local decl = nil
+  local fn = self.functions[fnname]
+  if fn.output~=nil and fn.output.type~=types.null() then
+    decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
+  end
+  return instance.name.."_"..fn.outputName, decl, true
+end
+
+function userModuleFunctions:instanceToVerilogFinalize( instance, module )
   local wires = {}
   local arglist = {}
     
   for fnname,fn in pairs(self.functions) do
-    table.insert( wires, declareWire( types.bool(), instance.name.."_"..fn.valid.name ))
-    table.insert( arglist, ", ."..fn.valid.name.."("..instance.name.."_"..fn.valid.name..")") 
-
-    if fn.input.type~=types.null() then
-     table.insert(wires,declareWire( fn.input.type, instance.name.."_"..fnname.."_"..fn.input.name )); 
-      table.insert(arglist,", ."..fn.input.name.."("..instance.name.."_"..fnname.."_"..fn.input.name..")")
-    end
-
-    if fn.output~=nil then
-      table.insert(wires, declareWire( fn.output.type, instance.name.."_"..fnname.."_"..fn.outputName))
-      table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fnname.."_"..fn.outputName..")")
+    if fnname=="CE" and module.options.CE then
+      -- HACK: we will wire this automatically
+    else
+      err( instance.verilogCompilerState[module][fnname]~=nil, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
+      
+      if fn:isPure()==false then
+        local inp = instance.verilogCompilerState[module][fnname][2]
+--        err( type(int)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+        table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
+      end
+      
+      if fn.input.type~=types.null() then
+        local inp = instance.verilogCompilerState[module][fnname][1]
+--        err( type(int)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+        table.insert(arglist,", ."..fn.input.name.."("..inp..")")
+      end
+      
+      if fn.output~=nil and fn.output.type~=types.null() then
+        table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
+      end
     end
   end
 
-  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n\n"
+  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")) ]]..instance.name.."(.CLK(CLK)"..sel(module.options.CE,",.CE(CE)","")..table.concat(arglist)..");"
 end
 
 function userModuleFunctions:lower()
@@ -779,27 +845,32 @@ function userModuleFunctions:toVerilog()
   if self.verilog==nil and type(self.options.verilog)=="string" then
     self.verilog = self.options.verilog
   elseif self.verilog==nil then
-    local astv = self.ast:toVerilog()
     local t = {}
 
     table.insert(t,"module "..self.name.."(input CLK")
-  
     for fnname,fn in pairs(self.functions) do
       if fn:isPure()==false then table.insert(t,", input "..fn.valid.name) end
-      if fn.input.type~=types.null() then table.insert(t,", input ["..(fn.input.type:sizeof()*8-1)..":0] "..fn.input.name) end
-      if fn.output~=nil then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
+      if fn.input.type~=types.null() then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
+      if fn.output~=nil and fn.output.type~=types.null() then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
 
     table.insert(t,");\n")
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
   
     for k,v in pairs(self.instances) do
-      if v.module.options.lateInstantiation~=true then
-        table.insert(t, v:toVerilog() )
+      if v.module.instanceToVerilogStart~=nil then
+        v.module:instanceToVerilogStart( v, self )
       end
     end
 
-    table.insert( t, self.ast:toVerilog() )
+    table.insert( t, self.ast:toVerilog(self) )
+
+    for k,v in pairs(self.instances) do
+      if v.module.instanceToVerilogFinalize~=nil then
+        table.insert(t, "  "..v.module:instanceToVerilogFinalize( v, self ).."\n" )
+      end
+    end
+
     table.insert(t,"endmodule\n\n")
 
     self.verilog = table.concat(t,"")
@@ -844,6 +915,13 @@ function systolic.module.new( name, fns, instances, options )
 
   if options==nil then options={} end
 
+  -- if we have a CE, add a stub function so that other functions can call it (hack)
+  if options.CE then
+    assert(fns.CE==nil)
+    fns.CE = {name="CE",output=nil,input={name="CE",type=types.bool()},outputName="____CEOUT_SHOULDNOTAPPEAR",valid={name="____CEVALID_SHOULDNOTAPPEAR"},pipelines={},instances={}}
+    fns.CE.isPure = function() return true end
+  end
+
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -868,9 +946,12 @@ function systolic.module.new( name, fns, instances, options )
   t.ast = t:lower()
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
-  local pipelineRegisters
-  t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline()
-  map( pipelineRegisters, function(p) table.insert( t.instances, p ) end )
+  
+  if options.onlyWire==nil or options.onlyWire==false then
+    local pipelineRegisters
+    t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline()
+    map( pipelineRegisters, function(p) table.insert( t.instances, p ) end )
+  end
 
   return t
 end
@@ -880,11 +961,19 @@ regModuleFunctions={}
 setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
 regModuleMT={__index=regModuleFunctions}
 
-function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, validVar )
-  if fnname=="delay" then
-    local decl = declareReg(self.type, instance.name, self.initial)
-    decl = decl.."always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
-    return instance.name, decl, true
+function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar )
+  if fnname=="delay" or fnname=="set" then
+    local decl = declareReg(self.type, instance.name, self.initial).."\n"
+    if module.options.CE then
+      decl = decl.."  always @ (posedge CLK) begin if (CE) begin "..instance.name.." <= "..inputVar.."; end end"
+    else
+      decl = decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
+    end
+    local name = instance.name
+    if fnname=="set" then name = "_____REG_SET" end
+    return name, decl, true
+  elseif fnname=="get" then
+    return instance.name, nil, true
   else
     print("regModuleFunctions:instanceToVerilog",fnname)
     assert(false)
@@ -892,6 +981,9 @@ function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, valid
 end
 function regModuleFunctions:getDependenciesLL() return {} end
 function regModuleFunctions:toVerilog() return "" end
+function regModuleFunctions:getDelay( fnname )
+  return 0
+end
 
 function systolic.module.reg( ty, initial )
   err(types.isType(ty),"type must be a type")
@@ -899,6 +991,10 @@ function systolic.module.reg( ty, initial )
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, input={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT"}
   t.functions.delay.isPure = function() return false end
+  t.functions.set={name="set", output={type=types.null()}, input={name="SET_INPUT",type=ty},outputName="SET_OUTPUT"}
+  t.functions.set.isPure = function() return false end
+  t.functions.get={name="get", output={type=ty}, input={name="GET_INPUT",type=types.null()},outputName="GET_OUTPUT"}
+  t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
 end
 
@@ -967,44 +1063,67 @@ fileModuleFunctions={}
 setmetatable(fileModuleFunctions,{__index=systolicModuleFunctions})
 fileModuleMT={__index=fileModuleFunctions}
 
-function fileModuleFunctions:instanceToVerilog( instance )
+function fileModuleFunctions:instanceToVerilogStart( instance, module )
+  instance.verilogCompilerState = instance.verilogCompilerState or {}
+  assert(instance.verilogCompilerState[module]==nil)
+  instance.verilogCompilerState[module] = {}
+end
+
+function fileModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  instance.verilogCompilerState[module][fnname]={datavar,validvar}
+  local decl = nil
+  local fn = self.functions[fnname]
+  if fn.output~=nil and fn.output.type~=types.null() then
+    decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
+  end
+  return instance.name.."_"..fn.outputName, decl, true
+end
+
+
+function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
 --  return "FILELOL"
   if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
     for i=0,self.type:sizeof()-1 do
-      assn = assn .. instance.name.."_read_out["..((i+1)*8-1)..":"..(i*8).."] = $fgetc("..instance.name.."_file); "
+      assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] = $fgetc("..instance.name.."_file); "
+    end
+
+    local RST = ""
+    if instance.verilogCompilerState[module].reset~=nil then
+      RST = "if ("..instance.verilogCompilerState[module].reset[2]..") begin r=$fseek("..instance.name.."_file,0,0); end"
     end
 
     return [[integer ]]..instance.name..[[_file,r;
-wire ]]..instance.name..[[_read_valid;
-wire ]]..instance.name..[[_reset_valid;
-reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_read_out;
-initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
-always @ (posedge CLK) begin 
-  if (]]..instance.name..[[_read_valid) begin ]]..assn..[[ end 
-  if (]]..instance.name..[[_reset_valid) begin r=$fseek(]]..instance.name..[[_file,0,0); end
-end
+  reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_out;
+  initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
+  always @ (posedge CLK) begin 
+    if (]]..instance.name..[[_read_valid ]]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 
+    ]]..RST..[[
+  end
 ]]
   elseif instance.callsites.read==nil and instance.callsites.write~=nil then
     local assn = ""
     for i=0,self.type:sizeof()-1 do
-      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.name.."_write_input["..((i+1)*8-1)..":"..(i*8).."] ); "
+      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
     end
 
+    local RST = ""
+    if instance.verilogCompilerState[module].reset~=nil then
+      RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
+    end
     return [[integer ]]..instance.name..[[_file,r;
-wire ]]..instance.name..[[_write_valid;
-wire ]]..instance.name..[[_reset_valid;
-wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_write_input;
-initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
-always @ (posedge CLK) begin 
-  if (]]..instance.name..[[_write_valid) begin ]]..assn..[[ end 
-  if (]]..instance.name..[[_reset_valid) begin r=$fseek(]]..instance.name..[[_file,0,0); end
-end
+  wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_write_input;
+  initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
+  always @ (posedge CLK) begin 
+    if (]]..instance.verilogCompilerState[module].write[2]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 
+    ]]..RST..[[
+  end
 ]]
   else
     assert(false)
   end
 end
+
 function fileModuleFunctions:toVerilog() return "" end
 function fileModuleFunctions:getDependenciesLL() return {} end
 function fileModuleFunctions:getDelay(fnname)

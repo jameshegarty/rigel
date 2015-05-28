@@ -382,23 +382,29 @@ function filter(t,f)
   return r
 end
 
+-- f must obey the property that:
+-- f(nil,nil) = base
+-- f(a,nil) = a
+-- (you don't need to specify these cases in f, but this is how it will behave)
+-- the f(nil,nil) case will only happen if the uses passes in an empty array
 function foldt(t, f, base)
+  assert(#t==keycount(t))
   if #t==0 then return base end
-  if #t==1 then return f(t[1]) end
+  if #t==1 then return t[1] end
   if #t==2 then return f(t[1],t[2]) end
 
   local res = {}
-  local i=1
+  local i=2
   while t[i] do
-    table.insert(res, f(t[i],t[i+1]))
+    table.insert(res, f(t[i-1],t[i]))
     i = i + 2
   end
-  while t[i] do
-    table.insert(res, t[i])
-    i = i + 1
-  end
+  -- if we have an odd # of elements
+  if t[i-1] then table.insert(res, t[i-1]) end
 
-  return res
+  assert(#res>0)
+  if #res==1 then return res[1] end
+  return foldt( res, f, base )
 end
 
 function range(a,b)
@@ -444,7 +450,7 @@ end
 function foldl( fn, base, t )
   assert(type(fn)=="function")
   assert(type(t)=="table")
-  assert(#t==keycount(t))
+  assert(#t==keycount(t)) -- should be only numeric keys
   
   if #t==0 then return base end
 
@@ -459,6 +465,7 @@ function foldl( fn, base, t )
 end
 
 function andop(a,b) return a and b end
+function orop(a,b) return a or b end
 function andopterra(a,b) return `a and b end
 
 -- returns first i elements of the list t

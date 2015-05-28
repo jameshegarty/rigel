@@ -24,6 +24,21 @@ function IR.IRFunctions:visitEach(func)
   return trav(self)
 end
 
+-- it's unclear what should be the return value for this
+function IR.IRFunctions:visitEachReverse( func )
+  local order = {}
+  self:visitEach( function(n) table.insert(order,n) end )
+  local i = #order
+  local value = {}
+  while i>=1 do
+    local node = order[i]
+    local argList = {}
+    for k,v in node:parents(self) do argList[k] = value[k] end
+    value[node] = func( node, argList )
+    i = i - 1
+  end
+end
+
 function IR.IRFunctions:process( func )
   return self:visitEach( 
     function( n, inputs )

@@ -33,12 +33,18 @@ hsfn = d.makeHandshake(d.makeStateful(fn))
 inp = d.input( d.StatefulHandshake(types.null()) )
 out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",ITYPE,"../frame_128.raw")),inp)
 out = d.apply("pointwise_wide", hsfn, out )
-out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide.raw",ITYPE,"pointwise_wide.sim.raw")), out )
+out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
 -------------
 f = d.seqMapHandshake( top, W, H, T )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
+
+io.output("out/pointwise_wide_handshake.sim.v")
+io.write(f:toVerilog())
+io.close()
+
+d.writeMetadata("out/pointwise_wide_handshake.metadata.lua",W,H,1,1)
 
 --local res, SimState, State = fn:compile()
 --Module = hsfn:compile()

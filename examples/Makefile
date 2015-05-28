@@ -14,7 +14,7 @@ all: $(RES)
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%.sim.v: %.t
+out/%.raw out/%.sim.v: %.t ../src/systolic.t ../darkroom.t
 	terra $<
 
 out/%.sim.raw: out/%.sim.v

@@ -596,8 +596,23 @@ function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
 
-function TypeFunctions:bits()
-  return self:sizeof()*8
+function TypeFunctions:verilogBits()
+  if self:isBool() then 
+    return 1
+  elseif self==types.null() then
+    return 0
+  elseif self:isTuple() then
+    local sz = 0
+    for _,v in pairs(self.list) do sz = sz + v:verilogBits() end
+    return sz
+  elseif self:isArray() then
+    return self:arrayOver():verilogBits()*self.size[1]*self.size[2]
+  elseif self:isInt() or self:isUint() then
+    return self:sizeof()*8
+  else
+    print(self)
+    assert(false)
+  end
 end
 
 function TypeFunctions:isFloat()
