@@ -1579,25 +1579,20 @@ wire ready_out;
 ]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready_out(ready_out),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
-      while(i<100) begin
-        CLK = 0; #10; CLK = 1; #10;
-        i = i + 1;
-      end
+      while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
 
       RST = 0;
       valid = 1;
 
-      i=0;
-      while( i < ]]..(W*H/T)..[[ ) begin
-         CLK = 0; #10; CLK = 1; #10;
-         if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin 
-$display("VALIDOUT");
-i = i + 1; end
-         $display("readyout %d valid %d",ready_out,process_output[32]);
-         ready_downstream = ready_downstream + 1;
-      end
-      $finish();
+      while(1) begin CLK = 0; #10; CLK = 1; #10; end
    end
+
+  reg [31:0] validCnt = 0;
+  always @(posedge CLK) begin
+    if(validCnt>= ]]..(W*H/T)..[[ ) begin $finish(); end
+    if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin validCnt = validCnt + 1; end
+    ready_downstream <= ready_downstream + 1;
+  end
 endmodule
 ]]})
 

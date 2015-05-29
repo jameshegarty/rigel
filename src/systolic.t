@@ -1125,7 +1125,6 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
     end
     return [[integer ]]..instance.name..[[_file,r;
-  wire []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_write_input;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
     if (]]..instance.verilogCompilerState[module].write[2]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 
