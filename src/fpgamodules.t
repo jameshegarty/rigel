@@ -191,7 +191,7 @@ function modules.shiftRegister( ty, size, name, options )
     if i==1 then
       table.insert(pipelines, I:set(inp) )
     else
-      table.insert(pipelines, I:set(regs[i]:get()) )
+      table.insert(pipelines, I:set(regs[i-1]:get()) )
     end
     if i==size then out=I:get() end
   end

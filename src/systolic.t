@@ -59,7 +59,7 @@ local binopToVerilog={["+"]="+",["*"]="*",["<<"]="<<<",[">>"]=">>>",["pow"]="**"
 
 local binopToVerilogBoolean={["=="]="==",["and"]="&&",["~="]="!=",["or"]="||"}
 
-function declareReg(ty, name, initial, comment)
+function systolic.declareReg(ty, name, initial, comment)
   assert(type(name)=="string")
 
   if comment==nil then comment="" end
@@ -76,8 +76,9 @@ function declareReg(ty, name, initial, comment)
     return "reg ["..(ty:verilogBits()-1)..":0] "..name..initial..";"..comment
  end
 end
+declareReg = systolic.declareReg
 
-function declareWire(ty, name, str, comment)
+function systolic.declareWire(ty, name, str, comment)
   assert( types.isType(ty) )
   assert(type(str)=="string" or str==nil)
 
@@ -96,6 +97,7 @@ function declareWire(ty, name, str, comment)
     return "wire ["..(ty:verilogBits()-1)..":0] "..name..str..";"..comment
   end
 end
+declareWire = systolic.declareWire
 
 function declarePort( ty, name, isInput )
   assert(type(name)=="string")
@@ -104,7 +106,7 @@ function declarePort( ty, name, isInput )
   if isInput==false then t = "output " end
 
   assert( ty~=types.null() )
-  if ty:isBool()==false then
+  if ty:isBool()==false and ty:verilogBits()>1 then
     t = t .."["..(ty:verilogBits()-1)..":0] "
   end
   t = t..name
@@ -561,7 +563,7 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = "("..cconst(n.type,n.value)..")"
       elseif n.kind=="fndefn" then
         --table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
-        if n.fn.output~=nil then table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";") end
+        if n.fn.output~=nil and n.fn.output.type~=types.null() then table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";") end
         finalResult = "_ERR_NULL_FNDEFN"
       elseif n.kind=="module" then
         for _,v in pairs(n.module.functions) do
@@ -584,7 +586,16 @@ function systolicASTFunctions:toVerilog( module )
         elseif n.inputs[1].type:isTuple() then
           local lowbit = 0
           for k,v in pairs(n.inputs[1].type.list) do if k-1<n.idx then lowbit = lowbit + v:verilogBits() end end
-          finalResult = args[1].."["..(lowbit+n.inputs[1].type.list[n.idx+1]:verilogBits()-1)..":"..lowbit.."]"
+          local ty = n.inputs[1].type.list[n.idx+1]
+          if n.inputs[1].type:verilogBits()==ty:verilogBits() then
+            finalResult = args[1] -- no index necessary
+          elseif ty:verilogBits()>1 then
+            finalResult = args[1].."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."]"
+          elseif ty:verilogBits()==1 then
+            finalResult = args[1].."["..lowbit.."]"
+          else
+            finalResult = "___NIL_INDEX"
+          end
         else
           print(n.expr.type)
           assert(false)
@@ -805,13 +816,13 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
       
       if fn:isPure()==false then
         local inp = instance.verilogCompilerState[module][fnname][2]
---        err( type(int)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+        err( type(inp)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
       end
       
       if fn.input.type~=types.null() then
         local inp = instance.verilogCompilerState[module][fnname][1]
---        err( type(int)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+        err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         table.insert(arglist,", ."..fn.input.name.."("..inp..")")
       end
       
@@ -964,8 +975,9 @@ regModuleMT={__index=regModuleFunctions}
 function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar )
   if fnname=="delay" or fnname=="set" then
     local decl = declareReg(self.type, instance.name, self.initial).."\n"
-    if module.options.CE then
-      decl = decl.."  always @ (posedge CLK) begin if (CE) begin "..instance.name.." <= "..inputVar.."; end end"
+
+    if module.options.CE or fnname=="set" then
+      decl = decl.."  always @ (posedge CLK) begin if ("..sel(fnname=="set",validVar,"")..sel(fnname=="set" and module.options.CE," && ","")..sel(module.options.CE,"CE","")..") begin "..instance.name.." <= "..inputVar.."; end end"
     else
       decl = decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
     end

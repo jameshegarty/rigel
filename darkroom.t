@@ -972,9 +972,8 @@ function darkroom.makeHandshake( f )
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeSR_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
-  local pvalid = S.parameter("valid", types.bool())
-  local pinp = S.parameter("process_input", darkroom.extract(f.inputType) )
-  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(pinp), SR:pushPop(pvalid, S.constant(true,types.bool()))}), "process_output",{},pvalid) ) 
+  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "reset_out", {}, S.parameter("reset",types.bool()) ) )
   local pready = S.parameter("ready_downstream", types.bool())
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready_out", {inner:CE(pready),SR:CE(pready)} ) )
@@ -1265,11 +1264,7 @@ function darkroom.lambda( name, input, output )
           instanceMap[n] = I
           module:add(I)
           table.insert( resetPipelines, I:reset() )
-          if darkroom.isStatefulHandshake(n.fn.inputType) then
-            return {I:process( S.index(inputs[1][1],0), S.index(inputs[1][1],1) )}
-          else
-            return {I:process(inputs[1][1])}
-          end
+          return {I:process(inputs[1][1])}
         else
           print(n.kind)
           assert(false)
@@ -1560,7 +1555,11 @@ reg CLK = 0;
 integer i = 0;
 reg RST = 1;
 reg valid = 0;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_valid(valid),.reset(RST));
+reg ready_downstream = 1;
+wire ready_out;
+]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
+
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready_out(ready_out),.ready_downstream(ready_downstream),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin
@@ -1572,9 +1571,12 @@ reg valid = 0;
       valid = 1;
 
       i=0;
-      while(i<]]..(W*H/T)..[[) begin
+      while( i < ]]..(W*H/T)..[[ ) begin
          CLK = 0; #10; CLK = 1; #10;
-         i = i + 1;
+         if(process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin 
+$display("VALIDOUT");
+i = i + 1; end
+         $display("readyout %d %d",ready_out,process_output[32]);
       end
       $finish();
    end

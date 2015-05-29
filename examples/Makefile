@@ -32,6 +32,6 @@ out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
 	test ! -s out/$*.sim.diff && touch $@
 
-out/%.bmp.correct.txt : out/%.bmp
+out/%.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff
 	test ! -s out/$*.diff && touch $@
