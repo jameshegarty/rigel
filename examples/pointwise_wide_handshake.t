@@ -36,7 +36,7 @@ out = d.apply("pointwise_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
 -------------
-f = d.seqMapHandshake( top, W, H, T )
+f = d.seqMapHandshake( top, W, H, T,2 )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 

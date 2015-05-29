@@ -814,7 +814,7 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     else
       err( instance.verilogCompilerState[module][fnname]~=nil, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
       
-      if fn:isPure()==false then
+      if fn:isPure()==false and self.options.onlyWire~=true then
         local inp = instance.verilogCompilerState[module][fnname][2]
         err( type(inp)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
@@ -860,7 +860,7 @@ function userModuleFunctions:toVerilog()
 
     table.insert(t,"module "..self.name.."(input CLK")
     for fnname,fn in pairs(self.functions) do
-      if fn:isPure()==false then table.insert(t,", input "..fn.valid.name) end
+      if fn:isPure()==false and self.options.onlyWire~=true then table.insert(t,", input "..fn.valid.name) end
       if fn.input.type~=types.null() then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
       if fn.output~=nil and fn.output.type~=types.null() then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end

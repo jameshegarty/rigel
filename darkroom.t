@@ -974,7 +974,8 @@ function darkroom.makeHandshake( f )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "reset_out", {}, S.parameter("reset",types.bool()) ) )
+  local rst = S.parameter("reset",types.bool())
+  res.systolicModule:addFunction( S.lambda("reset", rst, inner:reset(nil,rst), "reset_out") )
   local pready = S.parameter("ready_downstream", types.bool())
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready_out", {inner:CE(pready),SR:CE(pready)} ) )
 
@@ -1251,6 +1252,7 @@ function darkroom.lambda( name, input, output )
   local function makeSystolic( fn )
     local module = S.moduleConstructor( fn.name, {CE=sel(darkroom.isStatefulHandshake(fn.inputType),false,true), onlyWire=sel(darkroom.isStatefulHandshake(fn.inputType),true,false)} )
     local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
+    local rst = S.parameter( "reset", types.bool() )
     local resetPipelines = {}
 
     local instanceMap = {}
@@ -1263,7 +1265,12 @@ function darkroom.lambda( name, input, output )
           local I = n.fn.systolicModule:instantiate(n.name)
           instanceMap[n] = I
           module:add(I)
-          table.insert( resetPipelines, I:reset() )
+          if darkroom.isStatefulHandshake( n.fn.inputType ) then
+            table.insert( resetPipelines, I:reset(rst) )
+          else
+            table.insert( resetPipelines, I:reset() )
+          end
+
           return {I:process(inputs[1][1])}
         else
           print(n.kind)
@@ -1274,8 +1281,12 @@ function darkroom.lambda( name, input, output )
 
     local processfn = S.lambda( "process", inp, out[1], "process_output" )
     local process = module:addFunction( processfn )
-    module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
 
+    if darkroom.isStatefulHandshake( fn.inputType ) then
+      module:addFunction( S.lambda("reset", rst, nil, "reset_out", resetPipelines) )
+    else
+      module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
+    end
     if darkroom.isStatefulHandshake( fn.inputType ) then
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
@@ -1526,7 +1537,7 @@ endmodule
   return darkroom.newFunction(res)
 end
 
-function darkroom.seqMapHandshake( f, W, H, T )
+function darkroom.seqMapHandshake( f, W, H, T, readyRate )
   err( darkroom.isFunction(f), "fn must be a function")
   err( type(W)=="number", "W must be a number")
   err( type(H)=="number", "H must be a number")
@@ -1550,16 +1561,22 @@ function darkroom.seqMapHandshake( f, W, H, T )
   end
   res.terraModule = SeqMap
 
+  if readyRate==nil then readyRate=1 end
+  local rrlog2 = math.log(readyRate)/math.log(2)
+
+  local readybit = "1'b1"
+  if rrlog2>0 then readybit = "ready_downstream==1" end
+
   res.systolicModule = S.module.new("SeqMapHandshake_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
 reg valid = 0;
-reg ready_downstream = 1;
+reg []]..rrlog2..[[:0] ready_downstream = 1;
 wire ready_out;
 ]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
 
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready_out(ready_out),.ready_downstream(ready_downstream),.process_output(process_output));
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready_out(ready_out),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin
@@ -1573,10 +1590,11 @@ wire ready_out;
       i=0;
       while( i < ]]..(W*H/T)..[[ ) begin
          CLK = 0; #10; CLK = 1; #10;
-         if(process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin 
+         if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin 
 $display("VALIDOUT");
 i = i + 1; end
-         $display("readyout %d %d",ready_out,process_output[32]);
+         $display("readyout %d valid %d",ready_out,process_output[32]);
+         ready_downstream = ready_downstream + 1;
       end
       $finish();
    end
