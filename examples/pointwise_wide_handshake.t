@@ -8,7 +8,7 @@ local cstring = terralib.includec("string.h")
 
 W = 128
 H = 64
-T = 4
+T = 8
 
 inp = S.parameter("inp",types.uint(8))
 plus100 = d.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
@@ -36,14 +36,19 @@ out = d.apply("pointwise_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
 -------------
-f = d.seqMapHandshake( top, W, H, T,2 )
+f = d.seqMapHandshake( top, W, H, T,false, 2 )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
 io.output("out/pointwise_wide_handshake.sim.v")
 io.write(f:toVerilog())
 io.close()
-
+----------
+fnaxi = d.seqMapHandshake( hsfn, W, H, T, true )
+io.output("out/pointwise_wide_handshake.axi.v")
+io.write(fnaxi:toVerilog())
+io.close()
+--------
 d.writeMetadata("out/pointwise_wide_handshake.metadata.lua",W,H,1,1)
 
 --local res, SimState, State = fn:compile()

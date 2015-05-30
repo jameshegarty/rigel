@@ -1,0 +1,5 @@
+verilog work "ict106_axilite_conv.v"
+verilog work "conf.v"
+verilog work "ramreader.v"
+verilog work "ramwriter.v"
+verilog work "system.v"

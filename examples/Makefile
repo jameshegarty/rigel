@@ -7,15 +7,37 @@ SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
 
-RES += $(SIM)
+AXI = $(patsubst %.t,out/%.axi.bmp,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.raw,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.correct.txt,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.v,$(SRCS))
 
+RES += $(SIM)
+RES += $(AXI)
+
+CD = cd out;
 all: $(RES)
 
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%.sim.v: %.t ../src/systolic.t ../darkroom.t
+out/%.raw out/%.sim.v out/%.axi.v: %.t ../src/systolic.t ../darkroom.t
 	terra $<
+
+#	$(CD) xst -ifn ../../extras/helloaxi/system.xst
+
+out/%.axi.bit: out/%.axi.v
+	mkdir -p out/build_$*
+	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -ofn system" | xst > OUT_xst.txt
+	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd
+	cd out/build_$*; map -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf
+	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf
+	cd out/build_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../extras/helloaxi/ps7_constraints.ucf -ucf ../../extras/helloaxi/system.ucf
+	cd out/build_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
+	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
+	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
+	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd
+	mv out/build_$*/system.bit $@
 
 out/%.sim.raw: out/%.sim.v
 	cd out; vlogcomp $*.sim.v

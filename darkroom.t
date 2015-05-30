@@ -977,7 +977,7 @@ function darkroom.makeHandshake( f )
   local rst = S.parameter("reset",types.bool())
   res.systolicModule:addFunction( S.lambda("reset", rst, inner:reset(nil,rst), "reset_out") )
   local pready = S.parameter("ready_downstream", types.bool())
-  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready_out", {inner:CE(pready),SR:CE(pready)} ) )
+  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(pready),SR:CE(pready)} ) )
 
   return darkroom.newFunction(res)
 end
@@ -1307,7 +1307,7 @@ function darkroom.lambda( name, input, output )
           end
         end)
 
-      local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready_out", {} ) )
+      local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", {} ) )
       assert( readyfn:isPure() )
     end
 
@@ -1537,13 +1537,23 @@ endmodule
   return darkroom.newFunction(res)
 end
 
-function darkroom.seqMapHandshake( f, W, H, T, readyRate )
+local function readAll(file)
+    local f = io.open(file, "rb")
+    local content = f:read("*all")
+    f:close()
+    return content
+end
+
+function darkroom.seqMapHandshake( f, W, H, T, axi, readyRate )
   err( darkroom.isFunction(f), "fn must be a function")
   err( type(W)=="number", "W must be a number")
   err( type(H)=="number", "H must be a number")
   err( type(T)=="number", "T must be a number")
+  err( type(axi)=="boolean", "axi should be a bool")
+
   darkroom.expectStatefulHandshake(f.inputType)
   darkroom.expectStatefulHandshake(f.outputType)
+
   local res = {kind="seqMapHandshake", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
@@ -1561,22 +1571,31 @@ function darkroom.seqMapHandshake( f, W, H, T, readyRate )
   end
   res.terraModule = SeqMap
 
-  if readyRate==nil then readyRate=1 end
-  local rrlog2 = math.log(readyRate)/math.log(2)
+  local verilogStr
 
-  local readybit = "1'b1"
-  if rrlog2>0 then readybit = "ready_downstream==1" end
+  if axi then
+    local baseTypeI = darkroom.extractStatefulHandshake(f.inputType)
+    local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
+    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits")
+    err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
+    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..string.gsub(readAll("../extras/helloaxi/axi.v"),"___PIPELINE_MODULE_NAME",f.systolicModule.name)
+  else
+    if readyRate==nil then readyRate=1 end
+    local rrlog2 = math.log(readyRate)/math.log(2)
 
-  res.systolicModule = S.module.new("SeqMapHandshake_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
+    local readybit = "1'b1"
+    if rrlog2>0 then readybit = "ready_downstream==1" end
+
+    verilogStr = [[module sim();
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
 reg valid = 0;
 reg []]..rrlog2..[[:0] ready_downstream = 1;
-wire ready_out;
+wire ready;
 ]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
 
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready_out(ready_out),.ready_downstream(]]..readybit..[[),.process_output(process_output));
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.process_input(valid),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
@@ -1594,7 +1613,10 @@ wire ready_out;
     ready_downstream <= ready_downstream + 1;
   end
 endmodule
-]]})
+]]
+  end
+
+  res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
 
   return darkroom.newFunction(res)
 end
