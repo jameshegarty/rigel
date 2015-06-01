@@ -1753,9 +1753,10 @@ function darkroom.scanlHarnessHandshake( Module,
   end
 end
 
-function darkroom.writeMetadata(filename, width, height, channels, bytesPerChannel)
+function darkroom.writeMetadata(filename, width, height, channels, bytesPerChannel,inputImage)
+  assert(type(inputImage)=="string")
   io.output(filename)
-  io.write("return {width="..width..",height="..height..",channels="..channels..",bytesPerChannel="..bytesPerChannel.."}")
+  io.write("return {width="..width..",height="..height..",channels="..channels..",bytesPerChannel="..bytesPerChannel..",inputImage='"..inputImage.."'}")
   io.close()
 end
 

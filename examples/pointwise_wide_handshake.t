@@ -49,7 +49,7 @@ io.output("out/pointwise_wide_handshake.axi.v")
 io.write(fnaxi:toVerilog())
 io.close()
 --------
-d.writeMetadata("out/pointwise_wide_handshake.metadata.lua",W,H,1,1)
+d.writeMetadata("out/pointwise_wide_handshake.metadata.lua",W,H,1,1,"frame_128.raw")
 
 --local res, SimState, State = fn:compile()
 --Module = hsfn:compile()
