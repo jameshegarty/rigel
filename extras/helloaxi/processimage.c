@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
 
 	unsigned page_size = sysconf(_SC_PAGESIZE);
 
-	printf("GPIO access through /dev/mem.\n", page_size);
+	printf("GPIO access through /dev/mem. %d\n", page_size);
 
 	if (gpio_addr == 0) {
 		printf("GPIO physical address is required.\n");
@@ -105,6 +105,7 @@ int main(int argc, char *argv[]) {
   // we pad out the length to 128 bytes as required, but just leave it filled with garbage
   unsigned lenRawDown = lenRaw/downsample;
   unsigned int lenDown = lenRawDown + (8*16-(lenRawDown % (8*16)));
+  //unsigned int lenDown = lenRawDown;
   printf("LENDOWN %d\n", lenDown);
   unsigned int len = lenDown*downsample;
   assert(len % (8*16) == 0);
@@ -115,13 +116,16 @@ int main(int argc, char *argv[]) {
   void * ptr = mmap(NULL, 2*len, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
 
   loadImage( imfile, ptr, lenRaw );
+  //memset(ptr+len,0,len);
+  for(int i=0; i<len; i++){ *(unsigned char*)(ptr+len+i)=0; }
   //saveImage("before.raw",ptr,len);
 
   // mmap the device into memory 
   void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
   
   volatile Conf * conf = (Conf*) gpioptr;
-  
+
+
   conf->src = copy_addr;
   conf->dest = copy_addr + len;
   unsigned int lenPacked = len | (downsampleShift << 29);
@@ -129,9 +133,11 @@ int main(int argc, char *argv[]) {
   conf->len = lenPacked;
   conf->cmd = 3;
 
-  usleep(10000);
+  //usleep(10000);
+  sleep(1);
 
   saveImage(argv[3],ptr+len,lenRaw);
+  //saveImage(argv[3],ptr,lenRaw);
 
   return 0;
 }

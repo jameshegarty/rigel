@@ -38,7 +38,6 @@ assign M_AXI_AWSIZE = 2'b11;
 assign M_AXI_AWBURST = 2'b01;
 assign M_AXI_WSTRB = 8'b11111111;
 
-parameter BUFFER_SIZE = 4096;
 parameter IDLE = 0, RWAIT = 1;
     
 //ADDR logic

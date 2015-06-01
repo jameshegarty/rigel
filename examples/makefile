@@ -11,6 +11,7 @@ AXI = $(patsubst %.t,out/%.axi.bmp,$(SRCS))
 AXI += $(patsubst %.t,out/%.axi.raw,$(SRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(SRCS))
 AXI += $(patsubst %.t,out/%.axi.v,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.bit,$(SRCS))
 
 RES += $(SIM)
 RES += $(AXI)
@@ -28,7 +29,7 @@ out/%.raw out/%.sim.v out/%.axi.v: %.t
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
-	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -ofn system" | xst > OUT_xst.txt
+	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
 	cd out/build_$*; map -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
 	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
@@ -58,8 +59,15 @@ out/%.sim.raw: out/%.sim.v
 out/%.sim.bmp: out/%.sim.raw
 	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua
 
+out/%.axi.bmp: out/%.axi.raw
+	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua
+
 out/%.bmp: out/%.raw
 	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua
+
+out/%.axi.correct.txt : out/%.axi.bmp
+	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
+	test ! -s out/$*.axi.diff && touch $@
 
 out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
