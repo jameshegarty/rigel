@@ -22,7 +22,7 @@ module DRAMReader(
     
     //RAM port
     input DATA_READY_DOWNSTREAM,
-    input DATA_VALID,
+    output DATA_VALID,
     output [63:0] DATA
 );
 
