@@ -99,15 +99,10 @@ return function( ast, newNodeFn )
     ast.type = thistype
     ast.inputs = {lhs,rhs}
     
-  elseif ast.kind=="position" then
-    -- if position is still in the tree at this point, it means it's being used in an expression somewhere
-    -- choose a reasonable type...
-    ast.type=darkroom.type.int(32)
-    ast.scaleN1 = 0; ast.scaleN2 = 0; ast.scaleD1 = 0; ast.scaleD2 = 0; -- meet with any rate
   elseif ast.kind=="select" or ast.kind=="vectorSelect" then
-    local cond = inputs["cond"]
-    local a = inputs["a"]
-    local b = inputs["b"]
+    local cond = ast.inputs[1]
+    local a = ast.inputs[2]
+    local b = ast.inputs[3]
 
     if ast.kind=="vectorSelect" then
       if cond.type:arrayOver()~=darkroom.type.bool() then
@@ -125,32 +120,20 @@ return function( ast, newNodeFn )
         return nil            
       end
     else
-      if cond.type ~= darkroom.type.bool() then
-        darkroom.error("Error, condition of select must be scalar boolean. Use vectorSelect",origast:linenumber(),origast:offset(),origast:filename())
-        return nil
-      end
-
-      if a.type:isArray()~=b.type:isArray() then
-        darkroom.error("Error, if any results of select are arrays, all results must be arrays",origast:linenumber(),origast:offset())
-        return nil
-      end
-      
-      if a.type:isArray() and
-        a.type:arrayLength()~=b.type:arrayLength() then
-        darkroom.error("Error, array arguments to select must be the same length", origast:linenumber(), origast:offset(), origast:filename() )
-        return nil
-      end
+      err( cond.type == types.bool(), "Error, condition of select must be scalar boolean. Use vectorSelect" )
+      err( a.type:isArray()==b.type:isArray(), "Error, if any results of select are arrays, all results must be arrays")
+      err( a.type:isArray()==false or (a.type:arrayLength()==b.type:arrayLength()), "Error, array arguments to select must be the same length")
     end
 
-    local thistype, lhscast, rhscast =  darkroom.type.meet(a.type,b.type, ast.kind, origast)
+    local thistype, lhscast, rhscast =  types.meet( a.type, b.type, ast.kind )
 
     if a.type~=lhscast then a = newNodeFn({kind="cast",expr=a,type=lhscast}):copyMetadataFrom(origast) end
     if b.type~=rhscast then b = newNodeFn({kind="cast",expr=b,type=rhscast}):copyMetadataFrom(origast) end
     
     ast.type = thistype
-    ast.cond = cond
-    ast.a = a
-    ast.b = b
+    ast.inputs[1] = cond
+    ast.inputs[2] = a
+    ast.inputs[3] = b
     
   elseif ast.kind=="index" then
     local expr = ast.inputs[1]

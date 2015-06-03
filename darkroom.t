@@ -809,7 +809,9 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   res.terraModule = Linebuffer
 
   local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  local ot = (S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
+  local ot = S.select(S.eq(S.index(swinp,0),S.constant(w-1,types.uint(16))),
+                      S.constant(0,types.uint(16)),
+                      S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
   local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{})
 
   res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
@@ -1051,12 +1053,12 @@ function darkroom.makeHandshake( f )
   res.terraModule = MakeHandshake
 
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
-  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeSR_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
   local rst = S.parameter("reset",types.bool())
-  res.systolicModule:addFunction( S.lambda("reset", rst, inner:reset(nil,rst), "reset_out") )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{},rst) )
   local pready = S.parameter("ready_downstream", types.bool())
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(pready),SR:CE(pready)} ) )
 
@@ -1362,7 +1364,7 @@ function darkroom.lambda( name, input, output )
           instanceMap[n] = I
           module:add(I)
           if darkroom.isStatefulHandshake( n.fn.inputType ) then
-            table.insert( resetPipelines, I:reset(rst) )
+            table.insert( resetPipelines, I:reset(nil,rst) )
           else
             table.insert( resetPipelines, I:reset() )
           end

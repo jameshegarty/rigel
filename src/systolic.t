@@ -202,11 +202,12 @@ function systolic.lambda( name, input, output, outputName, pipelines, valid )
   err( type(outputName)=="string", "output name must be a string")
   
   if pipelines==nil then pipelines={} end
-  if valid==nil then valid = systolic.parameter(name.."_valid", types.bool()) end
-  if output~=nil then output = output:addValid( valid ) end
-  pipelines = map( pipelines, function(n) return n:addValid(valid) end )
+  local implicitValid = false
+  if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
+  --if output~=nil then output = output:addValid( valid ) end
+  --pipelines = map( pipelines, function(n) return n:addValid(valid) end )
 
-  local t = { name=name, input=input, output = output, outputName=outputName, pipelines=pipelines, valid=valid }
+  local t = { name=name, input=input, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid }
 
   return setmetatable(t,systolicFunctionMT)
 end
@@ -351,8 +352,10 @@ local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={}})
 function systolic.null() return __NULLTAB end
 
 function systolic.select( cond, a, b )
-  cond, a, b = convert(cond), convert(a), convert(b)
-  return typecheck(darkroom.ast.new({kind="select",inputs={cond,a,b}}):copyMetadataFrom(cond))
+  err( systolicAST.isSystolicAST(cond), "cond must be a systolic AST")
+  err( systolicAST.isSystolicAST(a), "a must be a systolic AST")
+  err( systolicAST.isSystolicAST(b), "b must be a systolic AST")
+  return typecheck({kind="select",inputs={cond,a,b},loc=getloc()})
 end
 
 function systolic.le(lhs, rhs) return binop(lhs,rhs,"<=") end
@@ -475,7 +478,7 @@ function systolicASTFunctions:pipeline()
       elseif n.kind=="index" or n.kind=="cast" then
         -- passthrough, no pipelining
         return {n, args[1][2]}
-      elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" then
+      elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" then
         -- tuples and calls happen to be almost identical
 
         if n.kind=="call" and n.func.input.type==types.null() then
@@ -495,14 +498,14 @@ function systolicASTFunctions:pipeline()
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
             err( internalDelay==0 or n.pipelined, "Error, could not disable pipelining, "..n.loc)
-          elseif n.kind=="binop" then 
+          elseif n.kind=="binop" or n.kind=="select" then 
             if n.pipelined then
               n = getDelayed(n,1)
               internalDelay = 1
             else
               internalDelay = 0
             end
-          elseif n.kind=="tuple" or n.kind=="array" then
+          elseif n.kind=="tuple" then
             internalDelay = 0 -- purely wiring
           else
             assert(false)
@@ -706,7 +709,7 @@ function systolicASTFunctions:toVerilog( module )
             elseif n.type:isBool() then
               local op = binopToVerilogBoolean[n.op]
               if type(op)~="string" then print("OP_BOOLEAN",n.op); assert(false) end
-              addstat(n.pipeline, callsite..n:name().."_c"..c, inputs.lhs[c]..op..inputs.rhs[c]..";")
+              res = "("..args[1]..op..args[2]..")"
             else
               local op = binopToVerilog[n.op]
               if type(op)~="string" then print("OP",n.op); assert(false) end
@@ -740,23 +743,7 @@ function systolicASTFunctions:toVerilog( module )
             assert(false)
           end
         elseif n.kind=="select" or n.kind=="vectorSelect" then
-          addInput("cond"); addInput("a"); addInput("b");
-          getInputs()
-
-          if n.pipeline then
-            thisDelay = 1
-            table.insert( resDeclarations, declareReg( n.type:baseType(), callsite..n:cname(c), "", " // "..n.kind.." result" ))
-          else
-            thisDelay = 0
-            table.insert( resDeclarations, declareWire( n.type:baseType(), callsite..n:cname(c), "", " // "..n.kind.." result" ))
-          end
-
-          local condC = 1
-          if n.kind=="vectorSelect" then condC=c end
-
-          --table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.cond[condC]..")?("..inputs.a[c].."):("..inputs.b[c].."); // "..n.kind.."\n")
-          addstat( n.pipeline, callsite..n:cname(c), "("..inputs.cond[condC]..")?("..inputs.a[c].."):("..inputs.b[c].."); // "..n.kind.."\n") 
-          res = callsite..n:cname(c)
+          res = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
         else
           print(n.kind)
           assert(false)
@@ -832,10 +819,14 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     else
       err( instance.verilogCompilerState[module][fnname]~=nil, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
       
-      if fn:isPure()==false and self.options.onlyWire~=true then
-        local inp = instance.verilogCompilerState[module][fnname][2]
-        err( type(inp)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-        table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
+      if fn:isPure()==false then
+        if self.options.onlyWire and fn.implicitValid then
+          -- when in onlyWire mode, it's ok to have an undriven valid bit
+        else
+          local inp = instance.verilogCompilerState[module][fnname][2]
+          err( type(inp)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+          table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
+        end
       end
       
       if fn.input.type~=types.null() then
@@ -857,9 +848,13 @@ function userModuleFunctions:lower()
   local mod = {kind="module", type=types.null(), inputs={}, module=self}
 
   for _,fn in pairs(self.functions) do
-    local node = { kind="fndefn", fn=fn,type=types.null(), valid=fn.valid, inputs={fn.output} }
+    local O = fn.output
+    if O~=nil and self.options.onlyWire~=true then O = O:addValid(fn.valid) end
+    local node = { kind="fndefn", fn=fn,type=types.null(), valid=fn.valid, inputs={O} }
     for k,pipe in pairs(fn.pipelines) do
-      table.insert( node.inputs, pipe )
+      local P = pipe
+      if self.options.onlyWire~=true then P = P:addValid(fn.valid) end
+      table.insert( node.inputs, P )
     end
 
     node = systolicAST.new(node)
@@ -878,7 +873,10 @@ function userModuleFunctions:toVerilog()
 
     table.insert(t,"module "..self.name.."(input CLK")
     for fnname,fn in pairs(self.functions) do
-      if fn:isPure()==false and self.options.onlyWire~=true then table.insert(t,", input "..fn.valid.name) end
+      if fn:isPure()==false then 
+        if self.options.onlyWire and fn.implicitValid then
+        else table.insert(t,", input "..fn.valid.name) end
+      end
       if fn.input.type~=types.null() then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
       if fn.output~=nil and fn.output.type~=types.null() then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
@@ -1037,7 +1035,8 @@ function systolic.module.regBy( ty, initial, setby )
   local inner = setby:instantiate("inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
-  fns.set = systolic.lambda("set", sinp, R:set(inner:process(systolic.tuple{R:get(),sinp})), "SET_OUTPUT" )
+  local setvalid = systolic.parameter("set_valid",types.bool())
+  fns.set = systolic.lambda("set", sinp, R:set(inner:process(systolic.tuple{R:get(),sinp}),setvalid), "SET_OUTPUT",{}, setvalid )
 
   return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0}} )
 end
