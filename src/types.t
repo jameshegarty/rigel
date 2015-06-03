@@ -219,9 +219,9 @@ function types.meet( a, b, op, ast)
     local prec = math.max(a.precision,b.precision)
     local thistype = types.int(prec)
     
-    if darkroom.cmpops[op] then
+    if cmpops[op] then
       return types.bool(), thistype, thistype
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.float(32)
@@ -262,9 +262,9 @@ function types.meet( a, b, op, ast)
     
     local thistype = types.int(prec)
     
-    if darkroom.cmpops[op] then
+    if cmpops[op] then
       return types.bool(), thistype, thistype
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="pow" then
       return thistype, thistype, thistype

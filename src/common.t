@@ -295,6 +295,12 @@ terra floorDivide(a : int, b: int)
   return terralib.select(a<0, (a-b+1)/b, a/b)
 end
 
+function isPowerOf2(x)
+  local r = math.log(x)/math.log(2)
+  return r==math.floor(r)
+end
+
+-- nearestPowerOf2(x) >= x
 function nearestPowerOf2(x)
   local r = math.pow(2, math.ceil(math.log(x)/math.log(2)))
   assert(r>=x)
@@ -413,6 +419,22 @@ function range(a,b)
   if b==nil then a,b = 1,a end
   local t = {}
   for i=a,b do table.insert(t,i) end
+  return t
+end
+
+function range2d(xlow,xhigh,ylow,yhigh)
+  assert(type(xlow)=="number")
+  assert(type(xhigh)=="number")
+  assert(type(ylow)=="number")
+  assert(type(yhigh)=="number")
+
+  local t = {}
+  for y=ylow,yhigh do
+    for x=xlow,xhigh do 
+      table.insert(t,{x,y})
+    end
+  end
+
   return t
 end
 

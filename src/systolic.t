@@ -45,7 +45,7 @@ end
 local function checkast(ast) err( systolicAST.isSystolicAST(ast), "input should be a systolic AST" ); return ast end
 
 local function typecheck(ast)
-  return systolicAST.new( typecheckAST(ast) )
+  return systolicAST.new( typecheckAST(ast,systolicAST.new) )
 end
 
 function checkReserved(k)
@@ -297,6 +297,7 @@ setmetatable(systolicASTFunctions,{__index=IR.IRFunctions})
 systolicASTMT={__index = systolicASTFunctions,
 __add=function(l,r) return binop(l,r,"+") end, 
 __sub=function(l,r) return binop(l,r,"-") end,
+__mul=function(l,r) return binop(l,r,"*") end,
   __newindex = function(table, key, value)
                     darkroom.error("Attempt to modify systolic AST node")
                   end}
@@ -321,8 +322,15 @@ function systolic.cast( expr, ty )
 end
 
 function systolic.constant( v, ty )
-  err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
   err( types.isType(ty), "constant type must be a type")
+
+  if ty:isArray() then
+    err( type(v)=="table", "if type is an array, v must be a table")
+    map( v,function(n) err(type(n)=="number", "array element must be a number") end )
+  else
+    err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
+  end
+
   return typecheck({ kind="constant", value=v, type = ty, loc=getloc(), inputs={} })
 end
 
@@ -331,6 +339,12 @@ function systolic.tuple( tab )
   local res = {kind="tuple",inputs={}, loc=getloc()}
   map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
   return typecheck(res)
+end
+
+-- tab should be in row major order
+function systolic.array( tab, W, H )
+  assert(false)
+  -- just do a cast from a tuple to an array
 end
 
 local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={}})
@@ -348,6 +362,7 @@ function systolic.ge(lhs, rhs) return binop(lhs,rhs,">=") end
 function systolic.gt(lhs, rhs) return binop(lhs,rhs,">") end
 function systolic.__or(lhs, rhs) return binop(lhs,rhs,"or") end
 function systolic.__and(lhs, rhs) return binop(lhs,rhs,"and") end
+function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
 function systolic.neg(expr) return unary(expr,"-") end
 
 function systolicASTFunctions:cname(c)
@@ -424,15 +439,10 @@ function systolicASTFunctions:isPure( validbit )
 end
 
 function systolicASTFunctions:disablePipelining()
-  return self:S("*"):process(
+  return self:process(
     function(n)
-      if n.kind=="reg" then
-        -- these things we can't disable pipelining on
-      else
-        local nn = n:shallowcopy()
-        nn.pipelined=false
-        return systolicAST.new(nn):copyMetadataFrom(n)
-      end
+      n.pipelined=false
+      return systolicAST.new(n)
     end)
 end
 
@@ -484,9 +494,18 @@ function systolicASTFunctions:pipeline()
           local internalDelay = 0
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
+            err( internalDelay==0 or n.pipelined, "Error, could not disable pipelining, "..n.loc)
           elseif n.kind=="binop" then 
-            n = getDelayed(n,1)
-            internalDelay = 1 
+            if n.pipelined then
+              n = getDelayed(n,1)
+              internalDelay = 1
+            else
+              internalDelay = 0
+            end
+          elseif n.kind=="tuple" or n.kind=="array" then
+            internalDelay = 0 -- purely wiring
+          else
+            assert(false)
           end
 
           return { n, maxd+internalDelay }
@@ -631,7 +650,7 @@ function systolicASTFunctions:toVerilog( module )
           if n.type:isArray() and n.inputs[1].type:isTuple()==true then
             err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
             for k,v in pairs(n.inputs[1].type.list) do
-              err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type")
+              err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
             end
             expr = args[1] 
           elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
@@ -666,8 +685,7 @@ function systolicASTFunctions:toVerilog( module )
         wire = true
       elseif n.kind=="null" then
         finalResult = ""
-      elseif n.kind=="array" then
-        assert(false)
+        wire = true
       else
         local resTable = {}
         for c=0,n.type:channels()-1 do
@@ -778,7 +796,7 @@ end
 -- Module Definitions
 --------------------------------------------------------------------
 function systolic.isModule(t)
-  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT
+  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==systolicModuleConstructorMT
 end
 
 systolic.module = {}
@@ -913,6 +931,7 @@ function userModuleFunctions:getDependencies()
 end
 
 function userModuleFunctions:getDelay( fnname )
+  if self.options.onlyWire then return self.options.verilogDelay[fnname] end
   return self.fndelays[fnname]
 end
 
@@ -921,7 +940,7 @@ function systolic.module.new( name, fns, instances, options )
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
   map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
-  err( type(fns)=="table", "instances must be a table")
+  err( type(instances)=="table", "instances must be a table")
   map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 
   if options==nil then options={} end
@@ -1009,6 +1028,19 @@ function systolic.module.reg( ty, initial )
   t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
 end
+-------------------
+function systolic.module.regBy( ty, initial, setby )
+  assert( systolic.isModule(setby) )
+  assert( setby:getDelay( "process" ) == 0 )
+  local sinp = systolic.parameter("inp",ty)
+  local R = systolic.module.reg( ty, initial ):instantiate("R")
+  local inner = setby:instantiate("inner")
+  local fns = {}
+  fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
+  fns.set = systolic.lambda("set", sinp, R:set(inner:process(systolic.tuple{R:get(),sinp})), "SET_OUTPUT" )
+
+  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0}} )
+end
 
 -------------------
 ram128ModuleFunctions={}
@@ -1042,34 +1074,82 @@ bramModuleFunctions={}
 setmetatable(bramModuleFunctions,{__index=systolicModuleFunctions})
 bramModuleMT={__index=bramModuleFunctions}
 
-local __bram = {kind="bram"}
-function bramModuleFunctions:instanceToVerilog( instance )
-    local conf={name=self.name}
-    conf.A={chunk=self.typeA:sizeof(),
-           DI = self.name.."_DI",
-           DO = self.name.."_DO",
-           ADDR = self.name.."_addr",
-           CLK = "CLK",
-           WE = self.name.."_WE",
-           readFirst = true}
-    conf.B={chunk=self.typeA:sizeof(),
-           DI = self.name.."_DI_B",
-           DO = self.name.."_DO_B",
-           ADDR = self.name.."_addr_B",
-           CLK = "CLK",
-           WE = "1'd0",
-           readFirst = true}
-    local addrbits = 10 - math.log(self.typeA:sizeof())/math.log(2)
-    return [[wire ]]..self.name..[[_WE;
-wire []]..(self.typeA:sizeof()*8-1)..":0]"..self.name..[[_DI;
-wire []]..(self.typeA:sizeof()*8-1)..":0]"..self.name..[[_DI_B;
-wire []]..(self.typeA:sizeof()*8-1)..":0]"..self.name..[[_DO;
-wire []]..(self.typeA:sizeof()*8-1)..":0]"..self.name..[[_DO_B;
-wire []]..addrbits..[[:0] ]]..self.name..[[_addr;
-wire []]..addrbits..[[:0] ]]..self.name..[[_addr_B;
-]]..table.concat(fixedBram(conf))
+function bramModuleFunctions:instanceToVerilogStart( instance, module )
+  instance.verilogCompilerState = instance.verilogCompilerState or {}
+  assert(instance.verilogCompilerState[module]==nil)
+  instance.verilogCompilerState[module] = {}
 end
-function systolic.module.bram( ) return __bram end
+
+function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  instance.verilogCompilerState[module][fnname]={datavar,validvar}
+  local fn = self.functions[fnname]
+  return instance.name.."_"..fn.outputName, nil, true
+end
+
+function bramModuleFunctions:instanceToVerilogFinalize( instance, module )
+  local VCS = instance.verilogCompilerState[module]
+  if keycount(VCS)==1 then
+    -- we only used 1 port
+    local WRITE_MODE = "WRITE_FIRST"
+    if VCS.writeAndReturnOriginal~=nil then WRITE_MODE="READ_FIRST" end
+
+    local BRAM_SIZE
+    if self.type:verilogBits()>32 then
+      BRAM_SIZE="36Kb" -- large port widths only available with this ram size
+    elseif (self.ramSizeInBytes>2048 and self.ramSizeInBytes<4096) then
+      BRAM_SIZE="36Kb" 
+    elseif self.ramSizeInBytes<=2048 then
+      BRAM_SIZE="18Kb"
+    else
+      print("RAM SIZE",self.ramSizeInBytes)
+      assert(false)
+    end
+
+    local WIDTH = self.type:verilogBits()
+    assert(WIDTH<=64)
+
+    return [[BRAM_SINGLE_MACRO #(
+   .BRAM_SIZE("]]..BRAM_SIZE..[["), // Target BRAM, "18Kb" or "36Kb"
+   .DEVICE("VIRTEX6"), // Target Device: "VIRTEX5", "VIRTEX6", "SPARTAN6"
+   .DO_REG(0), // Optional output register (0 or 1)
+   .INIT(36’h000000000), // Initial values on output port
+   .INIT_FILE ("NONE"),
+   .WRITE_WIDTH(]]..WIDTH..[[), // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
+   .READ_WIDTH(]]..WIDTH..[[),  // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
+   .SRVAL(36’h000000000), // Set/Reset value for port output
+   .WRITE_MODE("]]..WRITE_MODE..[[")) ]]..instance.name..[[(.DO(]]..instance.name..[[_writeAndReturnOriginal), // Output data
+.ADDR(ADDR), // Input address
+.CLK(CLK), // Input clock
+.DI(DI), // Input data port
+.EN(EN), // Input RAM enable
+.REGCE(REGCE), // Input output register enable
+.RST(RST),     // Input reset
+   .WE(WE)        // Input write enable
+);]]
+
+  else
+    print("INVALID BRAM CONFIGURATION")
+    for k,v in pairs(VCS) do print("VCS",k) end
+    assert(false)
+  end
+end
+
+function bramModuleFunctions:getDependenciesLL() return {} end
+function bramModuleFunctions:toVerilog() return "" end
+function bramModuleFunctions:getDelay( fnname )
+  return 0
+end
+
+function systolic.module.bram( ramSizeInBytes, ty, Btype ) 
+  err( types.isType(ty), "type must be a type")
+
+  local t = {kind="bram",functions={},ramSizeInBytes=ramSizeInBytes, type=ty, Btype=Btype}
+  t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(16),ty}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=ty}}
+  t.functions.writeAndReturnOriginal.isPure = function() return false end
+
+  return setmetatable( t, bramModuleMT )
+end
+
 --------------------
 fileModuleFunctions={}
 setmetatable(fileModuleFunctions,{__index=systolicModuleFunctions})

@@ -1,5 +1,6 @@
 -- NOTE: does typechecking in place! ast must be a table that's going to be thrown away!
-return function( ast )
+return function( ast, newNodeFn )
+  assert(type(newNodeFn)=="function")
   
   if ast.kind=="constant" then
     err( types.isType(ast.type), "missing type for constant, "..ast.loc)
@@ -92,8 +93,8 @@ return function( ast )
       darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
     end
     
-    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",expr=lhs,type=lhscast}):copyMetadataFrom(origast) end
-    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",expr=rhs,type=rhscast}):copyMetadataFrom(origast) end
+    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast}):copyMetadataFrom(origast) end
+    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",inputs={rhs},type=rhscast}):copyMetadataFrom(origast) end
     
     ast.type = thistype
     ast.inputs = {lhs,rhs}
@@ -162,8 +163,8 @@ return function( ast )
       err( ast.idx<maxIdx, "idx is out of bounds")
       ast.type = darkroom.type.bool()
     elseif expr.type:isArray() then
-      err( ast.idx < (expr.type:arrayLength())[1], "idx is out of bounds, "..tostring(ast.idx).." but should be "..tostring((expr.type:arrayLength())[1]))
-      err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2], "idy is out of bounds")
+      err( ast.idx < (expr.type:arrayLength())[1] and ast.idx>=0, "idx is out of bounds, "..tostring(ast.idx).." but should be "..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
+      err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2] and ast.idy>=0, "idy is out of bounds, is "..tostring(ast.idy).." but should be <"..tostring((expr.type:arrayLength())[2]))
       ast.type = expr.type:arrayOver()
     elseif expr.type:isTuple() then
       err( ast.idx < #expr.type.list, "idx is out of bounds of tuple "..ast.loc)
@@ -225,64 +226,12 @@ return function( ast )
     local ty = map(ast.inputs, function(t) return t.type end )
     ast.type = types.tuple(ty)
   elseif ast.kind=="array" then
-    
-    local cnt = 1
-    while ast["expr"..cnt] do
-      ast["expr"..cnt] = inputs["expr"..cnt]
-      ast["constLow_"..cnt] = inputs["expr"..cnt].constLow_1
-      ast["constHigh_"..cnt] = inputs["expr"..cnt].constHigh_1
-      cnt = cnt + 1
+    local typeOver
+    for k,v in pairs(ast.inputs) do
+      if typeOver~=nil then err( v.type==typeOver, "input type to array operator doesn't match, is "..tostring(v.type).." but should be "..tostring(typeOver)..", "..ast.loc) end
+      typeOver = v.type
     end
-    
-    local mtype = ast.expr1.type
-    local atype, btype
-    
-    if mtype:isArray() then
-      darkroom.error("You can't have nested arrays (index 0 of vector)", origast:linenumber(), origast:offset(), origast:filename() )
-    end
-    
-    local cnt = 2
-    while ast["expr"..cnt] do
-      if ast["expr"..cnt].type:isArray() then
-        darkroom.error("You can't have nested arrays (index "..(i-1).." of vector)")
-      end
-      
-      mtype, atype, btype = darkroom.type.meet( mtype, ast["expr"..cnt].type, "array", origast )
-      
-      if mtype==nil then
-        darkroom.error("meet error")      
-      end
-      
-      -- our type system should have guaranteed this...
-      assert(mtype==atype)
-      assert(mtype==btype)
-      
-      cnt = cnt + 1
-    end
-    
-    -- now we've figured out what the type of the array should be
-    
-    -- may need to insert some casts
-    local cnt = 1
-    while ast["expr"..cnt] do
-      -- meet should have failed if this isn't possible...
-      local from = ast["expr"..cnt].type
-
-      if from~=mtype then
-        if darkroom.type.checkImplicitCast(from, mtype,origast)==false then
-          darkroom.error("Error, can't implicitly cast "..from:str().." to "..mtype:str(), origast:linenumber(), origast:offset())
-        end
-        
-        ast["expr"..cnt] = newNodeFn({kind="cast",expr=ast["expr"..cnt], type=mtype}):copyMetadataFrom(ast["expr"..cnt])
-      end
-
-      cnt = cnt + 1
-    end
-    
-    local arraySize = cnt - 1
-    ast.type = darkroom.type.array(mtype, arraySize)
-    
-
+    ast.type = types.array2d( typeOver, ast.W, ast.H )
   elseif ast.kind=="cast" then
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
       error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed!")

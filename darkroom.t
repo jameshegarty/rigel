@@ -193,7 +193,8 @@ end
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
-function darkroom.packTupleArrays(W,H, typelist, stateful)
+-- This converts SoA to AoS
+function darkroom.packTupleArrays( W,H, typelist, stateful )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(typelist)=="table")
@@ -215,6 +216,18 @@ function darkroom.packTupleArrays(W,H, typelist, stateful)
     end
   end
   res.terraModule = PackTupleArrays
+
+  res.systolicModule = S.moduleConstructor("packTupleArrays",{CE=true})
+  local sinp = S.parameter("process_input", res.inputType )
+  local arrList = {}
+  for y=0,H-1 do
+    for x=0,W-1 do
+      table.insert( arrList, S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end)) )
+    end
+  end
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),darkroom.extract(res.outputType)), "process_output") )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
+
   return darkroom.newFunction(res)
 end
 
@@ -381,11 +394,11 @@ function darkroom.map( f, W, H )
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
   local resetPipelines={}
-  for i=0,W*H-1 do 
-    local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
-    table.insert( out, inst:process( S.index( inp, i ) ) )
+  for x=0,W-1 do for y=0,H-1 do
+    local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
+    table.insert( out, inst:process( S.index( inp, x, y ) ) )
     table.insert( resetPipelines, inst:reset() )
-  end
+  end end
   res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output" ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
 
@@ -795,6 +808,33 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   end
   res.terraModule = Linebuffer
 
+  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+  local ot = (S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
+  local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{})
+
+  res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap ):instantiate("addr") )
+
+  local outarray = {}
+  local evicted
+
+  for y=0,-ymin do
+
+    local lbinp = evicted
+    if y==0 then lbinp = sinp end
+    for x=1,T do outarray[x+y*T] = S.index(lbinp,x-1) end
+
+    if y<-ymin then
+      -- last line doesn't need a ram
+      local BRAM = res.systolicModule:add( S.module.bram( w*darkroom.extract(res.inputType):verilogBits()/8, darkroom.extract(res.inputType) ):instantiate("lb_m"..math.abs(y)))
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{addr:get(), lbinp} )
+    end
+  end
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), darkroom.extract(res.outputType) ), "process_output", {addr:set(S.constant(1, types.uint(16)))} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+
   return darkroom.newFunction(res)
 end
 
@@ -819,6 +859,31 @@ function darkroom.SSR( A, T, xmin, ymin )
     for y=0,-ymin+1 do for x=0,-xmin+T do (@out)[y*(-xmin+T)+x] = self.SR[y][x] end end
   end
   res.terraModule = SSR
+
+  res.systolicModule = S.moduleConstructor("SSR",{CE=true})
+  local sinp = S.parameter("inp", darkroom.extract(res.inputType))
+  local pipelines = {}
+  local SR = {}
+  local out = {}
+  for y=0,-ymin do 
+    SR[y]={}
+    local x = -xmin+T-1
+    while(x>=0) do
+      SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_"..x.."_"..y ) )
+      if x<-xmin then
+        out[y*(-xmin+T)+x+1] = SR[y][x+T]:get()
+        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
+      else -- x>-xmin
+        table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+xmin,y)) )
+        out[y*(-xmin+T)+x+1] = S.index( sinp, x+xmin, y )
+      end
+      x = x - 1
+    end
+  end
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), darkroom.extract(res.outputType)), "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+
   return darkroom.newFunction(res)
 end
 
@@ -917,6 +982,21 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   end
   res.terraModule = UnpackStencil
 
+  res.systolicModule = S.moduleConstructor("unpackStencil",{CE=true})
+  local sinp = S.parameter("inp", res.inputType)
+  local out = {}
+  for i=1,T do
+    out[i] = {}
+    for y=0,stencilH-1 do
+      for x=0,stencilW-1 do
+        out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+      end
+    end
+  end
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+
   return darkroom.newFunction(res)
 end
 
@@ -930,6 +1010,7 @@ function darkroom.makeStateful( f )
   assert(types.isType(res.inputType))
   res.delay = f.delay
   res.terraModule = f.terraModule
+  assert(S.isModule(f.systolicModule))
   res.systolicModule = f.systolicModule
   return darkroom.newFunction(res)
 end
@@ -1007,6 +1088,19 @@ function darkroom.reduce( f, W, H )
       @out = res
   end
   res.terraModule = ReduceModule
+
+  res.systolicModule = S.moduleConstructor("reduce_"..f.systolicModule.name,{CE=true})
+  local resetPipelines = {}
+  local sinp = S.parameter("process_input", res.inputType )
+  local t = map( range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
+  local i=0
+  local expr = foldt(t, function(a,b) 
+                       local I = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
+                       table.insert( resetPipelines, I:reset() )
+                       i = i + 1
+                       return I:process(S.tuple{a,b}) end, nil )
+  res.systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction( res )
 end
@@ -1262,6 +1356,8 @@ function darkroom.lambda( name, input, output )
           return {inp}
         elseif n.kind=="apply" then
           print("systolic APPLY",n.fn.kind)
+          print("APPLY",n.fn.systolicModule.functions.process.input.type,n.fn.systolicModule.functions.process.output.type)
+
           local I = n.fn.systolicModule:instantiate(n.name)
           instanceMap[n] = I
           module:add(I)
@@ -1272,12 +1368,17 @@ function darkroom.lambda( name, input, output )
           end
 
           return {I:process(inputs[1][1])}
+        elseif n.kind=="constant" then
+          return {S.constant( n.value, n.type )}
+        elseif n.kind=="tuple" then
+          return {S.tuple( map(inputs,function(i) return i[1] end) ) }
         else
           print(n.kind)
           assert(false)
         end
       end)
 
+    err( out[1].type==darkroom.extract(res.outputType), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.extract(res.outputType)).." function "..name )
 
     local processfn = S.lambda( "process", inp, out[1], "process_output" )
     local process = module:addFunction( processfn )
@@ -1320,7 +1421,7 @@ function darkroom.lambda( name, input, output )
 end
 
 function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput )
-  assert( type(name)=="string" )
+  err( type(name)=="string", "lift name must be string" )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
@@ -1328,6 +1429,8 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end
   terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
+
+  err( systolicOutput.type==outputType, "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
   local systolicModule = S.moduleConstructor(name,{CE=true})
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
