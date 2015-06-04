@@ -812,17 +812,16 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   local ot = S.select(S.eq(S.index(swinp,0),S.constant(w-1,types.uint(16))),
                       S.constant(0,types.uint(16)),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{})
+  local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
 
   res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap ):instantiate("addr") )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap, {CE=true} ):instantiate("addr") )
 
   local outarray = {}
   local evicted
 
   for y=0,-ymin do
-
     local lbinp = evicted
     if y==0 then lbinp = sinp end
     for x=1,T do outarray[x+y*T] = S.index(lbinp,x-1) end
@@ -830,7 +829,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
     if y<-ymin then
       -- last line doesn't need a ram
       local BRAM = res.systolicModule:add( S.module.bram( w*darkroom.extract(res.inputType):verilogBits()/8, darkroom.extract(res.inputType) ):instantiate("lb_m"..math.abs(y)))
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{addr:get(), lbinp} )
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ addr:get(), lbinp} )
     end
   end
 
@@ -862,7 +861,7 @@ function darkroom.SSR( A, T, xmin, ymin )
   end
   res.terraModule = SSR
 
-  res.systolicModule = S.moduleConstructor("SSR",{CE=true})
+  res.systolicModule = S.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T,{CE=true})
   local sinp = S.parameter("inp", darkroom.extract(res.inputType))
   local pipelines = {}
   local SR = {}
@@ -871,7 +870,7 @@ function darkroom.SSR( A, T, xmin, ymin )
     SR[y]={}
     local x = -xmin+T-1
     while(x>=0) do
-      SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_"..x.."_"..y ) )
+      SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_x"..x.."_y"..y ) )
       if x<-xmin then
         out[y*(-xmin+T)+x+1] = SR[y][x+T]:get()
         table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
@@ -883,7 +882,7 @@ function darkroom.SSR( A, T, xmin, ymin )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), darkroom.extract(res.outputType)), "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), darkroom.extract(res.outputType)), "process_output", pipelines ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return darkroom.newFunction(res)

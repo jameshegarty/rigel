@@ -129,6 +129,22 @@ function IR.IRFunctions:parents(root)
 
 end
 
+function IR.IRFunctions:eq(b)
+  assert(getmetatable(self)==getmetatable(b))
+  if keycount(self)~=keycount(b) or #self.inputs~=#b.inputs then  return false end
+
+  local ignore = {inputs=1,name=1,loc=1}
+  for k,v in pairs(self) do
+    if ignore[k]==nil then
+      if self[k]~=b[k] then return false end
+    end
+  end
+  for k,v in ipairs(self.inputs) do
+    if self.inputs[k]~=b.inputs[k] then return false end
+  end
+  return true
+end
+
 function IR.IRFunctions:parentCount(root)
   local pc=0
   for k,v in self:parents(root) do pc=pc+1 end

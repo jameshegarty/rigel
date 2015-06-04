@@ -16,10 +16,6 @@ end
 local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
-  if tab.scaleN1==nil then tab.scaleN1=0 end
-  if tab.scaleD1==nil then tab.scaleD1=0 end
-  if tab.scaleN2==nil then tab.scaleN2=0 end
-  if tab.scaleD2==nil then tab.scaleD2=0 end
   assert(type(tab.inputs)=="table")
   assert(#tab.inputs==keycount(tab.inputs))
   if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
@@ -543,6 +539,27 @@ function systolicASTFunctions:addValid( validbit )
     end)
 end
 
+function systolicASTFunctions:CSE()
+  local seenlist = {}
+  return self:process(
+    function(n)
+      n = systolicAST.new(n)
+      seenlist[n.kind] = seenlist[n.kind] or {}
+      for k,v in pairs(seenlist[n.kind]) do
+        if n:eq(v) then 
+          print("CSE",n.kind)
+          return v
+        else
+--          print("CSEFAIL",n.kind)
+        end
+        
+      end
+      -- not found
+      table.insert(seenlist[n.kind],n)
+      return n
+    end)
+end
+
 function systolicASTFunctions:toVerilog( module )
   assert( systolic.isModule(module))
   --local clockedLogic = {}
@@ -556,28 +573,13 @@ function systolicASTFunctions:toVerilog( module )
       local wire = false
 
       if n.kind=="call" then
---        if n.inst.module.options.lateInstantiation then
-          local decl
-          finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
-          table.insert( declarations, decl )
---[=[        else
-          if n.func:isPure()==false then
-            table.insert(declarations, "assign "..n.inst.name.."_"..n.func.valid.name.." = "..args[2].."; // call valid")
-          end
-          
-          if n.func.input.type~=types.null() then table.insert(declarations, "assign "..n.inst.name.."_"..n.func.input.name.." = "..args[1].."; // call input") end
-          
-          if n.func.output~=nil then
-            finalResult =  n.inst.name.."_"..n.func.outputName
-            wire = true
-          else
-            finalResult =  "__NILVALUE_ERROR"
-          end     
-      end]=]
+        local decl
+        finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
+        table.insert( declarations, decl )
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
-            return "{"..table.concat( map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end) ).."}"
+            return "{"..table.concat( map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end),", " ).."}"
           else
             return valueToVerilog(val, ty)
           end
@@ -600,7 +602,7 @@ function systolicASTFunctions:toVerilog( module )
         if n.inputs[1].type:isArray() then
           local flatIdx = (n.inputs[1].type:arrayLength())[1]*n.idy+n.idx
           local sz = n.inputs[1].type:arrayOver():verilogBits()
-          finalResult = args[1].."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."]"
+          finalResult = "("..args[1].."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."])"
         elseif n.inputs[1].type:isUint() or n.inputs[1].type:isInt() then
           table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
           table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index")
@@ -612,9 +614,9 @@ function systolicASTFunctions:toVerilog( module )
           if n.inputs[1].type:verilogBits()==ty:verilogBits() then
             finalResult = args[1] -- no index necessary
           elseif ty:verilogBits()>1 then
-            finalResult = args[1].."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."]"
+            finalResult = "("..args[1].."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."])"
           elseif ty:verilogBits()==1 then
-            finalResult = args[1].."["..lowbit.."]"
+            finalResult = "("..args[1].."["..lowbit.."])"
           else
             finalResult = "___NIL_INDEX"
           end
@@ -757,8 +759,8 @@ function systolicASTFunctions:toVerilog( module )
 
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false then
-        table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE", finalResult ) )
-        return n.name.."USEDMULTIPLE"
+        table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
+        return n.name.."USEDMULTIPLE"..n.kind
       else
         return finalResult
       end
@@ -800,6 +802,7 @@ function userModuleFunctions:instanceToVerilogStart( instance, module )
 end
 
 function userModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  err( instance.verilogCompilerState[module][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local decl = nil
   local fn = self.functions[fnname]
@@ -972,6 +975,7 @@ function systolic.module.new( name, fns, instances, options )
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
+  t.ast = t.ast:CSE()
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
   
@@ -1027,7 +1031,7 @@ function systolic.module.reg( ty, initial )
   return setmetatable(t,regModuleMT)
 end
 -------------------
-function systolic.module.regBy( ty, initial, setby )
+function systolic.module.regBy( ty, initial, setby, options )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
   local sinp = systolic.parameter("inp",ty)
@@ -1038,7 +1042,7 @@ function systolic.module.regBy( ty, initial, setby )
   local setvalid = systolic.parameter("set_valid",types.bool())
   fns.set = systolic.lambda("set", sinp, R:set(inner:process(systolic.tuple{R:get(),sinp}),setvalid), "SET_OUTPUT",{}, setvalid )
 
-  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0}} )
+  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0},CE=options.CE} )
 end
 
 -------------------
@@ -1082,7 +1086,8 @@ end
 function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local fn = self.functions[fnname]
-  return instance.name.."_"..fn.outputName, nil, true
+  local decl = declareWire( self.type, instance.name.."_"..fn.outputName)
+  return instance.name.."_"..fn.outputName, decl, true
 end
 
 function bramModuleFunctions:instanceToVerilogFinalize( instance, module )
@@ -1111,11 +1116,11 @@ function bramModuleFunctions:instanceToVerilogFinalize( instance, module )
    .BRAM_SIZE("]]..BRAM_SIZE..[["), // Target BRAM, "18Kb" or "36Kb"
    .DEVICE("VIRTEX6"), // Target Device: "VIRTEX5", "VIRTEX6", "SPARTAN6"
    .DO_REG(0), // Optional output register (0 or 1)
-   .INIT(36’h000000000), // Initial values on output port
+   .INIT(36'h000000000), // Initial values on output port
    .INIT_FILE ("NONE"),
    .WRITE_WIDTH(]]..WIDTH..[[), // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
    .READ_WIDTH(]]..WIDTH..[[),  // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
-   .SRVAL(36’h000000000), // Set/Reset value for port output
+   .SRVAL(36'h000000000), // Set/Reset value for port output
    .WRITE_MODE("]]..WRITE_MODE..[[")) ]]..instance.name..[[(.DO(]]..instance.name..[[_writeAndReturnOriginal), // Output data
 .ADDR(ADDR), // Input address
 .CLK(CLK), // Input clock
@@ -1125,7 +1130,6 @@ function bramModuleFunctions:instanceToVerilogFinalize( instance, module )
 .RST(RST),     // Input reset
    .WE(WE)        // Input write enable
 );]]
-
   else
     print("INVALID BRAM CONFIGURATION")
     for k,v in pairs(VCS) do print("VCS",k) end

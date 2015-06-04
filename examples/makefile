@@ -53,7 +53,7 @@ out/%.axi.raw: out/%.axi.bit
 
 out/%.sim.raw: out/%.sim.v
 	cd out; vlogcomp $*.sim.v
-	cd out; fuse -o $* -lib $* -top sim
+	cd out; fuse -o $* -lib $* -L unisim -L unimacro -top sim
 	cd out; echo "run all" | ./$*
 
 out/%.sim.bmp: out/%.sim.raw
