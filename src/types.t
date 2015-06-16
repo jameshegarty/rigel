@@ -84,11 +84,17 @@ end
 types._tuples = {}
 
 function types.tuple( list )
+  assert(type(list)=="table")
+  assert(keycount(list)==#list)
   if #list==1 and types.isType(list[1]) then return list[1] end
-  list = map( list, function(n) assert( types.isType(n) ); return n end )
+  print("TUPLE")
+  map( list, function(n) print(n);assert( types.isType(n) ) end )
   types._tuples[#list] = types._tuples[#list] or {}
   local tup = setmetatable( {kind="tuple", list = list }, TypeMT )
-  return deepsetweak( types._tuples[#list], list, tup )
+  assert(types.isType(tup))
+  local res = deepsetweak( types._tuples[#list], list, tup )
+  assert(types.isType(res))
+  return res
 end
 
 function types.fromTerraType(ty, linenumber, offset, filename)

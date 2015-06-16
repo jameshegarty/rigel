@@ -274,7 +274,7 @@ __index = function(tab,key)
         tab.callsites[fn.name] = tab.callsites[fn.name] or {}
         table.insert(tab.callsites[fn.name],1)
 
-        err( inp.type==fn.input.type, "Error, input type to function incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) )
+        err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) )
 
         local otype = types.null()
         if fn.output~=nil then otype = fn.output.type end
@@ -426,7 +426,8 @@ function systolicASTFunctions:isPure( validbit )
   return self:visitEach(
     function( n, inputs )
       if n.kind=="call" then
-        return n.func:isPure()
+        assert(#inputs>=1)
+        return n.func:isPure() and inputs[1]
       elseif n.kind=="parameter" then
         return n.key~=validbit.key -- explicitly used valid bit
       elseif n.kind=="fndefn" then
@@ -1086,56 +1087,10 @@ end
 function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local fn = self.functions[fnname]
-  local decl = declareWire( self.type, instance.name.."_"..fn.outputName)
+  local decl = declareWire( self.inputType, instance.name.."_"..fn.outputName)
   return instance.name.."_"..fn.outputName, decl, true
 end
 
-function bramModuleFunctions:instanceToVerilogFinalize( instance, module )
-  local VCS = instance.verilogCompilerState[module]
-  if keycount(VCS)==1 then
-    -- we only used 1 port
-    local WRITE_MODE = "WRITE_FIRST"
-    if VCS.writeAndReturnOriginal~=nil then WRITE_MODE="READ_FIRST" end
-
-    local BRAM_SIZE
-    if self.type:verilogBits()>32 then
-      BRAM_SIZE="36Kb" -- large port widths only available with this ram size
-    elseif (self.ramSizeInBytes>2048 and self.ramSizeInBytes<4096) then
-      BRAM_SIZE="36Kb" 
-    elseif self.ramSizeInBytes<=2048 then
-      BRAM_SIZE="18Kb"
-    else
-      print("RAM SIZE",self.ramSizeInBytes)
-      assert(false)
-    end
-
-    local WIDTH = self.type:verilogBits()
-    assert(WIDTH<=64)
-
-    return [[BRAM_SINGLE_MACRO #(
-   .BRAM_SIZE("]]..BRAM_SIZE..[["), // Target BRAM, "18Kb" or "36Kb"
-   .DEVICE("VIRTEX6"), // Target Device: "VIRTEX5", "VIRTEX6", "SPARTAN6"
-   .DO_REG(0), // Optional output register (0 or 1)
-   .INIT(36'h000000000), // Initial values on output port
-   .INIT_FILE ("NONE"),
-   .WRITE_WIDTH(]]..WIDTH..[[), // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
-   .READ_WIDTH(]]..WIDTH..[[),  // Valid values are 1-72 (37-72 only valid when BRAM_SIZE="36Kb")
-   .SRVAL(36'h000000000), // Set/Reset value for port output
-   .WRITE_MODE("]]..WRITE_MODE..[[")) ]]..instance.name..[[(.DO(]]..instance.name..[[_writeAndReturnOriginal), // Output data
-.ADDR(ADDR), // Input address
-.CLK(CLK), // Input clock
-.DI(DI), // Input data port
-.EN(EN), // Input RAM enable
-.REGCE(REGCE), // Input output register enable
-.RST(RST),     // Input reset
-   .WE(WE)        // Input write enable
-);]]
-  else
-    print("INVALID BRAM CONFIGURATION")
-    for k,v in pairs(VCS) do print("VCS",k) end
-    assert(false)
-  end
-end
 
 function bramModuleFunctions:getDependenciesLL() return {} end
 function bramModuleFunctions:toVerilog() return "" end
@@ -1143,14 +1098,124 @@ function bramModuleFunctions:getDelay( fnname )
   return 0
 end
 
-function systolic.module.bram( ramSizeInBytes, ty, Btype ) 
-  err( types.isType(ty), "type must be a type")
+----------------------
+-- the tradeoff is:
+-- TDP has 2 independent RW/R/W. 2 input ports, 2 output ports.
+-- SDP has either 1 RW or (1 R and 1 W), but twice the bit width as TDP. It has enough address lines to do 2 RW, but only has 1 input port and 1 output port.
+-- where 'RW' means a read and write at same address. 'RW/R/W' means either a RW, R, or W at an address.
 
-  local t = {kind="bram",functions={},ramSizeInBytes=ramSizeInBytes, type=ty, Btype=Btype}
-  t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(16),ty}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=ty}}
-  t.functions.writeAndReturnOriginal.isPure = function() return false end
 
-  return setmetatable( t, bramModuleMT )
+-- 2KB SDP ram
+bram2KSDPModuleFunctions={}
+setmetatable(bram2KSDPModuleFunctions,{__index=bramModuleFunctions})
+bram2KSDPModuleMT={__index=bram2KSDPModuleFunctions}
+
+function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
+  local VCS = instance.verilogCompilerState[module]
+  if self.writeAndReturnOriginal then
+    assert(keycount(VCS)==1)
+    -- we only used 1 port
+
+    -- we only use the 18 kbit wide BRAM here, b/c AFAIK using the 36 kbit BRAM doesn't provide a benefit, so there's no reason to special case that
+
+    local width
+    if self.inputType:verilogBits()==8 then
+      width = 9
+    elseif self.inputType:verilogBits()==16 then
+      width = 18
+    elseif self.inputType:verilogBits()==32 then
+      width = 36
+    else
+      error("unsupported BRAM2KSDP bitwidth,"..self.inputType:verilogBits() )
+      assert(false)
+    end
+
+    local DI = [[.DIBDI(]]..instance.name..[[_INPUT[31:16]),]]
+    if self.inputType:verilogBits()>16 then
+      -- for whatever reason, input ports are flipped in this mode
+      DI = [[.DIADI(]]..instance.name..[[_INPUT[31:16]),.DIBDI(]]..instance.name..[[_INPUT[47:32]),]]
+    end
+
+    local initS = ""
+    if self.init~=nil then
+      -- init should be an array of bytes
+      assert( type(self.init)=="table")
+      assert(#self.init==2048)
+      for block=0,63 do
+        local S = {}
+        for i=0,31 do 
+          local value = self.init[block*32+i+1]
+          assert( value < 256 )
+          table.insert(S,1,string.format("%02x",value)) 
+        end
+        initS = initS..".INIT_"..string.format("%02x",block).."(256'h"..table.concat(S,"").."),\n"
+      end
+    end
+
+    local addrbits = math.log((2048*8)/self.inputType:verilogBits())/math.log(2)
+    local addrS = instance.name.."_INPUT[13:0]"
+    if self.inputType:verilogBits()>1 then
+      addrS = "{"..instance.name.."_INPUT["..(addrbits-1)..":0],"..(14-addrbits).."'b0}"
+    end
+
+    return [[wire []]..(self.inputType:verilogBits()+16-1)..[[:0] ]]..instance.name..[[_INPUT;
+assign ]]..instance.name..[[_INPUT = ]]..VCS.writeAndReturnOriginal[1]..[[;
+RAMB18E1 #(.DOA_REG(0),    
+.DOB_REG(0),
+.RAM_MODE("SDP"),
+.READ_WIDTH_A(]]..width..[[),  // in SDP, this is read width including parity
+.READ_WIDTH_B(0),  // not used for SDP
+.WRITE_WIDTH_A(0), // not used in SDP
+.WRITE_WIDTH_B(]]..width..[[),  // in SDP, this is write width including parity
+.WRITE_MODE_A("READ_FIRST"),
+.WRITE_MODE_B("READ_FIRST"),]]..initS..[[
+.SIM_DEVICE("7SERIES")
+) ]]..instance.name..[[(]]..DI..[[
+.DOADO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0]),
+.DOBDO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[31:16]),
+.ADDRARDADDR(]]..addrS..[[), // in SDP, this is read addr
+.ADDRBWRADDR(]]..addrS..[[), // in SDP, this is write addr
+.WEBWE(4'b1111), // in SDP this is write port enable
+.ENARDEN(]]..VCS.writeAndReturnOriginal[2]..[[), // in SDP this is read enable
+.ENBWREN(]]..VCS.writeAndReturnOriginal[2]..[[), // in SDP this is write enable
+.WEA(2'b0),             // Port A (read port in SDP) Write Enable[3:0], input
+.RSTRAMARSTRAM(1'b0),
+.RSTREGARSTREG(1'b0),
+.RSTRAMB(1'b0),
+.RSTREGB(1'b0),
+.CLKARDCLK(CLK), // in SDP, this is read clock
+.CLKBWRCLK(CLK) // in SDP, this is write clock
+);]]
+
+  else
+    print("INVALID BRAM CONFIGURATION")
+    for k,v in pairs(VCS) do print("VCS",k) end
+    assert(false)
+  end
+end
+
+function systolic.module.bram2KSDP( writeAndReturnOriginal, inputType, init )
+  err( types.isType(inputType), "type must be a type")
+
+  local t = {kind="bram2KSDP",functions={}, inputType = inputType, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
+  local addrbits = math.log((2048*8)/inputType:verilogBits())/math.log(2)
+  if writeAndReturnOriginal then
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),inputType}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=inputType}}
+    t.functions.writeAndReturnOriginal.isPure = function() return false end
+  else
+    -- NYI
+    assert(false)
+  end
+
+  return setmetatable( t, bram2KSDPModuleMT )
+end
+
+----------------
+-- supports any size/bandwidth by instantiating multiple BRAMs
+function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputType )
+  local bwcount = math.ceil(inputType:verilogBits()/32)
+  local szcount = math.ceil(sizeInBytes/(2*1024))
+  local count = math.max(bwcount,szcount)
 end
 
 --------------------
@@ -1299,7 +1364,7 @@ function systolicModuleConstructor:add( inst )
 
   checkReserved(inst.name)
   if self.usedInstanceNames[inst.name]~=nil then
-    print("Error, name "..inst.name.." already in use")
+    print("Error, instance name "..inst.name.." already in use")
     assert(false)
   end
 

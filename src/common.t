@@ -335,7 +335,7 @@ end
 -- t[a][b][c] = t[a][b][c] or value
 -- returns t[a][b][c]
 -- (and also makes the intermediate tables if necessary)
-function deepsetweak(t,idx,value)
+function deepsetweak( t, idx, value )
   assert(type(t)=="table")
   assert(type(idx)=="table")
 
@@ -349,6 +349,9 @@ function deepsetweak(t,idx,value)
       T = T[v]
     end
   end
+
+  assert(keycount(idx)==#idx)
+  error("deepsetweak")
 end
 
 -- if idx={a,b,c} this does
@@ -526,4 +529,8 @@ end
 
 function err(asst, str)
   if asst==false then error(str) end
+end
+
+function rep(v,n)
+  return map(range(n), function(i) return v end)
 end

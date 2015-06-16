@@ -194,17 +194,16 @@ function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- This converts SoA to AoS
-function darkroom.packTupleArrays( W,H, typelist, stateful )
+-- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
+function darkroom.SoAtoAoS( W, H, typelist )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(typelist)=="table")
-  assert(stateful==nil or type(stateful)=="boolean")
 
   local res = {kind="packTupleArrays", W=W,H=H}
 
   res.inputType = types.tuple( map(typelist, function(t) return sel( stateful, darkroom.Stateful(types.array2d(t,W,H)), types.array2d(t,W,H) ) end) )
   res.outputType = types.array2d(types.tuple(typelist),W,H)
-  if stateful then res.outputType = darkroom.Stateful(res.outputType) end
   res.delay = 0
   local struct PackTupleArrays { }
   terra PackTupleArrays:reset() end
@@ -231,7 +230,37 @@ function darkroom.packTupleArrays( W,H, typelist, stateful )
   return darkroom.newFunction(res)
 end
 
-function darkroom.packTupleArraysStateful(W,H, typelist) return darkroom.packTupleArrays(W,H,typelist,true) end
+-- converts {Stateful(a), Stateful(b)...} to Stateful{a,b}
+-- Also {StatefulHandshake(a), StatefulHandshake(b)...} to StatefulHandshake{a,b}
+function darkroom.packTuple( typelist, handshake )
+  assert(type(typelist)=="table")
+  assert(handshake==nil or type(handshake)=="bool")
+
+  local res = {kind="packTuple", handshake=handshake}
+
+  res.inputType = types.tuple( map(typelist, function(t) return sel( handshake, darkroom.StatefulHandshake(t), darkroom.Stateful(t) ) end) )
+  res.outputType = darkroom.Stateful( types.tuple(typelist) )
+  if handshake then res.outputType = darkroom.StatefulHandshake( types.tuple(typelist) ) end
+  res.delay = 0
+  local struct PackTuple { }
+  terra PackTuple:reset() end
+  print("IP",res.inputType,darkroom.extract(res.inputType))
+  print("oP",res.outputType,darkroom.extract(res.outputType))
+  terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    @out = { [map(range(0,#typelist-1), function(i) return `inp.["_"..i] end ) ] }
+  end
+  res.terraModule = PackTuple
+
+  res.systolicModule = S.moduleConstructor("packTuple",{CE=true})
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
+  res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output") )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.packTupleArraysStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.darkroom.packTuple( typelist ) ) end
 
 function darkroom.crop(A,W,H,L,R,B,T,value)
   map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
@@ -809,7 +838,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   res.terraModule = Linebuffer
 
   local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  local ot = S.select(S.eq(S.index(swinp,0),S.constant(w-1,types.uint(16))),
+  local ot = S.select(S.eq(S.index(swinp,0),S.constant((w/T)-1,types.uint(16))),
                       S.constant(0,types.uint(16)),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
   local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
@@ -824,12 +853,14 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   for y=0,-ymin do
     local lbinp = evicted
     if y==0 then lbinp = sinp end
-    for x=1,T do outarray[x+y*T] = S.index(lbinp,x-1) end
+    for x=1,T do outarray[x+(-ymin-y)*T] = S.index(lbinp,x-1) end
 
     if y<-ymin then
       -- last line doesn't need a ram
-      local BRAM = res.systolicModule:add( S.module.bram( w*darkroom.extract(res.inputType):verilogBits()/8, darkroom.extract(res.inputType) ):instantiate("lb_m"..math.abs(y)))
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{ addr:get(), lbinp} )
+--      local BRAM = res.systolicModule:add( S.module.bramSDP( true, w*darkroom.extract(res.inputType):verilogBits()/8, darkroom.extract(res.inputType) ):instantiate("lb_m"..math.abs(y)))
+      local init = map(range(0,2048-1), function(i) return i%256 end)
+      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(9)), lbinp} )
     end
   end
 
@@ -1052,7 +1083,7 @@ function darkroom.makeHandshake( f )
   res.terraModule = MakeHandshake
 
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
-  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
@@ -1332,7 +1363,7 @@ function darkroom.lambda( name, input, output )
     if darkroom.isStatefulRV(res.inputType) then
       terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [out[2]] end
     else
-      terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
+      --terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
     end
     --Module:printpretty()
     --Module.methods.process:printpretty(false)
@@ -1515,21 +1546,60 @@ function darkroom.tuple( name, t )
   return darkroom.newIR( r )
 end
 
-function darkroom.index( inputType, idx )
+-- if index==true, then we return a value, not an array
+function darkroom.slice( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
   assert( types.isType(inputType) )
-  assert(type(idx)=="number")
+  assert(type(idxLow)=="number")
+  assert(type(idxHigh)=="number")
 
   if inputType:isTuple() then
-    assert( idx < #inputType.list )
+    assert( idxLow < #inputType.list )
+    assert( idxHigh < #inputType.list )
+    assert( idxLow == idxHigh ) -- NYI
+    assert( index )
     local OT = inputType.list[idx+1]
-    return darkroom.lift( inputType, OT, terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = inp.["_"..idx] end, 0 )
+    local systolicInput = S.parameter("inp", inputType)
+    local systolicOutput = S.index( systolicInput, idxLow )
+    local tfn = terra( inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = inp.["_"..idxLow] end
+    return darkroom.lift( "index_"..idx, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   elseif inputType:isArray() then
-    assert(idx<inputType:channels())
-    local OT = inputType:arrayOver()
-    return darkroom.lift( inputType, OT, terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = (@inp)[idx] end, 0 )
+    local W = (inputType:arrayLength())[1]
+    local H = (inputType:arrayLength())[2]
+    assert(idxLow<W)
+    assert(idxHigh<W)
+    assert(type(idyLow)=="number")
+    assert(type(idyHigh)=="number")
+    assert(idyLow<H)
+    assert(idyHigh<H)
+    assert(idxLow<=idxHigh)
+    assert(idyLow<=idyHigh)
+    local OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
+    local systolicInput = S.parameter("inp",inputType)
+
+    local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
+    systolicOutput = S.cast( systolicOutput, OT )
+    local tfn = terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) 
+      for iy = idyLow,idyHigh+1 do
+        for ix = idxLow, idxHigh+1 do
+          (@out)[(iy-idyLow)*(idxHigh-idxLow+1)+(ix-idxLow)] = (@inp)[ix+iy*W] 
+        end
+      end
+    end
+
+    if index then
+      OT = inputType:arrayOver()
+      systolicOutput = S.index( systolicInput, idxLow, idyLow )
+      tfn = terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
+    end
+
+    return darkroom.lift( "slice_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   else
     assert(false)
   end
+end
+
+function darkroom.index( inputType, idx, idy )
+  return darkroom.slice( inputType, idx, idx, idy, idy, true )
 end
 
 function darkroom.extractState( name, input )

@@ -150,7 +150,7 @@ return function( ast, newNodeFn )
       err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2] and ast.idy>=0, "idy is out of bounds, is "..tostring(ast.idy).." but should be <"..tostring((expr.type:arrayLength())[2]))
       ast.type = expr.type:arrayOver()
     elseif expr.type:isTuple() then
-      err( ast.idx < #expr.type.list, "idx is out of bounds of tuple "..ast.loc)
+      err( ast.idx < #expr.type.list, "idx is out of bounds of tuple. Index is "..ast.idx.." but should be < "..#expr.type.list.." "..ast.loc)
       err( ast.idy==nil or ast.idy==0, "idy should be nil "..ast.loc)
       ast.type = expr.type.list[ast.idx+1]
     else
@@ -224,7 +224,7 @@ return function( ast, newNodeFn )
     return nil
   end
 
-  if types.isType(ast.type)==false then print(ast.kind) end
+  if types.isType(ast.type)==false then print("missing type",ast.kind) end
   assert(types.isType(ast.type))
   if type(ast.constLow_1)=="number" then assert(ast.constLow_1<=ast.constHigh_1) end
 
