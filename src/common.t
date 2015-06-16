@@ -515,7 +515,7 @@ function memoize(f)
   end
 end
 
-
+-- this take [a,b,c,d,e,f] to [[a,b],[c,d],[e,f]] (for n==2)
 function split(t,n)
   assert(#t % n == 0)
   local r = {}
@@ -533,4 +533,12 @@ end
 
 function rep(v,n)
   return map(range(n), function(i) return v end)
+end
+
+function slice(t,low,high) 
+  assert( type(t)=="table" )
+  assert( type(low)=="number" )
+  assert( type(high)=="number" )
+  assert( low<=high )
+  return map(range(low,high),function(i) return t[i] end) 
 end

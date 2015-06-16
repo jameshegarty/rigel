@@ -135,6 +135,15 @@ return function( ast, newNodeFn )
     ast.inputs[2] = a
     ast.inputs[3] = b
     
+  elseif ast.kind=="bitSlice" then
+    local expr = ast.inputs[1]
+    local max = expr.type:verilogBits()
+
+    err( ast.low>=0 and ast.high>=0, "bitslice low/high must be >=0")
+    err( ast.low<max and ast.high<max, "bitslice low("..ast.low..")/high("..ast.high..") must be < type size ("..max..")")
+    err( ast.low<=ast.high, "bitslice low must be <= high")
+    
+    ast.type = types.bits(ast.high-ast.low+1)
   elseif ast.kind=="index" then
     local expr = ast.inputs[1]
 

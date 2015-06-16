@@ -857,10 +857,13 @@ function darkroom.linebuffer( A, w, h, T, ymin )
 
     if y<-ymin then
       -- last line doesn't need a ram
---      local BRAM = res.systolicModule:add( S.module.bramSDP( true, w*darkroom.extract(res.inputType):verilogBits()/8, darkroom.extract(res.inputType) ):instantiate("lb_m"..math.abs(y)))
-      local init = map(range(0,2048-1), function(i) return i%256 end)
-      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(9)), lbinp} )
+      local init = map(range(0,128-1), function(i) return i%256 end)
+      local bits = darkroom.extract(res.inputType):verilogBits()
+      local BRAM = res.systolicModule:add( S.module.bramSDP( true, (w/T)*darkroom.extract(res.inputType):verilogBits()/8, bits, bits, {CE=true}, init ):instantiate("lb_m"..math.abs(y)))
+
+--      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(4)), S.cast(lbinp,types.bits(64))} )
+      evicted = S.cast( evicted, darkroom.extract(res.inputType) )
     end
   end
 
@@ -1750,7 +1753,7 @@ function darkroom.seqMapHandshake( f, W, H, T, axi, readyRate )
   if axi then
     local baseTypeI = darkroom.extractStatefulHandshake(f.inputType)
     local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
-    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits")
+    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
     verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..string.gsub(readAll("../extras/helloaxi/axi.v"),"___PIPELINE_MODULE_NAME",f.systolicModule.name)
   else

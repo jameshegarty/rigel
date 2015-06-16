@@ -13,6 +13,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     return "int"..ty.precision
   elseif ty.kind=="uint" then
     return "uint"..ty.precision
+  elseif ty.kind=="bits" then
+    return "bits"..ty.precision
   elseif ty.kind=="float" then
     return "float"..ty.precision
   elseif ty.kind=="array" then
@@ -37,6 +39,12 @@ types._opaque={}
 function types.opaque(str)
   types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
   return types._opaque[str]
+end
+
+types._bits={}
+function types.bits(prec)
+  types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
+  return types._bits[prec]
 end
 
 types._uint={}
@@ -404,6 +412,10 @@ function types.checkExplicitCast(from, to, ast)
   if from==to then
     -- obvously can return true...
     return true
+  elseif to.kind=="bits" or from.kind=="bits" then
+    -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
+    err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
+    return true
   elseif from:isArray() and to:isArray() then
     -- we do allow you to explicitly cast arrays of different shapes but the same total size
     if from:channels()~=to:channels() then
@@ -425,7 +437,7 @@ function types.checkExplicitCast(from, to, ast)
       return true
     end
 
-    darkroom.error("Can't cast an array type to a non-array type. "..tostring(from).." to "..tostring(to), ast:linenumber(), ast:offset(), ast:filename() )
+    error("Can't cast an array type to a non-array type. "..tostring(from).." to "..tostring(to)..ast.loc)
     return false
   elseif from.kind=="uint" and to.kind=="uint" then
     return true
@@ -614,29 +626,20 @@ function TypeFunctions:verilogBits()
   elseif self:isArray() then
     return self:arrayOver():verilogBits()*self.size[1]*self.size[2]
   elseif self:isInt() or self:isUint() then
-    return self:sizeof()*8
+    return self.precision
+  elseif self:isBits() then
+    return self.precision
   else
     print(self)
     assert(false)
   end
 end
 
-function TypeFunctions:isFloat()
-  return self.kind=="float"
-end
-
-function TypeFunctions:isBool()
-  return self.kind=="bool"
-end
-
-function TypeFunctions:isInt()
-  return self.kind=="int"
-end
-
-function TypeFunctions:isUint()
-  return self.kind=="uint"
-end
-
+function TypeFunctions:isFloat() return self.kind=="float" end
+function TypeFunctions:isBool() return self.kind=="bool" end
+function TypeFunctions:isInt() return self.kind=="int" end
+function TypeFunctions:isUint() return self.kind=="uint" end
+function TypeFunctions:isBits() return self.kind=="bits" end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"
