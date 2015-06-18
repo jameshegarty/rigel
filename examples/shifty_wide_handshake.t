@@ -21,7 +21,7 @@ out = d.apply("shifty_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/shifty_wide_handshake.raw",RAWTYPE,"shifty_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
 -------------
-f = d.seqMapHandshake( top, W, H, T,false, 2 )
+f = d.seqMapHandshake( top, W, H, T, false, 2 )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 

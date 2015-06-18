@@ -862,13 +862,14 @@ function darkroom.linebuffer( A, w, h, T, ymin )
       local BRAM = res.systolicModule:add( S.module.bramSDP( true, (w/T)*darkroom.extract(res.inputType):verilogBits()/8, bits, bits, {CE=true}, init ):instantiate("lb_m"..math.abs(y)))
 
 --      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(4)), S.cast(lbinp,types.bits(64))} )
+      local addrbits = math.log(((w/T)*darkroom.extract(res.inputType):verilogBits())/bits)/math.log(2)
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), S.cast(lbinp,types.bits(bits))} )
       evicted = S.cast( evicted, darkroom.extract(res.inputType) )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), darkroom.extract(res.outputType) ), "process_output", {addr:set(S.constant(1, types.uint(16)))} ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), darkroom.extract(res.outputType) ), "process_output", {addr:setBy(S.constant(1, types.uint(16)))} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction(res)
 end

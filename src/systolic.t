@@ -95,6 +95,13 @@ function systolic.declareWire( ty, name, str, comment )
 end
 declareWire = systolic.declareWire
 
+function systolic.wireIfNecessary( inputIsWire, declarations, ty, name, str, comment )
+  if inputIsWire then return str end
+  local decl = systolic.declareWire( ty, name, str, comment)
+  table.insert(declarations, decl)
+  return name
+end
+
 function declarePort( ty, name, isInput )
   assert(type(name)=="string")
 
@@ -177,9 +184,10 @@ function valueToVerilog(value,ty)
   end
 end
 
-function systolicModuleFunctions:instantiate(name)
+function systolicModuleFunctions:instantiate( name, options )
   err( type(name)=="string", "instantiation name must be a string")
-  return systolicInstance.new({kind="module",module=self,name=name,callsites={}})
+  if options==nil then options={} end
+  return systolicInstance.new({ kind="module", module=self, name=name, options=options, callsites={} })
 end
 
 systolicFunctionFunctions = {}
@@ -272,17 +280,54 @@ __index = function(tab,key)
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         
         tab.callsites[fn.name] = tab.callsites[fn.name] or {}
-        table.insert(tab.callsites[fn.name],1)
 
         err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) )
 
         local otype = types.null()
         if fn.output~=nil then otype = fn.output.type end
 
-        local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
-        
-        return systolicAST.new(t)
-             end
+        if fn.input.type==types.null() then
+          -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
+          if #tab.callsites[fn.name]==0 then
+            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
+            table.insert(tab.callsites[fn.name], systolicAST.new(t))
+            return tab.callsites[fn.name][1]
+          else
+            -- cheap CSE
+            return tab.callsites[fn.name][1]
+          end
+        elseif self.options.arbitrate==nil then
+          -- no arbitration
+          if #tab.callsites[fn.name]==0 then
+            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
+            table.insert(tab.callsites[fn.name], systolicAST.new(t))
+            return tab.callsites[fn.name][1]
+          else
+            error("Function '"..fn.name.."' on instance '"..self.name.."' can't have multiple callsites!")
+          end
+        elseif self.options.arbitrate=="valid" then
+          if #tab.callsites[fn.name]==0  then
+
+            local tca = { kind="callArbitrate", type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={inp,valid} }
+            tca = systolicAST.new(tca)
+            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={systolic.index(tca,0),systolic.index(tca,1)} }
+            table.insert( tab.callsites[fn.name], {tca,t} )
+            return systolicAST.new(t)
+          else
+            -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
+            local tca = tab.callsites[fn.name][1][1]
+            local t = tab.callsites[fn.name][1][2]
+            table.insert(tca.inputs,inp)
+            table.insert(tca.inputs,valid)
+            print("CA",tca,#tca.inputs)
+            return t
+          end
+          assert(false)
+        else
+          assert(false)
+        end
+
+      end
     end
     
   end
@@ -581,6 +626,9 @@ function systolicASTFunctions:toVerilog( module )
   local finalOut = self:visitEach(
     function(n, args)
       local finalResult
+      local argwire = map(args, function(nn) assert(type(nn[2])=="boolean");return nn[2] end)
+      args = map(args, function(nn) assert(type(nn[1])=="string"); return nn[1] end)
+
       -- if finalResult is already a wire, we don't need to assign it to a wire at the end
       -- if wire==false, then finalResult is an expression, and can't be used multiple times
       local wire = false
@@ -589,6 +637,14 @@ function systolicASTFunctions:toVerilog( module )
         local decl
         finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
         table.insert( declarations, decl )
+      elseif n.kind=="callArbitrate" then
+        local pairs = split(args,2)
+        local data = foldt(pairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
+        local v = foldt(pairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
+
+        local cnt = foldt(pairs, function(a,b) return "(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))" end )
+        table.insert( declarations, "always @(posedge CLK) begin if("..cnt..[[ > 5'd1) begin $display("error, function has multiple valid bits active in same cycle!");$finish(); end end]])
+        finalResult = "{"..v..","..data.."}"
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
@@ -612,7 +668,9 @@ function systolicASTFunctions:toVerilog( module )
         end
         finalResult = "__ERR_NULL_MODULE"
       elseif n.kind=="bitSlice" then
-        finalResult = args[1].."["..n.high..":"..n.low.."]"
+        -- verilog doesn't have expressions - we can only bitslice on a wire. So coerce input into a wire.
+        local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for bitslice" )
+        finalResult = inp.."["..n.high..":"..n.low.."]"
       elseif n.kind=="index" then
         if n.inputs[1].type:isArray() then
           local flatIdx = (n.inputs[1].type:arrayLength())[1]*n.idy+n.idx
@@ -633,6 +691,7 @@ function systolicASTFunctions:toVerilog( module )
           elseif ty:verilogBits()==1 then
             finalResult = "("..args[1].."["..lowbit.."])"
           else
+            -- type has no bits?
             finalResult = "___NIL_INDEX"
           end
         else
@@ -643,67 +702,72 @@ function systolicASTFunctions:toVerilog( module )
         finalResult="{"..table.concat(reverse(args),",").."}"
       elseif n.kind=="cast" then
 
-          local expr
-          local cmt = " // cast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
-
-          local function dobasecast( expr, fromType, toType )
-            assert(type(expr)=="string")
-
-            if fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
-              -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
-              return expr
-            elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
-              -- casting smaller int to larger int. must sign extend
-              return "{ {"..(8*(toType:sizeof() - fromType:sizeof())).."{"..expr.."["..(fromType:sizeof()*8-1).."]}},"..expr.."["..(fromType:sizeof()*8-1)..":0]}"
-            elseif (fromType:isUint() or fromType:isInt()) and (toType:isInt() or toType:isUint()) and fromType.precision>toType.precision then
-              -- truncation. I don't know how this works
-              return expr.."["..(toType.precision-1)..":0]"
-            elseif fromType:isInt() and toType:isUint() and fromType.precision == toType.precision then
-              -- int to uint with same precision. I don't know how this works
-              return expr
-            elseif fromType:isBits() or toType:isBits() then
-              -- noop: verilog is blind to types anyway
-              assert(fromType:verilogBits()==toType:verilogBits())
-              return expr
-            else
-              print("FAIL TO CAST",fromType,"to",toType)
-              assert(false)
-            end
-          end
-
-          if n.type:isArray() and n.inputs[1].type:isTuple()==true then
-            err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
-            for k,v in pairs(n.inputs[1].type.list) do
-              err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
-            end
-            expr = args[1] 
-          elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
-            expr = "{"..table.concat( map(range(n.type:channels()), function(n) return args[1] end),",").."}" -- broadcast
-            cmt = " // broadcast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
-          elseif n.inputs[1].type:isArray() and n.type:isArray()==false and n.inputs[1].type:arrayOver():isBool() and (n.type:isUint() or n.type:isInt()) then
-            assert(false)
-            -- casting an array of bools (bitfield) to an int or uint
-            expr = "}"
-            for c=1,n.expr.type:channels() do
-              if c>1 then expr = ","..expr end
-              expr = inputs.expr[c]..expr
-            end
-            expr = "{"..expr
-          elseif n.type:isArray() and n.inputs[1].type:isArray() and n.type:baseType()==n.inputs[1].type:baseType() then
-            assert(false)
-            assert(n.type:channels() == n.expr.type:channels())
-            expr = inputs.expr[c]
-            cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
-          elseif n.type:isArray() and n.inputs[1].type:isArray()  then
-            assert(false)
-            assert(n.type:arrayLength() == n.expr.type:arrayLength())
-            -- same shape arrays, different base types
-            expr = dobasecast( inputs.expr[c], n.expr.type:baseType(), n.type:baseType() )
+        local expr
+        local cmt = " // cast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
+        
+        local function dobasecast( expr, fromType, toType )
+          assert(type(expr)=="string")
+          
+          if fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
+            -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
+            local bitdiff = toType.precision-fromType.precision
+            return "{"..bitdiff.."'b0,"..expr.."}"
+          elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
+            -- casting smaller int to larger int. must sign extend
+            return "{ {"..(8*(toType:sizeof() - fromType:sizeof())).."{"..expr.."["..(fromType:sizeof()*8-1).."]}},"..expr.."["..(fromType:sizeof()*8-1)..":0]}"
+          elseif (fromType:isUint() or fromType:isInt()) and (toType:isInt() or toType:isUint()) and fromType.precision>toType.precision then
+            -- truncation. I don't know how this works
+            return expr.."["..(toType.precision-1)..":0]"
+          elseif fromType:isInt() and toType:isUint() and fromType.precision == toType.precision then
+            -- int to uint with same precision. I don't know how this works
+            return expr
+          elseif fromType:isBits() or toType:isBits() then
+            -- noop: verilog is blind to types anyway
+            assert(fromType:verilogBits()==toType:verilogBits())
+            return expr
           else
-            expr = dobasecast( args[1], n.inputs[1].type, n.type )
+            print("FAIL TO CAST",fromType,"to",toType)
+            assert(false)
           end
-
-          finalResult = expr
+        end
+        
+        if n.type:isBits() or n.inputs[1].type:isBits() then
+          -- noop: verilog is blind to types anyway
+          assert(n.type:verilogBits()==n.inputs[1].type:verilogBits())
+          expr = args[1]
+        elseif n.type:isArray() and n.inputs[1].type:isTuple()==true then
+          err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
+          for k,v in pairs(n.inputs[1].type.list) do
+            err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
+          end
+          expr = args[1] 
+        elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
+          expr = "{"..table.concat( map(range(n.type:channels()), function(n) return args[1] end),",").."}" -- broadcast
+          cmt = " // broadcast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
+        elseif n.inputs[1].type:isArray() and n.type:isArray()==false and n.inputs[1].type:arrayOver():isBool() and (n.type:isUint() or n.type:isInt()) then
+          assert(false)
+          -- casting an array of bools (bitfield) to an int or uint
+          expr = "}"
+          for c=1,n.expr.type:channels() do
+            if c>1 then expr = ","..expr end
+            expr = inputs.expr[c]..expr
+          end
+          expr = "{"..expr
+        elseif n.type:isArray() and n.inputs[1].type:isArray() and n.type:baseType()==n.inputs[1].type:baseType() then
+          assert(false)
+          assert(n.type:channels() == n.expr.type:channels())
+          expr = inputs.expr[c]
+          cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
+        elseif n.type:isArray() and n.inputs[1].type:isArray()  then
+          assert(false)
+          assert(n.type:arrayLength() == n.expr.type:arrayLength())
+          -- same shape arrays, different base types
+          expr = dobasecast( inputs.expr[c], n.expr.type:baseType(), n.type:baseType() )
+        else
+          expr = dobasecast( args[1], n.inputs[1].type, n.type )
+        end
+        
+        finalResult = expr
       elseif n.kind=="parameter" then
         finalResult = n.name
         wire = true
@@ -752,7 +816,8 @@ function systolicASTFunctions:toVerilog( module )
               table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs")
               res = callsite..n:cname(c)
             else
-              return inputs.expr[c] -- must be unsigned
+--              return inputs.expr[c] -- must be unsigned
+              assert(false)
             end
           elseif n.op=="-" then
             assert(n.type:baseType():isInt())
@@ -779,9 +844,10 @@ function systolicASTFunctions:toVerilog( module )
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false then
         table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
-        return n.name.."USEDMULTIPLE"..n.kind
+        return {n.name.."USEDMULTIPLE"..n.kind,true}
       else
-        return finalResult
+        assert(type(finalResult)=="string")
+        return {finalResult, wire}
       end
     end)
 
@@ -1014,6 +1080,8 @@ regModuleMT={__index=regModuleFunctions}
 
 function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar )
   if fnname=="delay" or fnname=="set" then
+    err( #instance.callsites[fnname]==1, "Error, multiple ("..(#instance.callsites[fnname])..") calls to '"..fnname.."' on instance '"..instance.name.."'")
+
     local decl = declareReg(self.type, instance.name, self.initial).."\n"
 
     if module.options.CE or fnname=="set" then
@@ -1031,6 +1099,7 @@ function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVa
     assert(false)
   end
 end
+
 function regModuleFunctions:getDependenciesLL() return {} end
 function regModuleFunctions:toVerilog() return "" end
 function regModuleFunctions:getDelay( fnname )
@@ -1053,15 +1122,22 @@ end
 function systolic.module.regBy( ty, initial, setby, options )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
-  local sinp = systolic.parameter("inp",ty)
-  local R = systolic.module.reg( ty, initial ):instantiate("R")
+
+  local R = systolic.module.reg( ty, initial ):instantiate("R",{arbitrate="valid"})
   local inner = setby:instantiate("inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
-  local setvalid = systolic.parameter("set_valid",types.bool())
-  fns.set = systolic.lambda("set", sinp, R:set(inner:process(systolic.tuple{R:get(),sinp}),setvalid), "SET_OUTPUT",{}, setvalid )
 
-  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0},CE=options.CE} )
+  local sbinp = systolic.parameter("setby_inp",ty)
+  local setbyvalid = systolic.parameter("setby_valid",types.bool())
+  fns.setBy = systolic.lambda("setBy", sbinp, R:set(inner:process(systolic.tuple{R:get(),sbinp}),setbyvalid), "SETBY_OUTPUT",{}, setbyvalid )
+
+  local sinp = systolic.parameter("set_inp",ty)
+  local setvalid = systolic.parameter("set_valid",types.bool())
+  fns.set = systolic.lambda("set", sinp, R:set(sinp,setvalid), "SET_OUTPUT",{}, setvalid )
+--  fns.set = systolic.lambda("set", sinp, sinp, "SET_OUTPUT",{}, setvalid )
+
+  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=options.CE} )
 end
 
 -------------------
@@ -1112,8 +1188,9 @@ end
 
 function bramModuleFunctions:getDependenciesLL() return {} end
 function bramModuleFunctions:toVerilog() return "" end
-function bramModuleFunctions:getDelay( fnname )
-  return 0
+function bramModuleFunctions:getDelay( fnname ) 
+  if fnname=="writeAndReturnOriginal" then return 1
+  else assert(false) end
 end
 
 ----------------------
@@ -1161,7 +1238,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
           assert( value < 256 )
           table.insert(S,1,string.format("%02x",value)) 
         end
-        initS = initS..".INIT_"..string.format("%02x",block).."(256'h"..table.concat(S,"").."),\n"
+        initS = initS..".INIT_"..string.format("%02X",block).."(256'h"..table.concat(S,"").."),\n"
       end
     end
 
@@ -1178,26 +1255,39 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
       DI = ".DIADI("..instance.name.."_INPUT["..(addrbits+16-1)..":"..addrbits.."]),.DIBDI("..instance.name.."_INPUT["..(addrbits+32-1)..":"..(addrbits+16).."]),"
     end
 
+    local valid = VCS.writeAndReturnOriginal[2]
+    if self.options.CE then valid=valid.." && CE" end
+
+    --local debug = [[always @(posedge CLK) begin $display("BRAM v %d ce %d addr %d OUT %H inp %H",]]..VCS.writeAndReturnOriginal[2]..[[,CE,]]..addrS..[[,]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0],]]..instance.name..[[_INPUT[]]..(addrbits+32-1)..":"..(addrbits)..[[]); end]]
+
+    -- signals that don't seem to matter: DIPADIP, DIPBDIP, DOPADOP, DOPBDOP:
+    -- //.ENBWREN(1'b0), // in SDP this is write enable
+    -- //.REGCEAREGCE(1'b1), // DO_REG clock enable
+    -- //.REGCEB(1'b1), // DO_REG clock enable
+
     return [[wire []]..(self.inputBits+addrbits-1)..[[:0] ]]..instance.name..[[_INPUT;
 assign ]]..instance.name..[[_INPUT = ]]..VCS.writeAndReturnOriginal[1]..[[;
-RAMB18E1 #(.DOA_REG(0),    
+RAMB18E1 #(.DOA_REG(0),
 .DOB_REG(0),
 .RAM_MODE("SDP"),
 .READ_WIDTH_A(]]..width..[[),  // in SDP, this is read width including parity
 .READ_WIDTH_B(0),  // not used for SDP
 .WRITE_WIDTH_A(0), // not used in SDP
 .WRITE_WIDTH_B(]]..width..[[),  // in SDP, this is write width including parity
-.WRITE_MODE_A("READ_FIRST"),
-.WRITE_MODE_B("READ_FIRST"),]]..initS..[[
-.SIM_DEVICE("7SERIES")
+.WRITE_MODE_A("READ_FIRST"),  // READ_FIRST
+.WRITE_MODE_B("READ_FIRST"),
+.RDADDR_COLLISION_HWCONFIG("PERFORMANCE"),
+]]..initS..[[
+.SIM_DEVICE("7SERIES"),
+.SIM_COLLISION_CHECK("ALL")
 ) ]]..instance.name..[[(]]..DI..[[
 .DOADO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0]),
 .DOBDO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[31:16]),
 .ADDRARDADDR(]]..addrS..[[), // in SDP, this is read addr
 .ADDRBWRADDR(]]..addrS..[[), // in SDP, this is write addr
 .WEBWE(4'b1111), // in SDP this is write port enable
-.ENARDEN(]]..VCS.writeAndReturnOriginal[2]..[[), // in SDP this is read enable
-.ENBWREN(]]..VCS.writeAndReturnOriginal[2]..[[), // in SDP this is write enable
+.ENARDEN(]]..valid..[[), // in SDP this is read enable
+.ENBWREN(]]..valid..[[), // in SDP this is write enable
 .WEA(2'b0),             // Port A (read port in SDP) Write Enable[3:0], input
 .RSTRAMARSTRAM(1'b0),
 .RSTREGARSTREG(1'b0),
@@ -1214,16 +1304,17 @@ RAMB18E1 #(.DOA_REG(0),
   end
 end
 
-function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, init )
+function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, options, init )
   err( type(inputBits)=="number", "inputBits must be a number")
   err( type(outputBits)=="number", "outputBits must be a number")
+  err( options==nil or type(options)=="table", "options must be table")
 
   if init~=nil then
     assert(type(init)=="table")
     err(#init==2048, "init table has size "..(#init))
   end
 
-  local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
+  local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init, options=options}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
@@ -1271,7 +1362,7 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
 
     local out = {}
     for bw=0,bwcount-1 do
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSize, init ):instantiate("bram_"..bw) )
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSize, options, init ):instantiate("bram_"..bw) )
       local inp = systolic.bitSlice( inpData, bw*eachSize, (bw+1)*eachSize-1 )
       table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
     end
@@ -1310,7 +1401,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
   if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
     for i=0,self.type:sizeof()-1 do
-      assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] = $fgetc("..instance.name.."_file); "
+      assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] <= $fgetc("..instance.name.."_file); "
     end
 
     local RST = ""
@@ -1329,6 +1420,10 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
 ]]
   elseif instance.callsites.read==nil and instance.callsites.write~=nil then
     local assn = ""
+
+    local debug = ""
+    --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
+
     for i=0,self.type:sizeof()-1 do
       assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
     end
@@ -1337,7 +1432,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     if instance.verilogCompilerState[module].reset~=nil then
       RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
     end
-    return [[integer ]]..instance.name..[[_file,r;
+    return debug..[[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
     if (]]..instance.verilogCompilerState[module].write[2]..sel(module.options.CE," && CE","")..[[) begin ]]..assn..[[ end 

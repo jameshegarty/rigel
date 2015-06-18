@@ -80,10 +80,11 @@ returns an Instance
 Instantiation Options:
 These instantiation options will inheret the defaults of the module if not provided.
 
-callArbitrate = {nil, "valid", "values" }
+arbitrate = {nil, "valid", "values" }
 nil => Can only call each function on this instance once
 'valid' => can call functions multiple times, but only one valid bit can be true
 'value' => can call functions multiple times, and multiple valid bits must be true, but values must match
+'allow' => Just allow multiple calls?
 
 coherent: This determines the semantics of calling different functions on this modules. 
 If coherent==false, there is no guarantee about the timing of calling different functions. Ex: if you have a :valid() and a :get() function, you'd better make sure that your valid and get are called in the came clock. In practice, this means that :valid must not be pipelined, and :get must be the first thing in the pipe. The module documentation should tell you any inter-function semantics.
