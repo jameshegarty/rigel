@@ -159,6 +159,7 @@ function valueToVerilogLL(value,signed,bits)
 end
 
 function valueToVerilog(value,ty)
+  assert(types.isType(ty))
 
   if ty:isInt() then
     assert(type(value)=="number")
@@ -174,6 +175,7 @@ function valueToVerilog(value,ty)
     assert(value>=0)
     return (ty:sizeof()*8).."'d"..value
   elseif ty:isBool() then
+    assert(type(value)=="boolean")
     if value then
       return "1'd1"
     else
@@ -251,8 +253,8 @@ local function binop(lhs, rhs, op)
 end
 
 local function unary(expr, op)
-  expr = convert(expr)
-  return typecheck(darkroom.ast.new({kind="unary",op=op,expr=expr}):copyMetadataFrom(expr))
+  expr = checkast(expr)
+  return typecheck{kind="unary",op=op,inputs={expr}}
 end
 
 systolic._callsites = {}
@@ -420,6 +422,7 @@ function systolic.__or(lhs, rhs) return binop(lhs,rhs,"or") end
 function systolic.__and(lhs, rhs) return binop(lhs,rhs,"and") end
 function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
 function systolic.neg(expr) return unary(expr,"-") end
+function systolic.__not(expr) return unary(expr,"not") end
 
 function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
@@ -788,9 +791,9 @@ function systolicASTFunctions:toVerilog( module )
               local lhs = n.inputs[1]
               local rhs = n.inputs[2]
               if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
-                res = "($signed("..args[1]..")"..n.op.."$signed("..args[2].."));"
+                res = "($signed("..args[1]..")"..n.op.."$signed("..args[2].."))"
               elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
-                res = "(("..args[1]..")"..n.op.."("..args[2].."));"
+                res = "(("..args[1]..")"..n.op.."("..args[2].."))"
               else
                 print( n.type:baseType():isBool() , n.lhs.type:baseType():isInt() , n.rhs.type:baseType():isInt(),n.type:baseType():isBool() , n.lhs.type:baseType():isUint() , n.rhs.type:baseType():isUint())
                 assert(false)
@@ -810,35 +813,33 @@ function systolicASTFunctions:toVerilog( module )
             end
 
           elseif n.kind=="unary" then
-          addInput("expr")
-          getInputs()
-          thisDelay = 1
-
-          if n.op=="abs" then
-            if n.type:baseType():isInt() then
-              table.insert(resDeclarations, declareReg( n.type:baseType(), callsite..n:cname(c) ))
-              table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs")
+            if n.op=="abs" then
+              if n.type:baseType():isInt() then
+                table.insert(resDeclarations, declareReg( n.type:baseType(), callsite..n:cname(c) ))
+                table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs")
+                res = callsite..n:cname(c)
+              else
+                --              return inputs.expr[c] -- must be unsigned
+                assert(false)
+              end
+            elseif n.op=="-" then
+              assert(n.type:baseType():isInt())
+              table.insert(resDeclarations, declareReg(n.type:baseType(), callsite..n:cname(c)))
+              table.insert(resClockedLogic, callsite..n:cname(c).." <= -"..inputs.expr[c].."; // unary sub")
               res = callsite..n:cname(c)
+            elseif n.op=="not" then
+              res = "(~"..args[1]..")"
             else
---              return inputs.expr[c] -- must be unsigned
+              print(n.op)
               assert(false)
             end
-          elseif n.op=="-" then
-            assert(n.type:baseType():isInt())
-            table.insert(resDeclarations, declareReg(n.type:baseType(), callsite..n:cname(c)))
-            table.insert(resClockedLogic, callsite..n:cname(c).." <= -"..inputs.expr[c].."; // unary sub")
-            res = callsite..n:cname(c)
+          elseif n.kind=="select" or n.kind=="vectorSelect" then
+            res = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
           else
-            print(n.op)
+            print(n.kind)
             assert(false)
           end
-        elseif n.kind=="select" or n.kind=="vectorSelect" then
-          res = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
-        else
-          print(n.kind)
-          assert(false)
-        end
-
+          
           table.insert( resTable, res )
         end
 
@@ -1129,11 +1130,14 @@ function systolic.module.reg( ty, initial )
   return setmetatable(t,regModuleMT)
 end
 -------------------
-function systolic.module.regBy( ty, initial, setby, options )
+-- options = {init}
+function systolic.module.regBy( ty, setby, options )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
+  assert( options==nil or type(options)=="table")
 
-  local R = systolic.module.reg( ty, initial ):instantiate("R",{arbitrate="valid"})
+  if options==nil then options={} end
+  local R = systolic.module.reg( ty, options.init ):instantiate("R",{arbitrate="valid"})
   local inner = setby:instantiate("inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )

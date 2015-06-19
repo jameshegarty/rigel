@@ -6,10 +6,10 @@ return function( ast, newNodeFn )
     err( types.isType(ast.type), "missing type for constant, "..ast.loc)
     ast.constLow_1 = ast.value; ast.constHigh_1 = ast.value
   elseif ast.kind=="unary" then
-    ast.expr = inputs["expr"]
+    local expr = ast.inputs[1]
     
     if ast.op=="-" then
-      if ast.expr.type:isUint() then
+      if expr.type:isUint() then
         darkroom.warning("You're negating a uint, this is probably not what you want to do!", origast:linenumber(), origast:offset(), origast:filename())
       end
       
@@ -33,11 +33,10 @@ return function( ast, newNodeFn )
         assert(false)
       end
     elseif ast.op=="not" then
-      if ast.expr.type:baseType():isBool() or ast.expr.type:baseType():isInt() or ast.expr.type:baseType():isUint() then
-        ast.type = ast.expr.type
+      if expr.type:baseType():isBool() or expr.type:baseType():isInt() or expr.type:baseType():isUint() then
+        ast.type = expr.type
       else
-        darkroom.error("not only works on bools and integers",origast:linenumber(), origast:offset())
-        assert(false)
+        error("not only works on bools and integers, "..ast.loc)
       end
     elseif ast.op=="sin" or ast.op=="cos" or ast.op=="exp" or ast.op=="arctan" or ast.op=="ln" or ast.op=="sqrt" then
       if ast.expr.type==darkroom.type.float(32) then

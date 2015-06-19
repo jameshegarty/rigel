@@ -19,6 +19,8 @@ RES += $(AXI)
 CD = cd out;
 all: $(RES)
 
+sim: $(SIM)
+
 clean:
 	rm -Rf out/*
 

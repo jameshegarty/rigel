@@ -36,7 +36,7 @@ out = d.apply("pointwise_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
 -------------
-f = d.seqMapHandshake( top, W, H, T,false, 2 )
+f = d.seqMapHandshake( top, W, H, W,H, T,false, 2 )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
@@ -44,7 +44,7 @@ io.output("out/pointwise_wide_handshake.sim.v")
 io.write(f:toVerilog())
 io.close()
 ----------
-fnaxi = d.seqMapHandshake( hsfn, W, H, T, true )
+fnaxi = d.seqMapHandshake( hsfn, W, H, W, H, T, true )
 io.output("out/pointwise_wide_handshake.axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

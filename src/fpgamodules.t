@@ -180,13 +180,16 @@ end
 --modules.fifo = memoize(modules.fifonoop)
 
 function modules.shiftRegister( ty, size, name, options )
+  assert(options==nil or type(options)=="table")
+  if options==nil then options={} end
+
   local M = systolic.moduleConstructor( name, options )
   local pipelines = {}
   local out
   local inp = systolic.parameter("sr_input", ty)
   local regs = {}
   for i=1,size do
-    local I = M:add( systolic.module.reg( ty ):instantiate("SR"..i) )
+    local I = M:add( systolic.module.reg( ty, options.init ):instantiate("SR"..i) )
     table.insert( regs, I )
     if i==1 then
       table.insert(pipelines, I:set(inp) )

@@ -198,7 +198,10 @@ function types.meet( a, b, op, ast)
 
   local treatedAsBinops = {["select"]=1, ["vectorSelect"]=1,["array"]=1, ["mapreducevar"]=1, ["dot"]=1, ["min"]=1, ["max"]=1}
 
-  if a:isArray() and b:isArray() then
+  if a:isTuple() and b:isTuple() then
+    assert(a==b)
+    return a,a,a
+  elseif a:isArray() and b:isArray() then
     if a:arrayLength() ~= b:arrayLength() then
       print("Type error, array length mismatch")
       return nil
@@ -355,7 +358,7 @@ function types.meet( a, b, op, ast)
     local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, ast )
     return thistype, lhstype, rhstype
   else
-    print("Type error, meet not implemented for "..tostring(a).." and "..tostring(b))
+    print("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op)
     print(ast.op)
     assert(false)
     --os.exit()
