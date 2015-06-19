@@ -1304,17 +1304,17 @@ RAMB18E1 #(.DOA_REG(0),
   end
 end
 
-function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, options, init )
+function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, options )
   err( type(inputBits)=="number", "inputBits must be a number")
   err( type(outputBits)=="number", "outputBits must be a number")
   err( options==nil or type(options)=="table", "options must be table")
 
-  if init~=nil then
-    assert(type(init)=="table")
-    err(#init==2048, "init table has size "..(#init))
+  if options.init~=nil then
+    assert(type(options.init)=="table")
+    err(#options.init==2048, "init table has size "..(#options.init))
   end
 
-  local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init, options=options}
+  local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, options=options}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
@@ -1330,11 +1330,11 @@ end
 
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
-function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, options, init )
+function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, options)
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
   err( type(inputBits)=="number", "inputBits must be a number")
   err( type(outputBits)=="number", "outputBits must be a number")
-  err( isPowerOf2(sizeInBytes), "size in Bytes must be power of 2")
+  err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
 
   local bwcount = math.ceil(inputBits/32)
   local szcount = math.ceil(sizeInBytes/(2*1024))
@@ -1342,17 +1342,17 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
 
   assert(szcount==1)
 
-  if init~=nil then
-    err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
-    while #init < 2048 do
-      table.insert(init,0)
+  if options.init~=nil then
+    err( #options.init==sizeInBytes, "init field has size "..(#options.init).." but should have size "..sizeInBytes )
+    while #options.init < 2048 do
+      table.insert(options.init,0)
     end
   end
 
   if writeAndReturnOriginal then
     err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
     local addrbits = math.log((sizeInBytes*8)/inputBits)/math.log(2)
-    local mod = systolic.moduleConstructor( "bramSDP", options )
+    local mod = systolic.moduleConstructor( "bramSDP_size"..sizeInBytes.."_bw"..inputBits, options )
     local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBits)})
     local inpAddr = systolic.index(sinp,0)
     local inpData = systolic.index(sinp,1)
@@ -1362,7 +1362,7 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
 
     local out = {}
     for bw=0,bwcount-1 do
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSize, options, init ):instantiate("bram_"..bw) )
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSize, options ):instantiate("bram_"..bw) )
       local inp = systolic.bitSlice( inpData, bw*eachSize, (bw+1)*eachSize-1 )
       table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
     end

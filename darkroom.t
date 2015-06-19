@@ -200,9 +200,9 @@ function darkroom.SoAtoAoS( W, H, typelist )
   assert(type(H)=="number")
   assert(type(typelist)=="table")
 
-  local res = {kind="packTupleArrays", W=W,H=H}
+  local res = {kind="SoAtoAoS", W=W,H=H}
 
-  res.inputType = types.tuple( map(typelist, function(t) return sel( stateful, darkroom.Stateful(types.array2d(t,W,H)), types.array2d(t,W,H) ) end) )
+  res.inputType = types.tuple( map(typelist, function(t) return types.array2d(t,W,H) end) )
   res.outputType = types.array2d(types.tuple(typelist),W,H)
   res.delay = 0
   local struct PackTupleArrays { }
@@ -260,7 +260,7 @@ function darkroom.packTuple( typelist, handshake )
   return darkroom.newFunction(res)
 end
 
-function darkroom.packTupleArraysStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.darkroom.packTuple( typelist ) ) end
+function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.darkroom.packTuple( typelist ) ) end
 
 function darkroom.crop(A,W,H,L,R,B,T,value)
   map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
@@ -385,7 +385,6 @@ end
       data(tinp) = @(self.fifo:popFront())
       valid(tinp) = true
     end
-    cstdio.printf("CALLINNER %d\n",valid(tinp))
     self.inner:process(&tinp,&tout)
     self.delaysr:pushBack(&tout)
   end
@@ -415,7 +414,6 @@ function darkroom.map( f, W, H )
   local struct MapModule {fn:f.terraModule}
   terra MapModule:reset() self.fn:reset() end
   terra MapModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    cstdio.printf("MAP\n")
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
@@ -814,6 +812,10 @@ end
 function darkroom.linebuffer( A, w, h, T, ymin )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
+  
+  -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
+  err( w%T==0, "Linebuffer error, W%T~=0")
+
   local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
   darkroom.expectPure(A)
   res.inputType = darkroom.Stateful(types.array2d(A,T))
@@ -850,6 +852,12 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   local outarray = {}
   local evicted
 
+  local bits = darkroom.extract(res.inputType):verilogBits()
+  local sizeInBytes = nearestPowerOf2((w/T)*darkroom.extract(res.inputType):verilogBits()/8)
+  local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
+  local bramMod = S.module.bramSDP( true, sizeInBytes, bits, bits, {CE=true,init=init})
+  local addrbits = math.log((sizeInBytes*8)/bits)/math.log(2)
+
   for y=0,-ymin do
     local lbinp = evicted
     if y==0 then lbinp = sinp end
@@ -857,12 +865,10 @@ function darkroom.linebuffer( A, w, h, T, ymin )
 
     if y<-ymin then
       -- last line doesn't need a ram
-      local init = map(range(0,128-1), function(i) return i%256 end)
-      local bits = darkroom.extract(res.inputType):verilogBits()
-      local BRAM = res.systolicModule:add( S.module.bramSDP( true, (w/T)*darkroom.extract(res.inputType):verilogBits()/8, bits, bits, {CE=true}, init ):instantiate("lb_m"..math.abs(y)))
+      local BRAM = res.systolicModule:add( bramMod:instantiate("lb_m"..math.abs(y)) )
 
 --      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
-      local addrbits = math.log(((w/T)*darkroom.extract(res.inputType):verilogBits())/bits)/math.log(2)
+
       evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), S.cast(lbinp,types.bits(bits))} )
       evicted = S.cast( evicted, darkroom.extract(res.inputType) )
     end
@@ -1287,7 +1293,7 @@ function darkroom.lambda( name, input, output )
     local out = fn.output:visitEach(
       function(n, inputs)
 
-        if true then table.insert( stats, quote cstdio.printf([n.name.."\n"]) end ) end
+        --if true then table.insert( stats, quote cstdio.printf([n.name.."\n"]) end ) end
 
         local out
 
@@ -1631,7 +1637,8 @@ function darkroom.freadSeq( filename, ty, filenameVerilog)
     darkroomAssert(self.file~=nil, ["file "..filename.." doesnt exist"])
   end
   terra FreadSeq:process(inp : &types.null():toTerraType(), out : &ty:toTerraType())
-    cstdio.fread(out,[ty:sizeof()],1,self.file)
+    var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
+    darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
   end
   res.terraModule = FreadSeq
   res.systolicModule = S.moduleConstructor("freadSeq",{CE=true})
@@ -1737,13 +1744,14 @@ function darkroom.seqMapHandshake( f, W, H, T, axi, readyRate )
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
     var inp : darkroom.extract(f.inputType):toTerraType()
-    valid(inp)=true
+
     var o : darkroom.extract(f.outputType):toTerraType()
     var inpAddr = 0
     var outAddr = 0
     while inpAddr<W*H or outAddr<W*H do
+      valid(inp)=(inpAddr<W*H)
       self.inner:process(&inp,&o)
-      inpAddr = inpAddr + T
+      inpAddr = inpAddr + T -- in simulator, ready==true always, so we can always increment.
       if valid(o) then outAddr = outAddr + T end
     end
   end
@@ -1797,138 +1805,6 @@ endmodule
   res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
 
   return darkroom.newFunction(res)
-end
-
-local Im = require "image"
-
-function darkroom.scanlHarness( Module, 
-                                inputT, inputFilename, inputType, inputWidth, inputHeight, 
-                                outputT, outputFilename, outputType, outputWidth, outputHeight,
-                                L,R,B,Top)
-  assert(terralib.types.istype(Module))
-  assert(type(inputT)=="number")
-  assert(darkroom.isStatefulHandshake(inputType)==false)
-  assert(type(inputFilename)=="string")
-  assert(type(outputFilename)=="string")
-  assert(type(Top)=="number")
-
-  return terra()
-    cstdio.printf("DOIT\n")
-    var imIn : Im
-    imIn:load( inputFilename )
-    imIn:expand( L,R,B,Top)
-    darkroomAssert(imIn.width==inputWidth,"input image width isn't correct")
-    darkroomAssert(imIn.height==inputHeight,"input image height isn't correct")
-
-    var imOut : Im
-    imOut:allocateDarkroomFormat(outputWidth, outputHeight, 1, 1, 8, false, false, false)
-
---    var inp : inputType:toTerraType()
---    var out : outputType:toTerraType()
-
-    var module : Module
-    module:reset()
-
-    for i=0,inputWidth*inputHeight,inputT do
-      cstdio.printf("ITER %d\n",i)
-      module:process( [&uint8[inputT]]([&uint8](imIn.data)+i), [&uint8[outputT]]([&uint8](imOut.data)+i) )
---      module:process( [&uint8[T]](imIn.data), [&uint8[T]](imOut.data) )
-    end
-
---    imOut:save( outputFilename )
-    imOut:crop(L,R,B,Top):save( outputFilename )
-  end
-end
-
-
-function darkroom.scanlHarnessHandshake( Module, 
-                                inputT, inputFilename, inputType, inputWidth, inputHeight, 
-                                outputT, outputFilename, outputType, outputWidth, outputHeight,
-                                L,R,B,Top)
-  assert(terralib.types.istype(Module))
-  assert(type(inputT)=="number")
-  assert(types.isType(outputType))
-  assert(darkroom.isStatefulHandshake(inputType))
-  assert(type(Top)=="number")
-
-  local throttle = 1
-  if inputT<1 then throttle=1/inputT;inputT=1 end
-
-  print("OUTPUTTYPE",outputType)
-  assert(darkroom.extractStatefulHandshake(outputType):isArray())
-  local outputTileW = (darkroom.extractStatefulHandshake(outputType):arrayLength())[1]
-  local outputTileH = (darkroom.extractStatefulHandshake(outputType):arrayLength())[2]
-
-  return terra()
-    cstdio.printf("DOIT\n")
-    var imIn : Im
-    imIn:load( inputFilename )
-    imIn:expand( L, R, B, Top)
-    var imOut : Im
-    imOut:allocateDarkroomFormat(outputWidth, outputHeight, 1, 1, 8, false, false, false)
-
-    var module : Module
-    module:reset()
-
-    var delayCycles : int = 0
-    var validCycles = 0
-    var invalidCycles = 0
-    var started = false
-    var inpAddr = 0
-    var outAddrX = 0
-    var outAddrY = 0
-    var output : darkroom.extract(outputType):toTerraType()
-
-    var packedInp : darkroom.extract(inputType):toTerraType()
---    var inputValid = true
---    var outputValid = true
-
-    var TH : int = 0
-    while inpAddr<inputWidth*inputHeight or outAddrY<outputHeight do
-      cstdio.printf("ITER %d outX %d outY %d\n",inpAddr,outAddrX, outAddrY)
-      
-      if TH==0 then
-        data(packedInp) = @[&uint8[inputT]]([&uint8](imIn.data)+inpAddr)
-        valid(packedInp) = true
-        module:process( &packedInp, &output)
-        inpAddr = inpAddr + inputT
-      else
-        valid(packedInp) = false
-        module:process( &packedInp, &output )
-      end
-      TH = TH + 1
-      if TH>=throttle then TH=0 end
-
-      if valid(output) then
---        @[&uint8[T]]([&uint8](imOut.data)+outAddr) = output
-        for y=0,outputTileH do
-          for x=0,outputTileW do
-            @([&uint8](imOut.data)+outAddrX+x+(outAddrY+y)*outputWidth) = data(output)[y*outputTileW+x]
-          end
-        end
-
-        outAddrX = outAddrX+outputTileW; 
-        if outAddrX>=outputWidth then
-          outAddrY = outAddrY + outputTileH
-          outAddrX = 0
-        end
-
-        started = true
-        validCycles = validCycles + 1
-      elseif started then
-        invalidCycles = invalidCycles + 1
-      elseif started==false then
-        delayCycles = delayCycles + 1
-      end
-    end
-
-    imOut:crop(L,R,B,Top):save( outputFilename )
-
-    cstdio.printf("Delay Cycles %d\n", delayCycles)
-    cstdio.printf("valid percent: %f\n",[float](validCycles*100)/[float](invalidCycles+validCycles))
-
-    module:stats("root")
-  end
 end
 
 function darkroom.writeMetadata(filename, width, height, channels, bytesPerChannel,inputImage)

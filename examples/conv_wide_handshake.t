@@ -8,8 +8,9 @@ T = 8 -- throughput
 ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
 
-W = 128+ConvWidth
-H = 64+ConvWidth
+-- expand to include crop region
+W = upToNearest(T,128+ConvWidth-1)
+H = 64+ConvWidth-1
 
 -------------
 sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8)} )
@@ -27,7 +28,7 @@ reduceSumInt32 = d.lift( "reduceSumInt32", types.tuple { types.int(32), types.in
 inp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
 r = d.constant( "convkernel", range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth) )
 
-packed = d.apply( "packedtup", d.packTupleArrays(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
+packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
 conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), packed )
 conv = d.apply( "sum", d.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = d.apply( "touint8", touint8, conv )
