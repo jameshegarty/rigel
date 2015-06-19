@@ -8,6 +8,9 @@ T = 8 -- throughput
 ConvWidth = 4
 ConvArea = math.pow(ConvWidth,2)
 
+inputW = 128
+inputH = 64
+
 -- expand to include crop region
 W = upToNearest(T,128+ConvWidth-1)
 H = 64+ConvWidth-1
@@ -50,11 +53,12 @@ hsfn = d.makeHandshake(convpipe)
 ----------------
 inp = d.input( d.StatefulHandshake(types.null()) )
 out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",BASE_TYPE,"../frame_128.raw")),inp)
+out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)), out )
 out = d.apply("conv_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/conv_wide_handshake.raw",BASE_TYPE,"conv_wide_handshake.sim.raw")), out )
 harness = d.lambda( "harness", inp, out )
 -------------
-f = d.seqMapHandshake( harness, W, H, T,false )
+f = d.seqMapHandshake( harness, inputW, inputH, W, H, T,false )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
@@ -62,7 +66,7 @@ io.output("out/conv_wide_handshake.sim.v")
 io.write(f:toVerilog())
 io.close()
 ----------
-fnaxi = d.seqMapHandshake( hsfn, W, H, T, true )
+fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, W, H,T, true )
 io.output("out/conv_wide_handshake.axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

@@ -526,6 +526,8 @@ function systolicASTFunctions:pipeline()
       n.inputs={}
       for k,v in pairs(args) do n.inputs[k] = v[1] end
       n = systolicAST.new(n)
+      local pipelined = n.pipelined
+      n.pipelined = nil -- clear pipelined bit: we no longer need it, and it interferes with CSE
 
       if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" or n.kind=="null" then
         return {n, 0}
@@ -551,9 +553,9 @@ function systolicASTFunctions:pipeline()
           local internalDelay = 0
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
-            err( internalDelay==0 or n.pipelined, "Error, could not disable pipelining, "..n.loc)
+            err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
           elseif n.kind=="binop" or n.kind=="select" then 
-            if n.pipelined then
+            if pipelined then
               n = getDelayed(n,1)
               internalDelay = 1
             else
@@ -783,10 +785,12 @@ function systolicASTFunctions:toVerilog( module )
           if n.kind=="binop" then
 
             if n.op=="<" or n.op==">" or n.op=="<=" or n.op==">=" then
-              if n.type:baseType():isBool() and n.lhs.type:baseType():isInt() and n.rhs.type:baseType():isInt() then
-                res = "($signed("..args[1]..sub..")"..n.op.."$signed("..inputs.rhs[c]..sub.."));"
-              elseif n.type:baseType():isBool() and n.lhs.type:baseType():isUint() and n.rhs.type:baseType():isUint() then
-                res = "(("..args[1]..")"..n.op.."("..inputs.rhs[c].."));"
+              local lhs = n.inputs[1]
+              local rhs = n.inputs[2]
+              if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
+                res = "($signed("..args[1]..")"..n.op.."$signed("..args[2].."));"
+              elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
+                res = "(("..args[1]..")"..n.op.."("..args[2].."));"
               else
                 print( n.type:baseType():isBool() , n.lhs.type:baseType():isInt() , n.rhs.type:baseType():isInt(),n.type:baseType():isBool() , n.lhs.type:baseType():isUint() , n.rhs.type:baseType():isUint())
                 assert(false)
@@ -1017,7 +1021,12 @@ function userModuleFunctions:getDependencies()
 end
 
 function userModuleFunctions:getDelay( fnname )
-  if self.options.onlyWire then return self.options.verilogDelay[fnname] end
+  err( self.functions[fnname]~=nil, ":getDelay() error, '"..fnname.."' is not a valid function on this module")
+  if self.options.onlyWire then 
+    err( type(self.options.verilogDelay[fnname])=="number", "Error, onlyWire module function '"..fnname.."' is missing delay information")
+    return self.options.verilogDelay[fnname] 
+  end
+  assert(type(self.fndelays[fnname])=="number")
   return self.fndelays[fnname]
 end
 
@@ -1067,6 +1076,7 @@ function systolic.module.new( name, fns, instances, options )
   if options.onlyWire==nil or options.onlyWire==false then
     local pipelineRegisters
     t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline()
+    t.ast = t.ast:CSE() -- after pipeline bits are cleared, some more stuff can be CSE'd
     map( pipelineRegisters, function(p) table.insert( t.instances, p ) end )
   end
 

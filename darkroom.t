@@ -107,6 +107,20 @@ function darkroom.extractStatefulHandshake( a, loc )
   return a.list[1]
 end
 
+function sumwrap(limit)
+  assert(type(limit)=="number")
+  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
+                      S.constant(0,types.uint(16)),
+                      S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
+  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+end
+
+function summodule()
+  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+  return S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},{CE=true})
+end
+
 function darkroom.print(TY,inp)
   local stats = {}
   local TY = darkroom.extract(TY)
@@ -262,15 +276,16 @@ end
 
 function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.darkroom.packTuple( typelist ) ) end
 
-function darkroom.crop(A,W,H,L,R,B,T,value)
+-- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
+function darkroom.border(A,W,H,L,R,B,T,value)
   map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
-  local res = {kind="crop",L=L,R=R,T=T,B=B,value=value}
+  local res = {kind="border",L=L,R=R,T=T,B=B,value=value}
   res.inputType = types.array2d(A,W,H)
   res.outputType = res.inputType
   res.delay = 0
-  local struct Crop {}
-  terra Crop:reset() end
-  terra Crop:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+  local struct Border {}
+  terra Border:reset() end
+  terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for y=0,H do for x=0,W do 
         if x<L or y<B or x>=W-R or y>=H-T then
           (@out)[y*W+x] = [value]
@@ -279,7 +294,7 @@ function darkroom.crop(A,W,H,L,R,B,T,value)
         end
     end end
   end
-  res.terraModule = Crop
+  res.terraModule = Border
   return darkroom.newFunction(res)
 end
 
@@ -390,8 +405,20 @@ end
   end
   res.terraModule = LiftHandshake
 
-  return darkroom.newFunction(res)
+  res.systolicModule = S.moduleConstructor( "LiftHandshake_"..f.systolicModule.name, {onlyWire=true} )
 
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "LiftHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true} ):instantiate("validBitDelay") )
+  local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
+  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
+  local rst = S.parameter("reset",types.bool())
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{},rst) )
+
+  assert( f.systolicModule:getDelay("ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
+  local pready = S.parameter("ready_downstream", types.bool())
+  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(pready),SR:CE(pready)} ) )
+
+  return darkroom.newFunction(res)
 end
 
 -- arrays: A[W][H]. Row major
@@ -795,10 +822,11 @@ function darkroom.liftXYSeq( inpType, outType, W, H, T, tfn, delay )
   local p = darkroom.apply("p", darkroom.posSeq(W,H,T), darkroom.extractState("e",inp) )
   local packed = darkroom.apply( "packedtup", darkroom.packTupleArraysStateful(T,1,{inpType,types.tuple({types.int(32),types.int(32)})}), darkroom.tuple("ptup", {inp,p}) )
   local out = darkroom.apply("m", darkroom.makeStateful(darkroom.map( twrap, T )), packed )
-  return darkroom.lambda( "cropSeq", inp, out )
+  return darkroom.lambda( "liftXYSeq", inp, out )
 end
 
-function darkroom.cropSeq( A, W, H, T, L, R, B, Top, Value )
+-- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
+function darkroom.borderSeq( A, W, H, T, L, R, B, Top, Value )
   map({W,H,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
 
   return darkroom.liftXYSeq( A, A, W, H, T,
@@ -807,6 +835,68 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top, Value )
                                   else @out = @a end
                                 end, 1 )
 
+end
+
+-- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
+-- sequentialized to throughput T
+function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
+  err( types.isType(A), "A must be a type")
+  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+
+  err( W%T==0, "padSeq, W%T~=0")
+  err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
+
+  local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value}
+  res.inputType = darkroom.StatefulV(types.array2d(A,T))
+  res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+  res.delay=0
+
+  local struct PadSeq {posX:int; posY:int}
+  terra PadSeq:reset() self.posX=0; self.posY=0; end
+  terra PadSeq:stats() end -- not particularly interesting
+  terra PadSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    valid(out) = true -- we can always produce data
+    var inner : bool = false
+    if valid(inp) then
+      data(out) = data(inp)
+      inner = true
+    elseif self.posX<L or self.posX>=(L+W) or self.posY<B or self.posY>=(B+H) then
+      data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
+    else
+      darkroomAssert(false,"PadSeq, missing data?")
+    end
+
+    self.posX = self.posX+T;
+    if self.posX==(W+L+R) then
+      self.posX=0;
+      self.posY = self.posY+1;
+    end
+--    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
+  end
+  terra PadSeq:ready()  return (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
+  res.terraModule = PadSeq
+
+  res.systolicModule = S.moduleConstructor("PadSeq"..T,{CE=true})
+  local posX = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap(W+L+R-1), {CE=true} ):instantiate("posX") )
+  local posY = res.systolicModule:add( S.module.regBy( types.uint(16), 0, summodule(), {CE=true}):instantiate("posY") )
+
+  local pinp = S.parameter("process_input", darkroom.extractV(res.inputType) )
+  local C1 = S.lt( posX:get(), S.constant(L,types.uint(16)))
+  local C2 = S.ge( posX:get(), S.constant(L+W,types.uint(16)))
+  local C3 = S.lt( posY:get(), S.constant(B,types.uint(16)))
+  local C4 = S.ge( posY:get(), S.constant(B+H,types.uint(16)))
+  local isInside = S.__and(S.__and(C1,C2),S.__and(C3,C4))
+
+  local pipelines={}
+  pipelines[1] = posY:setBy( S.constant(1,types.uint(16), S.eq( posX:get(), S.constant(W+L+R-1,types.uint(16)) ) ) )
+  pipelines[2] = posX:setBy( S.constant(1, types.uint(16) ) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.select( isInside, pinp, S.cast(S.constant(Value,A),types.array2d(A,T)) ), "process_output", pipelines) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
+
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), isInside:disablePipelining(), "ready", {} ) )
+
+  return darkroom.newFunction(res)
 end
 
 function darkroom.linebuffer( A, w, h, T, ymin )
@@ -839,15 +929,9 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   end
   res.terraModule = Linebuffer
 
-  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  local ot = S.select(S.eq(S.index(swinp,0),S.constant((w/T)-1,types.uint(16))),
-                      S.constant(0,types.uint(16)),
-                      S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  local sumwrap = S.module.new( "sumwrap", {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
-
   res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap, {CE=true} ):instantiate("addr") )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), 0, sumwrap((w/T)-1), {CE=true} ):instantiate("addr") )
 
   local outarray = {}
   local evicted
@@ -1729,17 +1813,19 @@ local function readAll(file)
     return content
 end
 
-function darkroom.seqMapHandshake( f, W, H, T, axi, readyRate )
+function darkroom.seqMapHandshake( f, inputW, inputH, outputW, outputH, T, axi, readyRate )
   err( darkroom.isFunction(f), "fn must be a function")
-  err( type(W)=="number", "W must be a number")
-  err( type(H)=="number", "H must be a number")
+  err( type(inputW)=="number", "inputW must be a number")
+  err( type(inputH)=="number", "inputH must be a number")
+  err( type(outputW)=="number", "outputW must be a number")
+  err( type(outputH)=="number", "outputH must be a number")
   err( type(T)=="number", "T must be a number")
   err( type(axi)=="boolean", "axi should be a bool")
 
   darkroom.expectStatefulHandshake(f.inputType)
   darkroom.expectStatefulHandshake(f.outputType)
 
-  local res = {kind="seqMapHandshake", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
+  local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, T=T,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
@@ -1748,8 +1834,8 @@ function darkroom.seqMapHandshake( f, W, H, T, axi, readyRate )
     var o : darkroom.extract(f.outputType):toTerraType()
     var inpAddr = 0
     var outAddr = 0
-    while inpAddr<W*H or outAddr<W*H do
-      valid(inp)=(inpAddr<W*H)
+    while inpAddr<inputW*inputH or outAddr<outputW*outputH do
+      valid(inp)=(inpAddr<inputW*inputH)
       self.inner:process(&inp,&o)
       inpAddr = inpAddr + T -- in simulator, ready==true always, so we can always increment.
       if valid(o) then outAddr = outAddr + T end

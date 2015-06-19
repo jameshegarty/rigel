@@ -209,7 +209,7 @@ function types.meet( a, b, op, ast)
       local convtypea = types.array( at, a:arrayLength() )
       local convtypeb = types.array( bt, a:arrayLength() )
       return rettype, convtypea, convtypeb
-    elseif darkroom.cmpops[op] then
+    elseif cmpops[op] then
       -- cmp ops are elementwise
       local rettype,at,bt = types.meet(a.over,b.over,op,ast)
       local convtypea = types.array( at, a:arrayLength() )
@@ -217,9 +217,9 @@ function types.meet( a, b, op, ast)
       
       local thistype = types.array( types.bool(), a:arrayLength() )
       return thistype, convtypea, convtypeb
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif binops[op] or treatedAsBinops[op] then
       -- do it pointwise
-      local thistype = types.array( types.meet(a.over,b.over,op,ast), a:arrayLength() )
+      local thistype = types.array2d( types.meet(a.over,b.over,op,ast), (a:arrayLength())[1], (a:arrayLength())[2] )
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.array(types.float(32), a:arrayLength() )
@@ -271,7 +271,7 @@ function types.meet( a, b, op, ast)
     elseif ut.precision<t.precision then
       prec = math.max(a.precision,b.precision)
     else
-      darkroom.error("Can't meet a "..tostring(ut).." and a "..tostring(t),ast:linenumber(),ast:offset(),ast:filename())
+      error("Can't meet a "..tostring(ut).." and a "..tostring(t))
     end
     
     local thistype = types.int(prec)
@@ -305,11 +305,11 @@ function types.meet( a, b, op, ast)
       assert(false) -- NYI
     end
     
-    if darkroom.cmpops[op] then
+    if cmpops[op] then
       return types.bool(), thistype, thistype
-    elseif darkroom.intbinops[op] then
-      darkroom.error("Passing a float to an integer binary op "..op,ast:linenumber(),ast:offset())
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif intbinops[op] then
+      error("Passing a float to an integer binary op "..op)
+    elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.float(32)
@@ -324,11 +324,11 @@ function types.meet( a, b, op, ast)
     local prec = math.max(a.precision,b.precision)
     local thistype = types.float(prec)
     
-    if darkroom.cmpops[op] then
+    if cmpops[op] then
       return types.bool(), thistype, thistype
-    elseif darkroom.intbinops[op] then
-      darkroom.error("Passing a float to an integer binary op "..op,ast:linenumber(),ast:offset())
-    elseif darkroom.binops[op] or treatedAsBinops[op] then
+    elseif intbinops[op] then
+      error("Passing a float to an integer binary op "..op)
+    elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.float(32)
@@ -340,7 +340,7 @@ function types.meet( a, b, op, ast)
     
   elseif a.kind=="bool" and b.kind=="bool" then
     -- you can combine two bools into an array of bools
-    if darkroom.boolops[op]==nil and op~="array" then
+    if boolops[op]==nil and op~="array" then
       print("Internal error, attempting to meet two booleans on a non-boolean op: "..op,ast:linenumber(),ast:offset())
       return nil
     end
@@ -355,7 +355,7 @@ function types.meet( a, b, op, ast)
     local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, ast )
     return thistype, lhstype, rhstype
   else
-    print("Type error, meet not implemented for "..tostring(a).." and "..tostring(b),"line",ast:linenumber(),ast:filename())
+    print("Type error, meet not implemented for "..tostring(a).." and "..tostring(b))
     print(ast.op)
     assert(false)
     --os.exit()
