@@ -283,7 +283,7 @@ __index = function(tab,key)
         
         tab.callsites[fn.name] = tab.callsites[fn.name] or {}
 
-        err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is "..tostring(inp.type).." but should be "..tostring(fn.input.type) )
+        err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
 
         local otype = types.null()
         if fn.output~=nil then otype = fn.output.type end
@@ -310,6 +310,8 @@ __index = function(tab,key)
         elseif self.options.arbitrate=="valid" then
           if #tab.callsites[fn.name]==0  then
 
+            err(inp~=nil, "call aribtrate - missing input?")
+            err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
             local tca = { kind="callArbitrate", type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={inp,valid} }
             tca = systolicAST.new(tca)
             local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={systolic.index(tca,0),systolic.index(tca,1)} }
@@ -319,9 +321,12 @@ __index = function(tab,key)
             -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
             local tca = tab.callsites[fn.name][1][1]
             local t = tab.callsites[fn.name][1][2]
+            print("CABEFORE",self.kind,self.name,tca,#tca.inputs)
+            err(inp~=nil, "call aribtrate - missing input?")
             table.insert(tca.inputs,inp)
+            err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
             table.insert(tca.inputs,valid)
-            print("CA",tca,#tca.inputs)
+            print("CA",self.kind,self.name,tca,#tca.inputs)
             return t
           end
           assert(false)
@@ -537,7 +542,7 @@ function systolicASTFunctions:pipeline()
       elseif n.kind=="index" or n.kind=="cast" or n.kind=="bitSlice" then
         -- passthrough, no pipelining
         return {n, args[1][2]}
-      elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" then
+      elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" or n.kind=="callArbitrate" then
         -- tuples and calls happen to be almost identical
 
         if n.kind=="call" and n.func.input.type==types.null() then
@@ -564,7 +569,7 @@ function systolicASTFunctions:pipeline()
             else
               internalDelay = 0
             end
-          elseif n.kind=="tuple" then
+          elseif n.kind=="tuple" or n.kind=="callArbitrate" then
             internalDelay = 0 -- purely wiring
           else
             assert(false)
@@ -638,18 +643,29 @@ function systolicASTFunctions:toVerilog( module )
       -- if wire==false, then finalResult is an expression, and can't be used multiple times
       local wire = false
 
+      -- constants don't need to be assigned to wires if we use them multiple times (can just duplicate the text to make the verilog code easier to read)
+      local const = false
+
       if n.kind=="call" then
         local decl
         finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
         table.insert( declarations, decl )
       elseif n.kind=="callArbitrate" then
+        -- inputs are stored as {data,validbit} pairs, ie {call1data,call1valid,call2data,call2valid}
         local pairs = split(args,2)
-        local data = foldt(pairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
-        local v = foldt(pairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
-
-        local cnt = foldt(pairs, function(a,b) return "(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))" end )
-        table.insert( declarations, "always @(posedge CLK) begin if("..cnt..[[ > 5'd1) begin $display("error, function has multiple valid bits active in same cycle!");$finish(); end end]])
-        finalResult = "{"..v..","..data.."}"
+        if #pairs==1 then
+          -- we're in arbitrate mode, but we didn't actually end up calling it multiple times. Passthrough
+          finalResult = "{"..args[2]..","..args[1].."}"
+        else
+          local data = foldt(pairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
+          local v = foldt(pairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
+          
+          -- do bitcount w/ the array of valid bits. Pad to 5 bits so that sum works correctly
+          local cnt = foldt(pairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
+          
+          table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function '' on module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
+          finalResult = "{"..v..","..data.."}"
+        end
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
@@ -659,6 +675,7 @@ function systolicASTFunctions:toVerilog( module )
           end
         end
         finalResult = "("..cconst(n.type,n.value)..")"
+        const = true
       elseif n.kind=="fndefn" then
         --table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
         if n.fn.output~=nil and n.fn.output.type~=types.null() then table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";") end
@@ -847,7 +864,7 @@ function systolicASTFunctions:toVerilog( module )
       end
 
       -- if this value is used multiple places, store it in a variable
-      if n:parentCount(self)>1 and wire==false then
+      if n:parentCount(self)>1 and wire==false and const==false then
         table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
         return {n.name.."USEDMULTIPLE"..n.kind,true}
       else
@@ -1056,13 +1073,15 @@ function systolic.module.new( name, fns, instances, options )
 
   -- We let users choose whatever parameter names they want. Check for duplicate variable names in functions.
   local _usedPname = {}
-  for _,v in pairs(fns) do
+  for k,v in pairs(fns) do
     err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" )
-    _usedPname[v.outputName]=1
+    _usedPname[v.outputName]="output"
     err( _usedPname[v.input.name]==nil, "input name "..v.input.name.." used somewhere else in module" )
-    _usedPname[v.input.name]=1
-    err( _usedPname[v.valid.name]==nil, "valid bit name "..v.valid.name.." used somewhere else in module" )
-    _usedPname[v.valid.name]=1
+    _usedPname[v.input.name]="input"
+    if _usedPname[v.valid.name]~=nil then
+      err( _usedPname[v.valid.name]==nil, "valid bit name '"..v.valid.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.valid.name] )
+    end
+    _usedPname[v.valid.name]="valid for fn '"..k.."'"
   end
 
   local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, options=options,isComplete=false}
@@ -1484,6 +1503,72 @@ function systolic.module.file( filename, ty)
   res.functions.reset.isPure = function() return false end
 
   return setmetatable(res, fileModuleMT)
+end
+
+--------------------------------------------------------------------
+printModuleFunctions={}
+setmetatable(printModuleFunctions,{__index=systolicModuleFunctions})
+printModuleMT={__index=printModuleFunctions}
+
+function printModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+
+  local datalist = ""
+  if self.type:isTuple() then
+    local bit = 0
+    for k,v in pairs(self.type.list) do
+      if k~=1 then datalist=datalist.."," end
+      datalist = datalist..instance.name.."["..(bit+v:verilogBits()-1)..":"..bit.."]"
+      bit = bit + v:verilogBits()
+    end
+  else
+    assert(false)
+  end
+
+  local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
+assign ]]..instance.name..[[ = ]]..datavar..[[;
+always @(posedge CLK) begin $display("]]..self.str..[[",]]..datalist..[[); end]]
+  return "___NULL_PRINT_OUT", decl, true
+end
+
+function printModuleFunctions:toVerilog() return "" end
+function printModuleFunctions:getDependenciesLL() return {} end
+function printModuleFunctions:getDelay(fnname) return 0 end
+
+function systolic.module.print( ty, str )
+  err( types.isType(ty), "type input to print module should be type")
+  err( type(str)=="string", "string input to print module should be string")
+  local res = {kind="print",str=str, type=ty, options={}}
+  res.functions={}
+  res.functions.process={name="process",output={type=types.null()},input={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"}}
+  res.functions.process.isPure = function() return true end
+  return setmetatable(res, printModuleMT)
+end
+
+--------------------------------------------------------------------
+assertModuleFunctions={}
+setmetatable(assertModuleFunctions,{__index=systolicModuleFunctions})
+assertModuleMT={__index=assertModuleFunctions}
+
+function assertModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  local CES = ""
+  if self.options.CE then CES=" && CE==1'b1" end
+  local decl = [[always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("]]..self.str..[["); $finish(); end end]]
+  return "___NULL_ASSERT_OUT", decl, true
+end
+
+function assertModuleFunctions:toVerilog() return "" end
+function assertModuleFunctions:getDependenciesLL() return {} end
+function assertModuleFunctions:getDelay(fnname) return 0 end
+
+function systolic.module.assert( str, options )
+  err( type(str)=="string", "string input to print module should be string")
+
+  if options==nil then options={} end
+  local res = {kind="assert",str=str,  options=options}
+  res.functions={}
+  res.functions.process={name="process",output={type=types.null()},input={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"}}
+  res.functions.process.isPure = function() return false end
+  return setmetatable(res, assertModuleMT)
 end
 
 --------------------------------------------------------------------

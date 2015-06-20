@@ -185,22 +185,30 @@ function modules.shiftRegister( ty, size, name, options )
 
   local M = systolic.moduleConstructor( name, options )
   local pipelines = {}
+  local resetPipelines = {}
   local out
   local inp = systolic.parameter("sr_input", ty)
   local regs = {}
+
+  local ppvalid = systolic.parameter("pushPop_valid",types.bool())
+  local rstvalid = systolic.parameter("reset",types.bool())
+
   for i=1,size do
-    local I = M:add( systolic.module.reg( ty, options.init ):instantiate("SR"..i) )
+    local I = M:add( systolic.module.reg( ty, options.init ):instantiate("SR"..i,{arbitrate="valid"}) )
     table.insert( regs, I )
     if i==1 then
-      table.insert(pipelines, I:set(inp) )
+      table.insert(pipelines, I:set(inp,ppvalid) )
     else
-      table.insert(pipelines, I:set(regs[i-1]:get()) )
+      table.insert(pipelines, I:set(regs[i-1]:get(),ppvalid) )
     end
+    table.insert( resetPipelines, I:set( systolic.constant( options.resetValue, ty ), rstvalid ) )
     if i==size then out=I:get() end
   end
   if size==0 then out=inp end
 
-  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines) )
+  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid) )
+
+  local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines,rstvalid) )
 
   return M
 end

@@ -175,7 +175,7 @@ function types.valueToType(v)
   return nil -- fail
 end
 
-local boolops = {["or"]=1,["and"]=1} -- bool -> bool -> bool
+local boolops = {["or"]=1,["and"]=1,["=="]=1} -- bool -> bool -> bool
 local cmpops = {["=="]=1,["~="]=1,["<"]=1,[">"]=1,["<="]=1,[">="]=1} -- number -> number -> bool
 local binops = {["|"]=1,["^"]=1,["&"]=1,["<<"]=1,[">>"]=1,["+"]=1,["-"]=1,["%"]=1,["*"]=1,["/"]=1}
 -- these binops only work on ints
@@ -344,7 +344,7 @@ function types.meet( a, b, op, ast)
   elseif a.kind=="bool" and b.kind=="bool" then
     -- you can combine two bools into an array of bools
     if boolops[op]==nil and op~="array" then
-      print("Internal error, attempting to meet two booleans on a non-boolean op: "..op,ast:linenumber(),ast:offset())
+      error("Internal error, attempting to meet two booleans on a non-boolean op: "..op)
       return nil
     end
     

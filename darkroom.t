@@ -420,7 +420,7 @@ end
   assert( f.systolicModule:getDelay("ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
   local pready = S.parameter("ready_downstream", types.bool())
 --  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(pready),SR:CE(pready)} ) )
-  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(pready)} ) )
+  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(S.__or(S.__or(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(pinp,1)),rst))} ) )
 
   return darkroom.newFunction(res)
 end
@@ -883,27 +883,36 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   res.systolicModule = S.moduleConstructor("PadSeq"..T,{CE=true})
   local posX = res.systolicModule:add( S.module.regBy( types.uint(16), sumwrap(W+L+R-T), {CE=true} ):instantiate("posX") )
   local posY = res.systolicModule:add( S.module.regBy( types.uint(16), summodule(), {CE=true}):instantiate("posY") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", {CE=true}):instantiate("printInst") )
+  local asstInst = res.systolicModule:add( S.module.assert( "padSeq input ins't valid when it should be", {CE=true}):instantiate("asstInst") )
 
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local pinp_data = S.index(pinp,0)
   local pinp_valid = S.index(pinp,1)
 
-  local C1 = S.lt( posX:get(), S.constant(L,types.uint(16)))
-  local C2 = S.ge( posX:get(), S.constant(L+W,types.uint(16)))
-  local C3 = S.lt( posY:get(), S.constant(B,types.uint(16)))
-  local C4 = S.ge( posY:get(), S.constant(B+H,types.uint(16)))
-  local isInside = S.__and(S.__and(C1,C2),S.__and(C3,C4))
+  local C1 = S.ge( posX:get(), S.constant(L,types.uint(16)))
+  local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(16)))
+  local C3 = S.ge( posY:get(), S.constant(B,types.uint(16)))
+  local C4 = S.lt( posY:get(), S.constant(B+H,types.uint(16)))
+  local xcheck = S.__and(C1,C2)
+  local ycheck = S.__and(C3,C4)
+  local isInside = S.__and(xcheck,ycheck)
+  local readybit = isInside:disablePipelining()
 
   local pipelines={}
-  pipelines[1] = posY:setBy( S.constant(1,types.uint(16), S.eq( posX:get(), S.constant(W+L+R-1,types.uint(16)) ) ) )
-  pipelines[2] = posX:setBy( S.constant(1, types.uint(16) ) )
+  local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(16))  ):disablePipelining()
+  pipelines[1] = posY:setBy( S.constant(1,types.uint(16) ), incY )
+  pipelines[2] = posX:setBy( S.constant(T, types.uint(16) ) )
+  pipelines[3] = printInst:process( S.tuple{ posX:get(), posY:get(), readybit } )
+  pipelines[4] = asstInst:process( S.__or(pinp_valid,S.eq(readybit,S.constant(false,types.bool()) ) ) )
+
   local ValueBroadcast = S.cast(S.constant(Value,A),types.array2d(A,T))
   local ConstTrue = S.constant(true,types.bool())
-  res.systolicModule:addFunction( S.lambda("process", pinp, S.select( isInside, S.tuple{pinp_data,ConstTrue}, S.tuple{ValueBroadcast,ConstTrue} ), "process_output", pipelines) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.select( readybit, S.tuple{pinp_data,ConstTrue}, S.tuple{ValueBroadcast,ConstTrue} ), "process_output", pipelines) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
 
-  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), isInside:disablePipelining(), "ready", {} ) )
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
 
   return darkroom.newFunction(res)
 end
@@ -1187,14 +1196,14 @@ function darkroom.makeHandshake( f )
 
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
-  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,init=false} ):instantiate("validBitDelay") )
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
   local rst = S.parameter("reset",types.bool())
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{},rst) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.__not(rst))}), "process_output") ) 
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{SR:reset(nil,rst)},rst) )
   local pready = S.parameter("ready_downstream", types.bool())
-  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(pready),SR:CE(pready)} ) )
+  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(S.__or(pready,rst)),SR:CE(S.__or(pready,rst))} ) )
 
   return darkroom.newFunction(res)
 end
@@ -1892,7 +1901,8 @@ wire ready;
   always @(posedge CLK) begin
     $display("CLK %d",validCnt);
     if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin $finish(); end
-    if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[]) begin validCnt = validCnt + 1; end
+    // ignore the output when we're in reset mode - output is probably bogus
+    if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
     ready_downstream <= ready_downstream + 1;
   end
 endmodule
