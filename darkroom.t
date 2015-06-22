@@ -406,21 +406,33 @@ end
   res.terraModule = LiftHandshake
 
   res.systolicModule = S.moduleConstructor( "LiftHandshake_"..f.systolicModule.name, {onlyWire=true} )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool()}, "IV %d OV %d", {CE=true}):instantiate("printInst") )
 
-  -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
---  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "LiftHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,init=false} ):instantiate("validBitDelay") )
+
+
+  -- The idea here is that we can stall for 2 reasons: Downstream isn't ready (downstreamReady==false) or we're waiting on data but it isn't available.
+  -- (ie inner:ready()==true, but input is invalid). If either of these cases is true, we need to remember that it was stalled in that cycle, and then
+  -- gate the output valid after the output delay (ie we may have stalled on a cycle that has valid data on the output. We don't want the valid bit to
+  -- sit there on the output bus and produce duplicates).
+
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
---  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple({inner:process(pinp,S.constant(true,types.bool())), SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()))}), "process_output") ) 
 
   local rst = S.parameter("reset",types.bool())
-  res.systolicModule:addFunction( S.lambda("process", pinp, inner:process(pinp,S.__not(rst)), "process_output") ) 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{},rst) )
+  local notWaitingOnData = S.__or( S.eq(inner:ready(),S.constant(false,types.bool())), S.index(pinp,1) )
+
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "LiftHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name) )
+
+  local pout = inner:process(pinp,S.__not(rst))
+  pout = S.tuple{ S.index(pout,0), S.__and(S.index(pout,1), SR:pushPop(notWaitingOnData, S.__not(rst)) ) }
+
+  res.systolicModule:addFunction( S.lambda("process", pinp, pout, "process_output", { printInst:process( S.tuple{ S.index(pinp,1), S.index(pout,1) } ) } ) ) 
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out", {SR:reset(nil,rst)}, rst ) )
 
   assert( f.systolicModule:getDelay("ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
-  local pready = S.parameter("ready_downstream", types.bool())
---  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(pready),SR:CE(pready)} ) )
-  res.systolicModule:addFunction( S.lambda("ready", pready, systolic.__and(inner:ready(),pready), "ready", {inner:CE(S.__or(S.__or(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(pinp,1)),rst))} ) )
+  local downstreamReady = S.parameter("ready_downstream", types.bool())
+
+  res.systolicModule:addFunction( S.lambda("ready", downstreamReady, systolic.__and(inner:ready(),downstreamReady), "ready", {inner:CE(S.__or(rst,S.__and(downstreamReady,notWaitingOnData))), SR:CE(S.constant(true,types.bool()))} ) )
 
   return darkroom.newFunction(res)
 end
