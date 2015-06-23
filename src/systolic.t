@@ -1149,14 +1149,14 @@ function systolic.module.reg( ty, initial )
   return setmetatable(t,regModuleMT)
 end
 -------------------
--- options = {init}
-function systolic.module.regBy( ty, setby, options )
+systolic.module.regBy = memoize(function( ty, setby, CE, init )
+  assert( types.isType(ty) )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
-  assert( options==nil or type(options)=="table")
+  assert( CE==nil or type(CE)=="boolean" )
+  assert( init==nil or type(init)==ty:toLuaType() )
 
-  if options==nil then options={} end
-  local R = systolic.module.reg( ty, options.init ):instantiate("R",{arbitrate="valid"})
+  local R = systolic.module.reg( ty, init ):instantiate("R",{arbitrate="valid"})
   local inner = setby:instantiate("inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
@@ -1170,8 +1170,43 @@ function systolic.module.regBy( ty, setby, options )
   fns.set = systolic.lambda("set", sinp, R:set(sinp,setvalid), "SET_OUTPUT",{}, setvalid )
 --  fns.set = systolic.lambda("set", sinp, sinp, "SET_OUTPUT",{}, setvalid )
 
-  return systolic.module.new( "RegBy_"..setby.name, fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=options.CE} )
+  return systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE} )
+end)
+
+
+local function moduleConstructor(tab)
+  local constFunctions=tab.configFns
+  function constFunctions:complete()
+    if self.isComplete==false then
+      self.module = tab.complete(self)
+      self.isComplete = true
+    end
+  end
+  function constFunctions:instantiate( name )
+    self:complete()
+    return self.module:instantiate(name)
+  end
+
+  local constMT = {__index=constFunctions}
+  return function(...)
+    print("MODULE CONSTRUCTOR")
+    local t = tab.new(...)
+    t.isComplete=false
+print(t,tab.configFns)
+    return setmetatable(t,constMT)
+  end
 end
+
+systolic.module.regByConstructor = moduleConstructor{
+new=function( ty, setby )
+  assert( types.isType(ty) )
+  assert( systolic.isModule(setby) )
+  assert( setby:getDelay( "process" ) == 0 )
+  return {type=ty, setby=setby}
+end,
+complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
+configFns={includeCE=function(self) self.CE=true; return self end, setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I end}
+}
 
 -------------------
 ram128ModuleFunctions={}
@@ -1521,12 +1556,17 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
       bit = bit + v:verilogBits()
     end
   else
-    assert(false)
+    datalist = datavar
   end
+
+  local validS = ""
+  local validSS = ""
+  if validvar~=nil then validS,validSS="valid %d",validvar.."," end
+  if module.options.CE then validS = validS.." CE %d"; validSS = validSS.."CE," end
 
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
 assign ]]..instance.name..[[ = ]]..datavar..[[;
-always @(posedge CLK) begin $display("]]..self.str..[[",]]..datalist..[[); end]]
+always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
   return "___NULL_PRINT_OUT", decl, true
 end
 
@@ -1540,7 +1580,7 @@ function systolic.module.print( ty, str )
   local res = {kind="print",str=str, type=ty, options={}}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},input={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"}}
-  res.functions.process.isPure = function() return true end
+  res.functions.process.isPure = function() return false end
   return setmetatable(res, printModuleMT)
 end
 

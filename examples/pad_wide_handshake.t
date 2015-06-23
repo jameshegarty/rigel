@@ -24,7 +24,7 @@ out = d.apply("pad", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pad_wide_handshake.raw",BASE_TYPE,"pad_wide_handshake.sim.raw")), out )
 harness = d.lambda( "harness", inp, out )
 -------------
-f = d.seqMapHandshake( harness, inputW, inputH, W, H, T,false )
+f = d.seqMapHandshake( harness, inputW, inputH, W, H, T, false, 4 )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 

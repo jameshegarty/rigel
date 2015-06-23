@@ -504,13 +504,19 @@ function take(t,i)
 end
 
 __memoized = {}
+__memoizedNilHack = {}
 function memoize(f)
   assert(type(f)=="function")
   return function(...)
-    map({...}, function(v) assert(type(v)=="number" or type(v)=="table" or type(v)=="string") end)
+    local idx = map({...}, function(v) 
+                      -- hack: tables can't have nil keys. To accomadate this, we make a fake table to represent nils, and replace nils with that
+          if v==nil then return __memoizedNilHack end
+          err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean","deepsetweak type was "..type(v)) 
+          return v
+                           end)
     __memoized[f] = __memoized[f] or {}
     local t = index(__memoized[f],{...})
-    if t~=nil then return t end
+    if t~=nil then return t end -- early out, so that we don't call f multiple times w/ same arguments
     return deepsetweak( __memoized[f], {...}, f(...) )
   end
 end

@@ -116,10 +116,10 @@ function sumwrap(limit)
   return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
 end
 
-function summodule()
-  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  return S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},{CE=true})
-end
+------------
+local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+local summodule = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},{CE=true})
+------------
 
 function darkroom.print(TY,inp)
   local stats = {}
@@ -406,11 +406,9 @@ end
   res.terraModule = LiftHandshake
 
   res.systolicModule = S.moduleConstructor( "LiftHandshake_"..f.systolicModule.name, {onlyWire=true} )
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool()}, "IV %d OV %d", {CE=true}):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractV(f.inputType),types.bool(),darkroom.extractRV(f.outputType),types.bool(),types.bool(),types.bool()}, "RST %d I %h IV %d O %h OV %d US %d DS %d", {CE=true}):instantiate("printInst") )
 
-
-
-  -- The idea here is that we can stall for 2 reasons: Downstream isn't ready (downstreamReady==false) or we're waiting on data but it isn't available.
+  -- The idea here is that we can stall for 2 reasons: Downstream isn't ready (downstreamReady==false, and we're valid) or we're waiting on data but it isn't available.
   -- (ie inner:ready()==true, but input is invalid). If either of these cases is true, we need to remember that it was stalled in that cycle, and then
   -- gate the output valid after the output delay (ie we may have stalled on a cycle that has valid data on the output. We don't want the valid bit to
   -- sit there on the output bus and produce duplicates).
@@ -419,20 +417,29 @@ end
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
 
   local rst = S.parameter("reset",types.bool())
+  local pout = inner:process(pinp,S.__not(rst))
+
+  local downstreamReady = S.parameter("ready_downstream", types.bool())
+  -- not waiting on data: either data is available(pinp[1]==true), or we don't care (ready==false)
   local notWaitingOnData = S.__or( S.eq(inner:ready(),S.constant(false,types.bool())), S.index(pinp,1) )
+  -- not blocked downstream: either downstream is ready (downstreamReady), or we don't have any data anyway (pout[1]==false), so we can work on clearing the pipe
+  local notBlockedDownstream = S.__or(downstreamReady, S.eq(S.index(pout,1),S.constant(false,types.bool()) ))
+  local CE = S.__and(notBlockedDownstream,notWaitingOnData)
 
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "LiftHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name) )
-
-  local pout = inner:process(pinp,S.__not(rst))
+  
+  -- The point of the shift register: if notWaitingOnData==true this cycle, then we will have something valid (potentially) down the pipe N inner cycles later.
+  -- if CE==false, we need to make sure to ignore the data N cycles later (it may be a duplicate)
+  -- the CE for the SR is notBlockedDownstream: we need to make sure to keep valid==true on the output until the reader is ready to consume it.
   pout = S.tuple{ S.index(pout,0), S.__and(S.index(pout,1), SR:pushPop(notWaitingOnData, S.__not(rst)) ) }
 
-  res.systolicModule:addFunction( S.lambda("process", pinp, pout, "process_output", { printInst:process( S.tuple{ S.index(pinp,1), S.index(pout,1) } ) } ) ) 
+  res.systolicModule:addFunction( S.lambda("process", pinp, pout, "process_output", { printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(pout,0), S.index(pout,1), notWaitingOnData, notBlockedDownstream } ) } ) ) 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out", {SR:reset(nil,rst)}, rst ) )
 
   assert( f.systolicModule:getDelay("ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
-  local downstreamReady = S.parameter("ready_downstream", types.bool())
 
-  res.systolicModule:addFunction( S.lambda("ready", downstreamReady, systolic.__and(inner:ready(),downstreamReady), "ready", {inner:CE(S.__or(rst,S.__and(downstreamReady,notWaitingOnData))), SR:CE(S.constant(true,types.bool()))} ) )
+
+  res.systolicModule:addFunction( S.lambda("ready", downstreamReady, systolic.__and(inner:ready(),notBlockedDownstream), "ready", {inner:CE(S.__or(rst,CE)), SR:CE(notBlockedDownstream)} ) )
 
   return darkroom.newFunction(res)
 end
@@ -797,6 +804,7 @@ function darkroom.stencil( A, w, h, xmin, xmax, ymin, ymax )
   return darkroom.newFunction(res)
 end
 
+-- f(g())
 function darkroom.compose(name,f,g)
   assert(type(name)=="string")
   assert(darkroom.isFunction(f))
@@ -892,9 +900,10 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:ready()  return (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
   res.terraModule = PadSeq
 
-  res.systolicModule = S.moduleConstructor("PadSeq"..T,{CE=true})
-  local posX = res.systolicModule:add( S.module.regBy( types.uint(16), sumwrap(W+L+R-T), {CE=true} ):instantiate("posX") )
-  local posY = res.systolicModule:add( S.module.regBy( types.uint(16), summodule(), {CE=true}):instantiate("posY") )
+  res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_T"..T..T,{CE=true})
+
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(W+L+R-T) ):includeCE():instantiate("posX") )
+  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), summodule):includeCE():instantiate("posY") )
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", {CE=true}):instantiate("printInst") )
   local asstInst = res.systolicModule:add( S.module.assert( "padSeq input ins't valid when it should be", {CE=true}):instantiate("asstInst") )
 
@@ -961,7 +970,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
 
   res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), sumwrap((w/T)-1), {CE=true} ):instantiate("addr") )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), sumwrap((w/T)-1), true, nil ):instantiate("addr") )
 
   local outarray = {}
   local evicted
@@ -1541,7 +1550,7 @@ function darkroom.lambda( name, input, output )
     local process = module:addFunction( processfn )
 
     if darkroom.isStatefulHandshake( fn.inputType ) then
-      module:addFunction( S.lambda("reset", rst, nil, "reset_out", resetPipelines) )
+      module:addFunction( S.lambda("reset", S.parameter("ri",types.null()), nil, "reset_out", resetPipelines, rst) )
     else
       module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
     end
@@ -1566,7 +1575,7 @@ function darkroom.lambda( name, input, output )
         end)
 
       local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", {} ) )
-      assert( readyfn:isPure() )
+      --assert( readyfn:isPure() )
     end
 
     return module
@@ -1784,9 +1793,11 @@ function darkroom.fwriteSeq( filename, ty, filenameVerilog)
   res.terraModule = FwriteSeq
   res.systolicModule = S.moduleConstructor("fwriteSeq",{CE=true})
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("fwritefile") )
+  local printInst = res.systolicModule:add( S.module.print( ty, "fwrite O %h", {CE=true}):instantiate("printInst") )
+
   local inp = S.parameter("process_input", ty )
   local nilinp = S.parameter("process_nilinp", types.null() )
-  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", {sfile:write(inp)} ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", {sfile:write(inp),printInst:process(inp)} ) )
   res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction(res)
@@ -1911,7 +1922,7 @@ wire ready;
 
   reg [31:0] validCnt = 0;
   always @(posedge CLK) begin
-    $display("CLK %d",validCnt);
+    $display("------------------------------------------------- CLK %d ready %d",validCnt,]]..readybit..[[);
     if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin $finish(); end
     // ignore the output when we're in reset mode - output is probably bogus
     if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
