@@ -107,14 +107,14 @@ function darkroom.extractStatefulHandshake( a, loc )
   return a.list[1]
 end
 
-function sumwrap(limit)
+sumwrap = memoize(function(limit)
   assert(type(limit)=="number")
   local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
   local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
                       S.constant(0,types.uint(16)),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
   return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
-end
+                  end)
 
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
@@ -342,7 +342,11 @@ function darkroom.liftDecimate(f)
   res.systolicModule = S.moduleConstructor("LiftDecimate_"..f.systolicModule.name,{CE=true})
   local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftDecimate_inner") )
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(S.index(sinp,0),S.index(sinp,1)), "process_output" ) )
+  local pout = inner:process(S.index(sinp,0),S.index(sinp,1))
+  local pout_data = S.index(pout,0)
+  local pout_valid = S.index(pout,1)
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{pout_data, S.__and(pout_valid,S.index(sinp,1))}, "process_output" ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), S.constant(true,types.bool()), "ready", {} ) )
 
@@ -882,6 +886,7 @@ function darkroom.borderSeq( A, W, H, T, L, R, B, Top, Value )
 
 end
 
+-- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
   map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number") end)
 
@@ -906,6 +911,7 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
                              var x,y = (inp._0)[0]._0, (inp._0)[0]._1
                              data(out) = inp._1
                              valid(out) = (x>=L and y>=B and x<W-R and y<H-Top)
+                             cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out))
                            end, sinp, S.tuple{sdata,svalid})
 
   return darkroom.liftXYSeq( f, W, H, T )
@@ -929,21 +935,21 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:stats() end -- not particularly interesting
   terra PadSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    valid(out) = true -- we can always produce data
-    var inner : bool = false
-    if valid(inp) then
-      data(out) = data(inp)
-      inner = true
-    elseif self.posX<L or self.posX>=(L+W) or self.posY<B or self.posY>=(B+H) then
-      data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
+    var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
+
+    if interior then
+      data(out),valid(out) = data(inp), valid(inp)
     else
-      darkroomAssert(false,"PadSeq, missing data?")
+      valid(out) = true
+      data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
     end
 
-    self.posX = self.posX+T;
-    if self.posX==(W+L+R) then
-      self.posX=0;
-      self.posY = self.posY+1;
+    if (interior and valid(inp)) or interior==false then
+      self.posX = self.posX+T;
+      if self.posX==(W+L+R) then
+        self.posX=0;
+        self.posY = self.posY+1;
+      end
     end
 --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
   end

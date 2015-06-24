@@ -702,9 +702,10 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = inp.."["..n.high..":"..n.low.."]"
       elseif n.kind=="index" then
         if n.inputs[1].type:isArray() then
+          local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
           local flatIdx = (n.inputs[1].type:arrayLength())[1]*n.idy+n.idx
           local sz = n.inputs[1].type:arrayOver():verilogBits()
-          finalResult = "("..args[1].."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."])"
+          finalResult = "("..inp.."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."])"
         elseif n.inputs[1].type:isUint() or n.inputs[1].type:isInt() then
           table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
           table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index")
@@ -715,10 +716,13 @@ function systolicASTFunctions:toVerilog( module )
           local ty = n.inputs[1].type.list[n.idx+1]
           if n.inputs[1].type:verilogBits()==ty:verilogBits() then
             finalResult = args[1] -- no index necessary
-          elseif ty:verilogBits()>1 then
-            finalResult = "("..args[1].."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."])"
-          elseif ty:verilogBits()==1 then
-            finalResult = "("..args[1].."["..lowbit.."])"
+          elseif ty:verilogBits()>=1 then
+            local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
+            if ty:verilogBits()>1 then
+              finalResult = "("..inp.."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."])"
+            elseif ty:verilogBits()==1 then
+              finalResult = "("..inp.."["..lowbit.."])"
+            end
           else
             -- type has no bits?
             finalResult = "___NIL_INDEX"
