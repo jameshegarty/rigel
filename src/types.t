@@ -613,6 +613,16 @@ function TypeFunctions:toTerraType(pointer, vectorN)
   return nil
 end
 
+-- not very accurate. This will let us compare to type(t) at least
+function TypeFunctions:toLuaType()
+  if self.kind=="int" or self.kind=="uint" then
+    return "number"
+  else
+    print("toLuaType",self)
+    assert(false)
+  end
+end
+
 function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end

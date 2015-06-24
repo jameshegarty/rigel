@@ -542,6 +542,8 @@ function systolicASTFunctions:pipeline()
       elseif n.kind=="index" or n.kind=="cast" or n.kind=="bitSlice" then
         -- passthrough, no pipelining
         return {n, args[1][2]}
+      elseif n.kind=="unary" then
+        return {n, args[1][2]}
       elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" or n.kind=="callArbitrate" then
         -- tuples and calls happen to be almost identical
 
@@ -562,6 +564,7 @@ function systolicASTFunctions:pipeline()
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
             err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
+            err( n.func:isPure() or args[2][2]==0, "Error, valid bit should not be pipelined. Call to function '"..n.func.name.."', "..n.loc )
           elseif n.kind=="binop" or n.kind=="select" then 
             if pipelined then
               n = getDelayed(n,1)
@@ -652,16 +655,20 @@ function systolicASTFunctions:toVerilog( module )
         table.insert( declarations, decl )
       elseif n.kind=="callArbitrate" then
         -- inputs are stored as {data,validbit} pairs, ie {call1data,call1valid,call2data,call2valid}
-        local pairs = split(args,2)
-        if #pairs==1 then
+        local argpairs = split(args,2)
+        if #argpairs==1 then
           -- we're in arbitrate mode, but we didn't actually end up calling it multiple times. Passthrough
           finalResult = "{"..args[2]..","..args[1].."}"
         else
-          local data = foldt(pairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
-          local v = foldt(pairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
+          for k,v in pairs(argpairs) do
+            table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[==1'bx) begin $display("valid bit can't be x!"); end end]])
+          end
+
+          local data = foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
+          local v = foldt(argpairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
           
           -- do bitcount w/ the array of valid bits. Pad to 5 bits so that sum works correctly
-          local cnt = foldt(pairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
+          local cnt = foldt(argpairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
           
           table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function '' on module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
           finalResult = "{"..v..","..data.."}"
@@ -1205,7 +1212,7 @@ new=function( ty, setby )
   return {type=ty, setby=setby}
 end,
 complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
-configFns={includeCE=function(self) self.CE=true; return self end, setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I end}
+configFns={includeCE=function(self) self.CE=true; return self end, setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; return self end}
 }
 
 -------------------
