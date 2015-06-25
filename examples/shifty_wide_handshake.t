@@ -9,8 +9,8 @@ T = 8
 RAWTYPE = types.array2d( types.uint(8), T )
 ITYPE = d.Stateful(RAWTYPE)
 inp = d.input( ITYPE )
-convLB = d.apply( "convLB", d.linebuffer( types.uint(8), W,H, T, -1 ), inp)
-convpipe = d.apply( "slice", d.makeStateful(d.slice( types.array2d(types.uint(8),T,2), 0, T-1, 0, 0 ) ), convLB)
+convLB = d.apply( "convLB", d.linebuffer( types.uint(8), W,H, T, -4 ), inp)
+convpipe = d.apply( "slice", d.makeStateful(d.slice( types.array2d(types.uint(8),T,5), 0, T-1, 0, 0 ) ), convLB)
 convpipe = d.lambda( "convpipe", inp, convpipe )
 
 ------------

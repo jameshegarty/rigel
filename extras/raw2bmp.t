@@ -15,6 +15,12 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   inp.data = [&uint8](inp.dataPtr)
 
   var imgIn = cstdio.fopen(infile, "rb");
+
+  cstdio.fseek(imgIn, 0, cstdio.SEEK_END);
+  var sz = cstdio.ftell(imgIn);
+  cstdio.fseek(imgIn, 0, cstdio.SEEK_SET);
+  darkroomAssert(sz==metadata.width*metadata.height*metadata.channels, "Incorrect file size!")
+
   cstdio.fread(inp.dataPtr,1,totalSize,imgIn)
   cstdio.fclose(imgIn)
   inp.width = metadata.width

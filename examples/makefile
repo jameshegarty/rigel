@@ -7,11 +7,13 @@ SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
 
-AXI = $(patsubst %.t,out/%.axi.bmp,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.raw,$(SRCS))
+AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS))
+AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS))
+
+AXI = $(patsubst %.t,out/%.axi.raw,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.bmp,$(SRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.v,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.bit,$(SRCS))
+AXI += $(AXIBITS)
 
 RES += $(SIM)
 RES += $(AXI)
@@ -20,6 +22,10 @@ CD = cd out;
 all: $(RES)
 
 sim: $(SIM)
+
+axi: $(AXI)
+
+axibits: $(AXIBITS)
 
 clean:
 	rm -Rf out/*

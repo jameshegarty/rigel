@@ -1,6 +1,35 @@
 //-----------------------------------------------------------------------------
 // system.v
 //-----------------------------------------------------------------------------
+
+// The axi bus expects the number of valid data items to exactly match the # of addresses we send.
+// This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
+module OutputShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
+   reg [31:0] outCnt;
+   reg [31:0] outLen;
+
+   reg        fixupMode;
+   reg [31:0]  outClks = 0;
+   
+   
+   always@(posedge CLK) begin
+     if (RST) begin 
+        outCnt <= 32'd0;
+        outLen <= lengthOutput;
+        fixupMode <= 1'b0;
+        outClks <= 32'd0;
+     end else begin
+        outClks <= outClks + 32'd1;
+        
+        if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd128; end
+        if(outClks > 32'd2048) begin fixupMode <= 1'b1; end
+     end
+   end
+
+   assign out = (fixupMode)?(32'hDEADBEEF):(inp);
+   assign out_valid = (RST)?(1'b0):((fixupMode)?(outCnt<outLen):(inp_valid));
+endmodule // OutputShim
+
 module stage
   (
     inout [53:0] MIO,
@@ -150,15 +179,17 @@ module stage
    
   wire [64:0] pipelineOutputPacked;
   wire [63:0] pipelineOutput;
-  assign pipelineOutput = pipelineOutputPacked[63:0];   
+//  assign pipelineOutput = pipelineOutputPacked[63:0];   
   wire pipelineOutputValid;
-  assign pipelineOutputValid = pipelineOutputPacked[64];
+//  assign pipelineOutputValid = pipelineOutputPacked[64];
    
   wire       pipelineReady;
   wire      downstreamReady;
  
   ___PIPELINE_MODULE_NAME  pipeline(.CLK(FCLK0),.reset(CONFIG_READY),.ready(pipelineReady),.ready_downstream(downstreamReady),.process_input({pipelineInputValid,pipelineInput}),.process_output(pipelineOutputPacked));
-  
+
+   OutputShim OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
+   
   DRAMReader reader(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),

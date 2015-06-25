@@ -12,8 +12,11 @@ inputW = 128
 inputH = 64
 
 -- expand to include crop region
-W = upToNearest(T,128+ConvWidth-1)
-H = 64+ConvWidth-1
+--W = upToNearest(T,128+ConvWidth-1)
+--H = 64+ConvWidth-1
+
+W = inputW
+H = inputH
 
 -------------
 sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8)} )
@@ -53,7 +56,7 @@ hsfn = d.makeHandshake(convpipe)
 ----------------
 inp = d.input( d.StatefulHandshake(types.null()) )
 out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",BASE_TYPE,"../frame_128.raw")),inp)
-out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)), out )
+--out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)), out )
 out = d.apply("conv_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/conv_wide_handshake.raw",BASE_TYPE,"conv_wide_handshake.sim.raw")), out )
 harness = d.lambda( "harness", inp, out )

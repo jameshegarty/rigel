@@ -956,7 +956,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:ready()  return (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
   res.terraModule = PadSeq
 
-  res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_T"..T..T,{CE=true})
+  res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T,{CE=true})
 
   local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(W+L+R-T) ):includeCE():instantiate("posX") )
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), summodule):includeCE():instantiate("posY") )
@@ -987,7 +987,9 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 
   local ValueBroadcast = S.cast(S.constant(Value,A),types.array2d(A,T))
   local ConstTrue = S.constant(true,types.bool())
-  res.systolicModule:addFunction( S.lambda("process", pinp, S.select( readybit, pinp, S.tuple{ValueBroadcast,ConstTrue} ), "process_output", pipelines, pvalid) )
+  local ConstFalse = S.constant(false,types.bool())
+  local border = S.select(S.ge(posY:get(),S.constant(H+Top+B,types.uint(16))),S.tuple{ValueBroadcast,ConstFalse},S.tuple{ValueBroadcast,ConstTrue})
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.select( readybit, pinp, border ), "process_output", pipelines, pvalid) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
 
@@ -1967,6 +1969,7 @@ integer i = 0;
 reg RST = 1;
 reg valid = 0;
 reg []]..rrlog2..[[:0] ready_downstream = 1;
+reg [15:0] doneCnt = 0;
 wire ready;
 ]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
 
@@ -1976,15 +1979,25 @@ wire ready;
       while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
 
       RST = 0;
-      valid = 1;
+      //valid = 1;
 
       while(1) begin CLK = 0; #10; CLK = 1; #10; end
    end
 
+  reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
   reg [31:0] validCnt = 0;
   always @(posedge CLK) begin
     $display("------------------------------------------------- CLK %d ready %d",validCnt,]]..readybit..[[);
-    if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin $finish(); end
+    // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
+    // keep simulating for N cycles to make sure we don't send any more
+    if(validCnt> ]]..((outputW*outputH)/T)..[[ ) begin $display("Too many valid bits!"); end
+    if(validCnt>= ]]..((outputW*outputH)/T)..[[ && doneCnt==1024 ) begin $finish(); end
+    if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin doneCnt <= doneCnt+1; end
+    if(RST==0) begin 
+      valid <= (validInCnt <= ]]..((outputW*outputH)/T)..[[); 
+      if(ready) begin validInCnt <= validInCnt + 1; end
+    end
+    
     // ignore the output when we're in reset mode - output is probably bogus
     if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
     ready_downstream <= ready_downstream + 1;
