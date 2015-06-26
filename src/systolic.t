@@ -676,7 +676,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
-            return "{"..table.concat( map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end),", " ).."}"
+            return "{"..table.concat( reverse(map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end)),", " ).."}"
           else
             return valueToVerilog(val, ty)
           end

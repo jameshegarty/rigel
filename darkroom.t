@@ -421,7 +421,7 @@ end
   res.systolicModule = S.moduleConstructor( "LiftHandshake_"..f.systolicModule.name, {onlyWire=true} )
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractV(f.inputType),types.bool(),darkroom.extractRV(f.outputType),types.bool(),types.bool()}, "RST %d I %h IV %d O %h OV %d DS %d", {CE=true}):instantiate("printInst") )
 
-  local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
+  local inner = res.systolicModule:add(f.systolicModule:instantiate("inner_"..f.systolicModule.name))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
 
   local rst = S.parameter("reset",types.bool())
@@ -838,14 +838,16 @@ function darkroom.posSeq( W, H, T )
   res.systolicModule = S.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T,{CE=true})
   local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(W-T) ):includeCE():instantiate("posX") )
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), summodule):includeCE():instantiate("posY") )
-  local incY = S.eq( posX:get(), S.constant(W+T,types.uint(16))  ):disablePipelining()
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16)}, "x %d y %d", {CE=true}):instantiate("printInst") )
+
+  local incY = S.eq( posX:get(), S.constant(W-T,types.uint(16))  ):disablePipelining()
 
   local out = {S.tuple{posX:get(),posY:get()}}
   for i=1,T-1 do
     table.insert(out, S.tuple{posX:get()+S.constant(i,types.uint(16)),posY:get()})
   end
 
-  res.systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(16),types.uint(16)},T)), "process_output", {posX:setBy( S.constant(T, types.uint(16) ) ),  posY:setBy( S.constant(1,types.uint(16) ), incY )}) )
+  res.systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(16),types.uint(16)},T)), "process_output", {posX:setBy( S.constant(T, types.uint(16) ) ),  posY:setBy( S.constant(1,types.uint(16) ), incY ),printInst:process( S.tuple{posX:get(),posY:get()})}) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
 
@@ -1094,14 +1096,20 @@ function darkroom.SSR( A, T, xmin, ymin )
     SR[y]={}
     local x = -xmin+T-1
     while(x>=0) do
-      SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_x"..x.."_y"..y ) )
+
+
       if x<-xmin then
-        out[y*(-xmin+T)+x+1] = SR[y][x+T]:get()
-        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
+        SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_x"..x.."_y"..y ) )
+--        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
+        table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+(T+xmin),y ) ) )
+        out[y*(-xmin+T)+x+1] = SR[y][x]:get()
       else -- x>-xmin
-        table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+xmin,y)) )
-        out[y*(-xmin+T)+x+1] = S.index( sinp, x+xmin, y )
+        out[y*(-xmin+T)+x+1] = S.index(sinp,x+xmin,y)
+        --table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+xmin,y)) )
       end
+
+
+
       x = x - 1
     end
   end
@@ -1967,7 +1975,7 @@ function darkroom.seqMapHandshake( f, inputW, inputH, outputW, outputH, T, axi, 
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
-reg valid = 0;
+wire valid;
 reg []]..rrlog2..[[:0] ready_downstream = 1;
 reg [15:0] doneCnt = 0;
 wire ready;
@@ -1986,17 +1994,17 @@ wire ready;
 
   reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
   reg [31:0] validCnt = 0;
+
+  assign valid = (RST==0 && validInCnt < ]]..((outputW*outputH)/T)..[[);
+
   always @(posedge CLK) begin
-    $display("------------------------------------------------- CLK %d ready %d",validCnt,]]..readybit..[[);
+    $display("------------------------------------------------- validOutputs %d ready %d validInCnt",validCnt,]]..readybit..[[,validInCnt);
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
     if(validCnt> ]]..((outputW*outputH)/T)..[[ ) begin $display("Too many valid bits!"); end
     if(validCnt>= ]]..((outputW*outputH)/T)..[[ && doneCnt==1024 ) begin $finish(); end
     if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin doneCnt <= doneCnt+1; end
-    if(RST==0) begin 
-      valid <= (validInCnt <= ]]..((outputW*outputH)/T)..[[); 
-      if(ready) begin validInCnt <= validInCnt + 1; end
-    end
+    if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus
     if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
