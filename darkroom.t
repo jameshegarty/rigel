@@ -892,6 +892,8 @@ end
 function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
   map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number") end)
 
+  err( L>=0, "cropSeq, L<0")
+  err( R>=0, "cropSeq, R<0")
   err( W%T==0, "cropSeq, W%T~=0")
   err( L%T==0, "cropSeq, L%T~=0")
   err( R%T==0, "cropSeq, R%T~=0")
@@ -919,6 +921,18 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
   return darkroom.liftXYSeq( f, W, H, T )
 end
 
+-- This is the same as CropSeq, but lets you have L,R not be T-aligned
+function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top )
+  if L%T==0 and R%T==0 then return darkroom.cropSeq( A, W, H, T, L, R, B, Top ) end
+
+  local RResidual = R%T
+  local inp = darkroom.input( darkroom.Stateful(types.array2d( A, T )) )
+  local out = darkroom.apply( "SSR", darkroom.SSR( A, T, -RResidual, 0 ), inp)
+  out = darkroom.apply( "slice", darkroom.makeStateful(darkroom.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0)), out)
+  out = darkroom.apply( "crop", darkroom.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
+  return darkroom.lambda( "cropHelperSeq", inp, out )
+end
+
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
 function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
@@ -942,7 +956,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
     if interior then
       data(out),valid(out) = data(inp), valid(inp)
     else
-      valid(out) = true
+      valid(out) = self.posX<(W+L+R) and self.posY<(H+B+Top)
       data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
     end
 
