@@ -2014,7 +2014,7 @@ endmodule
 ]]
   end
 
-  res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
+  res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..inputW.."_"..inputH,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
 
   return darkroom.newFunction(res)
 end
