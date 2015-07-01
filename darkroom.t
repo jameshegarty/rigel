@@ -107,6 +107,7 @@ function darkroom.extractStatefulHandshake( a, loc )
   return a.list[1]
 end
 
+-- calculate A+B s.t. A+B <= limit
 sumwrap = memoize(function(limit)
   assert(type(limit)=="number")
   local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
@@ -375,7 +376,7 @@ function darkroom.RVPassthrough(f)
   return darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftStateful(f)))
 end
 
-function darkroom.liftHandshake(f)
+darkroom.liftHandshake = memoize(function(f)
   local res = {kind="liftHandshake", fn=f}
   darkroom.expectStatefulV(f.inputType)
   darkroom.expectStatefulRV(f.outputType)
@@ -446,7 +447,7 @@ end
   res.systolicModule:addFunction( S.lambda("ready", downstreamReady, systolic.__and(inner:ready(),notBlockedDownstream), "ready", {inner:CE(S.__or(rst,CE)), SR:CE(notBlockedDownstream)} ) )
 
   return darkroom.newFunction(res)
-end
+                                 end)
 
 -- arrays: A[W][H]. Row major
 -- array index A[y] yields type A[W]. A[y][x] yields type A
@@ -1014,6 +1015,145 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   return darkroom.newFunction(res)
 end
 
+--StatefulRV. Takes A[inputRate] in, and buffers to produce A[outputRate]
+darkroom.changeRate = memoize(function(A, inputRate, outputRate)
+  err( types.isType(A), "A should be a type")
+  err( type(outputRate)=="number", "outputRate should be number")
+
+  local maxRate = math.max(inputRate,outputRate)
+  print("IR",inputRate,"OR",outputRate,"MR",maxRate)
+  err( maxRate % inputRate == 0, "maxRate % inputRate ~= 0")
+  err( maxRate % outputRate == 0, "maxRate % outputRate ~=0")
+  darkroom.expectPure(A)
+
+  local inputCount = maxRate/inputRate
+  local outputCount = maxRate/outputRate
+
+  local res = {kind="changeRate", type=A, inputRate=inputRate, outputRate=outputRate}
+  res.inputType = darkroom.StatefulV(types.array2d(A,inputRate))
+  res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate))
+  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
+
+  local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; inputPhase:int;outputPhase:int}
+  terra ChangeRate:reset() self.inputPhase = 0; self.outputPhase=outputCount end
+
+  res.systolicModule = S.moduleConstructor("ChangeRate_"..inputRate.."_to"..outputRate,{CE=true})
+  local svalid = S.parameter("process_valid", types.bool() )
+  local rvalid = S.parameter("reset", types.bool() )
+  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local pdata = S.index(pinp,0)
+  local pvalid = S.index(pinp,1)
+
+  local function incIf(limit)
+      assert(type(limit)=="number")
+      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+      local ot = S.select(S.lt(S.index(swinp,0),S.constant(limit,types.uint(16))),
+                          S.index(swinp,0)+S.constant(1,types.uint(16)),
+                          S.select(S.index(swinp,1),S.constant(0,types.uint(16)),S.index(swinp,0))):disablePipelining()
+      return S.module.new( "incif_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+  end
+
+--  local sInputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("inputPhase"))
+--  local sInputPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(inputCount-1) ):includeCE():instantiate("inputPhase") )
+--  local sOutputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("outputPhase"))
+  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), incIf(outputCount-1) ):includeCE():instantiate("phase") )
+  local sWroteLast = res.systolicModule:add(S.module.reg( types.bool() ):instantiate("wroteLast",{arbitrate="valid"}))
+
+  local regs = map( range(maxRate), function(i) return res.systolicModule:add(S.module.reg(A):instantiate("Buffer_"..i)) end )
+
+
+
+  if inputRate>outputRate then
+    terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      cstdio.printf("CHANF outputPhase %d validin %d\n", self.outputPhase,valid(inp))
+      if self.outputPhase<outputCount then
+        valid(out) = true
+        for i=0,outputRate do (data(out))[i] = self.buffer[i+self.outputPhase*outputRate] end
+        self.outputPhase = self.outputPhase + 1
+      else
+        valid(out) = false
+      end
+
+      if valid(inp) and self.outputPhase>=outputCount then
+        self.buffer = data(inp)
+        self.outputPhase = 0
+      end
+      cstdio.printf("CHANF OUT validOut %d\n",valid(out))
+    end
+    terra ChangeRate:ready()  return self.outputPhase>=[outputCount-1] end
+
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(outputCount,types.uint(16))), sWroteLast:set(S.constant(true,types.bool()), rvalid) }, rvalid ) )
+
+    local ready = S.ge(sPhase:get(),S.constant(outputCount-2,types.uint(16))):disablePipelining()
+    local done = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16)))
+    local pipelines = {}
+    pipelines[1] = sPhase:setBy( pvalid )
+    local waiting = S.__and(done,S.__not(pvalid)):disablePipelining()
+    pipelines[2] = sWroteLast:set(waiting,svalid)
+
+    for i=1,inputRate do
+      table.insert(pipelines, regs[i]:set(S.index(pdata,i-1), pvalid) )
+    end
+
+    local data = {}
+    for i=1,outputCount do
+      table.insert(data, S.cast(S.tuple( map(range(outputRate), function(t) return regs[(i-1)*outputRate+t]:get() end) ), types.array2d(A,outputRate)) )
+    end
+
+    local out = fpgamodules.wideMux(data,sPhase:get())
+
+    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.__not(sWroteLast:get()) }, "process_output", pipelines, svalid) )
+    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), S.__or(ready,waiting):disablePipelining(), "ready", {} ) )
+
+  else -- inputRate <= outputRate
+    terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      cstdio.printf("CHANGE RATE inputCount %d inputPhase %d validin %d inputRate %d maxRate %d\n",inputCount, self.inputPhase,valid(inp),inputRate,maxRate)
+      if valid(inp) then
+        for i=0,inputRate do self.buffer[i+self.inputPhase*inputRate] = (data(inp))[i] end
+        self.inputPhase = self.inputPhase + 1
+      end
+
+      if self.inputPhase >= inputCount then
+        valid(out) = true
+        data(out) = self.buffer
+      else
+        valid(out) = false
+      end
+
+      if self.inputPhase>=inputCount then
+        self.inputPhase = 0
+      end
+
+      cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.inputPhase)
+    end
+
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))), sWroteLast:set(S.constant(false,types.bool()),rvalid) }, rvalid ) )
+
+    -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
+    local validout = S.__and( S.__and( S.ge(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ), pvalid )
+
+    local ConstTrue = S.constant(true,types.bool())
+
+    local pipelines = {sWroteLast:set(ConstTrue,svalid), sPhase:setBy(ConstTrue)}
+    for i=0,inputCount-1 do
+      for irate=0,inputRate-1 do
+        table.insert( pipelines, regs[i*inputRate+irate+1]:set(S.index(pdata,irate),S.eq(sPhase:get(),S.constant(i,types.uint(16))):disablePipelining()) )
+      end
+    end
+
+    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{S.cast(S.tuple(map(regs,function(n) return n:get() end)),types.array2d(A,outputRate)),validout}, "process_output", pipelines, svalid) )
+
+    terra ChangeRate:ready()  return true end
+
+
+    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ConstTrue, "ready", {} ) )
+  end
+
+  res.terraModule = ChangeRate
+
+  return darkroom.newFunction(res)
+  end)
+
 function darkroom.linebuffer( A, w, h, T, ymin )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
@@ -1112,7 +1252,11 @@ function darkroom.SSR( A, T, xmin, ymin )
     while(x>=0) do
 
 
-      if x<-xmin then
+      if x<-xmin-T then
+        SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_x"..x.."_y"..y ) )
+        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
+        out[y*(-xmin+T)+x+1] = SR[y][x]:get()
+      elseif x<-xmin then
         SR[y][x] = res.systolicModule:add( S.module.reg(A):instantiate("SR_x"..x.."_y"..y ) )
 --        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
         table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+(T+xmin),y ) ) )

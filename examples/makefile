@@ -1,18 +1,21 @@
 SRCS = $(wildcard *.t)
-RES = $(patsubst %.t,out/%.bmp,$(SRCS))
-RES += $(patsubst %.t,out/%.bmp.correct.txt,$(SRCS))
 
-SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
-SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
-SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS))
+# some images have intentially invalid pixels in them, so we can't compare with golds
+GOLDS = $(filter-out conv_wide_handshake.t shifty_wide_handshake.t,$(SRCS))
+RES = $(patsubst %.t,out/%.bmp,$(SRCS))
+RES += $(patsubst %.t,out/%.bmp.correct.txt,$(GOLDS))
+
+SIM = $(patsubst %.t,out/%.sim.bmp,$(ISRCS))
+SIM += $(patsubst %.t,out/%.sim.raw,$(ISRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
+SIM += $(patsubst %.t,out/%.sim.correct.txt,$(GOLDS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS))
 
 AXI = $(patsubst %.t,out/%.axi.raw,$(SRCS))
 AXI += $(patsubst %.t,out/%.axi.bmp,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.correct.txt,$(SRCS))
+AXI += $(patsubst %.t,out/%.axi.correct.txt,$(GOLDS))
 AXI += $(AXIBITS)
 
 RES += $(SIM)
@@ -59,10 +62,13 @@ out/%.axi.raw: out/%.axi.bit
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
 
+# isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
 out/%.sim.raw: out/%.sim.v
-	cd out; vlogcomp $*.sim.v
-	cd out; fuse -o $* -lib $* -L unisim -L unimacro -top sim
-	cd out; echo "run all" | ./$*
+	mkdir -p out/sim_$*
+	cd out/sim_$*; vlogcomp ../$*.sim.v
+	cd out/sim_$*; fuse -o $* -lib $* -L unisim -L unimacro -top sim
+	cd out/sim_$*; echo "run all" | ./$*
+	mv out/sim_$*/$*.sim.raw out
 
 out/%.sim.bmp: out/%.sim.raw
 	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua

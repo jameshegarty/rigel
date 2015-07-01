@@ -25,7 +25,7 @@ hsfn = d.compose("HSFN",
                  d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)) )
 
 inp = d.input( d.StatefulHandshake(types.null()) )
-out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",BASE_TYPE,"../frame_128.raw")),inp)
+out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",BASE_TYPE,"../../frame_128.raw")),inp)
 out = d.apply("pad", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pad2_wide_handshake.raw",BASE_TYPE,"pad2_wide_handshake.sim.raw")), out )
 harness = d.lambda( "harness", inp, out )

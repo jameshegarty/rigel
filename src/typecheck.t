@@ -154,7 +154,7 @@ return function( ast, newNodeFn )
       err( ast.idx<maxIdx, "idx is out of bounds")
       ast.type = darkroom.type.bool()
     elseif expr.type:isArray() then
-      err( ast.idx < (expr.type:arrayLength())[1] and ast.idx>=0, "idx is out of bounds, "..tostring(ast.idx).." but should be "..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
+      err( ast.idx < (expr.type:arrayLength())[1] and ast.idx>=0, "idx is out of bounds, "..tostring(ast.idx).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
       err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2] and ast.idy>=0, "idy is out of bounds, is "..tostring(ast.idy).." but should be <"..tostring((expr.type:arrayLength())[2]))
       ast.type = expr.type:arrayOver()
     elseif expr.type:isTuple() then

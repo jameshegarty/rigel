@@ -564,6 +564,10 @@ function systolicASTFunctions:pipeline()
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
             err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
+            --if n.func:isPure()==false then print("validbitPIPEDELAY",args[2][2],args[2][1].kind,args[2][1].loc) end
+            -- actually, it is OK to have pipelined valid bits (eg the input to one function is the output of another, which has a delay).
+            -- The problem comes up when we're trying to interact with non-coherent modules: then the timing of the callsites matters.
+            -- So, enforce valid delay==0 when calling noncoherent modules?
             err( n.func:isPure() or args[2][2]==0, "Error, valid bit should not be pipelined. Call to function '"..n.func.name.."', "..n.loc )
           elseif n.kind=="binop" or n.kind=="select" then 
             if pipelined then
@@ -1172,7 +1176,14 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
 
-  local sbinp = systolic.parameter("setby_inp",ty)
+  -- check setby type
+  local setbytype = setby.functions.process.input.type
+  assert(setbytype:isTuple())
+  local setbyTypeA = setbytype.list[1]
+  local setbyTypeB = setbytype.list[2]
+  assert(setbyTypeA==ty)
+
+  local sbinp = systolic.parameter("setby_inp",setbyTypeB)
   local setbyvalid = systolic.parameter("setby_valid",types.bool())
   fns.setBy = systolic.lambda("setBy", sbinp, R:set(inner:process(systolic.tuple{R:get(),sbinp}),setbyvalid), "SETBY_OUTPUT",{}, setbyvalid )
 

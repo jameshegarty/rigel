@@ -94,8 +94,11 @@ types._tuples = {}
 function types.tuple( list )
   assert(type(list)=="table")
   assert(keycount(list)==#list)
-  if #list==1 and types.isType(list[1]) then return list[1] end
-  print("TUPLE")
+
+  -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
+  -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
+  --if #list==1 and types.isType(list[1]) then return list[1] end
+
   map( list, function(n) print(n);assert( types.isType(n) ) end )
   types._tuples[#list] = types._tuples[#list] or {}
   local tup = setmetatable( {kind="tuple", list = list }, TypeMT )
@@ -422,7 +425,7 @@ function types.checkExplicitCast(from, to, ast)
   elseif from:isArray() and to:isArray() then
     -- we do allow you to explicitly cast arrays of different shapes but the same total size
     if from:channels()~=to:channels() then
-      darkroom.error("Can't change array length when casting "..tostring(from).." to "..tostring(to), ast:linenumber(), ast:offset(), ast:filename() )
+      error("Can't change array length when casting "..tostring(from).." to "..tostring(to) )
     end
 
     return types.checkExplicitCast(from.over, to.over,ast)

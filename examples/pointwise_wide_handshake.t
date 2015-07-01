@@ -31,7 +31,7 @@ fn = d.lambda( "pointwise_wide", inp, out )
 hsfn = d.makeHandshake(d.makeStateful(fn))
 ------------
 inp = d.input( d.StatefulHandshake(types.null()) )
-out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",ITYPE,"../frame_128.raw")),inp)
+out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",ITYPE,"../../frame_128.raw")),inp)
 out = d.apply("pointwise_wide", hsfn, out )
 out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
 top = d.lambda( "top", inp, out )
