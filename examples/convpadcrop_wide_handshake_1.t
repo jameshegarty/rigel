@@ -79,7 +79,7 @@ local out = d.apply("conv_wide", hsfn, out )
 local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/convpadcrop_wide_handshake_"..T..".raw",RW_TYPE,"convpadcrop_wide_handshake_"..T..".sim.raw")), out )
 local harness = d.lambda( "harness", inp, out )
 -------------
-local f = d.seqMapHandshake( harness, inputW, inputH, outputW, outputH, 8,false )
+local f = d.seqMapHandshake( harness, inputW, inputH, 8, outputW, outputH, 8,false )
 local Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
@@ -87,7 +87,7 @@ io.output("out/convpadcrop_wide_handshake_"..T..".sim.v")
 io.write(f:toVerilog())
 io.close()
 ----------
-local fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, outputW, outputH, 8, true )
+local fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, 8, outputW, outputH, 8, true )
 io.output("out/convpadcrop_wide_handshake_"..T..".axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

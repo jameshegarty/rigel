@@ -1303,6 +1303,8 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
 
     -- we only use the 18 kbit wide BRAM here, b/c AFAIK using the 36 kbit BRAM doesn't provide a benefit, so there's no reason to special case that
 
+--    err(self.inputBits==32 or self.outputBits==32, "BRAM2KSDP requires one of the ports to be 32 bit")
+
     local width
     if self.inputBits==8 then
       width = 9
@@ -1333,6 +1335,37 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
 
     local addrbits = math.log((2048*8)/self.inputBits)/math.log(2)
+
+    local valid = VCS.writeAndReturnOriginal[2]
+    if self.options.CE then valid=valid.." && CE" end
+
+    local conf={name=instance.name}
+    conf.A={chunk=self.inputBits/8,
+           DI = instance.name.."_INPUT["..(addrbits+self.inputBits-1)..":"..addrbits.."]",
+           DO = instance.name.."_SET_AND_RETURN_ORIG_OUTPUT",
+           ADDR = instance.name.."_INPUT["..(addrbits-1)..":0]",
+           CLK = "CLK",
+           WE = valid,
+           readFirst = true}
+    conf.B={chunk=self.inputBits/8,
+           DI = instance.name.."_DI_B",
+           DO = instance.name.."_DO_B",
+           ADDR = instance.name.."_addr_B",
+           CLK = "CLK",
+           WE = "1'd0",
+           readFirst = true}
+
+   return [[reg []]..(self.inputBits-1)..":0] "..instance.name..[[_DI_B;
+reg []]..(addrbits-1)..":0] "..instance.name..[[_addr_B;
+wire []]..(self.inputBits-1)..":0] "..instance.name..[[_DO_B;
+wire []]..(self.inputBits+addrbits-1)..[[:0] ]]..instance.name..[[_INPUT;
+assign ]]..instance.name..[[_INPUT = ]]..VCS.writeAndReturnOriginal[1]..[[;
+]]..table.concat(fixedBram(conf))
+
+-- It turns out that once you drill down, the 7 series BRAMs are just macros
+-- built out of Spartan 3 BRAMS, but with less options.
+--[=[
+    local addrbits = math.log((2048*8)/self.inputBits)/math.log(2)
     local addrS = instance.name.."_INPUT[13:0]"
     if self.inputBits>1 then
       -- bram macro ignore bottom bits
@@ -1345,8 +1378,6 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
       DI = ".DIADI("..instance.name.."_INPUT["..(addrbits+16-1)..":"..addrbits.."]),.DIBDI("..instance.name.."_INPUT["..(addrbits+32-1)..":"..(addrbits+16).."]),"
     end
 
-    local valid = VCS.writeAndReturnOriginal[2]
-    if self.options.CE then valid=valid.." && CE" end
 
     --local debug = [[always @(posedge CLK) begin $display("BRAM v %d ce %d addr %d OUT %H inp %H",]]..VCS.writeAndReturnOriginal[2]..[[,CE,]]..addrS..[[,]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0],]]..instance.name..[[_INPUT[]]..(addrbits+32-1)..":"..(addrbits)..[[]); end]]
 
@@ -1386,7 +1417,7 @@ RAMB18E1 #(.DOA_REG(0),
 .CLKARDCLK(CLK), // in SDP, this is read clock
 .CLKBWRCLK(CLK) // in SDP, this is write clock
 );]]
-
+]=]
   else
     print("INVALID BRAM CONFIGURATION")
     for k,v in pairs(VCS) do print("VCS",k) end

@@ -183,7 +183,7 @@ end
 -- tab should be a key of systolic values. Key is a systolic value that chooses between them.
 function modules.wideMux( tab, key )
   assert(#tab>0)
-  local packed = map(tab, function(t,i) return S.tuple{t,S.eq(key,S.constant(i,types.uint(16)))} end )
+  local packed = map(tab, function(t,i) return S.tuple{t,S.eq(key,S.constant(i-1,types.uint(16)))} end )
   local r = foldt( packed, function(a,b) return S.select(S.index(a,1),a,b) end )
   return S.index(r,0)
 end

@@ -420,7 +420,7 @@ end
   res.terraModule = LiftHandshake
 
   res.systolicModule = S.moduleConstructor( "LiftHandshake_"..f.systolicModule.name, {onlyWire=true} )
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractV(f.inputType),types.bool(),darkroom.extractRV(f.outputType),types.bool(),types.bool()}, "RST %d I %h IV %d O %h OV %d DS %d", {CE=true}):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractV(f.inputType),types.bool(),darkroom.extractRV(f.outputType),types.bool(),types.bool(),types.bool()}, "RST %d I %h IV %d O %h OV %d DS %d ready %d", {CE=true}):instantiate("printInst") )
 
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner_"..f.systolicModule.name))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
@@ -439,7 +439,7 @@ end
   
   pout = S.tuple{ S.index(pout,0), S.__and(S.index(pout,1), SR:pushPop(S.constant(true,types.bool()), S.__not(rst)) ) }
 
-  res.systolicModule:addFunction( S.lambda("process", pinp, pout, "process_output", { printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(pout,0), S.index(pout,1), notBlockedDownstream } ) } ) ) 
+  res.systolicModule:addFunction( S.lambda("process", pinp, pout, "process_output", { printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(pout,0), S.index(pout,1), notBlockedDownstream, inner:ready() } ) } ) ) 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out", {SR:reset(nil,rst)}, rst ) )
 
   assert( f.systolicModule:getDelay("ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
@@ -1015,6 +1015,15 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   return darkroom.newFunction(res)
 end
 
+incIf=memoize(function(limit)
+      assert(type(limit)=="number")
+      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+      local ot = S.select(S.lt(S.index(swinp,0),S.constant(limit,types.uint(16))),
+                          S.index(swinp,0)+S.constant(1,types.uint(16)),
+                          S.select(S.index(swinp,1),S.constant(0,types.uint(16)),S.index(swinp,0))):disablePipelining()
+      return S.module.new( "incif_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+              end)
+
 --StatefulRV. Takes A[inputRate] in, and buffers to produce A[outputRate]
 darkroom.changeRate = memoize(function(A, inputRate, outputRate)
   err( types.isType(A), "A should be a type")
@@ -1044,24 +1053,13 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
   local pdata = S.index(pinp,0)
   local pvalid = S.index(pinp,1)
 
-  local function incIf(limit)
-      assert(type(limit)=="number")
-      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
-      local ot = S.select(S.lt(S.index(swinp,0),S.constant(limit,types.uint(16))),
-                          S.index(swinp,0)+S.constant(1,types.uint(16)),
-                          S.select(S.index(swinp,1),S.constant(0,types.uint(16)),S.index(swinp,0))):disablePipelining()
-      return S.module.new( "incif_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
-  end
 
 --  local sInputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("inputPhase"))
 --  local sInputPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(inputCount-1) ):includeCE():instantiate("inputPhase") )
 --  local sOutputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("outputPhase"))
-  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), incIf(outputCount-1) ):includeCE():instantiate("phase") )
   local sWroteLast = res.systolicModule:add(S.module.reg( types.bool() ):instantiate("wroteLast",{arbitrate="valid"}))
 
   local regs = map( range(maxRate), function(i) return res.systolicModule:add(S.module.reg(A):instantiate("Buffer_"..i)) end )
-
-
 
   if inputRate>outputRate then
     terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
@@ -1082,17 +1080,22 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
     end
     terra ChangeRate:ready()  return self.outputPhase>=[outputCount-1] end
 
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(outputCount,types.uint(16))), sWroteLast:set(S.constant(true,types.bool()), rvalid) }, rvalid ) )
+    -- 8 to 4
+    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), incIf(outputCount-1) ):includeCE():instantiate("phase") )
+    local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.bool(),A}, "phase %d wroteLast %d buffer[0] %h", {CE=true}):instantiate("printInst") )
 
-    local ready = S.ge(sPhase:get(),S.constant(outputCount-2,types.uint(16))):disablePipelining()
-    local done = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16)))
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(outputCount-1,types.uint(16))), sWroteLast:set(S.constant(true,types.bool()), rvalid) }, rvalid ) )
+
+    local ready = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16))):disablePipelining()
+    --local done = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16)))
     local pipelines = {}
     pipelines[1] = sPhase:setBy( pvalid )
-    local waiting = S.__and(done,S.__not(pvalid)):disablePipelining()
+    local waiting = S.__and(ready,S.__not(pvalid)):disablePipelining()
     pipelines[2] = sWroteLast:set(waiting,svalid)
+    pipelines[3] = printInst:process( S.tuple{sPhase:get(), sWroteLast:get(), regs[1]:get()} )
 
     for i=1,inputRate do
-      table.insert(pipelines, regs[i]:set(S.index(pdata,i-1), pvalid) )
+      table.insert(pipelines, regs[i]:set(S.index(pdata,i-1), S.__and(pvalid,ready):disablePipelining()) )
     end
 
     local data = {}
@@ -1127,17 +1130,19 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
       cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.inputPhase)
     end
 
+    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), incIf(inputCount-1) ):includeCE():instantiate("phase") )
+
     res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))), sWroteLast:set(S.constant(false,types.bool()),rvalid) }, rvalid ) )
 
     -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
-    local validout = S.__and( S.__and( S.ge(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ), pvalid )
+    local validout = S.__and( S.__and( S.ge(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ), pvalid ):disablePipelining()
 
     local ConstTrue = S.constant(true,types.bool())
 
-    local pipelines = {sWroteLast:set(ConstTrue,svalid), sPhase:setBy(ConstTrue)}
+    local pipelines = {sWroteLast:set(ConstTrue,svalid), sPhase:setBy(ConstTrue,pvalid)}
     for i=0,inputCount-1 do
       for irate=0,inputRate-1 do
-        table.insert( pipelines, regs[i*inputRate+irate+1]:set(S.index(pdata,irate),S.eq(sPhase:get(),S.constant(i,types.uint(16))):disablePipelining()) )
+        table.insert( pipelines, regs[i*inputRate+irate+1]:set(S.index(pdata,irate), S.__and( S.eq( sPhase:get(),S.constant(i,types.uint(16))), pvalid ):disablePipelining()) )
       end
     end
 
@@ -2084,19 +2089,20 @@ local function readAll(file)
     return content
 end
 
-function darkroom.seqMapHandshake( f, inputW, inputH, outputW, outputH, T, axi, readyRate )
+function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, outputT, axi, readyRate )
   err( darkroom.isFunction(f), "fn must be a function")
   err( type(inputW)=="number", "inputW must be a number")
   err( type(inputH)=="number", "inputH must be a number")
   err( type(outputW)=="number", "outputW must be a number")
   err( type(outputH)=="number", "outputH must be a number")
-  err( type(T)=="number", "T must be a number")
+  err( type(inputT)=="number", "inputT must be a number")
+  err( type(outputT)=="number", "outputT must be a number")
   err( type(axi)=="boolean", "axi should be a bool")
 
   darkroom.expectStatefulHandshake(f.inputType)
   darkroom.expectStatefulHandshake(f.outputType)
 
-  local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, T=T,inputType=types.null(),outputType=types.null()}
+  local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, inputT=inputT, outputT=outputT,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
@@ -2108,8 +2114,8 @@ function darkroom.seqMapHandshake( f, inputW, inputH, outputW, outputH, T, axi, 
     while inpAddr<inputW*inputH or outAddr<outputW*outputH do
       valid(inp)=(inpAddr<inputW*inputH)
       self.inner:process(&inp,&o)
-      inpAddr = inpAddr + T -- in simulator, ready==true always, so we can always increment.
-      if valid(o) then outAddr = outAddr + T end
+      inpAddr = inpAddr + inputT -- in simulator, ready==true always, so we can always increment.
+      if valid(o) then outAddr = outAddr + outputT end
     end
   end
   res.terraModule = SeqMap
@@ -2153,15 +2159,15 @@ wire ready;
   reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
   reg [31:0] validCnt = 0;
 
-  assign valid = (RST==0 && validInCnt < ]]..((outputW*outputH)/T)..[[);
+  assign valid = (RST==0 && validInCnt < ]]..((outputW*outputH)/outputT)..[[);
 
   always @(posedge CLK) begin
     $display("------------------------------------------------- validOutputs %d ready %d validInCnt",validCnt,]]..readybit..[[,validInCnt);
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
-    if(validCnt> ]]..((outputW*outputH)/T)..[[ ) begin $display("Too many valid bits!"); end
-    if(validCnt>= ]]..((outputW*outputH)/T)..[[ && doneCnt==1024 ) begin $finish(); end
-    if(validCnt>= ]]..((outputW*outputH)/T)..[[ ) begin doneCnt <= doneCnt+1; end
+    if(validCnt> ]]..((outputW*outputH)/outputT)..[[ ) begin $display("Too many valid bits!"); end
+    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && doneCnt==1024 ) begin $finish(); end
+    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ ) begin doneCnt <= doneCnt+1; end
     if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus
