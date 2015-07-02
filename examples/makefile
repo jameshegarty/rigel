@@ -5,10 +5,14 @@ GOLDS = $(filter-out conv_wide_handshake.t shifty_wide_handshake.t,$(SRCS))
 RES = $(patsubst %.t,out/%.bmp,$(SRCS))
 RES += $(patsubst %.t,out/%.bmp.correct.txt,$(GOLDS))
 
-SIM = $(patsubst %.t,out/%.sim.bmp,$(ISRCS))
-SIM += $(patsubst %.t,out/%.sim.raw,$(ISRCS))
+SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
+SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS))
+SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
+SIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
+SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(GOLDS))
+SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(GOLDS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS))
@@ -33,7 +37,7 @@ axibits: $(AXIBITS)
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%.sim.v out/%.axi.v: %.t 
+out/%.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t 
 	terra $<
 
 #	$(CD) xst -ifn ../../extras/helloaxi/system.xst

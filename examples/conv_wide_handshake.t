@@ -54,27 +54,36 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 hsfn = d.makeHandshake(convpipe)
 ----------------
-inp = d.input( d.StatefulHandshake(types.null()) )
-out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",BASE_TYPE,"../../frame_128.raw")),inp)
+function harness(infile,outfile,id)
+local inp = d.input( d.StatefulHandshake(types.null()) )
+local out = d.apply("fread",d.makeHandshake(d.freadSeq(infile, BASE_TYPE,"../../frame_128.raw")),inp)
 --out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)), out )
 out = d.apply("conv_wide", hsfn, out )
-out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/conv_wide_handshake.raw",BASE_TYPE,"conv_wide_handshake.sim.raw")), out )
-harness = d.lambda( "harness", inp, out )
+out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,BASE_TYPE,"conv_wide_handshake.sim.raw")), out )
+return d.lambda( "harness"..id, inp, out )
+end
 -------------
-f = d.seqMapHandshake( harness, inputW, inputH, W, H, T,false )
+f = d.seqMapHandshake( harness("frame_128.raw","conv_wide_handshake.raw",1), inputW, inputH, T, W, H, T,false )
 Module = f:compile()
 (terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
+f = d.seqMapHandshake( harness("../../frame_128.raw","conv_wide_handshake.sim.raw",2), inputW, inputH, T, W, H, T,false )
 io.output("out/conv_wide_handshake.sim.v")
 io.write(f:toVerilog())
 io.close()
 ----------
-fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, W, H,T, true )
+f = d.seqMapHandshake( harness("../../frame_128.raw","conv_wide_handshake_half.sim.raw",3), inputW, inputH, T, W, H, T,false,2 )
+io.output("out/conv_wide_handshake_half.sim.v")
+io.write(f:toVerilog())
+io.close()
+----------
+fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, T, W, H,T, true )
 io.output("out/conv_wide_handshake.axi.v")
 io.write(fnaxi:toVerilog())
 io.close()
 --------
 d.writeMetadata("out/conv_wide_handshake.metadata.lua",W,H,1,1,"frame_128.raw")
+d.writeMetadata("out/conv_wide_handshake_half.metadata.lua",W,H,1,1,"frame_128.raw")
 
 
 --Module = convpipe:compile()

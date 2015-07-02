@@ -1414,7 +1414,7 @@ function darkroom.makeStateful( f )
 end
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
-function darkroom.makeHandshake( f )
+darkroom.makeHandshake = memoize(function( f )
   assert( darkroom.isFunction(f) )
   local res = { kind="makeHandshake", fn = f }
   darkroom.expectStateful(f.inputType)
@@ -1460,7 +1460,7 @@ function darkroom.makeHandshake( f )
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(S.__or(pready,rst)),SR:CE(S.__or(pready,rst))} ) )
 
   return darkroom.newFunction(res)
-end
+                                 end)
 
 function darkroom.reduce( f, W, H )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
@@ -1985,11 +1985,11 @@ function darkroom.catState( name, input, state )
   return darkroom.newIR( {kind="catState", name=name, loc=getloc(), inputs={input,state}} )
 end
 
-function darkroom.freadSeq( filename, ty, filenameVerilog)
+darkroom.freadSeq = memoize(function( filename, ty )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
-  if filenameVerilog==nil then filenameVerilog=filename end
+  local filenameVerilog=filename
   local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=darkroom.Stateful(ty), inputType=darkroom.Stateful(types.null()), outputType=darkroom.Stateful(ty), delay=0}
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:reset() 
@@ -2001,7 +2001,7 @@ function darkroom.freadSeq( filename, ty, filenameVerilog)
     darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
   end
   res.terraModule = FreadSeq
-  res.systolicModule = S.moduleConstructor("freadSeq",{CE=true})
+  res.systolicModule = S.moduleConstructor("freadSeq_"..filename:gsub('%W','_'),{CE=true})
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
   local nilinp = S.parameter("process_nilinp", types.null() )
@@ -2009,13 +2009,13 @@ function darkroom.freadSeq( filename, ty, filenameVerilog)
   res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction(res)
-end
+                            end)
 
 function darkroom.fwriteSeq( filename, ty, filenameVerilog)
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
-  if filenameVerilog==nil then filenameVerilog=filename end
+  if true or filenameVerilog==nil then filenameVerilog=filename end
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
@@ -2027,7 +2027,7 @@ function darkroom.fwriteSeq( filename, ty, filenameVerilog)
     @out = @inp
   end
   res.terraModule = FwriteSeq
-  res.systolicModule = S.moduleConstructor("fwriteSeq",{CE=true})
+  res.systolicModule = S.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_'),{CE=true})
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty ):instantiate("fwritefile") )
   local printInst = res.systolicModule:add( S.module.print( ty, "fwrite O %h", {CE=true}):instantiate("printInst") )
 
@@ -2124,6 +2124,8 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
 
   local verilogStr
 
+  if readyRate==nil then readyRate=1 end
+
   if axi then
     local baseTypeI = darkroom.extractStatefulHandshake(f.inputType)
     local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
@@ -2131,7 +2133,6 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
     verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..string.gsub(readAll("../extras/helloaxi/axi.v"),"___PIPELINE_MODULE_NAME",f.systolicModule.name)
   else
-    if readyRate==nil then readyRate=1 end
     local rrlog2 = math.log(readyRate)/math.log(2)
 
     local readybit = "1'b1"
@@ -2180,7 +2181,7 @@ endmodule
 ]]
   end
 
-  res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..inputW.."_"..inputH,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
+  res.systolicModule = S.module.new("SeqMapHandshake_"..f.systolicModule.name.."_"..inputW.."_"..inputH.."_rr"..readyRate,{},{f.systolicModule:instantiate("inst")},{verilog = verilogStr})
 
   return darkroom.newFunction(res)
 end
