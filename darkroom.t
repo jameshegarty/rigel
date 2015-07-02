@@ -1131,22 +1131,24 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
     end
 
     local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), incIf(inputCount-1) ):includeCE():instantiate("phase") )
+    local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.bool(),types.array2d(A,outputRate)}, "phase %d wroteLast %d buffer %h", {CE=true}):instantiate("printInst") )
 
     res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))), sWroteLast:set(S.constant(false,types.bool()),rvalid) }, rvalid ) )
 
     -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
-    local validout = S.__and( S.__and( S.ge(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ), pvalid ):disablePipelining()
+    local validout = S.__and( S.eq(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ):disablePipelining()
 
     local ConstTrue = S.constant(true,types.bool())
 
-    local pipelines = {sWroteLast:set(ConstTrue,svalid), sPhase:setBy(ConstTrue,pvalid)}
+    local out = S.cast(S.tuple(map(regs,function(n) return n:get() end)),types.array2d(A,outputRate))
+    local pipelines = {sWroteLast:set(pvalid,svalid), sPhase:setBy(ConstTrue,pvalid), printInst:process(S.tuple{sPhase:get(),sWroteLast:get(),out}) }
     for i=0,inputCount-1 do
       for irate=0,inputRate-1 do
         table.insert( pipelines, regs[i*inputRate+irate+1]:set(S.index(pdata,irate), S.__and( S.eq( sPhase:get(),S.constant(i,types.uint(16))), pvalid ):disablePipelining()) )
       end
     end
 
-    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{S.cast(S.tuple(map(regs,function(n) return n:get() end)),types.array2d(A,outputRate)),validout}, "process_output", pipelines, svalid) )
+    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,validout}, "process_output", pipelines, svalid) )
 
     terra ChangeRate:ready()  return true end
 
@@ -2159,7 +2161,7 @@ wire ready;
   reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
   reg [31:0] validCnt = 0;
 
-  assign valid = (RST==0 && validInCnt < ]]..((outputW*outputH)/outputT)..[[);
+  assign valid = (RST==0 && validInCnt < ]]..((inputW*inputH)/inputT)..[[);
 
   always @(posedge CLK) begin
     $display("------------------------------------------------- validOutputs %d ready %d validInCnt",validCnt,]]..readybit..[[,validInCnt);
