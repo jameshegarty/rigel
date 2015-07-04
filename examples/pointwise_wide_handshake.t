@@ -5,6 +5,7 @@ local types = require("types")
 local S = require("systolic")
 local cstdio = terralib.includec("stdio.h")
 local cstring = terralib.includec("string.h")
+local harness = require "harness"
 
 W = 128
 H = 64
@@ -29,34 +30,5 @@ fn = d.lambda( "pointwise_wide", inp, out )
 --out = d.apply( "hs", d.makeHandshake(d.makeStateful(fn)), inp)
 --hsfn = d.lambda( "pointwise_wide_hs", inp, out )
 hsfn = d.makeHandshake(d.makeStateful(fn))
-------------
-inp = d.input( d.StatefulHandshake(types.null()) )
-out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",ITYPE,"../../frame_128.raw")),inp)
-out = d.apply("pointwise_wide", hsfn, out )
-out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/pointwise_wide_handshake.raw",ITYPE,"pointwise_wide_handshake.sim.raw")), out )
-top = d.lambda( "top", inp, out )
--------------
-f = d.seqMapHandshake( top, W, H, W,H, T,false, 2 )
-Module = f:compile()
-(terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
-io.output("out/pointwise_wide_handshake.sim.v")
-io.write(f:toVerilog())
-io.close()
-----------
-fnaxi = d.seqMapHandshake( hsfn, W, H, W, H, T, true )
-io.output("out/pointwise_wide_handshake.axi.v")
-io.write(fnaxi:toVerilog())
-io.close()
---------
-d.writeMetadata("out/pointwise_wide_handshake.metadata.lua",W,H,1,1,"frame_128.raw")
-
---local res, SimState, State = fn:compile()
---Module = hsfn:compile()
---res:printpretty()
---doit = d.scanlHarnessHandshake( Module, T, "frame_128.bmp", ITYPE,W,H, T,"out/pointwise_wide_handshake.bmp", ITYPE, W, H,0,0,0,0)
---doit()
-
---io.output("out/pointwise_wide_handshake.v")
---io.write(hsfn:toVerilog())
---io.close()
+harness.axi( "pointwise_wide_handshake", hsfn, ITYPE, W,H, ITYPE,W,H)

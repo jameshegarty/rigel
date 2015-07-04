@@ -2,6 +2,7 @@ local d = require "darkroom"
 local Image = require "image"
 local types = require("types")
 local S = require("systolic")
+local harness = require "harness"
 
 --T = 8 -- throughput
 function MAKE(T)
@@ -72,36 +73,9 @@ local out = d.apply("HH",d.makeHandshake(convpipe), out)
 local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0, 0))), out)
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
-----------------
-local function harness(infile,outfile,id)
-local inp = d.input( d.StatefulHandshake(types.null()) )
-local out = d.apply("fread",d.makeHandshake(d.freadSeq(infile,RW_TYPE)),inp)
-local out = d.apply("conv_wide", hsfn, out )
-local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,RW_TYPE)), out )
-return d.lambda( "harness"..id, inp, out )
+
+harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, RW_TYPE, outputW, outputH )
 end
--------------
-local f = d.seqMapHandshake( harness("frame_128.raw","out/convpadcrop_wide_handshake_"..T..".raw",1), inputW, inputH, 8, outputW, outputH, 8,false )
-local Module = f:compile()
-(terra() var m:Module; m:reset(); m:process(nil,nil) end)()
-------
-local f = d.seqMapHandshake( harness("../../frame_128.raw","convpadcrop_wide_handshake_"..T..".sim.raw",2), inputW, inputH, 8, outputW, outputH, 8,false )
-io.output("out/convpadcrop_wide_handshake_"..T..".sim.v")
-io.write(f:toVerilog())
-io.close()
-------
-local f = d.seqMapHandshake( harness("../../frame_128.raw","convpadcrop_wide_handshake_"..T.."_half.sim.raw",3), inputW, inputH, 8, outputW, outputH, 8,false,2 )
-io.output("out/convpadcrop_wide_handshake_"..T.."_half.sim.v")
-io.write(f:toVerilog())
-io.close()
-----------
-local fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, 8, outputW, outputH, 8, true )
-io.output("out/convpadcrop_wide_handshake_"..T..".axi.v")
-io.write(fnaxi:toVerilog())
-io.close()
---------
-d.writeMetadata("out/convpadcrop_wide_handshake_"..T..".metadata.lua", outputW, outputH,1,1,"frame_128.raw")
-d.writeMetadata("out/convpadcrop_wide_handshake_"..T.."_half.metadata.lua", outputW, outputH,1,1,"frame_128.raw")
-end
+
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))
 MAKE(tonumber(t))

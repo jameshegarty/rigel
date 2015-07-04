@@ -1,4 +1,5 @@
-SRCS = $(wildcard *.t)
+SRCFILES = $(wildcard *.t)
+SRCS = $(filter-out harness.t,$(SRCFILES))
 
 # some images have intentially invalid pixels in them, so we can't compare with golds
 GOLDS = $(filter-out conv_wide_handshake.t shifty_wide_handshake.t,$(SRCS))
@@ -86,6 +87,10 @@ out/%.bmp: out/%.raw
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
 	test ! -s out/$*.axi.diff && touch $@
+
+out/%_half.sim.correct.txt : out/%_half.sim.bmp
+	diff out/$*_half.sim.bmp gold/$*.bmp > out/$*_half.sim.diff
+	test ! -s out/$*_half.sim.diff && touch $@
 
 out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff

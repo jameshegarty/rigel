@@ -2,6 +2,7 @@ local d = require "darkroom"
 local Image = require "image"
 local types = require("types")
 local S = require("systolic")
+local harness = require "harness"
 
 T = 1 -- throughput
 
@@ -72,24 +73,5 @@ local out = d.apply("HH",d.makeHandshake(convpipe), out)
 local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0, 0))), out)
 --local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
-----------------
-local inp = d.input( d.StatefulHandshake(types.null()) )
-local out = d.apply("fread",d.makeHandshake(d.freadSeq("frame_128.raw",RW_TYPE,"../../frame_128.raw")),inp)
-local out = d.apply("conv_wide", hsfn, out )
-local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq("out/convpadcrop_handshake.raw",RW_TYPE,"convpadcrop_handshake.sim.raw")), out )
-local harness = d.lambda( "harness", inp, out )
--------------
-local f = d.seqMapHandshake( harness, inputW, inputH, outputW, outputH, T,false )
-local Module = f:compile()
-(terra() var m:Module; m:reset(); m:process(nil,nil) end)()
 
-io.output("out/convpadcrop_handshake.sim.v")
-io.write(f:toVerilog())
-io.close()
-----------
---local fnaxi = d.seqMapHandshake( hsfn, inputW, inputH, outputW, outputH, 8, true )
---io.output("out/convpadcrop_wide_handshake.axi.v")
---io.write(fnaxi:toVerilog())
---io.close()
---------
-d.writeMetadata("out/convpadcrop_handshake.metadata.lua", outputW, outputH,1,1,"frame_128.raw")
+harness.sim( "convpadcrop_handshake", hsfn, T, RW_TYPE, inputW, inputH, RW_TYPE, outputW, outputH )
