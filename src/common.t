@@ -338,6 +338,7 @@ end
 function deepsetweak( t, idx, value )
   assert(type(t)=="table")
   assert(type(idx)=="table")
+  assert(#idx>0)
 
   local T = t
   for k,v in ipairs(idx) do
@@ -351,7 +352,7 @@ function deepsetweak( t, idx, value )
   end
 
   assert(keycount(idx)==#idx)
-  error("deepsetweak")
+  error("deepsetweak?")
 end
 
 -- if idx={a,b,c} this does
@@ -417,7 +418,7 @@ function foldt(t, f, base)
 end
 
 function range(a,b)
-  assert(type(a)=="number")
+  assert(type(a)=="number" and (a==math.floor(a)))
   assert(type(b)=="number" or b==nil)
   if b==nil then a,b = 1,a end
   local t = {}
@@ -472,6 +473,7 @@ function sort( a, f )
   return t
 end
 
+-- fn(a,b)
 function foldl( fn, base, t )
   assert(type(fn)=="function")
   assert(type(t)=="table")
@@ -492,6 +494,7 @@ end
 function andop(a,b) return a and b end
 function orop(a,b) return a or b end
 function andopterra(a,b) return `a and b end
+terra xor( a:bool, b:bool) return (a or b) and (not (a and b)) end
 
 -- returns first i elements of the list t
 function take(t,i)

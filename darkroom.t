@@ -37,11 +37,12 @@ darkroom = {}
 DEFAULT_FIFO_SIZE = 2048*16
 
 darkroom.State = types.opaque("state")
+darkroom.StateR = types.opaque("stateR")
 darkroom.Handshake = types.opaque("handshake")
 darkroom.Registered = types.opaque("registered")
 function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
 function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}), darkroom.State}) end
-function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool(), types.bool()}),darkroom.State}) end
+function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool()}),darkroom.StateR}) end
 function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
 function darkroom.StatefulHandshakeRegistered(A) return types.tuple({ A, darkroom.State, darkroom.Handshake, darkroom.Registered }) end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
@@ -56,13 +57,13 @@ local valid = darkroom.valid
 darkroom.ready = macro(function(i) return `i._2 end)
 local ready = darkroom.ready
 
-function darkroom.isStateful( a ) return a:isTuple() and a.list[2]==darkroom.State end
+function darkroom.isStateful( a ) return a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR) end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
 function darkroom.isStatefulHandshakeRegistered( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake and a.list[4]==darkroom.Registered end
 function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
-function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==types.bool() end
+function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
 function darkroom.expectPure( A, er ) if darkroom.isStateful(A) or darkroom.isStatefulHandshake(A) then error(er or "type should be pure") end end
-function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false then error(er or "type should be stateful") end end
+function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or darkroom.isStatefulV(A) or darkroom.isStatefulRV(A) then error(er or "type should be stateful") end end
 function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
 function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
 function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandshake(A)==false then error(er or "type should be stateful handshake") end end
@@ -80,17 +81,24 @@ function darkroom.extractStateful( a, loc )
   return a.list[1]
 end
 
+-- extractV(StatefulV(A)) == A
 function darkroom.extractV( a, loc )
   if darkroom.isStatefulV(a)==false then error("Not a statefulV input, ") end
   return a.list[1].list[1]
 end
 
+-- extractRV(StatefulRV(A)) == A
 function darkroom.extractRV( a, loc )
   if darkroom.isStatefulRV(a)==false then error("Not a statefulRV input, ") end
   return a.list[1].list[1]
 end
 
+-- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
+-- ie Stateful(A) => A
+-- StatefulV(A) => {A,bool}
+-- StatefulRV(A) => {A,bool}
 function darkroom.extract( a, loc )
+  if a==darkroom.State then return types.null() end
   if darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeRegistered(a) then
     return types.tuple({a.list[1],types.bool()})
   end
@@ -106,16 +114,6 @@ function darkroom.extractStatefulHandshake( a, loc )
   if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, "..loc) end
   return a.list[1]
 end
-
--- calculate A+B s.t. A+B <= limit
-sumwrap = memoize(function(limit)
-  assert(type(limit)=="number")
-  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
-                      S.constant(0,types.uint(16)),
-                      S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
-                  end)
 
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
@@ -266,7 +264,7 @@ function darkroom.packTuple( typelist, handshake )
   end
   res.terraModule = PackTuple
 
-  res.systolicModule = S.moduleConstructor("packTuple",{CE=true})
+  res.systolicModule = S.moduleConstructor("packTuple_"..tostring(typelist),{CE=true})
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
   res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output") )
@@ -276,7 +274,7 @@ function darkroom.packTuple( typelist, handshake )
 end
 
 -- takes {Stateful(a[W,H]), Stateful(b[W,H]),...} to Stateful( {a,b}[W,H] )
-function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.packTuple( typelist ) ) end
+function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) end
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function darkroom.border(A,W,H,L,R,B,T,value)
@@ -314,8 +312,56 @@ function darkroom.liftStateful(f)
     valid(out) = true
   end
   res.terraModule = LiftStateful
+  res.systolicModule = S.moduleConstructor("LiftStateful_"..f.systolicModule.name,{CE=true})
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftStateful_inner") )
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ inner:process(sinp), S.constant(true, types.bool())}, "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) )
+
   return darkroom.newFunction(res)
 end
+
+-- f should be Stateful->StatefulRV
+-- You should never use Stateful->StatefulRV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
+function darkroom.waitOnInput(f)
+  local res = {kind="waitOnInput", fn = f}
+  darkroom.expectStateful(f.inputType)
+  darkroom.expectStatefulRV(f.outputType)
+  res.inputType = darkroom.StatefulV(darkroom.extract(f.inputType))
+  res.outputType = f.outputType
+  res.delay = f.delay
+  local struct WaitOnInput { inner : f.terraModule }
+  terra WaitOnInput:reset() self.inner:reset() end
+  terra WaitOnInput:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if self.inner:ready()==false or valid(inp) then
+    if xor(self.inner:ready(),valid(inp)) then 
+      cstdio.printf("XOR %d %d\n",self.inner:ready(),valid(inp))
+darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") end
+
+      self.inner:process(&data(inp),out)
+    else
+      valid(out) = false
+    end
+  end
+  terra WaitOnInput:ready() return self.inner:ready() end
+  res.terraModule = WaitOnInput
+
+  err( f.systolicModule:getDelay("ready")==0, "ready bit should not be pipelined")
+  res.systolicModule = S.moduleConstructor("WaitOnInput_"..f.systolicModule.name,{CE=true})
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("WaitOnInput_inner") )
+  local asstInst = res.systolicModule:add( S.module.assert( "waitOnInput valid bit doesn't match ready bit", {CE=true}):instantiate("asstInst") )
+
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local runable = S.__or(S.eq(inner:ready(),S.constant(false,types.bool())), S.index(sinp,1) ):disablePipelining()
+--  local runable = inner:ready():disablePipelining()
+  local out = inner:process( S.index(sinp,0), runable )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", {asstInst:process(S.__not(S.xor(inner:ready(),S.index(sinp,1))))} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) )
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), inner:ready(), "ready", {} ) )
+
+  return darkroom.newFunction(res)
+end
+
 
 function darkroom.liftDecimate(f)
   assert(darkroom.isFunction(f))
@@ -340,6 +386,7 @@ function darkroom.liftDecimate(f)
   terra LiftDecimate:ready() return true end
   res.terraModule = LiftDecimate
 
+  err( f.systolicModule~=nil, "Missing systolic for "..f.kind )
   res.systolicModule = S.moduleConstructor("LiftDecimate_"..f.systolicModule.name,{CE=true})
   local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftDecimate_inner") )
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
@@ -369,6 +416,20 @@ function darkroom.RPassthrough(f)
   end
   terra RPassthrough:ready( inp:bool ) return inp and self.inner:ready() end
   res.terraModule = RPassthrough
+
+  err( f.systolicModule~=nil, "RPassthrough null module "..f.kind)
+  res.systolicModule = S.moduleConstructor("RPassthrough_"..f.systolicModule.name,{CE=true})
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("RPassthrough_inner") )
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+
+  -- this is dumb: we don't actually use the 'ready' bit in the struct (it's provided by the ready function).
+  -- but we include it to distinguish the types.
+  local out = inner:process( S.tuple{ S.index(sinp,0), S.index(sinp,1)} )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.index(out,1) }, "process_output" ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, S.parameter("reset",types.bool())) )
+  local rinp = S.parameter("ready_input", types.bool() )
+  res.systolicModule:addFunction( S.lambda("ready", rinp, S.__and(inner:ready(),rinp):disablePipelining(), "ready", {} ) )
+
   return darkroom.newFunction(res)
 end
 
@@ -837,7 +898,7 @@ function darkroom.posSeq( W, H, T )
   res.terraModule = PosSeq
 
   res.systolicModule = S.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T,{CE=true})
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(W-T) ):includeCE():instantiate("posX") )
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(W-T) ):includeCE():instantiate("posX") )
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), summodule):includeCE():instantiate("posY") )
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16)}, "x %d y %d", {CE=true}):instantiate("printInst") )
 
@@ -891,7 +952,8 @@ end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
-  map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number") end)
+  map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
+  err(T>=1,"cropSeq T<1")
 
   err( L>=0, "cropSeq, L<0")
   err( R>=0, "cropSeq, R<0")
@@ -938,7 +1000,8 @@ end
 -- sequentialized to throughput T
 function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
-  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number"); err(n>=0,"n<0") end)
+  err(T>=1, "padSeq, T<1")
 
   err( W%T==0, "padSeq, W%T~=0")
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
@@ -975,7 +1038,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 
   res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T,{CE=true})
 
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(W+L+R-T) ):includeCE():instantiate("posX") )
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(W+L+R-T) ):includeCE():instantiate("posX") )
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), summodule):includeCE():instantiate("posY") )
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", {CE=true}):instantiate("printInst") )
 --  local asstInst = res.systolicModule:add( S.module.assert( "padSeq input ins't valid when it should be", {CE=true}):instantiate("asstInst") )
@@ -1027,7 +1090,10 @@ incIf=memoize(function(limit)
 --StatefulRV. Takes A[inputRate] in, and buffers to produce A[outputRate]
 darkroom.changeRate = memoize(function(A, inputRate, outputRate)
   err( types.isType(A), "A should be a type")
+  err( type(inputRate)=="number", "inputRate should be number")
+  err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number")
+  err( outputRate==math.floor(outputRate), "outputRate should be integer")
 
   local maxRate = math.max(inputRate,outputRate)
   print("IR",inputRate,"OR",outputRate,"MR",maxRate)
@@ -1193,7 +1259,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
 
   res.systolicModule = S.moduleConstructor("linebuffer",{CE=true})
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), sumwrap((w/T)-1), true, nil ):instantiate("addr") )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.sumwrap((w/T)-1), true, nil ):instantiate("addr") )
 
   local outarray = {}
   local evicted
@@ -1289,7 +1355,7 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   assert(T<=1); 
   assert((-xmin+1)*T==math.floor((-xmin+1)*T))
   local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin }
-  res.inputType = darkroom.StatefulV(types.array2d(A,1,-ymin+1))
+  res.inputType = darkroom.Stateful(types.array2d(A,1,-ymin+1))
   res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
   res.delay=0
   local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int}
@@ -1306,15 +1372,15 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
     end
 
     --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
-    if valid(inp) then
-      darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
+    if self:ready() then
+      --darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
       darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
       self.activeCycles = self.activeCycles + 1
       self.wroteLastColumn=false
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
       for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
-      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = data(inp)[y*SStride+(x+xmin)] end end
+      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
       self.phase = 0
     else
       if self.phase<[1/T]-1 then 
@@ -1327,6 +1393,19 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   end
   terra SSRPartial:ready()  return self.phase==[1/T]-1 end
   res.terraModule = SSRPartial
+
+  res.systolicModule = S.moduleConstructor("SSRPartial",{CE=true})
+  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local P = 1/T
+
+  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, reverse( map(range(P), function(i) return sinp( (i-1)*P ) end ) ) )
+  
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, S.constant(true, types.bool()) }, "process_output", shifterPipelines) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", shifterResetPipelines,S.parameter("reset",types.bool())) )
+
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), shifterReading, "ready", {} ) )
+
   return darkroom.newFunction(res)
 end
 
@@ -1342,6 +1421,7 @@ function darkroom.stencilLinebuffer( A, w, h, T, xmin, xmax, ymin, ymax )
   return darkroom.compose("stencilLinebuffer", darkroom.SSR( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, T, ymin ) )
 end
 
+-- this has type StatefulV -> StatefulRV
 function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
@@ -1350,7 +1430,7 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(xmax==0)
   assert(ymax==0)
 
-  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.SSRPartial( A, T, xmin, ymin)), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
+  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
 end
 
 -- purely wiring
@@ -1361,7 +1441,7 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   assert(type(stencilH)=="number")
   assert(stencilH>0)
   assert(type(T)=="number")
-  assert(T>0)
+  assert(T>=1)
 
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
   res.inputType = types.array2d( A, stencilW+T-1, stencilH)
@@ -1508,6 +1588,10 @@ end
 function darkroom.reduceSeq( f, T )
   assert(T<=1)
 
+  if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
+    error("Reduction function f must be of type {A,A}->A, "..loc)
+  end
+
   local res = {kind="reduceSeq", fn=f}
   darkroom.expectPure(f.outputType)
   res.inputType = darkroom.Stateful(f.outputType)
@@ -1540,6 +1624,23 @@ function darkroom.reduceSeq( f, T )
     end
   end
   res.terraModule = ReduceSeq
+
+  err( f.systolicModule:getDelay("process") == 0, "ReduceSeq function must have delay==0" )
+
+  res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name,{CE=true})
+  local sinp = S.parameter("process_input", f.outputType )
+  local svalid = S.parameter("process_valid", types.bool() )
+  local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
+
+  local sResult = res.systolicModule:add( S.module.regByConstructor( f.outputType, f.systolicModule ):includeCE():instantiate("result") )
+  
+  local pipelines = {}
+  pipelines[1] = sResult:set( sinp, S.eq(phaseValue, S.constant(0, types.uint(16) ) ):disablePipelining() )
+  pipelines[2] = sResult:setBy( sinp, S.__not(S.eq(phaseValue, S.constant(0, types.uint(16) ) )):disablePipelining() )
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sResult:get(), phaseValid }, "process_output", concat(phasePipelines,pipelines), svalid) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", phaseResetPipelines, S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction( res )
 end
@@ -1672,10 +1773,13 @@ function darkroom.lambda( name, input, output )
           table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
           table.insert( resetStats, quote mself.[n.name]:reset() end )
           table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
+
           local readyOut = symbol( bool, "ready_"..n.name )
           if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
           elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
+
           table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
+
           return {out,readyOut}
         elseif n.kind=="applyRegLoad" then
           if usedNames[n.name]==nil then
@@ -1728,7 +1832,11 @@ function darkroom.lambda( name, input, output )
     terra Module.methods.reset( [mself] ) [resetStats] end
     terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
     if darkroom.isStatefulRV(res.inputType) then
+      assert(out[2]~=nil)
       terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [out[2]] end
+    elseif darkroom.isStatefulRV(res.outputType) then
+      assert(out[2]~=nil)
+      terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
     else
       --terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
     end
@@ -1746,17 +1854,20 @@ function darkroom.lambda( name, input, output )
     local module = S.moduleConstructor( fn.name, {CE=sel(darkroom.isStatefulHandshake(fn.inputType),false,true), onlyWire=sel(darkroom.isStatefulHandshake(fn.inputType),true,false)} )
     local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
     local rst = S.parameter( "reset", types.bool() )
+    local readyInput = S.parameter( "ready_input", types.bool() )
     local resetPipelines = {}
 
     local instanceMap = {}
     local out = fn.output:visitEach(
       function(n, inputs)
         if n.kind=="input" then
-          return {inp}
+          return {inp, sel(darkroom.isStatefulRV(n.type), readyInput, nil) }
         elseif n.kind=="apply" then
           print("systolic APPLY",n.fn.kind)
           err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
           print("APPLY",n.fn.systolicModule.functions.process.input.type,n.fn.systolicModule.functions.process.output.type)
+          err( n.fn.systolicModule.functions.process.input.type==darkroom.extract(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.input.type).." but should be "..tostring(darkroom.extract(n.fn.inputType)) )
+          err( n.fn.systolicModule.functions.process.output.type==darkroom.extract(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
 
           local I = n.fn.systolicModule:instantiate(n.name)
           instanceMap[n] = I
@@ -1767,7 +1878,17 @@ function darkroom.lambda( name, input, output )
             table.insert( resetPipelines, I:reset() )
           end
 
-          return {I:process(inputs[1][1])}
+
+          if darkroom.isStatefulV(n.inputs[1].type) then
+            return { I:process(inputs[1][1]), I:ready() }
+          elseif darkroom.isStatefulRV(n.inputs[1].type) then
+            return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
+          elseif darkroom.isStatefulRV(n.type) then
+            -- the strange Stateful->StatefulRV case
+            err( false, "You shouldn't use Stateful->StatefulRV directly, loc "..n.loc )
+          else
+            return {I:process(inputs[1][1])}
+          end
         elseif n.kind=="constant" then
           return {S.constant( n.value, n.type )}
         elseif n.kind=="tuple" then
@@ -1790,7 +1911,13 @@ function darkroom.lambda( name, input, output )
     else
       module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
     end
-    if darkroom.isStatefulHandshake( fn.inputType ) then
+
+    if darkroom.isStatefulRV( fn.inputType ) then
+      assert( S.isAST(out[2]) )
+      local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
+    elseif darkroom.isStatefulRV( fn.outputType ) then
+      local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
+    elseif darkroom.isStatefulHandshake( fn.inputType ) then
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
       fn.output:visitEachReverse(
@@ -1866,6 +1993,9 @@ end
 function darkroom.constSeq( value, A, w, h, T )
   assert(type(value)=="table")
   assert(type(value[1])=="number")
+  assert(#value==w*h)
+
+
 --  assert(type(value[1][1])=="number")
   assert(T<=1)
   assert( types.isType(A) )
@@ -1877,6 +2007,7 @@ function darkroom.constSeq( value, A, w, h, T )
   local W = w*T
   if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
   res.outputType = darkroom.Stateful(types.array2d(A,W,h))
+
   res.delay = 0
   local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
   local mself = symbol(&ConstSeqState,"mself")
@@ -1898,6 +2029,19 @@ function darkroom.constSeq( value, A, w, h, T )
     if self.phase == [1/T] then self.phase = 0 end
   end
   res.terraModule = ConstSeqState
+  res.systolicModule = S.moduleConstructor("constSeq",{CE=true})
+  local sconsts = map(range(1/T), function() return {} end)
+  for y=0,h-1 do
+    for xr=0,(1/T)-1 do
+      for x=0, W do
+        table.insert(sconsts[xr+1], value[y*w+xr*W+x+1])
+      end
+    end
+  end
+  local shiftOut, shiftPipelines = fpgamodules.addShifter( res.systolicModule, map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end) )
+  local inp = S.parameter("process_input", types.null() )
+  res.systolicModule:addFunction( S.lambda("process", inp, shiftOut, "process_output", shiftPipelines ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("process_nilinp", types.null() ), nil, "process_reset", {}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction( res )
 end
@@ -2114,6 +2258,7 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
     var inpAddr = 0
     var outAddr = 0
     while inpAddr<inputW*inputH or outAddr<outputW*outputH do
+      cstdio.printf("---------------------------------- RUNPIPE inpAddr %d outAddr %d\n", inpAddr, outAddr)
       valid(inp)=(inpAddr<inputW*inputH)
       self.inner:process(&inp,&o)
       inpAddr = inpAddr + inputT -- in simulator, ready==true always, so we can always increment.

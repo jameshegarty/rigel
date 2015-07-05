@@ -214,7 +214,8 @@ return function( ast, newNodeFn )
     end
 
   elseif ast.kind=="tuple" then
-    local ty = map(ast.inputs, function(t) return t.type end )
+    err( #ast.inputs>0, "no inputs to tuple? "..ast.loc )
+    local ty = map(ast.inputs, function(t) assert(types.isType(t.type)); return t.type end )
     ast.type = types.tuple(ty)
   elseif ast.kind=="array" then
     local typeOver

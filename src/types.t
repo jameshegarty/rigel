@@ -65,24 +65,15 @@ function types.float(prec)
   return types._float[prec]
 end
 
-ShapeMT = {}
-function types.isShape(w) return getmetatable(w)==ShapeMT end
-
-types._shape = {}
-function types.shapevar(varname, scale)
-  assert(type(varname)=="string")
-  assert(type(scale)=="number")
-  local s = setmetatable({varname,scale}, ShapeMT)
-  return deepsetweak( types._shape, s, s )
-end
-
 types._array={}
 
 function types.array2d( _type, w, h )
   assert( types.isType(_type) )
-  assert( type(w)=="number" or types.isShape(w))
-  assert( type(h)=="number" or types.isShape(h) or h==nil)
+  assert( type(w)=="number" )
+  assert( type(h)=="number" or h==nil)
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
+  assert(w==math.floor(w))
+  assert(h==math.floor(h))
 
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
@@ -178,7 +169,7 @@ function types.valueToType(v)
   return nil -- fail
 end
 
-local boolops = {["or"]=1,["and"]=1,["=="]=1} -- bool -> bool -> bool
+local boolops = {["or"]=1,["and"]=1,["=="]=1,["xor"]=1} -- bool -> bool -> bool
 local cmpops = {["=="]=1,["~="]=1,["<"]=1,[">"]=1,["<="]=1,[">="]=1} -- number -> number -> bool
 local binops = {["|"]=1,["^"]=1,["&"]=1,["<<"]=1,[">>"]=1,["+"]=1,["-"]=1,["%"]=1,["*"]=1,["/"]=1}
 -- these binops only work on ints
@@ -620,6 +611,8 @@ end
 function TypeFunctions:toLuaType()
   if self.kind=="int" or self.kind=="uint" then
     return "number"
+  elseif self.kind=="array" or self.kind=="tuple" then
+    return "table"
   else
     print("toLuaType",self)
     assert(false)

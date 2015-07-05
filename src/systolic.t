@@ -12,6 +12,7 @@ systolicAST = {}
 function systolicAST.isSystolicAST(ast)
   return getmetatable(ast)==systolicASTMT
 end
+systolic.isAST = systolicAST.isSystolicAST
 
 local __usedNameCnt = 0
 function systolicAST.new(tab)
@@ -347,6 +348,16 @@ systolicASTMT={__index = systolicASTFunctions,
 __add=function(l,r) return binop(l,r,"+") end, 
 __sub=function(l,r) return binop(l,r,"-") end,
 __mul=function(l,r) return binop(l,r,"*") end,
+__call = function(tab, delayvalue)
+  err( type(delayvalue)=="number", "delay must be a number")
+  if tab.kind=="delay" then
+    assert(false) -- we should merge them or do something more intelligent?
+  elseif delayvalue==0 then
+    return tab
+  else
+    return systolicAST.new({kind="delay",delay=delayvalue,inputs={tab},type=tab.type})
+  end
+end,
   __newindex = function(table, key, value)
                     darkroom.error("Attempt to modify systolic AST node")
                   end}
@@ -425,6 +436,7 @@ function systolic.ge(lhs, rhs) return binop(lhs,rhs,">=") end
 function systolic.gt(lhs, rhs) return binop(lhs,rhs,">") end
 function systolic.__or(lhs, rhs) return binop(lhs,rhs,"or") end
 function systolic.__and(lhs, rhs) return binop(lhs,rhs,"and") end
+function systolic.xor(lhs, rhs) return binop(lhs,rhs,"xor") end
 function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
 function systolic.neg(expr) return unary(expr,"-") end
 function systolic.__not(expr) return unary(expr,"not") end
@@ -503,6 +515,13 @@ function systolicASTFunctions:isPure( validbit )
     end)
 end
 
+function systolicASTFunctions:const()
+  if self.kind=="constant" then
+    return self.value
+  end
+  return nil
+end
+
 function systolicASTFunctions:disablePipelining()
   return self:process(
     function(n)
@@ -549,6 +568,7 @@ function systolicASTFunctions:pipeline()
 
         if n.kind=="call" and n.func.input.type==types.null() then
           -- no inputs, so this gets put at time 0
+          err( n.inst.module:getDelay( n.func.name )==0 or pipelined, "Error, could not disable pipelinging for function '"..n.func.name.."' on instance '"..n.inst.name.."', "..n.loc)
           return { n, n.inst.module:getDelay( n.func.name ) }
         else
           -- delay match on all inputs
@@ -564,7 +584,7 @@ function systolicASTFunctions:pipeline()
           if n.kind=="call" then 
             internalDelay= n.inst.module:getDelay( n.func.name ) 
             err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
-            --if n.func:isPure()==false then print("validbitPIPEDELAY",args[2][2],args[2][1].kind,args[2][1].loc) end
+            if n.func:isPure()==false then print("validbitPIPEDELAY",args[2][2],args[2][1].kind,args[2][1].loc) end
             -- actually, it is OK to have pipelined valid bits (eg the input to one function is the output of another, which has a delay).
             -- The problem comes up when we're trying to interact with non-coherent modules: then the timing of the callsites matters.
             -- So, enforce valid delay==0 when calling noncoherent modules?
@@ -592,6 +612,11 @@ function systolicASTFunctions:pipeline()
           fnDelays[n.fn.name] = args[1][2]
         end
         return {n,0}
+      elseif n.kind=="delay" then
+        -- notice that we DO NOT add the explicit delay to the retiming number.
+        -- if we did that, the other nodes would compensate and the delay
+        -- we want would disappear!
+        return {getDelayed( args[1][1], n.delay ), args[1][2] }
       else
         print(n.kind)
         assert(false)
@@ -913,6 +938,31 @@ end
 systolic.module = {}
 local __usedModuleNames = {}
 
+-- generates a class that provides a nice interface for setting optional parameters
+local function moduleConstructor(tab)
+  local constFunctions=tab.configFns
+  function constFunctions:complete()
+    if self.isComplete==false then
+      self.module = tab.complete(self)
+      self.isComplete = true
+    end
+  end
+  function constFunctions:instantiate( name )
+    self:complete()
+    return self.module:instantiate(name)
+  end
+
+  local constMT = {__index=constFunctions}
+  return function(...)
+    print("MODULE CONSTRUCTOR")
+    local t = tab.new(...)
+    t.isComplete=false
+print(t,tab.configFns)
+    return setmetatable(t,constMT)
+  end
+end
+
+
 userModuleFunctions={}
 setmetatable(userModuleFunctions,{__index=systolicModuleFunctions})
 userModuleMT={__index=userModuleFunctions}
@@ -1065,6 +1115,7 @@ end
 
 function systolic.module.new( name, fns, instances, options )
   assert(type(name)=="string")
+  name = name:gsub('%W','_')
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
   map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
@@ -1163,6 +1214,13 @@ function systolic.module.reg( ty, initial )
   t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
 end
+
+systolic.module.regConstructor = moduleConstructor{
+new=function(ty) return {type=ty} end,
+complete=function(self) return systolic.module.reg( self.type, self.init) end,
+configFns={setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; return self end}
+}
+
 -------------------
 systolic.module.regBy = memoize(function( ty, setby, CE, init )
   assert( types.isType(ty) )
@@ -1195,29 +1253,6 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   return systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE} )
 end)
 
-
-local function moduleConstructor(tab)
-  local constFunctions=tab.configFns
-  function constFunctions:complete()
-    if self.isComplete==false then
-      self.module = tab.complete(self)
-      self.isComplete = true
-    end
-  end
-  function constFunctions:instantiate( name )
-    self:complete()
-    return self.module:instantiate(name)
-  end
-
-  local constMT = {__index=constFunctions}
-  return function(...)
-    print("MODULE CONSTRUCTOR")
-    local t = tab.new(...)
-    t.isComplete=false
-print(t,tab.configFns)
-    return setmetatable(t,constMT)
-  end
-end
 
 systolic.module.regByConstructor = moduleConstructor{
 new=function( ty, setby )

@@ -3,6 +3,16 @@ S=systolic
 --statemachine = require("statemachine")
 local modules = {}
 
+-- calculate A+B s.t. A+B <= limit
+modules.sumwrap = memoize(function(limit)
+  assert(type(limit)=="number")
+  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
+                      S.constant(0,types.uint(16)),
+                      S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
+  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+                  end)
+
 function modules.reduceSystolic( op, cnt, datatype, argminVars)
   local rname, rmod = modules.reduceVerilog( op, cnt, datatype, argminVars )
   local r = systolic.module(rname, {verilog=rmod} )
@@ -220,6 +230,87 @@ function modules.shiftRegister( ty, size, name, options )
   local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines,rstvalid) )
 
   return M
+end
+
+-- This returns a module that keeps track of phase. It returns a phase value and a valid bit.
+-- valid bit is only true after a full phase has completed.
+--
+-- If period=2 it returns:
+-- t0: value=0, valid=false
+-- t1: value=1, valid=false
+-- t2: value=0, valid=true
+-- t3: value=1, valid=false
+function modules.addPhaser( module, period, fnValidBit )
+  assert( math.floor(period)==period )
+  assert(S.isAST(fnValidBit))
+
+  local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap( period-1) ):includeCE():instantiate("phase") )
+  local notFirstCycle = module:add( S.module.reg( types.bool() ):instantiate("notFirstCycle",{arbitrate="valid"}) )
+
+  local valueout = phase:get()
+  local validbit = S.__and(S.eq(phase:get(), S.constant(0,types.uint(16))), notFirstCycle:get())
+  local resetPipelines = {phase:set( S.constant(0, types.uint(16) ) ), notFirstCycle:set( S.constant( false, types.bool() ), fnValidBit )}
+  local pipelines = {phase:setBy( S.constant(1,types.uint(16)) ), notFirstCycle:set( S.constant(true, types.bool() ), fnValidBit ) }
+
+  return valueout, validbit, pipelines, resetPipelines
+end
+
+-- This is a nice interface for generating a shift register.
+-- This takes a table of expressions 'exprs', and returns a code quote
+-- that returns their values over #exprs clock cycles. Also returns
+-- a value that tells you whether it's storing the values in that cycle.
+--
+-- More precisely, for #exprs==3:
+-- t0 returns exprs[1]@t0,true
+-- t1 returns exprs[2]@t0,false
+-- t2 returns exprs[3]@t0,false
+-- t3 returns exprs[1]@t3,true
+-- t4 returns exprs[2]@t3,false
+-- t5 returns exprs[3]@t3,false
+-- etc
+--
+-- This does a few clever optimizations:
+-- * if all exprs are const, it does no reads.
+-- * If one of the exprs happens to have a value that is 
+--   already in the shift register, it will just read that value instead
+--   of calculating it. This happens if exprs[a] == exprs[b](#exprs), using the delay syntax
+function modules.addShifter( module, exprs )
+  assert( S.isModule(module) )
+  assert(type(exprs)=="table")
+  assert(#exprs>0)
+  map( exprs, function(e) assert(S.isAST(e)) end )
+
+  if #exprs==1 then
+    -- only 1 element in array: just return it
+    return exprs[1], {}, {}, S.constant( true, types.bool() )
+  end
+
+  local resetPipelines, pipelines, out, reading, ty
+
+  map(exprs, function(e) assert(ty==nil or e.type==ty); ty=e.type; end )
+
+  local allconst = foldl( andop, true, map(exprs, function(e) return e:const()~=nil end ) )
+
+  if allconst then
+    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):setInit(e:const()):instantiate("SR_"..i) ) end )
+
+    pipelines = map( regs, function(r,i) return r:set( regs[(i%#exprs)+1]:get() )  end )
+    out = regs[1]:get()
+  else
+    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(#exprs-1) ):includeCE():instantiate("phase") )
+    resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
+    reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining()
+
+    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):instantiate("SR_"..i) ) end )
+
+    -- notice that in the first cycle we write exprs[2] to reg[1]. That way this is ready
+    -- on the second cycle.
+    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[(i%#exprs)+1], regs[(i%#exprs)+1]:get()) ) end )
+
+    out = S.select( reading, exprs[1], regs[1]:get() )
+  end
+  
+  return out, pipelines, resetPipelines, reading
 end
 
 function modules.xygen( minX, maxX, minY, maxY )
