@@ -297,7 +297,7 @@ __index = function(tab,key)
         if fn.input.type==types.null() then
           -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
           if #tab.callsites[fn.name]==0 then
-            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
+            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
             table.insert(tab.callsites[fn.name], systolicAST.new(t))
             return tab.callsites[fn.name][1]
           else
@@ -307,7 +307,7 @@ __index = function(tab,key)
         elseif self.options.arbitrate==nil then
           -- no arbitration
           if #tab.callsites[fn.name]==0 then
-            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
+            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
             table.insert(tab.callsites[fn.name], systolicAST.new(t))
             return tab.callsites[fn.name][1]
           else
@@ -318,9 +318,9 @@ __index = function(tab,key)
 
             err(inp~=nil, "call aribtrate - missing input?")
             err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-            local tca = { kind="callArbitrate", type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={inp,valid} }
+            local tca = { kind="callArbitrate", fn=fn.name, instance=self, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={inp,valid} }
             tca = systolicAST.new(tca)
-            local t = { kind="call", inst=self, func=fn, type=otype, loc=getloc(), inputs={systolic.index(tca,0),systolic.index(tca,1)} }
+            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={systolic.index(tca,0),systolic.index(tca,1)} }
             table.insert( tab.callsites[fn.name], {tca,t} )
             return systolicAST.new(t)
           else
@@ -602,7 +602,7 @@ function systolicASTFunctions:pipeline()
           
           local internalDelay = 0
           if n.kind=="call" then 
-            internalDelay= n.inst.module:getDelay( n.func.name ) 
+            internalDelay= n.inst.module:getDelay( n.fnname ) 
             err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
             if n.func:isPure()==false then print("validbitPIPEDELAY",args[2][2],args[2][1].kind,args[2][1].loc) end
             -- actually, it is OK to have pipelined valid bits (eg the input to one function is the output of another, which has a delay).
@@ -700,7 +700,7 @@ function systolicASTFunctions:toVerilog( module )
 
       if n.kind=="call" then
         local decl
-        finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.func.name, args[1], args[2] )
+        finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.fnname, args[1], args[2] )
         table.insert( declarations, decl )
       elseif n.kind=="callArbitrate" then
         -- inputs are stored as {data,validbit} pairs, ie {call1data,call1valid,call2data,call2valid}
@@ -719,7 +719,7 @@ function systolicASTFunctions:toVerilog( module )
           -- do bitcount w/ the array of valid bits. Pad to 5 bits so that sum works correctly
           local cnt = foldt(argpairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
           
-          table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function '' on module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
+          table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function ']]..n.fn..[[' on instance ']]..n.instance.name..[[' in module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
           finalResult = "{"..v..","..data.."}"
         end
       elseif n.kind=="constant" then
@@ -1024,7 +1024,8 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     if fnname=="CE" and module.options.CE then
       -- HACK: we will wire this automatically
     else
-      err( instance.verilogCompilerState[module][fnname]~=nil, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
+      local canBeUndriven = fn:isPure()
+      err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
       
       if fn:isPure()==false then
         if self.options.onlyWire and fn.implicitValid then
@@ -1136,7 +1137,7 @@ function userModuleFunctions:getDependencies()
 end
 
 function userModuleFunctions:getDelay( fnname )
-  err( self.functions[fnname]~=nil, ":getDelay() error, '"..fnname.."' is not a valid function on this module")
+  err( self.functions[fnname]~=nil, ":getDelay() error, '"..fnname.."' is not a valid function on module "..self.name)
   if self.options.onlyWire then 
     err( type(self.options.verilogDelay[fnname])=="number", "Error, onlyWire module function '"..fnname.."' is missing delay information")
     return self.options.verilogDelay[fnname] 
@@ -1277,7 +1278,8 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
 
   local sbinp = systolic.parameter("setby_inp",setbyTypeB)
   local setbyvalid = systolic.parameter("setby_valid",types.bool())
-  fns.setBy = systolic.lambda("setBy", sbinp, R:set(inner:process(systolic.tuple{R:get(),sbinp}),setbyvalid), "SETBY_OUTPUT",{}, setbyvalid )
+  local setbyout = inner:process(systolic.tuple{R:get(),sbinp})
+  fns.setBy = systolic.lambda("setby", sbinp, setbyout, "SETBY_OUTPUT",{R:set(setbyout,setbyvalid)}, setbyvalid )
 
   local sinp = systolic.parameter("set_inp",ty)
   local setvalid = systolic.parameter("set_valid",types.bool())

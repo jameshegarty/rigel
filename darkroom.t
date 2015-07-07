@@ -358,6 +358,7 @@ function darkroom.waitOnInput(f)
   res.delay = f.delay
   local struct WaitOnInput { inner : f.terraModule }
   terra WaitOnInput:reset() self.inner:reset() end
+  terra WaitOnInput:stats(name:&int8) self.inner:stats(name) end
   terra WaitOnInput:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.inner:ready()==false or valid(inp) then
     if xor(self.inner:ready(),valid(inp)) then 
@@ -381,7 +382,7 @@ darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") end
   local runable = S.__or(S.eq(inner:ready(),S.constant(false,types.bool())), S.index(sinp,1) ):disablePipelining()
 --  local runable = inner:ready():disablePipelining()
   local out = inner:process( S.index(sinp,0), runable )
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", {asstInst:process(S.__not(S.xor(inner:ready(),S.index(sinp,1))))} ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", {asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1))))} ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), inner:ready(), "ready", {} ) )
 
@@ -414,7 +415,7 @@ function darkroom.liftDecimate(f)
 
   err( f.systolicModule~=nil, "Missing systolic for "..f.kind )
   res.systolicModule = S.moduleConstructor("LiftDecimate_"..f.systolicModule.name,{CE=true})
-  local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftDecimate_inner") )
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftDecimate_inner_"..f.systolicModule.name) )
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local pout = inner:process(S.index(sinp,0),S.index(sinp,1))
   local pout_data = S.index(pout,0)
@@ -480,7 +481,8 @@ darkroom.liftHandshake = memoize(function(f)
   terra LiftHandshake:stats(name:&int8) 
     cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
     self.inner:stats(name) 
-end
+  end
+
   terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if valid(inp) then
       self.fifo:pushBack(&data(inp))
@@ -1039,7 +1041,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 
   local struct PadSeq {posX:int; posY:int}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
-  terra PadSeq:stats() end -- not particularly interesting
+  terra PadSeq:stats(name:&int8) end -- not particularly interesting
   terra PadSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
@@ -1137,7 +1139,7 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
 
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; inputPhase:int;outputPhase:int}
   terra ChangeRate:reset() self.inputPhase = 0; self.outputPhase=outputCount end
-
+  terra ChangeRate:stats(name:&int8) end
   res.systolicModule = S.moduleConstructor("ChangeRate_"..inputRate.."_to"..outputRate,{CE=true})
   local svalid = S.parameter("process_valid", types.bool() )
   local rvalid = S.parameter("reset", types.bool() )
@@ -1429,9 +1431,9 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
 
   local shiftValues = {}
   local Weach = (-xmin+1)/P -- number of columns in each output
-  print(Weach, #range(Weach-1,0))
+
   for p=P-1,0,-1 do
-    shiftValues[p] = concat2dArrays( map( range(Weach-1,0), function(i) return sinp( p*Weach + i ) end ))
+    table.insert(shiftValues, concat2dArrays( map( range(Weach-1,0), function(i) return sinp( p*Weach + i ) end )) )
   end
 
   local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues )
@@ -1671,17 +1673,19 @@ function darkroom.reduceSeq( f, T )
   res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name,{CE=true})
   local sinp = S.parameter("process_input", f.outputType )
   local svalid = S.parameter("process_valid", types.bool() )
-  local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
+  --local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap( (1/T)-1 ) ):includeCE():instantiate("phase") )
 
   local sResult = res.systolicModule:add( S.module.regByConstructor( f.outputType, f.systolicModule ):includeCE():instantiate("result") )
   
   local pipelines = {}
-  pipelines[1] = sResult:set( sinp, S.eq(phaseValue, S.constant(0, types.uint(16) ) ):disablePipelining() )
-  pipelines[2] = sResult:setBy( sinp, S.__not(S.eq(phaseValue, S.constant(0, types.uint(16) ) )):disablePipelining() )
+  pipelines[1] = sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() )
+  pipelines[2] = phase:setBy( S.constant(1,types.uint(16)) )
+  local out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sResult:get(), phaseValid }, "process_output", concat(phasePipelines,pipelines), svalid) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (1/T)-1, types.uint(16))) }, "process_output", pipelines, svalid) )
 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", phaseResetPipelines, S.parameter("reset",types.bool())) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction( res )
 end
@@ -2235,6 +2239,7 @@ function darkroom.seqMap( f, W, H, T )
   local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:stats() self.inner:stats("TOP") end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
     var o : darkroom.extract(f.outputType):toTerraType()
     for i=0,W*H do self.inner:process(nil,&o) end
@@ -2293,6 +2298,7 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
   local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, inputT=inputT, outputT=outputT,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:stats() self.inner:stats("TOP") end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
     var inp : darkroom.extract(f.inputType):toTerraType()
 

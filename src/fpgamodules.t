@@ -278,6 +278,7 @@ function modules.addShifter( module, exprs )
   assert( S.isModule(module) )
   assert(type(exprs)=="table")
   assert(#exprs>0)
+  assert(#exprs==keycount(exprs))
   map( exprs, function(e) assert(S.isAST(e)) end )
 
   if #exprs==1 then
