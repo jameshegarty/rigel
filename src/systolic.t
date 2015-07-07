@@ -372,18 +372,32 @@ function systolicASTFunctions:init()
   systolicAST.new(self)
 end
 
--- ops
-function systolic.index( expr, idx, idy )
-  assert(systolicAST.isSystolicAST(expr))
-  err( type(idx)=="number", "idx should be a number" )
-  if idy==nil then idy=0 end
-  return typecheck({kind="index", idx=idx, idy=idy, inputs={expr}, loc=getloc()})
-end
-
 function systolic.cast( expr, ty )
   err( systolicAST.isSystolicAST(expr), "input to cast must be a systolic ast")
   err( types.isType(ty), "input to cast must be a type")
   return typecheck({kind="cast",inputs={expr},type=ty,loc=getloc()})
+end
+
+-- ops. idx, idy are inclusive
+function systolic.slice( expr, idxLow, idxHigh, idyLow, idyHigh )
+  assert(systolicAST.isSystolicAST(expr))
+  err( type(idxLow)=="number", "idxLow should be a number" )
+  err( type(idxHigh)=="number", "idxHigh should be a number" )
+  if idyLow==nil then idyLow=0 end
+  if idyHigh==nil then idyHigh=0 end
+  return typecheck({kind="slice", idxLow=idxLow, idxHigh=idxHigh, idyLow=idyLow, idyHigh=idyHigh, inputs={expr}, loc=getloc()})
+end
+
+function systolic.index( expr, idx, idy )
+  err( systolicAST.isSystolicAST(expr), "expr should be systolic value") 
+  -- slice will return an array or tuple with one element. so we need to do a cast.
+  if expr.type:isArray() then
+    return systolic.cast( systolic.slice(expr, idx, idx, idy, idy), expr.type:arrayOver() )
+  elseif expr.type:isTuple() then
+    local v = systolic.slice(expr, idx, idx, idy, idy)
+    return systolic.cast( v, v.type.list[1] )
+  end
+  err(false, "Index only works on tuples and arrays")
 end
 
 function systolic.bitSlice( expr, low, high )
@@ -564,7 +578,7 @@ function systolicASTFunctions:pipeline()
 
       if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" or n.kind=="null" then
         return {n, 0}
-      elseif n.kind=="index" or n.kind=="cast" or n.kind=="bitSlice" then
+      elseif n.kind=="slice" or n.kind=="cast" or n.kind=="bitSlice" then
         -- passthrough, no pipelining
         return {n, args[1][2]}
       elseif n.kind=="unary" then
@@ -735,27 +749,35 @@ function systolicASTFunctions:toVerilog( module )
         -- verilog doesn't have expressions - we can only bitslice on a wire. So coerce input into a wire.
         local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for bitslice" )
         finalResult = inp.."["..n.high..":"..n.low.."]"
-      elseif n.kind=="index" then
+      elseif n.kind=="slice" then
         if n.inputs[1].type:isArray() then
           local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
-          local flatIdx = (n.inputs[1].type:arrayLength())[1]*n.idy+n.idx
           local sz = n.inputs[1].type:arrayOver():verilogBits()
-          finalResult = "("..inp.."["..((flatIdx+1)*sz-1)..":"..(flatIdx*sz).."])"
-        elseif n.inputs[1].type:isUint() or n.inputs[1].type:isInt() then
-          table.insert( resDeclarations, declareWire( n.type:baseType(), n:cname(c), "", " // index result" ))
-          table.insert( resDeclarations, "assign "..n:cname(c).." = "..inputs["expr"][c].."["..n.index1.constLow_1.."]; // index")
-          finalResult = n:cname(c)
+          local W = (n.inputs[1].type:arrayLength())[1]
+
+          local res = {}
+          for y=n.idyHigh,n.idyLow,-1 do
+            table.insert( res, inp.."["..((y*W+n.idxHigh+1)*sz-1)..":"..((y*W+n.idxLow)*sz).."]" )
+          end
+
+          finalResult = "({"..table.concat(res,",").."})"
         elseif n.inputs[1].type:isTuple() then
           local lowbit = 0
-          for k,v in pairs(n.inputs[1].type.list) do if k-1<n.idx then lowbit = lowbit + v:verilogBits() end end
-          local ty = n.inputs[1].type.list[n.idx+1]
-          if n.inputs[1].type:verilogBits()==ty:verilogBits() then
-            finalResult = args[1] -- no index necessary
-          elseif ty:verilogBits()>=1 then
+          local highbit = 0
+          for k,v in pairs(n.inputs[1].type.list) do 
+            if k-1<n.idxLow then lowbit = lowbit + v:verilogBits() end 
+            if k-1<=n.idxHigh then highbit = highbit + v:verilogBits() end 
+          end
+          highbit = highbit-1
+          --local ty = n.inputs[1].type.list[n.idxHigh+1]
+          if (highbit-lowbit+1)==n.inputs[1].type:verilogBits() then
+            -- no index necessary. either we sliced whole tuple, or other types were null.
+            finalResult = args[1]
+          elseif n.inputs[1].type:verilogBits()>=1 then
             local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
-            if ty:verilogBits()>1 then
-              finalResult = "("..inp.."["..(lowbit+ty:verilogBits()-1)..":"..lowbit.."])"
-            elseif ty:verilogBits()==1 then
+            if highbit~=lowbit then
+              finalResult = "("..inp.."["..highbit..":"..lowbit.."])"
+            else
               finalResult = "("..inp.."["..lowbit.."])"
             end
           else
@@ -803,11 +825,14 @@ function systolicASTFunctions:toVerilog( module )
           -- noop: verilog is blind to types anyway
           assert(n.type:verilogBits()==n.inputs[1].type:verilogBits())
           expr = args[1]
-        elseif n.type:isArray() and n.inputs[1].type:isTuple()==true then
-          err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
-          for k,v in pairs(n.inputs[1].type.list) do
-            err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
-          end
+        elseif n.type:isArray() and n.inputs[1].type:isTuple() then
+          --err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
+          --for k,v in pairs(n.inputs[1].type.list) do
+          --  err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
+          --end
+          
+          -- Theoretically, typechecker should only allow valid tuple array casts to be allowed? (always row-major order)
+          err( n.type:verilogBits()==n.inputs[1].type:verilogBits(), "tuple to array cast verilog size doesn't match?")
           expr = args[1] 
         elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
           expr = "{"..table.concat( map(range(n.type:channels()), function(n) return args[1] end),",").."}" -- broadcast
@@ -826,11 +851,12 @@ function systolicASTFunctions:toVerilog( module )
           assert(n.type:channels() == n.expr.type:channels())
           expr = inputs.expr[c]
           cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
-        elseif n.type:isArray() and n.inputs[1].type:isArray()  then
-          assert(false)
-          assert(n.type:arrayLength() == n.expr.type:arrayLength())
-          -- same shape arrays, different base types
-          expr = dobasecast( inputs.expr[c], n.expr.type:baseType(), n.type:baseType() )
+        elseif n.inputs[1].type:isTuple() and #n.inputs[1].type.list==1 and n.inputs[1].type.list[1]==n.type then
+          -- {A} to A.  Noop
+          expr = args[1]
+        elseif n.inputs[1].type:isArray() and n.inputs[1].type:arrayOver()==n.type and n.inputs[1].type:channels()==1 then
+          -- A[1] to A. Noop
+          expr = args[1]
         else
           expr = dobasecast( args[1], n.inputs[1].type, n.type )
         end

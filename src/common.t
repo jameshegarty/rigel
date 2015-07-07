@@ -417,12 +417,18 @@ function foldt(t, f, base)
   return foldt( res, f, base )
 end
 
+-- returns a table of values from a to b, inclusive
 function range(a,b)
   assert(type(a)=="number" and (a==math.floor(a)))
   assert(type(b)=="number" or b==nil)
   if b==nil then a,b = 1,a end
   local t = {}
-  for i=a,b do table.insert(t,i) end
+  if a<=b then
+    for i=a,b do table.insert(t,i) end
+  else -- b<a
+    for i=a,b,-1 do table.insert(t,i) end
+  end
+
   return t
 end
 
@@ -544,6 +550,7 @@ function rep(v,n)
   return map(range(n), function(i) return v end)
 end
 
+-- low, high are inclusive
 function slice(t,low,high) 
   assert( type(t)=="table" )
   assert( type(low)=="number" )

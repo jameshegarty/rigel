@@ -85,6 +85,7 @@ types._tuples = {}
 function types.tuple( list )
   assert(type(list)=="table")
   assert(keycount(list)==#list)
+  err(#list>0, "no empty tuple types!")
 
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
@@ -413,19 +414,35 @@ function types.checkExplicitCast(from, to, ast)
     -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
     err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
     return true
-  elseif from:isArray() and to:isArray() then
+  elseif from:isArray() and to:isArray() and from:arrayOver()==to:arrayOver() then
     -- we do allow you to explicitly cast arrays of different shapes but the same total size
     if from:channels()~=to:channels() then
       error("Can't change array length when casting "..tostring(from).." to "..tostring(to) )
     end
 
     return types.checkExplicitCast(from.over, to.over,ast)
-  elseif from:isTuple() and to:isArray() then
-    return #from.list==to:channels()
+  elseif from:isTuple() then
+    if #from.list==1 and from.list[1]==to then
+      -- casting {A} to A
+      return true
+    elseif to:isArray() then
+      if #from.list==to:channels() and from.list[1]==to:arrayOver() then
+        -- casting {A} to A[1]
+        return true
+      elseif from.list[1]:isArray() then
+        -- we can cast {A[a],A[b],A[c]..} to A[a+b+c]
+        local ty, channels = from.list[1]:arrayOver(), 0
+        map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
+        err( channels==to:channels(), "channels don't match") 
+        return true
+      end
+    else
+      error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
+    end
   elseif (from:isTuple()==false and from:isArray()==false) and to:isArray() then
     -- broadcast
     return types.checkExplicitCast(from, to.over, ast )
-  elseif from:isArray() and (to:isArray()==false and to:isTuple()==false) then
+  elseif from:isArray() then
     if from:arrayOver():isBool() and from:channels()==to:sizeof()*8 then
       -- casting an array of bools to a type with the same number of bits is OK
       return true

@@ -122,6 +122,30 @@ local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint
 local summodule = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},{CE=true})
 ------------
 
+-- tab should be a table of systolic ASTs, all type array2d. Heights should match
+function concat2dArrays(tab)
+  assert(type(tab)=="table")
+  assert(#tab>0)
+  assert( systolic.isAST(tab[1]))
+  local H, ty = (tab[1].type:arrayLength())[2], tab[1].type:arrayOver()
+  local totalW = 0
+  local res = {}
+
+  for y=0,H-1 do
+    for _,v in ipairs(tab) do
+      assert( systolic.isAST(v) )
+      assert( v.type:isArray() )
+      assert( H==(v.type:arrayLength())[2] )
+      assert( ty==v.type:arrayOver() )
+      local w = (v.type:arrayLength())[1]
+      if y==0 then totalW = totalW + w end
+      table.insert(res, S.slice( v, 0, w-1, y, y ) )
+    end
+  end
+
+  return S.cast( S.tuple(res), types.array2d(ty,totalW,H) )
+end
+
 function darkroom.print(TY,inp)
   local stats = {}
   local TY = darkroom.extract(TY)
@@ -1398,7 +1422,19 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local P = 1/T
 
-  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, reverse( map(range(P), function(i) return sinp( (i-1)*P ) end ) ) )
+  local srv = map(range(P), function(i) return sinp( (i-1)*P ) end )
+  if P<-xmin+1 then
+    -- We always have 1 column coming in.
+  end
+
+  local shiftValues = {}
+  local Weach = (-xmin+1)/P -- number of columns in each output
+  print(Weach, #range(Weach-1,0))
+  for p=P-1,0,-1 do
+    shiftValues[p] = concat2dArrays( map( range(Weach-1,0), function(i) return sinp( p*Weach + i ) end ))
+  end
+
+  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues )
   
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, S.constant(true, types.bool()) }, "process_output", shifterPipelines) )
 
@@ -1473,7 +1509,7 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   end
 
   res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output" ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return darkroom.newFunction(res)
 end
@@ -1914,7 +1950,7 @@ function darkroom.lambda( name, input, output )
 
     if darkroom.isStatefulHandshake( fn.inputType ) then
       module:addFunction( S.lambda("reset", S.parameter("ri",types.null()), nil, "reset_out", resetPipelines, rst) )
-    else
+    elseif darkroom.isStateful( fn.inputType) then -- pure fns don't have a reset
       module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
     end
 

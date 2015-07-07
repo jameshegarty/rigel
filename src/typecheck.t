@@ -143,24 +143,26 @@ return function( ast, newNodeFn )
     err( ast.low<=ast.high, "bitslice low must be <= high")
     
     ast.type = types.bits(ast.high-ast.low+1)
-  elseif ast.kind=="index" then
+  elseif ast.kind=="slice" then
     local expr = ast.inputs[1]
 
-    err(expr.type:isArray() or expr.type:isUint() or expr.type:isInt() or expr.type:isTuple(), "Error, you can not index into an this type! Type is "..tostring(expr.type)..ast.loc)    
+    err(expr.type:isArray() or expr.type:isTuple(), "Error, you can not index into an this type! Type is "..tostring(expr.type)..ast.loc)    
+    err( ast.idxLow<=ast.idxHigh, "idxLow>idxHigh")
+    err( ast.idyLow<=ast.idyHigh, "idyLow>idyHigh")
     
-    if expr.type:isUint() or expr.type:isInt() then 
-      local maxIdx = expr.type.precision 
-      err( ast.idy~=nil, "idy should be nil")
-      err( ast.idx<maxIdx, "idx is out of bounds")
-      ast.type = darkroom.type.bool()
-    elseif expr.type:isArray() then
-      err( ast.idx < (expr.type:arrayLength())[1] and ast.idx>=0, "idx is out of bounds, "..tostring(ast.idx).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
-      err( ast.idy==nil or ast.idy < (expr.type:arrayLength())[2] and ast.idy>=0, "idy is out of bounds, is "..tostring(ast.idy).." but should be <"..tostring((expr.type:arrayLength())[2]))
-      ast.type = expr.type:arrayOver()
+    if expr.type:isArray() then
+      err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, "..tostring(ast.idxLow).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
+      err( ast.idxHigh < (expr.type:arrayLength())[1] and ast.idxHigh>=0, "idxHigh is out of bounds, "..tostring(ast.idxHigh).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
+      err( ast.idyLow==nil or ast.idyLow < (expr.type:arrayLength())[2] and ast.idyLow>=0, "idy is out of bounds, is "..tostring(ast.idyLow).." but should be <"..tostring((expr.type:arrayLength())[2]))
+      err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2]))
+      ast.type = types.array2d(expr.type:arrayOver(), ast.idxHigh-ast.idxLow+1, ast.idyHigh-ast.idyLow+1 )
     elseif expr.type:isTuple() then
-      err( ast.idx < #expr.type.list, "idx is out of bounds of tuple. Index is "..ast.idx.." but should be < "..#expr.type.list.." "..ast.loc)
-      err( ast.idy==nil or ast.idy==0, "idy should be nil "..ast.loc)
-      ast.type = expr.type.list[ast.idx+1]
+      err( ast.idxLow < #expr.type.list, "idxLow is out of bounds of tuple. Index is "..ast.idxLow.." but should be < "..#expr.type.list.." "..ast.loc)
+      err( ast.idxHigh < #expr.type.list, "idxHigh is out of bounds of tuple. Index is "..ast.idxHigh.." but should be < "..#expr.type.list.." "..ast.loc)
+      err( ast.idyLow==nil or ast.idyLow==0, "idyLow should be nil "..ast.loc)
+      err( ast.idyHigh==nil or ast.idyHigh==0, "idyHigh should be nil "..ast.loc)
+      print(ast.idxLow, ast.idxHigh,#expr.type.list)
+      ast.type = types.tuple( slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1) )
     else
       assert(false)
     end
