@@ -57,12 +57,14 @@ local valid = darkroom.valid
 darkroom.ready = macro(function(i) return `i._2 end)
 local ready = darkroom.ready
 
-function darkroom.isStateful( a ) return a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR) end
+
+function darkroom.isStateful( a ) return (a==darkroom.State or a==darkroom.StateR) or (a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR or darkroom.isStateful(a.list[1]))) end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
 function darkroom.isStatefulHandshakeRegistered( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake and a.list[4]==darkroom.Registered end
 function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
 function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
-function darkroom.expectPure( A, er ) if darkroom.isStateful(A) or darkroom.isStatefulHandshake(A) then error(er or "type should be pure") end end
+function darkroom.isPure( a ) return darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false end
+function darkroom.expectPure( A, er ) if darkroom.isPure(A)==false then error(er or "type should be pure but is "..tostring(A)) end end
 function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or darkroom.isStatefulV(A) or darkroom.isStatefulRV(A) then error(er or "type should be stateful") end end
 function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
 function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
@@ -238,7 +240,7 @@ function darkroom.SoAtoAoS( W, H, typelist )
     end
   end
   res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),darkroom.extract(res.outputType)), "process_output") )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
+  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
 
   return darkroom.newFunction(res)
 end
@@ -274,7 +276,7 @@ function darkroom.packTuple( typelist, handshake )
 end
 
 -- takes {Stateful(a[W,H]), Stateful(b[W,H]),...} to Stateful( {a,b}[W,H] )
-function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("packTupleArraysStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) end
+function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("SoAtoAoSStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) end
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function darkroom.border(A,W,H,L,R,B,T,value)
@@ -540,10 +542,10 @@ function darkroom.map( f, W, H )
   for x=0,W-1 do for y=0,H-1 do
     local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
     table.insert( out, inst:process( S.index( inp, x, y ) ) )
-    table.insert( resetPipelines, inst:reset() )
+    --table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
   end end
   res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output" ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
+  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
 
   return darkroom.newFunction(res)
 end
@@ -1358,40 +1360,38 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   res.inputType = darkroom.Stateful(types.array2d(A,1,-ymin+1))
   res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
   res.delay=0
-  local struct SSRPartial {phase:int; wroteLastColumn:bool; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int}
-  terra SSRPartial:reset() self.phase=[1/T]-1; self.wroteLastColumn=true;self.activeCycles=0;self.idleCycles=0; end
+  local struct SSRPartial {phase:int; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int}
+  terra SSRPartial:reset() self.phase=0; self.activeCycles=0;self.idleCycles=0; end
   terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
   terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    if self.wroteLastColumn==false then
-      var W = [(-xmin+1)*T]
-      for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][x+self.phase*W] end end
-      valid(out)=true
-      if self.phase==[1/T]-1 then self.wroteLastColumn=true end
-    else
-      valid(out)=false
-    end
 
+    var phaseAtStart = self.phase
     --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
     if self:ready() then
       --darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
-      darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
-      self.activeCycles = self.activeCycles + 1
-      self.wroteLastColumn=false
+--      darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
+--      self.activeCycles = self.activeCycles + 1
+--      self.wroteLastColumn=false
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
       for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
       for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
-      self.phase = 0
+      self.phase = terralib.select([T==1],0,1)
     else
       if self.phase<[1/T]-1 then 
         self.phase = self.phase + 1 
-        self.activeCycles = self.activeCycles + 1
+--        self.activeCycles = self.activeCycles + 1
       else
-        self.idleCycles = self.idleCycles + 1
+        self.phase = 0
+--        self.idleCycles = self.idleCycles + 1
       end
     end
+
+    var W = [(-xmin+1)*T]
+    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][x+phaseAtStart*W] end end
+    valid(out)=true
   end
-  terra SSRPartial:ready()  return self.phase==[1/T]-1 end
+  terra SSRPartial:ready()  return self.phase==0 end
   res.terraModule = SSRPartial
 
   res.systolicModule = S.moduleConstructor("SSRPartial",{CE=true})
@@ -1489,7 +1489,12 @@ function darkroom.makeStateful( f )
   res.delay = f.delay
   res.terraModule = f.terraModule
   assert(S.isModule(f.systolicModule))
-  res.systolicModule = f.systolicModule
+  res.systolicModule = S.moduleConstructor("MakeStateful_"..f.systolicModule.name,{CE=true})
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("MakeStateful_inner") )
+  local sinp = S.parameter("process_input", f.inputType )
+  res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp), "process_output") )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {},S.parameter("reset",types.bool())) )
+
   return darkroom.newFunction(res)
 end
 
@@ -1575,11 +1580,11 @@ function darkroom.reduce( f, W, H )
   local i=0
   local expr = foldt(t, function(a,b) 
                        local I = res.systolicModule:add(f.systolicModule:instantiate("inner"..i))
-                       table.insert( resetPipelines, I:reset() )
+                       --table.insert( resetPipelines, I:reset() ) -- no reset for pure functions
                        i = i + 1
                        return I:process(S.tuple{a,b}) end, nil )
   res.systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output" ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool())) )
+  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction( res )
 end
@@ -1601,7 +1606,7 @@ function darkroom.reduceSeq( f, T )
   local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
   terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
-    if self.phase==0 and T==1 then -- passthrough
+    if self.phase==0 and T==1 then -- T==1 mean this is a noop, passthrough
       self.phase = 0
       valid(out) = true
       data(out) = @inp
@@ -1874,7 +1879,8 @@ function darkroom.lambda( name, input, output )
           module:add(I)
           if darkroom.isStatefulHandshake( n.fn.inputType ) then
             table.insert( resetPipelines, I:reset(nil,rst) )
-          else
+          elseif darkroom.isPure( n.fn.inputType )==false then
+            print("CALLRESET",n.fn.kind)
             table.insert( resetPipelines, I:reset() )
           end
 
@@ -1964,7 +1970,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   local systolicModule = S.moduleConstructor(name,{CE=true})
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
   local nip = S.parameter("nip",types.null())
-  systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
+  --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
 
   local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule }
   return darkroom.newFunction( res )
@@ -2031,10 +2037,10 @@ function darkroom.constSeq( value, A, w, h, T )
   res.terraModule = ConstSeqState
   res.systolicModule = S.moduleConstructor("constSeq",{CE=true})
   local sconsts = map(range(1/T), function() return {} end)
-  for y=0,h-1 do
-    for xr=0,(1/T)-1 do
-      for x=0, W do
-        table.insert(sconsts[xr+1], value[y*w+xr*W+x+1])
+  for C=0, (1/T)-1 do
+    for y=0, h-1 do
+      for x=0, W-1 do
+        table.insert(sconsts[C+1], value[y*w+C*W+x+1])
       end
     end
   end

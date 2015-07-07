@@ -54,7 +54,7 @@ end
 
 local binopToVerilog={["+"]="+",["*"]="*",["<<"]="<<<",[">>"]=">>>",["pow"]="**",["=="]="==",["and"]="&",["-"]="-",["<"]="<",[">"]=">",["<="]="<=",[">="]=">="}
 
-local binopToVerilogBoolean={["=="]="==",["and"]="&&",["~="]="!=",["or"]="||"}
+local binopToVerilogBoolean={["=="]="==",["and"]="&&",["~="]="!=",["or"]="||",["xor"]="^"}
 
 function systolic.declareReg(ty, name, initial, comment)
   assert(type(name)=="string")
@@ -182,7 +182,12 @@ function valueToVerilog(value,ty)
     else
       return "1'd0"
     end
+  elseif ty:isArray() then
+    assert(type(value)=="table")
+    assert(#value==ty:channels())
+    return "{"..table.concat( reverse( map( value, function(v) return valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
   else
+    print("valueToVerilog",ty)
     assert(false)
   end
 end
@@ -394,6 +399,7 @@ function systolic.constant( v, ty )
   if ty:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
     map( v,function(n) err(type(n)=="number", "array element must be a number") end )
+    err( #v==ty:channels(), "incorrect number of channels" )
   else
     err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
   end
@@ -1235,6 +1241,8 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
 
   -- check setby type
+  --err(#setby.functions==1, "regBy setby module should only have process function")
+  assert(setby.functions.process:isPure())
   local setbytype = setby.functions.process.input.type
   assert(setbytype:isTuple())
   local setbyTypeA = setbytype.list[1]

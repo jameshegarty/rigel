@@ -306,6 +306,7 @@ function modules.addShifter( module, exprs )
     -- notice that in the first cycle we write exprs[2] to reg[1]. That way this is ready
     -- on the second cycle.
     pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[(i%#exprs)+1], regs[(i%#exprs)+1]:get()) ) end )
+    table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
     out = S.select( reading, exprs[1], regs[1]:get() )
   end
