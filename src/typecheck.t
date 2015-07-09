@@ -54,6 +54,8 @@ return function( ast, newNodeFn )
       end
     elseif ast.op=="print" then
       ast.type = ast.expr.type
+    elseif ast.op=="isX" then
+      ast.type = types.bool()
     else
       print(ast.op)
       assert(false)

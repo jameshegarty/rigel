@@ -459,6 +459,7 @@ function systolic.__and(lhs, rhs) return binop(lhs,rhs,"and") end
 function systolic.xor(lhs, rhs) return binop(lhs,rhs,"xor") end
 function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
 function systolic.neg(expr) return unary(expr,"-") end
+function systolic.isX(expr) return unary(expr,"isX") end
 function systolic.__not(expr) return unary(expr,"not") end
 
 function systolicASTFunctions:cname(c)
@@ -922,6 +923,8 @@ function systolicASTFunctions:toVerilog( module )
               res = callsite..n:cname(c)
             elseif n.op=="not" then
               res = "(~"..args[1]..")"
+            elseif n.op=="isX" then
+              res = "("..args[1].."===1'bx)"
             else
               print(n.op)
               assert(false)
@@ -1119,7 +1122,8 @@ function userModuleFunctions:toVerilog()
 
     for fnname,fn in pairs(self.functions) do
 --      if fn:isPure()==false and (self.options.onlyWire and fn.implicitValid)==false then 
-      if fn:isPure()==false and self.options.onlyWire==false then
+      if fn:isPure()==false and self.options.onlyWire~=true then
+
         table.insert(t, [[always @(posedge CLK) begin if(]]..fn.valid.name..[[===1'bx) begin $display("Valid bit can't be x! Module '%s' function ']]..fnname..[['", INSTANCE_NAME);  end end
 ]])
       end
@@ -1296,7 +1300,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   assert( init==nil or type(init)==ty:toLuaType() )
 
   local R = systolic.module.reg( ty, init ):instantiate("R",{arbitrate="valid"})
-  local inner = setby:instantiate("inner")
+  local inner = setby:instantiate("regby_inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
 
@@ -1758,7 +1762,9 @@ assertModuleMT={__index=assertModuleFunctions}
 function assertModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
   local CES = ""
   if self.options.CE then CES=" && CE==1'b1" end
-  local decl = [[always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("]]..self.str..[["); $finish(); end end]]
+  local finish = "$finish(); "
+  if self.options.exit==false then finish="" end
+  local decl = [[always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME);]]..finish..[[ end end]]
   return "___NULL_ASSERT_OUT", decl, true
 end
 
