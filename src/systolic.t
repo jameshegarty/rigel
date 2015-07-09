@@ -528,6 +528,8 @@ function systolicASTFunctions:isPure( validbit )
         return n.func:isPure() and inputs[1]
       elseif n.kind=="parameter" then
         return n.key~=validbit.key -- explicitly used valid bit
+      elseif n.kind=="delay" then
+        return false
       elseif n.kind=="fndefn" then
           assert(false) -- we shouldn't call isPure on lowered ASTs
       else
