@@ -13,6 +13,27 @@ modules.sumwrap = memoize(function(limit)
   return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
                   end)
 
+-- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
+modules.incIf=memoize(function(inc)
+                        print("MAKEINCIF")
+                        if inc==nil then inc=1 end
+      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+
+      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,types.uint(16)), S.index(swinp,0) ):disablePipelining()
+      return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+              end)
+
+modules.incIfWrap=memoize(function(limit,inc)
+                        assert(type(limit)=="number")
+                        local incv = inc or 1
+      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+
+      local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,types.uint(16))), S.constant(0,types.uint(16)), S.index(swinp,0)+S.constant(incv,types.uint(16)) )
+      local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
+      return S.module.new( "incif_wrap"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output")},{},{CE=true})
+              end)
+
+
 function modules.reduceSystolic( op, cnt, datatype, argminVars)
   local rname, rmod = modules.reduceVerilog( op, cnt, datatype, argminVars )
   local r = systolic.module(rname, {verilog=rmod} )

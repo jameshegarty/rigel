@@ -322,6 +322,7 @@ function ratioFactor(a,b)
   local g = gcd(a,b)
   return a/g, b/g
 end
+simplify = ratioFactor
 
 function map(t,f)
   assert(type(t)=="table")
@@ -335,6 +336,7 @@ end
 -- t[a][b][c] = t[a][b][c] or value
 -- returns t[a][b][c]
 -- (and also makes the intermediate tables if necessary)
+-- This function has a weakness - we can't detect if we provided insufficient indices! That will still return something.
 function deepsetweak( t, idx, value )
   assert(type(t)=="table")
   assert(type(idx)=="table")
@@ -361,6 +363,9 @@ end
 function index(t,idx)
   assert(type(t)=="table")
   assert(type(idx)=="table")
+  assert(keycount(idx)==#idx)
+  assert(#idx>0)
+
   local T = t
   for k,v in ipairs(idx) do
     T = T[v]
@@ -523,10 +528,17 @@ function memoize(f)
           err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean","deepsetweak type was "..type(v)) 
           return v
                            end)
+    local cnt = #{...}
     __memoized[f] = __memoized[f] or {}
-    local t = index(__memoized[f],{...})
-    if t~=nil then return t end -- early out, so that we don't call f multiple times w/ same arguments
-    return deepsetweak( __memoized[f], {...}, f(...) )
+    if cnt==0 then
+      if __memoized[f][0]==nil then __memoized[f][0]=f(...) end
+      return __memoized[f][0]
+    else
+      __memoized[f][cnt] = __memoized[f][cnt] or {}
+      local t = index(__memoized[f][cnt],{...})
+      if t~=nil then return t end -- early out, so that we don't call f multiple times w/ same arguments
+      return deepsetweak( __memoized[f][cnt], {...}, f(...) )
+    end
   end
 end
 

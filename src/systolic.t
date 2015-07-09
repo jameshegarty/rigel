@@ -710,7 +710,7 @@ function systolicASTFunctions:toVerilog( module )
           finalResult = "{"..args[2]..","..args[1].."}"
         else
           for k,v in pairs(argpairs) do
-            table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[==1'bx) begin $display("valid bit can't be x!"); end end]])
+            table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[===1'bx) begin $display("valid bit can't be x! Module '%s' instance ']]..n.instance.name..[[' function ']]..n.fn..[['", INSTANCE_NAME); end end]])
           end
 
           local data = foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
@@ -865,6 +865,10 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="parameter" then
         finalResult = n.name
         wire = true
+      elseif n.kind=="instanceParameter" then
+        table.insert(declarations, declareWire(n.type, n.name, n.variable))
+        finalResult = n.name
+        wire=true
       elseif n.kind=="null" then
         finalResult = ""
         wire = true
@@ -953,6 +957,13 @@ function systolicASTFunctions:toVerilog( module )
   return fin
 end
 
+function systolic.instanceParameter( variable, ty )
+  -- HACK: get a verilog instance varible
+  assert(type(variable)=="string")
+  assert( types.isType(ty) )
+  return systolicAST.new({kind="instanceParameter",variable=variable,type=ty,inputs={}})
+end
+
 function systolic.parameter( name, ty )
   assert(type(name)=="string")
   checkReserved(name)
@@ -976,6 +987,7 @@ local function moduleConstructor(tab)
   function constFunctions:complete()
     if self.isComplete==false then
       self.module = tab.complete(self)
+      assert( systolic.isModule(self.module) )
       self.isComplete = true
     end
   end
@@ -1038,6 +1050,7 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
       end
       
       if fn.input.type~=types.null() then
+        err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'?")
         local inp = instance.verilogCompilerState[module][fnname][1]
         err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         table.insert(arglist,", ."..fn.input.name.."("..inp..")")
@@ -1049,7 +1062,14 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
   end
 
-  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")) ]]..instance.name.."(.CLK(CLK)"..sel(module.options.CE,",.CE(CE)","")..table.concat(arglist)..");"
+  local params = ""
+  if type(instance.options.parameters)=="table" then
+    for k,v in pairs(instance.options.parameters) do
+      params = params..",."..k.."("..tostring(v)..")"
+    end
+  end
+
+  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..sel(module.options.CE,",.CE(CE)","")..table.concat(arglist)..");"
 end
 
 function userModuleFunctions:lower()
@@ -1091,7 +1111,20 @@ function userModuleFunctions:toVerilog()
 
     table.insert(t,");\n")
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
-  
+    if type(self.options.parameters)=="table" then
+      for k,v in pairs(self.options.parameters) do
+        table.insert(t,"parameter "..k.."="..v..";\n")
+      end
+    end
+
+    for fnname,fn in pairs(self.functions) do
+--      if fn:isPure()==false and (self.options.onlyWire and fn.implicitValid)==false then 
+      if fn:isPure()==false and self.options.onlyWire==false then
+        table.insert(t, [[always @(posedge CLK) begin if(]]..fn.valid.name..[[===1'bx) begin $display("Valid bit can't be x! Module '%s' function ']]..fnname..[['", INSTANCE_NAME);  end end
+]])
+      end
+    end
+
     for k,v in pairs(self.instances) do
       if v.module.instanceToVerilogStart~=nil then
         v.module:instanceToVerilogStart( v, self )
@@ -1286,7 +1319,10 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   fns.set = systolic.lambda("set", sinp, R:set(sinp,setvalid), "SET_OUTPUT",{}, setvalid )
 --  fns.set = systolic.lambda("set", sinp, sinp, "SET_OUTPUT",{}, setvalid )
 
-  return systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE} )
+  print("make regby")
+  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE} )
+  assert(systolic.isModule(M))
+  return M
 end)
 
 
@@ -1297,7 +1333,13 @@ new=function( ty, setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
-complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
+complete=function(self) 
+  print("REGBYCONST COMPLERE")
+local M= systolic.module.regBy( self.type, self.setby, self.CE, self.init ) 
+map(M,print)
+print("RGBY",systolic.isModule(M),M,keycount(M),__memoizedNilHack)
+return M
+end,
 configFns={includeCE=function(self) self.CE=true; return self end, setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; return self end}
 }
 
@@ -1813,6 +1855,9 @@ function systolicModuleConstructor:addFunction( fn )
   return fn
 end
 
+function systolicModuleConstructor:onlyWire(v) self.options.onlyWire=v; return self end
+function systolicModuleConstructor:parameters(p) self.options.parameters=p; return self end
+
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
     self.module = systolic.module.new( self.name, self.functions, self.instances, self.options )
@@ -1830,9 +1875,9 @@ function systolicModuleConstructor:toVerilog()
   return self.module:toVerilog()
 end
 
-function systolicModuleConstructor:instantiate( name )
+function systolicModuleConstructor:instantiate( name, options )
   self:complete()
-  return self.module:instantiate(name)
+  return self.module:instantiate( name, options )
 end
 
 
