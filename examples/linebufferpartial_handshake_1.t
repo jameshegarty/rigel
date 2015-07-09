@@ -24,6 +24,7 @@ local inputH = 64
 
 local BASE_TYPE = types.array2d( types.uint(8), 1 )
 
+--[=[
 local ITYPE = d.StatefulV(BASE_TYPE)
 local inp = d.input( ITYPE )
 
@@ -31,6 +32,15 @@ local out = d.apply( "convLB", d.stencilLinebufferPartial( types.uint(8), inputW
 out = d.apply("extract",d.RVPassthrough(d.makeStateful(extract)),out)
 local lbp = d.lambda("lbp", inp, out)
 local hsfn = d.liftHandshake(lbp)
+]=]
+
+local ITYPE = d.StatefulHandshake(BASE_TYPE)
+local inp = d.input( ITYPE )
+
+local out = d.apply( "convLB", d.stencilLinebufferPartial( types.uint(8), inputW, inputH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
+out = d.apply("extract",d.makeHandshake(d.makeStateful(extract)),out)
+local hsfn = d.lambda("lbp", inp, out)
+
 
 harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, 1, BASE_TYPE, inputW, inputH, types.uint(8), inputW/T, inputH)
 end

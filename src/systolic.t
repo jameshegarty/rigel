@@ -545,6 +545,12 @@ function systolicASTFunctions:const()
   return nil
 end
 
+function systolicASTFunctions:setName(s)
+  assert(type(s)=="string")
+  self.name = self.name.."_"..s
+  return self
+end
+
 function systolicASTFunctions:disablePipelining()
   return self:process(
     function(n)
@@ -559,6 +565,9 @@ function systolicASTFunctions:pipeline()
 
   local delayCache = {}
   local function getDelayed( node, delay )
+    -- if node is a constant, we don't need to put it in a register.
+    if node:const()~=nil then return node end
+    
     delayCache[node] = delayCache[node] or {}
     if delay==0 then return node
     elseif delayCache[node][delay]==nil then
@@ -875,11 +884,15 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="null" then
         finalResult = ""
         wire = true
+      elseif n.kind=="select" then
+        finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       else
         local resTable = {}
+        assert(n.type:channels()==1)
         for c=0,n.type:channels()-1 do
           local res
           local sub = "["..((c+1)*n.type:baseType():verilogBits()-1)..":"..(c*n.type:baseType():verilogBits()).."]" 
+          if n.type:channels()==1 then sub="" end
 
           if n.kind=="binop" then
 
@@ -931,7 +944,7 @@ function systolicASTFunctions:toVerilog( module )
               print(n.op)
               assert(false)
             end
-          elseif n.kind=="select" or n.kind=="vectorSelect" then
+          elseif n.kind=="vectorSelect" then
             res = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
           else
             print(n.kind)
@@ -1246,12 +1259,24 @@ regModuleFunctions={}
 setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
 regModuleMT={__index=regModuleFunctions}
 
+function regModuleFunctions:instanceToVerilogStart( instance, module )
+  instance.verilogCompilerState = instance.verilogCompilerState or {}
+  assert(instance.verilogCompilerState[module]==nil)
+  instance.verilogCompilerState[module] = false
+end
+
+
 function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar )
+  local decl = nil
+  if instance.verilogCompilerState[module]==false then
+    decl = declareReg(self.type, instance.name, self.initial)
+    instance.verilogCompilerState[module]=true
+  end
+
   if fnname=="delay" or fnname=="set" then
     err( #instance.callsites[fnname]==1, "Error, multiple ("..(#instance.callsites[fnname])..") calls to '"..fnname.."' on instance '"..instance.name.."'")
 
-    local decl = declareReg(self.type, instance.name, self.initial).."\n"
-
+    if decl==nil then decl="" end
     if module.options.CE or fnname=="set" then
       decl = decl.."  always @ (posedge CLK) begin if ("..sel(fnname=="set",validVar,"")..sel(fnname=="set" and module.options.CE," && ","")..sel(module.options.CE,"CE","")..") begin "..instance.name.." <= "..inputVar.."; end end"
     else
@@ -1261,7 +1286,7 @@ function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVa
     if fnname=="set" then name = "_____REG_SET" end
     return name, decl, true
   elseif fnname=="get" then
-    return instance.name, nil, true
+    return instance.name, decl, true
   else
     print("regModuleFunctions:instanceToVerilog",fnname)
     assert(false)
@@ -1464,6 +1489,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            DO = instance.name.."_SET_AND_RETURN_ORIG_OUTPUT",
            ADDR = instance.name.."_INPUT["..(addrbits-1)..":0]",
            CLK = "CLK",
+           EN="CE",
            WE = valid,
            readFirst = true}
     conf.B={chunk=self.inputBits/8,
@@ -1471,6 +1497,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            DO = instance.name.."_DO_B",
            ADDR = instance.name.."_addr_B",
            CLK = "CLK",
+           EN="CE",
            WE = "1'd0",
            readFirst = true}
 

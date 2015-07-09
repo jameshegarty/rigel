@@ -1504,8 +1504,9 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   end
 
   local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues )
-  
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, S.constant(true, types.bool()) }, "process_output", shifterPipelines) )
+
+  local processValid = S.parameter("process_valid",types.bool())
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", shifterResetPipelines,S.parameter("reset",types.bool())) )
 
@@ -1535,8 +1536,8 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(xmax==0)
   assert(ymax==0)
 
-  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
---  return darkroom.compose("stencilLinebufferPartial", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
+--  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
+  return darkroom.compose("stencilLinebufferPartial", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
 end
 
 -- purely wiring

@@ -320,17 +320,24 @@ function modules.addShifter( module, exprs )
     out = regs[1]:get()
   else
     local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(#exprs-1) ):includeCE():instantiate("phase") )
+
+
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
-    reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining()
+    reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
     local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):instantiate("SR_"..i) ) end )
 
     -- notice that in the first cycle we write exprs[2] to reg[1]. That way this is ready
     -- on the second cycle.
-    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[(i%#exprs)+1], regs[(i%#exprs)+1]:get()) ) end )
+    pipelines = map( slice(regs,1,#regs-1), function(r,i) return r:set( S.select(reading, exprs[(i%#exprs)+1], regs[(i%#exprs)+1]:get()) ) end )
+    pipelines[#pipelines+1] = regs[#regs]:set(exprs[1]) -- it's possible we may not even use this one.
     table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
+
     out = S.select( reading, exprs[1], regs[1]:get() )
+
+    local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", {CE=true}):instantiate("printInst") )
+    table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
   end
   
   return out, pipelines, resetPipelines, reading
@@ -388,8 +395,8 @@ function fixedBram(conf)
     table.insert(res,".ADDRB("..conf[B].ADDR.."),\n")
     table.insert(res,".WEA("..conf[A].WE.."),\n")
     table.insert(res,".WEB("..conf[B].WE.."),\n")
-    table.insert(res,".ENA(1'b1),\n")
-    table.insert(res,".ENB(1'b1),\n")
+    table.insert(res,".ENA("..conf[A].EN.."),\n")
+    table.insert(res,".ENB("..conf[B].EN.."),\n")
     table.insert(res,".CLKA("..conf[A].CLK.."),\n")
     table.insert(res,".CLKB("..conf[B].CLK.."),\n")
     table.insert(res,".SSRA(1'b0),\n")
