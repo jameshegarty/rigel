@@ -369,11 +369,19 @@ darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") end
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),types.bool(),types.bool()}, "WaitOnInput "..f.systolicModule.name.." ready %d validIn %d runable %d RST %d", {CE=true}):instantiate("printInst") )
 
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local runable = S.__or(S.eq(inner:ready(),S.constant(false,types.bool())), S.index(sinp,1) ):disablePipelining()
+  local svalid = S.parameter("process_valid", types.bool())
+  local runable = S.__and(S.__or(S.__not(inner:ready()), S.index(sinp,1) ),svalid):disablePipelining()
 --  local runable = inner:ready():disablePipelining()
   local out = inner:process( S.index(sinp,0), runable )
   local RST = S.parameter("reset",types.bool())
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", {asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1)))), printInst:process( S.tuple{inner:ready(),S.index(sinp,1), runable, RST} ) } ) )
+  if f.systolicModule.functions.reset:isPure() then RST=S.constant(false,types.bool()) end
+
+  local pipelines = {}
+  -- Actually, it's ok for (ready==false and valid(inp)==true) to be true. We do not have to read when ready==false, we can just ignore it.
+--  table.insert( pipelines, asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1)))):disablePipelining() )
+  table.insert( pipelines, printInst:process( S.tuple{inner:ready(),S.index(sinp,1), runable, RST} ) )
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", pipelines, svalid ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, RST) )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), inner:ready(), "ready", {} ) )
 
@@ -1069,6 +1077,7 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
 end
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
+-- All it does is throws in a shift register to alter the horizontal phase
 function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top )
   if L%T==0 and R%T==0 then return darkroom.cropSeq( A, W, H, T, L, R, B, Top ) end
 
@@ -1527,6 +1536,7 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(ymax==0)
 
   return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
+--  return darkroom.compose("stencilLinebufferPartial", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
 end
 
 -- purely wiring
@@ -1637,6 +1647,7 @@ darkroom.makeHandshake = memoize(function( f )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local rst = S.parameter("reset",types.bool())
+  if f.systolicModule.functions.reset:isPure() then rst = S.constant(false, types.bool()) end
 
   local pipelines = {}
   local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,{exit=false}):instantiate("asstInst") )
@@ -1738,6 +1749,7 @@ function darkroom.reduceSeq( f, T )
   err( f.systolicModule:getDelay("process") == 0, "ReduceSeq function must have delay==0" )
 
   res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name,{CE=true})
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),f.outputType,f.outputType}, "ReduceSeq "..f.systolicModule.name.." phase %d input %d output %d", {CE=true}):instantiate("printInst") )
   local sinp = S.parameter("process_input", f.outputType )
   local svalid = S.parameter("process_valid", types.bool() )
   --local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
@@ -1748,7 +1760,9 @@ function darkroom.reduceSeq( f, T )
   local pipelines = {}
   pipelines[1] = sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() )
   pipelines[2] = phase:setBy( S.constant(1,types.uint(16)) )
+
   local out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
+  table.insert(pipelines, printInst:process( S.tuple{phase:get(),sinp,out} ) )
 
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (1/T)-1, types.uint(16))) }, "process_output", pipelines, svalid) )
 
@@ -1981,7 +1995,7 @@ function darkroom.lambda( name, input, output, sdfOverride )
       elseif n.kind=="tuple" then
         local IR = sdfTotal(n.inputs[1])
         -- all input rates must match!
-        map(n.inputs, function(i) local isdf = sdfTotal(i); err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate") end )
+        map(n.inputs, function(i,key) local isdf = sdfTotal(i); err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..n.loc) end )
         res = IR
       else
         print("sdftotal",n.kind)
@@ -2170,7 +2184,7 @@ function darkroom.constSeq( value, A, w, h, T )
   local W = w*T
   if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
   res.outputType = darkroom.Stateful(types.array2d(A,W,h))
-  res.sdfInput, res.sdfOutput = {1,1}, {1,1/T}
+  res.sdfInput, res.sdfOutput = {1,1}, {1,1}  -- well, technically this produces 1 output for every (nil) input
 
   res.delay = 0
   local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
@@ -2319,11 +2333,11 @@ darkroom.freadSeq = memoize(function( filename, ty )
   return darkroom.newFunction(res)
                             end)
 
-function darkroom.fwriteSeq( filename, ty, filenameVerilog)
+function darkroom.fwriteSeq( filename, ty )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   darkroom.expectPure(ty)
-  if true or filenameVerilog==nil then filenameVerilog=filename end
+  local filenameVerilog=filename
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 

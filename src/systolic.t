@@ -978,7 +978,7 @@ end
 -- Module Definitions
 --------------------------------------------------------------------
 function systolic.isModule(t)
-  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==systolicModuleConstructorMT
+  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==systolicModuleConstructorMT or getmetatable(t)==regModuleMT
 end
 
 systolic.module = {}

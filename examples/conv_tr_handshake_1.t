@@ -60,7 +60,7 @@ inp = d.input( darkroom.StatefulRV(types.array2d( types.uint(8), ConvWidth*T, Co
 conv = d.apply( "convseqapply", d.RVPassthrough(convseq), inp)
 conv = d.apply( "sumseq", d.RPassthrough(d.liftDecimate(d.reduceSeq( reduceSumInt32_0cyc, T ))), conv )
 conv = d.apply( "touint8", d.RVPassthrough(d.makeStateful(touint8Array1)), conv )
-
+conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
 local convolve = d.lambda( "convolve", inp, conv )
 
 -------------
@@ -79,9 +79,9 @@ local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 local hsfninp = d.input( d.StatefulHandshake(RW_TYPE) )
 --local out = hsfninp
 local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),8,1)), hsfninp )
-local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius-1, 0)), out)
+local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 local out = d.apply("HH",d.liftHandshake(convpipe), out)
-local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2-1, 0, 0))), out)
+local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0, 0))), out)
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
