@@ -559,6 +559,39 @@ function systolicASTFunctions:disablePipelining()
     end)
 end
 
+function systolicASTFunctions:removeDelays( )
+  local pipelineRegisters = {}
+
+  local delayCache = {}
+  local function getDelayed( node, delay, validbit )
+    -- if node is a constant, we don't need to put it in a register.
+    if node:const()~=nil then return node end
+    
+    delayCache[node] = delayCache[node] or {}
+    delayCache[node][validbit] = delayCache[node][validbit] or {}
+    if delay==0 then return node
+    elseif delayCache[node][validbit][delay]==nil then
+      local reg = systolic.module.reg( node.type ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name)
+      table.insert( pipelineRegisters, reg )
+      local d = getDelayed(node, delay-1, validbit)
+      delayCache[node][validbit][delay] = reg:delay( d, validbit )
+    end
+    return delayCache[node][validbit][delay]
+  end
+
+  local finalOut = self:process(
+    function ( n )
+      if n.kind=="delay" then
+        -- notice that we DO NOT add the explicit delay to the retiming number.
+        -- if we did that, the other nodes would compensate and the delay
+        -- we want would disappear!
+        return getDelayed( n.inputs[1], n.delay, n.inputs[2] )
+      end
+    end)
+
+  return finalOut, pipelineRegisters
+end
+
 function systolicASTFunctions:pipeline()
   local pipelineRegisters = {}
   local fnDelays = {}
@@ -644,11 +677,6 @@ function systolicASTFunctions:pipeline()
           fnDelays[n.fn.name] = args[1][2]
         end
         return {n,0}
-      elseif n.kind=="delay" then
-        -- notice that we DO NOT add the explicit delay to the retiming number.
-        -- if we did that, the other nodes would compensate and the delay
-        -- we want would disappear!
-        return {getDelayed( args[1][1], n.delay ), args[1][2] }
       else
         print(n.kind)
         assert(false)
@@ -665,6 +693,9 @@ function systolicASTFunctions:addValid( validbit )
       if n.kind=="call" and n.inputs[2]==nil and n.func:isPure()==false then
         -- don't add valid bit to pure functions
         assert( systolicAST.isSystolicAST(n.inputs[1]) )
+        n.inputs[2] = validbit
+        return systolicAST.new(n)
+      elseif n.kind=="delay" then
         n.inputs[2] = validbit
         return systolicAST.new(n)
       end
@@ -1236,11 +1267,22 @@ function systolic.module.new( name, fns, instances, options )
   end
 
   local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, options=options,isComplete=false}
-  map( instances, function(i) t.instanceMap[i]=1; t.usedInstanceNames[i.name]=1 end )
   setmetatable(t,userModuleMT)
+
 
   t.ast = t:lower()
   t.ast = t.ast:CSE()
+
+  local delayRegisters
+  t.ast, delayRegisters = t.ast:removeDelays()
+
+
+print("DR",#delayRegisters)
+for k,v in pairs(delayRegisters) do print("DRR",v.name) end
+  t.instances = concat(t.instances, delayRegisters)
+
+  map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
+
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
   
@@ -1278,7 +1320,8 @@ function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVa
 
     if decl==nil then decl="" end
     if module.options.CE or fnname=="set" then
-      decl = decl.."  always @ (posedge CLK) begin if ("..sel(fnname=="set",validVar,"")..sel(fnname=="set" and module.options.CE," && ","")..sel(module.options.CE,"CE","")..") begin "..instance.name.." <= "..inputVar.."; end end"
+      -- some callsites (e.g. pipeline registers) don't provide a valid bit, so that's ok
+      decl = decl.."  always @ (posedge CLK) begin if ("..sel(validVar~=nil,validVar,"")..sel(validVar~=nil and module.options.CE," && ","")..sel(module.options.CE,"CE","")..") begin "..instance.name.." <= "..inputVar.."; end end"
     else
       decl = decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
     end
