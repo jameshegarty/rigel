@@ -28,7 +28,8 @@ end
 
 
 local function getloc()
-  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
+--  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
+  return debug.traceback()
 end
 
 function sanitize(s)
@@ -654,6 +655,7 @@ function systolicASTFunctions:pipeline()
             -- The problem comes up when we're trying to interact with non-coherent modules: then the timing of the callsites matters.
             -- So, enforce valid delay==0 when calling noncoherent modules?
             err( n.func:isPure() or args[2][2]==0, "Error, valid bit should not be pipelined. Call to function '"..n.func.name.."', "..n.loc )
+--            err(args[1][2]==0 and args[2][2]==0,"Error, function should not be pipelined. "..n.func.name..", "..n.loc)
           elseif n.kind=="binop" or n.kind=="select" then 
             if pipelined then
               n = getDelayed(n,1)

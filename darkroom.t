@@ -1491,16 +1491,11 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local P = 1/T
 
-  local srv = map(range(P), function(i) return sinp( (i-1)*P ) end )
-  if P<-xmin+1 then
-    -- We always have 1 column coming in.
-  end
-
   local shiftValues = {}
   local Weach = (-xmin+1)/P -- number of columns in each output
 
   for p=P-1,0,-1 do
-    table.insert(shiftValues, concat2dArrays( map( range(Weach-1,0), function(i) return sinp( p*Weach + i ) end )) )
+    table.insert(shiftValues, concat2dArrays( map( range(Weach-1,0), function(i) return sinp( (p*Weach + i)*P ) end )) )
   end
 
   local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues )
@@ -1536,7 +1531,7 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(xmax==0)
   assert(ymax==0)
 
---  return darkroom.compose("stencilLinebufferPartial", darkroom.RPassthrough(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.liftDecimate(darkroom.liftStateful(darkroom.linebuffer( A, w, h, 1, ymin ))) )
+  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
   return darkroom.compose("stencilLinebufferPartial", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
 end
 
