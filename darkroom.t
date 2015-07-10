@@ -1657,12 +1657,13 @@ darkroom.makeHandshake = memoize(function( f )
   local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,{exit=false}):instantiate("asstInst") )
   pipelines[1] = asstInst:process(S.__not(S.isX(S.index(pinp,1))), S.constant(true,types.bool()) )
 
+  local pready = S.parameter("ready_downstream", types.bool())
   local out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.__not(rst))})
   table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready } ) )
 
   res.systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{SR:reset(nil,rst)},rst) )
-  local pready = S.parameter("ready_downstream", types.bool())
+
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready", {inner:CE(S.__or(pready,rst)),SR:CE(S.__or(pready,rst))} ) )
 
   return darkroom.newFunction(res)
