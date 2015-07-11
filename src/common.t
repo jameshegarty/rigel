@@ -570,3 +570,10 @@ function slice(t,low,high)
   assert( low<=high )
   return map(range(low,high),function(i) return t[i] end) 
 end
+
+function shallowCopy(t)
+  assert(type(t)=="table")
+  local n = {}
+  for k,v in pairs(t) do n[k] = v end
+  return n
+end

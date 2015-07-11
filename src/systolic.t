@@ -195,8 +195,15 @@ end
 
 function systolicModuleFunctions:instantiate( name, options )
   err( type(name)=="string", "instantiation name must be a string")
+
   if options==nil then options={} end
-  return systolicInstance.new({ kind="module", module=self, name=name, options=options, callsites={} })
+
+  -- coherence is a property of instances. By default, inherit the coherence option from the module
+  -- (This makes registers coherent by default for example)
+  if options.coherent==nil then options.coherent=self.options.coherent end
+
+  -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
+  return systolicInstance.new({ kind="module", module=self, name=name, options=options, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
 systolicFunctionFunctions = {}
@@ -215,6 +222,13 @@ function systolic.lambda( name, input, output, outputName, pipelines, valid )
   err( type(outputName)=="string", "output name must be a string")
   
   if pipelines==nil then pipelines={} end
+
+  -- a (possibly unnecessary) sanity check
+  for k,v in pairs(pipelines) do
+    err(v~=output,"pipeline "..k.." is the same as the output!")
+    for kk,vv in pairs(pipelines) do err(v~=vv or k==kk, "Pipeline "..k.." is the same as pipeline "..kk) end
+  end
+
   local implicitValid = false
   if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
   --if output~=nil then output = output:addValid( valid ) end
@@ -274,6 +288,80 @@ function systolic.isInstance(tab)
   return getmetatable(tab)==systolicInstanceMT
 end
 
+local function addArbitration(fn, fnname, instance, input, valid)
+--  assert( systolic.isFunction(fn) )
+  assert( systolic.isInstance(instance) )
+
+  local otype = types.null()
+  if fn.output~=nil then otype = fn.output.type end
+  
+  if fn.input.type==types.null() then
+    -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
+    return input, valid
+  elseif instance.options.arbitrate==nil then
+    -- no arbitration
+    if #instance.callsites[fnname]==0 then
+      return input, valid
+    else
+      error("Function '"..fn.name.."' on instance '"..self.name.."' can't have multiple callsites!")
+    end
+  elseif instance.options.arbitrate=="valid" then
+    if #instance.arbitration[fnname]==0  then
+      -- need to make a new callArbitrate node
+      err(input~=nil, "call aribtrate - missing input?")
+      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
+      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={input,valid} }
+      tca = systolicAST.new(tca)
+      local I, V = S.index(tca,0), S.index(tca,1)
+      table.insert(instance.arbitration[fnname], {tca,I,V})
+      return I,V
+    else
+      -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
+      local tcaDATA = instance.arbitration[fnname][1]
+      local tca,I,V = tcaDATA[1], tcaDATA[2], tcaDATA[3]
+
+      assert(input:contains(tca)==false)
+      assert(valid:contains(tca)==false)
+
+      err(input~=nil, "call aribtrate - missing input?")
+      table.insert( tca.inputs, input )
+      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
+      table.insert(tca.inputs, valid)
+
+      return I,V
+    end
+    assert(false)
+  else
+    assert(false)
+  end
+end
+
+
+local function createCallsite( fn, fnname, instance, input, valid )
+--  assert( systolic.isFunction(fn) )
+  assert( systolic.isInstance(instance) )
+  assert( systolicAST.isSystolicAST(input))
+
+  local otype = types.null()
+  if fn.output~=nil then otype = fn.output.type end
+
+  if #instance.callsites[fnname]==0 then
+    -- no callsite yet, we can just create it
+    local t = { kind="call", inst=instance, fnname=fnname, func=fn, type=otype, loc=getloc(), inputs={input,valid} }
+    table.insert(instance.callsites[fnname], systolicAST.new(t))
+    return instance.callsites[fnname][1]
+  else
+    -- It should never be possible to create multiple real callsites. If we got to this point,
+    -- either we're calling the thing a second time with the same inputs (CSE),
+    -- or we coerced the inputs with an arbitration node
+    local old = instance.callsites[fnname][1]
+    assert(old.inputs[1]==input)
+    assert(old.inputs[2]==valid)
+    return old
+  end
+
+end
+
 systolicInstanceMT={
 __index = function(tab,key)
   local v = rawget(tab, key)
@@ -283,64 +371,20 @@ __index = function(tab,key)
   if v==nil and rawget(tab,"kind")=="module" then
     -- try to find key in function tab
     local fn = rawget(tab,"module").functions[key]
+    --err( systolic.isFunction(fn), "Function "..key.." is not a function on module "..tab.module.kind.."?")
     if fn~=nil then
       return function(self, inp, valid)
+        err(tab.final==false, "Attempting to modify a finalized instance!")
         if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         
-        tab.callsites[fn.name] = tab.callsites[fn.name] or {}
+        tab.callsites[key] = tab.callsites[key] or {}
+        tab.arbitration[key] = tab.arbitration[key] or {}
 
         err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
 
-        local otype = types.null()
-        if fn.output~=nil then otype = fn.output.type end
-
-        if fn.input.type==types.null() then
-          -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
-          if #tab.callsites[fn.name]==0 then
-            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
-            table.insert(tab.callsites[fn.name], systolicAST.new(t))
-            return tab.callsites[fn.name][1]
-          else
-            -- cheap CSE
-            return tab.callsites[fn.name][1]
-          end
-        elseif self.options.arbitrate==nil then
-          -- no arbitration
-          if #tab.callsites[fn.name]==0 then
-            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={inp,valid} }
-            table.insert(tab.callsites[fn.name], systolicAST.new(t))
-            return tab.callsites[fn.name][1]
-          else
-            error("Function '"..fn.name.."' on instance '"..self.name.."' can't have multiple callsites!")
-          end
-        elseif self.options.arbitrate=="valid" then
-          if #tab.callsites[fn.name]==0  then
-
-            err(inp~=nil, "call aribtrate - missing input?")
-            err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-            local tca = { kind="callArbitrate", fn=fn.name, instance=self, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={inp,valid} }
-            tca = systolicAST.new(tca)
-            local t = { kind="call", inst=self, fnname=key, func=fn, type=otype, loc=getloc(), inputs={systolic.index(tca,0),systolic.index(tca,1)} }
-            table.insert( tab.callsites[fn.name], {tca,t} )
-            return systolicAST.new(t)
-          else
-            -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
-            local tca = tab.callsites[fn.name][1][1]
-            local t = tab.callsites[fn.name][1][2]
-            print("CABEFORE",self.kind,self.name,tca,#tca.inputs)
-            err(inp~=nil, "call aribtrate - missing input?")
-            table.insert(tca.inputs,inp)
-            err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-            table.insert(tca.inputs,valid)
-            print("CA",self.kind,self.name,tca,#tca.inputs)
-            return t
-          end
-          assert(false)
-        else
-          assert(false)
-        end
-
+        local arbInput, arbValid = addArbitration( fn, key, tab, inp, valid )
+        return createCallsite( fn, key, tab, arbInput, arbValid )
       end
     end
     
@@ -365,7 +409,7 @@ __call = function(tab, delayvalue)
   end
 end,
   __newindex = function(table, key, value)
-                    darkroom.error("Attempt to modify systolic AST node")
+                    error("Attempt to modify systolic AST node")
                   end}
 
 function systolicASTFunctions:init()
@@ -396,6 +440,7 @@ function systolic.index( expr, idx, idy )
     return systolic.cast( systolic.slice(expr, idx, idx, idy, idy), expr.type:arrayOver() )
   elseif expr.type:isTuple() then
     local v = systolic.slice(expr, idx, idx, idy, idy)
+    assert(#v.type.list==1)
     return systolic.cast( v, v.type.list[1] )
   end
   err(false, "Index only works on tuples and arrays")
@@ -513,7 +558,7 @@ function systolicASTFunctions:checkInstances( instMap )
   self:visitEach( 
     function(n)
       if n.kind=="call" then
-        err( instMap[n.inst]~=nil, "Error, instance "..n.inst.name.." is not a member of this module, "..n.loc )
+        err( instMap[n.inst]~=nil, "Error, instance "..n.inst.name.." is not a member of this module, "..n.inst.loc )
       end
     end)
 end
@@ -552,12 +597,15 @@ function systolicASTFunctions:setName(s)
   return self
 end
 
+-- When we disable pipelining, we mutate the nodes. The reason is that I don't think you'd ever want 
+-- to compute something both pipelined, and not pipelined (you clock period would still be limited by the non-pipelined stuff, 
+-- so pipelining it would provide no benefit).
+--
+-- Theoretically, functions can only be driven by parameters, calls on instances, and constants. So, disabling pipelining shouldn't be able to
+-- escape the scope of one module (??!)
 function systolicASTFunctions:disablePipelining()
-  return self:process(
-    function(n)
-      n.pipelined=false
-      return systolicAST.new(n)
-    end)
+  self:visitEach(function(n) n.pipelined=false end)
+  return self
 end
 
 function systolicASTFunctions:removeDelays( )
@@ -572,7 +620,7 @@ function systolicASTFunctions:removeDelays( )
     delayCache[node][validbit] = delayCache[node][validbit] or {}
     if delay==0 then return node
     elseif delayCache[node][validbit][delay]==nil then
-      local reg = systolic.module.reg( node.type ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name)
+      local reg = systolic.module.reg( node.type ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name,{coherent=false})
       table.insert( pipelineRegisters, reg )
       local d = getDelayed(node, delay-1, validbit)
       delayCache[node][validbit][delay] = reg:delay( d, validbit )
@@ -605,7 +653,7 @@ function systolicASTFunctions:pipeline()
     delayCache[node] = delayCache[node] or {}
     if delay==0 then return node
     elseif delayCache[node][delay]==nil then
-      local reg = systolic.module.reg( node.type ):instantiate(node.name.."_pipeline"..delay)
+      local reg = systolic.module.reg( node.type ):instantiate(node.name.."_pipeline"..delay,{coherent=false})
       table.insert( pipelineRegisters, reg )
       local d = getDelayed(node, delay-1)
       delayCache[node][delay] = reg:delay( d )
@@ -622,21 +670,22 @@ function systolicASTFunctions:pipeline()
       local pipelined = n.pipelined
       n.pipelined = nil -- clear pipelined bit: we no longer need it, and it interferes with CSE
 
+      local res
       if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" or n.kind=="null" then
-        return {n, 0}
+        res = {n, 0}
       elseif n.kind=="slice" or n.kind=="cast" or n.kind=="bitSlice" then
         -- passthrough, no pipelining
-        return {n, args[1][2]}
+        res = {n, args[1][2]}
       elseif n.kind=="unary" then
-        return {n, args[1][2]}
+        res = {n, args[1][2]}
       elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" or n.kind=="callArbitrate" then
         -- tuples and calls happen to be almost identical
 
-        if n.kind=="call" and n.func.input.type==types.null() then
+        --if n.kind=="call" and n.func.input.type==types.null() then
           -- no inputs, so this gets put at time 0
-          err( n.inst.module:getDelay( n.func.name )==0 or pipelined, "Error, could not disable pipelinging for function '"..n.func.name.."' on instance '"..n.inst.name.."', "..n.loc)
-          return { n, n.inst.module:getDelay( n.func.name ) }
-        else
+--          err( n.inst.module:getDelay( n.func.name )==0 or pipelined, "Error, could not disable pipelinging for function '"..n.func.name.."' on instance '"..n.inst.name.."', "..n.loc)
+--          return { n, n.inst.module:getDelay( n.func.name ) }
+--        else
           -- delay match on all inputs
           local maxd = 0
           map(args, function(a) maxd=math.max(maxd,a[2]) end)
@@ -648,14 +697,8 @@ function systolicASTFunctions:pipeline()
           
           local internalDelay = 0
           if n.kind=="call" then 
-            internalDelay= n.inst.module:getDelay( n.fnname ) 
+            internalDelay = n.inst.module:getDelay( n.fnname ) 
             err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
-            if n.func:isPure()==false then print("validbitPIPEDELAY",args[2][2],args[2][1].kind,args[2][1].loc) end
-            -- actually, it is OK to have pipelined valid bits (eg the input to one function is the output of another, which has a delay).
-            -- The problem comes up when we're trying to interact with non-coherent modules: then the timing of the callsites matters.
-            -- So, enforce valid delay==0 when calling noncoherent modules?
-            err( n.func:isPure() or args[2][2]==0, "Error, valid bit should not be pipelined. Call to function '"..n.func.name.."', "..n.loc )
---            err(args[1][2]==0 and args[2][2]==0,"Error, function should not be pipelined. "..n.func.name..", "..n.loc)
           elseif n.kind=="binop" or n.kind=="select" then 
             if pipelined then
               n = getDelayed(n,1)
@@ -669,8 +712,8 @@ function systolicASTFunctions:pipeline()
             assert(false)
           end
 
-          return { n, maxd+internalDelay }
-        end
+          res = { n, maxd+internalDelay }
+--        end
       elseif n.kind=="fndefn" then
         if #n.inputs==0 then
           -- its possible for functions to do nothing
@@ -678,11 +721,16 @@ function systolicASTFunctions:pipeline()
         else
           fnDelays[n.fn.name] = args[1][2]
         end
-        return {n,0}
+        res = {n,0}
       else
         print(n.kind)
         assert(false)
       end
+
+      if pipelined~=nil and pipelined==false then 
+        err(res[2]==0, "failed to disable pipelining for "..n.kind) 
+      end
+      return res
     end)
 
   return finalOut[1], pipelineRegisters, fnDelays
@@ -694,7 +742,6 @@ function systolicASTFunctions:addValid( validbit )
     function(n)
       if n.kind=="call" and n.inputs[2]==nil and n.func:isPure()==false then
         -- don't add valid bit to pure functions
-        assert( systolicAST.isSystolicAST(n.inputs[1]) )
         n.inputs[2] = validbit
         return systolicAST.new(n)
       elseif n.kind=="delay" then
@@ -915,7 +962,7 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = n.name
         wire=true
       elseif n.kind=="null" then
-        finalResult = ""
+        finalResult = "__SYSTOLIC_NULL"
         wire = true
       elseif n.kind=="select" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
@@ -992,10 +1039,16 @@ function systolicASTFunctions:toVerilog( module )
 
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false and const==false then
-        table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
-        return {n.name.."USEDMULTIPLE"..n.kind,true}
+        if n.type==types.null() then
+--          print("NULLTYPE",n.kind,n.loc)
+--          assert(false)
+          -- null outputs with multiple consumers are strange, but OK. Example: A coherent call with null output that is used in two different functions. (they will both share the same node, with null output)
+        else
+          table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
+          return {n.name.."USEDMULTIPLE"..n.kind,true}
+        end
       else
-        assert(type(finalResult)=="string")
+        err(type(finalResult)=="string","finalResult is not string? "..n.kind)
         return {finalResult, wire}
       end
     end)
@@ -1042,9 +1095,9 @@ local function moduleConstructor(tab)
       self.isComplete = true
     end
   end
-  function constFunctions:instantiate( name )
+  function constFunctions:instantiate(...)
     self:complete()
-    return self.module:instantiate(name)
+    return self.module:instantiate(...)
   end
 
   local constMT = {__index=constFunctions}
@@ -1069,10 +1122,15 @@ function userModuleFunctions:instanceToVerilogStart( instance, module )
 end
 
 function userModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
-  err( instance.verilogCompilerState[module][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+  local fn = self.functions[fnname]
+  if fn:isPure()==false and fn.input.type==types.null() then
+    -- it's ok to have multiple calls to a pure function w/ no inputs
+    err( instance.verilogCompilerState[module][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc)
+  end
+
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local decl = nil
-  local fn = self.functions[fnname]
+
   if fn.output~=nil and fn.output.type~=types.null() then
     decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
   end
@@ -1239,6 +1297,7 @@ function systolic.module.new( name, fns, instances, options )
   map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
   err( type(instances)=="table", "instances must be a table")
   map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
+  map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
 
   if options==nil then options={} end
 
@@ -1277,10 +1336,6 @@ function systolic.module.new( name, fns, instances, options )
 
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays()
-
-
-print("DR",#delayRegisters)
-for k,v in pairs(delayRegisters) do print("DRR",v.name) end
   t.instances = concat(t.instances, delayRegisters)
 
   map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
@@ -1318,7 +1373,7 @@ function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVa
   end
 
   if fnname=="delay" or fnname=="set" then
-    err( #instance.callsites[fnname]==1, "Error, multiple ("..(#instance.callsites[fnname])..") calls to '"..fnname.."' on instance '"..instance.name.."'")
+    --err( #instance.callsites[fnname]==1, "Error, multiple ("..(#instance.callsites[fnname])..") calls to '"..fnname.."' on instance '"..instance.name.."'")
 
     if decl==nil then decl="" end
     if module.options.CE or fnname=="set" then
@@ -1346,7 +1401,7 @@ end
 
 function systolic.module.reg( ty, initial )
   err(types.isType(ty),"type must be a type")
-  local t = {kind="reg",initial=initial,type=ty,options={lateInstantiation=true}}
+  local t = {kind="reg",initial=initial,type=ty,options={coherent=true}}
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, input={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT"}
   t.functions.delay.isPure = function() return false end
@@ -1371,7 +1426,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   assert( CE==nil or type(CE)=="boolean" )
   assert( init==nil or type(init)==ty:toLuaType() )
 
-  local R = systolic.module.reg( ty, init ):instantiate("R",{arbitrate="valid"})
+  local R = systolic.module.reg( ty, init ):instantiate("R",{arbitrate="valid",coherent=false})
   local inner = setby:instantiate("regby_inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
@@ -1396,7 +1451,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
 --  fns.set = systolic.lambda("set", sinp, sinp, "SET_OUTPUT",{}, setvalid )
 
   print("make regby")
-  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE} )
+  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init), fns, {R,inner}, {onlyWire=true,verilogDelay={get=0,set=0,setBy=0},CE=CE,coherent=true} )
   assert(systolic.isModule(M))
   return M
 end)
@@ -1698,6 +1753,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance, module )
 end
 
 function fileModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
+  assert( type(validvar) == "string" )
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local decl = nil
   local fn = self.functions[fnname]
@@ -1709,7 +1765,6 @@ end
 
 
 function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
---  return "FILELOL"
   if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
     for i=0,self.type:sizeof()-1 do
@@ -1720,8 +1775,6 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     if instance.verilogCompilerState[module].reset~=nil then
       RST = "if ("..instance.verilogCompilerState[module].reset[2]..") begin r=$fseek("..instance.name.."_file,0,0); end"
     end
-
---  reg []]..(self.type:sizeof()*8-1)..[[:0] ]]..instance.name..[[_out;
 
     return [[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end

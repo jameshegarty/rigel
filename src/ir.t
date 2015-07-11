@@ -175,4 +175,10 @@ function IR.isIR(v)
   return t==IR.IRFunctions
 end
 
+function IR.IRFunctions:contains(node)
+  local fnd = false
+  self:visitEach(function(n) if n==node then fnd=true end end)
+  return fnd
+end
+
 return IR

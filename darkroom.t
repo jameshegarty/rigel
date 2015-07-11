@@ -328,7 +328,7 @@ function darkroom.liftStateful(f)
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ inner:process(sinp), S.constant(true, types.bool())}, "process_output" ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) )
-
+  res.systolicModule:complete()
   return darkroom.newFunction(res)
 end
 
@@ -522,7 +522,7 @@ darkroom.liftHandshake = memoize(function(f)
   local outputCount
   local iif = fpgamodules.incIf()
   assert(S.isModule(iif))
-  if STREAMING==false then outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(16), iif ):includeCE():instantiate("outputCount") ) end
+  if STREAMING==false then outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(16), iif ):includeCE():instantiate("outputCount",{coherent=false}) ) end
 
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner_"..f.systolicModule.name))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
@@ -979,6 +979,7 @@ function darkroom.posSeq( W, H, T )
   res.systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(16),types.uint(16)},T)), "process_output", {posX:setBy( S.constant(true, types.bool() ) ),  posY:setBy( incY ),printInst:process( S.tuple{posX:get(),posY:get()})}) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
+  res.systolicModule:complete()
 
   return darkroom.newFunction(res)
 end
@@ -1100,7 +1101,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value}
-  res.inputType = darkroom.StatefulV(types.array2d(A,T))
+  res.inputType = darkroom.Stateful(types.array2d(A,T))
   res.outputType = darkroom.StatefulRV(types.array2d(A,T))
   res.sdfInput, res.sdfOutput = { (W*H)/T, ((W+L+R)*(H+B+Top))/T}, {1,1}
   res.delay=0
@@ -1111,19 +1112,17 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
+    valid(out) = true
     if interior then
-      data(out),valid(out) = data(inp), valid(inp)
+      data(out) = @inp
     else
-      valid(out) = self.posX<(W+L+R) and self.posY<(H+B+Top)
       data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
     end
-
-    if (interior and valid(inp)) or interior==false then
-      self.posX = self.posX+T;
-      if self.posX==(W+L+R) then
-        self.posX=0;
-        self.posY = self.posY+1;
-      end
+    
+    self.posX = self.posX+T;
+    if self.posX==(W+L+R) then
+      self.posX=0;
+      self.posY = self.posY+1;
     end
 --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
   end
@@ -1135,13 +1134,13 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 
   local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( W+L+R-T, T ) ):includeCE():setInit(0):instantiate("posX_padSeq") ) 
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(H+Top+B) ):includeCE():setInit(0):instantiate("posY_padSeq") ) 
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool(),types.bool()}, "x %d y %d ready %d validout %d", {CE=true}):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", {CE=true}):instantiate("printInst") )
 --  local asstInst = res.systolicModule:add( S.module.assert( "padSeq input ins't valid when it should be", {CE=true}):instantiate("asstInst") )
 
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local pvalid = S.parameter("process_valid", types.bool() )
-  local pinp_data = S.index(pinp,0)
-  local pinp_valid = S.index(pinp,1)
+  --local pinp_data = S.index(pinp,0)
+  --local pinp_valid = S.index(pinp,1)
 
   local C1 = S.ge( posX:get(), S.constant(L,types.uint(16)))
   local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(16)))
@@ -1153,28 +1152,28 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   local readybit = isInside:disablePipelining()
 
   local pipelines={}
-  local stepPipe = S.__or( pinp_valid, S.__not(readybit) )
+  --local stepPipe = S.__or( pinp_valid, S.__not(readybit) )
   local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(16))  ):disablePipelining()
-  pipelines[1] = posY:setBy( S.__and(S.__and(incY, stepPipe ),pvalid):disablePipelining() )
-  pipelines[2] = posX:setBy( S.__and(stepPipe,pvalid):disablePipelining() )
+  pipelines[1] = posY:setBy( incY )
+  pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 
 --  pipelines[4] = asstInst:process( S.__or(pinp_valid,S.eq(readybit,S.constant(false,types.bool()) ) ) )
 
   local ValueBroadcast = S.cast(S.constant(Value,A),types.array2d(A,T))
   local ConstTrue = S.constant(true,types.bool())
-  local ConstFalse = S.constant(false,types.bool())
-  local border = S.select(S.ge(posY:get(),S.constant(H+Top+B,types.uint(16))),S.tuple{ValueBroadcast,ConstFalse},S.tuple{ValueBroadcast,ConstTrue})
-  local out = S.select( readybit, pinp, border )
+  --local ConstFalse = S.constant(false,types.bool())
+  --local border = S.select(S.ge(posY:get(),S.constant(H+Top+B,types.uint(16))),S.tuple{ValueBroadcast,ConstFalse},S.tuple{ValueBroadcast,ConstTrue})
+  local out = S.select( readybit, pinp, ValueBroadcast )
 
-  table.insert(pipelines, printInst:process( S.tuple{ posX:get(), posY:get(), readybit, S.index(out,1) } ) )
+  table.insert(pipelines, printInst:process( S.tuple{ posX:get(), posY:get(), readybit } ) )
 
-  res.systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines, pvalid) )
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,ConstTrue}, "process_output", pipelines, pvalid) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
 
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
 
-  return darkroom.newFunction(res)
+  return darkroom.waitOnInput(darkroom.newFunction(res))
 end
 
 
@@ -1642,7 +1641,7 @@ darkroom.makeHandshake = memoize(function( f )
 
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool()}, "RST %d IV %d O %h OV %d ready %d", {CE=true}):instantiate("printInst") )
 
-  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name) )
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name,{coherent=false}) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local rst = S.parameter("reset",types.bool())
@@ -2145,7 +2144,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
-
+  systolicModule:complete()
   local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={1,1}, sdfOutput={1,1} }
   return darkroom.newFunction( res )
 end

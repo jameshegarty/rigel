@@ -163,8 +163,10 @@ return function( ast, newNodeFn )
       err( ast.idxHigh < #expr.type.list, "idxHigh is out of bounds of tuple. Index is "..ast.idxHigh.." but should be < "..#expr.type.list.." "..ast.loc)
       err( ast.idyLow==nil or ast.idyLow==0, "idyLow should be nil "..ast.loc)
       err( ast.idyHigh==nil or ast.idyHigh==0, "idyHigh should be nil "..ast.loc)
-      print(ast.idxLow, ast.idxHigh,#expr.type.list)
-      ast.type = types.tuple( slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1) )
+
+      local outlist = slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1)
+
+      ast.type = types.tuple( outlist )
     else
       assert(false)
     end

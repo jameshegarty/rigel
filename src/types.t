@@ -91,12 +91,13 @@ function types.tuple( list )
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
   --if #list==1 and types.isType(list[1]) then return list[1] end
 
-  map( list, function(n) print(n);assert( types.isType(n) ) end )
+  map( list, function(n) print("types.tuple",n);assert( types.isType(n) ) end )
   types._tuples[#list] = types._tuples[#list] or {}
   local tup = setmetatable( {kind="tuple", list = list }, TypeMT )
   assert(types.isType(tup))
   local res = deepsetweak( types._tuples[#list], list, tup )
   assert(types.isType(res))
+  assert(#res.list==#list)
   return res
 end
 
