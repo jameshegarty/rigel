@@ -44,7 +44,7 @@ function IR.IRFunctions:process( func )
     function( n, inputs )
       local r = n:shallowcopy()
       for k,v in pairs(n.inputs) do r.inputs[k] = inputs[k] end
-      local res = func( r )
+      local res = func( r, n )
       if getmetatable(res)==getmetatable(n) then
         return res
       elseif res~=nil then

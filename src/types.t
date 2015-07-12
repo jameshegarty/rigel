@@ -72,7 +72,7 @@ function types.array2d( _type, w, h )
   assert( type(w)=="number" )
   assert( type(h)=="number" or h==nil)
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
-  assert(w==math.floor(w))
+  err(w==math.floor(w), "non integer array width "..tostring(w))
   assert(h==math.floor(h))
 
   -- dedup the arrays

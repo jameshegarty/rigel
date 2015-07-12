@@ -587,6 +587,8 @@ end
 function systolicASTFunctions:const()
   if self.kind=="constant" then
     return self.value
+  elseif self.kind=="null" then
+    return false -- not sure what do do here?
   end
   return nil
 end
@@ -641,7 +643,59 @@ function systolicASTFunctions:removeDelays( )
   return finalOut, pipelineRegisters
 end
 
-function systolicASTFunctions:pipeline()
+-- this returns (I=total internal delay of node), (D=delays pipelining has to add)
+-- I-D is the amount that the op has built in (eg delay of a call)
+function systolicASTFunctions:internalDelay()
+  if self.kind=="call" then 
+    local res = self.inst.module:getDelay( self.fnname ) 
+    err( res==0 or self.pipelined, "Error, could not disable pipelining, "..self.loc)
+    return res, 0
+  elseif self.kind=="binop" or self.kind=="select" or self.kind=="unary" then 
+    if self.pipelined==nil or self.pipelined then
+      return 1,1
+    else
+      return 0,0
+    end
+  elseif self.kind=="tuple" or self.kind=="callArbitrate" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
+    return 0,0 -- purely wiring, or inputs
+  else
+    print("KIND",self.kind)
+    assert(false)
+  end
+end
+
+function systolicASTFunctions:calculateDelays(coherentDelays)
+  local delaysAtInput = {}
+  local coherentConverged = true
+
+  local finalOut = self:visitEach(
+    function( n )
+      local maxd = 0
+      map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay()) end)
+          
+      -- for coherent modules, we need all calls to have the same delay at their input.
+      -- record what delay the coherent modules are at, and whether we had to change it this round.
+      if n.kind=="call" and n.inst.options.coherent then 
+        if coherentDelays[n.inst]==nil or coherentDelays[n.inst] < maxd then
+          coherentConverged = false
+          coherentDelays[n.inst]=maxd
+        else
+          -- the coherent module is at a later delay than us - we just add extra delays to match
+          maxd = coherentDelays[n.inst]
+        end
+      end
+
+      delaysAtInput[n] = maxd      
+
+      if n.pipelined~=nil and n.pipelined==false then 
+        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind) 
+      end
+    end)
+
+  return delaysAtInput, coherentDelays, coherentConverged
+end
+
+function systolicASTFunctions:addPipelineRegisters( delaysAtInput )
   local pipelineRegisters = {}
   local fnDelays = {}
 
@@ -661,79 +715,56 @@ function systolicASTFunctions:pipeline()
     return delayCache[node][delay]
   end
 
-  local finalOut = self:visitEach(
-    function( inpn, args )
-      local n = inpn:shallowcopy()
-      n.inputs={}
-      for k,v in pairs(args) do n.inputs[k] = v[1] end
-      n = systolicAST.new(n)
-      local pipelined = n.pipelined
+  local finalOut = self:process(
+    function( n, orig )
+      local thisDelay = delaysAtInput[orig]
+      assert(type(thisDelay)=="number")
       n.pipelined = nil -- clear pipelined bit: we no longer need it, and it interferes with CSE
 
-      local res
-      if n.kind=="parameter" or n.kind=="constant" or n.kind=="module" or n.kind=="null" then
-        res = {n, 0}
-      elseif n.kind=="slice" or n.kind=="cast" or n.kind=="bitSlice" then
-        -- passthrough, no pipelining
-        res = {n, args[1][2]}
-      elseif n.kind=="unary" then
-        res = {n, args[1][2]}
-      elseif n.kind=="call" or n.kind=="tuple" or n.kind=="binop" or n.kind=="select" or n.kind=="callArbitrate" then
-        -- tuples and calls happen to be almost identical
-
-        --if n.kind=="call" and n.func.input.type==types.null() then
-          -- no inputs, so this gets put at time 0
---          err( n.inst.module:getDelay( n.func.name )==0 or pipelined, "Error, could not disable pipelinging for function '"..n.func.name.."' on instance '"..n.inst.name.."', "..n.loc)
---          return { n, n.inst.module:getDelay( n.func.name ) }
---        else
-          -- delay match on all inputs
-          local maxd = 0
-          map(args, function(a) maxd=math.max(maxd,a[2]) end)
-          
-          for k,v in pairs(n.inputs) do
-            -- insert delays so that each input is delayed the same amount
-            n.inputs[k] = getDelayed( args[k][1], maxd - args[k][2])
-          end
-          
-          local internalDelay = 0
-          if n.kind=="call" then 
-            internalDelay = n.inst.module:getDelay( n.fnname ) 
-            err( internalDelay==0 or pipelined, "Error, could not disable pipelining, "..n.loc)
-          elseif n.kind=="binop" or n.kind=="select" then 
-            if pipelined then
-              n = getDelayed(n,1)
-              internalDelay = 1
-            else
-              internalDelay = 0
-            end
-          elseif n.kind=="tuple" or n.kind=="callArbitrate" then
-            internalDelay = 0 -- purely wiring
-          else
-            assert(false)
-          end
-
-          res = { n, maxd+internalDelay }
---        end
-      elseif n.kind=="fndefn" then
-        if #n.inputs==0 then
-          -- its possible for functions to do nothing
+      if n.kind=="fndefn" then 
+        -- remember, we want the delay of the fn to be based on the delay of the output, not the pipelines
+        if n.fn.output==nil then
           fnDelays[n.fn.name] = 0
         else
-          fnDelays[n.fn.name] = args[1][2]
+          fnDelays[n.fn.name] = delaysAtInput[orig.inputs[1]]+orig.inputs[1]:internalDelay()
         end
-        res = {n,0}
-      else
-        print(n.kind)
-        assert(false)
       end
 
-      if pipelined~=nil and pipelined==false then 
-        err(res[2]==0, "failed to disable pipelining for "..n.kind) 
+      if n.kind=="module" then
+        -- obviously, we do not want to pipeline this.
+      else
+        local inputList = n.inputs
+
+        -- the reason we don't pipeline fndefns is that we want the output delay to _only_ depend on the output. If some pipelines are longer than the output, that's ok (don't count that)
+        if n.kind=="fndefn" then inputList={n.inputs[1]} end
+
+        for k,_ in pairs(inputList) do
+          -- insert delays so that each input is delayed the same amount
+          -- Note: we have to do this on the original node, before we removed the pipeling information!
+          local ID, delaysToAdd = orig.inputs[k]:internalDelay()
+          local inpDelay = delaysAtInput[orig.inputs[k]] + (ID-delaysToAdd)
+          n.inputs[k] = getDelayed( n.inputs[k], thisDelay - inpDelay)
+        end
       end
-      return res
+
+      return systolicAST.new(n)
     end)
 
-  return finalOut[1], pipelineRegisters, fnDelays
+  return finalOut, pipelineRegisters, fnDelays
+end
+
+function systolicASTFunctions:pipeline()
+  local iter=1
+  local delaysAtInput = {}
+  local coherentDelays = {}
+  local converged = false
+  while converged==false do
+    if iter==10 then error("Pipelining solve failed to converge! Probably, you created an unsatisfiable loop (a coherent module that reads and writes in the same cycle along a pipelined path)") end
+    delaysAtInput, coherentDelays, converged = self:calculateDelays(coherentDelays)
+    iter = iter + 1
+  end
+
+  return self:addPipelineRegisters( delaysAtInput )
 end
 
 function systolicASTFunctions:addValid( validbit )
