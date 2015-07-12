@@ -2434,7 +2434,13 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
     local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
     err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
-    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..string.gsub(readAll("../extras/helloaxi/axi.v"),"___PIPELINE_MODULE_NAME",f.systolicModule.name)
+
+    local axiv = readAll("../extras/helloaxi/axi.v")
+    axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
+    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
+    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
+
+    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
   else
     local rrlog2 = math.log(readyRate)/math.log(2)
 
