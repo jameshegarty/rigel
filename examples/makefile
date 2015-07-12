@@ -2,7 +2,8 @@ SRCFILES = $(wildcard *.t)
 SRCS = $(filter-out harness.t,$(SRCFILES))
 
 # some images have intentially invalid pixels in them, so we can't compare with golds
-GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
+#GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
+GOLDS = $(SRCS)
 RES = $(patsubst %.t,out/%.bmp,$(SRCS))
 RES += $(patsubst %.t,out/%.bmp.correct.txt,$(GOLDS))
 

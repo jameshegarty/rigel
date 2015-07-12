@@ -237,7 +237,7 @@ function darkroom.SoAtoAoS( W, H, typelist )
   end
   res.terraModule = PackTupleArrays
 
-  res.systolicModule = S.moduleConstructor("packTupleArrays",{CE=true})
+  res.systolicModule = S.moduleConstructor("packTupleArrays_"..(tostring(typelist):gsub('%W','_')),{CE=true})
   local sinp = S.parameter("process_input", res.inputType )
   local arrList = {}
   for y=0,H-1 do
@@ -1720,14 +1720,21 @@ function darkroom.reduceSeq( f, T )
   local svalid = S.parameter("process_valid", types.bool() )
   --local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
   local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap( (1/T)-1 ) ):includeCE():instantiate("phase") )
-
-  local sResult = res.systolicModule:add( S.module.regByConstructor( f.outputType, f.systolicModule ):includeCE():instantiate("result") )
   
   local pipelines = {}
-  pipelines[1] = sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() )
-  pipelines[2] = phase:setBy( S.constant(1,types.uint(16)) )
+  table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
 
-  local out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
+  local out
+  
+  if T==1 then
+    -- hack: Our reduce fn always adds two numbers. If we only have 1 number, it won't work! just return the input.
+    out = sinp
+  else
+    local sResult = res.systolicModule:add( S.module.regByConstructor( f.outputType, f.systolicModule ):includeCE():instantiate("result") )
+    table.insert( pipelines, sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() ) )
+    out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
+  end
+
   table.insert(pipelines, printInst:process( S.tuple{phase:get(),sinp,out} ) )
 
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (1/T)-1, types.uint(16))) }, "process_output", pipelines, svalid) )

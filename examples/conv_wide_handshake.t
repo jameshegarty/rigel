@@ -50,6 +50,7 @@ inp = d.input( ITYPE )
 convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
 convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ) ), convLB )
 convpipe = d.apply( "conv", d.makeStateful( d.map( convolve, T ) ), convstencils )
+convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
 convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
