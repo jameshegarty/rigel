@@ -350,9 +350,10 @@ function darkroom.waitOnInput(f)
   terra WaitOnInput:stats(name:&int8) self.inner:stats(name) end
   terra WaitOnInput:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.inner:ready()==false or valid(inp) then
-    if xor(self.inner:ready(),valid(inp)) then 
-      cstdio.printf("XOR %d %d\n",self.inner:ready(),valid(inp))
-darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") end
+      if xor(self.inner:ready(),valid(inp)) then 
+        cstdio.printf("XOR %d %d\n",self.inner:ready(),valid(inp))
+        darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") 
+      end
 
       self.inner:process(&data(inp),out)
     else
@@ -1177,9 +1178,10 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 end
 
 
---StatefulRV. Takes A[inputRate] in, and buffers to produce A[outputRate]
-darkroom.changeRate = memoize(function(A, inputRate, outputRate)
+--StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
+darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
   err( types.isType(A), "A should be a type")
+  err( type(H)=="number", "H should be number")
   err( type(inputRate)=="number", "inputRate should be number")
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number")
@@ -1195,128 +1197,90 @@ darkroom.changeRate = memoize(function(A, inputRate, outputRate)
   local outputCount = maxRate/outputRate
 
   local res = {kind="changeRate", type=A, inputRate=inputRate, outputRate=outputRate}
-  res.inputType = darkroom.StatefulV(types.array2d(A,inputRate))
+  res.inputType = darkroom.Stateful(types.array2d(A,inputRate))
   res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate))
   res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.sdfInput, res.sdfOutput = {outputRate,1},{inputRate,1}
 
-  local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; inputPhase:int;outputPhase:int}
-  terra ChangeRate:reset() self.inputPhase = 0; self.outputPhase=outputCount end
+  local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; phase:int}
+
   terra ChangeRate:stats(name:&int8) end
   res.systolicModule = S.moduleConstructor("ChangeRate_"..inputRate.."_to"..outputRate,{CE=true})
   local svalid = S.parameter("process_valid", types.bool() )
   local rvalid = S.parameter("reset", types.bool() )
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local pdata = S.index(pinp,0)
-  local pvalid = S.index(pinp,1)
-
-
---  local sInputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("inputPhase"))
---  local sInputPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), sumwrap(inputCount-1) ):includeCE():instantiate("inputPhase") )
---  local sOutputPhase = res.systolicModule:add(S.module.reg( types.uint(16) ):instantiate("outputPhase"))
-  local sWroteLast = res.systolicModule:add(S.module.reg( types.bool() ):instantiate("wroteLast",{arbitrate="valid"}))
 
   local regs = map( range(maxRate), function(i) return res.systolicModule:add(S.module.reg(A):instantiate("Buffer_"..i)) end )
 
   if inputRate>outputRate then
+    terra ChangeRate:reset() self.phase = 0; end
     terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-      cstdio.printf("CHANF outputPhase %d validin %d\n", self.outputPhase,valid(inp))
-      if self.outputPhase<outputCount then
-        valid(out) = true
-        for i=0,outputRate do (data(out))[i] = self.buffer[i+self.outputPhase*outputRate] end
-        self.outputPhase = self.outputPhase + 1
-      else
-        valid(out) = false
+      cstdio.printf("CHANGE_DOWN phase %d\n", self.phase)
+      if self.phase==0 then
+        for i=0,inputRate do self.buffer[i] = (@inp)[i] end
       end
 
-      if valid(inp) and self.outputPhase>=outputCount then
-        self.buffer = data(inp)
-        self.outputPhase = 0
-      end
-      cstdio.printf("CHANF OUT validOut %d\n",valid(out))
+      for i=0,outputRate do (data(out))[i] = self.buffer[i+self.phase*outputRate] end
+      valid(out) = true
+
+      self.phase = self.phase + 1
+      if  self.phase>=outputCount then self.phase=0 end
+
+      cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out))
     end
-    terra ChangeRate:ready()  return self.outputPhase>=[outputCount-1] end
+    terra ChangeRate:ready()  return self.phase==0 end
 
     -- 8 to 4
-    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(outputCount-1) ):includeCE():instantiate("phase_changeratedown") )
-    local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.bool(),A}, "phase %d wroteLast %d buffer[0] %h", {CE=true}):instantiate("printInst") )
-
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(outputCount-1,types.uint(16))), sWroteLast:set(S.constant(true,types.bool()), rvalid) }, rvalid ) )
-
-    local ready = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16))):disablePipelining()
-    --local done = S.eq(sPhase:get(),S.constant(outputCount-1,types.uint(16)))
-    local pipelines = {}
-    pipelines[1] = sPhase:setBy( pvalid )
-    local waiting = S.__and(ready,S.__not(pvalid)):disablePipelining()
-    pipelines[2] = sWroteLast:set(waiting,svalid)
-    pipelines[3] = printInst:process( S.tuple{sPhase:get(), sWroteLast:get(), regs[1]:get()} )
-
-    for i=1,inputRate do
-      table.insert(pipelines, regs[i]:set(S.index(pdata,i-1), S.__and(pvalid,ready):disablePipelining()) )
+    local shifterReads = {}
+    for i=0,outputCount-1 do
+      table.insert(shifterReads, S.slice( pinp, i*outputRate, (i+1)*outputRate-1, 0, H-1 ) )
     end
+    local out, pipelines, resetPipelines, ready = fpgamodules.addShifter( res.systolicModule, shifterReads )
 
-    local data = {}
-    for i=1,outputCount do
-      table.insert(data, S.cast(S.tuple( map(range(outputRate), function(t) return regs[(i-1)*outputRate+t]:get() end) ), types.array2d(A,outputRate)) )
-    end
+    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.constant(true,types.bool()) }, "process_output", pipelines, svalid) )
+    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, rvalid ) )
 
-    local out = fpgamodules.wideMux(data,sPhase:get())
-
-    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.__not(sWroteLast:get()) }, "process_output", pipelines, svalid) )
-    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), S.__or(ready,waiting):disablePipelining(), "ready", {} ) )
-
-  else -- inputRate <= outputRate
+  else -- inputRate <= outputRate. 4 to 8
+    terra ChangeRate:reset() self.phase = 0; end
     terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-      cstdio.printf("CHANGE RATE inputCount %d inputPhase %d validin %d inputRate %d maxRate %d\n",inputCount, self.inputPhase,valid(inp),inputRate,maxRate)
-      if valid(inp) then
-        for i=0,inputRate do self.buffer[i+self.inputPhase*inputRate] = (data(inp))[i] end
-        self.inputPhase = self.inputPhase + 1
-      end
+      for i=0,inputRate do self.buffer[i+self.phase*inputRate] = (@(inp))[i] end
 
-      if self.inputPhase >= inputCount then
+      if self.phase >= inputCount-1 then
         valid(out) = true
         data(out) = self.buffer
       else
         valid(out) = false
       end
 
-      if self.inputPhase>=inputCount then
-        self.inputPhase = 0
+      self.phase = self.phase + 1
+      if self.phase>=inputCount then
+        self.phase = 0
       end
 
-      cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.inputPhase)
+      cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.phase)
     end
-
-    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(inputCount-1) ):includeCE():instantiate("phase_changerateup") )
-    local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.bool(),types.array2d(A,outputRate)}, "phase %d wroteLast %d buffer %h", {CE=true}):instantiate("printInst") )
-
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))), sWroteLast:set(S.constant(false,types.bool()),rvalid) }, rvalid ) )
-
-    -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
-    local validout = S.__and( S.eq(sPhase:get(),S.constant(0,types.uint(16))), sWroteLast:get() ):disablePipelining()
-
-    local ConstTrue = S.constant(true,types.bool())
-
-    local out = S.cast(S.tuple(map(regs,function(n) return n:get() end)),types.array2d(A,outputRate))
-    local pipelines = {sWroteLast:set(pvalid,svalid), sPhase:setBy(ConstTrue,pvalid), printInst:process(S.tuple{sPhase:get(),sWroteLast:get(),out}) }
-    for i=0,inputCount-1 do
-      for irate=0,inputRate-1 do
-        table.insert( pipelines, regs[i*inputRate+irate+1]:set(S.index(pdata,irate), S.__and( S.eq( sPhase:get(),S.constant(i,types.uint(16))), pvalid ):disablePipelining()) )
-      end
-    end
-
-    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,validout}, "process_output", pipelines, svalid) )
-
     terra ChangeRate:ready()  return true end
 
+    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(inputCount-1) ):includeCE():instantiate("phase_changerateup") )
+    local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", {CE=true}):instantiate("printInst") )
+    local ConstTrue = S.constant(true,types.bool())
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))) }, rvalid ) )
 
+    -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
+    local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
+
+    local out = concat2dArrays(map(range(inputCount-1,0), function(i) return pinp(i) end))
+    local pipelines = {sPhase:setBy(ConstTrue), printInst:process(S.tuple{sPhase:get(),out}) }
+
+    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,validout}, "process_output", pipelines, svalid) )
     res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ConstTrue, "ready", {} ) )
   end
 
   res.terraModule = ChangeRate
 
-  return darkroom.newFunction(res)
-  end)
+  return darkroom.waitOnInput(darkroom.newFunction(res))
+end)
 
 function darkroom.linebuffer( A, w, h, T, ymin )
   assert(w>0); assert(h>0);
@@ -1637,9 +1601,9 @@ darkroom.makeHandshake = memoize(function( f )
   res.terraModule = MakeHandshake
 
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
-  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} )
+  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name, {onlyWire=true} ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0})
 
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool()}, "RST %d IV %d O %h OV %d ready %d", {CE=true}):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool(),types.uint(16)}, "RST %d IV %d O %h OV %d ready %d expectedOutput %d", {CE=true}):instantiate("printInst") )
 
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), "MakeHandshakeValidBitDelay_"..f.systolicModule.name.."_"..f.systolicModule:getDelay("process"), {CE=true,resetValue=false} ):instantiate("validBitDelay_"..f.systolicModule.name,{coherent=false}) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
@@ -1653,7 +1617,7 @@ darkroom.makeHandshake = memoize(function( f )
 
   local pready = S.parameter("ready_downstream", types.bool())
   local out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1)), SR:pushPop(S.index(pinp,1), S.__not(rst))})
-  table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready } ) )
+  table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready, S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) )
 
   res.systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst), "reset_out",{SR:reset(nil,rst)},rst) )

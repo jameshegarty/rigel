@@ -78,14 +78,14 @@ local inp = d.input( ITYPE )
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 local hsfninp = d.input( d.StatefulHandshake(RW_TYPE) )
 --local out = hsfninp
-local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),8,1)), hsfninp )
+local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), hsfninp )
 local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 --local out = d.apply("HH",d.liftHandshake(convpipe), out)
 local out = d.apply( "convLB", d.stencilLinebufferPartial( types.uint(8), internalW, internalH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), out)
 local out = d.apply( "conv", d.liftHandshake(convolve), out )
 
 local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0, 0))), out)
-local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,8)), out )
+local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
 harness.axi( "conv_tr_handshake_"..(1/T), hsfn, RW_TYPE, inputW, inputH, RW_TYPE, outputW, outputH )
