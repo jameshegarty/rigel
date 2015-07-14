@@ -8,7 +8,7 @@ local harness = require "harness"
 function MAKE(T)
 --ConvRadius = 1
 local ConvRadius = 2
-local ConvWidth = ConvRadius*2+1
+local ConvWidth = ConvRadius*2
 local ConvArea = math.pow( ConvWidth, 2 )
 
 local inputW = 128
