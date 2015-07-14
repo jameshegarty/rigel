@@ -48,7 +48,7 @@ out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
 	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
-	cd out/build_$*; map -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
+	cd out/build_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
 	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
 	cd out/build_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../extras/helloaxi/ps7_constraints.ucf -ucf ../../extras/helloaxi/system.ucf > OUT_trce.txt
 	cd out/build_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
