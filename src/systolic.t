@@ -610,6 +610,14 @@ function systolicASTFunctions:disablePipelining()
   return self
 end
 
+function systolicASTFunctions:disablePipeliningSingle()
+  if self.pipelined~=nil and self.pipelined==false then return self end
+
+  local r = self:shallowcopy()
+  r.pipelined=false
+  return systolicAST.new(r)
+end
+
 function systolicASTFunctions:removeDelays( )
   local pipelineRegisters = {}
 
@@ -667,6 +675,7 @@ end
 function systolicASTFunctions:calculateDelays(coherentDelays)
   local delaysAtInput = {}
   local coherentConverged = true
+  local firstFailure
 
   local finalOut = self:visitEach(
     function( n )
@@ -679,6 +688,7 @@ function systolicASTFunctions:calculateDelays(coherentDelays)
         if coherentDelays[n.inst]==nil or coherentDelays[n.inst] < maxd then
           coherentConverged = false
           coherentDelays[n.inst]=maxd
+          if firstFailure==nil then firstFailure = n end
         else
           -- the coherent module is at a later delay than us - we just add extra delays to match
           maxd = coherentDelays[n.inst]
@@ -692,7 +702,7 @@ function systolicASTFunctions:calculateDelays(coherentDelays)
       end
     end)
 
-  return delaysAtInput, coherentDelays, coherentConverged
+  return delaysAtInput, coherentDelays, coherentConverged, firstFailure
 end
 
 function systolicASTFunctions:addPipelineRegisters( delaysAtInput )
@@ -758,9 +768,10 @@ function systolicASTFunctions:pipeline()
   local delaysAtInput = {}
   local coherentDelays = {}
   local converged = false
+  local firstFailure
   while converged==false do
-    if iter==10 then error("Pipelining solve failed to converge! Probably, you created an unsatisfiable loop (a coherent module that reads and writes in the same cycle along a pipelined path)") end
-    delaysAtInput, coherentDelays, converged = self:calculateDelays(coherentDelays)
+    if iter==100 then print(firstFailure.fnname,firstFailure.loc);error("Pipelining solve failed to converge! Probably, you created an unsatisfiable loop (a coherent module that reads and writes in the same cycle along a pipelined path)") end
+    delaysAtInput, coherentDelays, converged, firstFailure = self:calculateDelays(coherentDelays)
     iter = iter + 1
   end
 
@@ -782,8 +793,40 @@ function systolicASTFunctions:addValid( validbit )
     end)
 end
 
-function systolicASTFunctions:CSE()
-  local seenlist = {}
+-- this converts ASTs so that different (but equivilant) delay arrangements
+-- result in the same AST, so that they can be CSE'd
+function systolicASTFunctions:internalizeDelays()
+  local res = self:visitEach(
+    function(n, args)
+
+      if n.kind=="delay" then
+        return {args[1][1],args[1][2]+n.delay}
+      else
+        local r = n:shallowcopy()
+        local minDelay = 1000000
+        if #n.inputs==0 then minDelay=0 end
+
+        for k,v in pairs(n.inputs) do 
+          r.inputs[k] = args[k][1]
+          minDelay = math.min(minDelay, args[k][2])
+        end
+
+        for k,v in pairs(n.inputs) do 
+          -- remember the delay delta. If it's zero, just don't store it (CSE correctly with non-delayed nodes)
+          if args[k][2]>minDelay then
+            assert(r["delay"..k]==nil) -- just in case
+            r["delay"..k] = args[k][2]-minDelay
+          end
+        end
+        return {systolicAST.new(r), minDelay}
+      end
+    end)
+
+  return res[1], res[2]
+end
+
+function systolicASTFunctions:CSE(repo)
+  local seenlist = repo or {}
   return self:process(
     function(n)
       n = systolicAST.new(n)

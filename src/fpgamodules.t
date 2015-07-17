@@ -276,6 +276,42 @@ function modules.addPhaser( module, period, fnValidBit )
   return valueout, validbit, pipelines, resetPipelines
 end
 
+-- If exprs[i] === exprs[i+j](j*P), then we can just read exprs[i] out of reg[i+j] (and not have to calcuate exprs[i]).
+-- Where P=#exprs
+-- (reg[i]:get() == exprs[i](P), because we do a read every P cycles)
+local function optimizeShifter( exprs, regs )
+  local CSErepo = {}
+  local internalized = map(exprs, function(e) local node, totalDelay = e:internalizeDelays(); return {node=node:CSE(CSErepo), delay=totalDelay} end)
+
+  local newexprs = {}
+
+  -- search for matches
+  local P = #exprs
+  for i=1,#exprs do
+    local nearestj, nearestV
+    for j=1,#exprs-i do
+      if internalized[i].node==internalized[i+j].node then
+        local dist =  internalized[i].delay - (internalized[i+j].delay+j*P)
+        if dist>=0 and (nearestj==nil or dist<nearestV) then
+          nearestj, nearestV = j, dist
+        end
+      end
+    end
+
+    -- the j that we find may not match exactly (we may need to add a few extra delays).
+    -- This may not theoretically provide any benefit, but it may help if Verilog's CSE fails (which is likely).
+    -- It shouldn't make it any worse...
+    if nearestj~=nil then
+      -- we actually read at the address+1, b/c in the cycle we read the values haven't been shifted back to their original position yet
+      newexprs[i] = (regs[(i+nearestj)%#exprs+1]:get())(nearestV)
+    else
+      newexprs[i] = exprs[i]
+    end
+  end
+
+  return newexprs
+end
+
 -- This is a nice interface for generating a shift register.
 -- This takes a table of expressions 'exprs', and returns a code quote
 -- that returns their values over #exprs clock cycles. Also returns
@@ -327,14 +363,17 @@ function modules.addShifter( module, exprs )
 
     local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):instantiate("SR_"..i) ) end )
 
-    -- notice that in the first cycle we write exprs[2] to reg[1]. That way this is ready
-    -- on the second cycle.
-    pipelines = map( slice(regs,1,#regs-1), function(r,i) return r:set( S.select(reading, exprs[(i%#exprs)+1], regs[(i%#exprs)+1]:get()) ) end )
-    pipelines[#pipelines+1] = regs[#regs]:set(exprs[1]) -- it's possible we may not even use this one.
+    exprs = optimizeShifter( exprs, regs )
+
+    -- notice that in the first cycle we write exprs[1] to regs[1].
+    -- Since we bypass exprs[1] to the output on the first cycle, this means we actually always read out of reg[2]
+    -- it's possible we may not even use regs[1]. This is just if we end up CSEing (optimizeShifter)
+    --
+    -- disable pipeling on the select to make sure all the reads/write happen in same cycle (or else we will create timing cycle)
+    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[(i%#exprs)+1]:get()):disablePipeliningSingle() ) end )
     table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
-
-    out = S.select( reading, exprs[1], regs[1]:get() )
+    out = S.select( reading, exprs[1], regs[2]:get() )
 
     local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", {CE=true}):instantiate("printInst") )
     table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
