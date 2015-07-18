@@ -4,6 +4,7 @@ SRCS = $(filter-out harness.t,$(SRCFILES))
 # some images have intentially invalid pixels in them, so we can't compare with golds
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t,$(SRCS))
 RES = $(patsubst %.t,out/%.bmp,$(SRCS))
 RES += $(patsubst %.t,out/%.bmp.correct.txt,$(GOLDS))
 
@@ -16,12 +17,12 @@ SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(GOLDS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(GOLDS))
 
-AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS))
-AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS))
+AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
+AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
 
-AXI = $(patsubst %.t,out/%.axi.raw,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.bmp,$(SRCS))
-AXI += $(patsubst %.t,out/%.axi.correct.txt,$(GOLDS))
+AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
+AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
+AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
 AXI += $(AXIBITS)
 
 RES += $(SIM)
@@ -46,7 +47,8 @@ out/%.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
-	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -ofn system" | xst > OUT_xst.txt
+	# run xst, then 'help -arch zynq -command run' to get list of options
+	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 Yes -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
 	cd out/build_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
 	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt

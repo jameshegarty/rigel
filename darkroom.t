@@ -177,6 +177,76 @@ function darkroom.newIR(tab)
   return setmetatable( tab, darkroomIRMT )
 end
 
+local __sdfTotalCache = {}
+-- assume that inputs have SDF rate {1,1}, then what is the rate of this node?
+function darkroomIRFunctions:sdfTotal()
+  if __sdfTotalCache[self]==nil then
+    local res
+    if self.kind=="input" or self.kind=="constant" then
+      res = {1,1}
+    elseif self.kind=="extractState" then
+      res = self.inputs[1]:sdfTotal()
+    elseif self.kind=="apply" then
+      assert(#self.inputs==1)
+      local I = self.inputs[1]:sdfTotal()
+      err( type(self.fn.sdfInput)=="table", "Missing SDF rate for fn "..self.fn.kind)
+      local R = { self.fn.sdfOutput[1]*self.fn.sdfInput[2], self.fn.sdfOutput[2]*self.fn.sdfInput[1] } -- output/input ratio
+      local On, Od = simplify(I[1]*R[1], I[2]*R[2])
+      res = {On,Od}
+    elseif self.kind=="tuple" then
+      local IR = self.inputs[1]:sdfTotal()
+      -- all input rates must match!
+      map(self.inputs, function(i,key) local isdf = i:sdfTotal(); err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..self.loc) end )
+      res = IR
+    else
+      print("sdftotal",self.kind)
+      assert(false)
+    end
+    __sdfTotalCache[self]=res
+  end
+  return __sdfTotalCache[self]
+end
+
+-- assuming that the inputs are running at {1,1}, what is the utilization of this node?
+-- 0.5: only active every other cycle. 2: somehow active twice a cycle? (a bug)
+function darkroomIRFunctions:sdfUtilization()
+  if self.kind=="apply" then
+    local total = self:sdfTotal()
+
+    local r = (total[2]*self.fn.sdfOutput[1])/(total[1]*self.fn.sdfOutput[2]) -- (total[1]/total[2])/(n.sdfOutput[1]/n.sdfOutput[2])
+    print("SDFRATE",self.name,total[1],total[2], self.fn.sdfOutput[1],self.fn.sdfOutput[2],"--",r)
+    assert(r<=1)
+    return r
+  else
+    assert(false)
+  end
+end
+
+-- assuming that the inputs are running at {1,1}, wht is the worst SDF utilization in this DAG?
+-- (this will limit the speed of the whole pipe)
+local __sdfWorstUtilizationCache = {}
+function darkroomIRFunctions:sdfWorstUtilization()
+  if __sdfWorstUtilizationCache[self]==nil then
+    if self.kind=="apply" then
+      --print("WORST",self.fn.kind)
+      local r = self:sdfUtilization()
+
+      -- leaf functions can't have a worse utilization than their input/output rate.
+      -- lambdas however can: (you can run something slow in the middle)
+      if self.fn.kind=="lambda" then
+        r = r*self.fn.output:sdfWorstUtilization()
+      end
+
+      local res = math.min(self.inputs[1]:sdfWorstUtilization(), r)
+      __sdfWorstUtilizationCache[self] = res
+    else
+      -- don't care. just set it to default value
+      __sdfWorstUtilizationCache[self] = 1
+    end
+  end
+  return __sdfWorstUtilizationCache[self]
+end
+
 function darkroomIRFunctions:typecheck()
   return self:process(
     function(n)
@@ -390,7 +460,7 @@ function darkroom.waitOnInput(f)
 end
 
 
-function darkroom.liftDecimate(f)
+darkroom.liftDecimate = memoize(function(f)
   assert(darkroom.isFunction(f))
   local res = {kind="liftDecimate", fn = f}
   darkroom.expectStateful(f.inputType)
@@ -430,7 +500,7 @@ function darkroom.liftDecimate(f)
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), S.constant(true,types.bool()), "ready", {} ) )
 
   return darkroom.newFunction(res)
-end
+                                end)
 
 function darkroom.RPassthrough(f)
   local res = {kind="RPassthrough", fn = f}
@@ -543,7 +613,7 @@ darkroom.liftHandshake = memoize(function(f)
   local srvalue = SR:pushPop(S.constant(true,types.bool()), S.__not(rst))
   local outvalid = S.__and(S.index(pout,1), srvalue )
   local outvalidRaw = outvalid
-  if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
+  --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
   local out = S.tuple{ S.index(pout,0), outvalid }
 
   local pipelines = {}
@@ -1200,7 +1270,12 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
   res.inputType = darkroom.Stateful(types.array2d(A,inputRate))
   res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate))
   res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
-  res.sdfInput, res.sdfOutput = {outputRate,1},{inputRate,1}
+
+  if inputRate>outputRate then -- 8 to 4
+    res.sdfInput, res.sdfOutput = {outputRate,inputRate},{1,1}
+  else -- 4 to 8
+    res.sdfInput, res.sdfOutput = {1,1},{inputRate,outputRate}
+  end
 
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; phase:int}
 
@@ -1744,6 +1819,30 @@ function darkroom.reduceSeq( f, T )
   return darkroom.newFunction( res )
 end
 
+-- surpresses output if we get more then _count_ inputs
+darkroom.overflow = memoize(function( A, count )
+  darkroom.expectPure(A)
+  -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
+  -- But in theory you should only put this at the very end of your pipe, so whatever...
+  local res = {kind="overflow", A=A, inputType=darkroom.Stateful(A), outputType=darkroom.StatefulV(A), count=count, sdfInput={1,1}, sdfOutput={1,1}, delay=0}
+  local struct Overflow {cnt:int}
+  terra Overflow:reset() self.cnt=0 end
+  terra Overflow:process( inp : &A:toTerraType(), out:&darkroom.extract(res.outputType):toTerraType())
+    data(out) = @inp
+    valid(out) = (self.cnt<count)
+    self.cnt = self.cnt+1
+  end
+  res.terraModule = Overflow
+  res.systolicModule = S.moduleConstructor("Overflow_"..count,{CE=true})
+  local cnt = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIf()):includeCE():instantiate("cnt") )
+
+  local sinp = S.parameter("process_input", A )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sinp, S.lt(cnt:get(), S.constant( count, types.uint(16))) }, "process_output", {cnt:setBy(S.constant(true,types.bool()))} ) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool())) )
+
+  return darkroom.newFunction( res )
+                            end)
 
 function darkroom.cat2d( A,T,w,h )
   assert(types.isType(A))
@@ -1948,42 +2047,12 @@ function darkroom.lambda( name, input, output, sdfOverride )
   end
 
   res.terraModule = docompile(res)
-
-  local __sdfCache = {}
-  local function sdfTotal(n)
-    assert(darkroom.isIR(n))
-    if __sdfCache[n]==nil then
-      local res
-      if n.kind=="input" or n.kind=="constant" then
-        res = {1,1}
-      elseif n.kind=="extractState" then
-        res = sdfTotal(n.inputs[1])
-      elseif n.kind=="apply" then
-        assert(#n.inputs==1)
-        local I = sdfTotal(n.inputs[1])
-        err( type(n.fn.sdfInput)=="table", "Missing SDF rate for fn "..n.fn.kind)
-        local R = { n.fn.sdfOutput[1]*n.fn.sdfInput[2], n.fn.sdfOutput[2]*n.fn.sdfInput[1] } -- output/input ratio
-        local On, Od = simplify(I[1]*R[1], I[2]*R[2])
-        res = {On,Od}
-      elseif n.kind=="tuple" then
-        local IR = sdfTotal(n.inputs[1])
-        -- all input rates must match!
-        map(n.inputs, function(i,key) local isdf = sdfTotal(i); err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..n.loc) end )
-        res = IR
-      else
-        print("sdftotal",n.kind)
-        assert(false)
-      end
-      __sdfCache[n]=res
-    end
-    return __sdfCache[n]
-  end
-
+  
   res.sdfInput = {1,1}
   if sdfOverride~=nil then
     res.sdfOutput = sdfOverride
   else
-    res.sdfOutput = sdfTotal(output)
+    res.sdfOutput = output:sdfTotal()
   end
 
   local function makeSystolic( fn )
@@ -2012,8 +2081,8 @@ function darkroom.lambda( name, input, output, sdfOverride )
 
           local params
           if darkroom.isStatefulHandshake( n.fn.inputType ) then
-            local IC = sdfTotal(n.inputs[1])
-            local OC = sdfTotal(n)
+            local IC = n.inputs[1]:sdfTotal()
+            local OC = n:sdfTotal()
             params={INPUT_COUNT="(INPUT_COUNT*"..IC[1]..")/"..IC[2],OUTPUT_COUNT="(INPUT_COUNT*"..OC[1]..")/"..OC[2]}
             print("PARAMS")
           end
@@ -2439,6 +2508,7 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
     axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
+    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens/f.output:sdfWorstUtilization())+1024) -- just give it 1024 cycles of slack
 
     verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
   else

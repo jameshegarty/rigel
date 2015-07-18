@@ -53,7 +53,7 @@ always @(posedge ACLK) begin
                 if(a_count - 1 == 0)
                     a_state <= IDLE;
                 a_count <= a_count - 1;
-                M_AXI_ARADDR <= M_AXI_ARADDR + 128; 
+                M_AXI_ARADDR <= M_AXI_ARADDR + 128; // Bursts are 128 bytes long
             end
         end
     endcase
@@ -70,7 +70,7 @@ always @(posedge ACLK) begin
     end else case(r_state)
         IDLE: begin
             if(CONFIG_VALID) begin
-                b_count <= {CONFIG_NBYTES[31:7],7'b0};
+                b_count <= {CONFIG_NBYTES[31:7],7'b0}; // round to nearest 128 bytes
                 r_state <= RWAIT;
             end
         end
@@ -79,7 +79,7 @@ always @(posedge ACLK) begin
                 //use M_AXI_RDATA
                 if(b_count - 8 == 0)
                     r_state <= IDLE;
-                b_count <= b_count - 8;
+                b_count <= b_count - 8; // each valid cycle the bus provides 8 bytes
             end
         end
     endcase

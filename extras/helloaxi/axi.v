@@ -5,6 +5,8 @@
 // The axi bus expects the number of valid data items to exactly match the # of addresses we send.
 // This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
 module OutputShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
+   parameter WAIT_CYCLES = 2048;
+   
    reg [31:0] outCnt;
    reg [31:0] outLen;
 
@@ -22,7 +24,7 @@ module OutputShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] 
         outClks <= outClks + 32'd1;
         
         if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd128; end
-        if(outClks > 32'd2048) begin fixupMode <= 1'b1; end
+        if(outClks > WAIT_CYCLES) begin fixupMode <= 1'b1; end
      end
    end
 
@@ -188,7 +190,7 @@ module stage
  
   ___PIPELINE_MODULE_NAME  #(.INPUT_COUNT(___PIPELINE_INPUT_COUNT),.OUTPUT_COUNT(___PIPELINE_OUTPUT_COUNT)) pipeline(.CLK(FCLK0),.reset(CONFIG_READY),.ready(pipelineReady),.ready_downstream(downstreamReady),.process_input({pipelineInputValid,pipelineInput}),.process_output(pipelineOutputPacked));
 
-   OutputShim OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
+   OutputShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
    
   DRAMReader reader(
     .ACLK(FCLK0),
