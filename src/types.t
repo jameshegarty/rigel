@@ -631,6 +631,8 @@ function TypeFunctions:toLuaType()
     return "number"
   elseif self.kind=="array" or self.kind=="tuple" then
     return "table"
+  elseif self.kind=="bool" then
+    return "boolean"
   else
     print("toLuaType",self)
     assert(false)
