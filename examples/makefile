@@ -5,8 +5,8 @@ SRCS = $(filter-out harness.t,$(SRCFILES))
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
 AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t,$(SRCS))
-RES = $(patsubst %.t,out/%.bmp,$(SRCS))
-RES += $(patsubst %.t,out/%.bmp.correct.txt,$(GOLDS))
+TERRA = $(patsubst %.t,out/%.bmp,$(SRCS))
+TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS))
@@ -25,11 +25,14 @@ AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
 AXI += $(AXIBITS)
 
+RES = $(TERRA)
 RES += $(SIM)
 RES += $(AXI)
 
 CD = cd out;
 all: $(RES)
+
+terra: $(TERRA)
 
 sim: $(SIM)
 

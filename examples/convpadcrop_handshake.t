@@ -74,4 +74,4 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.
 --local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
-harness.sim( "convpadcrop_handshake", hsfn, T, RW_TYPE, inputW, inputH, RW_TYPE, outputW, outputH )
+harness.sim( "convpadcrop_handshake", hsfn, T, RW_TYPE, nil, nil, inputW, inputH, RW_TYPE, outputW, outputH )

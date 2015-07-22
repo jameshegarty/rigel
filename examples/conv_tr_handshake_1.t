@@ -88,7 +88,7 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
-harness.axi( "conv_tr_handshake_"..(1/T), hsfn, RW_TYPE, inputW, inputH, RW_TYPE, outputW, outputH )
+harness.axi( "conv_tr_handshake_"..(1/T), hsfn, RW_TYPE, nil, nil, inputW, inputH, RW_TYPE, outputW, outputH )
 end
 
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))

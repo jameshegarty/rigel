@@ -384,15 +384,26 @@ function concat(t1,t2)
 end
 
 function reverse(t)
+  assert(keycount(t)==#t)
   local r = {}
   for k,v in ipairs(t) do r[#t-k+1] = v end
   return r
 end
 
+-- t[k] is removed from array if f([t[k])==false
 function filter(t,f)
   local r = {}
   for k,v in pairs(t) do
-    if f(v) then r[k] = v end
+    if f(v,k) then table.insert(r, v) end
+  end
+  return r
+end
+
+function ifilter( t, f )
+  assert(keycount(t)==#t)
+  local r = {}
+  for k,v in ipairs(t) do
+    if f(v,k) then table.insert(r, v) end
   end
   return r
 end
@@ -517,27 +528,42 @@ function take(t,i)
   return r
 end
 
+
+
 __memoized = {}
 __memoizedNilHack = {}
+
+local function makeDense(t)
+  local max = 0
+  for k,v in pairs(t) do assert(type(k)=="number"); max=math.max(max,k) end
+  for k=1,max do if t[k]==nil then t[k]=__memoizedNilHack end end
+end
+
 function memoize(f)
   assert(type(f)=="function")
   return function(...)
     local idx = map({...}, function(v) 
-                      -- hack: tables can't have nil keys. To accomadate this, we make a fake table to represent nils, and replace nils with that
-          if v==nil then return __memoizedNilHack end
-          err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean","deepsetweak type was "..type(v)) 
-          return v
+                      -- hack: tables can't have nil keys. To accommodate this, we make a fake table to represent nils, and replace nils with that
+                      -- (remember, we use the values of this table as keys for the hash later)
+                      if v==nil then return __memoizedNilHack end
+                      err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean","deepsetweak type was "..type(v)) 
+                      return v
                            end)
-    local cnt = #{...}
+
+    -- since some values of {...} may be nil, we need to densify it (fill in all keys from min to max)
+    makeDense(idx)
+
+    assert(keycount(idx)==#idx)
+    local cnt = #idx
     __memoized[f] = __memoized[f] or {}
     if cnt==0 then
       if __memoized[f][0]==nil then __memoized[f][0]=f(...) end
       return __memoized[f][0]
     else
       __memoized[f][cnt] = __memoized[f][cnt] or {}
-      local t = index(__memoized[f][cnt],{...})
+      local t = index(__memoized[f][cnt],idx)
       if t~=nil then return t end -- early out, so that we don't call f multiple times w/ same arguments
-      return deepsetweak( __memoized[f][cnt], {...}, f(...) )
+      return deepsetweak( __memoized[f][cnt], idx, f(...) )
     end
   end
 end
@@ -561,6 +587,7 @@ end
 function rep(v,n)
   return map(range(n), function(i) return v end)
 end
+broadcast = rep
 
 -- low, high are inclusive
 function slice(t,low,high) 

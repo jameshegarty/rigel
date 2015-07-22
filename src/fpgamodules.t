@@ -34,6 +34,14 @@ modules.incIfWrap=memoize(function(limit,inc)
               end)
 
 
+------------
+local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
+modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
+------------
+local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
+modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{},nil,true)
+------------
+
 function modules.reduceSystolic( op, cnt, datatype, argminVars)
   local rname, rmod = modules.reduceVerilog( op, cnt, datatype, argminVars )
   local r = systolic.module(rname, {verilog=rmod} )

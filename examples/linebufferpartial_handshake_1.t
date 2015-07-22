@@ -43,7 +43,7 @@ out = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), inpu
 local hsfn = d.lambda("lbp", inp, out)
 
 
-harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, 1, BASE_TYPE, inputW, inputH, BASE_TYPE, inputW/T, inputH)
+harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, 1, BASE_TYPE, nil, nil, inputW, inputH, BASE_TYPE, inputW/T, inputH)
 end
 
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))

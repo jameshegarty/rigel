@@ -5,18 +5,19 @@ types = {}
 
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
+            local const = sel(ty.constant,"_const","")
   if ty.kind=="bool" then
-    return "bool"
+    return "bool"..const
   elseif ty.kind=="null" then
     return "null"
   elseif ty.kind=="int" then
-    return "int"..ty.precision
+    return "int"..ty.precision..const
   elseif ty.kind=="uint" then
-    return "uint"..ty.precision
+    return "uint"..ty.precision..const
   elseif ty.kind=="bits" then
-    return "bits"..ty.precision
+    return "bits"..ty.precision..const
   elseif ty.kind=="float" then
-    return "float"..ty.precision
+    return "float"..ty.precision..const
   elseif ty.kind=="array" then
     return tostring(ty.over).."["..table.concat(ty.size,",").."]"
   elseif ty.kind=="tuple" then
@@ -29,8 +30,9 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   assert(false)
 end}
 
-types._bool=setmetatable({kind="bool"}, TypeMT)
-function types.bool() return types._bool end
+types._bool=setmetatable({kind="bool",constant=false}, TypeMT)
+types._boolconst=setmetatable({kind="bool",constant=true}, TypeMT)
+function types.bool(const) if const==true then return types._boolconst else return types._bool end end
 
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
@@ -41,28 +43,32 @@ function types.opaque(str)
   return types._opaque[str]
 end
 
-types._bits={}
-function types.bits(prec)
-  types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
-  return types._bits[prec]
+types._bits={[true]={},[false]={}}
+function types.bits( prec, const )
+  local c = (const==true)
+  types._bits[c][prec] = types._bits[c][prec] or setmetatable({kind="bits",precision=prec,constant=c},TypeMT)
+  return types._bits[c][prec]
 end
 
-types._uint={}
-function types.uint(prec)
-  types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
-  return types._uint[prec]
+types._uint={[true]={},[false]={}}
+function types.uint(prec,const)
+  local c = (const==true)
+  types._uint[c][prec] = types._uint[c][prec] or setmetatable({kind="uint",precision=prec,constant=c},TypeMT)
+  return types._uint[c][prec]
 end
 
-types._int={}
-function types.int(prec)
-  types._int[prec] = types._int[prec] or setmetatable({kind="int",precision=prec},TypeMT)
-  return types._int[prec]
+types._int={[true]={},[false]={}}
+function types.int(prec,const)
+  local c = (const==true)
+  types._int[c][prec] = types._int[c][prec] or setmetatable({kind="int",precision=prec,constant=c},TypeMT)
+  return types._int[c][prec]
 end
 
-types._float={}
-function types.float(prec)
-  types._float[prec] = types._float[prec] or setmetatable({kind="float",precision=prec},TypeMT)
-  return types._float[prec]
+types._float={[true]={},[false]={}}
+function types.float(prec,const)
+  local c = (const==true)
+  types._float[c][prec] = types._float[c][prec] or setmetatable({kind="float",precision=prec,constant=c},TypeMT)
+  return types._float[c][prec]
 end
 
 types._array={}
@@ -537,6 +543,36 @@ function types.uintToInt(ty)
   return types.int(ty.precision)
 end
 
+-- is the type const?
+function TypeFunctions:const()
+  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() then
+    return self.constant
+  elseif self:isArray() then
+    return self:arrayOver():const()
+  elseif self:isTuple() then
+    return foldl(andop,true, map(self.list, function(v) return v:const() end ) )
+  elseif self:isNull() then
+    return true
+  else
+    print(":const",self)
+    assert(false)
+  end
+end
+
+function TypeFunctions:makeConst()
+  if self:const() then return self end
+
+  if self:isUint() then
+    return types.uint( self.precision, true )
+  elseif self:isArray() then
+    local L = self:arrayLength()
+    return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
+  else
+    print(":makeConst",self)
+    assert(false)
+  end
+end
+
 function TypeFunctions:toC()
   if self.kind=="float" and self.precision==32 then
     return "float"
@@ -576,15 +612,15 @@ end
 function TypeFunctions:toTerraType(pointer, vectorN)
   local ttype
 
-  if self==types.float(32) then
+  if self:isFloat() and self.precision==32 then
     ttype = float
-  elseif self==types.float(64) then
+  elseif self:isFloat() and self.precision==64 then
     ttype = double
-  elseif self==types.uint(8) then
+  elseif self:isUint() and self.precision==8 then
     ttype = uint8
   elseif self==types.int(8) then
     ttype = int8
-  elseif self==types.bool() then
+  elseif self:isBool() then
     ttype = bool
   elseif self==types.int(32) then
     ttype = int32
@@ -623,6 +659,21 @@ function TypeFunctions:toTerraType(pointer, vectorN)
   assert(false)
 
   return nil
+end
+
+function TypeFunctions:valueToTerra(value)
+  if self:isUint() or self:isFloat() or self:isInt() then
+    assert(type(value)=="number")
+    return `[self:toTerraType()](value)
+  elseif self:isArray() then
+    assert(type(value)=="table")
+    assert(#value==self:channels())
+    local tup = map( value, function(v) return self:arrayOver():valueToTerra(v) end )
+    return `[self:toTerraType()](array(tup))
+  else
+    print("TypeFunctions:valueToTerra",self)
+    assert(false)
+  end
 end
 
 -- not very accurate. This will let us compare to type(t) at least
@@ -669,6 +720,7 @@ function TypeFunctions:isBool() return self.kind=="bool" end
 function TypeFunctions:isInt() return self.kind=="int" end
 function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
+function TypeFunctions:isNull() return self.kind=="null" end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"

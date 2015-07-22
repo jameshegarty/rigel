@@ -65,7 +65,7 @@ function systolic.declareReg(ty, name, initial, comment)
   if initial==nil or initial=="" then 
     initial=""
   else
-    initial = " = "..valueToVerilog(initial,ty)
+    initial = " = "..systolic.valueToVerilog(initial,ty)
   end
 
   if ty:isBool() then
@@ -160,7 +160,7 @@ function valueToVerilogLL(value,signed,bits)
   end
 end
 
-function valueToVerilog(value,ty)
+function systolic.valueToVerilog( value, ty )
   assert(types.isType(ty))
 
   if ty:isInt() then
@@ -186,7 +186,7 @@ function valueToVerilog(value,ty)
   elseif ty:isArray() then
     assert(type(value)=="table")
     assert(#value==ty:channels())
-    return "{"..table.concat( reverse( map( value, function(v) return valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
+    return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
   else
     print("valueToVerilog",ty)
     assert(false)
@@ -912,7 +912,7 @@ function systolicASTFunctions:toVerilog( module )
           if ty:isArray() then
             return "{"..table.concat( reverse(map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end)),", " ).."}"
           else
-            return valueToVerilog(val, ty)
+            return systolic.valueToVerilog(val, ty)
           end
         end
         finalResult = "("..cconst(n.type,n.value)..")"
@@ -974,7 +974,8 @@ function systolicASTFunctions:toVerilog( module )
           assert(false)
         end
       elseif n.kind=="tuple" then
-        finalResult="{"..table.concat(reverse(args),",").."}"
+        local nonulls = ifilter(args, function(v,k) return n.inputs[k].type:isNull()==false end )
+        finalResult="{"..table.concat(reverse(nonulls),",").."}"
       elseif n.kind=="cast" then
 
         local expr
@@ -1251,14 +1252,14 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
         end
       end
       
-      if fn.input.type~=types.null() then
+      if fn.input.type~=types.null() and fn.input.type:verilogBits()>0  then
         err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'?")
         local inp = instance.verilogCompilerState[module][fnname][1]
         err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         table.insert(arglist,", ."..fn.input.name.."("..inp..")")
       end
       
-      if fn.output~=nil and fn.output.type~=types.null() then
+      if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
         table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
       end
     end
@@ -1305,8 +1306,8 @@ function userModuleFunctions:toVerilog()
         if self.onlyWire and fn.implicitValid then
         else table.insert(t,", input "..fn.valid.name) end
       end
-      if fn.input.type~=types.null() then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
-      if fn.output~=nil and fn.output.type~=types.null() then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
+      if fn.input.type~=types.null() and fn.input.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
+      if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
 
     table.insert(t,");\n")
@@ -1952,7 +1953,11 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
     local bit = 0
     for k,v in pairs(self.type.list) do
       if k~=1 then datalist=datalist.."," end
-      datalist = datalist..instance.name.."["..(bit+v:verilogBits()-1)..":"..bit.."]"
+      if v:verilogBits()==0 then
+        datalist = datalist.."0"
+      else
+        datalist = datalist..instance.name.."["..(bit+v:verilogBits()-1)..":"..bit.."]"
+      end
       bit = bit + v:verilogBits()
     end
   else

@@ -31,4 +31,4 @@ fn = d.lambda( "pointwise_wide", inp, out )
 --hsfn = d.lambda( "pointwise_wide_hs", inp, out )
 hsfn = d.makeHandshake(d.makeStateful(fn))
 
-harness.axi( "pointwise_wide_handshake", hsfn, ITYPE, W,H, ITYPE,W,H)
+harness.axi( "pointwise_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W,H)

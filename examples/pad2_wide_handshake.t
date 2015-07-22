@@ -25,4 +25,4 @@ hsfn = d.compose("HSFN",
                  d.liftHandshake(d.padSeq(types.uint(8), W, H, T, (WW-W), 0, (HH-H), 0, 128)),
                  d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)) )
 
-harness.axi( "pad2_wide_handshake", hsfn, BASE_TYPE, inputW, inputH, BASE_TYPE, WW, HH)
+harness.axi( "pad2_wide_handshake", hsfn, BASE_TYPE, nil, nil, inputW, inputH, BASE_TYPE, WW, HH)

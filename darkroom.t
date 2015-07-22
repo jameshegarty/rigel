@@ -15,7 +15,7 @@ STREAMING = false
 
 darkroom = {}
 
-DEFAULT_FIFO_SIZE = 2048*16*16
+DEFAULT_FIFO_SIZE = 2048*16
 
 darkroom.State = types.opaque("state")
 darkroom.StateR = types.opaque("stateR")
@@ -80,6 +80,7 @@ end
 -- ie Stateful(A) => A
 -- StatefulV(A) => {A,bool}
 -- StatefulRV(A) => {A,bool}
+-- StatefulHandshake(A) => {A,bool}
 function darkroom.extract( a, loc )
   if a==darkroom.State then return types.null() end
   if darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeRegistered(a) then
@@ -93,15 +94,25 @@ function darkroom.extract( a, loc )
   return a.list[1]
 end
 
+-- extract underlying actual data type.
+-- ie Stateful(A) => A
+-- StatefulV(A) => A
+-- StatefulRV(A) => A
+-- StatefulHandshake(A) => A
+function darkroom.extractData(a)
+  if darkroom.isStatefulHandshake(a) then return a.list[1]
+  elseif darkroom.isStatefulV(a) then return darkroom.extractV(a)
+  elseif darkroom.isStatefulRV(a) then return darkroom.extractRV(a)
+  elseif darkroom.isStateful(a) then return darkroom.extract(a)
+  elseif darkroom.isPure(a) then return a
+  else print("extractdata",a); assert(false) end
+end
+
 function darkroom.extractStatefulHandshake( a, loc )
-  if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, "..loc) end
+  if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, ") end
   return a.list[1]
 end
 
-------------
-local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-local summodule = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
-------------
 
 -- tab should be a table of systolic ASTs, all type array2d. Heights should match
 function concat2dArrays(tab)
@@ -194,9 +205,18 @@ function darkroomIRFunctions:sdfTotal()
       local On, Od = simplify(I[1]*R[1], I[2]*R[2])
       res = {On,Od}
     elseif self.kind=="tuple" then
-      local IR = self.inputs[1]:sdfTotal()
+      local IR
       -- all input rates must match!
-      map(self.inputs, function(i,key) local isdf = i:sdfTotal(); err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..self.loc) end )
+      for key,i in pairs(self.inputs) do
+        if darkroom.extractData(i.type ):const() then
+          -- we don't care about SDF rates on constants
+        else
+          local isdf = i:sdfTotal(); 
+          if IR==nil then IR=isdf end
+          err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..self.loc)
+        end
+      end
+
       res = IR
     else
       print("sdftotal",self.kind)
@@ -253,13 +273,6 @@ function darkroomIRFunctions:typecheck()
       if n.kind=="apply" then
         assert( types.isType( n.inputs[1].type ) )
         if n.fn.inputType~=n.inputs[1].type then error("Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc) end
-
-        if n.fn.tapInput~=nil then
-          err( n.inputs[2]~=nil, "Missing tap input, "..n.loc)
-          err( n.fn.tapInput.type==n.inputs[2].type, "Tap input has incorrect type, "..n.loc)
-          err( n.inputs[2]:tapConst(), "Tap input must be tapConst" )
-        end
-
         n.type = n.fn.outputType
         return darkroom.newIR( n )
       elseif n.kind=="applyRegLoad" then
@@ -330,36 +343,89 @@ end
 
 -- converts {Stateful(a), Stateful(b)...} to Stateful{a,b}
 -- Also {StatefulHandshake(a), StatefulHandshake(b)...} to StatefulHandshake{a,b}
+-- typelist should be a table of pure types
 function darkroom.packTuple( typelist, handshake )
   assert(type(typelist)=="table")
-  assert(handshake==nil or type(handshake)=="bool")
+  err( handshake==nil or type(handshake)=="boolean", "handshake argument should be bool")
 
   local res = {kind="packTuple", handshake=handshake}
 
+  map(typelist, function(t) darkroom.expectPure(t) end )
   res.inputType = types.tuple( map(typelist, function(t) return sel( handshake, darkroom.StatefulHandshake(t), darkroom.Stateful(t) ) end) )
   res.outputType = darkroom.Stateful( types.tuple(typelist) )
   if handshake then res.outputType = darkroom.StatefulHandshake( types.tuple(typelist) ) end
   res.sdfInput,res.sdfOutput = {1,1},{1,1}
   res.delay = 0
   local struct PackTuple { }
-  terra PackTuple:reset() end
+
+  terra PackTuple:stats(name:&int8)  end
   print("IP",res.inputType,darkroom.extract(res.inputType))
   print("oP",res.outputType,darkroom.extract(res.outputType))
-  terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    @out = { [map(range(0,#typelist-1), function(i) return `inp.["_"..i] end ) ] }
+  
+  if handshake then
+    -- ignore the valid bit on const stuff: it is always considered valid
+    local activePorts = {}
+    for k,v in ipairs(typelist) do if v:const()==false then table.insert(activePorts, k) end end
+      for k,v in ipairs(activePorts) do print("ACTIVEPORT",k,v) end
+
+    map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), DEFAULT_FIFO_SIZE, "makeHandshake")}) end )
+    terra PackTuple:reset() [map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
+    terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      [map(activePorts, function(i) return quote if valid(inp.["_"..(i-1)]) then self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) end end end )]
+
+      var hasData = [foldt(map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), andopterra, true )]
+      if hasData then
+        data(out) = { [map( typelist, function(t,k) if t:const() then print("CONST",k);return `data(inp.["_"..(k-1)]) else print("NOTCONST",k);return `@(self.["FIFO"..k]:popFront()) end end ) ] }
+        valid(out) = true
+      else
+        valid(out) = false
+      end
+    end
+  else
+    terra PackTuple:reset() end
+    terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      @out = { [map(range(0,#typelist-1), function(i) return `inp.["_"..i] end ) ] }
+    end
   end
+
   res.terraModule = PackTuple
 
-  res.systolicModule = S.moduleConstructor("packTuple_"..tostring(typelist)):CE(true)
+  res.systolicModule = S.moduleConstructor("packTuple_"..tostring(typelist))
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
-  res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output") )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
+
+  if handshake then
+    res.systolicModule:onlyWire(true)
+    res.systolicModule:CE(false) -- nothing to stall
+
+    local activePorts={}
+    for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
+    --local activePorts = filter(typelist, function(t,k) activePort=k; return t:const()==false end )
+    err(#activePorts<=1, "NYI - packTuple with multiple active ports! This needs a fifo along all but one of the edges")
+
+    local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
+
+    -- valid bit is the AND of all the inputs
+    --local valid = foldt(map(range(0,#typelist-1),function(i) return S.index(S.index(sinp,i),1) end),function(a,b) return S.__and(a,b) end,"X")
+    local valid = S.index(S.index(sinp,activePorts[1]-1),1)
+    print("VALID",systolic.isAST(valid),valid)
+    local out = S.tuple{outv, valid}
+    res.systolicModule:addFunction( S.lambda("process", sinp, out:disablePipelining(), "process_output") )
+
+    -- built-in behavior with ready bits is to AND all the downstreams together. So we don't actully have to do anything
+    local downstreamReady = S.parameter("ready_downstream", types.bool())
+    res.systolicModule:addFunction( S.lambda("ready", downstreamReady, downstreamReady, "ready" ) )
+  else
+    res.systolicModule:CE(true)
+    local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
+    res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output") )
+  end
 
   return darkroom.newFunction(res)
 end
 
 -- takes {Stateful(a[W,H]), Stateful(b[W,H]),...} to Stateful( {a,b}[W,H] )
+-- typelist should be a table of pure types
 function darkroom.SoAtoAoSStateful( W,H, typelist) return darkroom.compose("SoAtoAoSStateful", darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist)), darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) end
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
@@ -976,6 +1042,18 @@ valid(out.["_"..i]) = false end
   return darkroom.newFunction(res)
 end
 
+-- takes A to A[T] by duplicating the input
+function darkroom.broadcast(A,T)
+  darkroom.expectPure(A)
+  err( type(T)=="number", "T should be number")
+  local OT = types.array2d(A,T)
+  local sinp = S.parameter("inp",A)
+  return darkroom.lift("Broadcast_"..T,A,OT,0,
+                       terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
+                         for i=0,T do (@out)[i] = @inp end
+                         end, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
+end
+
 -- broadcast : ( v : A , n : number ) -> A[n]
 --darkroom.broadcast = darkroom.newDarkroomFunction( { kind = "broadcast" } )
 
@@ -1081,7 +1159,7 @@ function darkroom.liftXYSeq( f, W, H, T, sdfOverride )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
   local out = darkroom.apply("m", darkroom.makeStateful(f), packed )
-  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, nil, sdfOverride )
+  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, sdfOverride )
 end
 
 -- this takes a function f : {{int32,int32},inputType} -> outputType
@@ -1625,7 +1703,7 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   return darkroom.newFunction(res)
 end
 
-function darkroom.makeStateful( f )
+darkroom.makeStateful = memoize(function( f )
   assert( darkroom.isFunction(f) )
   local res = { kind="makeStateful", fn = f }
   darkroom.expectPure(f.inputType)
@@ -1644,7 +1722,7 @@ function darkroom.makeStateful( f )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {},S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction(res)
-end
+                                end)
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
 darkroom.makeHandshake = memoize(function( f )
@@ -1664,6 +1742,9 @@ darkroom.makeHandshake = memoize(function( f )
                               inner: f.terraModule}
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
   terra MakeHandshake:stats( name : &int8 )  end
+  
+  -- if inner function is const, consider input to always be valid
+  local innerconst = darkroom.extractStateful(f.outputType):const()
   terra MakeHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), 
                                out : &darkroom.extract(res.outputType):toTerraType())
     
@@ -1677,7 +1758,7 @@ darkroom.makeHandshake = memoize(function( f )
 
     var tout : darkroom.extract(res.outputType):toTerraType()
     valid(tout) = valid(inp)
-    if valid(inp) then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
+    if valid(inp) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
     self.delaysr:pushBack(&tout)
   end
   res.terraModule = MakeHandshake
@@ -1901,16 +1982,15 @@ end
 
 -- function definition
 -- output, inputs
-function darkroom.lambda( name, input, output, tapInput, sdfOverride )
+function darkroom.lambda( name, input, output, sdfOverride, X )
+  assert(X==nil)
   assert( type(name) == "string" )
   assert( darkroom.isIR( input ) )
   assert( input.kind=="input" )
   assert( darkroom.isIR( output ) )
-  err( tapInput==nil or darkroom.isIR( tapInput ), "tapInput must be an IR node" )
-  err( tapInput==nil or tapInput.kind=="tap", "tapInput must be a tap input" )
 
   local output = output:typecheck()
-  local res = {kind = "lambda", name=name, input = input, output = output, tapInput }
+  local res = {kind = "lambda", name=name, input = input, output = output }
   res.inputType = input.type
   res.outputType = output.type
 
@@ -1981,6 +2061,21 @@ function darkroom.lambda( name, input, output, tapInput, sdfOverride )
 
           table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
 
+if darkroom.isStatefulHandshake(n.inputs[1].type) or darkroom.isStatefulHandshake(n.type) then
+  table.insert( Module.entries, {field=n.name.."CNT", type=int} )
+  table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+
+  table.insert( Module.entries, {field=n.name.."ICNT", type=int} )
+  table.insert( resetStats, quote mself.[n.name.."ICNT"]=0 end )
+
+local Q = quote end
+                if darkroom.isStatefulHandshake(n.inputs[1].type) then Q = quote if valid([inputs[1][1]]) then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end end
+end
+table.insert( stats, quote cstdio.printf("APPLY %s inpv %d outv %d cnt %d icnt %d\n",n.name, valid([inputs[1][1]]), valid(out),mself.[n.name.."CNT"],mself.[n.name.."ICNT"] );
+                Q
+                if valid(out) then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
+ end )
+end
           return {out,readyOut}
         elseif n.kind=="applyRegLoad" then
           if usedNames[n.name]==nil then
@@ -2153,6 +2248,8 @@ function darkroom.lambda( name, input, output, tapInput, sdfOverride )
           elseif n.kind=="apply" then
             print("systolic ready APPLY",n.fn.kind)
             return instanceMap[n]:ready(input)
+          elseif n.kind=="tuple" then
+            return input
           else
             print(n.kind)
             assert(false)
@@ -2176,6 +2273,8 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
+  err( systolic.isAST(systolicOutput), "missing systolic output")
+
   local struct LiftModule {}
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end
@@ -2284,7 +2383,7 @@ function darkroom.tuple( name, t )
 end
 
 -- if index==true, then we return a value, not an array
-function darkroom.slice( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
+darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
   assert( types.isType(inputType) )
   assert(type(idxLow)=="number")
   assert(type(idxHigh)=="number")
@@ -2294,11 +2393,11 @@ function darkroom.slice( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
     assert( idxHigh < #inputType.list )
     assert( idxLow == idxHigh ) -- NYI
     assert( index )
-    local OT = inputType.list[idx+1]
+    local OT = inputType.list[idxLow+1]
     local systolicInput = S.parameter("inp", inputType)
     local systolicOutput = S.index( systolicInput, idxLow )
     local tfn = terra( inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = inp.["_"..idxLow] end
-    return darkroom.lift( "index_"..idx, inputType, OT, 0, tfn, systolicInput, systolicOutput )
+    return darkroom.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
@@ -2333,12 +2432,14 @@ function darkroom.slice( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
   else
     assert(false)
   end
-end
+                         end)
 
 function darkroom.index( inputType, idx, idy )
+  err( types.isType(inputType), "first input to index must be a type" )
   return darkroom.slice( inputType, idx, idx, idy, idy, true )
 end
 
+-- this is for driving stateful functions with no input
 function darkroom.extractState( name, input )
   assert(type(name)=="string")
   assert(darkroom.isIR( input ) )
@@ -2459,8 +2560,11 @@ local function readAll(file)
     return content
 end
 
-function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, outputT, axi, readyRate )
+function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, axi, readyRate )
   err( darkroom.isFunction(f), "fn must be a function")
+  err( types.isType(inputType), "inputType must be a type")
+  err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
+  err( tapInputType==nil or type(tapValue)==tapInputType:toLuaType(), "tapValue must match tapInputType")
   err( type(inputW)=="number", "inputW must be a number")
   err( type(inputH)=="number", "inputH must be a number")
   err( type(outputW)=="number", "outputW must be a number")
@@ -2481,16 +2585,22 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
+
+  local innerinp = symbol(darkroom.extract(f.inputType):toTerraType(), "innerinp")
+  local assntaps = quote end
+  if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
+
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var inp : darkroom.extract(f.inputType):toTerraType()
+    var [innerinp]
+    [assntaps]
 
     var o : darkroom.extract(f.outputType):toTerraType()
     var inpAddr = 0
     var outAddr = 0
     while inpAddr<inputW*inputH or outAddr<outputW*outputH do
       cstdio.printf("---------------------------------- RUNPIPE inpAddr %d outAddr %d\n", inpAddr, outAddr)
-      valid(inp)=(inpAddr<inputW*inputH)
-      self.inner:process(&inp,&o)
+      valid(innerinp)=(inpAddr<inputW*inputH)
+      self.inner:process(&innerinp,&o)
       inpAddr = inpAddr + inputT -- in simulator, ready==true always, so we can always increment.
       if valid(o) then outAddr = outAddr + outputT end
     end
@@ -2502,7 +2612,7 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
   if readyRate==nil then readyRate=1 end
 
   if axi then
-    local baseTypeI = darkroom.extractStatefulHandshake(f.inputType)
+    local baseTypeI = inputType
     local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
     err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
@@ -2520,6 +2630,12 @@ function darkroom.seqMapHandshake( f, inputW, inputH, inputT, outputW, outputH, 
     local readybit = "1'b1"
     if rrlog2>0 then readybit = "ready_downstream==1" end
 
+    local tapreg, tapRST = "",""
+    if tapInputType~=nil then 
+      tapreg = S.declareReg( tapInputType, "taps").."\n" 
+      tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
+    end
+
     verilogStr = [[module sim();
 reg CLK = 0;
 integer i = 0;
@@ -2528,9 +2644,10 @@ wire valid;
 reg []]..rrlog2..[[:0] ready_downstream = 1;
 reg [15:0] doneCnt = 0;
 wire ready;
+]]..tapreg..[[
 ]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
 
-]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputTokens..[[),.OUTPUT_COUNT(]]..outputTokens..[[)) inst (.CLK(CLK),.process_input(valid),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
+]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputTokens..[[),.OUTPUT_COUNT(]]..outputTokens..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
@@ -2550,6 +2667,7 @@ wire ready;
     $display("------------------------------------------------- validOutputs %d ready %d validInCnt",validCnt,]]..readybit..[[,validInCnt);
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
+]]..tapRST..[[
     if(validCnt> ]]..((outputW*outputH)/outputT)..[[ ) begin $display("Too many valid bits!"); end
     if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && doneCnt==1024 ) begin $finish(); end
     if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ ) begin doneCnt <= doneCnt+1; end

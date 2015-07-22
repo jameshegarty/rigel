@@ -17,4 +17,4 @@ convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), W, H, T, 0, 0, 
 convpipe = d.lambda( "convpipe", inp, convpipe )
 hsfn = d.makeHandshake(convpipe)
 
-harness.axi("shifty_wide_handshake", hsfn, RAWTYPE, W,H, RAWTYPE,W,H)
+harness.axi("shifty_wide_handshake", hsfn, RAWTYPE, nil, nil, W,H, RAWTYPE,W,H)
