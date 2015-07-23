@@ -1,5 +1,5 @@
 -- NOTE: does typechecking in place! ast must be a table that's going to be thrown away!
-return function( ast, newNodeFn )
+local function typecheck_inner( ast, newNodeFn )
   assert(type(newNodeFn)=="function")
   
   if ast.kind=="constant" then
@@ -94,8 +94,8 @@ return function( ast, newNodeFn )
       darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
     end
     
-    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast}):copyMetadataFrom(origast) end
-    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",inputs={rhs},type=rhscast}):copyMetadataFrom(origast) end
+    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast}) end
+    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",inputs={rhs},type=rhscast}) end
     
     ast.type = thistype
     ast.inputs = {lhs,rhs}
@@ -128,8 +128,8 @@ return function( ast, newNodeFn )
 
     local thistype, lhscast, rhscast =  types.meet( a.type, b.type, ast.kind )
 
-    if a.type~=lhscast then a = newNodeFn({kind="cast",expr=a,type=lhscast}):copyMetadataFrom(origast) end
-    if b.type~=rhscast then b = newNodeFn({kind="cast",expr=b,type=rhscast}):copyMetadataFrom(origast) end
+    if a.type~=lhscast then a = newNodeFn({kind="cast",inputs={a},type=lhscast}) end
+    if b.type~=rhscast then b = newNodeFn({kind="cast",inputs={b},type=rhscast}) end
     
     ast.type = thistype
     ast.inputs[1] = cond
@@ -244,4 +244,33 @@ return function( ast, newNodeFn )
   if type(ast.constLow_1)=="number" then assert(ast.constLow_1<=ast.constHigh_1) end
 
   return ast
+end
+
+return function( ast, newNodeFn )
+local out = typecheck_inner( ast, newNodeFn )
+
+local allConstInput = true
+--for k,v in pairs(ast.inputs) do allConstInput = allConstInput and v.type:const() end
+for k,v in pairs(ast.inputs) do if v.type:const()==false then allConstInput=false end end
+
+-- sanity check: out is const <=> inputs are all const
+if (ast.type:const() and allConstInput==false) then
+  if ast.kind~="slice" then
+    print("Inputs aren't const, but output is!",ast.kind)
+    assert(false)
+  end
+end
+
+if (ast.type:const()==false and allConstInput) then
+  if ast.kind~="cast" then
+    print("Lost constness?",ast.kind)
+    assert(false)
+  end
+end
+
+--if ast.kind=="binop" then
+--  print("ALLCONST",ast.op,allConstInput,ast.type:const(),ast.type)
+--end
+
+return out
 end

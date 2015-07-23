@@ -386,7 +386,7 @@ function modules.addShifter( module, exprs )
     local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
     table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
   end
-  
+
   return out, pipelines, resetPipelines, reading
 end
 

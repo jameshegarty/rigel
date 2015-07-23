@@ -395,7 +395,13 @@ __index = function(tab,key)
         tab.callsites[key] = tab.callsites[key] or {}
         tab.arbitration[key] = tab.arbitration[key] or {}
 
-        err( inp.type==fn.input.type, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
+        if inp.type==fn.input.type then
+          
+        elseif inp.type:constSubtypeOf(fn.input.type) then
+          inp = systolic.cast( inp, fn.input.type )
+        else
+          err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
+        end
 
         local arbInput, arbValid = addArbitration( fn, key, tab, inp, valid )
         return createCallsite( fn, key, tab, arbInput, arbValid )
@@ -469,6 +475,7 @@ end
 
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
+  ty = ty:makeConst()
 
   if ty:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
@@ -602,11 +609,12 @@ function systolicASTFunctions:isPure( validbit )
     end)
 end
 
+-- attempts to get the value of the constant
 function systolicASTFunctions:const()
   if self.kind=="constant" then
     return self.value
   elseif self.kind=="null" then
-    return false -- not sure what do do here?
+    return nil -- not sure what do do here?
   end
   return nil
 end
@@ -643,7 +651,7 @@ function systolicASTFunctions:removeDelays( )
   local delayCache = {}
   local function getDelayed( node, delay, validbit )
     -- if node is a constant, we don't need to put it in a register.
-    if node:const()~=nil then return node end
+    if node.type:const() then return node end
     
     delayCache[node] = delayCache[node] or {}
     delayCache[node][validbit] = delayCache[node][validbit] or {}
@@ -731,7 +739,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput )
   local delayCache = {}
   local function getDelayed( node, delay )
     -- if node is a constant, we don't need to put it in a register.
-    if node:const()~=nil then return node end
+    if node.type:const() then return node end
     
     delayCache[node] = delayCache[node] or {}
     if delay==0 then return node
@@ -1043,6 +1051,8 @@ function systolicASTFunctions:toVerilog( module )
         elseif n.inputs[1].type:isArray() and n.inputs[1].type:arrayOver()==n.type and n.inputs[1].type:channels()==1 then
           -- A[1] to A. Noop
           expr = args[1]
+        elseif n.inputs[1].type:constSubtypeOf(n.type) then
+          expr = args[1] -- casting const to non-const. Verilog doesn't care.
         else
           expr = dobasecast( args[1], n.inputs[1].type, n.type )
         end
@@ -1503,6 +1513,8 @@ end
 
 function systolic.module.reg( ty, initial )
   err(types.isType(ty),"type must be a type")
+  ty = ty:stripConst() -- output of register obviously can't be const
+
   local t = {kind="reg",initial=initial,type=ty,options={coherent=true}}
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, input={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT"}

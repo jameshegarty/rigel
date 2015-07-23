@@ -417,6 +417,8 @@ function types.checkExplicitCast(from, to, ast)
   if from==to then
     -- obvously can return true...
     return true
+  elseif from:constSubtypeOf(to) then
+    return true
   elseif to.kind=="bits" or from.kind=="bits" then
     -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
     err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
@@ -545,7 +547,7 @@ end
 
 -- is the type const?
 function TypeFunctions:const()
-  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() then
+  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
     return self.constant
   elseif self:isArray() then
     return self:arrayOver():const()
@@ -559,16 +561,60 @@ function TypeFunctions:const()
   end
 end
 
+-- if self is a subtype of A, this means self can be used in place of A
+-- eg 'bool_const' is a subtype of 'bool'
+function TypeFunctions:constSubtypeOf(A)
+  if A==self then
+    return true
+  elseif A.kind~=self.kind then
+    return false
+  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isArray() then
+    if self:const() and A:makeConst()==self then
+      return true
+    else
+      return false
+    end
+  elseif self:isTuple() then
+    return foldl( andop, true, map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
+  else
+    print(":constSubtypeOf",self,A)
+    assert(false)
+  end
+end
+
 function TypeFunctions:makeConst()
   if self:const() then return self end
 
   if self:isUint() then
     return types.uint( self.precision, true )
+  elseif self:isInt() then
+    return types.int( self.precision, true )
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
+  elseif self:isBool() then
+    return types.bool(true)
   else
     print(":makeConst",self)
+    assert(false)
+  end
+end
+
+function TypeFunctions:stripConst()
+  if self:isUint() then
+    return types.uint( self.precision, false )
+  elseif self:isInt() then
+    return types.int( self.precision, false )
+  elseif self:isArray() then
+    local L = self:arrayLength()
+    return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
+  elseif self:isTuple() then
+    local typelist = map(self.list, function(t) return t:stripConst() end)
+    return types.tuple(typelist)
+  elseif self:isBool() then
+    return types.bool(false)
+  else
+    print(":stripConst",self)
     assert(false)
   end
 end
@@ -622,13 +668,13 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = int8
   elseif self:isBool() then
     ttype = bool
-  elseif self==types.int(32) then
+  elseif self:isInt() and self.precision==32 then
     ttype = int32
   elseif self==types.int(64) then
     ttype = int64
   elseif self==types.uint(32) then
     ttype = uint32
-  elseif self==types.uint(16) then
+  elseif self:isUint() and self.precision==16 then
     ttype = uint16
   elseif self==types.int(16) then
     ttype = int16
@@ -642,7 +688,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
   elseif self.kind=="null" then
     ttype = &opaque
   else
-    print(self)
+    print(":toTerraType",self)
     print(debug.traceback())
     assert(false)
   end

@@ -2361,7 +2361,14 @@ function darkroom.constSeq( value, A, w, h, T )
     end
   end
   local shiftOut, shiftPipelines = fpgamodules.addShifter( res.systolicModule, map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end) )
+
+  if shiftOut.type:const() then
+    -- this happens if we have an array of size 1, for example (becomes a passthrough). Strip the const-ness so that the module returns a consistant type with different parameters.
+    shiftOut = S.cast(shiftOut, shiftOut.type:stripConst())
+  end
+
   local inp = S.parameter("process_input", types.null() )
+
   res.systolicModule:addFunction( S.lambda("process", inp, shiftOut, "process_output", shiftPipelines ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("process_nilinp", types.null() ), nil, "process_reset", {}, S.parameter("reset", types.bool() ) ) )
 
