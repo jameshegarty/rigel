@@ -2622,6 +2622,13 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens/f.output:sdfWorstUtilization())+1024) -- just give it 1024 cycles of slack
+    if tapInputType~=nil then
+      axiv = string.gsub(axiv,"___PIPELINE_TAPS",S.declareReg( tapInputType, "taps").."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
+    else
+      axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
+    end
 
     verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
   else
