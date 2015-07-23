@@ -670,13 +670,13 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = bool
   elseif self:isInt() and self.precision==32 then
     ttype = int32
-  elseif self==types.int(64) then
+  elseif self:isInt() and self.precision==64 then
     ttype = int64
-  elseif self==types.uint(32) then
+  elseif self:isUint() and self.precision==32 then
     ttype = uint32
   elseif self:isUint() and self.precision==16 then
     ttype = uint16
-  elseif self==types.int(16) then
+  elseif self:isInt() and self.precision==16 then
     ttype = int16
   elseif self:isArray() then
     assert(vectorN==nil)

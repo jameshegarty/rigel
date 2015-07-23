@@ -15,7 +15,7 @@ STREAMING = false
 
 darkroom = {}
 
-DEFAULT_FIFO_SIZE = 2048*16
+DEFAULT_FIFO_SIZE = 2048*16*16
 
 darkroom.State = types.opaque("state")
 darkroom.StateR = types.opaque("stateR")
@@ -2630,7 +2630,11 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens/f.output:sdfWorstUtilization())+1024) -- just give it 1024 cycles of slack
     if tapInputType~=nil then
-      axiv = string.gsub(axiv,"___PIPELINE_TAPS",S.declareReg( tapInputType, "taps").."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+      local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
+      local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
+
+--      axiv = string.gsub(axiv,"___PIPELINE_TAPS",S.declareReg( tapInputType, "taps").."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+      axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
       axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
     else
       axiv = string.gsub(axiv,"___PIPELINE_TAPS","")

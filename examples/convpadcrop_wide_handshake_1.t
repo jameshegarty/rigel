@@ -34,16 +34,16 @@ local TAP_TYPE_CONST = TAP_TYPE:makeConst()
 
 -------------
 local sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8):makeConst()} )
-local partial = d.lift( "partial", types.tuple {types.uint(8),types.uint(8):makeConst()}, types.int(32), 1,
-                  terra( a : &tuple(uint8,uint8), out : &int32 )
-                    @out = [int32](a._0)*[int32](a._1)
-                  end, sinp, S.cast(S.index(sinp,0),types.int(32))*S.cast(S.index(sinp,1),types.int(32)) )
+local partial = d.lift( "partial", types.tuple {types.uint(8),types.uint(8):makeConst()}, types.uint(32), 1,
+                  terra( a : &tuple(uint8,uint8), out : &uint32 )
+                    @out = [uint32](a._0)*[uint32](a._1)
+                  end, sinp, S.cast(S.index(sinp,0),types.uint(32))*S.cast(S.index(sinp,1),types.uint(32)) )
 -------------
-local touint8inp = S.parameter("inp", types.int(32))
-local touint8 = d.lift( "touint8", types.int(32), types.uint(8), 1, terra( a : &int32, out : &uint8 ) @out = [uint8](@a >> 5) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(5,types.int(32))), types.uint(8)) )
+local touint8inp = S.parameter("inp", types.uint(32))
+local touint8 = d.lift( "touint8", types.uint(32), types.uint(8), 1, terra( a : &uint32, out : &uint8 ) @out = [uint8](@a >> 7) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(7,types.uint(32))), types.uint(8)) )
 -------------
-local rsinp = S.parameter( "inp", types.tuple { types.int(32), types.int(32) } )
-local reduceSumInt32 = d.lift( "reduceSumInt32", types.tuple { types.int(32), types.int(32) }, types.int(32), 1, terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
+local rsinp = S.parameter( "inp", types.tuple { types.uint(32), types.uint(32) } )
+local reduceSumUint32 = d.lift( "reduceSumUint32", types.tuple { types.uint(32), types.uint(32) }, types.uint(32), 1, terra( inp : &tuple(uint32,uint32), out : &uint32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
 -------------
 local INP_TYPE = types.tuple{types.array2d( types.uint(8), ConvWidth, ConvWidth ),TAP_TYPE_CONST}
 local inp = d.input( INP_TYPE )
@@ -52,7 +52,7 @@ local inp = d.input( INP_TYPE )
 
 local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8):makeConst()}), inp )
 local conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), packed )
-local conv = d.apply( "sum", d.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
+local conv = d.apply( "sum", d.reduce( reduceSumUint32, ConvWidth, ConvWidth ), conv )
 local conv = d.apply( "touint8", touint8, conv )
 
 local convolve = d.lambda( "convolve", inp, conv )
@@ -94,7 +94,7 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp_raw, out)
 
-harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE,  TAP_TYPE_CONST, rep(1,ConvWidth*ConvWidth), inputW, inputH, RW_TYPE, outputW, outputH )
+harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE,  TAP_TYPE_CONST, range(ConvWidth*ConvWidth), inputW, inputH, RW_TYPE, outputW, outputH )
 --harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, types.array2d( types.uint(8), 4 ), outputW, outputH )
 end
 
