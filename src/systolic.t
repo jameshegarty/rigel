@@ -22,6 +22,7 @@ function systolicAST.new(tab)
   if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   if tab.pipelined==nil then tab.pipelined=true end
+  map(tab.inputs, function(n) assert(systolicAST.isSystolicAST(n)) end)
   IR.new(tab)
   return setmetatable(tab,systolicASTMT)
 end
@@ -301,56 +302,6 @@ function systolic.isInstance(tab)
   return getmetatable(tab)==systolicInstanceMT
 end
 
-local function addArbitration(fn, fnname, instance, input, valid)
---  assert( systolic.isFunction(fn) )
-  assert( systolic.isInstance(instance) )
-
-  local otype = types.null()
-  if fn.output~=nil then otype = fn.output.type end
-  
-  if fn.input.type==types.null() then
-    -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
-    return input, valid
-  elseif instance.arbitrate==nil then
-    -- no arbitration
-    if #instance.callsites[fnname]==0 then
-      return input, valid
-    else
-      error("Function '"..fn.name.."' on instance '"..self.name.."' can't have multiple callsites!")
-    end
-  elseif instance.arbitrate=="valid" then
-    if #instance.arbitration[fnname]==0  then
-      -- need to make a new callArbitrate node
-      err(input~=nil, "call aribtrate - missing input?")
-      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={input,valid} }
-      tca = systolicAST.new(tca)
-      local I, V = S.index(tca,0), S.index(tca,1)
-      table.insert(instance.arbitration[fnname], {tca,I,V})
-      return I,V
-    else
-      -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
-      local tcaDATA = instance.arbitration[fnname][1]
-      local tca,I,V = tcaDATA[1], tcaDATA[2], tcaDATA[3]
-
-      assert(input:contains(tca)==false)
-      assert(valid:contains(tca)==false)
-
-      err(input~=nil, "call aribtrate - missing input?")
-      table.insert( tca.inputs, input )
-      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-      table.insert(tca.inputs, valid)
-
-      return I,V
-    end
-    assert(false)
-  else
-    print("ARBITRATE", instance.arbitrate)
-    assert(false)
-  end
-end
-
-
 local function createCallsite( fn, fnname, instance, input, valid )
 --  assert( systolic.isFunction(fn) )
   assert( systolic.isInstance(instance) )
@@ -359,21 +310,8 @@ local function createCallsite( fn, fnname, instance, input, valid )
   local otype = types.null()
   if fn.output~=nil then otype = fn.output.type end
 
-  if #instance.callsites[fnname]==0 then
-    -- no callsite yet, we can just create it
-    local t = { kind="call", inst=instance, fnname=fnname, func=fn, type=otype, loc=getloc(), inputs={input,valid} }
-    table.insert(instance.callsites[fnname], systolicAST.new(t))
-    return instance.callsites[fnname][1]
-  else
-    -- It should never be possible to create multiple real callsites. If we got to this point,
-    -- either we're calling the thing a second time with the same inputs (CSE),
-    -- or we coerced the inputs with an arbitration node
-    local old = instance.callsites[fnname][1]
-    assert(old.inputs[1]==input)
-    assert(old.inputs[2]==valid)
-    return old
-  end
-
+  local t = { kind="call", inst=instance, fnname=fnname, func=fn, type=otype, loc=getloc(), inputs={input,valid} }
+  return systolicAST.new(t)
 end
 
 systolicInstanceMT={
@@ -403,8 +341,7 @@ __index = function(tab,key)
           err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
         end
 
-        local arbInput, arbValid = addArbitration( fn, key, tab, inp, valid )
-        return createCallsite( fn, key, tab, arbInput, arbValid )
+        return createCallsite( fn, key, tab, inp, valid )
       end
     end
     
@@ -803,6 +740,70 @@ function systolicASTFunctions:pipeline()
   end
 
   return self:addPipelineRegisters( delaysAtInput )
+end
+
+
+local function addArbitration( callsite )
+  assert(systolicAST.isSystolicAST(callsite))
+    --fn, fnname, instance, input, valid)
+--  assert( systolic.isFunction(fn) )
+  local fn, fnname, instance, input, valid = callsite.func, callsite.fnname, callsite.inst, callsite.inputs[1], callsite.inputs[2]
+  assert( systolic.isInstance(instance) )
+
+  local otype = types.null()
+  if fn.output~=nil then otype = fn.output.type end
+  
+  if fn.input.type==types.null() then
+    -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
+    return callsite
+  elseif instance.arbitrate==nil then
+    -- no arbitration
+    if #instance.callsites[fnname]==0 then
+      table.insert(instance.callsites[fnname],callsite)
+      return callsite
+    else
+      error("Function '"..fn.name.."' on instance '"..instance.name.."' can't have multiple callsites!"..callsite.loc)
+    end
+  elseif instance.arbitrate=="valid" then
+    if #instance.arbitration[fnname]==0  then
+      -- need to make a new callArbitrate node
+      err(input~=nil, "call aribtrate - missing input?")
+      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
+      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={input,valid} }
+      tca = systolicAST.new(tca)
+      local I, V = S.index(tca,0), S.index(tca,1)
+      local CS = createCallsite( fn, fnname, instance, I, V)
+      table.insert(instance.arbitration[fnname], {tca,CS})
+      return CS
+    else
+      -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
+      local tcaDATA = instance.arbitration[fnname][1]
+      local tca,CS = tcaDATA[1], tcaDATA[2]
+
+      assert(input:contains(tca)==false)
+      assert(valid:contains(tca)==false)
+
+      err(input~=nil, "call aribtrate - missing input?")
+      table.insert( tca.inputs, input )
+      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
+      table.insert(tca.inputs, valid)
+
+      return CS
+    end
+    assert(false)
+  else
+    print("ARBITRATE", instance.arbitrate)
+    assert(false)
+  end
+end
+
+function systolicASTFunctions:mergeCallsites()
+  return self:process(
+    function(n)
+      if n.kind=="call" then
+        return addArbitration( systolicAST.new(n) )
+      end
+    end)
 end
 
 function systolicASTFunctions:addValid( validbit )
@@ -1302,7 +1303,6 @@ function userModuleFunctions:lower()
     table.insert( mod.inputs, node )
   end
   mod = systolicAST.new(mod)
-
   return mod
 end
 
@@ -1444,7 +1444,8 @@ function systolic.module.new( name, fns, instances, tapInput, CE, onlyWire, cohe
 
 
   t.ast = t:lower()
-  t.ast = t.ast:CSE()
+  t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
+  t.ast = t.ast:mergeCallsites()
 
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays()
