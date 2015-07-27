@@ -810,9 +810,15 @@ function systolicASTFunctions:addValid( validbit )
   assert( systolicAST.isSystolicAST(validbit) )
   return self:process(
     function(n)
-      if n.kind=="call" and n.inputs[2]==nil and n.func:isPure()==false then
+      if n.kind=="call" and n.func:isPure()==false then
         -- don't add valid bit to pure functions
-        n.inputs[2] = validbit
+        if n.inputs[2]==nil then
+          n.inputs[2] = validbit
+        else
+          n.inputs[2]:visitEach(function(nn) if nn.kind=="parameter" and nn.key==validbit.key then error("Explicit valid bit includes parent scope valid bit! This is not necessary, it's added automatically. "..n.loc) end end)
+                                n.inputs[2] = systolic.__and(n.inputs[2], validbit)
+                                n.inputs[2].pipelined=false
+        end
         return systolicAST.new(n)
       elseif n.kind=="delay" then
         n.inputs[2] = validbit

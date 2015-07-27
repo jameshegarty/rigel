@@ -245,11 +245,11 @@ function modules.shiftRegister( ty, size, name, resetValue, X )
     local I = M:add( systolic.module.reg( ty ):instantiate("SR"..i):setArbitrate("valid") )
     table.insert( regs, I )
     if i==1 then
-      table.insert(pipelines, I:set(inp,ppvalid) )
+      table.insert(pipelines, I:set(inp) )
     else
-      table.insert(pipelines, I:set(regs[i-1]:get(),ppvalid) )
+      table.insert(pipelines, I:set(regs[i-1]:get()) )
     end
-    table.insert( resetPipelines, I:set( systolic.constant( resetValue, ty ), rstvalid ) )
+    table.insert( resetPipelines, I:set( systolic.constant( resetValue, ty ) ) )
     if i==size then out=I:get() end
   end
   if size==0 then out=inp end

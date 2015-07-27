@@ -514,7 +514,7 @@ function darkroom.waitOnInput(f)
 
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local svalid = S.parameter("process_valid", types.bool())
-  local runable = S.__and(S.__or(S.__not(inner:ready()), S.index(sinp,1) ),svalid):disablePipelining()
+  local runable = S.__or(S.__not(inner:ready()), S.index(sinp,1) ):disablePipelining()
 --  local runable = inner:ready():disablePipelining()
   local out = inner:process( S.index(sinp,0), runable )
   local RST = S.parameter("reset",types.bool())
@@ -525,7 +525,7 @@ function darkroom.waitOnInput(f)
 --  table.insert( pipelines, asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1)))):disablePipelining() )
   table.insert( pipelines, printInst:process( S.tuple{inner:ready(),S.index(sinp,1), runable, RST} ) )
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),runable) }, "process_output", pipelines, svalid ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),S.__and(runable,svalid):disablePipelining()) }, "process_output", pipelines, svalid ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, RST) )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), inner:ready(), "ready", {} ) )
 
