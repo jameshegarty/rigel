@@ -953,7 +953,9 @@ function darkroom.downsampleXSeq( A, W, H, T, scale )
   return darkroom.liftXYSeq( f, W, H, T, sdfOverride )
 end
 
+-- StatefulV -> StatefulRV
 function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
+  --[=[
   map({W,H,T,scaleX,scaleY},function(n) assert(type(n)=="number") end)
   assert(scaleX<=1)
   assert(scaleY<=1)
@@ -962,6 +964,22 @@ function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
                                   @b = (x%[1/scaleX])==0 and (y%[1/scaleY])==0
                                 end, 0)
   return darkroom.compose("downsampleSeq",darkroom.densify(A,T),darkroom.filterStateful( A,T,f))
+  ]=]
+  
+  local inp = darkroom.input( darkroom.StatefulV(types.array2d(A,T)) )
+  local out = inp
+  if scaleY>1 then
+    out = darkroom.apply("downsampleSeq_Y", darkroom.liftDecimate(darkroom.downsampleYSeq( A, W, H, T, scaleY )), out)
+  end
+  if scaleX>1 then
+    out = darkroom.apply("downsampleSeq_X", darkroom.RPassthrough(darkroom.liftDecimate(darkroom.downsampleXSeq( A, W, H, T, scaleX ))), out)
+    local downsampleT = math.max(T/scaleX,1)
+    if downsampleT<T then
+      -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
+      out = darkroom.apply("downsampleSeq_incrate", darkroom.RPassthrough(darkroom.changeRate(types.uint(8),1,downsampleT,T)), out )
+    elseif downsampleT>T then assert(false) end
+  end
+  return darkroom.lambda("downsampleSeq", inp, out)
 end
 
 function darkroom.packPyramid( A, w, h, levels, human )
@@ -1219,7 +1237,7 @@ function darkroom.compose(name,f,g)
 end
 
 -- output type: {uint16,uint16}[T]
-function darkroom.posSeq( W, H, T )
+darkroom.posSeq = memoize(function( W, H, T )
   assert(W>0); assert(H>0); assert(T>=1);
   local res = {kind="posSeq", T=T, W=W, H=H }
   res.inputType = darkroom.State
@@ -1255,13 +1273,13 @@ function darkroom.posSeq( W, H, T )
   res.systolicModule:complete()
 
   return darkroom.newFunction(res)
-end
+                          end)
 
 -- this takes a function f : {{int32,int32}[T],inputType[T]} -> outputType[T]
 -- and drives the first tuple with (x,y) coord
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
-function darkroom.liftXYSeq( f, W, H, T, sdfOverride )
+darkroom.liftXYSeq = memoize(function( f, W, H, T, sdfOverride )
   assert(darkroom.isFunction(f))
   map({W,H,T},function(n) assert(type(n)=="number") end)
 
@@ -1277,7 +1295,7 @@ function darkroom.liftXYSeq( f, W, H, T, sdfOverride )
   local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
   local out = darkroom.apply("m", darkroom.makeStateful(f), packed )
   return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, sdfOverride )
-end
+end)
 
 -- this takes a function f : {{int32,int32},inputType} -> outputType
 function darkroom.liftXYSeqPointwise( f, W, H, T )
@@ -2404,7 +2422,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
   systolicModule:complete()
-  local res = { kind="lift", inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={1,1}, sdfOutput={1,1} }
+  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={1,1}, sdfOutput={1,1} }
   return darkroom.newFunction( res )
 end
 
