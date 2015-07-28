@@ -176,7 +176,7 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isUint() then
     assert(type(value)=="number")
     assert(value>=0)
-    return (ty:sizeof()*8).."'d"..value
+    return (ty:verilogBits()).."'d"..value
   elseif ty:isBool() then
     assert(type(value)=="boolean")
     if value then

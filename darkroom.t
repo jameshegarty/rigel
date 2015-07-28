@@ -233,38 +233,70 @@ function darkroomIRFunctions:sdfUtilization()
   if self.kind=="apply" then
     local total = self:sdfTotal()
 
-    local r = (total[2]*self.fn.sdfOutput[1])/(total[1]*self.fn.sdfOutput[2]) -- (total[1]/total[2])/(n.sdfOutput[1]/n.sdfOutput[2])
-    print("SDFRATE",self.name,total[1],total[2], self.fn.sdfOutput[1],self.fn.sdfOutput[2],"--",r)
-    assert(r<=1)
-    return r
+    -- by convention, either input or output (or both) are running at a rate of 1.
+    -- (we don't intentially design modules that sit idle)
+    -- we can then look at the rate on the end with rate==1 to find the utilization
+    -- 1-> (1/N): a downsample
+    -- (1/N) -> 1 : a upsample
+    -- 1->1 no rate change
+
+    if   (self.fn.sdfOutput[1]/self.fn.sdfOutput[2])==1 then
+      -- this also covers the case where inputRate==1/1
+      return total[1]/total[2]
+    elseif (self.fn.sdfInput[1]/self.fn.sdfInput[2])==1 then
+      local tot = self.inputs[1]:sdfTotal()
+      return tot[1]/tot[2]
+    else
+      assert(false)
+    end
   else
     assert(false)
   end
 end
 
--- assuming that the inputs are running at {1,1}, wht is the worst SDF utilization in this DAG?
+-- assuming that the inputs are running at {1,1}, wht is the lowest/highest SDF utilization in this DAG?
 -- (this will limit the speed of the whole pipe)
-local __sdfWorstUtilizationCache = {}
-function darkroomIRFunctions:sdfWorstUtilization()
-  if __sdfWorstUtilizationCache[self]==nil then
+-- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
+local __sdfExtremeUtilizationCache = {}
+function darkroomIRFunctions:sdfExtremeUtilization(highest)
+  assert(type(highest)=="boolean")
+
+  if __sdfExtremeUtilizationCache[self]==nil then
+    __sdfExtremeUtilizationCache[self]={}
+  end
+
+  if __sdfExtremeUtilizationCache[self][highest]==nil then
     if self.kind=="apply" then
       --print("WORST",self.fn.kind)
       local r = self:sdfUtilization()
 
       -- leaf functions can't have a worse utilization than their input/output rate.
       -- lambdas however can: (you can run something slow in the middle)
+      local fnloc = ""
       if self.fn.kind=="lambda" then
-        r = r*self.fn.output:sdfWorstUtilization()
+        r = r*self.fn.output:sdfExtremeUtilization(highest)
+        local a,b = self.fn.output:sdfExtremeUtilization(highest)
+        fnloc = b
       end
 
-      local res = math.min(self.inputs[1]:sdfWorstUtilization(), r)
-      __sdfWorstUtilizationCache[self] = res
+      --local res = math.min(self.inputs[1]:sdfExtremeUtilization(highest), r)
+      --if highest then res=math.max(self.inputs[1]:sdfExtremeUtilization(highest),r) end
+
+      --__sdfExtremeUtilizationCache[self][highest] = {res
+      if highest and r>=self.inputs[1]:sdfExtremeUtilization(highest) then
+        __sdfExtremeUtilizationCache[self][highest] = {r,self.loc.."; "..fnloc}
+      elseif highest==false and r<=self.inputs[1]:sdfExtremeUtilization(highest) then
+        __sdfExtremeUtilizationCache[self][highest] = {r,self.loc..";"..fnloc}
+      else
+        local a,b = self.inputs[1]:sdfExtremeUtilization(highest)
+        __sdfExtremeUtilizationCache[self][highest] = {a,b}
+      end
     else
       -- don't care. just set it to default value
-      __sdfWorstUtilizationCache[self] = 1
+      __sdfExtremeUtilizationCache[self][highest] = {1,"NONE"}
     end
   end
-  return __sdfWorstUtilizationCache[self]
+  return __sdfExtremeUtilizationCache[self][highest][1], __sdfExtremeUtilizationCache[self][highest][2]
 end
 
 function darkroomIRFunctions:typecheck()
@@ -837,6 +869,37 @@ function darkroom.densify( A, T )
   return darkroom.newFunction(res)
 end
 
+-- takes A[W,H] to A[W,H/scale]
+-- lines where ycoord%scale==0 are kept
+-- Stateful -> StatefulV
+function darkroom.downsampleYSeq( A, W, H, T, scale )
+  assert( types.isType(A) )
+  map({W,H,T,scale},function(n) assert(type(n)=="number") end)
+  assert(scale>=1)
+  err( W%T==0, "downsampleYSeq, W%T~=0")
+  err( isPowerOf2(scale), "scale must be power of 2")
+  local sbits = math.log(scale)/math.log(2)
+
+  local inputType = types.array2d(A,T)
+  local outputType = types.tuple{inputType,types.bool()}
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local innerInputType = types.tuple{xyType, inputType}
+
+  local sinp = S.parameter( "process_input", innerInputType )
+  local sdata = S.index(sinp,1)
+  local sy = S.index(S.index(S.index(sinp,0),0),1)
+  local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+
+  local f = darkroom.lift( "DownsampleYSeq", innerInputType, outputType, 0, 
+                           terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
+                             var y = (inp._0)[0]._1
+                             data(out) = inp._1
+                             valid(out) = (y%scale==0)
+                           end, sinp, S.tuple{sdata,svalid})
+
+  return darkroom.liftXYSeq( f, W, H, T, {1,scale} )
+end
+
 function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
   map({W,H,T,scaleX,scaleY},function(n) assert(type(n)=="number") end)
   assert(scaleX<=1)
@@ -1098,7 +1161,8 @@ function darkroom.compose(name,f,g)
   assert(darkroom.isFunction(f))
   assert(darkroom.isFunction(g))
   local inp = darkroom.input( g.inputType )
-  return darkroom.lambda(name,inp,darkroom.apply(name.."_f",f,darkroom.apply(name.."_g",g,inp)))
+  local gvalue = darkroom.apply(name.."_g",g,inp)
+  return darkroom.lambda(name,inp,darkroom.apply(name.."_f",f,gvalue))
 end
 
 -- output type: {uint16,uint16}[T]
@@ -2628,7 +2692,19 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
-    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens/f.output:sdfWorstUtilization())+1024) -- just give it 1024 cycles of slack
+
+    -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
+    local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
+    print("MAX UTILIZATION",maxUtilization,LL)
+
+    local minUtilization, MLL = f.output:sdfExtremeUtilization(false)
+    print("MIN UTILIZATION",minUtilization,MLL)
+    
+    -- this is the worst utilization of a unit, accounting for the fact that all units must have utilization < 1
+    local totalMinUtilization = minUtilization/maxUtilization
+    print("TOTAL MIN UTILIZATION",totalMinUtilization)
+
+    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens*maxUtilization)+1024) -- just give it 1024 cycles of slack
     if tapInputType~=nil then
       local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
       local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
