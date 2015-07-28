@@ -900,6 +900,59 @@ function darkroom.downsampleYSeq( A, W, H, T, scale )
   return darkroom.liftXYSeq( f, W, H, T, {1,scale} )
 end
 
+-- takes A[W,H] to A[W/scale,H]
+-- lines where xcoord%scale==0 are kept
+-- Stateful -> StatefulV
+-- 
+-- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
+function darkroom.downsampleXSeq( A, W, H, T, scale )
+  assert( types.isType(A) )
+  map({W,H,T,scale},function(n) assert(type(n)=="number") end)
+  assert(scale>=1)
+  err( W%T==0, "downsampleXSeq, W%T~=0")
+  err( isPowerOf2(scale), "NYI - scale must be power of 2")
+  local sbits = math.log(scale)/math.log(2)
+
+  local outputT
+  if scale>T then outputT = 1
+  elseif T%scale==0 then outputT = T/scale
+  else err(false,"T%scale~=0 and scale<T") end
+
+  local inputType = types.array2d(A,T)
+  local outputType = types.tuple{types.array2d(A,outputT),types.bool()}
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local innerInputType = types.tuple{xyType, inputType}
+
+  local sinp = S.parameter( "process_input", innerInputType )
+--  local sdata = S.index(sinp,1)
+  local sy = S.index(S.index(S.index(sinp,0),0),0)
+  local svalid, sdata, tfn, sdfOverride
+  if scale>T then
+    sdfOverride = {1,scale}
+    svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+    sdata = S.index(sinp,1)
+    tfn = terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
+                             var x = (inp._0)[0]._0
+                             data(out) = inp._1
+                             valid(out) = (x%scale==0)
+                           end
+  else
+    sdfOverride = {1,1}
+    svalid = S.constant(true,types.bool())
+    local datavar = S.index(sinp,1)
+    sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
+    sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
+    tfn = terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
+      for i=0,outputT do (data(out))[i] = (inp._1)[i*scale] end
+      valid(out) = true
+    end
+  end
+
+  local f = darkroom.lift( "DownsampleXSeq", innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid})
+
+  return darkroom.liftXYSeq( f, W, H, T, sdfOverride )
+end
+
 function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
   map({W,H,T,scaleX,scaleY},function(n) assert(type(n)=="number") end)
   assert(scaleX<=1)
@@ -2239,7 +2292,7 @@ end
           err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
           print("APPLY",n.fn.systolicModule.functions.process.input.type,n.fn.systolicModule.functions.process.output.type)
           err( n.fn.systolicModule.functions.process.input.type==darkroom.extract(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.input.type).." but should be "..tostring(darkroom.extract(n.fn.inputType)) )
-          err( n.fn.systolicModule.functions.process.output.type==darkroom.extract(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
+          err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.extract(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
 
           local params
           if darkroom.isStatefulHandshake( n.fn.inputType ) then
@@ -2282,7 +2335,7 @@ end
         end
       end)
 
-    err( out[1].type==darkroom.extract(res.outputType), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.extract(res.outputType)).." function "..name )
+    err( out[1].type:constSubtypeOf(darkroom.extract(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.extract(res.outputType)).." function "..name )
 
     local processfn = S.lambda( "process", inp, out[1], "process_output" )
     local process = module:addFunction( processfn )
@@ -2344,7 +2397,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   terra LiftModule:stats( name : &int8 )  end
   terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
 
-  err( systolicOutput.type==outputType, "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
+  err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
   local systolicModule = S.moduleConstructor(name):CE(true)
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output") )
