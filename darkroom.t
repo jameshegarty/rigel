@@ -1065,6 +1065,29 @@ function darkroom.upsampleYSeq( A, W, H, T, scale )
   return darkroom.waitOnInput( darkroom.newFunction(res) )
 end
 
+-- this is always Stateful Handshake
+function darkroom.upsampleSeq( A, W, H, T, scaleX, scaleY )
+  assert(scaleX>=1)
+  assert(scaleY>=1)
+
+  local inner
+  if scaleY>1 and scaleX==1 then
+    inner = darkroom.liftHandshake(darkroom.upsampleYSeq( A, W, H, T, scaleY ))
+  elseif scaleX>1 and scaleY==1 then
+    inner = darkroom.makeHandshake(darkroom.makeStateful(darkroom.upsampleXSeq( A, W, H, T, scaleX )))
+  else
+    local f = darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftStateful(darkroom.makeStateful(darkroom.upsampleXSeq( A, W, H, T, scaleX )))))
+    inner = darkroom.compose("upsampleSeq", f, darkroom.upsampleYSeq( A, W, H, T, scaleY ))
+    inner = darkroom.liftHandshake(inner)
+  end
+
+  if scaleX>1 then
+    return darkroom.compose("upsampleSeqCorrectRate",darkroom.liftHandshake(darkroom.changeRate(A,1,T*scaleX,T)), inner)
+  else
+    return inner
+  end
+end
+
 function darkroom.packPyramid( A, w, h, levels, human )
   assert(types.isType(A))
   assert(type(w)=="number")
