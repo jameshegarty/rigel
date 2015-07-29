@@ -982,6 +982,27 @@ function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
   return darkroom.lambda("downsampleSeq", inp, out)
 end
 
+-- This is actually a pure function
+function darkroom.upsampleXSeq( A, W, H, T, scale )
+  local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
+  local sinp = S.parameter("inp",types.array2d(A,T))
+  local out = {}
+  for t=0,T-1 do
+    for s=0,scale-1 do
+      table.insert(out, S.index(sinp,t) )
+    end
+  end
+  out = S.cast(S.tuple(out), OTYPE)
+  return darkroom.lift("upsampleX", ITYPE, OTYPE, 0,
+                       terra(inp : &ITYPE:toTerraType(), out:&OTYPE:toTerraType())
+                         for t=0,T do
+                           for s=0,scale do
+                             (@out)[t*scale+s] = (@inp)[t]
+                           end
+                         end
+                       end, sinp, out)
+end
+
 function darkroom.packPyramid( A, w, h, levels, human )
   assert(types.isType(A))
   assert(type(w)=="number")
