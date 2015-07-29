@@ -1636,7 +1636,13 @@ end
 function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
   instance.verilogCompilerState[module][fnname]={datavar,validvar}
   local fn = self.functions[fnname]
-  local decl = declareWire( types.bits( self.outputBits ), instance.name.."_"..fn.outputName)
+  local decl
+  if fnname=="writeAndReturnOriginal" then
+    decl = declareWire( types.bits( self.inputBits ), instance.name.."_"..fn.outputName)
+  elseif fnname=="read" then
+    decl = declareWire( types.bits( self.outputBits ), instance.name.."_"..fn.outputName)
+  else assert(false) end
+
   return instance.name.."_"..fn.outputName, decl, true
 end
 
@@ -1645,6 +1651,7 @@ function bramModuleFunctions:getDependenciesLL() return {} end
 function bramModuleFunctions:toVerilog() return "" end
 function bramModuleFunctions:getDelay( fnname ) 
   if fnname=="writeAndReturnOriginal" then return 1
+  elseif fnname=="read" then return 1
   else assert(false) end
 end
 
@@ -1662,8 +1669,11 @@ bram2KSDPModuleMT={__index=bram2KSDPModuleFunctions}
 
 function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
   local VCS = instance.verilogCompilerState[module]
+  
+  for k,v in pairs(VCS) do assert(k=="writeAndReturnOriginal" or k=="read") end
+
   if self.writeAndReturnOriginal then
-    assert(keycount(VCS)==1)
+    --assert(keycount(VCS)==1)
     -- we only used 1 port
 
     -- we only use the 18 kbit wide BRAM here, b/c AFAIK using the 36 kbit BRAM doesn't provide a benefit, so there's no reason to special case that
@@ -1713,6 +1723,18 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            EN="CE",
            WE = valid,
            readFirst = true}
+
+    if VCS.read~=nil then
+      conf.B={chunk=self.outputBits/8,
+           DI = instance.name.."_DI_B",
+           DO = instance.name.."_READ_OUTPUT",
+           ADDR = VCS.read[1],
+           CLK = "CLK",
+           EN="CE",
+           WE = "1'd0",
+           readFirst = true}
+
+    else
     conf.B={chunk=self.inputBits/8,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_DO_B",
@@ -1721,6 +1743,9 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            EN="CE",
            WE = "1'd0",
            readFirst = true}
+
+    end
+
 
    return [[reg []]..(self.inputBits-1)..":0] "..instance.name..[[_DI_B;
 reg []]..(addrbits-1)..":0] "..instance.name..[[_addr_B;
@@ -1792,10 +1817,11 @@ RAMB18E1 #(.DOA_REG(0),
   end
 end
 
+-- if outputBits==nil, we don't make a read port (only a write port)
 function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, init, X )
   assert(X==nil)
   err( type(inputBits)=="number", "inputBits must be a number")
-  err( type(outputBits)=="number", "outputBits must be a number")
+  err( outputBits==nil or type(outputBits)=="number", "outputBits must be a number")
 
   if init~=nil then
     assert(type(init)=="table")
@@ -1805,9 +1831,14 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
   local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
-    err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(outputBits)}}
+    --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}}
     t.functions.writeAndReturnOriginal.isPure = function() return false end
+
+    if outputBits~=nil then
+      t.functions.read = {name="read", input={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)}}
+      t.functions.read.isPure = function() return true end
+    end
   else
     -- NYI
     assert(false)
@@ -1818,11 +1849,12 @@ end
 
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
+-- if outputBits==nil, we don't make a read function (only a write function)
 function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, init, X)
   assert(X==nil)
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
   err( type(inputBits)=="number", "inputBits must be a number")
-  err( type(outputBits)=="number", "outputBits must be a number")
+  err( outputBits==nil or type(outputBits)=="number", "outputBits must be a number")
   err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
 
   local bwcount = math.ceil(inputBits/32)
@@ -1839,23 +1871,29 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
   end
 
   if writeAndReturnOriginal then
-    err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
+    --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
     local addrbits = math.log((sizeInBytes*8)/inputBits)/math.log(2)
     local mod = systolic.moduleConstructor( "bramSDP_size"..sizeInBytes.."_bw"..inputBits )
     local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBits)})
+    local sinpRead = systolic.parameter("inpRead",types.uint(addrbits))
     local inpAddr = systolic.index(sinp,0)
     local inpData = systolic.index(sinp,1)
     
     local eachSize = math.min( 32, inputBits )
     local eachAddrbits = math.log((2048*8)/eachSize)/math.log(2)
+    
+    local eachSizeOutput
+    if outputBits~=nil then eachSizeOutput = math.min( 32, outputBits ) end
 
-    local out = {}
+    local out, outRead = {}, {}
     for bw=0,bwcount-1 do
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSize, init ):instantiate("bram_"..bw) )
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSizeOutput, init ):instantiate("bram_"..bw) )
       local inp = systolic.bitSlice( inpData, bw*eachSize, (bw+1)*eachSize-1 )
       table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
+      if outputBits~=nil then table.insert( outRead, m:read( systolic.cast(inpAddr,types.uint(eachAddrbits)) ) ) end
     end
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, systolic.cast(systolic.tuple(out),types.bits(outputBits)), "WARO_OUT") )
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, systolic.cast(systolic.tuple(out),types.bits(inputBits)), "WARO_OUT") )
+    if outputBits~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBits)), "READ_OUT") ) end
 
     return mod
   else

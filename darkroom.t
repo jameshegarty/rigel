@@ -983,6 +983,7 @@ function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
 end
 
 -- This is actually a pure function
+-- takes A[T] to A[T*scale]
 function darkroom.upsampleXSeq( A, W, H, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
   local sinp = S.parameter("inp",types.array2d(A,T))
@@ -1001,6 +1002,67 @@ function darkroom.upsampleXSeq( A, W, H, T, scale )
                            end
                          end
                        end, sinp, out)
+end
+
+-- StatefulV -> StatefulRV
+function darkroom.upsampleYSeq( A, W, H, T, scale )
+  err( W%T==0,"W%T~=0")
+  err( isPowerOf2(scale), "scale must be power of 2")
+  err( isPowerOf2(W), "W must be power of 2")
+
+  local res = {kind="upsampleYSeq", sdfInput={1,scale}, sdfOutput={1,1}}
+  local ITYPE = types.array2d(A,T)
+  res.inputType = darkroom.Stateful(ITYPE)
+  res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+  res.delay=0
+
+  local struct UpsampleYSeq { buffer : (ITYPE:toTerraType())[W/T], phase:int, xpos: int}
+  terra UpsampleYSeq:reset() self.phase=0; self.xpos=0; end
+  terra UpsampleYSeq:stats(name:&int8)  end
+  terra UpsampleYSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    valid(out) = true
+    if self.phase==0 then
+      self.buffer[self.xpos] = @(inp)
+      data(out) = @(inp)
+    else
+      data(out) = self.buffer[self.xpos]
+    end
+
+    self.xpos = self.xpos + 1
+    if self.xpos==W/T then self.xpos = 0; self.phase = self.phase+1 end
+    if self.phase==scale then self.phase=0 end
+  end
+  terra UpsampleYSeq:ready()  return self.phase==0 end
+
+  res.terraModule = UpsampleYSeq
+
+  -----------------
+  res.systolicModule = S.moduleConstructor("UpsampleYSeq"):CE(true)
+  local sinp = S.parameter( "inp", ITYPE )
+
+  -- we currently don't have a way to make a posx counter and phase counter coherent relative to each other. So just use 1 counter for both. This restricts us to only do power of two however!
+  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap((W/T)*scale-1) ):includeCE():instantiate("xpos") )
+
+  local addrbits = math.log(W/T)/math.log(2)
+  assert(addrbits==math.floor(addrbits))
+  
+  local xpos = S.cast(S.bitSlice( sPhase:get(), 0, addrbits-1), types.uint(addrbits))
+
+  local phasebits = (math.log(scale)/math.log(2))
+  local phase = S.cast(S.bitSlice( sPhase:get(), addrbits, addrbits+phasebits-1 ), types.uint(phasebits))
+
+  local sBuffer = res.systolicModule:add( S.module.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits(), ITYPE:verilogBits() ):CE(true):instantiate("buffer"):setCoherent(true) )
+  local reading = S.eq( phase, S.constant(0,types.uint(phasebits)) ):disablePipelining()
+
+
+
+  local pipelines = {sBuffer:writeAndReturnOriginal(S.tuple{xpos,S.cast(sinp,types.bits(ITYPE:verilogBits()))}, reading), sPhase:setBy( S.constant(1, types.uint(16)) )}
+  local out = S.select( reading, sinp, S.cast(sBuffer:read(xpos),ITYPE) ) 
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines) )
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool())) )
+
+  return darkroom.waitOnInput( darkroom.newFunction(res) )
 end
 
 function darkroom.packPyramid( A, w, h, levels, human )
@@ -1639,7 +1701,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
   local bits = darkroom.extract(res.inputType):verilogBits()
   local sizeInBytes = nearestPowerOf2((w/T)*darkroom.extract(res.inputType):verilogBits()/8)
   local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
-  local bramMod = S.module.bramSDP( true, sizeInBytes, bits, bits, init ):CE(true)
+  local bramMod = S.module.bramSDP( true, sizeInBytes, bits, nil, init ):CE(true)
   local addrbits = math.log((sizeInBytes*8)/bits)/math.log(2)
 
   for y=0,-ymin do
