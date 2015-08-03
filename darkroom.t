@@ -53,7 +53,9 @@ function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandsha
 
 -- takes StatefulHandshakeRegistered to StatefulHandshake
 function darkroom.stripRegistered( a, loc )
-  if a:isTuple() then
+  if darkroom.isStatefulHandshakeRegistered(a) then
+    return darkroom.StatefulHandshake( a.list[1] )
+  elseif a:isTuple() then
     return types.tuple( map(a.list, function(t) assert(darkroom.isStatefulHandshakeRegistered(t)); return darkroom.StatefulHandshake(t.list[1]) end ) )
   end
   assert(false)
@@ -170,6 +172,18 @@ end
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
 
+-- takes SDF input rate I and returns output rate after I is processed by this function
+function darkroomFunctionFunctions:sdfTransfer(I)
+  assert(type(I)=="table")
+  assert(type(I[1])=="number" and type(I[2])=="number")
+
+  err( type(self.sdfInput)=="table", "Missing SDF rate for fn "..self.kind)
+  local R = { self.sdfOutput[1]*self.sdfInput[2], self.sdfOutput[2]*self.sdfInput[1] } -- output/input ratio
+  local On, Od = simplify(I[1]*R[1], I[2]*R[2])
+  local res = {On,Od}
+  return res
+end
+
 function darkroomFunctionFunctions:compile() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
@@ -181,7 +195,9 @@ end
 darkroomIRFunctions = {}
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
 darkroomIRMT = {__index = darkroomIRFunctions }
+darkroomInstanceMT = {}
 
+function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
   IR.new( tab )
@@ -190,48 +206,83 @@ end
 
 local __sdfTotalCache = {}
 -- assume that inputs have SDF rate {1,1}, then what is the rate of this node?
-function darkroomIRFunctions:sdfTotal()
-  if __sdfTotalCache[self]==nil then
-    local res
-    if self.kind=="input" or self.kind=="constant" then
-      res = {1,1}
-    elseif self.kind=="extractState" then
-      res = self.inputs[1]:sdfTotal()
-    elseif self.kind=="apply" then
-      assert(#self.inputs==1)
-      local I = self.inputs[1]:sdfTotal()
-      err( type(self.fn.sdfInput)=="table", "Missing SDF rate for fn "..self.fn.kind)
-      local R = { self.fn.sdfOutput[1]*self.fn.sdfInput[2], self.fn.sdfOutput[2]*self.fn.sdfInput[1] } -- output/input ratio
-      local On, Od = simplify(I[1]*R[1], I[2]*R[2])
-      res = {On,Od}
-    elseif self.kind=="tuple" then
-      local IR
-      -- all input rates must match!
-      for key,i in pairs(self.inputs) do
-        if darkroom.extractData(i.type ):const() then
-          -- we don't care about SDF rates on constants
+function darkroomIRFunctions:sdfTotalInner()
+  local converged = true
+  self:visitEach( 
+    function( n, args )
+      local res
+      if n.kind=="input" or n.kind=="constant" then
+        res = {1,1}
+      elseif n.kind=="extractState" then
+        res = args[1]
+      elseif n.kind=="applyRegLoad" then
+        if n.inst.sdf=="x" or n.inst.sdf==nil then
+          res = "x"
         else
-          local isdf = i:sdfTotal(); 
-          if IR==nil then IR=isdf end
-          err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..self.loc)
+          res = s.fn:sdfTransfer(n.inst.sdf)
         end
+      elseif n.kind=="apply" then
+        assert(#n.inputs==1)
+        local I = args[1]
+        res =  n.fn:sdfTransfer(I)
+      elseif n.kind=="tuple" then
+        local IR
+        -- all input rates must match!
+        for key,i in pairs(n.inputs) do
+          if darkroom.extractData( i.type ):const() then
+            -- we don't care about SDF rates on constants
+          else
+            local isdf = args[key]
+            if IR==nil then IR=isdf end
+            err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..n.loc)
+          end
+        end
+        
+        res = IR
+      else
+        print("sdftotal",n.kind)
+        assert(false)
       end
 
-      res = IR
-    else
-      print("sdftotal",self.kind)
-      assert(false)
+      if __sdfTotalCache[n]==nil or res=="x" then
+        converged = false
+      elseif __sdfTotalCache[n][1]~=res[1] or __sdfTotalCache[n][2]~=res[2] then
+        converged = false
+      end
+
+      assert(type(res)=="table")
+      __sdfTotalCache[n] = res
+      return res
+    end)
+
+  return converged
+end
+
+local __sdfConverged = {}
+function darkroomIRFunctions:sdfTotal(root)
+  assert(darkroom.isIR(root))
+  if __sdfConverged[root]==nil then
+    local iter, converged = 10, false
+    while iter>=0 and converged==false do
+      print("SDF ITER", iter)
+      converged = root:sdfTotalInner()
+      iter = iter - 1
     end
-    __sdfTotalCache[self]=res
+    err( converged, "Error, SDF solve failed to converge. Do you have a feedback loop?" )
+    __sdfConverged[root] = converged
   end
+
+  assert( type(__sdfTotalCache[self])=="table" )
   return __sdfTotalCache[self]
 end
 
 -- assuming that the inputs are running at {1,1}, what is the utilization of this node?
 -- 0.5: only active every other cycle. 2: somehow active twice a cycle? (a bug)
-function darkroomIRFunctions:sdfUtilization()
+function darkroomIRFunctions:sdfUtilization(root)
+  assert(darkroom.isIR(root))
+
   if self.kind=="apply" then
-    local total = self:sdfTotal()
+    local total = self:sdfTotal(root)
 
     -- by convention, either input or output (or both) are running at a rate of 1.
     -- (we don't intentially design modules that sit idle)
@@ -244,13 +295,15 @@ function darkroomIRFunctions:sdfUtilization()
       -- this also covers the case where inputRate==1/1
       return total[1]/total[2]
     elseif (self.fn.sdfInput[1]/self.fn.sdfInput[2])==1 then
-      local tot = self.inputs[1]:sdfTotal()
+      local tot = self.inputs[1]:sdfTotal(root)
       return tot[1]/tot[2]
     else
       assert(false)
     end
   else
-    assert(false)
+    --print("sdfUtilization",self.kind)
+    --assert(false)
+    return 1
   end
 end
 
@@ -258,44 +311,43 @@ end
 -- (this will limit the speed of the whole pipe)
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
 local __sdfExtremeUtilizationCache = {}
-function darkroomIRFunctions:sdfExtremeUtilization(highest)
+function darkroomIRFunctions:sdfExtremeUtilization( highest )
   assert(type(highest)=="boolean")
 
-  if __sdfExtremeUtilizationCache[self]==nil then
-    __sdfExtremeUtilizationCache[self]={}
-  end
+  __sdfExtremeUtilizationCache[self] = __sdfExtremeUtilizationCache[self] or {}
 
   if __sdfExtremeUtilizationCache[self][highest]==nil then
-    if self.kind=="apply" then
-      --print("WORST",self.fn.kind)
-      local r = self:sdfUtilization()
+    __sdfExtremeUtilizationCache[self][highest] = self:visitEach(
+      function( n, args )
+        local r = n:sdfUtilization(self)
+          
+        -- leaf functions can't have a worse utilization than their input/output rate.
+        -- lambdas however can: (you can run something slow in the middle)
+        local fnloc = ""
+        if n.kind=="apply" and n.fn.kind=="lambda" then
+          local a,b = n.fn.output:sdfExtremeUtilization( highest )
+          r = r * a
+          fnloc = b
+        end
 
-      -- leaf functions can't have a worse utilization than their input/output rate.
-      -- lambdas however can: (you can run something slow in the middle)
-      local fnloc = ""
-      if self.fn.kind=="lambda" then
-        r = r*self.fn.output:sdfExtremeUtilization(highest)
-        local a,b = self.fn.output:sdfExtremeUtilization(highest)
-        fnloc = b
-      end
+        local res
+        for _,v in pairs(args) do
+          if highest and r>=v[1] then
+            res = {r,self.loc.."; "..fnloc}
+          elseif highest==false and r<=v[1] then
+            res = {r,self.loc..";"..fnloc}
+          else
+            res = v
+          end
+        end
+        if res==nil then res = {1,"NONE"} end
 
-      --local res = math.min(self.inputs[1]:sdfExtremeUtilization(highest), r)
-      --if highest then res=math.max(self.inputs[1]:sdfExtremeUtilization(highest),r) end
-
-      --__sdfExtremeUtilizationCache[self][highest] = {res
-      if highest and r>=self.inputs[1]:sdfExtremeUtilization(highest) then
-        __sdfExtremeUtilizationCache[self][highest] = {r,self.loc.."; "..fnloc}
-      elseif highest==false and r<=self.inputs[1]:sdfExtremeUtilization(highest) then
-        __sdfExtremeUtilizationCache[self][highest] = {r,self.loc..";"..fnloc}
-      else
-        local a,b = self.inputs[1]:sdfExtremeUtilization(highest)
-        __sdfExtremeUtilizationCache[self][highest] = {a,b}
-      end
-    else
-      -- don't care. just set it to default value
-      __sdfExtremeUtilizationCache[self][highest] = {1,"NONE"}
-    end
+        assert(type(res[1])=="number")
+        assert(type(res[2])=="string")
+        return res
+      end)
   end
+  
   return __sdfExtremeUtilizationCache[self][highest][1], __sdfExtremeUtilizationCache[self][highest][2]
 end
 
@@ -308,11 +360,11 @@ function darkroomIRFunctions:typecheck()
         n.type = n.fn.outputType
         return darkroom.newIR( n )
       elseif n.kind=="applyRegLoad" then
-        if n.inputs[1].type~=darkroom.State then error("input to reg load must be state, "..n.loc) end
-        n.type = darkroom.stripRegistered(n.fn.outputType)
+        --if n.inputs[1].type~=darkroom.State then error("input to reg load must be state, "..n.loc) end
+        n.type = darkroom.stripRegistered(n.inst.fn.outputType)
         return darkroom.newIR( n )
       elseif n.kind=="applyRegStore" then
-        if n.inputs[1].type~=darkroom.stripRegistered(n.fn.inputType) then error("input to reg store has incorrect type, should be "..tostring(darkroom.stripRegistered(n.fn.inputType)).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
+        if n.inputs[1].type~=darkroom.stripRegistered(n.inst.fn.inputType) then error("input to reg store has incorrect type, should be "..tostring(darkroom.stripRegistered(n.inst.fn.inputType)).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
         n.type = darkroom.State
         return darkroom.newIR( n )
       elseif n.kind=="input" then
@@ -325,6 +377,64 @@ function darkroomIRFunctions:typecheck()
       elseif n.kind=="tuple" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
         return darkroom.newIR(n)
+      else
+        print(n.kind)
+        assert(false)
+      end
+    end)
+end
+
+function darkroomIRFunctions:codegenSystolic( module )
+  assert(systolic.isModuleConstructor(module))
+  return self:visitEach(
+    function(n, inputs)
+      if n.kind=="input" then
+        local res = {module:lookupFunction("process"):input()}
+        if darkroom.isStatefulRV(n.type) then res[2] = module:lookupFunction("ready"):input() end
+        return res
+      elseif n.kind=="applyRegLoad" then
+        assert( darkroom.isStatefulHandshakeRegistered( n.inst.fn.outputType ) )
+        return {module:lookupInstance(n.name):load()}
+      elseif n.kind=="apply" then
+        print("systolic APPLY",n.fn.kind)
+        err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
+        --print("APPLY",n.fn.systolicModule.functions.process.input.type,n.fn.systolicModule.functions.process.output.type)
+        err( n.fn.systolicModule:lookupFunction("process"):input().type==darkroom.extract(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):input().type).." but should be "..tostring(darkroom.extract(n.fn.inputType)) )
+        err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.extract(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
+        
+        local params
+        if darkroom.isStatefulHandshake( n.fn.inputType ) then
+          local IC = n.inputs[1]:sdfTotal(self)
+          local OC = n:sdfTotal(self)
+          params={INPUT_COUNT="(INPUT_COUNT*"..IC[1]..")/"..IC[2],OUTPUT_COUNT="(INPUT_COUNT*"..OC[1]..")/"..OC[2]}
+          print("PARAMS")
+        end
+        
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
+
+        if darkroom.isStatefulHandshake( n.fn.inputType ) then
+          module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):valid()) )
+        elseif darkroom.isPure( n.fn.inputType )==false then
+          print("CALLRESET",n.fn.kind)
+          module:lookupFunction("reset"):addPipeline( I:reset() )
+        end
+                
+        if darkroom.isStatefulV(n.inputs[1].type) then
+          return { I:process(inputs[1][1]), I:ready() }
+        elseif darkroom.isStatefulRV(n.inputs[1].type) then
+          return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
+        elseif darkroom.isStatefulRV(n.type) then
+          -- the strange Stateful->StatefulRV case
+          err( false, "You shouldn't use Stateful->StatefulRV directly, loc "..n.loc )
+        else
+          return {I:process(inputs[1][1])}
+        end
+      elseif n.kind=="constant" then
+        return {S.constant( n.value, n.type )}
+      elseif n.kind=="tuple" then
+        return {S.tuple( map(inputs,function(i) return i[1] end) ) }
+      elseif n.kind=="extractState" then
+        return {S.null()}
       else
         print(n.kind)
         assert(false)
@@ -1400,7 +1510,7 @@ darkroom.liftXYSeq = memoize(function( f, W, H, T, sdfOverride )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
   local out = darkroom.apply("m", darkroom.makeStateful(f), packed )
-  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, sdfOverride )
+  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, nil, nil, sdfOverride )
 end)
 
 -- this takes a function f : {{int32,int32},inputType} -> outputType
@@ -2013,7 +2123,7 @@ darkroom.makeHandshake = memoize(function( f )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local rst = S.parameter("reset",types.bool())
-  if f.systolicModule.functions.reset:isPure() then rst = S.constant(false, types.bool()) end
+  if f.systolicModule:lookupFunction("reset"):isPure() then rst = S.constant(false, types.bool()) end
 
   local pipelines = {}
   local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,false):instantiate("asstInst") )
@@ -2030,6 +2140,31 @@ darkroom.makeHandshake = memoize(function( f )
 
   return darkroom.newFunction(res)
                                  end)
+function darkroom.fifo( A, size )
+  darkroom.expectPure(A)
+  err( type(size)=="number", "size must be number")
+  err( size >0,"size<=0")
+  
+  local res = {kind="fifo", inputType=darkroom.StatefulHandshakeRegistered(A), outputType=darkroom.StatefulHandshakeRegistered(A)}
+
+  local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo") }
+  terra Fifo:reset() self.fifo:reset() end
+  terra Fifo:store( inp : &darkroom.extract(res.inputType):toTerraType())
+    if valid(inp) then self.fifo:pushBack(&data(inp)) end
+  end
+  terra Fifo:load( out : &darkroom.extract(res.outputType):toTerraType())
+    if self.fifo:hasData() then
+      valid(out) = true
+      data(out) = self.fifo:popFront()
+    else
+      valid(out) = false
+    end
+  end
+
+  res.systolicModule = S.moduleConstructor("fifo_"..size):CE(true)
+
+  return darkroom.newFunction(res)
+end
 
 function darkroom.reduce( f, W, H )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
@@ -2223,15 +2358,20 @@ end
 
 -- function definition
 -- output, inputs
-function darkroom.lambda( name, input, output, sdfOverride, X )
+function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride, X )
   assert(X==nil)
   assert( type(name) == "string" )
   assert( darkroom.isIR( input ) )
   assert( input.kind=="input" )
   assert( darkroom.isIR( output ) )
+  assert( instances==nil or type(instances)=="table")
+  if instances~=nil then map( instances, function(n) assert(darkroom.isInstance(n)) end ) end
+  assert( pipelines==nil or type(pipelines)=="table")
+  if pipelines~=nil then map( pipelines, function(n) assert(darkroom.isIR(n)) end ) end
+  assert( sdfOverride==nil or type(sdfOverride)=="table")
 
   local output = output:typecheck()
-  local res = {kind = "lambda", name=name, input = input, output = output }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines }
   res.inputType = input.type
   res.outputType = output.type
 
@@ -2268,7 +2408,7 @@ function darkroom.lambda( name, input, output, sdfOverride, X )
     Module.entries = terralib.newlist( {} )
     local mself = symbol( &Module, "module self" )
 
-    local usedNames = {}
+    if fn.instances~=nil then for k,v in pairs(fn.instances) do table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end end
 
     local out = fn.output:visitEach(
       function(n, inputs)
@@ -2319,18 +2459,10 @@ table.insert( stats, quote cstdio.printf("APPLY %s inpv %d outv %d cnt %d icnt %
 end
           return {out,readyOut}
         elseif n.kind=="applyRegLoad" then
-          if usedNames[n.name]==nil then
-            table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          end
-          usedNames[n.name] = 1
           table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
           table.insert( stats, quote mself.[n.name]:load( out ) end )
           return {out}
         elseif n.kind=="applyRegStore" then
-          if usedNames[n.name]==nil then
-            table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          end
-          usedNames[n.name] = 1
           table.insert( resetStats, quote mself.[n.name]:reset() end )
           table.insert( stats, quote mself.[n.name]:store( [inputs[1][1]] ) end )
           return {`nil}
@@ -2391,7 +2523,7 @@ end
   if sdfOverride~=nil then
     res.sdfOutput = sdfOverride
   else
-    res.sdfOutput = output:sdfTotal()
+    res.sdfOutput = output:sdfTotal(output)
   end
 
   local function makeSystolic( fn )
@@ -2401,74 +2533,36 @@ end
       module:parameters{INPUT_COUNT=0, OUTPUT_COUNT=0}
     end
 
-    local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
-    local rst = S.parameter( "reset", types.bool() )
-    local readyInput = S.parameter( "ready_input", types.bool() )
-    local resetPipelines = {}
+    --local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
+    --local rst = S.parameter( "reset", types.bool() )
+    --local readyInput = S.parameter( "ready_input", types.bool() )
+    --local resetPipelines = {}
+    local process = module:addFunction( systolic.lambdaConstructor( "process", darkroom.extract(fn.inputType), "process_input") )
+    module:addFunction( systolic.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
-    local instanceMap = {}
-    local out = fn.output:visitEach(
-      function(n, inputs)
-        if n.kind=="input" then
-          return {inp, sel(darkroom.isStatefulRV(n.type), readyInput, nil) }
-        elseif n.kind=="apply" then
-          print("systolic APPLY",n.fn.kind)
-          err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
-          print("APPLY",n.fn.systolicModule.functions.process.input.type,n.fn.systolicModule.functions.process.output.type)
-          err( n.fn.systolicModule.functions.process.input.type==darkroom.extract(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.input.type).." but should be "..tostring(darkroom.extract(n.fn.inputType)) )
-          err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.extract(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
+    if fn.instances~=nil then
+      for k,v in pairs(fn.instances) do
+        err( systolic.isModule(v.fn.systolicModule), "Missing systolic module for "..v.fn.kind)
+        module:add( v.fn.systolicModule:instantiate(v.name) )
+      end
+    end
 
-          local params
-          if darkroom.isStatefulHandshake( n.fn.inputType ) then
-            local IC = n.inputs[1]:sdfTotal()
-            local OC = n:sdfTotal()
-            params={INPUT_COUNT="(INPUT_COUNT*"..IC[1]..")/"..IC[2],OUTPUT_COUNT="(INPUT_COUNT*"..OC[1]..")/"..OC[2]}
-            print("PARAMS")
-          end
-
-          local I = n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params)
-          instanceMap[n] = I
-          module:add(I)
-          if darkroom.isStatefulHandshake( n.fn.inputType ) then
-            table.insert( resetPipelines, I:reset(nil,rst) )
-          elseif darkroom.isPure( n.fn.inputType )==false then
-            print("CALLRESET",n.fn.kind)
-            table.insert( resetPipelines, I:reset() )
-          end
-
-
-          if darkroom.isStatefulV(n.inputs[1].type) then
-            return { I:process(inputs[1][1]), I:ready() }
-          elseif darkroom.isStatefulRV(n.inputs[1].type) then
-            return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
-          elseif darkroom.isStatefulRV(n.type) then
-            -- the strange Stateful->StatefulRV case
-            err( false, "You shouldn't use Stateful->StatefulRV directly, loc "..n.loc )
-          else
-            return {I:process(inputs[1][1])}
-          end
-        elseif n.kind=="constant" then
-          return {S.constant( n.value, n.type )}
-        elseif n.kind=="tuple" then
-          return {S.tuple( map(inputs,function(i) return i[1] end) ) }
-        elseif n.kind=="extractState" then
-          return {S.null()}
-        else
-          print(n.kind)
-          assert(false)
-        end
-      end)
+    local out = fn.output:codegenSystolic( module )
 
     err( out[1].type:constSubtypeOf(darkroom.extract(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.extract(res.outputType)).." function "..name )
 
-    local processfn = S.lambda( "process", inp, out[1], "process_output" )
-    local process = module:addFunction( processfn )
+    assert(systolic.isFunctionConstructor(process))
+    process:setOutput( out[1], "process_output" )
+    --local processfn = S.lambda( "process", inp, out[1], "process_output" )
+    
+    --local process = module:addFunction( processfn )
 
+    --[=[
     if darkroom.isStatefulHandshake( fn.inputType ) then
       module:addFunction( S.lambda("reset", S.parameter("ri",types.null()), nil, "reset_out", resetPipelines, rst) )
     elseif darkroom.isStateful( fn.inputType) then -- pure fns don't have a reset
       module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
-    end
+    end]=]
 
     if darkroom.isStatefulRV( fn.inputType ) then
       assert( S.isAST(out[2]) )
@@ -2488,7 +2582,7 @@ end
             return nil
           elseif n.kind=="apply" then
             print("systolic ready APPLY",n.fn.kind)
-            return instanceMap[n]:ready(input)
+            return module:lookupInstance(n.name):ready(input)
           elseif n.kind=="tuple" then
             return input
           else
@@ -2536,6 +2630,13 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
 end
 
+function darkroom.instantiateRegistered( name, fn )
+  err( type(name)=="string", "name must be string")
+  err( darkroom.isFunction(fn), "fn must be function" )
+  local t = {name=name, fn=fn}
+  return setmetatable(t, darkroomInstanceMT)
+end
+
 function darkroom.apply( name, fn, input )
   assert( type(name) == "string" )
   assert( darkroom.isFunction(fn) )
@@ -2544,12 +2645,15 @@ function darkroom.apply( name, fn, input )
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
 end
 
-function darkroom.applyRegLoad( name, fn, input )
-  return darkroom.newIR( {kind = "applyRegLoad", name = name, loc=getloc(), fn = fn, inputs = {input} } )
+function darkroom.applyLoad( name, inst )
+  err( type(name)=="string", "name must be string")
+  assert( darkroom.isInstance(inst) )
+  return darkroom.newIR( {kind = "applyRegLoad", name = name, loc=getloc(), inst = inst, inputs = {} } )
 end
 
-function darkroom.applyRegStore( name, fn, input )
-  return darkroom.newIR( {kind = "applyRegStore", name = name, loc=getloc(), fn = fn, inputs = {input} } )
+function darkroom.applyStore( name, inst, input )
+  assert( darkroom.isInstance(inst) )
+  return darkroom.newIR( {kind = "applyRegStore", name = name, loc=getloc(), inst = inst, inputs = {input} } )
 end
 
 function darkroom.constSeq( value, A, w, h, T )
@@ -2713,7 +2817,9 @@ darkroom.freadSeq = memoize(function( filename, ty )
     darkroomAssert(self.file~=nil, ["file "..filename.." doesnt exist"])
   end
   terra FreadSeq:process(inp : &types.null():toTerraType(), out : &ty:toTerraType())
+    cstdio.printf("FREADSTART\n")
     var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
+    cstdio.printf("FREADDONE\n")
     darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
   end
   res.terraModule = FreadSeq

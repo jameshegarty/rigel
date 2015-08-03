@@ -216,20 +216,27 @@ function systolicModuleFunctions:instantiate( name, tap, coherent, arbitrate, pa
   return systolicInstance.new({ kind="module", module=self, name=name, coherent=coherent, arbitrate=arbitrate, tap=tap, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
+function systolicModuleFunctions:lookupFunction( fnname )
+  for k,v in pairs(self.functions) do
+    if v.name==fnname then return v end
+  end
+  err(false, "Function "..fnname.." not found!")
+end
+
 systolicFunctionFunctions = {}
 systolicFunctionMT={__index=systolicFunctionFunctions}
 
 systolicFunction = {}
 function systolic.isFunction(t)
-  return getmetatable(t)==systolicFunctionMT or getmetatable(t)==systolicFunctionConstructorMT
+  return getmetatable(t)==systolicFunctionMT --or getmetatable(t)==systolicFunctionConstructorMT
 end
 
-function systolic.lambda( name, input, output, outputName, pipelines, valid )
-  err( systolicAST.isSystolicAST(input), "input must be a systolic AST" )
+function systolic.lambda( name, inputParameter, output, outputName, pipelines, valid )
+  err( systolicAST.isSystolicAST(inputParameter), "input must be a systolic AST" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
-  err( input.kind=="parameter", "input must be a parameter" )
-  err( type(outputName)=="string", "output name must be a string")
+  err( inputParameter.kind=="parameter", "input must be a parameter" )
+  err( output==nil or type(outputName)=="string", "output name must be a string")
   
   if pipelines==nil then pipelines={} end
 
@@ -244,7 +251,7 @@ function systolic.lambda( name, input, output, outputName, pipelines, valid )
   --if output~=nil then output = output:addValid( valid ) end
   --pipelines = map( pipelines, function(n) return n:addValid(valid) end )
 
-  local t = { name=name, input=input, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid }
+  local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid }
 
   return setmetatable(t,systolicFunctionMT)
 end
@@ -271,6 +278,8 @@ function systolicFunctionFunctions:isPure()
   if self.output==nil then return purePipes end
   return self.output:isPure(self.valid) and purePipes
 end
+
+function systolicFunctionFunctions:input() return self.inputParameter end
 
 function systolicFunctionFunctions:isAccessor()
   return #self.inputs==0
@@ -333,12 +342,12 @@ __index = function(tab,key)
         tab.callsites[key] = tab.callsites[key] or {}
         tab.arbitration[key] = tab.arbitration[key] or {}
 
-        if inp.type==fn.input.type then
+        if inp.type==fn.inputParameter.type then
           
-        elseif inp.type:constSubtypeOf(fn.input.type) then
-          inp = systolic.cast( inp, fn.input.type )
+        elseif inp.type:constSubtypeOf(fn.inputParameter.type) then
+          inp = systolic.cast( inp, fn.inputParameter.type )
         else
-          err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.input.type).."'" )
+          err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.inputParameter.type).."'" )
         end
 
         return createCallsite( fn, key, tab, inp, valid )
@@ -753,7 +762,7 @@ local function addArbitration( callsite )
   local otype = types.null()
   if fn.output~=nil then otype = fn.output.type end
   
-  if fn.input.type==types.null() then
+  if fn.inputParameter.type==types.null() then
     -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
     return callsite
   elseif instance.arbitrate==nil then
@@ -769,7 +778,7 @@ local function addArbitration( callsite )
       -- need to make a new callArbitrate node
       err(input~=nil, "call aribtrate - missing input?")
       err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.input.type,types.bool()}, loc=getloc(), inputs={input,valid} }
+      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.inputParameter.type,types.bool()}, loc=getloc(), inputs={input,valid} }
       tca = systolicAST.new(tca)
       local I, V = S.index(tca,0), S.index(tca,1)
       local CS = createCallsite( fn, fnname, instance, I, V)
@@ -1234,7 +1243,7 @@ end
 
 function userModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar )
   local fn = self.functions[fnname]
-  if fn:isPure()==false and fn.input.type==types.null() then
+  if fn:isPure()==false and fn.inputParameter.type==types.null() then
     -- it's ok to have multiple calls to a pure function w/ no inputs
     err( instance.verilogCompilerState[module][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc)
   end
@@ -1245,7 +1254,10 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   if fn.output~=nil and fn.output.type~=types.null() then
     decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
   end
-  return instance.name.."_"..fn.outputName, decl, true
+
+  local outname = instance.name.."_NILOUTPUT"
+  if fn.output~=nil then outname = instance.name.."_"..fn.outputName end
+  return outname, decl, true
 end
 
 function userModuleFunctions:instanceToVerilogFinalize( instance, module )
@@ -1269,11 +1281,11 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
         end
       end
       
-      if fn.input.type~=types.null() and fn.input.type:verilogBits()>0  then
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
         err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'?")
         local inp = instance.verilogCompilerState[module][fnname][1]
         err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-        table.insert(arglist,", ."..fn.input.name.."("..inp..")")
+        table.insert(arglist,", ."..fn.inputParameter.name.."("..inp..")")
       end
       
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
@@ -1322,7 +1334,7 @@ function userModuleFunctions:toVerilog()
         if self.onlyWire and fn.implicitValid then
         else table.insert(t,", input "..fn.valid.name) end
       end
-      if fn.input.type~=types.null() and fn.input.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.input.type, fn.input.name, true)) end
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.inputParameter.type, fn.inputParameter.name, true)) end
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
     end
 
@@ -1422,7 +1434,7 @@ function systolic.module.new( name, fns, instances, tapInput, CE, onlyWire, cohe
   -- if we have a CE, add a stub function so that other functions can call it (hack)
   if CE then
     assert(fns.CE==nil)
-    fns.CE = {name="CE",output=nil,input={name="CE",type=types.bool()},outputName="____CEOUT_SHOULDNOTAPPEAR",valid={name="____CEVALID_SHOULDNOTAPPEAR"},pipelines={},instances={}}
+    fns.CE = {name="CE",output=nil,inputParameter={name="CE",type=types.bool()},outputName="____CEOUT_SHOULDNOTAPPEAR",valid={name="____CEVALID_SHOULDNOTAPPEAR"},pipelines={},instances={}}
     fns.CE.isPure = function() return true end
   end
 
@@ -1435,10 +1447,10 @@ function systolic.module.new( name, fns, instances, tapInput, CE, onlyWire, cohe
   -- We let users choose whatever parameter names they want. Check for duplicate variable names in functions.
   local _usedPname = {}
   for k,v in pairs(fns) do
-    err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" )
-    _usedPname[v.outputName]="output"
-    err( _usedPname[v.input.name]==nil, "input name "..v.input.name.." used somewhere else in module" )
-    _usedPname[v.input.name]="input"
+    if v.output~=nil then err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" ) end
+    if v.output~=nil then _usedPname[v.outputName]="output" end
+    err( _usedPname[v.inputParameter.name]==nil, "input name "..v.inputParameter.name.." used somewhere else in module" )
+    _usedPname[v.inputParameter.name]="input"
     if _usedPname[v.valid.name]~=nil then
       err( _usedPname[v.valid.name]==nil, "valid bit name '"..v.valid.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.valid.name] )
     end
@@ -1524,11 +1536,11 @@ function systolic.module.reg( ty, initial )
 
   local t = {kind="reg",initial=initial,type=ty,options={coherent=true}}
   t.functions={}
-  t.functions.delay={name="delay", output={type=ty}, input={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT"}
+  t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT"}
   t.functions.delay.isPure = function() return false end
-  t.functions.set={name="set", output={type=types.null()}, input={name="SET_INPUT",type=ty},outputName="SET_OUTPUT"}
+  t.functions.set={name="set", output={type=types.null()}, inputParameter={name="SET_INPUT",type=ty},outputName="SET_OUTPUT"}
   t.functions.set.isPure = function() return false end
-  t.functions.get={name="get", output={type=ty}, input={name="GET_INPUT",type=types.null()},outputName="GET_OUTPUT"}
+  t.functions.get={name="get", output={type=ty}, inputParameter={name="GET_INPUT",type=types.null()},outputName="GET_OUTPUT"}
   t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
 end
@@ -1555,7 +1567,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init )
   -- check setby type
   --err(#setby.functions==1, "regBy setby module should only have process function")
   assert(setby.functions.process:isPure())
-  local setbytype = setby.functions.process.input.type
+  local setbytype = setby:lookupFunction("process"):input().type
   assert(setbytype:isTuple())
   local setbyTypeA = setbytype.list[1]
   local setbyTypeB = setbytype.list[2]
@@ -1832,11 +1844,11 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", input={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}}
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}}
     t.functions.writeAndReturnOriginal.isPure = function() return false end
 
     if outputBits~=nil then
-      t.functions.read = {name="read", input={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)}}
+      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)}}
       t.functions.read.isPure = function() return true end
     end
   else
@@ -1988,11 +2000,11 @@ function systolic.module.file( filename, ty, X)
   assert(X==nil)
   local res = {kind="file",filename=filename, type=ty }
   res.functions={}
-  res.functions.read={name="read",output={type=ty},input={name="FREAD_INPUT",type=types.null()},outputName="out",valid={name="read_valid"}}
+  res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="out",valid={name="read_valid"}}
   res.functions.read.isPure = function() return false end
-  res.functions.write={name="write",output={type=types.null()},input={name="input",type=ty},outputName="out",valid={name="write_valid"}}
+  res.functions.write={name="write",output={type=types.null()},inputParameter={name="input",type=ty},outputName="out",valid={name="write_valid"}}
   res.functions.write.isPure = function() return false end
-  res.functions.reset = {name="reset",output={type=types.null()},input={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
+  res.functions.reset = {name="reset",output={type=types.null()},inputParameter={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
   res.functions.reset.isPure = function() return false end
 
   return setmetatable(res, fileModuleMT)
@@ -2044,7 +2056,7 @@ function systolic.module.print( ty, str, CE, X )
 
   local res = {kind="print",str=str, type=ty, CE=CE}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},input={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"}}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"}}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, printModuleMT)
 end
@@ -2074,7 +2086,7 @@ function systolic.module.assert( str, exit, X )
 
   local res = {kind="assert",str=str, exit=exit}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},input={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"}}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"}}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, assertModuleMT)
 end
@@ -2086,27 +2098,43 @@ end
 systolicFunctionConstructor = {}
 systolicFunctionConstructorMT={__index=systolicFunctionConstructor}
 
-function systolic.lambdaConstructor( name, input, valid )
-  err( systolicAST.isSystolicAST(input), "input must be a systolic AST" )
-  if valid==nil then valid = systolic.parameter( name.."_valid", types.bool() ) end
-  local t = {name=name, input=input, isComplete=false }
+function systolic.isFunctionConstructor(t) return getmetatable(t)==systolicFunctionConstructorMT end
+
+function systolic.lambdaConstructor( name, inputType, inputName, validName )
+  err( type(name)=="string", "name must be string")
+  err( types.isType(inputType), "inputType must be type")
+  err( type(inputName)=="string", "input name must be string")
+
+  local t = {name=name, inputParameter=systolic.parameter(inputName, inputType), isComplete=false, pipelines={} }
+  if type(validName)=="string" then t.validParameter = systolic.parameter(validName, types.bool()) end
+  return setmetatable(t, systolicFunctionConstructorMT)
+end
+
+function systolicFunctionConstructor:input() return self.inputParameter end
+function systolicFunctionConstructor:valid() err(self.validParameter~=nil, "validName was not passed at creation time"); return self.validParameter end
+function systolicFunctionConstructor:setOutput( o, oname ) 
+  err( self.isComplete==false, "function is already complete"); 
+  assert(systolic.isAST(o)); 
+  assert(type(oname)=="string")
+  self.output = o;
+  self.outputName = oname
+end
+
+function systolicFunctionConstructor:addPipeline( p ) 
+  err( self.isComplete==false, "function is already complete"); 
+  assert(systolic.isAST(p)); 
+  table.insert( self.pipelines, p )
 end
 
 function systolicFunctionConstructor:complete()
   if self.isComplete==false then
-    if self.returnValue==nil then self.returnValue={type=types.null()} end
+    self.fn = systolic.lambda( self.name, self.inputParameter, self.output, self.outputName, self.pipelines, self.validParameter )
     self.isComplete=true
   end
+  return self.fn
 end
 
-function systolicFunctionConstructor:output( expr )
-  err( systolicAST.isSystolicAST(expr), "output must be a systolic AST" )
-  self.returnValue = expr
-end
-
-function systolicFunctionConstructor:output( expr )
-
-end
+function systolicFunctionConstructor:isPure() self:complete(); return self.fn:isPure() end
 
 --------------------------------------------------------------------
 -- Syntax sugar for incrementally defining a module
@@ -2114,6 +2142,8 @@ end
 
 systolicModuleConstructor = {}
 systolicModuleConstructorMT={__index=systolicModuleConstructor}
+
+function systolic.isModuleConstructor(I) return getmetatable(I)==systolicModuleConstructorMT end
 
 function systolic.moduleConstructor( name, X )
   assert(type(name)=="string")
@@ -2128,7 +2158,6 @@ end
 
 function systolicModuleConstructor:add( inst )
   err( systolic.isInstance(inst), "must be an instance" )
-  assert( inst.kind=="module" or inst.kind=="reg" or inst.kind=="ram128" or inst.kind=="bram")
 
   checkReserved(inst.name)
   if self.usedInstanceNames[inst.name]~=nil then
@@ -2137,16 +2166,26 @@ function systolicModuleConstructor:add( inst )
   end
 
   self.instanceMap[inst] = 1
-  self.usedInstanceNames[inst.name] = 1
+  self.usedInstanceNames[inst.name] = inst
 
   table.insert(self.instances,inst)
   return inst
 end
 
+function systolicModuleConstructor:lookupInstance( instName )
+  assert( type(instName)=="string")
+  err( systolic.isInstance(self.usedInstanceNames[instName]), "Could not find instance named '"..instName.."' on module")
+  return self.usedInstanceNames[instName]
+end
+
+function systolicModuleConstructor:lookupFunction( funcName )
+  err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
+  return self.functions[funcName]
+end
 
 function systolicModuleConstructor:addFunction( fn )
   err( self.isComplete==false, "module is already complete")
-  err( systolic.isFunction(fn), "input must be a systolic function")
+  err( systolic.isFunction(fn) or systolic.isFunctionConstructor(fn), "input must be a systolic function")
 
   if self.usedInstanceNames[fn.name]~=nil then
     print("Error, function name "..fn.name.." already in use")
@@ -2166,7 +2205,8 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
-    self.module = systolic.module.new( self.name, self.functions, self.instances, self.options.tapInput, self.options.CE, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
+    local fns = map(self.functions, function(f) if systolic.isFunctionConstructor(f) then return f:complete() else return f end end)
+    self.module = systolic.module.new( self.name, fns, self.instances, self.options.tapInput, self.options.CE, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
     self.isComplete = true
   end
 end
