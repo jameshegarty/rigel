@@ -47,7 +47,7 @@ function H.sim(filename, hsfn, T, inputType, tapType, tapValue, inputW, inputH, 
 -------------
 local f = d.seqMapHandshake( harness(hsfn,"frame_128.raw",inputType,tapType,"out/"..filename..".raw",outputType,1,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false )
 local Module = f:compile()
-(terra() var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats() end)()
+(terra() var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
 ------
 local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..".sim.raw",outputType,2,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false )
 io.output("out/"..filename..".sim.v")
