@@ -412,10 +412,12 @@ function systolic.index( expr, idx, idy )
   err(false, "Index only works on tuples and arrays")
 end
 
+-- low,high are inclusive
 function systolic.bitSlice( expr, low, high )
   err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast")
   err( type(low)=="number", "low must be number")
   err( type(high)=="number", "high must be number")
+  err( high>=low, "high<low" )
   return typecheck({kind="bitSlice",inputs={expr},low=low,high=high,loc=getloc()})
 end
 
@@ -645,6 +647,8 @@ function systolicASTFunctions:internalDelay()
   end
 end
 
+-- this function calculates the pipe delay of each op in the AST.
+-- You can add constraints (disable pipelinging, coherence groups), and it will solve for them.
 function systolicASTFunctions:calculateDelays(coherentDelays)
   local delaysAtInput = {}
   local coherentConverged = true
@@ -671,7 +675,9 @@ function systolicASTFunctions:calculateDelays(coherentDelays)
       delaysAtInput[n] = maxd      
 
       if n.pipelined~=nil and n.pipelined==false then 
-        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind) 
+        local loc = ""
+        if n.loc~=nil then loc=n.loc end
+        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind..loc) 
       end
     end)
 
@@ -1611,8 +1617,15 @@ configFns={includeCE=function(self) self.CE=true; return self end, setInit=funct
 ram128ModuleFunctions={}
 setmetatable(ram128ModuleFunctions,{__index=systolicModuleFunctions})
 ram128ModuleMT={__index=ram128ModuleFunctions}
-local __ram128 = {kind="ram128"}
+local __ram128 = {kind="ram128", functions={}}
+__ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
+__ram128.functions.read.isPure = function() return true end
+__ram128.functions.write={name="write", inputParameter={name="WRITE",type=types.tuple{types.uint(7),types.bits(1)}},outputName="WRITE_OUTPUT", output={type=types.bits(1)}}
+__ram128.functions.write.isPure = function() return false end
+
 setmetatable(__ram128,ram128ModuleMT)
+
+function ram128ModuleFunctions:getDelay(fnname) return 0 end
 
 function ram128ModuleFunctions:instanceToVerilog( instance )
     return [[ wire ]]..instance.name..[[_WE;
@@ -2102,10 +2115,13 @@ function systolic.isFunctionConstructor(t) return getmetatable(t)==systolicFunct
 
 function systolic.lambdaConstructor( name, inputType, inputName, validName )
   err( type(name)=="string", "name must be string")
-  err( types.isType(inputType), "inputType must be type")
-  err( type(inputName)=="string", "input name must be string")
+  err( inputType==nil or types.isType(inputType), "inputType must be type")
+  err( inputType==nil or type(inputName)=="string", "input name must be string")
 
-  local t = {name=name, inputParameter=systolic.parameter(inputName, inputType), isComplete=false, pipelines={} }
+  local t = {name=name, isComplete=false, pipelines={} }
+  if inputType~=nil then t.inputParameter=systolic.parameter(inputName, inputType) 
+  else t.inputParameter=systolic.parameter(name.."_NULL_INPUT",types.null()) end
+
   if type(validName)=="string" then t.validParameter = systolic.parameter(validName, types.bool()) end
   return setmetatable(t, systolicFunctionConstructorMT)
 end
@@ -2115,7 +2131,7 @@ function systolicFunctionConstructor:valid() err(self.validParameter~=nil, "vali
 function systolicFunctionConstructor:setOutput( o, oname ) 
   err( self.isComplete==false, "function is already complete"); 
   assert(systolic.isAST(o)); 
-  assert(type(oname)=="string")
+  err(type(oname)=="string", "output must be given a name")
   self.output = o;
   self.outputName = oname
 end
@@ -2205,6 +2221,7 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
+    print("COMPLETEMODULE",self.name)
     local fns = map(self.functions, function(f) if systolic.isFunctionConstructor(f) then return f:complete() else return f end end)
     self.module = systolic.module.new( self.name, fns, self.instances, self.options.tapInput, self.options.CE, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
     self.isComplete = true

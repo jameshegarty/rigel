@@ -215,11 +215,18 @@ function darkroomIRFunctions:sdfTotalInner()
         res = {1,1}
       elseif n.kind=="extractState" then
         res = args[1]
-      elseif n.kind=="applyRegLoad" then
-        if n.inst.sdf=="x" or n.inst.sdf==nil then
-          res = "x"
+      elseif n.kind=="applyMethod" then
+        if n.fnname=="load" then
+          if n.inst.sdf=="x" or n.inst.sdf==nil then
+            res = "x"
+          else
+            res = n.inst.fn:sdfTransfer(n.inst.sdf)
+          end
+        elseif n.fnname=="store" then
+          n.inst.sdf = args[1]
+          res = args[1]
         else
-          res = s.fn:sdfTransfer(n.inst.sdf)
+          assert(false)
         end
       elseif n.kind=="apply" then
         assert(#n.inputs==1)
@@ -239,6 +246,8 @@ function darkroomIRFunctions:sdfTotalInner()
         end
         
         res = IR
+      elseif n.kind=="statements" then
+        res = args[1]
       else
         print("sdftotal",n.kind)
         assert(false)
@@ -250,7 +259,7 @@ function darkroomIRFunctions:sdfTotalInner()
         converged = false
       end
 
-      assert(type(res)=="table")
+      assert(type(res)=="table" or res=="x")
       __sdfTotalCache[n] = res
       return res
     end)
@@ -359,13 +368,16 @@ function darkroomIRFunctions:typecheck()
         if n.fn.inputType~=n.inputs[1].type then error("Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc) end
         n.type = n.fn.outputType
         return darkroom.newIR( n )
-      elseif n.kind=="applyRegLoad" then
-        --if n.inputs[1].type~=darkroom.State then error("input to reg load must be state, "..n.loc) end
-        n.type = darkroom.stripRegistered(n.inst.fn.outputType)
-        return darkroom.newIR( n )
-      elseif n.kind=="applyRegStore" then
-        if n.inputs[1].type~=darkroom.stripRegistered(n.inst.fn.inputType) then error("input to reg store has incorrect type, should be "..tostring(darkroom.stripRegistered(n.inst.fn.inputType)).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
-        n.type = darkroom.State
+      elseif n.kind=="applyMethod" then
+        if n.fnname=="load" then
+          n.type = darkroom.stripRegistered(n.inst.fn.outputType)
+        elseif n.fnname=="store" then
+          if n.inputs[1].type~=darkroom.stripRegistered(n.inst.fn.inputType) then error("input to reg store has incorrect type, should be "..tostring(darkroom.stripRegistered(n.inst.fn.inputType)).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
+          n.type = types.null()
+        else
+          err(false,"Unknown method "..n.fnname)
+        end
+
         return darkroom.newIR( n )
       elseif n.kind=="input" then
       elseif n.kind=="constant" then
@@ -376,6 +388,9 @@ function darkroomIRFunctions:typecheck()
         return darkroom.newIR(n)
       elseif n.kind=="tuple" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
+        return darkroom.newIR(n)
+      elseif n.kind=="statements" then
+        n.type = n.inputs[1].type
         return darkroom.newIR(n)
       else
         print(n.kind)
@@ -392,9 +407,16 @@ function darkroomIRFunctions:codegenSystolic( module )
         local res = {module:lookupFunction("process"):input()}
         if darkroom.isStatefulRV(n.type) then res[2] = module:lookupFunction("ready"):input() end
         return res
-      elseif n.kind=="applyRegLoad" then
+      elseif n.kind=="applyMethod" then
         assert( darkroom.isStatefulHandshakeRegistered( n.inst.fn.outputType ) )
-        return {module:lookupInstance(n.name):load()}
+
+        if n.fnname=="load" then 
+          return {module:lookupInstance(n.inst.name):load()}
+        elseif n.fnname=="store" then
+          return {module:lookupInstance(n.inst.name):store(inputs[1][1])}
+        else
+          assert(false)
+        end
       elseif n.kind=="apply" then
         print("systolic APPLY",n.fn.kind)
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
@@ -1472,8 +1494,8 @@ darkroom.posSeq = memoize(function( W, H, T )
   res.terraModule = PosSeq
 
   res.systolicModule = S.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T):CE(true)
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(W-T,T) ):setInit(0):includeCE():instantiate("posX_posSeq") )
-  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(H-1)):setInit(0):includeCE():instantiate("posY_posSeq") )
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):includeCE():instantiate("posX_posSeq") )
+  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):includeCE():instantiate("posY_posSeq") )
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16)}, "x %d y %d", true):instantiate("printInst") )
 
   local incY = S.eq( posX:get(), S.constant(W-T,types.uint(16))  ):disablePipelining()
@@ -1639,8 +1661,8 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T):CE(true)
 
 
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( W+L+R-T, T ) ):includeCE():setInit(0):instantiate("posX_padSeq") ) 
-  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(H+Top+B) ):includeCE():setInit(0):instantiate("posY_padSeq") ) 
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W+L+R-T, T ) ):includeCE():setInit(0):instantiate("posX_padSeq") ) 
+  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B) ):includeCE():setInit(0):instantiate("posY_padSeq") ) 
   local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") )
 --  local asstInst = res.systolicModule:add( S.module.assert( "padSeq input ins't valid when it should be", {CE=true}):instantiate("asstInst") )
 
@@ -1773,7 +1795,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
     end
     terra ChangeRate:ready()  return true end
 
-    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap(inputCount-1) ):includeCE():instantiate("phase_changerateup") )
+    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):includeCE():instantiate("phase_changerateup") )
     local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", true ):instantiate("printInst") )
     local ConstTrue = S.constant(true,types.bool())
     res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))) }, rvalid ) )
@@ -1826,7 +1848,7 @@ function darkroom.linebuffer( A, w, h, T, ymin )
 
   res.systolicModule = S.moduleConstructor("linebuffer"):CE(true)
   local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap((w/T)-1), true, nil ):instantiate("addr") )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
 
   local outarray = {}
   local evicted
@@ -2140,12 +2162,19 @@ darkroom.makeHandshake = memoize(function( f )
 
   return darkroom.newFunction(res)
                                  end)
-function darkroom.fifo( A, size )
+
+-- promotes FIFO systolic module to handshake type.
+-- In the future, we'd like to make our type system powerful enough to be able to do this...
+local function promoteFifo(systolicModule)
+  
+end
+
+darkroom.fifo = memoize(function( A, size )
   darkroom.expectPure(A)
   err( type(size)=="number", "size must be number")
   err( size >0,"size<=0")
   
-  local res = {kind="fifo", inputType=darkroom.StatefulHandshakeRegistered(A), outputType=darkroom.StatefulHandshakeRegistered(A)}
+  local res = {kind="fifo", inputType=darkroom.StatefulHandshakeRegistered(A), outputType=darkroom.StatefulHandshakeRegistered(A), sdfInput={1,1}, sdfOutput={1,1}}
 
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo") }
   terra Fifo:reset() self.fifo:reset() end
@@ -2163,8 +2192,24 @@ function darkroom.fifo( A, size )
 
   res.systolicModule = S.moduleConstructor("fifo_"..size):CE(true)
 
+  local fifo = res.systolicModule:add( fpgamodules.fifo128(A):instantiate("FIFO") )
+  
+  --------------
+  -- Stateful -> StatefulRV
+  local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
+  store:addPipeline( fifo:pushBack( store:input() ) )
+  local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "storeReady" ) )
+  storeReady:setOutput( fifo:ready(), "ready" )
+  --------------
+  -- Stateful -> StatefulV
+  local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
+  load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
+  --------------
+
+  res.systolicModule = promoteFifo(res.systolicModule)
+
   return darkroom.newFunction(res)
-end
+                        end)
 
 function darkroom.reduce( f, W, H )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
@@ -2458,14 +2503,18 @@ table.insert( stats, quote cstdio.printf("APPLY %s inpv %d outv %d cnt %d icnt %
  end )
 end
           return {out,readyOut}
-        elseif n.kind=="applyRegLoad" then
-          table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
-          table.insert( stats, quote mself.[n.name]:load( out ) end )
-          return {out}
-        elseif n.kind=="applyRegStore" then
-          table.insert( resetStats, quote mself.[n.name]:reset() end )
-          table.insert( stats, quote mself.[n.name]:store( [inputs[1][1]] ) end )
-          return {`nil}
+        elseif n.kind=="applyMethod" then
+          if n.fnname=="load" then
+            table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
+            table.insert( stats, quote mself.[n.name]:load( out ) end )
+            return {out}
+          elseif n.fnname=="store" then
+            table.insert( resetStats, quote mself.[n.name]:reset() end )
+            table.insert( stats, quote mself.[n.name]:store( [inputs[1][1]] ) end )
+            return {`nil}
+          else
+            assert(false)
+          end
         elseif n.kind=="constant" then
           if n.type:isArray() then
             map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
@@ -2486,6 +2535,8 @@ end
         elseif n.kind=="catState" then
           table.insert( stats, quote @out = @[inputs[1][1]] end)
           return {out,inputs[1][2]}
+        elseif n.kind=="statements" then
+          return inputs[1]
         else
           print(n.kind)
           assert(false)
@@ -2645,16 +2696,15 @@ function darkroom.apply( name, fn, input )
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
 end
 
-function darkroom.applyLoad( name, inst )
+function darkroom.applyMethod( name, inst, fnname, input )
   err( type(name)=="string", "name must be string")
   assert( darkroom.isInstance(inst) )
-  return darkroom.newIR( {kind = "applyRegLoad", name = name, loc=getloc(), inst = inst, inputs = {} } )
+  err( type(fnname)=="string", "fnname must be string")
+  assert( input==nil or darkroom.isIR( input ) )
+
+  return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )
 end
 
-function darkroom.applyStore( name, inst, input )
-  assert( darkroom.isInstance(inst) )
-  return darkroom.newIR( {kind = "applyRegStore", name = name, loc=getloc(), inst = inst, inputs = {input} } )
-end
 
 function darkroom.constSeq( value, A, w, h, T )
   assert(type(value)=="table")
@@ -2732,6 +2782,13 @@ function darkroom.tuple( name, t )
   local r = {kind="tuple", name=name, loc=getloc(), inputs={}}
   map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
+end
+
+function darkroom.statements( t )
+  assert( type(t)=="table" )
+  assert(#t>0 and keycount(t)==#t)
+  map(t, function(i) assert(darkroom.isIR(i)) end )
+  return darkroom.newIR{kind="statements",inputs=t,loc=getloc()}
 end
 
 -- if index==true, then we return a value, not an array

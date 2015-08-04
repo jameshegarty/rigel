@@ -444,6 +444,12 @@ function types.checkExplicitCast(from, to, ast)
         map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
         err( channels==to:channels(), "channels don't match") 
         return true
+      elseif from.list[1]:isBits() then
+        -- cast a tuple of a bunch of bits to whatever
+        local sz = 0
+        map( from.list, function(t) err(t:isBits(),"bittuplecast fail"); sz = sz + t:verilogBits() end )
+        err(sz == to:verilogBits(), "tuple of bits size fail")
+        return true
       end
     else
       error("unknown tuple cast? "..tostring(from).." to "..tostring(to))

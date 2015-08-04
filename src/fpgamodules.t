@@ -23,12 +23,17 @@ modules.incIf=memoize(function(inc)
       return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output")},{},nil,true)
               end)
 
-modules.incIfWrap=memoize(function(limit,inc)
+-- we generally want to use incIf if we are going to increment a variable based on some (calculated) condition.
+-- The reason for this is if we module the valid bit based on the condition, the valid bit may go into a undefined state.
+-- (ie at init time the condition will be unstable garbage or X's). This allows us to not mess with the valid bit,
+-- but still conditionally increment.
+modules.incIfWrap=memoize(function(ty,limit,inc)
+                            assert(types.isType(ty))
                         assert(type(limit)=="number")
                         local incv = inc or 1
-      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+      local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
 
-      local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,types.uint(16))), S.constant(0,types.uint(16)), S.index(swinp,0)+S.constant(incv,types.uint(16)) )
+      local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
       local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
       return S.module.new( "incif_wrap"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output")},{},nil,true)
               end)
@@ -40,6 +45,18 @@ modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.in
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
 modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{},nil,true)
+------------
+-- modsub calculates A-B where A,B are mod 'wrap'. We say that A>=B always. So if A<B (as stored), we calculate it as if they have just wrapped around circularly.
+-- This is obviously ambiguous - we can't tell how many times A vs B have wrapped around. Assume they have only wrapped around once.
+function modules.modSub( A, B, wrap )
+  assert( systolic.isAST(A))
+  assert( systolic.isAST(B))
+  assert(A.type==B.type)
+  assert(type(wrap)=="number")
+  
+  return S.select(S.lt(A,B), S.constant(wrap, A.type)-B+A, A-B )
+end
+
 ------------
 
 function modules.reduceSystolic( op, cnt, datatype, argminVars)
@@ -144,48 +161,47 @@ function modules.linebuffer( maxDelayX, maxDelayY, datatype, stripWidth )
 end
 modules.linebuffer = memoize( modules.linebuffer )
 
-function modules.fifo(ty)
-  assert(darkroom.type.isType(ty))
+modules.fifo128 = memoize(function(ty)
+  assert(types.isType(ty))
 
-  local fifo = systolic.module("fifo_"..sanitize(tostring(ty)) )
-  local writeAddr = fifo:add(systolic.reg("writeAddr", uint16, 0))
-  local readAddr = fifo:add(systolic.reg("readAddr", uint16, 0))
-  local bits = ty:baseType():sizeof()*8
-  local rams = map( range( ty:channels()*bits ), function(v) return fifo:add(systolic.ram128("fifo"..v)) end )
+  local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty)) )
+  -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
+  local writeAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),128), true ):instantiate("writeAddr"))
+  local readAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),128), true ):instantiate("readAddr"))
+  local bits = ty:verilogBits()
+  local rams = map( range( ty:channels()*bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
+
+  -- ready (not full)
+  local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
+  local ready = S.lt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(127,types.uint(8)) ):disablePipelining()
+  readyFn:setOutput( ready, "ready" )
+
+  -- has data
+  local hasDataFn = fifo:addFunction( S.lambdaConstructor("hasData") )
+  local hasData = S.__not( S.eq( writeAddr:get(), readAddr:get()) ):disablePipelining()
+  hasDataFn:setOutput( hasData, "hasData" )
 
   -- pushBack
-  local input = systolic.input("indata", ty)
-  local flatinputs = systolic.cast( input:read(), darkroom.type.array( ty:baseType(), {ty:channels()} ) )
-  local pushBack = fifo:addFunction("pushBack",{input},nil)
-  pushBack:addAssert( systolic.lt(writeAddr:read() - readAddr:read(), 128), "attempting to push to a full fifo" )
-  pushBack:addAssignBy( "sum", writeAddr, systolic.cast(1, uint16) )
-  for c=1,ty:channels() do
-    for b=1,bits do
-      local elem = input:read()
-      if ty:isArray() then elem = systolic.flatindex( input:read(),c-1) end
-      pushBack:writeRam128( rams[(c-1)*bits+(b-1)+1], writeAddr:read(), systolic.index(elem,{b-1}) )
-    end
+  local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
+  local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo" ):instantiate("pushBackAssert") )
+  pushBack:addPipeline( pushBackAssert:process( ready )  )
+  pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
+  for b=1,bits do
+    pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:input(),b-1,b-1)} )  )
   end
 
   -- popFront
-  local out = systolic.output("outdata", ty)
-  local popFront = fifo:addFunction("popFront",{},out)
-  popFront:addAssert( systolic.gt(writeAddr:read(), readAddr:read()), "attempting to pop from an empty fifo" )
-  popFront:addAssignBy( "sum", readAddr, systolic.cast(1,uint16) )
-  popFront:addAssign( out, systolic.array( map( range(ty:channels()), function(c)
-    return systolic.cast(systolic.array(map( range(bits), 
-      function(b) 
-       return rams[(c-1)*bits+(b-1)+1]:read(readAddr:read())
-      end)),ty:baseType()) end)))
-
-  -- ready
-  local readyres = systolic.output("isReady", darkroom.type.bool() )
-  local ready = fifo:addFunction("ready",{},readyres, {pipeline=false})
-  ready:addAssign(readyres, systolic.gt(writeAddr:read()-readAddr:read(),0) )
+  local popFront = fifo:addFunction( S.lambdaConstructor("popFront") )
+  local popFrontAssert = fifo:add( systolic.module.assert( "attempting to pop from an empty fifo" ):instantiate("popFrontAssert") )
+  popFront:addPipeline( popFrontAssert:process( hasData ) )
+  popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
+  print("BITS",bits)
+  local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
+  popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
 
   return fifo
-end
-modules.fifo = memoize(modules.fifo)
+                          end)
+
 
 function modules.fifonoop(ty)
   assert(darkroom.type.isType(ty))

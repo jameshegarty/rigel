@@ -20,14 +20,14 @@ local p100 = d.makeHandshake(d.makeStateful(d.map( plus100, T)))
 ITYPE = types.array2d( types.uint(8), T )
 local inp = d.input( d.StatefulHandshake(ITYPE) )
 local regs = {d.instantiateRegistered("f1",d.fifo(ITYPE,1)),d.instantiateRegistered("f2",d.fifo(ITYPE,1))}
-local pipelines = {d.applyStore("s1",regs[1],inp)}
+--local pipelines = {d.applyStore("s1",regs[1],inp)}
 
 ------
-local pinp = d.applyLoad("l1",regs[1])
+local pinp = d.applyMethod("l1",regs[1],"load")
 local out = d.apply( "plus100", p100, pinp )
-table.insert(pipelines, d.applyStore("s2",regs[2], out))
+--table.insert(pipelines, d.applyStore("s2",regs[2], out))
 ------
-hsfn = d.lambda( "fifo_wide", inp, d.applyLoad("l2",regs[2]), regs, pipelines )
+hsfn = d.lambda( "fifo_wide", inp, d.statements{d.applyMethod("l2",regs[2],"load"), d.applyMethod("s1",regs[1],"store",inp), d.applyMethod("s2",regs[2], "store",out)}, regs )
 ------------
 
 harness.axi( "fifo_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W,H)
