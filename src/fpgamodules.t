@@ -10,7 +10,7 @@ modules.sumwrap = memoize(function(limit)
   local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
                       S.constant(0,types.uint(16)),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output")},{},nil,true)
+  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
                   end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
@@ -20,7 +20,7 @@ modules.incIf=memoize(function(inc)
       local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
 
       local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,types.uint(16)), S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output")},{},nil,true)
+      return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
 -- we generally want to use incIf if we are going to increment a variable based on some (calculated) condition.
@@ -35,7 +35,7 @@ modules.incIfWrap=memoize(function(ty,limit,inc)
 
       local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
       local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_wrap"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output")},{},nil,true)
+      return S.module.new( "incif_wrap"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
 
@@ -243,9 +243,10 @@ function modules.wideMux( tab, key )
   return S.index(r,0)
 end
 
-function modules.shiftRegister( ty, size, name, resetValue, X )
+function modules.shiftRegister( ty, size, name, resetValue, CE, X )
   assert(X==nil)
   err( resetValue==nil or type(resetValue) == ty:toLuaType(), "resetValue has incorrect type")
+  err( type(CE)=="boolean", "CE option must be bool")
 
   local M = systolic.moduleConstructor( name )
   local pipelines = {}
@@ -258,7 +259,7 @@ function modules.shiftRegister( ty, size, name, resetValue, X )
   local rstvalid = systolic.parameter("reset",types.bool())
 
   for i=1,size do
-    local I = M:add( systolic.module.reg( ty ):instantiate("SR"..i):setArbitrate("valid") )
+    local I = M:add( systolic.module.reg( ty, CE ):instantiate("SR"..i):setArbitrate("valid") )
     table.insert( regs, I )
     if i==1 then
       table.insert(pipelines, I:set(inp) )
@@ -270,9 +271,9 @@ function modules.shiftRegister( ty, size, name, resetValue, X )
   end
   if size==0 then out=inp end
 
-  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid) )
-
-  local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines,rstvalid) )
+  local CEvar = sel(CE,S.CE("CE"),nil)
+  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid, CEvar ) )
+  local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid, CEvar) )
 
   return M
 end
@@ -374,18 +375,17 @@ function modules.addShifter( module, exprs )
   local allconst = foldl( andop, true, map(exprs, function(e) return e:const()~=nil end ) )
 
   if allconst then
-    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):setInit(e:const()):instantiate("SR_"..i) ) end )
+    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
 
     pipelines = map( regs, function(r,i) return r:set( regs[(i%#exprs)+1]:get() )  end )
     out = regs[1]:get()
   else
-    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(#exprs-1) ):includeCE():instantiate("phase") )
-
+    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(#exprs-1) ):CE(true):instantiate("phase") )
 
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
-    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):instantiate("SR_"..i) ) end )
+    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
 
     exprs = optimizeShifter( exprs, regs )
 
