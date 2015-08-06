@@ -94,8 +94,8 @@ local function typecheck_inner( ast, newNodeFn )
       darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
     end
     
-    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast}) end
-    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",inputs={rhs},type=rhscast}) end
+    if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast,loc=debug.traceback()}) end
+    if rhs.type~=rhscast then rhs = newNodeFn({kind="cast",inputs={rhs},type=rhscast,loc=debug.traceback()}) end
     
     ast.type = thistype
     ast.inputs = {lhs,rhs}
@@ -128,8 +128,8 @@ local function typecheck_inner( ast, newNodeFn )
 
     local thistype, lhscast, rhscast =  types.meet( a.type, b.type, ast.kind )
 
-    if a.type~=lhscast then a = newNodeFn({kind="cast",inputs={a},type=lhscast}) end
-    if b.type~=rhscast then b = newNodeFn({kind="cast",inputs={b},type=rhscast}) end
+    if a.type~=lhscast then a = newNodeFn({kind="cast",inputs={a},type=lhscast,loc=debug.traceback()}) end
+    if b.type~=rhscast then b = newNodeFn({kind="cast",inputs={b},type=rhscast,loc=debug.traceback()}) end
     
     ast.type = thistype
     ast.inputs[1] = cond

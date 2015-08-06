@@ -21,6 +21,7 @@ function systolicAST.new(tab)
   assert(#tab.inputs==keycount(tab.inputs))
   if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
+  assert(type(tab.loc)=="string")
   if tab.pipelined==nil then tab.pipelined=true end
   map(tab.inputs, function(n) assert(systolicAST.isSystolicAST(n)) end)
   IR.new(tab)
@@ -229,7 +230,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
   err( inputParameter.kind=="parameter", "input must be a parameter" )
-  err( output==nil or type(outputName)=="string", "output name must be a string")
+  err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string is output is given")
   err( CE==nil or (systolicAST.isSystolicAST(CE) and CE.kind=="parameter" and CE.type==types.bool(true)), "CE must be nil or CE parameter")
   assert(X==nil)
 
@@ -274,7 +275,11 @@ function systolicFunctionFunctions:isPure()
   return self.output:isPure(self.valid) and purePipes
 end
 
-function systolicFunctionFunctions:input() return self.inputParameter end
+function systolicFunctionFunctions:getInput() return self.inputParameter end
+function systolicFunctionFunctions:getOutput() return self.output end
+function systolicFunctionFunctions:getOutputName() return self.outputName end
+function systolicFunctionFunctions:getValid() return self.valid end
+function systolicFunctionFunctions:getCE() return self.CE end
 
 function systolicFunctionFunctions:isAccessor()
   return #self.inputs==0
@@ -293,7 +298,7 @@ end
 
 local function unary(expr, op)
   expr = checkast(expr)
-  return typecheck{kind="unary",op=op,inputs={expr}}
+  return typecheck{kind="unary",op=op,inputs={expr},loc=getloc()}
 end
 
 systolic._callsites = {}
@@ -368,7 +373,7 @@ __call = function(tab, delayvalue)
   elseif delayvalue==0 then
     return tab
   else
-    return systolicAST.new({kind="delay",delay=delayvalue,inputs={tab},type=tab.type})
+    return systolicAST.new({kind="delay",delay=delayvalue,inputs={tab},type=tab.type,loc=getloc()})
   end
 end,
   __newindex = function(table, key, value)
@@ -455,7 +460,7 @@ function systolic.array( tab, W, H )
   -- just do a cast from a tuple to an array
 end
 
-local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={}})
+local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={},loc="Null LOC"})
 function systolic.null() return __NULLTAB end
 
 function systolic.select( cond, a, b )
@@ -708,7 +713,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
       assert(stallDomains[orig]~=nil)
       local hasCE = false
       local CE
-      if stallDomains[orig]~="___NOSTALL" then hasCE, CE = true, stallDomains[orig] end
+      if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then hasCE, CE = true, stallDomains[orig] end
       
       local reg = systolic.module.reg( node.type, hasCE, nil, false ):instantiate(node.name.."_pipeline"..delay):setCoherent(false)
       table.insert( pipelineRegisters, reg )
@@ -780,15 +785,29 @@ function systolicASTFunctions:calculateStallDomains()
         return n.fn.CE
       elseif n:parentCount(self)==0 then
         return "___UNKNOWN"
+      elseif n.type:const() then
+        return "___CONST"
       else
         local seen
         for k,v in pairs(args) do
 --          assert(systolic.isAST(v) and v.kind=="parameter")
-          if seen==nil or seen=="___NOSTALL" then
+          if seen==nil or seen=="___NOSTALL" or seen=="___CONST" then
 --            print("SEEN",v.name)
             seen = v
-          elseif v~="___NOSTALL" then
-            if seen~=v then print("multiple stall LOC",n.loc) end
+          elseif v~="___NOSTALL" and v~="___CONST" then
+            if seen~=v then 
+              print("multiple stall LOC",n.loc) 
+              if type(seen)=="string" then
+                print("Domain 1:"..seen)
+              else
+                print("Domain 1:"..seen.name)
+              end
+              if type(v)=="string" then
+                print("Domain 2:"..v)
+              else
+                print("Domain 2:"..v.name)
+              end
+            end
             err( seen==v, "Op is under multiple stall domains! "..tostring(seen).." "..tostring(v).."KIND:"..n.kind.."TYPE:"..tostring(n.type) )
           end
         end
@@ -1260,14 +1279,14 @@ function systolic.instanceParameter( variable, ty )
   -- HACK: get a verilog instance varible
   assert(type(variable)=="string")
   assert( types.isType(ty) )
-  return systolicAST.new({kind="instanceParameter",variable=variable,type=ty,inputs={}})
+  return systolicAST.new({kind="instanceParameter",variable=variable,type=ty,inputs={},loc=getloc()})
 end
 
 function systolic.parameter( name, ty )
   assert(type(name)=="string")
   checkReserved(name)
   assert( types.isType(ty) )
-  return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={}})
+  return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})
 end
 
 function systolic.CE( name )
@@ -1403,13 +1422,13 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
 end
 
 function userModuleFunctions:lower()
-  local mod = {kind="module", type=types.null(), inputs={}, module=self}
+  local mod = {kind="module", type=types.null(), inputs={}, module=self,loc="userModuleFunctions:lower()"}
 
   for _,fn in pairs(self.functions) do
     local O = fn.output
     if O~=nil and self.onlyWire~=true then O = O:addValid(fn.valid) end
     if O~=nil and self.onlyWire~=true and fn.CE~=nil then O = O:addCE(fn.CE) end
-    local node = { kind="fndefn", fn=fn, type=types.null(), valid=fn.valid, inputs={O} }
+    local node = { kind="fndefn", fn=fn, type=types.null(), valid=fn.valid, inputs={O},loc="userModuleFUnctions:lower()" }
     for k,pipe in pairs(fn.pipelines) do
       local P = pipe
       if self.onlyWire~=true then P = P:addValid(fn.valid) end
@@ -1542,8 +1561,8 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   -- We let users choose whatever parameter names they want. Check for duplicate variable names in functions.
   local _usedPname = {}
   for k,v in pairs(fns) do
-    if v.output~=nil then err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" ) end
-    if v.output~=nil then _usedPname[v.outputName]="output" end
+    if v.output~=nil and v.output.type~=types.null() then err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" ) end
+    if v.output~=nil and v.output.type~=types.null() then _usedPname[v.outputName]="output" end
     err( _usedPname[v.inputParameter.name]==nil, "input name "..v.inputParameter.name.." used somewhere else in module" )
     _usedPname[v.inputParameter.name]="input"
     if _usedPname[v.valid.name]~=nil then
@@ -1680,7 +1699,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   -- check setby type
   --err(#setby.functions==1, "regBy setby module should only have process function")
   assert(setby.functions.process:isPure())
-  local setbytype = setby:lookupFunction("process"):input().type
+  local setbytype = setby:lookupFunction("process"):getInput().type
   assert(setbytype:isTuple())
   local setbyTypeA = setbytype.list[1]
   local setbyTypeB = setbytype.list[2]
@@ -2240,9 +2259,15 @@ function systolic.lambdaConstructor( name, inputType, inputName, validName )
   return setmetatable(t, systolicFunctionConstructorMT)
 end
 
-function systolicFunctionConstructor:input() return self.inputParameter end
-function systolicFunctionConstructor:valid() err(self.validParameter~=nil, "validName was not passed at creation time"); return self.validParameter end
-function systolicFunctionConstructor:CE() err(self.CEparameter~=nil, "CE not given"); return self.CEparameter end
+function systolicFunctionConstructor:getInput() return self.inputParameter end
+function systolicFunctionConstructor:getValid() 
+  --err(self.validParameter~=nil, "validName was not passed at creation time"); 
+  return self.validParameter 
+end
+function systolicFunctionConstructor:getCE() 
+  --err(self.CEparameter~=nil, "CE not given"); 
+  return self.CEparameter 
+end
 function systolicFunctionConstructor:setOutput( o, oname ) 
   err( self.isComplete==false, "function is already complete"); 
   assert(systolic.isAST(o)); 
@@ -2250,6 +2275,9 @@ function systolicFunctionConstructor:setOutput( o, oname )
   self.output = o;
   self.outputName = oname
 end
+function systolicFunctionConstructor:getOutputName() return self.outputName end
+function systolicFunctionConstructor:getOutput() return self.output end
+
 function systolicFunctionConstructor:setCE( ce ) 
   err( self.isComplete==false, "function is already complete"); 
   assert( systolic.isAST(ce) and ce.kind=="parameter" and ce.type==types.bool(true) )
@@ -2315,7 +2343,8 @@ function systolicModuleConstructor:lookupInstance( instName )
 end
 
 function systolicModuleConstructor:lookupFunction( funcName )
-  err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
+  --err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
+  if self.functions[funcName]==nil then print("Warning: Could not find function named '"..funcName.."' on module "..self.name) end
   return self.functions[funcName]
 end
 

@@ -187,8 +187,12 @@ modules.fifo128 = memoize(function(ty)
   pushBack:addPipeline( pushBackAssert:process( ready )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
   for b=1,bits do
-    pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:input(),b-1,b-1)} )  )
+    pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
   end
+
+  -- pushBackReset
+  local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("pushBackReset" ) )
+  pushBackReset:addPipeline( writeAddr:set(systolic.constant(0,types.uint(8))))
 
   -- popFront
   local popFront = fifo:addFunction( S.lambdaConstructor("popFront") )
@@ -198,6 +202,10 @@ modules.fifo128 = memoize(function(ty)
   print("BITS",bits)
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
   popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
+
+  -- popFrontReset
+  local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("popFrontReset" ) )
+  popFrontReset:addPipeline( readAddr:set(systolic.constant(0,types.uint(8))))
 
   return fifo
                           end)
@@ -243,12 +251,12 @@ function modules.wideMux( tab, key )
   return S.index(r,0)
 end
 
-function modules.shiftRegister( ty, size, name, resetValue, CE, X )
+modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   assert(X==nil)
   err( resetValue==nil or type(resetValue) == ty:toLuaType(), "resetValue has incorrect type")
   err( type(CE)=="boolean", "CE option must be bool")
 
-  local M = systolic.moduleConstructor( name )
+  local M = systolic.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE) )
   local pipelines = {}
   local resetPipelines = {}
   local out
@@ -276,7 +284,7 @@ function modules.shiftRegister( ty, size, name, resetValue, CE, X )
   local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid, CEvar) )
 
   return M
-end
+                                end)
 
 -- This returns a module that keeps track of phase. It returns a phase value and a valid bit.
 -- valid bit is only true after a full phase has completed.
