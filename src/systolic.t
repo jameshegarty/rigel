@@ -1786,14 +1786,15 @@ wire [6:0] ]]..instance.name..[[_readAddr;
 err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
 
 local writeInput = instance.verilogCompilerState[module].write[1]
-local writeData = instance.name.."_writeInput[0]"
-local writeAddr = instance.name.."_writeInput[7:1]"
+local writeData = instance.name.."_writeInput[7]"
+local writeAddr = instance.name.."_writeInput[6:0]"
 local readAddr = instance.verilogCompilerState[module].read[1]
 
 local valid = instance.verilogCompilerState[module].write[2]
 local CE = instance.verilogCompilerState[module].write[3]
 local WE = valid.." && "..CE
 return [[wire [7:0] ]]..instance.name..[[_writeInput = ]]..writeInput..[[;
+wire ]]..instance.name..[[_writeOut;
 RAM128X1D ]]..instance.name..[[  (
   .WCLK(CLK),
   .D(]]..writeData..[[),
@@ -2219,7 +2220,9 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
   local validS = ""
   local validSS = ""
   if validvar~=nil then validS,validSS="valid %d",validvar.."," end
-  if module.CE then validS = validS.." CE %d"; validSS = validSS..cevar.."," end
+
+  err(self.CE==false or type(cevar)=="string", "Error, missing CE from print instance '"..instance.name.."' on module '"..module.name.."'")
+  if self.CE then validS = validS.." CE %d"; validSS = validSS..cevar.."," end
 
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
 assign ]]..instance.name..[[ = ]]..datavar..[[;
@@ -2236,10 +2239,11 @@ function systolic.module.print( ty, str, CE, X )
   err( types.isType(ty), "type input to print module should be type")
   err( type(str)=="string", "string input to print module should be string")
   err( CE==nil or type(CE)=="boolean", "CE must be bool")
+  if CE==nil then CE=false end
 
   local res = {kind="print",str=str, type=ty, CE=CE}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"}}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, printModuleMT)
 end
@@ -2251,7 +2255,10 @@ assertModuleMT={__index=assertModuleFunctions}
 
 function assertModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
   local CES = ""
-  if self.CE then CES=" && "..cevar.."==1'b1" end
+  if self.CE then 
+    err( type(cevar)=="string", "Assert missing CE for instance '"..instance.name.."' in module '"..module.name.."'")
+    CES=" && "..cevar.."==1'b1" 
+  end
   local finish = "$finish(); "
   if self.exit==false then finish="" end
   local decl = [[always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME);]]..finish..[[ end end]]
@@ -2262,14 +2269,15 @@ function assertModuleFunctions:toVerilog() return "" end
 function assertModuleFunctions:getDependenciesLL() return {} end
 function assertModuleFunctions:getDelay(fnname) return 0 end
 
-function systolic.module.assert( str, exit, X )
+function systolic.module.assert( str, CE, exit, X )
   assert(X==nil)
   err( type(str)=="string", "string input to print module should be string")
+  err( type(CE)=="boolean", "CE must be boolean" )
   err( exit==nil or type(exit)=="boolean", "Exit must be bool or nil")
 
-  local res = {kind="assert",str=str, exit=exit}
+  local res = {kind="assert",str=str, exit=exit, CE = CE}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"}}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"},CE=sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, assertModuleMT)
 end

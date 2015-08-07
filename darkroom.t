@@ -674,6 +674,42 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns )
   end
 end
 
+-- This takes a Stateful->StatefulR to StatefulV->StatefulRV
+-- Compare to waitOnInput below: runIffReady is used when we want to take control of the ready bit purely for performance reasons, but don't want to amplify or decimate data.
+local function runIffReadySystolic( systolicModule, fns, passthroughFns )
+  local res = S.moduleConstructor("RunIffReady_"..systolicModule.name)
+  local inner = res:add( systolicModule:instantiate("RunIffReady_inner") )
+
+  for _,fnname in pairs(fns) do
+    local srcFn = systolicModule:lookupFunction(fnname)
+
+    local prefix = fnname.."_"
+    if fnname=="process" then prefix="" end
+
+    err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
+
+    local sinp = S.parameter(fnname.."_input", darkroom.extract(darkroom.StatefulV(srcFn:getInput().type)) )
+
+    local svalid = S.parameter(fnname.."_valid", types.bool())
+    local runable = S.__and(inner[prefix.."ready"](inner), S.index(sinp,1) ):disablePipelining()
+
+    local out = inner[fnname]( inner, S.index(sinp,0), runable )
+
+    local RST = S.parameter(prefix.."reset",types.bool())
+    if systolicModule:lookupFunction(prefix.."reset"):isPure() then RST=S.constant(false,types.bool()) end
+
+    local pipelines = {}
+
+    local CE = S.CE("CE")
+    res:addFunction( S.lambda(fnname, sinp, S.tuple{ out, S.__and( runable,svalid ):disablePipelining() }, fnname.."_output", pipelines, svalid, CE ) )
+    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST, CE) )
+    res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
+  end
+
+  passthroughSystolic( res, systolicModule, inner, passthroughFns )
+  return res
+end
+
 local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
   local res = S.moduleConstructor("WaitOnInput_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("WaitOnInput_inner") )
@@ -687,7 +723,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
 
-    local asstInst = res:add( S.module.assert( "waitOnInput valid bit doesn't match ready bit"):instantiate("asstInst") )
+    local asstInst = res:add( S.module.assert( "waitOnInput valid bit doesn't match ready bit", true ):instantiate("asstInst") )
     local printInst = res:add( S.module.print( types.tuple{types.bool(),types.bool(),types.bool(),types.bool()}, "WaitOnInput "..systolicModule.name.." ready %d validIn %d runable %d RST %d", true ):instantiate(prefix.."printInst") )
 
     local sinp
@@ -722,6 +758,8 @@ end
 
 -- f should be Stateful->StatefulRV
 -- You should never use Stateful->StatefulRV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
+-- if inner:ready()==true, inner will run iff valid(input)==true
+-- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
 function darkroom.waitOnInput(f)
   local res = {kind="waitOnInput", fn = f}
   darkroom.expectStateful(f.inputType)
@@ -865,7 +903,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     local prefix = fnname.."_"
     if fnname=="process" then prefix="" end
 
-    local printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d DS %d ready %d outputCount %d expectedOutputCount %d", true):instantiate(prefix.."printInst") )
+    local printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d DS %d ready %d outputCount %d expectedOutputCount %d"):instantiate(prefix.."printInst") )
 
     local outputCount
     local iif = fpgamodules.incIf()
@@ -901,10 +939,10 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     pipelines[1] = printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, inner[prefix.."ready"](inner), outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } )
     if STREAMING==false then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
     
-    local asstInst = res:add( S.module.assert( "LiftHandshake: output valid bit should not be X!" ,false):instantiate(prefix.."asstInst") )
+    local asstInst = res:add( S.module.assert( "LiftHandshake: output valid bit should not be X!" , false, false):instantiate(prefix.."asstInst") )
     table.insert(pipelines, asstInst:process(S.__not(S.isX(S.index(out,1))), S.constant(true,types.bool()) ) )
     
-    local asstInst2 = res:add( S.module.assert( "LiftHandshake: input valid bit should not be X!" ,false):instantiate(prefix.."asstInst2") )
+    local asstInst2 = res:add( S.module.assert( "LiftHandshake: input valid bit should not be X!" , false, false):instantiate(prefix.."asstInst2") )
     table.insert(pipelines, asstInst2:process(S.__not(S.isX(S.index(pinp,1))), S.constant(true,types.bool()) ) )
     
     res:addFunction( S.lambda(fnname, pinp, out, fnname.."_output", pipelines ) ) 
@@ -2242,7 +2280,7 @@ darkroom.makeHandshake = memoize(function( f )
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool(),types.uint(16)}, "RST %d IV %d O %h OV %d ready %d expectedOutput %d", true):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool(),types.uint(16)}, "RST %d IV %d O %h OV %d ready %d expectedOutput %d"):instantiate("printInst") )
 
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), false, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
@@ -2251,7 +2289,7 @@ darkroom.makeHandshake = memoize(function( f )
   if f.systolicModule:lookupFunction("reset"):isPure() then rst = S.constant(false, types.bool()) end
 
   local pipelines = {}
-  local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,false):instantiate("asstInst") )
+  local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,false, false):instantiate("asstInst") )
   pipelines[1] = asstInst:process(S.__not(S.isX(S.index(pinp,1))), S.constant(true,types.bool()) )
 
   local pready = S.parameter("ready_downstream", types.bool())
@@ -2308,12 +2346,12 @@ darkroom.fifo = memoize(function( A, size )
   local fifo = res.systolicModule:add( fpgamodules.fifo128(A):instantiate("FIFO") )
   
   --------------
-  -- Stateful -> StatefulRV
+  -- Stateful -> StatefulR
   local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
   local storeCE = S.CE("store_CE")
   store:setCE(storeCE)
   store:addPipeline( fifo:pushBack( store:getInput() ) )
-  store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
+  --store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
   local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
   storeReady:setOutput( fifo:ready(), "store_ready" )
   local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
@@ -2331,7 +2369,7 @@ darkroom.fifo = memoize(function( A, size )
   --------------
 
   res.systolicModule = liftDecimateSystolic(res.systolicModule,{"load"},{"store"})
-  res.systolicModule = waitOnInputSystolic( res.systolicModule,{"store"},{"load"})
+  res.systolicModule = runIffReadySystolic( res.systolicModule,{"store"},{"load"})
   res.systolicModule = liftHandshakeSystolic( res.systolicModule,{"load","store"},{})
 
   return darkroom.newFunction(res)
