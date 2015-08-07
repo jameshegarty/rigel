@@ -166,10 +166,10 @@ modules.fifo128 = memoize(function(ty)
 
   local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty)) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
-  local writeAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),128), true ):instantiate("writeAddr"))
-  local readAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),128), true ):instantiate("readAddr"))
+  local writeAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),127), true ):instantiate("writeAddr"))
+  local readAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),127), true ):instantiate("readAddr"))
   local bits = ty:verilogBits()
-  local rams = map( range( ty:channels()*bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
+  local rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
 
   -- ready (not full)
   local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
@@ -179,10 +179,13 @@ modules.fifo128 = memoize(function(ty)
   -- has data
   local hasDataFn = fifo:addFunction( S.lambdaConstructor("hasData") )
   local hasData = S.__not( S.eq( writeAddr:get(), readAddr:get()) ):disablePipelining()
+--  local hasData = S.gt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(1,types.uint(8)) ):disablePipelining()
   hasDataFn:setOutput( hasData, "hasData" )
 
   -- pushBack
+  local pushCE = S.CE("CE_push")
   local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
+  pushBack:setCE(pushCE)
   local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo" ):instantiate("pushBackAssert") )
   pushBack:addPipeline( pushBackAssert:process( ready )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
@@ -192,12 +195,17 @@ modules.fifo128 = memoize(function(ty)
 
   -- pushBackReset
   local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("pushBackReset" ) )
+  pushBackReset:setCE(pushCE)
   pushBackReset:addPipeline( writeAddr:set(systolic.constant(0,types.uint(8))))
 
   -- popFront
+  local popCE = S.CE("CE_pop")
   local popFront = fifo:addFunction( S.lambdaConstructor("popFront") )
+  popFront:setCE(popCE)
   local popFrontAssert = fifo:add( systolic.module.assert( "attempting to pop from an empty fifo" ):instantiate("popFrontAssert") )
   popFront:addPipeline( popFrontAssert:process( hasData ) )
+  local popFrontPrint = fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d", true):instantiate("popFrontPrintInst") )
+  popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get()} ) )
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
   print("BITS",bits)
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
@@ -205,6 +213,7 @@ modules.fifo128 = memoize(function(ty)
 
   -- popFrontReset
   local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("popFrontReset" ) )
+  popFrontReset:setCE(popCE)
   popFrontReset:addPipeline( readAddr:set(systolic.constant(0,types.uint(8))))
 
   return fifo

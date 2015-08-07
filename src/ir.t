@@ -25,7 +25,8 @@ function IR.IRFunctions:visitEach(func)
 end
 
 -- it's unclear what should be the return value for this
-function IR.IRFunctions:visitEachReverse( func )
+-- includeKey==true: in argument list to func, pass table of {parentValue, keyInParent}
+function IR.IRFunctions:visitEachReverse( func, includeKey )
   local order = {}
   self:visitEach( function(n) table.insert(order,n) end )
   local i = #order
@@ -33,7 +34,7 @@ function IR.IRFunctions:visitEachReverse( func )
   while i>=1 do
     local node = order[i]
     local argList = {}
-    for k,v in node:parents(self) do argList[k] = value[k] end
+    for parentNode,parentKey in node:parents(self) do argList[parentNode] = sel(includeKey,{value[parentNode],parentKey},value[parentNode]) end
     value[node] = func( node, argList )
     i = i - 1
   end

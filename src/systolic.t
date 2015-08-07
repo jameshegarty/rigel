@@ -347,7 +347,9 @@ __index = function(tab,key)
         if inp.type==fn.inputParameter.type then
           
         elseif inp.type:constSubtypeOf(fn.inputParameter.type) then
-          inp = systolic.cast( inp, fn.inputParameter.type )
+          --  stripping the Const-ness will cause problems when we CSE with multiple stall domains
+          -- We don't actually need to insert an explicit cast, it doesn't matter. Cast would be a noop
+--          inp = systolic.cast( inp, fn.inputParameter.type )
         else
           err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.inputParameter.type).."'" )
         end
@@ -1369,7 +1371,7 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   end
 
   local outname = instance.name.."_NILOUTPUT"
-  if fn.output~=nil then outname = instance.name.."_"..fn.outputName end
+  if fn.output~=nil and fn.output.type~=types.null() then outname = instance.name.."_"..fn.outputName end
   return outname, decl, true
 end
 
@@ -1400,7 +1402,7 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
     
     if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-      err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'?")
+      err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'? input type "..tostring(fn.inputParameter.type))
       local inp = instance.verilogCompilerState[module][fnname][1]
       err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
       table.insert(arglist,", ."..fn.inputParameter.name.."("..inp..")")
@@ -1743,28 +1745,63 @@ ram128ModuleMT={__index=ram128ModuleFunctions}
 local __ram128 = {kind="ram128", functions={}}
 __ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
 __ram128.functions.read.isPure = function() return true end
-__ram128.functions.write={name="write", inputParameter={name="WRITE",type=types.tuple{types.uint(7),types.bits(1)}},outputName="WRITE_OUTPUT", output={type=types.bits(1)}}
+__ram128.functions.write={name="write", inputParameter={name="WRITE",type=types.tuple{types.uint(7),types.bits(1)}},outputName="WRITE_OUTPUT", output={type=types.bits(1)}, CE=systolic.CE("CE")}
 __ram128.functions.write.isPure = function() return false end
 
 setmetatable(__ram128,ram128ModuleMT)
 
 function ram128ModuleFunctions:getDelay(fnname) return 0 end
+function ram128ModuleFunctions:getDependenciesLL() return {} end
+function ram128ModuleFunctions:toVerilog() return "" end
 
-function ram128ModuleFunctions:instanceToVerilog( instance )
-    return [[ wire ]]..instance.name..[[_WE;
+function ram128ModuleFunctions:instanceToVerilogStart( instance, module )
+  instance.verilogCompilerState = instance.verilogCompilerState or {}
+  assert(instance.verilogCompilerState[module]==nil)
+  instance.verilogCompilerState[module] = {}
+end
+
+function ram128ModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
+  instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
+  local fn = self.functions[fnname]
+  local decl
+  if fnname=="write" then
+    assert(type(cevar)=="string")
+--    decl = declareWire( types.bool(), instance.name.."_"..fn.outputName)
+  elseif fnname=="read" then
+    decl = declareWire( types.bool(), instance.name.."_"..fn.outputName)
+  else assert(false) end
+
+  return instance.name.."_"..fn.outputName, decl, true
+end
+
+
+function ram128ModuleFunctions:instanceToVerilogFinalize( instance, module )
+--[=[ wire ]]..instance.name..[[_WE;
 wire ]]..instance.name..[[_D;
 wire ]]..instance.name..[[_writeOut;
-wire ]]..instance.name..[[_readOut;
+wire ]]..instance.name..[[_READ_OUTPUT;
 wire [6:0] ]]..instance.name..[[_writeAddr;
 wire [6:0] ]]..instance.name..[[_readAddr;
+                               ]=]
+err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
+
+local writeInput = instance.verilogCompilerState[module].write[1]
+local writeData = instance.name.."_writeInput[0]"
+local writeAddr = instance.name.."_writeInput[7:1]"
+local readAddr = instance.verilogCompilerState[module].read[1]
+
+local valid = instance.verilogCompilerState[module].write[2]
+local CE = instance.verilogCompilerState[module].write[3]
+local WE = valid.." && "..CE
+return [[wire [7:0] ]]..instance.name..[[_writeInput = ]]..writeInput..[[;
 RAM128X1D ]]..instance.name..[[  (
   .WCLK(CLK),
-  .D(]]..instance.name..[[_D),
-  .WE(]]..instance.name..[[_WE),
+  .D(]]..writeData..[[),
+  .WE(]]..WE..[[),
   .SPO(]]..instance.name..[[_writeOut),
-  .DPO(]]..instance.name..[[_readOut),
-  .A(]]..instance.name..[[_writeAddr),
-  .DPRA(]]..instance.name..[[_readAddr));
+  .DPO(]]..instance.name..[[_READ_OUTPUT),
+  .A(]]..writeAddr..[[),
+  .DPRA(]]..readAddr..[[));
 ]]
 end
 

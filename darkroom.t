@@ -174,6 +174,8 @@ darkroomFunctionMT={__index=darkroomFunctionFunctions}
 
 -- takes SDF input rate I and returns output rate after I is processed by this function
 function darkroomFunctionFunctions:sdfTransfer(I)
+  if I=="x" then return "x" end
+
   assert(type(I)=="table")
   assert(type(I[1])=="number" and type(I[2])=="number")
 
@@ -410,10 +412,14 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="applyMethod" then
         assert( darkroom.isStatefulHandshakeRegistered( n.inst.fn.outputType ) )
 
+        local I = module:lookupInstance(n.inst.name)
+
         if n.fnname=="load" then 
-          return {module:lookupInstance(n.inst.name):load(S.tuple{S.null(),S.constant(true,types.bool())})}
+          module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
+          return {I:load(S.tuple{S.null(),S.constant(true,types.bool())})}
         elseif n.fnname=="store" then
-          return {module:lookupInstance(n.inst.name):store(inputs[1][1])}
+          module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
+          return {I:store(inputs[1][1])}
         else
           assert(false)
         end
@@ -586,7 +592,7 @@ function darkroom.packTuple( typelist, handshake )
 
     -- built-in behavior with ready bits is to AND all the downstreams together. So we don't actully have to do anything
     local downstreamReady = S.parameter("ready_downstream", types.bool())
-    res.systolicModule:addFunction( S.lambda("ready", downstreamReady, downstreamReady, "ready" ) )
+    res.systolicModule:addFunction( S.lambda("ready", downstreamReady, S.tuple(broadcast(downstreamReady,#typelist)), "ready" ) )
   else
     local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
     res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output",nil,nil,CE) )
@@ -859,7 +865,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     local prefix = fnname.."_"
     if fnname=="process" then prefix="" end
 
-    local printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, "RST %d I %h IV %d O %h OV %d DS %d ready %d outputCount %d expectedOutputCount %d", true):instantiate(prefix.."printInst") )
+    local printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d DS %d ready %d outputCount %d expectedOutputCount %d", true):instantiate(prefix.."printInst") )
 
     local outputCount
     local iif = fpgamodules.incIf()
@@ -2277,17 +2283,25 @@ darkroom.fifo = memoize(function( A, size )
 
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo") }
   terra Fifo:reset() self.fifo:reset() end
+  terra Fifo:stats(name:&int8)  end
   terra Fifo:store( inp : &darkroom.extract(res.inputType):toTerraType())
-    if valid(inp) then self.fifo:pushBack(&data(inp)) end
+    cstdio.printf("FIFO STORE\n")
+    if valid(inp) then 
+      cstdio.printf("FIFO STORE, valid input\n")
+      self.fifo:pushBack(&data(inp)) 
+    end
   end
   terra Fifo:load( out : &darkroom.extract(res.outputType):toTerraType())
     if self.fifo:hasData() then
+      cstdio.printf("FIFO LOAD, hasData\n")
       valid(out) = true
-      data(out) = self.fifo:popFront()
+      data(out) = @(self.fifo:popFront())
     else
+      cstdio.printf("FIFO LOAD, no data\n")
       valid(out) = false
     end
   end
+  res.terraModule = Fifo
 
   res.systolicModule = S.moduleConstructor("fifo_"..size)
 
@@ -2296,19 +2310,23 @@ darkroom.fifo = memoize(function( A, size )
   --------------
   -- Stateful -> StatefulRV
   local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
-  store:setCE(S.CE("store_CE"))
+  local storeCE = S.CE("store_CE")
+  store:setCE(storeCE)
   store:addPipeline( fifo:pushBack( store:getInput() ) )
   store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
   local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
-  storeReady:setOutput( fifo:ready(), "ready" )
+  storeReady:setOutput( fifo:ready(), "store_ready" )
   local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
+  storeReset:setCE(storeCE)
   storeReset:addPipeline(fifo:pushBackReset())
   --------------
   -- Stateful -> StatefulV
   local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
-  load:setCE(S.CE("load_CE"))
+  local loadCE = S.CE("load_CE")
+  load:setCE(loadCE)
   load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
   local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
+  loadReset:setCE(loadCE)
   loadReset:addPipeline(fifo:popFrontReset())
   --------------
 
@@ -2563,7 +2581,10 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
     Module.entries = terralib.newlist( {} )
     local mself = symbol( &Module, "module self" )
 
-    if fn.instances~=nil then for k,v in pairs(fn.instances) do table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end end
+    if fn.instances~=nil then for k,v in pairs(fn.instances) do 
+        err(v.fn.terraModule~=nil, "Missing terra module for "..v.fn.kind)
+        table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
+    end
 
     local out = fn.output:visitEach(
       function(n, inputs)
@@ -2607,7 +2628,7 @@ if darkroom.isStatefulHandshake(n.inputs[1].type) or darkroom.isStatefulHandshak
 local Q = quote end
                 if darkroom.isStatefulHandshake(n.inputs[1].type) then Q = quote if valid([inputs[1][1]]) then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end end
 end
-table.insert( stats, quote cstdio.printf("APPLY %s inpv %d outv %d cnt %d icnt %d\n",n.name, valid([inputs[1][1]]), valid(out),mself.[n.name.."CNT"],mself.[n.name.."ICNT"] );
+table.insert( stats, quote cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d\n",n.name, valid([inputs[1][1]]), valid(out),mself.[n.name.."CNT"],mself.[n.name.."ICNT"] );
                 Q
                 if valid(out) then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
  end )
@@ -2615,12 +2636,16 @@ end
           return {out,readyOut}
         elseif n.kind=="applyMethod" then
           if n.fnname=="load" then
-            table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
-            table.insert( stats, quote mself.[n.name]:load( out ) end )
+            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+            table.insert( stats, quote mself.[n.inst.name]:load( out ) 
+                            cstdio.printf("LOAD OUTPUT %s %d\n",n.name, valid(out) )
+end )
             return {out}
           elseif n.fnname=="store" then
-            table.insert( resetStats, quote mself.[n.name]:reset() end )
-            table.insert( stats, quote mself.[n.name]:store( [inputs[1][1]] ) end )
+            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+            table.insert( stats, quote 
+                            cstdio.printf("STORE INPUT %s %d\n",n.name,valid([inputs[1][1]]))
+mself.[n.inst.name]:store( [inputs[1][1]] ) end )
             return {`nil}
           else
             assert(false)
@@ -2646,6 +2671,7 @@ end
           table.insert( stats, quote @out = @[inputs[1][1]] end)
           return {out,inputs[1][2]}
         elseif n.kind=="statements" then
+          table.insert( stats, quote @out = @[inputs[1][1]] end)
           return inputs[1]
         else
           print(n.kind)
@@ -2742,9 +2768,21 @@ end
     elseif darkroom.isStatefulHandshake( fn.inputType ) then
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
+      local readyPipelines={}
       fn.output:visitEachReverse(
         function(n, inputs)
-          local input = foldt( stripkeys(inputs), function(a,b) return S.__and(a,b) end, readyinp )
+          local inputList = {}
+          for parentNode,v in pairs(inputs) do
+            if #parentNode.inputs==1 then
+              assert(v[2]==1)
+              table.insert( inputList, v[1] )
+            else
+              table.insert( inputList, S.index(v[1],v[2]-1) )
+            end
+          end
+
+          -- ready bit for this node is AND of all consumers
+          local input = foldt( inputList, function(a,b) return S.__and(a,b) end, readyinp )
 
           if n.kind=="input" then
             assert(readyout==nil)
@@ -2753,15 +2791,32 @@ end
           elseif n.kind=="apply" then
             print("systolic ready APPLY",n.fn.kind)
             return module:lookupInstance(n.name):ready(input)
+          elseif n.kind=="applyMethod" then
+            if n.fnname=="load" then
+              -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
+              local inst = module:lookupInstance(n.inst.name)
+              local R = inst[n.fnname.."_ready"](inst, input)
+              table.insert(readyPipelines,R)
+              return R
+            elseif n.fnname=="store" then
+              local inst = module:lookupInstance(n.inst.name)
+              return inst[n.fnname.."_ready"](inst, input)
+            else
+              assert(false)
+            end
           elseif n.kind=="tuple" then
             return input
+          elseif n.kind=="statements" then
+            local L = {readyinp}
+            for i=2,#n.inputs do table.insert(L,S.constant(true,types.bool())) end
+            return S.tuple(L)
           else
             print(n.kind)
             assert(false)
           end
-        end)
+        end, true)
 
-      local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", {} ) )
+      local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", readyPipelines ) )
       --assert( readyfn:isPure() )
     end
 
