@@ -588,6 +588,16 @@ function systolicASTFunctions:disablePipelining()
   return self
 end
 
+-- This will assign this node to NO transaction. Even if :setTransaction() is called on it, it will remain in no transaction!
+function systolicASTFunctions:setNoTransaction()
+  return self:process(function(n) n.transaction=false; return systolicAST.new(n) end)
+end
+
+function systolicASTFunctions:setTransaction(tname)
+  assert( type(tname)=="string" )
+  return self:process(function(n) if(n.transaction==nil or n.transaction~=false) then n.transaction=tname; end return systolicAST.new(n) end)
+end
+
 function systolicASTFunctions:disablePipeliningSingle()
   if self.pipelined~=nil and self.pipelined==false then return self end
 
@@ -895,9 +905,19 @@ function systolicASTFunctions:addValid( validbit )
         if n.inputs[2]==nil then
           n.inputs[2] = validbit
         else
-          n.inputs[2]:visitEach(function(nn) if nn.kind=="parameter" and nn.key==validbit.key then error("Explicit valid bit includes parent scope valid bit! This is not necessary, it's added automatically. "..n.loc) end end)
-                                n.inputs[2] = systolic.__and(n.inputs[2], validbit)
-                                n.inputs[2].pipelined=false
+          --n.inputs[2]:visitEach(function(nn) if nn.kind=="parameter" and nn.key==validbit.key then error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc) end end)
+          local function checkValidBit(nn)
+            if nn.kind=="call" then
+              -- don't recurse into other calls, they may include the valid bit, but that's OK!
+            elseif nn.kind=="parameter" and nn.key==validbit.key then 
+              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
+            else
+              map(nn.inputs, function(i) checkValidBit(i) end)
+            end
+          end
+          checkValidBit(n.inputs[2])
+          n.inputs[2] = systolic.__and(n.inputs[2], validbit)
+          n.inputs[2].pipelined=false
         end
         return systolicAST.new(n)
       elseif n.kind=="delay" then
@@ -1285,7 +1305,7 @@ function systolic.instanceParameter( variable, ty )
 end
 
 function systolic.parameter( name, ty )
-  assert(type(name)=="string")
+  err( type(name)=="string", "parameter name must be string" )
   checkReserved(name)
   assert( types.isType(ty) )
   return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})

@@ -190,10 +190,11 @@ appendSet(binops,cmpops)
 
 -- returns resultType, lhsType, rhsType
 -- ast is used for error reporting
-function types.meet( a, b, op, ast)
+function types.meet( a, b, op, loc)
   assert(types.isType(a))
   assert(types.isType(b))
   assert(type(op)=="string")
+  assert(type(loc)=="string") -- code location of op, in case there is an error
   
   assert(getmetatable(a)==TypeMT)
   assert(getmetatable(b)==TypeMT)
@@ -210,13 +211,13 @@ function types.meet( a, b, op, ast)
     end
     
     if op=="dot" then
-      local rettype,at,bt = types.meet(a.over,b.over,op,ast)
+      local rettype,at,bt = types.meet(a.over,b.over,op,loc)
       local convtypea = types.array( at, a:arrayLength() )
       local convtypeb = types.array( bt, a:arrayLength() )
       return rettype, convtypea, convtypeb
     elseif cmpops[op] then
       -- cmp ops are elementwise
-      local rettype,at,bt = types.meet(a.over,b.over,op,ast)
+      local rettype,at,bt = types.meet(a.over,b.over,op,loc)
       local convtypea = types.array( at, a:arrayLength() )
       local convtypeb = types.array( bt, a:arrayLength() )
       
@@ -224,7 +225,7 @@ function types.meet( a, b, op, ast)
       return thistype, convtypea, convtypeb
     elseif binops[op] or treatedAsBinops[op] then
       -- do it pointwise
-      local thistype = types.array2d( types.meet(a.over,b.over,op,ast), (a:arrayLength())[1], (a:arrayLength())[2] )
+      local thistype = types.array2d( types.meet( a.over, b.over, op, loc ), (a:arrayLength())[1], (a:arrayLength())[2] )
       return thistype, thistype, thistype
     elseif op=="pow" then
       local thistype = types.array(types.float(32), a:arrayLength() )
@@ -354,16 +355,13 @@ function types.meet( a, b, op, ast)
     return thistype, thistype, thistype
   elseif a:isArray() and b:isArray()==false then
     -- we take scalar constants and duplicate them out to meet the other arguments array length
-    local thistype, lhstype, rhstype = types.meet( a, types.array( b,a :arrayLength() ), op, ast )
+    local thistype, lhstype, rhstype = types.meet( a, types.array( b,a :arrayLength() ), op, loc )
     return thistype, lhstype, rhstype
   elseif a:isArray()==false and b:isArray() then
-    local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, ast )
+    local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, loc )
     return thistype, lhstype, rhstype
   else
-    print("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op)
-    print(ast.op)
-    assert(false)
-    --os.exit()
+    error("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op..", "..loc)
   end
   
   assert(false)

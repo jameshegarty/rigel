@@ -182,6 +182,11 @@ modules.fifo128 = memoize(function(ty)
 --  local hasData = S.gt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(1,types.uint(8)) ):disablePipelining()
   hasDataFn:setOutput( hasData, "hasData" )
 
+  -- size
+  local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
+  local fsize = ( writeAddr:get() - readAddr:get() ):disablePipelining()
+  sizeFn:setOutput( fsize, "size" )
+
   -- pushBack
   local pushCE = S.CE("CE_push")
   local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
@@ -253,6 +258,7 @@ end
 --modules.fifo = memoize(modules.fifonoop)
 
 -- tab should be a key of systolic values. Key is a systolic value that chooses between them.
+-- key is 0 indexed
 function modules.wideMux( tab, key )
   assert(#tab>0)
   local packed = map(tab, function(t,i) return S.tuple{t,S.eq(key,S.constant(i-1,types.uint(16)))} end )

@@ -88,7 +88,7 @@ local function typecheck_inner( ast, newNodeFn )
       end
     end
 
-    local thistype, lhscast, rhscast = types.meet( lhs.type, rhs.type, ast.op, ast )
+    local thistype, lhscast, rhscast = types.meet( lhs.type, rhs.type, ast.op, ast.loc )
     
     if thistype==nil then
       darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
@@ -126,7 +126,7 @@ local function typecheck_inner( ast, newNodeFn )
       err( a.type:isArray()==false or (a.type:arrayLength()==b.type:arrayLength()), "Error, array arguments to select must be the same length")
     end
 
-    local thistype, lhscast, rhscast =  types.meet( a.type, b.type, ast.kind )
+    local thistype, lhscast, rhscast =  types.meet( a.type, b.type, ast.kind, ast.loc )
 
     if a.type~=lhscast then a = newNodeFn({kind="cast",inputs={a},type=lhscast,loc=debug.traceback()}) end
     if b.type~=rhscast then b = newNodeFn({kind="cast",inputs={b},type=rhscast,loc=debug.traceback()}) end
@@ -232,7 +232,7 @@ local function typecheck_inner( ast, newNodeFn )
     ast.type = types.array2d( typeOver, ast.W, ast.H )
   elseif ast.kind=="cast" then
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
-      error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed!")
+      error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! "..ast.loc)
     end
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! "..ast.loc)

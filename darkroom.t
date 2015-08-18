@@ -20,12 +20,17 @@ DEFAULT_FIFO_SIZE = 2048*16*16
 darkroom.State = types.opaque("state")
 darkroom.StateR = types.opaque("stateR")
 darkroom.Handshake = types.opaque("handshake")
-darkroom.Registered = types.opaque("registered")
 function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
 function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}), darkroom.State}) end
 function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool()}),darkroom.StateR}) end
 function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
-function darkroom.StatefulHandshakeRegistered(A) return types.tuple({ A, darkroom.State, darkroom.Handshake, darkroom.Registered }) end
+local __statefulHandshakeArray={}
+function darkroom.StatefulHandshakeArray(A,N) 
+  if __statefulHandshakeArray[A]==nil then __statefulHandshakeArray[A]={} end
+  if __statefulHandshakeArray[A][N]==nil then __statefulHandshakeArray[A][N] = {kind="statefulHandshakeArray"} end
+  return __statefulHandshakeArray[A][N]
+end
+
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
 struct EmptyState {}
@@ -41,7 +46,6 @@ local ready = darkroom.ready
 
 function darkroom.isStateful( a ) return (a==darkroom.State or a==darkroom.StateR) or (a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR or darkroom.isStateful(a.list[1]))) end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
-function darkroom.isStatefulHandshakeRegistered( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake and a.list[4]==darkroom.Registered end
 function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
 function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
 function darkroom.isPure( a ) return darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false end
@@ -50,16 +54,6 @@ function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or da
 function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
 function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
 function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandshake(A)==false then error(er or "type should be stateful handshake") end end
-
--- takes StatefulHandshakeRegistered to StatefulHandshake
-function darkroom.stripRegistered( a, loc )
-  if darkroom.isStatefulHandshakeRegistered(a) then
-    return darkroom.StatefulHandshake( a.list[1] )
-  elseif a:isTuple() then
-    return types.tuple( map(a.list, function(t) assert(darkroom.isStatefulHandshakeRegistered(t)); return darkroom.StatefulHandshake(t.list[1]) end ) )
-  end
-  assert(false)
-end
 
 function darkroom.extractStateful( a, loc )
   if darkroom.isStateful(a)==false then error("Not a stateful input, "..loc) end
@@ -85,7 +79,7 @@ end
 -- StatefulHandshake(A) => {A,bool}
 function darkroom.extract( a, loc )
   if a==darkroom.State then return types.null() end
-  if darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeRegistered(a) then
+  if darkroom.isStatefulHandshake(a) then
     return types.tuple({a.list[1],types.bool()})
   end
   if a:isTuple() and darkroom.isStateful(a.list[1]) then
@@ -115,6 +109,9 @@ function darkroom.extractStatefulHandshake( a, loc )
   return a.list[1]
 end
 
+function darkroom.isSDFRate(t)
+  return type(t)=="table" and type(t[1])=="number" and type(t[2])=="number"
+end
 
 -- tab should be a table of systolic ASTs, all type array2d. Heights should match
 function concat2dArrays(tab)
@@ -173,17 +170,40 @@ darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
 
 -- takes SDF input rate I and returns output rate after I is processed by this function
+-- I is the format: {{A_sdfrate,A_converged},{B_sdfrate,B_converged}}
 function darkroomFunctionFunctions:sdfTransfer(I)
-  if I=="x" then return "x" end
-
   assert(type(I)=="table")
-  assert(type(I[1])=="number" and type(I[2])=="number")
+  map(I, function(i) assert(darkroom.isSDFRate(i[1])) end )
 
-  err( type(self.sdfInput)=="table", "Missing SDF rate for fn "..self.kind)
-  local R = { self.sdfOutput[1]*self.sdfInput[2], self.sdfOutput[2]*self.sdfInput[1] } -- output/input ratio
-  local On, Od = simplify(I[1]*R[1], I[2]*R[2])
-  local res = {On,Od}
-  return res
+  -- a few things can happen here:
+  -- (1) inputs are converged, but ratio is inconsistant. Return unconverged
+  -- (2) ratio is consistant, but some inputs are unconverged. Return unconverged.
+
+  err( darkroom.isSDFRate(self.sdfInput) or (type(self.sdfInput)=="table" and darkroom.isSDFRate(self.sdfInput[1])), "Missing SDF rate for fn "..self.kind)
+
+  -- shim b/c if we don't have multiple inputs, we don't pack into a table
+  local sdfInput = self.sdfInput
+  if darkroom.isSDFRate(self.sdfInput) then sdfInput = {sdfInput} end
+
+  local allConverged, consistantRatio, res = true, true
+
+  print("SDFSDF",#sdfInput,#I,self.kind)
+  assert( #sdfInput == #I )
+
+  for i=1,#sdfInput do
+    local R = { self.sdfOutput[1]*sdfInput[i][2], self.sdfOutput[2]*sdfInput[i][1] } -- output/input ratio
+    local Isdf, Iconverged = I[i][1], I[i][2]
+    local On, Od = simplify(Isdf[1]*R[1], Isdf[2]*R[2])
+    --local res = {On,Od}
+    if res==nil then
+      res = {On,Od}
+    else
+      if On~=res[1] or Od~=res[2] then consistantRatio=false end
+    end
+    allConverged = allConverged and Iconverged
+  end
+
+  return {res,allConverged and consistantRatio}
 end
 
 function darkroomFunctionFunctions:compile() return self.terraModule end
@@ -208,65 +228,68 @@ end
 
 local __sdfTotalCache = {}
 -- assume that inputs have SDF rate {1,1}, then what is the rate of this node?
-function darkroomIRFunctions:sdfTotalInner()
-  local converged = true
-  self:visitEach( 
+function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
+  assert( type(registeredInputRates)=="table" )
+
+  -- t is format {{a_sdfrate,a_converged},{b_sdfrate,b_converged},...}
+  local function allConverged(t)
+    for k,v in pairs(t) do if v[2]==false then return false end end
+      return true
+  end
+
+  local res = self:visitEach( 
     function( n, args )
       local res
       if n.kind=="input" or n.kind=="constant" then
-        res = {1,1}
+        res = {{1,1},true}
       elseif n.kind=="extractState" then
         res = args[1]
       elseif n.kind=="applyMethod" then
         if n.fnname=="load" then
-          if n.inst.sdf=="x" or n.inst.sdf==nil then
-            res = "x"
+          if registeredInputRates[n.inst]==nil then
+            res = {{1,1},false}
           else
-            res = n.inst.fn:sdfTransfer(n.inst.sdf)
+            res = n.inst.fn:sdfTransfer(registeredInputRates[n.inst])
           end
         elseif n.fnname=="store" then
-          n.inst.sdf = args[1]
-          res = args[1]
+          registeredInputRates[n.inst] = args
+          -- rate doesn't matter
+          res = {{1,1},allConverged(args)}
         else
           assert(false)
         end
       elseif n.kind=="apply" then
         assert(#n.inputs==1)
-        local I = args[1]
-        res =  n.fn:sdfTransfer(I)
-      elseif n.kind=="tuple" then
+        res =  n.fn:sdfTransfer(args)
+      elseif n.kind=="tuple" or n.kind=="array2d" then
         local IR
         -- all input rates must match!
         for key,i in pairs(n.inputs) do
           if darkroom.extractData( i.type ):const() then
             -- we don't care about SDF rates on constants
           else
-            local isdf = args[key]
+            local isdf = args[key][1]
             if IR==nil then IR=isdf end
             err(isdf[1]==IR[1] and isdf[2]==IR[2], "tuple mismatched SDF rate. [1]="..isdf[1].."/"..isdf[2].." ["..key.."]="..IR[1].."/"..IR[2]..", loc"..n.loc)
           end
         end
         
-        res = IR
+        res = {IR, allConverged(args) }
       elseif n.kind=="statements" then
-        res = args[1]
+        res = { args[1][1], allConverged(args) }
       else
         print("sdftotal",n.kind)
         assert(false)
       end
 
-      if __sdfTotalCache[n]==nil or res=="x" then
-        converged = false
-      elseif __sdfTotalCache[n][1]~=res[1] or __sdfTotalCache[n][2]~=res[2] then
-        converged = false
-      end
-
-      assert(type(res)=="table" or res=="x")
-      __sdfTotalCache[n] = res
+      assert(darkroom.isSDFRate(res[1]))
+      assert( type(res[2])=="boolean" )
+      __sdfTotalCache[n] = res[1]
       return res
     end)
 
-  return converged
+  -- output is format {{sdfRateInput1, convergedInput1},...}
+  return res[1][2]
 end
 
 local __sdfConverged = {}
@@ -274,9 +297,10 @@ function darkroomIRFunctions:sdfTotal(root)
   assert(darkroom.isIR(root))
   if __sdfConverged[root]==nil then
     local iter, converged = 10, false
+    local registeredInputRates = {} -- hold the rate of back edges between iterations
     while iter>=0 and converged==false do
       print("SDF ITER", iter)
-      converged = root:sdfTotalInner()
+      converged = root:sdfTotalInner( registeredInputRates )
       iter = iter - 1
     end
     err( converged, "Error, SDF solve failed to converge. Do you have a feedback loop?" )
@@ -366,15 +390,18 @@ function darkroomIRFunctions:typecheck()
   return self:process(
     function(n)
       if n.kind=="apply" then
+        err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
         assert( types.isType( n.inputs[1].type ) )
         if n.fn.inputType~=n.inputs[1].type then error("Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc) end
         n.type = n.fn.outputType
         return darkroom.newIR( n )
       elseif n.kind=="applyMethod" then
+        err(n.inst.fn.registered, "Error, calling method "..n.fnname.." on a non-registered type!")
+
         if n.fnname=="load" then
-          n.type = darkroom.stripRegistered(n.inst.fn.outputType)
+          n.type = n.inst.fn.outputType
         elseif n.fnname=="store" then
-          if n.inputs[1].type~=darkroom.stripRegistered(n.inst.fn.inputType) then error("input to reg store has incorrect type, should be "..tostring(darkroom.stripRegistered(n.inst.fn.inputType)).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
+          if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
           n.type = types.null()
         else
           err(false,"Unknown method "..n.fnname)
@@ -390,6 +417,10 @@ function darkroomIRFunctions:typecheck()
         return darkroom.newIR(n)
       elseif n.kind=="tuple" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
+        return darkroom.newIR(n)
+      elseif n.kind=="array2d" then
+        map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
+        n.type = types.array2d( n.inputs[1].type, n.W, n.H )
         return darkroom.newIR(n)
       elseif n.kind=="statements" then
         n.type = n.inputs[1].type
@@ -410,7 +441,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         if darkroom.isStatefulRV(n.type) then res[2] = module:lookupFunction("ready"):getInput() end
         return res
       elseif n.kind=="applyMethod" then
-        assert( darkroom.isStatefulHandshakeRegistered( n.inst.fn.outputType ) )
+        assert( n.inst.fn.registered )
 
         local I = module:lookupInstance(n.inst.name)
 
@@ -461,6 +492,9 @@ function darkroomIRFunctions:codegenSystolic( module )
         return {S.constant( n.value, n.type )}
       elseif n.kind=="tuple" then
         return {S.tuple( map(inputs,function(i) return i[1] end) ) }
+      elseif n.kind=="array2d" then
+        local outtype = types.array2d(darkroom.extract(n.type:arrayOver()),n.W,n.H)
+        return {S.cast(S.tuple( map(inputs,function(i) return i[1] end) ), outtype) }
       elseif n.kind=="extractState" then
         return {S.null()}
       elseif n.kind=="statements" then
@@ -653,13 +687,13 @@ function darkroom.liftStateful(f)
   return darkroom.newFunction(res)
 end
 
-local function passthroughSystolic( res, systolicModule, inner, passthroughFns )
+local function passthroughSystolic( res, systolicModule, inner, passthroughFns, onlyWire )
   assert(type(passthroughFns)=="table")
 
   for _,fnname in pairs(passthroughFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
-    print("PASSTHROUGH",fnname,"ON",srcFn:getOutputName(), srcFn:getValid())
-    res:addFunction( S.lambda(fnname, srcFn:getInput(), inner[fnname]( inner, srcFn:getInput() ), srcFn:getOutputName(), nil, srcFn:getValid(), srcFn:getCE() ) )
+    print("PASSTHROUGH",fnname,"ON",srcFn:getOutputName(), srcFn:getValid(),"VALID")
+    res:addFunction( S.lambda(fnname, srcFn:getInput(), inner[fnname]( inner, srcFn:getInput() ), srcFn:getOutputName(), nil, sel(onlyWire,nil,srcFn:getValid()), srcFn:getCE() ) )
 
     local readySrcFn = systolicModule:lookupFunction(fnname.."_ready")
     if readySrcFn~=nil then
@@ -1491,6 +1525,300 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   
 end
 
+-- Stateful{uint8,uint8,uint8...} -> Stateful(uint8)
+-- Ignores the counts. Just interleaves between streams.
+-- N: number of streams.
+-- period==0: ABABABAB, period==1: AABBAABBAABB, period==2: AAAABBBB
+function darkroom.interleveSchedule( N, period )
+  err(type(N)=="number", "N must be number")
+  err( isPowerOf2(N), "N must be power of 2")
+  err(type(period)=="number", "period must be number")
+  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=darkroom.Stateful(types.array2d(types.uint(8),N)), outputType=darkroom.Stateful(types.uint(8)), sdfInput={1,1}, sdfOutput={1,1} }
+  local struct InterleveSchedule { phase: uint8 }
+  terra InterleveSchedule:reset() self.phase=0 end
+  terra InterleveSchedule:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &uint8 )
+    @out = (self.phase >> period) % N
+  end
+  res.terraModule = InterleveSchedule
+
+  res.systolicModule = S.moduleConstructor("InterleveSchedule_"..N.."_"..period)
+  local inp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 256, 1 ) ):setInit(0):CE(true):instantiate("phase") )
+  local log2N = math.log(N)/math.log(2)
+
+  local CE = S.CE("CE")
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast(S.cast(S.bitSlice(phase:get(),period,period+log2N),types.uint(2)), types.uint(8)), "process_output", {phase:setBy( S.constant(true,types.bool()))}, nil, S.CE("process_CE") ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(8)))}, S.parameter("reset",types.bool()),CE) )
+
+  return darkroom.newFunction(res)
+end
+
+-- normalizes a table of SDF rates so that they sum to 1
+local function sdfNormalize( tab )
+  map( tab, function(n) assert(darkroom.isSDFRate(n)) end )
+
+  local sum = tab[1]
+  for i=2,#tab do
+    local b = tab[i]
+    -- (a/b)+(c/d) == (a*d/b*d) + (c*b/b*d)
+    sum[1] = sum[1]*b[2] + b[1]*sum[2]
+    sum[2] = sum[2]*b[2]
+  end
+  
+  local res = {}
+  for i=1,#tab do
+    local n,d = simplify(tab[i][1]*sum[2],tab[i][2]*sum[1])
+    res[i] = {n,d}
+  end
+  
+  return res
+end
+
+local function mergeStores( module, N )
+  local res = S.moduleConstructor("MergeStores_"..module.name):onlyWire(true)
+  local inner = res:add( module:instantiate("inner") )
+
+  local srcFn = module:lookupFunction("store_1")
+  local inputType = types.array2d(srcFn:getInput().type, N)
+  local inp = S.parameter( "store_input", inputType )
+  local sout = S.tuple( map(range(N), function(i) return inner["store_"..i](inner, S.index( inp,i-1) ) end ) )
+
+  res:addFunction( S.lambda("store", inp, sout, "store_output" ) )
+
+  res:addFunction( S.lambda("store_reset", S.parameter("store_reset_input",types.null()), nil, "store_reset_output", map( range(N), function(i) return inner["store_"..i.."_reset"](inner) end ) ) )
+
+  local readyinp = S.parameter( "store_ready_downstream", types.bool() )
+  local readyout = S.tuple( map(range(N), function(i) return inner["store_"..i.."_ready"](inner, readyinp) end ) )
+  res:addFunction( S.lambda("store_ready", readyinp, readyout, "store_ready_output" ) )
+
+  print("MERGE STORES PASSTHROUGH")
+  passthroughSystolic( res, module, inner, {"load"}, true )
+  return res
+end
+
+--[=[
+-- inputRates is a list of SDF rates
+-- {StatefulHandshakRegistered(A),StatefulHandshakRegistered(A),...} -> StatefulHandshakRegistered({A,stream:uint8}),
+-- where stream is the ID of the input that corresponds to the output
+function darkroom.serialize( A, inputRates, Schedule )
+  err( types.isType(A), "A must be type" )
+  err( type(inputRates)=="table", "inputRates must be table")
+  map( inputRates, function(n) assert(darkroom.isSDFRate(n)) end )
+  err( darkroom.isFunction(Schedule), "schedule must be darkroom function")
+  err( darkroom.extract(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+  darkroom.expectPure(A)
+
+  local res = {kind="serialize", A=A, inputRates=inputRates, schedule=Schedule}
+  res.inputType = types.array2d(darkroom.StatefulHandshake(A),#inputRates)
+  res.outputType = darkroom.StatefulHandshake( types.tuple{A,types.uint(8)} )
+  res.registered = true
+  res.sdfInput = sdfNormalize(inputRates)
+  res.sdfOutput = {1,1}
+
+  local struct Serialize { schedule: Schedule.terraModule, 
+                         fifos : (simmodules.fifo( A:toTerraType(), DEFAULT_FIFO_SIZE, "tmuxfifo"))[#inputRates];}
+  terra Serialize:reset() 
+    for i=0,[#inputRates] do self.fifos[i]:reset() end
+    self.schedule:reset() 
+  end
+  terra Serialize:stats( name: &int8 ) end
+  terra Serialize:store( inp : &darkroom.extract(res.inputType):toTerraType() )
+    for i=0,[#inputRates] do
+      if valid((@inp)[i]) then
+        self.fifos[i]:pushBack(data(inp[i]))
+      end
+    end
+  end
+  terra Serialize:load( out : &darkroom.extract(res.outputType):toTerraType() )
+    var counts : uint8[#inputRates]
+    for i=0,[#inputRates] do counts[i] = self.fifos[i]:size() end
+    var next : uint8
+    self.schedule:process(&counts,&next)
+    darkroomAssert( next>=0 and next<[#inputRates], "schedule produced an invalid fifo destination")
+    
+    if self.fifos[next]:hasData() then
+      valid(out) = true
+      data(out)._0 = @(self.fifos[next]:popFront())
+      data(out)._1 = next
+    else
+      valid(out) = false
+    end
+  end
+
+  res.terraModule = Serialize
+  res.systolicModule = S.moduleConstructor("Serialize_"..#inputRates)
+  local fifos = map(range(#inputRates), function(i) return res.systolicModule:add(fpgamodules.fifo128(A):instantiate("FIFO_"..i)) end)
+  local scheduler = res.systolicModule:add( Schedule.systolicModule:instantiate("Scheduler") )
+  
+  -----------------
+  -- N fifo store Fns: Stateful->StatefulR
+  local storeFns = {}
+  for i=1,#inputRates do
+    storeFns[i] = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i, A, "store_input_"..i ) )
+    local storeCE = S.CE("store_CE_"..i)
+    storeFns[i]:setCE(storeCE)
+    storeFns[i]:addPipeline( fifos[i]:pushBack( storeFns[i]:getInput() ) )
+
+    local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i.."_ready" ) )
+    storeReady:setOutput( fifos[i]:ready(), "store_"..i.."_ready" )
+    local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i.."_reset" ) )
+    storeReset:setCE(storeCE)
+    storeReset:addPipeline(fifos[i]:pushBackReset())
+  end
+  -----------------
+  -- fifo load: Stateful->StatefulV({A,stream})
+  local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
+  local loadCE = S.CE("load_CE")
+  load:setCE(loadCE)
+
+  local counts = map(fifos, function(f) return f:size() end )
+  local next = scheduler:process(S.cast(S.tuple(counts),types.array2d(types.uint(8),#fifos))):setNoTransaction()
+  
+  -- we need to atomically check that the queue still has data, and load it
+  local values = map(fifos, function(f,k) return S.tuple({ f:popFront(nil,S.__and( f:hasData(), S.eq( next, S.constant(k-1,types.uint(8))))), f:hasData()}):disablePipelining():setTransaction("pop") end)
+  local out = fpgamodules.wideMux( values, next ) -- notice that we load before the mux, so that the mux can be pipelined.
+  load:setOutput( S.tuple{S.tuple{S.index(out,0),next},S.index(out,1)}, "load_output" )
+
+  local loadReady = res.systolicModule:addFunction( S.lambdaConstructor( "load_ready" ) )
+  loadReady:setOutput( S.constant(true,types.bool()), "load_ready" )
+  local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
+  loadReset:setCE(loadCE)
+
+  load:complete()
+  --------
+
+  local storesList = map(range(#inputRates), function(i) return "store_"..i end)
+  res.systolicModule = runIffReadySystolic( res.systolicModule, storesList, {"load"})
+  res.systolicModule = liftDecimateSystolic( res.systolicModule, {"load"}, storesList )
+  res.systolicModule = liftHandshakeSystolic( res.systolicModule, concat(storesList,{"load"}), {} )
+  res.systolicModule = mergeStores( res.systolicModule, #inputRates )
+
+  return darkroom.newFunction(res)
+end
+
+-- inputRates is a list of SDF rates
+-- {StatefulHandshakRegistered(A),StatefulHandshakRegistered(A),...} -> StatefulHandshakRegistered({A,stream:uint8}),
+-- where stream is the ID of the input that corresponds to the output
+function darkroom.serialize( A, inputRates, Schedule )
+  err( types.isType(A), "A must be type" )
+  err( type(inputRates)=="table", "inputRates must be table")
+  map( inputRates, function(n) assert(darkroom.isSDFRate(n)) end )
+  err( darkroom.isFunction(Schedule), "schedule must be darkroom function")
+  err( darkroom.extract(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+  darkroom.expectPure(A)
+
+  local res = {kind="serialize", A=A, inputRates=inputRates, schedule=Schedule}
+  res.inputType = darkroom.StatefulHandshakeArray( A, #inputRates )
+  res.outputType = darkroom.StatefulHandshake( types.tuple{A,types.uint(8)} )
+  res.sdfInput = sdfNormalize(inputRates)
+  res.sdfOutput = {1,1}
+
+  local struct Serialize { schedule: Schedule.terraModule, 
+                         fifos : (simmodules.fifo( A:toTerraType(), DEFAULT_FIFO_SIZE, "tmuxfifo"))[#inputRates];}
+  terra Serialize:reset() 
+    for i=0,[#inputRates] do self.fifos[i]:reset() end
+    self.schedule:reset() 
+  end
+  terra Serialize:stats( name: &int8 ) end
+  terra Serialize:store( inp : &darkroom.extract(res.inputType):toTerraType() )
+    for i=0,[#inputRates] do
+      if valid((@inp)[i]) then
+        self.fifos[i]:pushBack(data(inp[i]))
+      end
+    end
+  end
+  terra Serialize:load( out : &darkroom.extract(res.outputType):toTerraType() )
+    var counts : uint8[#inputRates]
+    for i=0,[#inputRates] do counts[i] = self.fifos[i]:size() end
+    var next : uint8
+    self.schedule:process(&counts,&next)
+    darkroomAssert( next>=0 and next<[#inputRates], "schedule produced an invalid fifo destination")
+    
+    if self.fifos[next]:hasData() then
+      valid(out) = true
+      data(out)._0 = @(self.fifos[next]:popFront())
+      data(out)._1 = next
+    else
+      valid(out) = false
+    end
+  end
+
+  res.terraModule = Serialize
+
+  res.systolicModule = S.moduleConstructor("Serialize_"..#inputRates):onlyWire(true)
+  local scheduler = res.systolicModule:add( Schedule.systolicModule:instantiate("Scheduler") )
+
+  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local readyDownstream = S.parameter( "ready_downstream", types.bool() )
+
+  local pipelines = {}
+  local resetPipelines = {}
+
+  local nextFIFO = res.systolicModule:add( S.module.reg( types.uint(8), true ):instantiate("nextFIFO") )  
+  local nextFIFOSet = res.systolicModule:add( S.module.reg( types.bool(), true ):instantiate("nextFIFOSet") )
+
+  local perFIFOReady = {}
+  for i=1,#inputRates do
+    table.insert( perFIFOReady, S.__and(nextFIFO:get()==S.constant(i-1,types.uint(8)), nextFIFOSet:get()) )
+  end
+
+  local stepSchedule = 
+
+  table.insert( pipelines, nextFIFO:set( scheduler:process(nil,stepSchedule), stepSchedule ) )
+  table.insert( pipelines, nextFIFOSet:set(S.constant(true,types.bool())) )
+  table.insert( resetPipelines, nextFIFOSet:set(S.constant(false,types.bool())) )
+
+
+  -----------------
+  -- N fifo store Fns: Stateful->StatefulR
+  local storeFns = {}
+  for i=1,#inputRates do
+    storeFns[i] = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i, A, "store_input_"..i ) )
+    local storeCE = S.CE("store_CE_"..i)
+    storeFns[i]:setCE(storeCE)
+    storeFns[i]:addPipeline( fifos[i]:pushBack( storeFns[i]:getInput() ) )
+
+    local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i.."_ready" ) )
+    storeReady:setOutput( fifos[i]:ready(), "store_"..i.."_ready" )
+    local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_"..i.."_reset" ) )
+    storeReset:setCE(storeCE)
+    storeReset:addPipeline(fifos[i]:pushBackReset())
+  end
+  -----------------
+  -- fifo load: Stateful->StatefulV({A,stream})
+  local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
+  local loadCE = S.CE("load_CE")
+  load:setCE(loadCE)
+
+  local counts = map(fifos, function(f) return f:size() end )
+  local next = scheduler:process(S.cast(S.tuple(counts),types.array2d(types.uint(8),#fifos))):setNoTransaction()
+  
+  -- we need to atomically check that the queue still has data, and load it
+  local values = map(fifos, function(f,k) return S.tuple({ f:popFront(nil,S.__and( f:hasData(), S.eq( next, S.constant(k-1,types.uint(8))))), f:hasData()}):disablePipelining():setTransaction("pop") end)
+  local out = fpgamodules.wideMux( values, next ) -- notice that we load before the mux, so that the mux can be pipelined.
+  load:setOutput( S.tuple{S.tuple{S.index(out,0),next},S.index(out,1)}, "load_output" )
+
+  local loadReady = res.systolicModule:addFunction( S.lambdaConstructor( "load_ready" ) )
+  loadReady:setOutput( S.constant(true,types.bool()), "load_ready" )
+  local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
+  loadReset:setCE(loadCE)
+
+  load:complete()
+  --------
+
+  local storesList = map(range(#inputRates), function(i) return "store_"..i end)
+  res.systolicModule = runIffReadySystolic( res.systolicModule, storesList, {"load"})
+  res.systolicModule = liftDecimateSystolic( res.systolicModule, {"load"}, storesList )
+  res.systolicModule = liftHandshakeSystolic( res.systolicModule, concat(storesList,{"load"}), {} )
+  res.systolicModule = mergeStores( res.systolicModule, #inputRates )
+
+  return darkroom.newFunction(res)
+end
+]=]
+
+
+
+--[=[
 function darkroom.tmux( f, inputList )
   assert( darkroom.isFunction(f))
   darkroom.expectPure(f.inputType)
@@ -1548,6 +1876,7 @@ valid(out.["_"..i]) = false end
 
   return darkroom.newFunction(res)
 end
+]=]
 
 -- takes A to A[T] by duplicating the input
 function darkroom.broadcast(A,T)
@@ -2317,7 +2646,7 @@ darkroom.fifo = memoize(function( A, size )
   err( type(size)=="number", "size must be number")
   err( size >0,"size<=0")
   
-  local res = {kind="fifo", inputType=darkroom.StatefulHandshakeRegistered(A), outputType=darkroom.StatefulHandshakeRegistered(A), sdfInput={1,1}, sdfOutput={1,1}}
+  local res = {kind="fifo", inputType=darkroom.StatefulHandshake(A), outputType=darkroom.StatefulHandshake(A), registered=true, sdfInput={1,1}, sdfOutput={1,1}}
 
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo") }
   terra Fifo:reset() self.fifo:reset() end
@@ -2700,9 +3029,10 @@ mself.[n.inst.name]:store( [inputs[1][1]] ) end )
           map(inputs, function(m,i) local ty = darkroom.extract(darkroom.extract(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[ty:sizeof()]) end) end)
           return {out}
---        elseif n.kind=="index" then
---          table.insert( stats, quote @out = [inputs[1][1]].["_"..n.idx] end)
---          return {out}
+        elseif n.kind=="array2d" then
+          local ty = darkroom.extract(n.type):arrayOver()
+          map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&(out[i-1]),[m[1]],[ty:sizeof()]) end) end)
+          return {out}
         elseif n.kind=="extractState" then
           return {`nil}
         elseif n.kind=="catState" then
@@ -2842,7 +3172,7 @@ mself.[n.inst.name]:store( [inputs[1][1]] ) end )
             else
               assert(false)
             end
-          elseif n.kind=="tuple" then
+          elseif n.kind=="tuple" or n.kind=="array2d" then
             return input
           elseif n.kind=="statements" then
             local L = {readyinp}
@@ -2896,6 +3226,7 @@ end
 function darkroom.instantiateRegistered( name, fn )
   err( type(name)=="string", "name must be string")
   err( darkroom.isFunction(fn), "fn must be function" )
+  err( fn.registered, "fn must be registered")
   local t = {name=name, fn=fn}
   return setmetatable(t, darkroomInstanceMT)
 end
@@ -2992,6 +3323,17 @@ end
 function darkroom.tuple( name, t )
   assert( type(t)=="table" )
   local r = {kind="tuple", name=name, loc=getloc(), inputs={}}
+  map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
+  return darkroom.newIR( r )
+end
+
+function darkroom.array2d( name, t, W, H )
+  assert( type(t)=="table" )
+  err( type(W)=="number", "W must be number")
+  if H==nil then H=1 end
+  err( type(H)=="number", "H must be number")
+
+  local r = {kind="array2d", name=name, loc=getloc(), inputs={}, W=W,H=H}
   map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
