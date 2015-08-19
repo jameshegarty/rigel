@@ -825,10 +825,11 @@ function darkroom.waitOnInput(f)
   terra WaitOnInput:stats(name:&int8) self.inner:stats(name) end
   terra WaitOnInput:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.inner:ready()==false or valid(inp) then
-      if xor(self.inner:ready(),valid(inp)) then 
-        cstdio.printf("XOR %d %d\n",self.inner:ready(),valid(inp))
-        darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") 
-      end
+      -- inner should just ignore the input if inner:ready()==false. We don't have to check for this
+--      if xor(self.inner:ready(),valid(inp)) then 
+--        cstdio.printf("XOR %d %d\n",self.inner:ready(),valid(inp))
+--        darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") 
+--      end
 
       self.inner:process(&data(inp),out)
     else
@@ -1027,20 +1028,20 @@ darkroom.liftHandshake = memoize(function(f)
   local delay = math.max(1, f.delay)
 
   local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), delay, "liftHandshake"),
-                              fifo: simmodules.fifo( darkroom.extractStatefulHandshake(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
+--                              fifo: simmodules.fifo( darkroom.extractStatefulHandshake(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
                               inner: f.terraModule}
-  terra LiftHandshake:reset() self.delaysr:reset(); self.fifo:reset(); self.inner:reset() end
+  terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
   terra LiftHandshake:stats(name:&int8) 
-    cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
+--    cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
     self.inner:stats(name) 
   end
 
   terra LiftHandshake:process( readyDownstream : bool, inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if readyDownstream then
       cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner:ready())
-      if valid(inp) and self.inner:ready() then
-        self.fifo:pushBack(&data(inp))
-      end
+--     if valid(inp) and self.inner:ready() then
+--        self.fifo:pushBack(&data(inp))
+--      end
 
       if self.delaysr:size()==delay then
         var ot = self.delaysr:popFront()
@@ -1050,14 +1051,14 @@ darkroom.liftHandshake = memoize(function(f)
         valid(out) = false
       end
 
-      var tinp : darkroom.extract(f.inputType):toTerraType()
+--      var tinp : darkroom.extract(f.inputType):toTerraType()
       var tout : darkroom.extract(f.outputType):toTerraType()
-      valid(tinp) = false
-      if self.fifo:hasData() and self.inner:ready() then
-        data(tinp) = @(self.fifo:popFront())
-        valid(tinp) = true
-      end
-      self.inner:process(&tinp,&tout)
+--      valid(tinp) = false
+--      if valid(inp) and self.inner:ready() then
+--        data(tinp) = data(inp)
+--        valid(tinp) = true
+--      end
+      self.inner:process(inp,&tout)
       self.delaysr:pushBack(&tout)
     end
   end
