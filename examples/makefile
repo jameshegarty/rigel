@@ -4,9 +4,13 @@ SRCS = $(filter-out harness.t,$(SRCFILES))
 # some images have intentially invalid pixels in them, so we can't compare with golds
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t,$(SRCS))
-TERRA = $(patsubst %.t,out/%.bmp,$(SRCS))
+
+TERRA = $(patsubst %.t,out/%.raw,$(SRCS))
+TERRA += $(patsubst %.t,out/%_half.raw,$(SRCS))
+TERRA += $(patsubst %.t,out/%.bmp,$(SRCS))
+TERRA += $(patsubst %.t,out/%_half.bmp,$(SRCS))
 TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
+TERRA += $(patsubst %.t,out/%_half.correct.txt,$(GOLDS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS))
@@ -16,6 +20,8 @@ SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
 SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(GOLDS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(GOLDS))
+
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
@@ -43,7 +49,7 @@ axibits: $(AXIBITS)
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t 
+out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t 
 	terra $<
 
 #	$(CD) xst -ifn ../../extras/helloaxi/system.xst
@@ -102,6 +108,11 @@ out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
 	test ! -s out/$*.sim.diff && touch $@
 
+out/%_half.correct.txt : out/%_half.bmp
+	diff out/$*_half.bmp gold/$*.bmp > out/$*_half.diff
+	test ! -s out/$*_half.diff && touch $@
+
 out/%.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff
 	test ! -s out/$*.diff && touch $@
+

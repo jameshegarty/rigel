@@ -40,6 +40,7 @@ function M.fifo( T, reqMaxSize, name )
 
   terra FIFO:hasData() return self.backAddr > self.frontAddr end
   terra FIFO:size() return self.backAddr-self.frontAddr end
+  terra FIFO:full() return self:size() > reqMaxSize end
 
   terra FIFO:maxSizeSeen() return self.maxSeen end
   return FIFO

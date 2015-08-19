@@ -44,24 +44,27 @@ function H.sim(filename, hsfn, T, inputType, tapType, tapValue, inputW, inputH, 
   assert(type(outputH)=="number")
 
   local outputCount = (outputW*outputH)/T
--------------
-local f = d.seqMapHandshake( harness(hsfn,"frame_128.raw",inputType,tapType,"out/"..filename..".raw",outputType,1,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false )
-local Module = f:compile()
-(terra() var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
-------
-local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..".sim.raw",outputType,2,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false )
-io.output("out/"..filename..".sim.v")
-io.write(f:toVerilog())
-io.close()
-------
-local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw",inputType,tapType,filename.."_half.sim.raw",outputType,3, outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false,2 )
-io.output("out/"..filename.."_half.sim.v")
-io.write(f:toVerilog())
-io.close()
-----------
-d.writeMetadata("out/"..filename..".metadata.lua", outputW, outputH,1,1,"frame_128.raw")
-d.writeMetadata("out/"..filename.."_half.metadata.lua", outputW, outputH,1,1,"frame_128.raw")
 
+  -------------
+  for i=1,2 do
+    local ext=""
+    if i==2 then ext="_half" end
+    local f = d.seqMapHandshake( harness(hsfn,"frame_128.raw",inputType,tapType,"out/"..filename..ext..".raw",outputType,i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T, false, i )
+    local Module = f:compile()
+    (terra() var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
+  end
+  ------
+  for i=1,2 do
+    local ext=""
+    if i==2 then ext="_half" end
+    local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..ext..".sim.raw",outputType,2+i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false,2 )
+    io.output("out/"..filename..ext..".sim.v")
+    io.write(f:toVerilog())
+    io.close()
+    
+    d.writeMetadata("out/"..filename..ext..".metadata.lua", outputW, outputH,1,1,"frame_128.raw")
+  end
+  
 end
 
 -- AXI must have T=8

@@ -104,6 +104,18 @@ function darkroom.extractData(a)
   else print("extractdata",a); assert(false) end
 end
 
+function darkroom.extractReady(a)
+  if darkroom.isStatefulHandshake(a) then return types.bool()
+  elseif darkroom.isStatefulRV(a) then return types.bool()
+  elseif a:isTuple() and darkroom.isStatefulHandshake(a.list[1]) then
+    map(a.list,function(i) assert(darkroom.isStatefulHandshake(i)); end )
+    return types.tuple(broadcast(types.bool(),#a.list))
+  else 
+    print("COULD NOT EXTRACT READY",a)
+    assert(false) 
+  end
+end
+
 function darkroom.extractStatefulHandshake( a, loc )
   if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, ") end
   return a.list[1]
@@ -580,17 +592,20 @@ function darkroom.packTuple( typelist, handshake )
 
     map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), DEFAULT_FIFO_SIZE, "makeHandshake")}) end )
     terra PackTuple:reset() [map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
-    terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-      [map(activePorts, function(i) return quote if valid(inp.["_"..(i-1)]) then self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) end end end )]
+    terra PackTuple:process( readyDownstream: bool, inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      if readyDownstream then
+        [map(activePorts, function(i) return quote if valid(inp.["_"..(i-1)]) then self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) end end end )]
 
-      var hasData = [foldt(map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), andopterra, true )]
-      if hasData then
-        data(out) = { [map( typelist, function(t,k) if t:const() then print("CONST",k);return `data(inp.["_"..(k-1)]) else print("NOTCONST",k);return `@(self.["FIFO"..k]:popFront()) end end ) ] }
-        valid(out) = true
-      else
-        valid(out) = false
+        var hasData = [foldt(map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), andopterra, true )]
+        if hasData then
+         data(out) = { [map( typelist, function(t,k) if t:const() then print("CONST",k);return `data(inp.["_"..(k-1)]) else print("NOTCONST",k);return `@(self.["FIFO"..k]:popFront()) end end ) ] }
+         valid(out) = true
+        else
+          valid(out) = false
+        end
       end
     end
+    terra PackTuple:ready(readyDownstream:bool) return {[broadcast(readyDownstream,#typelist)]} end
   else
     terra PackTuple:reset() end
     terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
@@ -1020,29 +1035,34 @@ darkroom.liftHandshake = memoize(function(f)
     self.inner:stats(name) 
   end
 
-  terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    if valid(inp) then
-      self.fifo:pushBack(&data(inp))
-    end
+  terra LiftHandshake:process( readyDownstream : bool, inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if readyDownstream then
+      cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner:ready())
+      if valid(inp) and self.inner:ready() then
+        self.fifo:pushBack(&data(inp))
+      end
 
-    if self.delaysr:size()==delay then
-      var ot = self.delaysr:popFront()
-      valid(out) = valid(ot)
-      data(out) = data(ot)
-    else
-      valid(out) = false
-    end
+      if self.delaysr:size()==delay then
+        var ot = self.delaysr:popFront()
+        valid(out) = valid(ot)
+        data(out) = data(ot)
+      else
+        valid(out) = false
+      end
 
-    var tinp : darkroom.extract(f.inputType):toTerraType()
-    var tout : darkroom.extract(f.outputType):toTerraType()
-    valid(tinp) = false
-    if self.fifo:hasData() and self.inner:ready() then
-      data(tinp) = @(self.fifo:popFront())
-      valid(tinp) = true
+      var tinp : darkroom.extract(f.inputType):toTerraType()
+      var tout : darkroom.extract(f.outputType):toTerraType()
+      valid(tinp) = false
+      if self.fifo:hasData() and self.inner:ready() then
+        data(tinp) = @(self.fifo:popFront())
+        valid(tinp) = true
+      end
+      self.inner:process(&tinp,&tout)
+      self.delaysr:pushBack(&tout)
     end
-    self.inner:process(&tinp,&tout)
-    self.delaysr:pushBack(&tout)
   end
+  terra LiftHandshake:ready(readyDownstream:bool) return readyDownstream and self.inner:ready() end
+--  terra LiftHandshake:ready(readyDownstream:bool) return readyDownstream  end
   res.terraModule = LiftHandshake
   res.systolicModule = liftHandshakeSystolic( f.systolicModule, {"process"},{} )
 
@@ -2588,22 +2608,25 @@ darkroom.makeHandshake = memoize(function( f )
   
   -- if inner function is const, consider input to always be valid
   local innerconst = darkroom.extractStateful(f.outputType):const()
-  terra MakeHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), 
+  terra MakeHandshake:process( readyDownstream:bool, 
+                               inp : &darkroom.extract(res.inputType):toTerraType(), 
                                out : &darkroom.extract(res.outputType):toTerraType())
-    
-    if self.delaysr:size()==delay then
-      var ot = self.delaysr:popFront()
-      valid(out) = valid(ot)
-      data(out) = data(ot)
-    else
-      valid(out)=false
-    end
+    if readyDownstream then
+      if self.delaysr:size()==delay then
+        var ot = self.delaysr:popFront()
+        valid(out) = valid(ot)
+        data(out) = data(ot)
+      else
+        valid(out)=false
+      end
 
-    var tout : darkroom.extract(res.outputType):toTerraType()
-    valid(tout) = valid(inp)
-    if valid(inp) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
-    self.delaysr:pushBack(&tout)
+      var tout : darkroom.extract(res.outputType):toTerraType()
+      valid(tout) = valid(inp)
+      if valid(inp) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
+      self.delaysr:pushBack(&tout)
+    end
   end
+  terra MakeHandshake:ready( readyDownstream: bool ) return readyDownstream end
   res.terraModule = MakeHandshake
 
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
@@ -2651,23 +2674,28 @@ darkroom.fifo = memoize(function( A, size )
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo") }
   terra Fifo:reset() self.fifo:reset() end
   terra Fifo:stats(name:&int8)  end
-  terra Fifo:store( inp : &darkroom.extract(res.inputType):toTerraType())
+  terra Fifo:store( ready : bool, inp : &darkroom.extract(res.inputType):toTerraType())
     cstdio.printf("FIFO STORE\n")
-    if valid(inp) then 
+    -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
+    -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
+    if valid(inp) and ready then 
       cstdio.printf("FIFO STORE, valid input\n")
       self.fifo:pushBack(&data(inp)) 
     end
   end
-  terra Fifo:load( out : &darkroom.extract(res.outputType):toTerraType())
-    if self.fifo:hasData() then
-      cstdio.printf("FIFO LOAD, hasData\n")
-      valid(out) = true
-      data(out) = @(self.fifo:popFront())
-    else
-      cstdio.printf("FIFO LOAD, no data\n")
-      valid(out) = false
+  terra Fifo:load( readyDownstream: bool, out : &darkroom.extract(res.outputType):toTerraType())
+    if readyDownstream then
+      if self.fifo:hasData() then
+        cstdio.printf("FIFO LOAD, hasData\n")
+        valid(out) = true
+        data(out) = @(self.fifo:popFront())
+      else
+        cstdio.printf("FIFO LOAD, no data\n")
+        valid(out) = false
+      end
     end
   end
+  terra Fifo:storeReady() return (self.fifo:full()==false) end
   res.terraModule = Fifo
 
   res.systolicModule = S.moduleConstructor("fifo_"..size)
@@ -2953,6 +2981,99 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
         table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
     end
 
+    local readyOutput
+    fn.output:visitEachReverse(
+      function(n, inputs)
+        local inputList = {}
+        for parentNode,v in pairs(inputs) do
+          if #parentNode.inputs==1 then
+            assert(v[2]==1)
+            table.insert( inputList, v[1] )
+--          elseif parentNode.kind=="apply" and darkroom.isStatefulHandshake(parentNode.fn.inputType)==false and parentNode.fn.inputType:isTuple() then
+          elseif parentNode.kind=="tuple" or parentNode.kind=="statements" then
+            local idx = v[2]-1
+            table.insert( inputList, `[v[1]].["_"..idx] )
+          elseif parentNode.kind=="array2d" then
+            print("DERP",parentNode.kind, n.type)
+            local idx = v[2]-1
+            table.insert( inputList, `([v[1]])[idx] )
+          else
+            -- is there some other way to cross the streams?
+            print("KIND",parentNode.kind)
+            assert(false)
+          end
+        end
+
+        -- ready bit for this node is AND of all consumers
+        local input = foldt( inputList, function(a,b) return `(a and b) end, readyInput )
+
+        local out
+        if (n.kind=="apply" or n.kind=="applyMethod") and (darkroom.isStatefulHandshake(n.type) or darkroom.isStatefulRV(n.type)) then
+          local name = n.name
+          if n.kind=="applyMethod" then name = n.inst.name end
+
+          table.insert( Module.entries, {field="readydownstream_"..name, type=darkroom.extractReady(n.type):toTerraType()} )
+          
+          if n.kind=="apply" and darkroom.isStatefulHandshake(n.fn.inputType) then
+            table.insert( Module.entries, {field="ready_"..name, type=darkroom.extractReady(n.fn.inputType):toTerraType()} )
+          elseif n.kind=="applyMethod" then
+            table.insert( Module.entries, {field="ready_"..name, type=darkroom.extractReady(n.inst.fn.inputType):toTerraType()} )
+          end
+
+          table.insert( readyStats, quote mself.["readydownstream_"..name] = input end )
+        end
+
+        if n.kind=="input" then
+          assert(readyOutput==nil)
+          readyOutput = input
+          return nil
+        elseif n.kind=="apply" then
+          print("systolic ready APPLY",n.fn.kind)
+          if darkroom.isStatefulHandshake(n.fn.outputType) or  darkroom.isStatefulRV(n.fn.inputType)  then
+            local ot = `mself.[n.name]:ready(input)
+            if darkroom.isStatefulHandshake(n.fn.inputType) then table.insert( readyStats, quote mself.["ready_"..n.name] = ot end ) end
+            return ot
+          else
+            print("NO READY INPUT",n.fn.kind,n.fn.inputType)
+            return `mself.[n.name]:ready()
+          end
+        elseif n.kind=="applyMethod" then
+          if n.fnname=="load" then 
+            -- load has nothing upstream, so whatever
+          elseif n.fnname=="store" then
+            local ot = `mself.[n.inst.name]:storeReady()
+            -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
+            table.insert( readyStats, quote mself.["ready_"..n.inst.name] = ot end ) 
+            return ot
+          else
+            assert(false)
+          end
+        elseif n.kind=="tuple" or n.kind=="array2d" then
+          return input
+        elseif n.kind=="statements" then
+          local L = {readyInput}
+          for i=2,#n.inputs do 
+            table.insert( L, `true )
+          end
+          return `{L}
+        elseif n.kind=="constant" or n.kind=="extractState" then
+        else
+          print(n.kind)
+          assert(false)
+        end
+      end, true)
+
+    if darkroom.isStatefulRV(res.inputType) then
+      assert(readyOutput~=nil)
+      terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return readyOutput end
+    elseif darkroom.isStatefulRV(res.outputType) then
+      assert(readyOutput~=nil)
+      -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
+      terra Module.methods.ready( [mself] ) var [readyInput] = true; [readyStats]; return readyOutput end
+    elseif darkroom.isStatefulHandshake(res.outputType) then
+      terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [readyOutput] end
+    end
+
     local out = fn.output:visitEach(
       function(n, inputs)
 
@@ -2971,7 +3092,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
         if n.kind=="input" then
           print("N",n,n.type,"FNINP",fn.input,fn.input.type)
           if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
-          return {inputSymbol, readyInput}
+          return inputSymbol
         elseif n.kind=="apply" then
           print("APPLY",n.fn.kind, n.inputs[1].type, n.type)
           print("APP",n.name, n.fn.terraModule, "inputtype",n.fn.inputType,"outputtype",n.fn.outputType)
@@ -2979,41 +3100,45 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           table.insert( resetStats, quote mself.[n.name]:reset() end )
           table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
 
-          local readyOut = symbol( bool, "ready_"..n.name )
-          if darkroom.isStatefulV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready() end) 
-          elseif darkroom.isStatefulRV(n.inputs[1].type) then table.insert( readyStats, quote var [readyOut] = mself.[n.name]:ready([inputs[1][2]]) end) end
+          if darkroom.isStatefulHandshake(n.type) then
+            table.insert( stats, quote mself.[n.name]:process( mself.["readydownstream_"..n.name], [inputs[1]], out ) end )
+          else
+            table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+          end
 
-          table.insert( stats, quote mself.[n.name]:process( [inputs[1][1]], out ) end )
+          if darkroom.isStatefulHandshake(n.inputs[1].type) or darkroom.isStatefulHandshake(n.type) then
+            table.insert( Module.entries, {field=n.name.."CNT", type=int} )
+            table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
 
-if darkroom.isStatefulHandshake(n.inputs[1].type) or darkroom.isStatefulHandshake(n.type) then
-  table.insert( Module.entries, {field=n.name.."CNT", type=int} )
-  table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+            table.insert( Module.entries, {field=n.name.."ICNT", type=int} )
+            table.insert( resetStats, quote mself.[n.name.."ICNT"]=0 end )
 
-  table.insert( Module.entries, {field=n.name.."ICNT", type=int} )
-  table.insert( resetStats, quote mself.[n.name.."ICNT"]=0 end )
+            local readyDownstream = `mself.["readydownstream_"..n.name]
+            local readyThis = `mself.["ready_"..n.name]
 
-local Q = quote end
-                if darkroom.isStatefulHandshake(n.inputs[1].type) then Q = quote if valid([inputs[1][1]]) then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end end
-end
-table.insert( stats, quote cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d\n",n.name, valid([inputs[1][1]]), valid(out),mself.[n.name.."CNT"],mself.[n.name.."ICNT"] );
+            local Q = quote end
+                if darkroom.isStatefulHandshake(n.inputs[1].type) then Q = quote if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end end
+            end
+            table.insert( stats, quote cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d readydownstream %d\n",n.name, valid([inputs[1]]), valid(out),mself.[n.name.."CNT"],mself.[n.name.."ICNT"] , readyDownstream);
                 Q
-                if valid(out) then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
- end )
-end
-          return {out,readyOut}
+                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
+            end )
+          end
+
+          return out
         elseif n.kind=="applyMethod" then
           if n.fnname=="load" then
             table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-            table.insert( stats, quote mself.[n.inst.name]:load( out ) 
+            table.insert( stats, quote mself.[n.inst.name]:load( mself.["readydownstream_"..n.inst.name], out ) 
                             cstdio.printf("LOAD OUTPUT %s %d\n",n.name, valid(out) )
 end )
-            return {out}
+            return out
           elseif n.fnname=="store" then
             table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
             table.insert( stats, quote 
-                            cstdio.printf("STORE INPUT %s %d\n",n.name,valid([inputs[1][1]]))
-mself.[n.inst.name]:store( [inputs[1][1]] ) end )
-            return {`nil}
+                            cstdio.printf("STORE INPUT %s %d\n",n.name,valid([inputs[1]]))
+                            mself.[n.inst.name]:store( mself.["ready_"..n.inst.name], [inputs[1]] ) end )
+            return `nil
           else
             assert(false)
           end
@@ -3024,22 +3149,22 @@ mself.[n.inst.name]:store( [inputs[1][1]] ) end )
             assert(false)
           end
 
-          return {out}
+          return out
         elseif n.kind=="tuple" then
           map(inputs, function(m,i) local ty = darkroom.extract(darkroom.extract(n.type).list[i])
-              table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m[1]],[ty:sizeof()]) end) end)
-          return {out}
+              table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
+          return out
         elseif n.kind=="array2d" then
           local ty = darkroom.extract(n.type):arrayOver()
           map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&(out[i-1]),[m[1]],[ty:sizeof()]) end) end)
-          return {out}
+          return out
         elseif n.kind=="extractState" then
-          return {`nil}
+          return `nil
         elseif n.kind=="catState" then
-          table.insert( stats, quote @out = @[inputs[1][1]] end)
-          return {out,inputs[1][2]}
+          table.insert( stats, quote @out = @[inputs[1]] end)
+          return out
         elseif n.kind=="statements" then
-          table.insert( stats, quote @out = @[inputs[1][1]] end)
+          table.insert( stats, quote @out = @[inputs[1]] end)
           return inputs[1]
         else
           print(n.kind)
@@ -3047,28 +3172,14 @@ mself.[n.inst.name]:store( [inputs[1][1]] ) end )
         end
       end)
 
---    callOnEntries(Module,"reset")
-
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] )
---        cstdio.printf([fn.name.."\n"])
-      [stats]
+    if darkroom.isStatefulHandshake(fn.output.type) then
+      terra Module.methods.process( [mself], readyDownstream: bool, [inputSymbol], [outputSymbol] ) [stats] end
+    else
+      terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
     end
     terra Module.methods.reset( [mself] ) [resetStats] end
     terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
-    if darkroom.isStatefulRV(res.inputType) then
-      assert(out[2]~=nil)
-      terra Module.methods.ready( [mself], [readyInput] ) [readyStats]; return [out[2]] end
-    elseif darkroom.isStatefulRV(res.outputType) then
-      assert(out[2]~=nil)
-      terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
-    else
-      --terra Module.methods.ready( [mself] ) [readyStats]; return [out[2]] end
-    end
-    --Module:printpretty()
-    --Module.methods.process:printpretty(false)
-    --print("PP")
-    --Module.methods.process:printpretty()
-    --print("PPDONE")
+
     return Module
   end
 
@@ -3117,16 +3228,6 @@ mself.[n.inst.name]:store( [inputs[1][1]] ) end )
 
     assert(systolic.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
-    --local processfn = S.lambda( "process", inp, out[1], "process_output" )
-    
-    --local process = module:addFunction( processfn )
-
-    --[=[
-    if darkroom.isStatefulHandshake( fn.inputType ) then
-      module:addFunction( S.lambda("reset", S.parameter("ri",types.null()), nil, "reset_out", resetPipelines, rst) )
-    elseif darkroom.isStateful( fn.inputType) then -- pure fns don't have a reset
-      module:addFunction( S.lambda("reset", S.parameter("nip",types.null()), nil, "reset_out", resetPipelines, S.parameter("reset", types.bool() ) ) )
-    end]=]
 
     if darkroom.isStatefulRV( fn.inputType ) then
       assert( S.isAST(out[2]) )
@@ -3557,6 +3658,8 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
   local assntaps = quote end
   if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
 
+  if readyRate==nil then readyRate=1 end
+
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
     var [innerinp]
     [assntaps]
@@ -3564,19 +3667,23 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     var o : darkroom.extract(f.outputType):toTerraType()
     var inpAddr = 0
     var outAddr = 0
+    var downstreamReady = 0
     while inpAddr<inputW*inputH or outAddr<outputW*outputH do
-      cstdio.printf("---------------------------------- RUNPIPE inpAddr %d outAddr %d\n", inpAddr, outAddr)
       valid(innerinp)=(inpAddr<inputW*inputH)
-      self.inner:process(&innerinp,&o)
-      inpAddr = inpAddr + inputT -- in simulator, ready==true always, so we can always increment.
-      if valid(o) then outAddr = outAddr + outputT end
+      var wasReady = self.inner:ready(downstreamReady==0)
+      cstdio.printf("---------------------------------- RUNPIPE inpAddr %d outAddr %d ready %d downstreamReady %d\n", inpAddr, outAddr, wasReady, downstreamReady==0)
+      self.inner:process(wasReady,&innerinp,&o)
+      if wasReady then inpAddr = inpAddr + inputT end
+      if valid(o) and (downstreamReady==0) then outAddr = outAddr + outputT end
+      downstreamReady = downstreamReady+1
+      if downstreamReady==readyRate then downstreamReady=0 end
     end
   end
   res.terraModule = SeqMap
 
   local verilogStr
 
-  if readyRate==nil then readyRate=1 end
+
 
   if axi then
     local baseTypeI = inputType
