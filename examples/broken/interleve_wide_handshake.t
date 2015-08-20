@@ -23,14 +23,13 @@ ignoreBin = d.lift( "ignoreBin", BTYPE, ITYPE, 0, terra( a:&BTYPE:toTerraType(),
 A = d.input( d.StatefulHandshake(ITYPE) )
 B = d.apply( "plus100", d.makeHandshake(d.makeStateful(d.map(plus100,8))), A )
 
-local SER = darkroom.serialize( ITYPE, {{1,1},{1,1}}, d.interleveSchedule( 2, 2 ) ) 
-local serialize = d.instantiateRegistered("SER", SER)
+local out = darkroom.apply("toHandshakeArray", d.toHandshakeArray(ITYPE,{{1,2},{1,2}}), d.array2d("sa",{A,B},2))
+local SER = darkroom.serialize( ITYPE, {{1,2},{1,2}}, d.interleveSchedule( 2, 2 ) ) 
+local out = darkroom.apply("ser", SER, out )
 
---out = d.apply( "serialize", darkroom.serialize( ITYPE, {{1,1},{1,1}}, d.interleveSchedule( 2, 2 ) ), d.array2d("sa",{A,B},2) )
-local out = d.applyMethod("SL", serialize, "load")
 out = d.apply("ib", d.makeHandshake(d.makeStateful(ignoreBin)), out )
 
-hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("SS", serialize, "store", d.array2d("sa",{A,B},2))}, {serialize} )
+hsfn = d.lambda( "interleve_wide", A, out )
 
 ------------
 --ITYPE = d.StatefulHandshake(ITYPE)

@@ -992,7 +992,6 @@ function systolicASTFunctions:CSE(repo)
       seenlist[n.kind] = seenlist[n.kind] or {}
       for k,v in pairs(seenlist[n.kind]) do
         if n:eq(v) then 
-          print("CSE",n.kind)
           return v
         else
 --          print("CSEFAIL",n.kind)
@@ -1342,7 +1341,6 @@ local function moduleConstructor(tab)
 
   local constMT = {__index=constFunctions}
   return function(...)
-    print("MODULE CONSTRUCTOR")
     local t = tab.new(...)
     t.isComplete=false
 print(t,tab.configFns)
@@ -2433,7 +2431,6 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
-    print("COMPLETEMODULE",self.name)
     local fns = map(self.functions, function(f) if systolic.isFunctionConstructor(f) then return f:complete() else return f end end)
     self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
     self.isComplete = true
