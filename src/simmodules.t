@@ -1,3 +1,4 @@
+cstdio = terralib.includec("stdio.h")
 local M = {}
 
 function M.fifo( T, reqMaxSize, name )
@@ -20,8 +21,9 @@ function M.fifo( T, reqMaxSize, name )
   end
 
   terra FIFO:pushBack( inp : &T ) 
-    darkroomAssert( self:size() <= reqMaxSize, ["FIFO overflow "..name] )
+    darkroomAssert( self:full()==false, ["FIFO overflow "..name] )
     self.data[self.backAddr % maxSize] = @inp
+    cstdio.printf("fifo %s store addr %d\n", name, self.backAddr)
     self.backAddr = self.backAddr + 1
     if self:size()>self.maxSeen then self.maxSeen=self:size() end
   end
@@ -33,14 +35,16 @@ function M.fifo( T, reqMaxSize, name )
   end
 
   terra FIFO:popFront() : &T
+    darkroomAssert( self:hasData(), "fifo has no data")
     var cur = &self.data[self.frontAddr % maxSize]
+    cstdio.printf("fifo %s load addr %d\n", name, self.frontAddr)
     self.frontAddr = self.frontAddr + 1
     return cur
   end
 
   terra FIFO:hasData() return self.backAddr > self.frontAddr end
   terra FIFO:size() return self.backAddr-self.frontAddr end
-  terra FIFO:full() return self:size() > reqMaxSize end
+  terra FIFO:full() return self:size() >= reqMaxSize end
 
   terra FIFO:maxSizeSeen() return self.maxSeen end
   return FIFO
@@ -51,8 +55,8 @@ function M.shiftRegister( T, size, name )
   local struct SR { fifo : FIFO }
   terra SR:reset() self.fifo:reset() end
   terra SR:pushBack( inp : &T )
+    if self.fifo:size()==size then self.fifo:popFront() end
     self.fifo:pushBack(inp)
-    if self.fifo:size()>size then self.fifo:popFront() end
   end
   -- these are the _newest_ things in the shift register
   -- idx=0 is the most recent thing pushBack'ed
