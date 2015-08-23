@@ -21,24 +21,31 @@ inp = S.parameter("inp",BTYPE)
 ignoreBin = d.lift( "ignoreBin", BTYPE, ITYPE, 0, terra( a:&BTYPE:toTerraType(), out:&ITYPE:toTerraType()) @out = a._0 end, inp, S.index(inp,0) )
 --ignoreBin = d.lift( "ignoreBin", BTYPE, ITYPE, 0, terra( a:&BTYPE:toTerraType(), out:&ITYPE:toTerraType()) @out = array(a._1,a._1,a._1,a._1,a._1,a._1,a._1,a._1) end, inp, S.index(inp,0) )
 ------------
---local fifos = { d.instantiateRegistered("f1",d.fifo(ITYPE,128)), d.instantiateRegistered("f2",d.fifo(ITYPE,127)) }
-local fifos = { d.instantiateRegistered("f1",d.fifo(ITYPE,128))}
+local fifos = { d.instantiateRegistered("f1",d.fifo(ITYPE,128)), d.instantiateRegistered("f2",d.fifo(ITYPE,128)) }
+--local fifos = { d.instantiateRegistered("f1",d.fifo(ITYPE,128))}
 
 A = d.input( d.StatefulHandshake(ITYPE) )
-B = d.apply( "plus100", d.makeHandshake(d.makeStateful(d.map(plus100,8))), A )
+local Abroadcast = d.apply("Abroadcast", d.broadcastStream(ITYPE,2), A)
 
---local AinFifo = d.applyMethod("L1", fifos[1],"load")
-local BinFifo = d.applyMethod("L2", fifos[1],"load")
+--B = d.apply( "plus100", d.makeHandshake(d.makeStateful(d.map(plus100,8))), d.selectStream("A0",Abroadcast,0) )
+local AinFifo1 = d.applyMethod("L1", fifos[1],"load")
+B = d.apply( "plus100", d.makeHandshake(d.makeStateful(d.map(plus100,8))), AinFifo1 )
 
-local out = darkroom.apply("toHandshakeArray", d.toHandshakeArray(ITYPE,{{1,2},{1,2}}), d.array2d("sa",{A,BinFifo},2,1,false))
+
+
+local AinFifo2 = d.applyMethod("L2", fifos[2],"load")
+
+--local out = darkroom.apply("toHandshakeArray", d.toHandshakeArray(ITYPE,{{1,2},{1,2}}), d.array2d("sa",{d.selectStream("A1",Abroadcast,1),BinFifo},2,1,false))
+local out = darkroom.apply("toHandshakeArray", d.toHandshakeArray(ITYPE,{{1,2},{1,2}}), d.array2d("sa",{AinFifo2,B},2,1,false))
+
 local SER = darkroom.serialize( ITYPE, {{1,2},{1,2}}, d.interleveSchedule( 2, 2 ) ) 
 local out = darkroom.apply("ser", SER, out )
 
-out = d.apply("ib", d.makeHandshake(d.makeStateful(ignoreBin)), out )
+out = d.apply("ignoreBin", d.makeHandshake(d.makeStateful(ignoreBin)), out )
 
---hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",A), d.applyMethod("s2",fifos[2],"store",B) }, fifos )
+hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",d.selectStream("A0",Abroadcast,0)), d.applyMethod("s2",fifos[2],"store",d.selectStream("A1",Abroadcast,1)) }, fifos )
 --hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",A) }, fifos )
-hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",B) }, fifos )
+--hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",B) }, fifos )
 
 ------------
 --ITYPE = d.StatefulHandshake(ITYPE)

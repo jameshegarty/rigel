@@ -446,6 +446,7 @@ end
 
 function systolic.tuple( tab )
   err( type(tab)=="table", "input to tuple should be a table")
+  err( #tab==keycount(tab), "tab must be array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
   map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
   return typecheck(res)
@@ -1470,7 +1471,9 @@ function userModuleFunctions:toVerilog()
     local CEseen = {}
     table.insert(t,"module "..self.name.."(input CLK")
     for fnname,fn in pairs(self.functions) do
-      if fn:isPure()==false then 
+      -- our purity analysis isn't smart enough to know whether a valid bit is needed when onlyWire==true.
+      -- EG, if we use the valid bit to control clock enables or something. So just do what the user said (include the valid unless it was implicit)
+      if fn:isPure()==false or self.onlyWire then 
         if self.onlyWire and fn.implicitValid then
         else table.insert(t,", input "..fn.valid.name) end
       end
@@ -2245,6 +2248,9 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
 assign ]]..instance.name..[[ = ]]..datavar..[[;
 always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
+
+  if DARKROOM_VERBOSE==false then decl="" end
+
   return "___NULL_PRINT_OUT", decl, true
 end
 

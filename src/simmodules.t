@@ -1,11 +1,12 @@
 cstdio = terralib.includec("stdio.h")
 local M = {}
 
-function M.fifo( T, reqMaxSize, name )
+function M.fifo( T, reqMaxSize, name, verbose )
   assert(terralib.types.istype(T))
   assert(type(reqMaxSize)=="number")
   local maxSize = reqMaxSize + 1 -- if we alloc reqMaxSize, we can't distinguish between empty and full
   assert(type(name)=="string")
+  if verbose==nil then verbose=false end
 
   local struct FIFO {
     data : T[maxSize];
@@ -23,7 +24,7 @@ function M.fifo( T, reqMaxSize, name )
   terra FIFO:pushBack( inp : &T ) 
     darkroomAssert( self:full()==false, ["FIFO overflow "..name] )
     self.data[self.backAddr % maxSize] = @inp
-    cstdio.printf("fifo %s store addr %d\n", name, self.backAddr)
+    if verbose then cstdio.printf("fifo %s store addr %d\n", name, self.backAddr) end
     self.backAddr = self.backAddr + 1
     if self:size()>self.maxSeen then self.maxSeen=self:size() end
   end
@@ -37,7 +38,7 @@ function M.fifo( T, reqMaxSize, name )
   terra FIFO:popFront() : &T
     darkroomAssert( self:hasData(), "fifo has no data")
     var cur = &self.data[self.frontAddr % maxSize]
-    cstdio.printf("fifo %s load addr %d\n", name, self.frontAddr)
+    if verbose then cstdio.printf("fifo %s load addr %d\n", name, self.frontAddr) end
     self.frontAddr = self.frontAddr + 1
     return cur
   end

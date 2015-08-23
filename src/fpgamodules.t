@@ -30,6 +30,7 @@ modules.incIf=memoize(function(inc)
 modules.incIfWrap=memoize(function(ty,limit,inc)
                             assert(types.isType(ty))
                         assert(type(limit)=="number")
+                        err(limit<math.pow(2,ty:verilogBits()), "limit out of bounds!")
                         local incv = inc or 1
       local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
 
@@ -45,6 +46,9 @@ modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.in
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
 modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{},nil,true)
+------------
+local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
+modules.__andSingleCycle = S.module.new( "andmoduleSingleCycle", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
 ------------
 -- modsub calculates A-B where A,B are mod 'wrap'. We say that A>=B always. So if A<B (as stored), we calculate it as if they have just wrapped around circularly.
 -- This is obviously ambiguous - we can't tell how many times A vs B have wrapped around. Assume they have only wrapped around once.
@@ -171,9 +175,14 @@ modules.fifo128 = memoize(function(ty)
   local bits = ty:verilogBits()
   local rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
 
+  -- size
+  local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
+  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), 128 ) --( writeAddr:get() - readAddr:get() ):disablePipelining()
+  sizeFn:setOutput( fsize, "size" )
+
   -- ready (not full)
   local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
-  local ready = S.lt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(127,types.uint(8)) ):disablePipelining()
+  local ready = S.lt( fsize, S.constant(126,types.uint(8)) ):disablePipelining()
   readyFn:setOutput( ready, "ready" )
 
   -- has data
@@ -182,10 +191,6 @@ modules.fifo128 = memoize(function(ty)
 --  local hasData = S.gt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(1,types.uint(8)) ):disablePipelining()
   hasDataFn:setOutput( hasData, "hasData" )
 
-  -- size
-  local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
-  local fsize = ( writeAddr:get() - readAddr:get() ):disablePipelining()
-  sizeFn:setOutput( fsize, "size" )
 
   -- pushBack
   local pushCE = S.CE("CE_push")
@@ -209,8 +214,8 @@ modules.fifo128 = memoize(function(ty)
   popFront:setCE(popCE)
   local popFrontAssert = fifo:add( systolic.module.assert( "attempting to pop from an empty fifo", true ):instantiate("popFrontAssert") )
   popFront:addPipeline( popFrontAssert:process( hasData ) )
-  local popFrontPrint = fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d", true):instantiate("popFrontPrintInst") )
-  popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get()} ) )
+  local popFrontPrint = fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") )
+  popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
   print("BITS",bits)
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
