@@ -276,7 +276,7 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   err( resetValue==nil or type(resetValue) == ty:toLuaType(), "resetValue has incorrect type")
   err( type(CE)=="boolean", "CE option must be bool")
 
-  local M = systolic.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE) )
+  local M = systolic.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE).."_TY"..ty:verilogBits() )
   local pipelines = {}
   local resetPipelines = {}
   local out

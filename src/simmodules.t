@@ -35,6 +35,11 @@ function M.fifo( T, reqMaxSize, name, verbose )
     return &self.data[(self.backAddr+idx-1) % maxSize]
   end
 
+  -- expects idx>=0. idx==0 is the next thing to pop
+  terra FIFO:peekFront( idx : int ) : &T
+    return &self.data[(self.frontAddr+idx) % maxSize]
+  end
+
   terra FIFO:popFront() : &T
     darkroomAssert( self:hasData(), "fifo has no data")
     var cur = &self.data[self.frontAddr % maxSize]

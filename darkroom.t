@@ -31,6 +31,7 @@ function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}
 function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool()}),darkroom.StateR}) end
 function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
 function darkroom.StatefulHandshakeArray(A,N) return types.tuple({A,types.opaque("statefulHandshakeArray"..N)}) end
+function darkroom.StatefulHandshakeTmuxed(A,N) return types.tuple({A,types.opaque("statefulHandshakeTmuxed"..N)}) end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
 struct EmptyState {}
@@ -46,6 +47,7 @@ local ready = darkroom.ready
 
 function darkroom.isStateful( a ) return (a==darkroom.State or a==darkroom.StateR) or (a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR or darkroom.isStateful(a.list[1]))) end
 function darkroom.isStatefulHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,22)=="statefulHandshakeArray" end
+function darkroom.isStatefulHandshakeTmuxed(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,23)=="statefulHandshakeTmuxed" end
 function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
 function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
 function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
@@ -79,18 +81,21 @@ end
 -- StatefulRV(A) => {A,bool}
 -- StatefulHandshake(A) => {A,bool}
 function darkroom.extract( a, loc )
-  if a==darkroom.State then return types.null() end
-  if darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeArray(a) then
+  if a==darkroom.State then return types.null() 
+  elseif darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeArray(a) then
     return types.tuple({a.list[1],types.bool()})
+  elseif darkroom.isStatefulHandshakeTmuxed(a) then
+    return types.tuple({a.list[1],types.uint(8)})
   elseif a:isArray() and darkroom.isStatefulHandshake(a:arrayOver()) then
     return types.array2d( darkroom.extract(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
-  end
-  if a:isTuple() and darkroom.isStateful(a.list[1]) then
+  elseif a:isTuple() and darkroom.isStateful(a.list[1]) then
     return types.tuple(map(a.list, function(n) assert(darkroom.isStateful(n)); return darkroom.extract(n) end))
+  elseif darkroom.isStateful(a) then
+    return a.list[1]
+  elseif darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then 
+    return a 
   end
-  if darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then return a end
-
-  return a.list[1]
+  assert(false)
 end
 
 -- extract underlying actual data type.
@@ -119,6 +124,13 @@ function darkroom.extractReady(a)
     print("COULD NOT EXTRACT READY",a)
     assert(false) 
   end
+end
+
+function darkroom.extractValid(a)
+  if darkroom.isStatefulHandshakeTmuxed(a) then
+    return types.uint(8)
+  end
+  return types.bool()
 end
 
 function darkroom.extractStatefulHandshake( a, loc )
@@ -208,7 +220,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   err( darkroom.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.kind)
 
   -- if we're going from N->N, we don't know how stuff maps so we can't do it automatically
-  assert( #self.sdfInput==1 or #self.sdfOutput==1 )
+  err( #self.sdfInput==1 or #self.sdfOutput==1, "sdf rate with no default behavior "..loc )
 
   local allConverged, consistantRatio = true, true
 
@@ -542,7 +554,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
 
-        if darkroom.isStatefulHandshake( n.fn.inputType ) or darkroom.isStatefulHandshakeArray( n.fn.inputType ) then
+        if darkroom.isStatefulHandshake( n.fn.inputType ) or darkroom.isStatefulHandshakeArray( n.fn.inputType ) or darkroom.isStatefulHandshakeTmuxed( n.fn.inputType ) then
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
         elseif darkroom.isPure( n.fn.inputType )==false then
           module:lookupFunction("reset"):addPipeline( I:reset() )
@@ -1697,7 +1709,7 @@ local function mergeStores( module, N )
   return res
 end
 
-
+-- WARNING: validOut depends on readyDownstream
 function darkroom.toHandshakeArray( A, inputRates )
   err( types.isType(A), "A must be type" )
   darkroom.expectPure(A)
@@ -1723,9 +1735,10 @@ function darkroom.toHandshakeArray( A, inputRates )
         valid(out) = true
         data(out) = data((@inp)[self.readyDownstream])
       else
-        var a : bool = (@inp)[0]._1
-        var b : bool  = (@inp)[1]._1
-        if DARKROOM_VERBOSE then cstdio.printf("TOHANDSHAKE FAIL: invalid input. readyDownstream=%d| %d, %d\n", self.readyDownstream,a,b) end
+        if DARKROOM_VERBOSE then 
+          cstdio.printf("TOHANDSHAKE FAIL: invalid input. readyDownstream=%d/%d\n", self.readyDownstream,[#inputRates-1]) 
+          for i=0,[#inputRates] do cstdio.printf("TOHANDSHAKE ready[%d] = %d\n",i,valid((@inp)[i]) ) end
+        end
         
         valid(out) = false
       end
@@ -1744,7 +1757,7 @@ function darkroom.toHandshakeArray( A, inputRates )
   res.terraModule = ToHandshakeArray
 
   res.systolicModule = S.moduleConstructor("ToHandshakeArray_"..#inputRates):onlyWire(true)
-  local printStr = "IV ["..table.concat(broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d"
+  local printStr = "IV ["..table.concat(broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d/"..(#inputRates-1)
   local printInst = res.systolicModule:add( S.module.print( types.tuple(concat(broadcast(types.bool(),#inputRates+1),{types.uint(8)})), printStr):instantiate("printInst") )
 
   local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
@@ -1761,7 +1774,7 @@ function darkroom.toHandshakeArray( A, inputRates )
 
   local validList = {}
   for i=1,#inputRates do
-    table.insert( validList, S.eq(inpValid[i], S.eq(readyDownstream, S.constant(i-1,types.uint(8))) ) )
+    table.insert( validList, S.__and(inpValid[i], S.eq(readyDownstream, S.constant(i-1,types.uint(8))) ) )
   end
 
   local validOut = foldt( validList, function(a,b) return S.__or(a,b) end, "X" )
@@ -1783,24 +1796,30 @@ end
 -- inputRates is a list of SDF rates
 -- {StatefulHandshakRegistered(A),StatefulHandshakRegistered(A),...} -> StatefulHandshakRegistered({A,stream:uint8}),
 -- where stream is the ID of the input that corresponds to the output
-function darkroom.serialize( A, inputRates, Schedule )
+function darkroom.serialize( A, inputRates, Schedule, X )
   err( types.isType(A), "A must be type" )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( darkroom.isSDFRate(inputRates) )
   err( darkroom.isFunction(Schedule), "schedule must be darkroom function")
   err( darkroom.extract(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
   darkroom.expectPure(A)
+  assert(X==nil)
 
   local res = {kind="serialize", A=A, inputRates=inputRates, schedule=Schedule}
   res.inputType = darkroom.StatefulHandshakeArray( A, #inputRates )
-  res.outputType = darkroom.StatefulHandshake( types.tuple{A,types.uint(8)} )
+  res.outputType = darkroom.StatefulHandshakeTmuxed( A, #inputRates )
 
   local sdfSum = inputRates[1][1]/inputRates[1][2]
   for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
   err(sdfSum==1, "inputRates must sum to 1")
 
   res.sdfInput = inputRates
-  res.sdfOutput = {{1,1}}
+  res.sdfOutput = inputRates
+
+  function res:sdfTransfer( I, loc ) 
+    err(#I[1]==#inputRates, "serialize: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
+    return I 
+  end
 
   local struct Serialize { schedule: Schedule.terraModule; nextId : uint8, ready:uint8, readyDownstream:bool}
   terra Serialize:reset() self.schedule:reset(); self.schedule:process(nil,&self.nextId) end
@@ -1808,14 +1827,14 @@ function darkroom.serialize( A, inputRates, Schedule )
   terra Serialize:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
     if self.readyDownstream then
       if valid(inp) then
-        valid(out) = true
-        data(out) = {data(inp), self.nextId}
+        valid(out) = self.nextId
+        data(out) = data(inp)
         -- step the schedule
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE\n") end
         self.schedule:process( nil, &self.nextId)
       else
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: invalid input\n") end
-        valid(out) = false
+        valid(out) = [#inputRates]
       end
     else
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: blocked downstream\n") end
@@ -1834,7 +1853,7 @@ function darkroom.serialize( A, inputRates, Schedule )
 
   res.systolicModule = S.moduleConstructor("Serialize_"..#inputRates):onlyWire(true)
   local scheduler = res.systolicModule:add( Schedule.systolicModule:instantiate("Scheduler") )
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),types.uint(8),types.bool()}, "Serialize OV %d readyDownstream %d ready %d/"..(#inputRates-1).." stepSchedule %d"):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(8),types.bool(),types.uint(8),types.bool()}, "Serialize OV %d/"..(#inputRates-1).." readyDownstream %d ready %d/"..(#inputRates-1).." stepSchedule %d"):instantiate("printInst") )
   local resetValid = S.parameter("reset_valid", types.bool() )
 
   local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
@@ -1845,26 +1864,187 @@ function darkroom.serialize( A, inputRates, Schedule )
   local pipelines = {}
   local resetPipelines = {}
 
-  local nextFIFO = res.systolicModule:add( S.module.reg( types.uint(8), false ):instantiate("nextFIFO"):setArbitrate("valid") )  
-  local nextFIFOSet = res.systolicModule:add( S.module.reg( types.bool(), false ):instantiate("nextFIFOSet"):setArbitrate("valid") )
+--  local nextFIFO = res.systolicModule:add( S.module.reg( types.uint(8), false ):instantiate("nextFIFO"):setArbitrate("valid") )  
+--  local nextFIFOSet = res.systolicModule:add( S.module.reg( types.bool(), false ):instantiate("nextFIFOSet"):setArbitrate("valid") )
 
   local stepSchedule = S.__and( S.__and(inpValid, readyDownstream), S.__not(resetValid) )
 
   assert( Schedule.systolicModule:getDelay("process")==0 )
   local schedulerCE = S.__or(resetValid, readyDownstream)
-  table.insert( pipelines, nextFIFO:set( scheduler:process(nil,stepSchedule, schedulerCE), stepSchedule ) )
-  table.insert( pipelines, nextFIFOSet:set(S.constant(true,types.bool()), S.__not(resetValid)) )
-  table.insert( resetPipelines, nextFIFOSet:set(S.constant(false,types.bool()), resetValid) )
+  local nextFIFO = scheduler:process(nil,stepSchedule, schedulerCE)
+--  table.insert( pipelines, nextFIFO:set( scheduler:process(nil,stepSchedule, schedulerCE), stepSchedule ) )
+--  table.insert( pipelines, nextFIFOSet:set(S.constant(true,types.bool()), S.__not(resetValid)) )
+--  table.insert( resetPipelines, nextFIFOSet:set(S.constant(false,types.bool()), resetValid) )
   table.insert( resetPipelines, scheduler:reset(nil, resetValid, schedulerCE ) )
 
-  local validOut = S.__and(inpValid,nextFIFOSet:get())
-  local readyOut = S.select( S.__and(nextFIFOSet:get(), readyDownstream), nextFIFO:get(), S.constant(#inputRates,types.uint(8)))
+--  local validOut = S.__and(inpValid,nextFIFOSet:get())
+--  local validOut = inpValid
+  local validOut = S.select(inpValid,nextFIFO,S.constant(#inputRates,types.uint(8)))
+--  local readyOut = S.select( S.__and(nextFIFOSet:get(), readyDownstream), nextFIFO:get(), S.constant(#inputRates,types.uint(8)))
+  local readyOut = S.select( readyDownstream, nextFIFO, S.constant(#inputRates,types.uint(8)))
   table.insert( pipelines, printInst:process( S.tuple{validOut, readyDownstream, readyOut, stepSchedule} ) )
 
-  res.systolicModule:addFunction( S.lambda("process", inp, S.tuple{S.tuple{inpData,nextFIFO:get()}, validOut } , "process_output", pipelines ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, S.tuple{ inpData, validOut } , "process_output", pipelines ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
 
   res.systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
+
+  return darkroom.newFunction(res)
+end
+
+-- WARNING: ready depends on ValidIn
+function darkroom.demux( A, rates, X )
+  err( types.isType(A), "A must be type" )
+  err( type(rates)=="table", "rates must be table")
+  assert( darkroom.isSDFRate(rates) )
+  darkroom.expectPure(A)
+  assert(X==nil)
+
+  local res = {kind="demux", A=A, rates=rates}
+
+  res.inputType = darkroom.StatefulHandshakeTmuxed( A, #rates )
+  res.outputType = types.array2d(darkroom.StatefulHandshake(A), #rates)
+
+  local sdfSum = rates[1][1]/rates[1][2]
+  for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
+  err(sdfSum==1, "rates must sum to 1")
+
+  res.sdfInput = rates
+  res.sdfOutput = rates
+
+  function res:sdfTransfer( I, loc ) 
+    err(#I[1]==#rates, "demux: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#rates) )
+    return I 
+  end
+
+  -- HACK: we don't have true bidirectional data transfer in the simulator, so fake it with a FIFO
+  local struct Demux { fifo: simmodules.fifo( darkroom.extract(res.inputType):toTerraType(), 8, "makeHandshake"), ready:bool, readyDownstream:bool[#rates]}
+  terra Demux:reset() self.fifo:reset() end
+  terra Demux:stats( name: &int8 ) end
+  terra Demux:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    if self.ready then
+      cstdio.printf("DMUX: push to internal fifo\n")
+      self.fifo:pushBack(inp)
+    else
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: push to internal fifo fail, not ready\n") end
+    end
+
+    var ot = self.fifo:peekFront(0)
+    if valid(ot)>=[#rates] and self.fifo:hasData() then
+      for i=0,[#rates] do
+        valid((@out)[i]) = false
+      end
+      self.fifo:popFront()
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: invalid input\n") end
+    elseif valid(ot)<[#rates] and self.readyDownstream[valid(ot)] and self.fifo:hasData() then
+      self.fifo:popFront()
+      for i=0,[#rates] do
+        valid((@out)[i]) = (i==valid(ot))
+        data((@out)[i]) = data(ot)
+      end
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: valid input, readyDownstream\n") end
+    else
+      if DARKROOM_VERBOSE then 
+        cstdio.printf("DMUX: not ready downstream IV:%d fifo_full:%d fifo_size:%d\n",valid(ot),self.fifo:full(), self.fifo:size() ) 
+        for i=0,[#rates] do cstdio.printf("DMUX readyDownstream[%d] = %d\n",i,self.readyDownstream[i]) end
+      end
+    end
+  end
+  terra Demux:calculateReady( readyDownstream : bool[#rates])
+    self.readyDownstream = readyDownstream
+    self.ready = (self.fifo:full()==false)
+  end
+
+  res.terraModule = Demux
+
+  res.systolicModule = S.moduleConstructor("Demux_"..#rates):onlyWire(true)
+
+  local printInst = res.systolicModule:add( S.module.print( types.tuple(concat({types.uint(8)},broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") )
+  local resetValid = S.parameter("reset_valid", types.bool() )
+
+  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inpData = S.index(inp,0)
+  local inpValid = S.index(inp,1)  -- uint8
+  local readyDownstream = S.parameter( "ready_downstream", types.array2d( types.bool(), #rates ) )
+
+
+  local pipelines = {}
+  local resetPipelines = {}
+
+  local out = {}
+  local readyOut = {}
+  for i=1,#rates do
+    table.insert( out, S.tuple{inpData, S.eq(inpValid,S.constant(i-1,types.uint(8))) } )
+    table.insert( readyOut, S.__and( S.index(readyDownstream,i-1),  S.eq(inpValid,S.constant(i-1,types.uint(8)))) )
+  end
+
+  local readyOut = foldt( readyOut, function(a,b) return S.__or(a,b) end, "X" )
+  readyOut = S.__or(readyOut, S.eq(inpValid, S.constant(#rates, types.uint(8)) ) )
+
+  local printList = {}
+  table.insert(printList,inpValid)
+  for i=1,#rates do table.insert( printList, S.index(readyDownstream,i-1) ) end
+  table.insert(printList,readyOut)
+  table.insert( pipelines, printInst:process(S.tuple(printList) ) )
+
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast(S.tuple(out),darkroom.extract(res.outputType)) , "process_output", pipelines ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
+
+  res.systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
+
+  return darkroom.newFunction(res)
+end
+
+function darkroom.flattenStreams( A, rates, X )
+  err( types.isType(A), "A must be type" )
+  err( type(rates)=="table", "rates must be table")
+  assert( darkroom.isSDFRate(rates) )
+  darkroom.expectPure(A)
+  assert(X==nil)
+
+  local res = {kind="flattenStreams", A=A, rates=rates}
+
+  res.inputType = darkroom.StatefulHandshakeTmuxed( A, #rates )
+  res.outputType = darkroom.StatefulHandshake(A)
+
+  local sdfSum = rates[1][1]/rates[1][2]
+  for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
+  err(sdfSum==1, "rates must sum to 1")
+
+  res.sdfInput = rates
+  res.sdfOutput = {{1,1}}
+
+  -- HACK: we don't have true bidirectional data transfer in the simulator, so fake it with a FIFO
+  local struct FlattenStreams { ready:bool, readyDownstream:bool}
+  terra FlattenStreams:reset()  end
+  terra FlattenStreams:stats( name: &int8 ) end
+  terra FlattenStreams:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    valid(out) = (valid(inp)<[#rates])
+    data(out) = data(inp)
+  end
+  terra FlattenStreams:calculateReady( readyDownstream : bool )
+    self.readyDownstream = readyDownstream
+    self.ready = readyDownstream
+  end
+
+  res.terraModule = FlattenStreams
+
+  res.systolicModule = S.moduleConstructor("FlattenStreams_"..#rates):onlyWire(true)
+
+  local resetValid = S.parameter("reset_valid", types.bool() )
+
+  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inpData = S.index(inp,0)
+  local inpValid = S.index(inp,1)
+  local readyDownstream = S.parameter( "ready_downstream", types.bool() )
+
+  local pipelines = {}
+  local resetPipelines = {}
+
+  res.systolicModule:addFunction( S.lambda("process", inp, S.tuple{inpData,S.__not(S.eq(inpValid,S.constant(#rates,types.uint(8))))} , "process_output", pipelines ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
+
+  res.systolicModule:addFunction( S.lambda("ready", readyDownstream, readyDownstream, "ready" ) )
 
   return darkroom.newFunction(res)
 end
@@ -2644,14 +2824,30 @@ darkroom.makeStateful = memoize(function( f )
                                 end)
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
-darkroom.makeHandshake = memoize(function( f )
+darkroom.makeHandshake = memoize(function( f, tmuxRates )
   assert( darkroom.isFunction(f) )
-  local res = { kind="makeHandshake", fn = f }
-  darkroom.expectStateful(f.inputType)
-  darkroom.expectStateful(f.outputType)
-  res.inputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.inputType))
-  res.outputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.outputType))
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
+
+  if tmuxRates~=nil then
+    darkroom.expectPure(f.inputType)
+    darkroom.expectPure(f.outputType)
+    res.inputType = darkroom.StatefulHandshakeTmuxed( f.inputType, #tmuxRates )
+    res.outputType = darkroom.StatefulHandshakeTmuxed (f.outputType, #tmuxRates )
+    assert( darkroom.isSDFRate(tmuxRates) )
+    res.sdfInput, res.sdfOutput = tmuxRates, tmuxRates
+
+    function res:sdfTransfer( I, loc ) 
+      err(#I[1]==#tmuxRates, "MakeHandshake: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#tmuxRates) )
+      return I 
+    end
+
+  else
+    darkroom.expectStateful(f.inputType)
+    darkroom.expectStateful(f.outputType)
+    res.inputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.inputType))
+    res.outputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.outputType))
+    res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  end
 
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
@@ -2664,21 +2860,27 @@ darkroom.makeHandshake = memoize(function( f )
   terra MakeHandshake:stats( name : &int8 )  end
   
   -- if inner function is const, consider input to always be valid
-  local innerconst = darkroom.extractStateful(f.outputType):const()
+  local innerconst = false
+  if tmuxRates==nil then innerconst = darkroom.extractStateful(f.outputType):const() end
+
+  local validFalse = false
+  if tmuxRates~=nil then validFalse = #tmuxRates end
+
   terra MakeHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), 
                                out : &darkroom.extract(res.outputType):toTerraType())
     if self.readyDownstream then
+      if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake IV %d readyDownstream=true\n",valid(inp)) end
       if self.delaysr:size()==delay then
         var ot = self.delaysr:popFront()
         valid(out) = valid(ot)
         data(out) = data(ot)
       else
-        valid(out)=false
+        valid(out)=validFalse
       end
 
       var tout : darkroom.extract(res.outputType):toTerraType()
       valid(tout) = valid(inp)
-      if valid(inp) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
+      if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
       self.delaysr:pushBack(&tout)
     end
   end
@@ -2688,9 +2890,11 @@ darkroom.makeHandshake = memoize(function( f )
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
   res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
-  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),types.bool(),darkroom.extractStateful(f.outputType),types.bool(),types.bool(),types.bool(), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d expectedOutput %d"):instantiate("printInst") )
+  local printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractValid(res.inputType),darkroom.extract(f.outputType), darkroom.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d expectedOutput %d"):instantiate("printInst") )
 
-  local SR = res.systolicModule:add( fpgamodules.shiftRegister( types.bool(), f.systolicModule:getDelay("process"), false, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
+  local SRdefault = false
+  if tmuxRates~=nil then SRdefault = #tmuxRates end
+  local SR = res.systolicModule:add( fpgamodules.shiftRegister( darkroom.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
   local rst = S.parameter("reset",types.bool())
@@ -2707,8 +2911,11 @@ darkroom.makeHandshake = memoize(function( f )
   table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready, pready, S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) )
 
   res.systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
-    local pure = f.systolicModule:lookupFunction("reset"):isPure()
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,rst,CE), "reset_out",{SR:reset(nil,rst,CE)},rst) )
+
+  local resetOutput
+  if tmuxRates==nil then resetOutput = inner:reset(nil,rst,CE) end
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), resetOutput, "reset_out",{SR:reset(nil,rst,CE)},rst) )
 
   res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
 
@@ -3068,7 +3275,12 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           end
         end
 
-        assert(#inputList==keycount(inputList))
+        if #inputList~=keycount(inputList) then
+          print("Strange downstream list ",n.name)
+          for k,v in pairs(inputList) do print("K",k,"V",v) end
+          assert(false)
+        end
+
         -- ready bit for this node is AND of all consumers
         local input = foldt( inputList, function(a,b) return `(a and b) end, readyInput )
 
@@ -3078,7 +3290,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           readyOutput = input
         elseif n.kind=="apply" then
 --          print("systolic ready APPLY",n.fn.kind)
-          if darkroom.isStatefulHandshake(n.fn.outputType) or  darkroom.isStatefulRV(n.fn.inputType) or darkroom.isStatefulHandshakeArray(n.fn.outputType) then
+          if darkroom.isStatefulHandshake(n.fn.outputType) or  darkroom.isStatefulRV(n.fn.inputType) or darkroom.isStatefulHandshakeArray(n.fn.outputType) or darkroom.isStatefulHandshakeTmuxed(n.fn.outputType) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady(input) end )
             res = `mself.[n.name].ready
           elseif n.fn.outputType:isArray() and darkroom.isStatefulHandshake(n.fn.outputType:arrayOver()) then
@@ -3527,9 +3739,10 @@ function darkroom.array2d( name, t, W, H, packStreams )
   return darkroom.newIR( r )
 end
 
-function darkroom.selectStream( name, input, i )
+function darkroom.selectStream( name, input, i, X )
   err( type(i)=="number", "i must be number")
   err( darkroom.isIR(input), "input must be IR")
+  assert(X==nil)
   return darkroom.newIR({kind="selectStream", name=name, i=i, loc=getloc(), inputs={input}})
 end
 
@@ -3853,7 +4066,7 @@ wire ready;
   assign valid = (RST==0 && validInCnt < ]]..((inputW*inputH)/inputT)..[[);
 
   always @(posedge CLK) begin
-    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- validOutputs %d ready %d readyDownstream %d validInCnt",validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
+    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d validOutputs %d ready %d readyDownstream %d validInCnt",RST,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
 ]]..tapRST..[[

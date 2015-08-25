@@ -41,7 +41,8 @@ local out = darkroom.apply("toHandshakeArray", d.toHandshakeArray(ITYPE,{{1,2},{
 local SER = darkroom.serialize( ITYPE, {{1,2},{1,2}}, d.interleveSchedule( 2, 2 ) ) 
 local out = darkroom.apply("ser", SER, out )
 
-out = d.apply("ignoreBin", d.makeHandshake(d.makeStateful(ignoreBin)), out )
+--out = d.apply("ignoreBin", d.makeHandshake(d.makeStateful(ignoreBin)), out )
+out = d.apply("flatten", d.flattenStreams(ITYPE,{{1,2},{1,2}}), out )
 
 hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",d.selectStream("A0",Abroadcast,0)), d.applyMethod("s2",fifos[2],"store",d.selectStream("A1",Abroadcast,1)) }, fifos )
 --hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos[1],"store",A) }, fifos )

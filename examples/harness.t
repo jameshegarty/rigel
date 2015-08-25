@@ -57,7 +57,7 @@ function H.sim(filename, hsfn, T, inputType, tapType, tapValue, inputW, inputH, 
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..ext..".sim.raw",outputType,2+i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T,false,2 )
+    local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..ext..".sim.raw",outputType,2+i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
