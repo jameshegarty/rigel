@@ -1,5 +1,5 @@
 SRCFILES = $(wildcard *.t)
-SRCS = $(filter-out harness.t,$(SRCFILES))
+SRCS = $(filter-out harness.t examplescommon.t,$(SRCFILES))
 
 # some images have intentially invalid pixels in them, so we can't compare with golds
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))

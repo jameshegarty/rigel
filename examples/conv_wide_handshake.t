@@ -3,6 +3,7 @@ local Image = require "image"
 local types = require("types")
 local S = require("systolic")
 local harness = require("harness")
+local C = require "examplescommon"
 
 T = 8 -- throughput
 --ConvRadius = 1
@@ -19,28 +20,7 @@ inputH = 64
 W = inputW
 H = inputH
 
--------------
-sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8)} )
-partial = d.lift( "partial", types.tuple {types.uint(8),types.uint(8)}, types.int(32), 1,
-                  terra( a : &tuple(uint8,uint8), out : &int32 )
-                    @out = [int32](a._0)*[int32](a._1)
-                  end, sinp, S.cast(S.index(sinp,0),types.int(32))*S.cast(S.index(sinp,1),types.int(32)) )
--------------
-touint8inp = S.parameter("inp", types.int(32))
-touint8 = d.lift( "touint8", types.int(32), types.uint(8), 1, terra( a : &int32, out : &uint8 ) @out = [uint8](@a >> 8) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(8,types.int(32))), types.uint(8)) )
--------------
-rsinp = S.parameter( "inp", types.tuple { types.int(32), types.int(32) } )
-reduceSumInt32 = d.lift( "reduceSumInt32", types.tuple { types.int(32), types.int(32) }, types.int(32), 1, terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
--------------
-inp = d.input( types.array2d( types.uint(8), ConvWidth, ConvWidth ) )
-r = d.constant( "convkernel", range(ConvArea), types.array2d( types.uint(8), ConvWidth, ConvWidth) )
-
-packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
-conv = d.apply( "partial", d.map( partial, ConvWidth, ConvWidth ), packed )
-conv = d.apply( "sum", d.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
-conv = d.apply( "touint8", touint8, conv )
-
-convolve = d.lambda( "convolve", inp, conv )
+local convolve = C.convolveConstant( types.uint(8), ConvWidth, range(ConvArea), 8 )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = d.Stateful(BASE_TYPE)

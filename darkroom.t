@@ -2329,7 +2329,8 @@ end
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
-function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top )
+function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top, X )
+  err(X==nil, "cropHelperSeq, too many arguments")
   if L%T==0 and R%T==0 then return darkroom.cropSeq( A, W, H, T, L, R, B, Top ) end
 
   local RResidual = R%T
