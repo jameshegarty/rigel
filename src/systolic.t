@@ -485,6 +485,7 @@ function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
 function systolic.neg(expr) return unary(expr,"-") end
 function systolic.isX(expr) return unary(expr,"isX") end
 function systolic.__not(expr) return unary(expr,"not") end
+function systolic.abs(expr) return unary(expr,"abs") end
 
 function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
@@ -803,9 +804,7 @@ function systolicASTFunctions:calculateStallDomains()
       else
         local seen
         for k,v in pairs(args) do
---          assert(systolic.isAST(v) and v.kind=="parameter")
           if seen==nil or seen=="___NOSTALL" or seen=="___CONST" then
---            print("SEEN",v.name)
             seen = v
           elseif v~="___NOSTALL" and v~="___CONST" then
             if seen~=v then 
@@ -994,8 +993,6 @@ function systolicASTFunctions:CSE(repo)
       for k,v in pairs(seenlist[n.kind]) do
         if n:eq(v) then 
           return v
-        else
---          print("CSEFAIL",n.kind)
         end
         
       end
@@ -1344,7 +1341,6 @@ local function moduleConstructor(tab)
   return function(...)
     local t = tab.new(...)
     t.isComplete=false
-print(t,tab.configFns)
     return setmetatable(t,constMT)
   end
 end
@@ -1548,7 +1544,7 @@ end
 function userModuleFunctions:getDelay( fnname )
   err( self.functions[fnname]~=nil, ":getDelay() error, '"..fnname.."' is not a valid function on module "..self.name)
   if self.onlyWire then 
-    err( type(self.verilogDelay[fnname])=="number", "Error, onlyWire module function '"..fnname.."' is missing delay information")
+    err( type(self.verilogDelay)=="table" and type(self.verilogDelay[fnname])=="number", "Error, onlyWire module '"..self.name.."' function '"..fnname.."' is missing delay information")
     return self.verilogDelay[fnname] 
   end
   assert(type(self.fndelays[fnname])=="number")
@@ -1740,7 +1736,6 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   local setvalid = systolic.parameter("set_valid",types.bool())
   fns.set = systolic.lambda("set", sinp, R:set(sinp,setvalid,CEVar), "SET_OUTPUT",{}, setvalid, CEVar )
 
-  print("make regby")
   local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init), fns, {R,inner}, true, true, nil,nil,{get=0,set=0,setBy=0} )
   assert(systolic.isModule(M))
   return M
@@ -2061,7 +2056,7 @@ end
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
 -- if outputBits==nil, we don't make a read function (only a write function)
-function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, init, CE, X)
+systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, init, CE, X)
   assert(X==nil)
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
   err( type(inputBits)=="number", "inputBits must be a number")
@@ -2085,7 +2080,7 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
     local addrbits = math.log((sizeInBytes*8)/inputBits)/math.log(2)
-    local mod = systolic.moduleConstructor( "bramSDP_size"..sizeInBytes.."_bw"..inputBits )
+    local mod = systolic.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBits.."_obw"..tostring(outputBits).."_CE"..tostring(CE).."_init"..tostring(init) )
     local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBits)})
     local sinpRead = systolic.parameter("inpRead",types.uint(addrbits))
     local inpAddr = systolic.index(sinp,0)
@@ -2111,7 +2106,7 @@ function systolic.module.bramSDP( writeAndReturnOriginal, sizeInBytes, inputBits
   else
     assert(false)
   end
-end
+                                  end)
 
 --------------------
 fileModuleFunctions={}

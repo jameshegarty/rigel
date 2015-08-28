@@ -23,7 +23,7 @@ function MAKE(T)
   out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,downsampleT,8)), out )
   local hsfn = d.lambda("hsfn", inp, out)
 
-  harness.axi( "downsamplex_wide_handshake_"..T, hsfn, ITYPE, nil, nil, W,H, ITYPE,W/scaleX,H)
+  harness.axi( "downsamplex_wide_handshake_"..T, hsfn, "frame_128.raw", nil, nil, ITYPE, 8,W,H, ITYPE,8,W/scaleX,H)
 end
 
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))

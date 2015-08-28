@@ -55,4 +55,4 @@ hsfn = d.lambda( "interleve_wide", A, d.statements{out, d.applyMethod("s1",fifos
 --hsfn = d.lambda( "pointwise_wide_hs", inp, out )
 --hsfn = d.makeHandshake(d.makeStateful(fn))
 
-harness.axi( "interleve_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W*2,H)
+harness.axi( "interleve_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W*2,H)

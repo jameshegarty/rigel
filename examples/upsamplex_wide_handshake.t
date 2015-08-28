@@ -23,7 +23,7 @@ scaleX = 2
   out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,upsampleT,8)), out )
   local hsfn = d.lambda("hsfn", inp, out)
 
-  harness.axi( "upsamplex_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W*scaleX,H)
+  harness.axi( "upsamplex_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE, T,W*scaleX,H)
 --end
 
 --local t = string.sub(arg[0],string.find(arg[0],"%d+"))

@@ -30,4 +30,4 @@ local out = d.apply( "plus100", p100, pinp )
 hsfn = d.lambda( "fifo_wide", inp, d.statements{out, d.applyMethod("s1",regs[1],"store",inp)}, regs )
 ------------
 
-harness.axi( "fifo_wide_handshake_1", hsfn, ITYPE, nil, nil, W,H, ITYPE,W,H)
+harness.axi( "fifo_wide_handshake_1", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)

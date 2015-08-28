@@ -15,7 +15,6 @@ modules.sumwrap = memoize(function(limit)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
 modules.incIf=memoize(function(inc)
-                        print("MAKEINCIF")
                         if inc==nil then inc=1 end
       local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
 
@@ -217,7 +216,7 @@ modules.fifo128 = memoize(function(ty)
   local popFrontPrint = fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") )
   popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
-  print("BITS",bits)
+
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
   popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
 

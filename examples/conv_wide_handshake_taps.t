@@ -62,4 +62,4 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 hsfn = d.makeHandshake(convpipe)
 
 local tapValue = range(ConvArea)
-harness.axi( "conv_wide_handshake_taps", hsfn, BASE_TYPE, STTYPE:makeConst(), tapValue, inputW, inputH, BASE_TYPE, inputW, inputH )
+harness.axi( "conv_wide_handshake_taps", hsfn, "frame_128.raw", STTYPE:makeConst(), tapValue, BASE_TYPE, T, inputW, inputH, BASE_TYPE, T, inputW, inputH )

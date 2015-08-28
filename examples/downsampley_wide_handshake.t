@@ -25,4 +25,4 @@ ITYPE = types.array2d( types.uint(8), T )
 --hsfn = d.makeHandshake(d.makeStateful(fn))
 hsfn = d.liftHandshake(d.liftDecimate(d.downsampleYSeq( types.uint(8), W,H,T,scaleY)))
 
-harness.axi( "downsampley_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W,H/scaleY)
+harness.axi( "downsampley_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H/scaleY)

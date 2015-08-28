@@ -35,4 +35,4 @@ local out = darkroom.apply("demux", darkroom.demux(ITYPE,{{1,2},{1,2}}), multipl
 hsfn = d.lambda( "tmux_wide", A, d.statements{ d.selectStream("i1",out,1), d.applyMethod("s1",fifos[1],"store",d.selectStream("i0",out,0)) }, fifos )
 
 
-harness.axi( "tmux_wide_handshake", hsfn, ITYPE, nil, nil, W,H, ITYPE,W,H)
+harness.axi( "tmux_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)

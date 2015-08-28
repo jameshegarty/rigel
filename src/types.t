@@ -429,7 +429,13 @@ function types.checkExplicitCast(from, to, ast)
 
     return types.checkExplicitCast(from.over, to.over,ast)
   elseif from:isTuple() then
-    if #from.list==1 and from.list[1]==to then
+    local allbits = foldt( from.list, andop, 'x')
+
+    if allbits then
+      -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
+      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail")
+      return true
+    elseif #from.list==1 and from.list[1]==to then
       -- casting {A} to A
       return true
     elseif to:isArray() then
@@ -442,16 +448,11 @@ function types.checkExplicitCast(from, to, ast)
         map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
         err( channels==to:channels(), "channels don't match") 
         return true
-      elseif from.list[1]:isBits() then
-        -- cast a tuple of a bunch of bits to whatever
-        local sz = 0
-        map( from.list, function(t) err(t:isBits(),"bittuplecast fail"); sz = sz + t:verilogBits() end )
-        err(sz == to:verilogBits(), "tuple of bits size fail")
-        return true
       end
-    else
-      error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
     end
+
+    error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
+
   elseif (from:isTuple()==false and from:isArray()==false) and to:isArray() then
     -- broadcast
     return types.checkExplicitCast(from, to.over, ast )

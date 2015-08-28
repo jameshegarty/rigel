@@ -55,7 +55,7 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp_raw, out)
 
-harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE,  TAP_TYPE, range(ConvWidth*ConvWidth), inputW, inputH, RW_TYPE, outputW, outputH )
+harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, "frame_128.raw", TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
 --harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, types.array2d( types.uint(8), 4 ), outputW, outputH )
 end
 

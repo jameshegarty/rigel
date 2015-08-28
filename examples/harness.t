@@ -15,7 +15,6 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   local hsfninp = out
 
   if tapInputType~=nil then
-    print("TIP",tapInputType)
     hsfninp = d.tuple("hsfninp",{out,inptaps})
     hsfninp = d.apply("HFN",d.packTuple({inputType,tapInputType},true),hsfninp)
   end
@@ -36,28 +35,32 @@ end
 
 local H = {}
 
-function H.sim(filename, hsfn, T, inputType, tapType, tapValue, inputW, inputH, outputType, outputW, outputH, X)
+function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
   assert(X==nil)
   assert( tapType==nil or types.isType(tapType) )
   assert( types.isType(inputType) )
   assert( types.isType(outputType) )
   assert(type(outputH)=="number")
+  assert(type(inputFilename)=="string")
 
-  local outputCount = (outputW*outputH)/T
+  local outputCount = (outputW*outputH)/outputT
 
   -------------
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn,"frame_128.raw",inputType,tapType,"out/"..filename..ext..".raw",outputType,i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T, false, i )
+    local f = d.seqMapHandshake( harness(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".raw",outputType,i,outputCount), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
     local Module = f:compile()
-    (terra() var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
+    if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
+    (terra() 
+       cstdio.printf("Start CPU Sim\n")
+       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
   end
   ------
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../../frame_128.raw", inputType, tapType, filename..ext..".sim.raw",outputType,2+i,outputCount), inputType, tapType, tapValue, inputW, inputH, T, outputW, outputH, T, false, i )
+    local f = d.seqMapHandshake( harness(hsfn, "../../"..inputFilename, inputType, tapType, filename..ext..".sim.raw",outputType,2+i,outputCount), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
@@ -68,8 +71,7 @@ function H.sim(filename, hsfn, T, inputType, tapType, tapValue, inputW, inputH, 
 end
 
 -- AXI must have T=8
-function H.axi(filename, hsfn, inputType, tapType, tapValue, inputW, inputH, outputType, outputW, outputH,X)
-  print("AXI",tapType,tapValue)
+function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,X)
 
   assert(X==nil)
   assert( types.isType(inputType) )
@@ -78,12 +80,13 @@ function H.axi(filename, hsfn, inputType, tapType, tapValue, inputW, inputH, out
   assert( types.isType(outputType) )
   assert(type(inputW)=="number")
   assert(type(outputH)=="number")
+  assert(type(inputFilename)=="string")
 
 -- axi runs the sim as well
-H.sim(filename, hsfn,8,inputType,tapType,tapValue,inputW, inputH, outputType, outputW, outputH)
+H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH)
 
 local axifn = harnessAxi(hsfn, inputW*inputH/8)
-local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputW, inputH, 8, outputW, outputH, 8, true )
+local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, true )
 io.output("out/"..filename..".axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

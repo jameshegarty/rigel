@@ -1,5 +1,12 @@
 local d = require "darkroom"
 local C = {}
+
+-- A -> A[W,H]
+C.arrayop = memoize(function(A,W,H)
+  local inp = d.input(A)
+  return d.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,d.array2d("ao",{inp},W,H))
+end)
+
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
@@ -22,6 +29,54 @@ function C.sum(A,B,outputType)
                   end, sinp, S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType) )
   return partial
 end
+
+-------------
+-- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
+-- async: 0 cycle delay
+function C.argmin(idxType,vType, async)
+  local ATYPE = types.tuple {idxType,vType}
+  local ITYPE = types.tuple{ATYPE,ATYPE}
+  local sinp = S.parameter( "inp", ITYPE )
+
+  local a0 = S.index(sinp,0)
+  local a0v = S.index(a0,1)
+  local a1 = S.index(sinp,0)
+  local a1v = S.index(a1,1)
+
+  local delay = 2
+  local out = S.select(S.le(a0v,a1v),a0,a1)
+
+  if async==true then 
+    out = out:disablePipelining() 
+    delay = 0
+  end
+
+  local partial = d.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay,
+                          terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
+                            if a._0._1 <= a._1._1 then
+                              @out = a._0
+                            else
+                              @out = a._1
+                            end
+                          end, sinp, out )
+  return partial
+end
+
+------------
+-- this returns a function from A[2]->outputType
+-- return |A[0]-A[1]| as a darkroom FN. A is a type
+-- returns something of type outputType
+function C.absoluteDifference(A,outputType)
+  local TY = types.array2d(A,2)
+  local sinp = S.parameter( "inp", TY )
+  local internalType = types.int(32)
+  local partial = d.lift( "absoluteDifference", TY, outputType, 1,
+                          terra( a : &(A:toTerraType())[2], out : &outputType:toTerraType() )
+                            @out = [outputType:toTerraType()]([int32]((@a)[0])-[int32]((@a)[1]))
+                          end, sinp, S.cast(S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType)), outputType) )
+  return partial
+end
+
 ------------
 -- returns a darkroom FN that casts type 'from' to type 'to'
 -- performs [to](from >> shift)
@@ -66,6 +121,22 @@ function C.convolveConstant( A, ConvWidth, tab, shift, X )
   local convolve = d.lambda( "convolve", inp, conv )
   return convolve
 end
+
+------------
+-- returns a function from A[2][Width,Width]->reduceType
+-- 'reduceType' is the precision we do the sum
+function C.SAD( A, reduceType, Width, X )
+  assert(X==nil)
+
+  local inp = d.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+
+  local conv = d.apply( "partial", d.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
+  local conv = d.apply( "sum", d.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
+
+  local convolve = d.lambda( "SAD", inp, conv )
+  return convolve
+end
+
 ------------
 -- takes a function f:A[StencilW,stencilH]->B
 -- returns a function from A[T]->B[T]

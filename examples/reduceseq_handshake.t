@@ -26,4 +26,4 @@ local out = d.apply("rseq", d.liftHandshake(d.liftDecimate(d.reduceSeq(reduceSum
 local out = d.apply("touint8", d.makeHandshake(d.makeStateful(touint8)), out)
 local hsfn = d.lambda( "hsfn", inp, out )
 
-harness.sim( "reduceseq_handshake", hsfn, 1, types.uint(8), nil, nil, inputW, inputH, types.uint(8), inputW/DOWNSAMP, inputH)
+harness.sim( "reduceseq_handshake", hsfn, "frame_128.raw", nil, nil, types.uint(8), 1,inputW, inputH, types.uint(8), 1,inputW/DOWNSAMP, inputH)

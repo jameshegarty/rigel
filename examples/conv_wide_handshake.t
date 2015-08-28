@@ -36,4 +36,4 @@ convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 hsfn = d.makeHandshake(convpipe)
 
-harness.axi( "conv_wide_handshake", hsfn, BASE_TYPE, nil, nil, inputW, inputH, BASE_TYPE, inputW, inputH )
+harness.axi( "conv_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE,T,inputW, inputH, BASE_TYPE,T, inputW, inputH )

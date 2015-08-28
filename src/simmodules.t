@@ -1,4 +1,5 @@
 cstdio = terralib.includec("stdio.h")
+local cstring = terralib.includec("string.h")
 local M = {}
 
 function M.fifo( T, reqMaxSize, name, verbose )
@@ -23,7 +24,9 @@ function M.fifo( T, reqMaxSize, name, verbose )
 
   terra FIFO:pushBack( inp : &T ) 
     darkroomAssert( self:full()==false, ["FIFO overflow "..name] )
-    self.data[self.backAddr % maxSize] = @inp
+--    self.data[self.backAddr % maxSize] = @inp
+    -- terra doesn't like us copying large structs by value
+    cstring.memcpy( &self.data[self.backAddr % maxSize], inp, [terralib.sizeof(T)])
     if verbose then cstdio.printf("fifo %s store addr %d\n", name, self.backAddr) end
     self.backAddr = self.backAddr + 1
     if self:size()>self.maxSeen then self.maxSeen=self:size() end
@@ -32,7 +35,10 @@ function M.fifo( T, reqMaxSize, name, verbose )
   -- expects idx <=0
   -- idx=0 is the thing that was most recently pushBack'ed
   terra FIFO:peekBack( idx : int ) : &T
-    return &self.data[(self.backAddr+idx-1) % maxSize]
+--    var addr = (self.backAddr+idx-1) % maxSize
+--    cstdio.printf("PeekBack addr %d, %d\n",addr,fixedModulus(self.backAddr+idx-1,maxSize))
+    var addr = fixedModulus(self.backAddr+idx-1,maxSize)
+    return &self.data[addr]
   end
 
   -- expects idx>=0. idx==0 is the next thing to pop

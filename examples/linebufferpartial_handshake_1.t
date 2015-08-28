@@ -39,11 +39,11 @@ local inp = d.input( ITYPE )
 
 local out = d.apply( "convLB", d.stencilLinebufferPartial( types.uint(8), inputW, inputH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
 out = d.apply("extract",d.makeHandshake(d.makeStateful(extract)),out)
-out = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), inputW/T, inputH, 1, 0, 0, ConvWidth-1, 0, 0 )), out ) -- cut off the junk
+out = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), inputW/T, inputH, 1, (ConvWidth-1)/T, 0, ConvWidth-1, 0, 0 )), out ) -- cut off the junk (undefined region)
 local hsfn = d.lambda("lbp", inp, out)
 
 
-harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, 1, BASE_TYPE, nil, nil, inputW, inputH, BASE_TYPE, inputW/T, inputH)
+harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, "frame_128.raw", nil, nil, BASE_TYPE, 1, inputW, inputH, BASE_TYPE, 1, inputW/T, inputH)
 end
 
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))

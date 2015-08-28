@@ -19,4 +19,4 @@ H = 64+ConvWidth-1
 BASE_TYPE = types.array2d( types.uint(8), T )
 
 hsfn = d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0))
-harness.axi( "pad_wide_handshake", hsfn, BASE_TYPE, nil, nil, inputW, inputH, BASE_TYPE, W, H)
+harness.axi( "pad_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE, T,inputW, inputH, BASE_TYPE, T,W, H)

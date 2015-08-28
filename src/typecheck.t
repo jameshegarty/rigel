@@ -21,15 +21,11 @@ local function typecheck_inner( ast, newNodeFn )
     elseif ast.op=="floor" or ast.op=="ceil" then
       ast.type = darkroom.type.float(32)
     elseif ast.op=="abs" then
-      if ast.expr.type:baseType()==darkroom.type.float(32) then
-        ast.type = ast.expr.type
-      elseif ast.expr.type:baseType()==darkroom.type.float(64) then
-        ast.type = ast.expr.type
-      elseif ast.expr.type:baseType():isInt() or ast.expr.type:baseType():isUint() then
+      if expr.type:baseType():isFloat() or expr.type:baseType():isInt() or expr.type:baseType():isUint() then
         -- obv can't make it any bigger
-        ast.type = ast.expr.type
+        ast.type = expr.type
       else
-        ast.expr.type:print()
+        expr.type:print()
         assert(false)
       end
     elseif ast.op=="not" then

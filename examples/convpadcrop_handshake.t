@@ -41,4 +41,4 @@ hsfn = C.padcrop(types.uint(8),inputW,inputH,T,ConvRadius,ConvRadius,ConvRadius,
 -------------
 
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus
-harness.sim( "convpadcrop_handshake", hsfn, T, RW_TYPE, nil, nil, inputW, inputH, RW_TYPE, outputW, outputH )
+harness.sim( "convpadcrop_handshake", hsfn, "frame_128.raw", nil, nil,  RW_TYPE, T, inputW, inputH, RW_TYPE, T, outputW, outputH )
