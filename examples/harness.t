@@ -15,7 +15,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   local hsfninp = out
 
   if tapInputType~=nil then
-    hsfninp = d.tuple("hsfninp",{out,inptaps})
+    hsfninp = d.tuple("hsfninp",{out,inptaps},false)
     hsfninp = d.apply("HFN",d.packTuple({inputType,tapInputType},true),hsfninp)
   end
 

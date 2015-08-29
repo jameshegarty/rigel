@@ -432,7 +432,7 @@ function systolic.constant( v, ty )
   if ty:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
     map( v,function(n) err(type(n)=="number", "array element must be a number") end )
-    err( #v==ty:channels(), "incorrect number of channels" )
+    err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
   else
     err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
   end

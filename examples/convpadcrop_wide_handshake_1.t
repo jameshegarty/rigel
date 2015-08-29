@@ -48,7 +48,7 @@ local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8
 --local out = d.apply("FW",d.makeHandshake(d.fwriteSeq("KERNOUT.raw",types.array2d(types.uint(8),T))), out)
 local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 
-local convpipeinp = d.tuple("CONVPIPEINP",{out,hsfn_taps})
+local convpipeinp = d.tuple("CONVPIPEINP",{out,hsfn_taps},false)
 convpipeinp = d.apply("CPI", darkroom.packTuple({BASE_TYPE,TAP_TYPE},true), convpipeinp)
 local out = d.apply("HH",d.makeHandshake(kernel), convpipeinp)
 local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)

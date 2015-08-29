@@ -580,6 +580,7 @@ function TypeFunctions:constSubtypeOf(A)
       return false
     end
   elseif self:isTuple() then
+    if #A.list~=#self.list then return false end
     return foldl( andop, true, map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
   else
     print(":constSubtypeOf",self,A)

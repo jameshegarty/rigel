@@ -1,4 +1,5 @@
 local d = require "darkroom"
+local cstdlib = terralib.includec("stdlib.h")
 local C = {}
 
 -- A -> A[W,H]
@@ -72,7 +73,7 @@ function C.absoluteDifference(A,outputType)
   local internalType = types.int(32)
   local partial = d.lift( "absoluteDifference", TY, outputType, 1,
                           terra( a : &(A:toTerraType())[2], out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()]([int32]((@a)[0])-[int32]((@a)[1]))
+                            @out = [outputType:toTerraType()](cstdlib.abs([int32]((@a)[0])-[int32]((@a)[1])) )
                           end, sinp, S.cast(S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType)), outputType) )
   return partial
 end
