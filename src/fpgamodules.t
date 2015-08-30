@@ -164,8 +164,9 @@ function modules.linebuffer( maxDelayX, maxDelayY, datatype, stripWidth )
 end
 modules.linebuffer = memoize( modules.linebuffer )
 
-modules.fifo128 = memoize(function(ty)
+modules.fifo128 = memoize(function(ty,verbose)
   assert(types.isType(ty))
+  assert(type(verbose)=="boolean")
 
   local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty)) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
@@ -213,8 +214,11 @@ modules.fifo128 = memoize(function(ty)
   popFront:setCE(popCE)
   local popFrontAssert = fifo:add( systolic.module.assert( "attempting to pop from an empty fifo", true ):instantiate("popFrontAssert") )
   popFront:addPipeline( popFrontAssert:process( hasData ) )
-  local popFrontPrint = fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") )
-  popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
+  local popFrontPrint
+  if verbose then 
+    popFrontPrint= fifo:add( systolic.module.print( types.tuple{types.uint(8),types.uint(8),types.uint(8)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") ) 
+    popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
+  end
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
 
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
@@ -383,12 +387,13 @@ end
 -- * If one of the exprs happens to have a value that is 
 --   already in the shift register, it will just read that value instead
 --   of calculating it. This happens if exprs[a] == exprs[b](#exprs), using the delay syntax
-function modules.addShifter( module, exprs )
+function modules.addShifter( module, exprs, verbose )
   assert( S.isModule(module) )
   assert(type(exprs)=="table")
   assert(#exprs>0)
   assert(#exprs==keycount(exprs))
   map( exprs, function(e) assert(S.isAST(e)) end )
+  assert(type(verbose)=="boolean")
 
   if #exprs==1 then
     -- only 1 element in array: just return it
@@ -426,8 +431,10 @@ function modules.addShifter( module, exprs )
 
     out = S.select( reading, exprs[1], regs[2]:get() )
 
-    local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
-    table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
+    if verbose then
+      local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
+      table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
+    end
   end
 
   return out, pipelines, resetPipelines, reading

@@ -12,14 +12,17 @@ TERRA += $(patsubst %.t,out/%_half.bmp,$(SRCS))
 TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(GOLDS))
 
-SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS))
-SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS))
-SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS))
-SIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS))
-SIM += $(patsubst %.t,out/%.sim.v,$(SRCS))
-SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS))
-SIM += $(patsubst %.t,out/%.sim.correct.txt,$(GOLDS))
-SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(GOLDS))
+# too slow
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t,$(SRCS))
+
+SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%.sim.raw,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%_half.sim.raw,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%.sim.v,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
 AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t,$(SRCS))
 

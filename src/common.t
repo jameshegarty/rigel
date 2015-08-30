@@ -448,6 +448,7 @@ function range(a,b)
   return t
 end
 
+-- row major order
 function range2d(xlow,xhigh,ylow,yhigh)
   assert(type(xlow)=="number")
   assert(type(xhigh)=="number")

@@ -39,6 +39,7 @@ function sanitize(s)
   s = s:gsub("%]","_")
   s = s:gsub("%,","_")
   s = s:gsub("%.","_")
+  s = s:gsub("%W","_")
   return s
 end
 
@@ -199,6 +200,8 @@ function systolicModuleFunctions:instantiate( name, coherent, arbitrate, paramet
   err( type(name)=="string", "instantiation name must be a string")
   assert(X==nil)
 
+  name = sanitize(name)
+
   -- coherence is a property of instances. By default, inherit the coherence option from the module
   -- (This makes registers coherent by default for example)
   err( coherent==nil or type(coherent)=="boolean", "coherent must be bool")
@@ -241,12 +244,14 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
     err(v~=output,"pipeline "..k.." is the same as the output!")
     for kk,vv in pairs(pipelines) do err(v~=vv or k==kk, "Pipeline "..k.." is the same as pipeline "..kk) end
   end
+  assert(keycount(pipelines)==#pipelines)
 
   local implicitValid = false
   if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
   --if output~=nil then output = output:addValid( valid ) end
   --pipelines = map( pipelines, function(n) return n:addValid(valid) end )
-
+  
+  if type(outputName)=="string" then outputName = sanitize(outputName) end
   local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid, CE=CE }
 
   return setmetatable(t,systolicFunctionMT)
@@ -1118,8 +1123,10 @@ function systolicASTFunctions:toVerilog( module )
         local expr
         local cmt = " // cast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
         
-        local function dobasecast( expr, fromType, toType )
+        local function dobasecast( expr, fromType, toType, inputIsWire, inputName )
           assert(type(expr)=="string")
+          assert(type(inputIsWire)=="boolean")
+          assert(type(inputName)=="string")
           
           if fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
             -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
@@ -1130,7 +1137,8 @@ function systolicASTFunctions:toVerilog( module )
             return "{ {"..(8*(toType:sizeof() - fromType:sizeof())).."{"..expr.."["..(fromType:sizeof()*8-1).."]}},"..expr.."["..(fromType:sizeof()*8-1)..":0]}"
           elseif (fromType:isUint() or fromType:isInt()) and (toType:isInt() or toType:isUint()) and fromType.precision>toType.precision then
             -- truncation. I don't know how this works
-            return expr.."["..(toType.precision-1)..":0]"
+            local exp = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for truncation")
+            return exp.."["..(toType.precision-1)..":0]"
           elseif fromType:isInt() and toType:isUint() and fromType.precision == toType.precision then
             -- int to uint with same precision. I don't know how this works
             return expr
@@ -1144,7 +1152,15 @@ function systolicASTFunctions:toVerilog( module )
           end
         end
         
-        if n.type:isBits() or n.inputs[1].type:isBits() then
+        local allBits = true
+        if n.inputs[1].type:isTuple() then
+          for k,v in pairs(n.inputs[1].type.list) do if v:isBits()==false then allBits=false end end
+        end
+
+        if n.inputs[1].type:isTuple() and allBits then
+          -- casting tuple of bit type {bits,bits,bits...} to anything: a noop
+          expr = args[1]
+        elseif n.type:isBits() or n.inputs[1].type:isBits() then
           -- noop: verilog is blind to types anyway
           assert(n.type:verilogBits()==n.inputs[1].type:verilogBits())
           expr = args[1]
@@ -1183,7 +1199,7 @@ function systolicASTFunctions:toVerilog( module )
         elseif n.inputs[1].type:constSubtypeOf(n.type) then
           expr = args[1] -- casting const to non-const. Verilog doesn't care.
         else
-          expr = dobasecast( args[1], n.inputs[1].type, n.type )
+          expr = dobasecast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
         end
         
         finalResult = expr
@@ -1236,10 +1252,8 @@ function systolicASTFunctions:toVerilog( module )
 
           elseif n.kind=="unary" then
             if n.op=="abs" then
-              if n.type:baseType():isInt() then
-                table.insert(resDeclarations, declareReg( n.type:baseType(), callsite..n:cname(c) ))
-                table.insert(resClockedLogic, callsite..n:cname(c).." <= ("..inputs.expr[c].."["..(n.type:baseType():sizeof()*8-1).."])?(-"..inputs.expr[c].."):("..inputs.expr[c].."); //abs")
-                res = callsite..n:cname(c)
+              if n.type:isInt() then
+                res = "(("..args[1].."["..(n.type:verilogBits()-1).."])?(-"..args[1].."):("..args[1].."))"
               else
                 --              return inputs.expr[c] -- must be unsigned
                 assert(false)
@@ -1554,7 +1568,7 @@ end
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
 function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, parameters, verilog, verilogDelay )
   assert(type(name)=="string")
-  name = name:gsub('%W','_')
+  name = sanitize(name)
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
   map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
@@ -2243,8 +2257,6 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
 assign ]]..instance.name..[[ = ]]..datavar..[[;
 always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
-
-  if DARKROOM_VERBOSE==false then decl="" end
 
   return "___NULL_PRINT_OUT", decl, true
 end

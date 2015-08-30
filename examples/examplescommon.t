@@ -41,7 +41,7 @@ function C.argmin(idxType,vType, async)
 
   local a0 = S.index(sinp,0)
   local a0v = S.index(a0,1)
-  local a1 = S.index(sinp,0)
+  local a1 = S.index(sinp,1)
   local a1v = S.index(a1,1)
 
   local delay = 2
