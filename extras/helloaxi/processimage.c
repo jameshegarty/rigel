@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <stdbool.h>
 
 void usage(void) {
 	printf("*argv[0] -g <GPIO_ADDRESS> -i|-o <VALUE>\n");
@@ -47,9 +48,15 @@ void loadImage(FILE* infile,  volatile void* address, int numbytes){
   fclose(infile);
 }
 
+bool isPowerOf2(unsigned int x) {
+  return x && !(x & (x - 1));
+}
+
+// we don't have a standard library... so reimplement this badly
 unsigned int mylog2(unsigned int x){
   printf("mylog2\n");
   unsigned int res = 0;
+  // find highest true bit
   while(x=x>>1){printf("H%d\n",x);res++;}
   return res;
 }
@@ -73,14 +80,34 @@ int main(int argc, char *argv[]) {
 	unsigned copy_addr = atoi(argv[1]);
 
   if(argc!=6){
-    printf("ERROR< insufficient args\n");
+    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom\n");
   }
 
-  unsigned int downsampleX = atoi(argv[4]);
-  unsigned int downsampleY = atoi(argv[5]);
-  unsigned int downsample = downsampleX*downsampleY;
-  unsigned int downsampleShift = mylog2(downsample);
-  printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
+  // dirty tricks: we want to support both upsamples and downsamples.
+  // We use 4 bits to store the amount we shift the input size.
+  // So, can shift the input size by 2^4-1=15 bits.
+  // When shift==0, we shift by 8 bits left, resulting in a 256x upsample.
+  // When shift==8, we shift an aggreagte of 0 bits.
+  // when shift=15, we shift an aggregate of 7 bits, 128x downsample.
+  unsigned int scaleN = atoi(argv[4]);
+  unsigned int scaleD = atoi(argv[5]);
+  //unsigned int downsample = downsampleX*downsampleY;
+  //unsigned int downsampleShift = mylog2(downsample);
+  //printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
+  assert(scaleN==1 || scaleD==1);
+  // b/c we send the shift, only power of two scales are supported
+  assert(isPowerOf2(scaleN) && isPowerOf2(scaleD));
+  
+  int downsampleShift;
+  if(scaleN==1){
+    // a downsample
+    downsampleShift = mylog2(scaleD)+8;
+  }else if(scaleD==1){
+    // a upsample
+    downsampleShift = 8-mylog2(scaleN);
+  }
+  assert( downsampleShift>=0 && downsampleShift<16 );
+  printf("Scale %d/%d, shift:%d\n",scaleN,scaleD,downsampleShift);
 
 	unsigned page_size = sysconf(_SC_PAGESIZE);
 
@@ -103,32 +130,34 @@ int main(int argc, char *argv[]) {
   printf("file LEN %d\n",lenRaw);
 
   // we pad out the length to 128 bytes as required, but just leave it filled with garbage
-  unsigned lenRawDown = lenRaw/downsample;
-  unsigned int lenDown = lenRawDown + (8*16-(lenRawDown % (8*16)));
+  unsigned lenRawOut = (lenRaw*scaleN)/scaleD;
+  unsigned int lenOut = lenRawOut + (8*16-(lenRawOut % (8*16)));
   //unsigned int lenDown = lenRawDown;
-  printf("LENDOWN %d\n", lenDown);
-  unsigned int len = lenDown*downsample;
-  assert(len % (8*16) == 0);
-  printf("LEN %d\n",len);
-  assert((len/(downsample)) % (8*16) == 0);
+  printf("LENOUT %d\n", lenOut);
+  unsigned int lenIn = (lenOut*scaleD)/scaleN;
+  assert(lenIn % (8*16) == 0);
+  printf("LENIN %d\n",lenIn);
+  assert(lenOut % (8*16) == 0);
 
   printf("mapping %08x\n",copy_addr);
-  void * ptr = mmap(NULL, 2*len, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
+  void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
 
   loadImage( imfile, ptr, lenRaw );
   //memset(ptr+len,0,len);
-  for(int i=0; i<len; i++){ *(unsigned char*)(ptr+len+i)=0; }
+  // zero out the output region
+  for(int i=0; i<lenOut; i++){ *(unsigned char*)(ptr+lenIn+i)=0; }
   //saveImage("before.raw",ptr,len);
 
   // mmap the device into memory 
+  // This mmaps the control region (the MMIO for the control registers).
+  // Image data is located at addr 'copy_addr'
   void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
   
   volatile Conf * conf = (Conf*) gpioptr;
 
-
   conf->src = copy_addr;
-  conf->dest = copy_addr + len;
-  unsigned int lenPacked = len | (downsampleShift << 29);
+  conf->dest = copy_addr + lenIn;
+  unsigned int lenPacked = lenIn | (downsampleShift << 28);
   printf("LEN PACKED %d\n",lenPacked);
   conf->len = lenPacked;
   conf->cmd = 3;
@@ -136,7 +165,7 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(1);
 
-  saveImage(argv[3],ptr+len,lenRaw);
+  saveImage(argv[3],ptr+lenIn,(lenRaw*scaleN)/scaleD);
   //saveImage(argv[3],ptr,lenRaw);
 
   return 0;

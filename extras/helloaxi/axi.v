@@ -165,9 +165,9 @@ module stage
 
 
    wire [31:0] lengthInput;
-   assign lengthInput = {3'b000,CONFIG_LEN[28:0]};
+   assign lengthInput = {4'b0000,CONFIG_LEN[27:0]};
    wire [31:0] lengthOutput;
-   assign lengthOutput = CONFIG_LEN[28:0] >> CONFIG_LEN[31:29];
+   assign lengthOutput = (CONFIG_LEN[27:0] << 8'd8) >> CONFIG_LEN[31:28];
 
   always @(posedge FCLK0) begin
     if(ARESETN == 0)

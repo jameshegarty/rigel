@@ -65,7 +65,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     io.write(f:toVerilog())
     io.close()
     
-    d.writeMetadata("out/"..filename..ext..".metadata.lua", outputW, outputH,1,1,"frame_128.raw")
+    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputW, inputH, outputW, outputH,1,1,"frame_128.raw")
   end
   
 end

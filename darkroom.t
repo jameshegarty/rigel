@@ -4295,10 +4295,20 @@ endmodule
   return darkroom.newFunction(res)
 end
 
-function darkroom.writeMetadata(filename, width, height, channels, bytesPerChannel,inputImage)
+function darkroom.writeMetadata(filename, inputWidth, inputHeight, outputWidth, outputHeight, channels, bytesPerChannel,inputImage, X)
   assert(type(inputImage)=="string")
+  assert(type(inputWidth)=="number")
+  assert(type(inputHeight)=="number")
+  assert(type(outputWidth)=="number")
+  assert(type(outputHeight)=="number")
+  assert(X==nil)
+
+  local scaleX = {outputWidth,inputWidth}
+  local scaleY = {outputHeight,inputHeight}
+  local scale = fracMultiply(scaleX,scaleY)
+
   io.output(filename)
-  io.write("return {width="..width..",height="..height..",channels="..channels..",bytesPerChannel="..bytesPerChannel..",inputImage='"..inputImage.."'}")
+  io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",channels="..channels..",bytesPerChannel="..bytesPerChannel..",inputImage='"..inputImage.."'}")
   io.close()
 end
 

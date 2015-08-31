@@ -64,17 +64,36 @@ function C.argmin(idxType,vType, async)
 end
 
 ------------
--- this returns a function from A[2]->outputType
--- return |A[0]-A[1]| as a darkroom FN. A is a type
--- returns something of type outputType
-function C.absoluteDifference(A,outputType)
+-- this returns a function from A[2]->A
+-- return |A[0]-A[1]| as a darkroom FN. 
+-- The largest absolute difference possible is the max value of A - min value, so returning type A is always fine.
+-- we fuse this with a cast to 'outputType' just for convenience.
+function C.absoluteDifference(A,outputType,X)
+  assert(types.isType(A))
+  assert(types.isType(outputType))
+  assert(X==nil)
+
   local TY = types.array2d(A,2)
   local sinp = S.parameter( "inp", TY )
-  local internalType = types.int(32)
+  local internalType, internalType_uint
+  local internalType_terra
+  if A==types.uint(8) then
+    -- make sure this doesn't overflow when we add sign bit
+    internalType = types.int(9)
+    internalType_uint = types.uint(9)
+    internalType_terra = int16 -- should yield equivilant output
+  else
+    assert(false)
+  end
+
+  local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
+  local out = S.cast(subabs, internalType_uint)
+  local out = S.cast(out, outputType)
+
   local partial = d.lift( "absoluteDifference", TY, outputType, 1,
                           terra( a : &(A:toTerraType())[2], out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](cstdlib.abs([int32]((@a)[0])-[int32]((@a)[1])) )
-                          end, sinp, S.cast(S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType)), outputType) )
+                            @out = [outputType:toTerraType()](cstdlib.abs([internalType_terra]((@a)[0])-[internalType_terra]((@a)[1])) )
+                          end, sinp, out )
   return partial
 end
 

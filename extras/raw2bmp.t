@@ -10,7 +10,7 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   cstdio.printf("START RAW@BMP\n")
   var inp : Image
 --  inp:loadRaw(infile,128,64,8)
-  var totalSize = metadata.width*metadata.height*metadata.bytesPerChannel*metadata.channels
+  var totalSize = metadata.outputWidth*metadata.outputHeight*metadata.bytesPerChannel*metadata.channels
   inp.dataPtr = cstdlib.malloc(totalSize)
   inp.data = [&uint8](inp.dataPtr)
 
@@ -19,13 +19,13 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   cstdio.fseek(imgIn, 0, cstdio.SEEK_END);
   var sz = cstdio.ftell(imgIn);
   cstdio.fseek(imgIn, 0, cstdio.SEEK_SET);
-  darkroomAssert(sz==metadata.width*metadata.height*metadata.channels, "Incorrect file size!")
+  darkroomAssert(sz==metadata.outputWidth*metadata.outputHeight*metadata.channels, "Incorrect file size!")
 
   cstdio.fread(inp.dataPtr,1,totalSize,imgIn)
   cstdio.fclose(imgIn)
-  inp.width = metadata.width
-  inp.height = metadata.height
-  inp.stride = metadata.width
+  inp.width = metadata.outputWidth
+  inp.height = metadata.outputHeight
+  inp.stride = metadata.outputWidth
   inp.channels = metadata.channels
   inp.bits = 8
   inp.floating = false
