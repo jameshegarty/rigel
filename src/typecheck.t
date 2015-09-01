@@ -152,7 +152,7 @@ local function typecheck_inner( ast, newNodeFn )
       err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, "..tostring(ast.idxLow).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
       err( ast.idxHigh < (expr.type:arrayLength())[1] and ast.idxHigh>=0, "idxHigh is out of bounds, "..tostring(ast.idxHigh).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
       err( ast.idyLow==nil or ast.idyLow < (expr.type:arrayLength())[2] and ast.idyLow>=0, "idy is out of bounds, is "..tostring(ast.idyLow).." but should be <"..tostring((expr.type:arrayLength())[2]))
-      err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2]))
+      err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2])..", "..ast.loc)
       ast.type = types.array2d(expr.type:arrayOver(), ast.idxHigh-ast.idxLow+1, ast.idyHigh-ast.idyLow+1 )
     elseif expr.type:isTuple() then
       err( ast.idxLow < #expr.type.list, "idxLow is out of bounds of tuple. Index is "..ast.idxLow.." but should be < "..#expr.type.list.." "..ast.loc)

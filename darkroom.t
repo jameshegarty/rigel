@@ -53,8 +53,8 @@ function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() an
 function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
 function darkroom.isPure( a ) return darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false end
 function darkroom.expectPure( A, er ) if darkroom.isPure(A)==false then error(er or "type should be pure but is "..tostring(A)) end end
-function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or darkroom.isStatefulV(A) or darkroom.isStatefulRV(A) then error(er or "type should be stateful") end end
-function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV") end end
+function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or darkroom.isStatefulV(A) or darkroom.isStatefulRV(A) then error(er or "type should be stateful, but is "..tostring(A)) end end
+function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV but is "..tostring(A)) end end
 function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
 function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandshake(A)==false then error(er or "type should be stateful handshake") end end
 
@@ -2562,13 +2562,14 @@ end
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
-darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
+darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   err( types.isType(A), "A should be a type")
   err( type(H)=="number", "H should be number")
   err( type(inputRate)=="number", "inputRate should be number")
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number")
   err( outputRate==math.floor(outputRate), "outputRate should be integer")
+  assert(X==nil)
 
   local maxRate = math.max(inputRate,outputRate)
 
@@ -2580,8 +2581,8 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
   local outputCount = maxRate/outputRate
 
   local res = {kind="changeRate", type=A, inputRate=inputRate, outputRate=outputRate}
-  res.inputType = darkroom.Stateful(types.array2d(A,inputRate))
-  res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate))
+  res.inputType = darkroom.Stateful(types.array2d(A,inputRate,H))
+  res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate,H))
   res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
 
   if inputRate>outputRate then -- 8 to 4
@@ -2593,7 +2594,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate)
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; phase:int, ready:bool}
 
   terra ChangeRate:stats(name:&int8) end
-  res.systolicModule = S.moduleConstructor("ChangeRate_"..inputRate.."_to"..outputRate)
+  res.systolicModule = S.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
   local svalid = S.parameter("process_valid", types.bool() )
   local rvalid = S.parameter("reset", types.bool() )
   local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
@@ -4013,6 +4014,7 @@ end
 function darkroom.extractState( name, input )
   assert(type(name)=="string")
   assert(darkroom.isIR( input ) )
+  assert( darkroom.isStateful(input.type) and darkroom.isStatefulV(input.type)==false and darkroom.isStatefulRV(input.type)==false)
   return darkroom.newIR( {kind="extractState", name=name, loc=getloc(), inputs={input}, type=darkroom.State} )
 end
 

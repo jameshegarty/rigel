@@ -13,7 +13,7 @@ TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(GOLDS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
