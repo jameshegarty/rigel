@@ -4295,10 +4295,12 @@ endmodule
   return darkroom.newFunction(res)
 end
 
-function darkroom.writeMetadata(filename, inputWidth, inputHeight, outputWidth, outputHeight, channels, bytesPerChannel,inputImage, X)
+function darkroom.writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, X)
   assert(type(inputImage)=="string")
+  assert(type(inputBytesPerPixel)=="number")
   assert(type(inputWidth)=="number")
   assert(type(inputHeight)=="number")
+  assert(type(outputBytesPerPixel)=="number")
   assert(type(outputWidth)=="number")
   assert(type(outputHeight)=="number")
   assert(X==nil)
@@ -4308,7 +4310,7 @@ function darkroom.writeMetadata(filename, inputWidth, inputHeight, outputWidth, 
   local scale = fracMultiply(scaleX,scaleY)
 
   io.output(filename)
-  io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",channels="..channels..",bytesPerChannel="..bytesPerChannel..",inputImage='"..inputImage.."'}")
+  io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
   io.close()
 end
 

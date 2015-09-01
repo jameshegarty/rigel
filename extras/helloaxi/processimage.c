@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 	unsigned copy_addr = atoi(argv[1]);
 
   if(argc!=6){
-    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom\n");
+    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel\n");
   }
 
   // dirty tricks: we want to support both upsamples and downsamples.
@@ -91,6 +91,10 @@ int main(int argc, char *argv[]) {
   // when shift=15, we shift an aggregate of 7 bits, 128x downsample.
   unsigned int scaleN = atoi(argv[4]);
   unsigned int scaleD = atoi(argv[5]);
+
+  unsigned int inputBytesPerPixel = atoi(argv[6]);
+  unsigned int outputBytesPerPixel = atoi(argv[7]);
+
   //unsigned int downsample = downsampleX*downsampleY;
   //unsigned int downsampleShift = mylog2(downsample);
   //printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
@@ -125,16 +129,26 @@ int main(int argc, char *argv[]) {
 		return -1;
   }
 
-  unsigned lenRaw;
-  FILE* imfile = openImage(argv[2], &lenRaw);
-  printf("file LEN %d\n",lenRaw);
+  unsigned lenInRaw;
+  FILE* imfile = openImage(argv[2], &lenInRaw);
+  printf("file LEN %d\n",lenInRaw);
+  
+  unsigned lenOutRaw = (lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
 
-  // we pad out the length to 128 bytes as required, but just leave it filled with garbage
-  unsigned lenRawOut = (lenRaw*scaleN)/scaleD;
-  unsigned int lenOut = lenRawOut + (8*16-(lenRawOut % (8*16)));
-  //unsigned int lenDown = lenRawDown;
+  unsigned int lenIn;
+  unsigned int lenOut;
+
+  // we pad out the length to 128 bytes as required, but just leave it filled with garbage.
+  // pad the smallest of the input/output, and upscale the padded size
+  if(lenOutRaw<=lenInRaw){ // a downscale
+    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+    lenIn = (lenOut*scaleD*inputBytesPerPixel)/(scaleN*outputBytesPerPixel);
+  }else{ // scaleD==1, a upsample
+    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
+    lenOut = (lenIn*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
+  }
+
   printf("LENOUT %d\n", lenOut);
-  unsigned int lenIn = (lenOut*scaleD)/scaleN;
   assert(lenIn % (8*16) == 0);
   printf("LENIN %d\n",lenIn);
   assert(lenOut % (8*16) == 0);
@@ -142,7 +156,7 @@ int main(int argc, char *argv[]) {
   printf("mapping %08x\n",copy_addr);
   void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
 
-  loadImage( imfile, ptr, lenRaw );
+  loadImage( imfile, ptr, lenInRaw );
   //memset(ptr+len,0,len);
   // zero out the output region
   for(int i=0; i<lenOut; i++){ *(unsigned char*)(ptr+lenIn+i)=0; }
@@ -165,7 +179,7 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(1);
 
-  saveImage(argv[3],ptr+lenIn,(lenRaw*scaleN)/scaleD);
+  saveImage(argv[3],ptr+lenIn,(lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel));
   //saveImage(argv[3],ptr,lenRaw);
 
   return 0;

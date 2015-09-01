@@ -4,7 +4,8 @@
 
 // The axi bus expects the number of valid data items to exactly match the # of addresses we send.
 // This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
-module OutputShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
+// lengthOutput is in bytes
+module UnderflowShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
    parameter WAIT_CYCLES = 2048;
    
    reg [31:0] outCnt;
@@ -23,12 +24,12 @@ module OutputShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] 
      end else begin
         outClks <= outClks + 32'd1;
         
-        if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd128; end
+        if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd8; end // AXI does 8 bytes per clock
         if(outClks > WAIT_CYCLES) begin fixupMode <= 1'b1; end
      end
    end
 
-   assign out = (fixupMode)?(32'hDEADBEEF):(inp);
+   assign out = (fixupMode)?(64'hDEAD):(inp);
    assign out_valid = (RST)?(1'b0):((fixupMode)?(outCnt<outLen):(inp_valid));
 endmodule // OutputShim
 
@@ -163,7 +164,7 @@ module stage
     .CONFIG_LEN(CONFIG_LEN),
     .CONFIG_IRQ(CONFIG_IRQ));
 
-
+   // lengthInput/lengthOutput are in bytes
    wire [31:0] lengthInput;
    assign lengthInput = {4'b0000,CONFIG_LEN[27:0]};
    wire [31:0] lengthOutput;
@@ -192,7 +193,7 @@ module stage
     
   ___PIPELINE_MODULE_NAME  #(.INPUT_COUNT(___PIPELINE_INPUT_COUNT),.OUTPUT_COUNT(___PIPELINE_OUTPUT_COUNT)) pipeline(.CLK(FCLK0),.reset(CONFIG_READY),.ready(pipelineReady),.ready_downstream(downstreamReady),.process_input({pipelineInputValid,___PIPELINE_INPUT}),.process_output(pipelineOutputPacked));
 
-   OutputShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
+   UnderflowShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
    
   DRAMReader reader(
     .ACLK(FCLK0),

@@ -49,7 +49,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".raw",outputType,i,outputCount), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
+    local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, "out/"..filename..ext..".raw", outputType, i, outputCount ), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
@@ -65,7 +65,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     io.write(f:toVerilog())
     io.close()
     
-    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputW, inputH, outputW, outputH,1,1,"frame_128.raw")
+    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
   end
   
 end
@@ -85,7 +85,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH)
 
-local axifn = harnessAxi(hsfn, inputW*inputH/8)
+local axifn = harnessAxi(hsfn, (outputW*outputH)/outputT)
 local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, true )
 io.output("out/"..filename..".axi.v")
 io.write(fnaxi:toVerilog())
