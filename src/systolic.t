@@ -605,6 +605,9 @@ function systolicASTFunctions:setTransaction(tname)
   return self:process(function(n) if(n.transaction==nil or n.transaction~=false) then n.transaction=tname; end return systolicAST.new(n) end)
 end
 
+-- this disables pipelining on a single node.
+-- Note that this doesn't guarantee that this is at pipe depth 0! (no pipelining).
+-- this just requests that we don't add any pipeline registers (if we were going to)
 function systolicASTFunctions:disablePipeliningSingle()
   if self.pipelined~=nil and self.pipelined==false then return self end
 
@@ -702,11 +705,12 @@ function systolicASTFunctions:calculateDelays(coherentDelays)
 
       delaysAtInput[n] = maxd      
 
-      if n.pipelined~=nil and n.pipelined==false then 
-        local loc = ""
-        if n.loc~=nil then loc=n.loc end
-        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind..loc) 
-      end
+--    pipelined==false is a soft request
+--      if n.pipelined~=nil and n.pipelined==false then 
+--        local loc = ""
+--        if n.loc~=nil then loc=n.loc end
+--        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind..loc) 
+--      end
     end)
 
   return delaysAtInput, coherentDelays, coherentConverged, firstFailure
@@ -1413,7 +1417,8 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     local canBeUndriven = fn:isPure()
     err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
     
-    if fn:isPure()==false then
+    -- if onlyWire==true, don't try to be clever - always wire the valid bit if it exists.
+    if fn:isPure()==false or self.onlyWire then
       if self.onlyWire and fn.implicitValid then
         -- when in onlyWire mode, it's ok to have an undriven valid bit
       else
@@ -1736,7 +1741,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   assert(setbytype:isTuple())
   local setbyTypeA = setbytype.list[1]
   local setbyTypeB = setbytype.list[2]
-  assert(setbyTypeA==ty)
+  err( setbyTypeA==ty, "regby type does not match type on setby function" )
 
   local CEVar
   if CE then CEVar = systolic.CE("CE") end

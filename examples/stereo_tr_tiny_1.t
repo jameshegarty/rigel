@@ -122,8 +122,15 @@ function make(filename,T)
   local right = d.apply("AOr", d.makeHandshake( d.makeStateful(C.arrayop(types.uint(8),1))),right) -- uint8[1]
   --local right = d.apply("right", d.makeHandshake(d.makeStateful(d.index(types.array2d(A,2),1))), right)
   local right = d.apply( "rightLB", d.makeHandshake( d.stencilLinebuffer( A, W, H, 1, -SADWidth+1, 0, -SADWidth+1, 0 ) ), right)
-  right = d.apply("rb", d.makeHandshake( d.makeStateful (d.broadcast( STENCIL_TYPE, SearchWindow ) ) ), right ) -- A[SADWidth,SADWidth][PCS]
-  right = d.apply( "rdown", d.liftHandshake(d.changeRate(STENCIL_TYPE,1,SearchWindow, perCycleSearch)), right) -- writes full output
+
+--  right = d.apply("rb", d.makeHandshake( d.makeStateful (d.broadcast( STENCIL_TYPE, 1/T ) ) ), right ) -- A[SADWidth,SADWidth][PCS]
+--  right = d.apply( "rdown", d.liftHandshake(d.changeRate(STENCIL_TYPE,1,1/T, 1)), right) -- writes full output
+  right = d.apply("rAO",d.makeHandshake(d.makeStateful(C.arrayop(STENCIL_TYPE,1))),right)
+  right = d.apply( "rup", d.upsampleXSeq(STENCIL_TYPE,1,1/T), right)
+
+  right = d.apply("right2", d.makeHandshake(d.makeStateful(d.index(types.array2d(STENCIL_TYPE,1),0))), right)
+  right = d.apply("rb2", d.makeHandshake( d.makeStateful (d.broadcast( STENCIL_TYPE, perCycleSearch ) ) ), right ) -- A[SADWidth,SADWidth][PCS]
+
   -------
 
   local merged = d.apply("merge", d.SoAtoAoSStateful( perCycleSearch, 1, {STENCIL_TYPE,STENCIL_TYPE}, true ), d.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[PCS]

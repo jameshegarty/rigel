@@ -4,13 +4,16 @@ S=systolic
 local modules = {}
 
 -- calculate A+B s.t. A+B <= limit
-modules.sumwrap = memoize(function(limit)
+modules.sumwrap = memoize(function( ty, limit, X)
+                            assert(types.isType(ty))
   assert(type(limit)=="number")
-  local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,types.uint(16))),
-                      S.constant(0,types.uint(16)),
+  assert(X==nil)
+
+  local swinp = S.parameter("process_input", types.tuple{ty,ty})
+  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,ty)),
+                      S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( "sumwrap_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
+  return S.module.new( "sumwrap_"..tostring(ty).."_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
                   end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
@@ -321,7 +324,7 @@ function modules.addPhaser( module, period, fnValidBit )
   assert( math.floor(period)==period )
   assert(S.isAST(fnValidBit))
 
-  local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap( period-1) ):includeCE():instantiate("phase") )
+  local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap( types.uint(16), period-1) ):includeCE():instantiate("phase") )
   local notFirstCycle = module:add( S.module.reg( types.bool() ):instantiate("notFirstCycle",{arbitrate="valid"}) )
 
   local valueout = phase:get()
@@ -412,7 +415,7 @@ function modules.addShifter( module, exprs, verbose )
     pipelines = map( regs, function(r,i) return r:set( regs[(i%#exprs)+1]:get() )  end )
     out = regs[1]:get()
   else
-    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(#exprs-1) ):CE(true):instantiate("phase") )
+    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),#exprs-1) ):CE(true):instantiate("phase") )
 
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")

@@ -981,7 +981,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{inner[prefix.."ready"](inner),S.index(sinp,1), runable, RST} ) ) end
 
     local CE = S.CE("CE")
-    res:addFunction( S.lambda(fnname, sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),S.__and(runable,svalid):disablePipelining()) }, fnname.."_output", pipelines, svalid, CE ) )
+    res:addFunction( S.lambda(fnname, sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),S.__and(runable,svalid):disablePipelining()):disablePipeliningSingle() }, fnname.."_output", pipelines, svalid, CE ) )
     res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST, CE) )
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
   end
@@ -1498,7 +1498,8 @@ end
 
 -- This is actually a pure function
 -- takes A[T] to A[T*scale]
-function darkroom.upsampleXSeq( A, W, H, T, scale )
+-- like this: [A[0],A[0],A[1],A[1],A[2],A[2],...]
+function darkroom.broadcastWide( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
   local sinp = S.parameter("inp",types.array2d(A,T))
   local out = {}
@@ -1508,7 +1509,7 @@ function darkroom.upsampleXSeq( A, W, H, T, scale )
     end
   end
   out = S.cast(S.tuple(out), OTYPE)
-  return darkroom.lift("upsampleX", ITYPE, OTYPE, 0,
+  return darkroom.lift("broadcastWide", ITYPE, OTYPE, 0,
                        terra(inp : &ITYPE:toTerraType(), out:&OTYPE:toTerraType())
                          for t=0,T do
                            for s=0,scale do
@@ -1516,6 +1517,63 @@ function darkroom.upsampleXSeq( A, W, H, T, scale )
                            end
                          end
                        end, sinp, out)
+end
+
+-- this has type StatefulV->StatefulRV
+function darkroom.upsampleXSeq( A, T, scale, X )
+  assert(X==nil)
+
+  if T==1 then
+    -- special case the EZ case of taking one value and writing it out N times
+    local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}}
+
+    local ITYPE = types.array2d(A,T)
+    res.inputType = darkroom.Stateful(ITYPE)
+    res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+    res.delay=0
+
+    local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:int, ready:bool }
+    terra UpsampleXSeq:reset() self.phase=0; end
+    terra UpsampleXSeq:stats(name:&int8)  end
+    terra UpsampleXSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+      valid(out) = true
+      if self.phase==0 then
+        self.buffer = @(inp)
+        data(out) = @(inp)
+      else
+        data(out) = self.buffer
+      end
+
+      self.phase = self.phase + 1
+      if self.phase==scale then self.phase=0 end
+    end
+    terra UpsampleXSeq:calculateReady()  self.ready = (self.phase==0) end
+
+    res.terraModule = UpsampleXSeq
+
+    -----------------
+    res.systolicModule = S.moduleConstructor("UpsampleXSeq")
+    local sinp = S.parameter( "inp", ITYPE )
+
+    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):instantiate("phase") )
+    local reg = res.systolicModule:add( S.module.reg( ITYPE,true ):instantiate("buffer") )
+
+    local reading = S.eq(sPhase:get(),S.constant(0,types.uint(8))):disablePipelining()
+    local out = S.select( reading, sinp, reg:get() ) 
+
+    local pipelines = {}
+    table.insert(pipelines, reg:set( sinp, reading ) )
+    table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(8)) ) )
+
+    local CE = S.CE("CE")
+    res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
+    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,types.uint(8)))},S.parameter("reset",types.bool()),CE) )
+
+    return darkroom.liftHandshake(darkroom.waitOnInput( darkroom.newFunction(res) ))
+  else
+    return darkroom.compose("upsampleXSeq_"..T, darkroom.liftHandshake(darkroom.changeRate(A,1,T*scale,T)), darkroom.makeHandshake(darkroom.makeStateful(darkroom.broadcastWide(A,T,scale))))
+  end
 end
 
 -- StatefulV -> StatefulRV
@@ -1555,7 +1613,7 @@ function darkroom.upsampleYSeq( A, W, H, T, scale )
   local sinp = S.parameter( "inp", ITYPE )
 
   -- we currently don't have a way to make a posx counter and phase counter coherent relative to each other. So just use 1 counter for both. This restricts us to only do power of two however!
-  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap((W/T)*scale-1) ):CE(true):instantiate("xpos") )
+  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),(W/T)*scale-1) ):CE(true):instantiate("xpos") )
 
   local addrbits = math.log(W/T)/math.log(2)
   assert(addrbits==math.floor(addrbits))
@@ -1589,18 +1647,17 @@ function darkroom.upsampleSeq( A, W, H, T, scaleX, scaleY )
   if scaleY>1 and scaleX==1 then
     inner = darkroom.liftHandshake(darkroom.upsampleYSeq( A, W, H, T, scaleY ))
   elseif scaleX>1 and scaleY==1 then
-    inner = darkroom.makeHandshake(darkroom.makeStateful(darkroom.upsampleXSeq( A, W, H, T, scaleX )))
+    inner = darkroom.upsampleXSeq( A, T, scaleX )
   else
-    local f = darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftStateful(darkroom.makeStateful(darkroom.upsampleXSeq( A, W, H, T, scaleX )))))
-    inner = darkroom.compose("upsampleSeq", f, darkroom.upsampleYSeq( A, W, H, T, scaleY ))
-    inner = darkroom.liftHandshake(inner)
+    local f = darkroom.upsampleXSeq( A, T, scaleX )
+    inner = darkroom.compose("upsampleSeq", f, darkroom.liftHandshake(darkroom.upsampleYSeq( A, W, H, T, scaleY )))
   end
 
-  if scaleX>1 then
-    return darkroom.compose("upsampleSeqCorrectRate",darkroom.liftHandshake(darkroom.changeRate(A,1,T*scaleX,T)), inner)
-  else
+--  if scaleX>1 then
+--    return darkroom.compose("upsampleSeqCorrectRate",darkroom.liftHandshake(darkroom.changeRate(A,1,T*scaleX,T)), inner)
+--  else
     return inner
-  end
+--  end
 end
 
 function darkroom.packPyramid( A, w, h, levels, human )
@@ -3260,7 +3317,7 @@ function darkroom.reduceSeq( f, T )
   local sinp = S.parameter("process_input", f.outputType )
   local svalid = S.parameter("process_valid", types.bool() )
   --local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap( (1/T)-1 ) ):CE(true):instantiate("phase") )
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):instantiate("phase") )
   
   local pipelines = {}
   table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
