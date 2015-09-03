@@ -2681,7 +2681,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     for i=0,outputCount-1 do
       table.insert(shifterReads, S.slice( pinp, i*outputRate, (i+1)*outputRate-1, 0, H-1 ) )
     end
-    local out, pipelines, resetPipelines, ready = fpgamodules.addShifter( res.systolicModule, shifterReads, DARKROOM_VERBOSE )
+    local out, pipelines, resetPipelines, ready = fpgamodules.addShifterSimple( res.systolicModule, shifterReads, DARKROOM_VERBOSE )
 
     local CE = S.CE("CE")
     res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.constant(true,types.bool()) }, "process_output", pipelines, svalid, CE) )
@@ -2910,12 +2910,18 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
   local shiftValues = {}
   local Weach = (-xmin+1)/P -- number of columns in each output
 
-  for p=P-1,0,-1 do
-    table.insert(shiftValues, concat2dArrays( map( range(Weach-1,0), function(i) return sinp( (p*Weach + i)*P ) end )) )
+--  for p=P-1,0,-1 do
+--    table.insert(shiftValues, concat2dArrays( map( range(Weach-1,0), function(i) return sinp( (p*Weach + i)*P ) end )) )
+    --  end
+
+  local W = -xmin+1
+  for x=0,W-1 do
+    table.insert( shiftValues, sinp( (W-1-x)*P) )
   end
 
-  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues, DARKROOM_VERBOSE )
+  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues, W*T, P, DARKROOM_VERBOSE )
 
+  shifterOut = concat2dArrays( slice( shifterOut, 1, Weach) )
   local processValid = S.parameter("process_valid",types.bool())
   local CE = S.CE("CE")
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid, CE) )
@@ -3948,7 +3954,7 @@ function darkroom.constSeq( value, A, w, h, T )
       end
     end
   end
-  local shiftOut, shiftPipelines = fpgamodules.addShifter( res.systolicModule, map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
+  local shiftOut, shiftPipelines = fpgamodules.addShifterSimple( res.systolicModule, map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
 
   if shiftOut.type:const() then
     -- this happens if we have an array of size 1, for example (becomes a passthrough). Strip the const-ness so that the module returns a consistant type with different parameters.

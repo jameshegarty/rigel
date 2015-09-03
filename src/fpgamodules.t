@@ -338,7 +338,10 @@ end
 -- If exprs[i] === exprs[i+j](j*P), then we can just read exprs[i] out of reg[i+j] (and not have to calcuate exprs[i]).
 -- Where P=#exprs
 -- (reg[i]:get() == exprs[i](P), because we do a read every P cycles)
-local function optimizeShifter( exprs, regs )
+local function optimizeShifter( exprs, regs, stride, period, X )
+  assert(type(period)=="number")
+  assert(X==nil)
+
   local CSErepo = {}
   local internalized = map(exprs, function(e) local node, totalDelay = e:internalizeDelays(); return {node=node:CSE(CSErepo), delay=totalDelay} end)
 
@@ -361,8 +364,13 @@ local function optimizeShifter( exprs, regs )
     -- This may not theoretically provide any benefit, but it may help if Verilog's CSE fails (which is likely).
     -- It shouldn't make it any worse...
     if nearestj~=nil then
-      -- we actually read at the address+1, b/c in the cycle we read the values haven't been shifted back to their original position yet
-      newexprs[i] = (regs[(i+nearestj)%#exprs+1]:get())(nearestV)
+      local i_0idx = i-1 -- do this 0 indexed b/c 1 indexed is confusing
+      -- we actually read at the (period-1), b/c in the cycle we read the values haven't been shifted all the way back to their original position yet
+      -- remember, we bypass the SR on cycle 0
+      -- (-endOffset) is where value exprs[1] will end up in the array after we do all the shift cycles
+      local endOffset = stride*(period-1)
+      -- note that lua's mod behaves 'correctly' for negative numbers
+      newexprs[i] = (regs[(i_0idx-endOffset+nearestj)%#exprs+1]:get())(nearestV)
     else
       newexprs[i] = exprs[i]
     end
@@ -376,13 +384,13 @@ end
 -- that returns their values over #exprs clock cycles. Also returns
 -- a value that tells you whether it's storing the values in that cycle.
 --
--- More precisely, for #exprs==3:
+-- More precisely, for period==3:
 -- t0 returns exprs[1]@t0,true
--- t1 returns exprs[2]@t0,false
--- t2 returns exprs[3]@t0,false
+-- t1 returns exprs[1+stride]@t0,false
+-- t2 returns exprs[1+stride*2]@t0,false
 -- t3 returns exprs[1]@t3,true
--- t4 returns exprs[2]@t3,false
--- t5 returns exprs[3]@t3,false
+-- t4 returns exprs[1+stride]@t3,false
+-- t5 returns exprs[1+stride*2]@t3,false
 -- etc
 --
 -- This does a few clever optimizations:
@@ -390,17 +398,20 @@ end
 -- * If one of the exprs happens to have a value that is 
 --   already in the shift register, it will just read that value instead
 --   of calculating it. This happens if exprs[a] == exprs[b](#exprs), using the delay syntax
-function modules.addShifter( module, exprs, verbose )
+function modules.addShifter( module, exprs, stride, period, verbose, X )
   assert( S.isModule(module) )
   assert(type(exprs)=="table")
   assert(#exprs>0)
   assert(#exprs==keycount(exprs))
   map( exprs, function(e) assert(S.isAST(e)) end )
   assert(type(verbose)=="boolean")
+  assert(X==nil)
 
-  if #exprs==1 then
+  if #exprs==1 and period==1 then
+    -- period==1 => reading is always true
+    -- strid doesn't matter (only 1 element)
     -- only 1 element in array: just return it
-    return exprs[1], {}, {}, S.constant( true, types.bool() )
+    return exprs, {}, {}, S.constant( true, types.bool() )
   end
 
   local resetPipelines, pipelines, out, reading, ty
@@ -409,30 +420,32 @@ function modules.addShifter( module, exprs, verbose )
 
   local allconst = foldl( andop, true, map(exprs, function(e) return e:const()~=nil end ) )
 
-  if allconst then
+  if allconst and period*stride==#exprs then
+    -- period*stride==#exprs => we will get back to initial condition after 'period' cycles
     local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
 
-    pipelines = map( regs, function(r,i) return r:set( regs[(i%#exprs)+1]:get() )  end )
-    out = regs[1]:get()
+    pipelines = map( regs, function(r,i) return r:set( regs[((i-1+stride)%#exprs)+1]:get() )  end )
+    out = map( regs, function(r) return r:get() end )
   else
-    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),#exprs-1) ):CE(true):instantiate("phase") )
+    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):instantiate("phase") )
 
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
     local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
 
-    exprs = optimizeShifter( exprs, regs )
+    exprs = optimizeShifter( exprs, regs, stride, period )
 
     -- notice that in the first cycle we write exprs[1] to regs[1].
     -- Since we bypass exprs[1] to the output on the first cycle, this means we actually always read out of reg[2]
     -- it's possible we may not even use regs[1]. This is just if we end up CSEing (optimizeShifter)
     --
     -- disable pipeling on the select to make sure all the reads/write happen in same cycle (or else we will create timing cycle)
-    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[(i%#exprs)+1]:get()):disablePipeliningSingle() ) end )
+    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[((i-1+stride)%#exprs)+1]:get()):disablePipeliningSingle() ) end )
     table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
-    out = S.select( reading, exprs[1], regs[2]:get() )
+    --out = S.select( reading, exprs[1], regs[2]:get() )
+    out = map( exprs, function(expr,i) return S.select( reading, expr, regs[((i-1+stride)%#exprs)+1]:get() ) end )
 
     if verbose then
       local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
@@ -441,6 +454,14 @@ function modules.addShifter( module, exprs, verbose )
   end
 
   return out, pipelines, resetPipelines, reading
+end
+
+-- this just rotates through the exprs array, one element per clock
+function modules.addShifterSimple( module, exprs, verbose, X )
+  assert(type(verbose)=="boolean")
+  assert(X==nil)
+  local out, pipelines, resetPipelines, reading =  modules.addShifter( module, exprs, 1, #exprs, verbose )
+  return out[1], pipelines, resetPipelines, reading
 end
 
 function modules.xygen( minX, maxX, minY, maxY )
