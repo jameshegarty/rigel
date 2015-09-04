@@ -11,6 +11,32 @@ local SADWidth = 8
 --local SearchWindow = 64
 local A = types.uint(8)
 
+function stencilLinebufferPartialOffsetOverlap( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
+  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  assert(T<=1); assert(w>0); assert(h>0);
+  assert(xmin<xmax)
+  assert(ymin<ymax)
+  assert(xmax==0)
+  assert(ymax==0)
+
+  local ST_W = -xmin+1
+  local ssr_region = ST_W - offset - overlap
+  local stride = ssr_region*T
+  assert(stride==math.floor(stride))
+
+  local LB = darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin ))
+  local SSR = darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin, stride, true )))
+
+  local inp = d.input( LB.inputType )
+  local out = d.apply("LB", LB, inp)
+  out = d.apply("SSR", SSR, out)
+  out = d.apply("slice", d.makeHandshake(d.makeStateful(d.slice(types.array2d(types.uint(8),ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin))), out)
+
+  return d.lambda("stencilLinebufferPartialOverlap",inp,out)
+  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
+  --return darkroom.compose("stencilLinebufferPartialOffsetOverlap", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))),  )
+end
+
 function displayOutput()
   local ITYPE = types.tuple{types.uint(8),types.uint(16)}
   local OTYPE = types.array2d(types.uint(8),1)
@@ -103,12 +129,13 @@ function make(filename,T)
 
   local left = d.apply("AO",d.makeHandshake(d.makeStateful(C.arrayop(types.uint(8),1))),left)
   --local left = d.apply( "LB", d.stencilLinebufferPartial( types.uint(8), W, H, T, -(SearchWindow+SADWidth)+1, 0, -SADWidth+1, 0 ), left)
-  local left = d.apply( "LB", d.makeHandshake(d.stencilLinebuffer( types.uint(8), W, H, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
-  local left = d.apply( "lslice", d.makeHandshake(d.makeStateful(d.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1))), left)
+--  local left = d.apply( "LB", d.makeHandshake(d.stencilLinebuffer( types.uint(8), W, H, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
+--  local left = d.apply( "lslice", d.makeHandshake(d.makeStateful(d.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1))), left)
 --  local left = d.apply( "ldown", d.liftHandshake(d.changeRate(types.uint(8),SADWidth,SearchWindow, SearchWindow*T,true)), left) -- writes full output
 --  local left = d.apply( "fullslice", d.makeHandshake(d.makeStateful(d.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1))), left)
-  local left = d.apply( "llb", d.makeHandshake(d.makeStateful(d.unpackStencil( A, SADWidth, SADWidth, SearchWindow))), left) -- A[SADWidth,SADWidth][PCS]
-  local left = d.apply( "ldown", d.liftHandshake(d.changeRate( STENCIL_TYPE, 1, SearchWindow, perCycleSearch )), left) 
+  local left = d.apply("LB", stencilLinebufferPartialOffsetOverlap( types.uint(8), W, H, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
+  local left = d.apply( "llb", d.makeHandshake(d.makeStateful(d.unpackStencil( A, SADWidth, SADWidth, perCycleSearch))), left) -- A[SADWidth,SADWidth][PCS]
+--  local left = d.apply( "ldown", d.liftHandshake(d.changeRate( STENCIL_TYPE, 1, SearchWindow, perCycleSearch )), left) 
 
   --------
   local right = d.apply("right", d.makeHandshake(d.makeStateful(d.index(types.array2d(A,2),1))), d.selectStream("i1",inp_broadcast,1))

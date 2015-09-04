@@ -406,6 +406,8 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
   map( exprs, function(e) assert(S.isAST(e)) end )
   assert(type(verbose)=="boolean")
   assert(X==nil)
+  assert(math.floor(stride)==stride)
+  assert(math.floor(period)==period)
 
   if #exprs==1 and period==1 then
     -- period==1 => reading is always true

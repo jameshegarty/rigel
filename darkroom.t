@@ -2861,19 +2861,33 @@ function darkroom.SSR( A, T, xmin, ymin )
   return darkroom.newFunction(res)
 end
 
-function darkroom.SSRPartial( A, T, xmin, ymin )
+function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
   assert(T<=1); 
-  assert((-xmin+1)*T==math.floor((-xmin+1)*T))
-  local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin }
+  assert(X==nil)
+
+  if stride==nil then
+    local Weach = (-xmin+1)*T
+    assert(Weach==math.floor(Weach))
+    stride=Weach
+  end
+
+  if fullOutput==nil then fullOutput=false end 
+
+  local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin, stride=stride, fullOutput=fullOutput }
   res.inputType = darkroom.Stateful(types.array2d(A,1,-ymin+1))
-  res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
+
+  if fullOutput then
+    res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1),-ymin+1))
+  else
+    res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
+  end
+
   res.sdfInput, res.sdfOutput = {{1,1/T}},{{1,1}}
   res.delay=0
   local struct SSRPartial {phase:int; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int, ready:bool}
   terra SSRPartial:reset() self.phase=0; self.activeCycles=0;self.idleCycles=0; end
   terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
   terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-
     var phaseAtStart = self.phase
     --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
     if self.ready then
@@ -2896,8 +2910,10 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
       end
     end
 
-    var W = [(-xmin+1)*T]
-    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][x+phaseAtStart*W] end end
+    var W : int = [(-xmin+1)*T]
+    var Wtotal = -xmin+1
+    if fullOutput then W = Wtotal end
+    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][fixedModulus(x+phaseAtStart*stride,Wtotal)] end end
     valid(out)=true
   end
   terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
@@ -2919,9 +2935,14 @@ function darkroom.SSRPartial( A, T, xmin, ymin )
     table.insert( shiftValues, sinp( (W-1-x)*P) )
   end
 
-  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues, W*T, P, DARKROOM_VERBOSE )
+  local shifterOut, shifterPipelines, shifterResetPipelines, shifterReading = fpgamodules.addShifter( res.systolicModule, shiftValues, stride, P, DARKROOM_VERBOSE )
 
-  shifterOut = concat2dArrays( slice( shifterOut, 1, Weach) )
+  if fullOutput then
+    shifterOut = concat2dArrays( shifterOut )
+  else
+    shifterOut = concat2dArrays( slice( shifterOut, 1, Weach) )
+  end
+
   local processValid = S.parameter("process_valid",types.bool())
   local CE = S.CE("CE")
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid, CE) )
@@ -3892,7 +3913,7 @@ end
 function darkroom.apply( name, fn, input )
   assert( type(name) == "string" )
   assert( darkroom.isFunction(fn) )
-  assert( darkroom.isIR( input ) )
+  err( darkroom.isIR( input ), "last argument to apply must be darkroom value" )
 
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
 end
