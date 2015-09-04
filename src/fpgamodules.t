@@ -348,12 +348,12 @@ local function optimizeShifter( exprs, regs, stride, period, X )
   local newexprs = {}
 
   -- search for matches
-  local P = #exprs
+--  local P = #exprs
   for i=1,#exprs do
     local nearestj, nearestV
     for j=1,#exprs-i do
       if internalized[i].node==internalized[i+j].node then
-        local dist =  internalized[i].delay - (internalized[i+j].delay+j*P)
+        local dist =  internalized[i].delay - (internalized[i+j].delay+j*period)
         if dist>=0 and (nearestj==nil or dist<nearestV) then
           nearestj, nearestV = j, dist
         end
