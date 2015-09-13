@@ -23,7 +23,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="tuple" then
     return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="opaque" then
-    return "opaque_"..ty.str
+    return "opaque_"..ty.str..const
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -37,10 +37,11 @@ function types.bool(const) if const==true then return types._boolconst else retu
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
 
-types._opaque={}
-function types.opaque(str)
-  types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
-  return types._opaque[str]
+types._opaque={[true]={},[false]={}}
+function types.opaque( str, const )
+  local c = (const==true)
+  types._opaque[c][str] = types._opaque[c][str] or setmetatable({kind="opaque",str=str,constant=c},TypeMT)
+  return types._opaque[c][str]
 end
 
 types._bits={[true]={},[false]={}}
@@ -552,7 +553,7 @@ end
 
 -- is the type const?
 function TypeFunctions:const()
-  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
+  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isOpaque() then
     return self.constant
   elseif self:isArray() then
     return self:arrayOver():const()
@@ -573,7 +574,7 @@ function TypeFunctions:constSubtypeOf(A)
     return true
   elseif A.kind~=self.kind then
     return false
-  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isArray() then
+  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isOpaque() then
     if self:const() and A:makeConst()==self then
       return true
     else
@@ -582,6 +583,8 @@ function TypeFunctions:constSubtypeOf(A)
   elseif self:isTuple() then
     if #A.list~=#self.list then return false end
     return foldl( andop, true, map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
+  elseif self:isArray() then
+    return self:arrayOver():constSubtypeOf(A:arrayOver())
   else
     print(":constSubtypeOf",self,A)
     assert(false)
@@ -595,6 +598,10 @@ function TypeFunctions:makeConst()
     return types.uint( self.precision, true )
   elseif self:isInt() then
     return types.int( self.precision, true )
+  elseif self:isBits() then
+    return types.bits( self.precision, true )
+  elseif self:isOpaque() then
+    return types.opaque( self.str, true )
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
@@ -668,21 +675,21 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = float
   elseif self:isFloat() and self.precision==64 then
     ttype = double
-  elseif self:isUint() and self.precision==8 then
+  elseif self:isUint() and self.precision<=8 then
     ttype = uint8
   elseif self==types.int(8) then
     ttype = int8
   elseif self:isBool() then
     ttype = bool
-  elseif self:isInt() and self.precision==32 then
+  elseif self:isInt() and self.precision>16 and self.precision<=32 then
     ttype = int32
-  elseif self:isInt() and self.precision==64 then
+  elseif self:isInt() and self.precision>32 and self.precision<=64 then
     ttype = int64
-  elseif self:isUint() and self.precision==32 then
+  elseif self:isUint() and self.precision>16 and self.precision<=32 then
     ttype = uint32
-  elseif self:isUint() and self.precision==16 then
+  elseif self:isUint() and self.precision>8 and self.precision<=16 then
     ttype = uint16
-  elseif self:isInt() and self.precision==16 then
+  elseif self:isInt() and self.precision>8 and self.precision<=16 then
     ttype = int16
   elseif self:isArray() then
     assert(vectorN==nil)
@@ -761,6 +768,8 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isBits() then
     return self.precision
+  elseif self:isOpaque() then
+    return 0
   else
     print(self)
     assert(false)
@@ -773,6 +782,7 @@ function TypeFunctions:isInt() return self.kind=="int" end
 function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
 function TypeFunctions:isNull() return self.kind=="null" end
+function TypeFunctions:isOpaque() return self.kind=="opaque" end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"

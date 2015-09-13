@@ -493,7 +493,7 @@ function darkroomIRFunctions:typecheck()
       if n.kind=="apply" then
         err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
         assert( types.isType( n.inputs[1].type ) )
-        if n.fn.inputType~=n.inputs[1].type then error("Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc) end
+        err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
         n.type = n.fn.outputType
         return darkroom.newIR( n )
       elseif n.kind=="applyMethod" then
@@ -3236,6 +3236,38 @@ darkroom.fifo = memoize(function( A, size )
 
   return darkroom.newFunction(res)
                         end)
+
+function darkroom.lut( inputType, outputType, values )
+  err( types.isType(inputType), "inputType must be type")
+  darkroom.expectPure( inputType )
+  err( types.isType(outputType), "outputType must be type")
+  darkroom.expectPure( outputType )
+
+  local inputCount = math.pow(2, inputType:verilogBits())
+  err( inputCount==#values, "values array has insufficient entries")
+
+  local res = {kind="lut", inputType=inputType, outputType=outputType, values=values }
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.delay = 1
+
+  local struct LUTModule { lut : (outputType:toTerraType())[inputCount] }
+  terra LUTModule:reset() self.lut = arrayof([outputType:toTerraType()], values) end
+  terra LUTModule:process( inp:&inputType:toTerraType(), out:&outputType:toTerraType())
+    @out = self.lut[@inp]
+  end
+  res.terraModule = LUTModule
+
+  res.systolicModule = S.moduleConstructor("LUT")
+  local lut = res.systolicModule:add( systolic.module.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits(), outputType:verilogBits(), values, true ):instantiate("LUT") )
+
+  local sinp = S.parameter("process_input", res.inputType )
+
+  local pipelines = {}
+  table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputType:verilogBits()))},S.constant(false,types.bool())) ) -- needs to be driven, but set valid==false
+  res.systolicModule:addFunction( S.lambda("process",sinp, lut:read(sinp), "process_output", pipelines, nil, S.CE("process_CE") ) )
+
+  return darkroom.newFunction(res)
+end
 
 function darkroom.reduce( f, W, H )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end

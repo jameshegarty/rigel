@@ -13,6 +13,7 @@ function systolicAST.isSystolicAST(ast)
   return getmetatable(ast)==systolicASTMT
 end
 systolic.isAST = systolicAST.isSystolicAST
+systolic.ast = systolicAST
 
 local __usedNameCnt = 0
 function systolicAST.new(tab)
@@ -175,7 +176,7 @@ function systolic.valueToVerilog( value, ty )
     else
       return (ty:sizeof()*8).."'d"..value
     end
-  elseif ty:isUint() then
+  elseif ty:isUint() or ty:isBits() then
     assert(type(value)=="number")
     assert(value>=0)
     return (ty:verilogBits()).."'d"..value
@@ -190,6 +191,8 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==ty:channels())
     return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
+  elseif ty:isOpaque() then
+    return "0'b0"
   else
     print("valueToVerilog",ty)
     assert(false)
@@ -344,6 +347,8 @@ __index = function(tab,key)
         err(tab.final==false, "Attempting to modify a finalized instance!")
         if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
+        err( valid==nil or systolicAST.isSystolicAST(valid), "valid must be a systolic ast or nil" )
+        err( ce==nil or systolicAST.isSystolicAST(ce), "CE must be a systolic ast or nil" )
         assert(X==nil)
         
         tab.callsites[key] = tab.callsites[key] or {}
@@ -487,6 +492,7 @@ function systolic.__or(lhs, rhs) return binop(lhs,rhs,"or") end
 function systolic.__and(lhs, rhs) return binop(lhs,rhs,"and") end
 function systolic.xor(lhs, rhs) return binop(lhs,rhs,"xor") end
 function systolic.rshift(lhs, rhs) return binop(lhs,rhs,">>") end
+function systolic.lshift(lhs, rhs) return binop(lhs,rhs,"<<") end
 function systolic.neg(expr) return unary(expr,"-") end
 function systolic.isX(expr) return unary(expr,"isX") end
 function systolic.__not(expr) return unary(expr,"not") end
@@ -1120,7 +1126,7 @@ function systolicASTFunctions:toVerilog( module )
           assert(false)
         end
       elseif n.kind=="tuple" then
-        local nonulls = ifilter(args, function(v,k) return n.inputs[k].type:isNull()==false end )
+        local nonulls = ifilter(args, function(v,k) return n.inputs[k].type:verilogBits()>0 end )
         finalResult="{"..table.concat(reverse(nonulls),",").."}"
       elseif n.kind=="cast" then
 
@@ -1970,6 +1976,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
 
     end
 
+    conf.init = self.init
 
    return [[reg []]..(self.inputBits-1)..":0] "..instance.name..[[_DI_B;
 reg []]..(addrbits-1)..":0] "..instance.name..[[_addr_B;

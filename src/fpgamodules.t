@@ -507,6 +507,24 @@ function fixedBram(conf)
   if conf[A].readFirst then table.insert(configParams, [[.WRITE_MODE_A("READ_FIRST")]]) end
   if conf[B].readFirst then table.insert(configParams, [[.WRITE_MODE_B("READ_FIRST")]]) end
 
+  local initS = ""
+  if conf.init~=nil then
+      -- init should be an array of bytes
+      assert( type(conf.init)=="table")
+      assert( #conf.init == 2048 )
+      for block=0,63 do
+        local S = {}
+        for i=0,31 do 
+          local value = conf.init[block*32+i+1]
+          assert( value < 256 )
+          table.insert(S,1,string.format("%02x",value)) 
+        end
+--        initS = initS..".INIT_"..string.format("%02X",block).."(256'h"..table.concat(S,"").."),\n"
+        table.insert(configParams, ".INIT_"..string.format("%02X",block).."(256'h"..table.concat(S,"")..")")
+      end
+--      table.insert(configParams, initS)
+  end
+
   table.insert(res,"RAMB16_S"..(conf[A].chunk*9).."_S"..(conf[B].chunk*9).." #("..table.concat(configParams,",")..") "..conf.name.." (\n")
     table.insert(res,".DIPA("..(conf[A].chunk).."'b0),\n")
     table.insert(res,".DIPB("..(conf[B].chunk).."'b0),\n")

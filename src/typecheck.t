@@ -243,30 +243,26 @@ local function typecheck_inner( ast, newNodeFn )
 end
 
 return function( ast, newNodeFn )
-local out = typecheck_inner( ast, newNodeFn )
+  local out = typecheck_inner( ast, newNodeFn )
 
-local allConstInput = true
---for k,v in pairs(ast.inputs) do allConstInput = allConstInput and v.type:const() end
-for k,v in pairs(ast.inputs) do if v.type:const()==false then allConstInput=false end end
+  local allConstInput = true
 
--- sanity check: out is const <=> inputs are all const
-if (ast.type:const() and allConstInput==false) then
-  if ast.kind~="slice" then
-    print("Inputs aren't const, but output is!",ast.kind)
-    assert(false)
+  for k,v in pairs(ast.inputs) do if v.type:const()==false then allConstInput=false end end
+
+  -- sanity check: out is const <=> inputs are all const
+  if (ast.type:const() and allConstInput==false) then
+    if ast.kind~="slice" then
+      print("Inputs aren't const, but output is!",ast.kind)
+      assert(false)
+    end
   end
-end
 
-if (ast.type:const()==false and allConstInput) then
-  if ast.kind~="cast" then
-    print("Lost constness?",ast.kind)
-    assert(false)
+  if (ast.type:const()==false and allConstInput) then
+    if ast.kind~="cast" then
+      print("Lost constness?",ast.kind)
+      assert(false)
+    end
   end
-end
 
---if ast.kind=="binop" then
---  print("ALLCONST",ast.op,allConstInput,ast.type:const(),ast.type)
---end
-
-return out
+  return out
 end
