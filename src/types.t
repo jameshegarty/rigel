@@ -75,7 +75,7 @@ end
 types._array={}
 
 function types.array2d( _type, w, h )
-  assert( types.isType(_type) )
+  err( types.isType(_type), "first index to array2d must be type" )
   assert( type(w)=="number" )
   assert( type(h)=="number" or h==nil)
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
@@ -430,11 +430,12 @@ function types.checkExplicitCast(from, to, ast)
 
     return types.checkExplicitCast(from.over, to.over,ast)
   elseif from:isTuple() then
-    local allbits = foldt( from.list, andop, 'x')
+    local allbits = foldt( map(from.list, function(n) return n:isBits() end), andop, 'X')
+
 
     if allbits then
       -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
-      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail")
+      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:"..tostring(from).." to "..tostring(to))
       return true
     elseif #from.list==1 and from.list[1]==to then
       -- casting {A} to A
@@ -449,6 +450,12 @@ function types.checkExplicitCast(from, to, ast)
         map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
         err( channels==to:channels(), "channels don't match") 
         return true
+      else -- casting {A,A,A,A} to A[4]
+        local allTheSame = true
+        for k,v in pairs(from.list) do if v~=from.list[1] then allTheSame=false end end
+        if allTheSame and #from.list == to:channels() then
+          return true
+        end
       end
     end
 
@@ -618,6 +625,8 @@ function TypeFunctions:stripConst()
     return types.uint( self.precision, false )
   elseif self:isInt() then
     return types.int( self.precision, false )
+  elseif self:isOpaque() then
+    return types.opaque( self.str, false )
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
@@ -677,7 +686,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = double
   elseif self:isUint() and self.precision<=8 then
     ttype = uint8
-  elseif self==types.int(8) then
+  elseif self:isInt() and self.precision<=8 then
     ttype = int8
   elseif self:isBool() then
     ttype = bool

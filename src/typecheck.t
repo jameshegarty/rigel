@@ -9,15 +9,9 @@ local function typecheck_inner( ast, newNodeFn )
     local expr = ast.inputs[1]
     
     if ast.op=="-" then
-      if expr.type:isUint() then
-        darkroom.warning("You're negating a uint, this is probably not what you want to do!", origast:linenumber(), origast:offset(), origast:filename())
-      end
+      err( expr.type:isUint()==false, "You're negating a uint, this is probably not what you want to do! "..ast.loc)
       
-      ast.type = ast.expr.type
-      if type(ast.expr.constLow_1)=="number" then 
-        ast.constLow_1 = -ast.expr.constLow_1; ast.constHigh_1 = -ast.expr.constHigh_1; 
-        if ast.constLow_1 > ast.constHigh_1 then ast.constLow_1, ast.constHigh_1 = ast.constHigh_1, ast.constLow_1 end
-      end
+      ast.type = expr.type
     elseif ast.op=="floor" or ast.op=="ceil" then
       ast.type = darkroom.type.float(32)
     elseif ast.op=="abs" then

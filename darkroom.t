@@ -1267,7 +1267,7 @@ darkroom.liftHandshake = memoize(function(f)
 
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
-function darkroom.map( f, W, H )
+darkroom.map = memoize(function( f, W, H )
   assert( darkroom.isFunction(f) )
   assert(type(W)=="number")
   assert(type(H)=="number" or H==nil)
@@ -1299,7 +1299,7 @@ function darkroom.map( f, W, H )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
 
   return darkroom.newFunction(res)
-end
+end)
 
 -- if scaleX,Y > 1 then this is upsample
 -- if scaleX,Y < 1 then this is downsample
@@ -3264,7 +3264,7 @@ function darkroom.lut( inputType, outputType, values )
 
   local pipelines = {}
   table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputType:verilogBits()))},S.constant(false,types.bool())) ) -- needs to be driven, but set valid==false
-  res.systolicModule:addFunction( S.lambda("process",sinp, lut:read(sinp), "process_output", pipelines, nil, S.CE("process_CE") ) )
+  res.systolicModule:addFunction( S.lambda("process",sinp, S.cast(lut:read(sinp),outputType), "process_output", pipelines, nil, S.CE("process_CE") ) )
 
   return darkroom.newFunction(res)
 end
@@ -3465,7 +3465,7 @@ end
 
 -- function argument
 function darkroom.input( type, sdfRate )
-  assert( types.isType( type ) )
+  err( types.isType( type ), "darkroom.input: first argument should be type" )
   assert( sdfRate==nil or darkroom.isSDFRate(sdfRate))
   return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate} )
 end
@@ -3543,7 +3543,9 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
     end
 
     local readyOutput
-    fn.output:visitEachReverse(
+    
+    if darkroom.isPure(fn.output.type)==false then
+      fn.output:visitEachReverse(
       function(n, inputs)
         local inputList = {}
         for parentNode,v in pairs(inputs) do
@@ -3621,6 +3623,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
 
         return res
       end, true)
+    end
 
     if darkroom.isStatefulRV(res.inputType) then
       assert(readyOutput~=nil)
@@ -4069,10 +4072,12 @@ function darkroom.statements( t )
 end
 
 -- if index==true, then we return a value, not an array
-darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index )
-  assert( types.isType(inputType) )
-  assert(type(idxLow)=="number")
-  assert(type(idxHigh)=="number")
+darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
+  err( types.isType(inputType),"slice first argument must be type" )
+  err(type(idxLow)=="number", "slice idxLow must be number")
+  err(type(idxHigh)=="number", "slice idxHigh must be number")
+  err(index==nil or type(index)=="boolean", "index must be bool")
+  assert(X==nil)
 
   if inputType:isTuple() then
     assert( idxLow < #inputType.list )
@@ -4120,8 +4125,10 @@ darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, 
   end
                          end)
 
-function darkroom.index( inputType, idx, idy )
+function darkroom.index( inputType, idx, idy, X )
   err( types.isType(inputType), "first input to index must be a type" )
+  err( type(idx)=="number", "index idx must be number")
+  assert(X==nil)
   if idy==nil then idy=0 end
   return darkroom.slice( inputType, idx, idx, idy, idy, true )
 end

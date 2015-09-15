@@ -17,11 +17,31 @@ function fixed.isFixedType(ty)
   return false
 end
 
+function fixed.expectFixed(ty)
+  err( fixed.isFixedType(ty), "Expected fixed point type")
+end
+
 function fixed.extract(ty)
   if fixed.isFixedType(ty) then
     return ty.list[1]
   end
   return ty
+end
+
+function fixed.extractExp(ty)
+  fixed.expectFixed(ty)
+  local str = ty.list[2].str:sub(6)
+  return tonumber(str)
+end
+
+function fixed.extractPrecision(ty)
+  fixed.expectFixed(ty)
+  return ty.list[1].precision
+end
+
+function fixed.extractSigned(ty)
+  fixed.expectFixed(ty)
+  return ty.list[1]:isInt()
 end
 
 function fixed.type( signed, precision, exp )
@@ -41,13 +61,13 @@ setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
 fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
-  err(l:signed()==r:signed(), "+: sign must match")
+  err(l:isSigned()==r:isSigned(), "+: sign must match")
   err(l:exp()==r:exp(), "+: exp must match")
   local p = math.max(l:precision(),r:precision())+1
-  return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:signed(), p, l:exp() ), loc=getloc()})
+  return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
 end, 
 __sub=function(l,r) 
-  err(l:signed() and r:signed(), "-: must be signed")
+  err(l:isSigned() and r:isSigned(), "-: must be signed")
   err(l:exp()==r:exp(), "-: exp must match")
   local p = math.max(l:precision(),r:precision())+1
   return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
@@ -76,8 +96,28 @@ function fixed.new(tab)
   return setmetatable(tab,fixedASTMT)
 end
 
-function fixed.parameter( name, type )
-  return fixed.new{kind="parameter",name=name, type=type,inputs={},loc=getloc()}
+function fixed.parameter( name, ty )
+  err(types.isType(ty), "second arg must be type")
+  return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
+end
+
+function fixed.tuple( tab )
+  local inps = {}
+  local ty = {}
+  for k,v in pairs(tab) do 
+    table.insert(inps,v) 
+    table.insert(ty,v.type)
+  end
+  return fixed.new{kind="tuple", inputs=inps, type=types.tuple(ty), loc=getloc()}
+end
+
+function fixed.array2d( tab, w, h )
+  local inps = {}
+  for k,v in pairs(tab) do 
+    table.insert(inps,v) 
+    assert(v.type==tab[1].type)
+  end
+  return fixed.new{kind="array2d", inputs=inps, type=types.array2d(tab[1].type,w,h), loc=getloc()}
 end
 
 function fixed.constant( value, signed, precision, exp )
@@ -90,6 +130,7 @@ function fixedASTFunctions:lift(exponant)
     local ty = fixed.type(false,self.type.precision,exponant)
     return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
   else
+    print("Could not lift type "..tostring(self.type))
     assert(false)
   end
 end
@@ -105,6 +146,14 @@ end
 function fixedASTFunctions:truncate(precision)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   local ty = fixed.type(self:isSigned(), precision, self:exp())
+  return fixed.new{kind="truncate", type=ty,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:pad(precision,exp)
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( precision>=self:precision(), "pad shouldn't make precision smaller")
+  err( exp>=self:exp(), "pad shouldn't make exp smaller")
+  local ty = fixed.type(self:isSigned(), precision, exp)
   return fixed.new{kind="truncate", type=ty,inputs={self},loc=getloc()}
 end
 
@@ -124,15 +173,102 @@ function fixedASTFunctions:hist(name)
   return fixed.new{kind="hist", type=self.type, name=name,inputs={self},loc=getloc()}
 end
 
-function fixedASTFunctions:lower()
+-- allowExp: should we allow you to lower something with a non-zero exp? or throw an error
+function fixedASTFunctions:lower(allowExp)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
-  err( self:exp()==0, "attempting to lower a value with nonzero exp")
+
+  if allowExp~=true then err( self:exp()==0, "attempting to lower a value with nonzero exp") end
+
   return fixed.new{kind="lower", type=fixed.extract(self.type),inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:toSigned()
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  if self:isSigned() then
+return self
+  end
+
+  local ty = fixed.type( true, self:precision()+1, self:exp() )
+  return fixed.new{kind="toSigned", type=ty, inputs={self}, loc=getloc() }
 end
 
 function fixedASTFunctions:rshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:cast(to)
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(to), "expected cast to fixed type: "..self.loc)
+
+  err( self:isSigned()==fixed.extractSigned(to), "sign must match")
+  
+  local res = self
+  if fixed.extractExp(to)<res:exp() then
+    res = res:rshift( res:exp() - fixed.extractExp(to) )
+  end
+
+  assert( res:exp() == fixed.extractExp(to) )
+ 
+  if fixed.extractPrecision(to) < res:precision() then
+    res = res:truncate(fixed.extractPrecision(to))
+  elseif fixed.extractPrecision(to) > res:precision() then
+    res = res:pad(fixed.extractPrecision(to),res:exp())
+  end
+  
+  err( res.type==to, "fixed cast failed, from "..tostring(self.type).." to "..tostring(to))
+
+  return res
+end
+
+function fixedASTFunctions:index(ix,iy)
+  err(self.type:isTuple() or self.type:isArray(), "attempting to index into something other than an array or tuple")
+  err( type(ix)=="number", "ix must be number")
+  err( iy==nil or type(iy)=="number", "iy must be number")
+
+  local ty
+  if self.type:isTuple() then
+    assert(ix>=0 and ix<#self.type.list)
+    ty = self.type.list[ix+1]
+  elseif self.type:isArray() then
+    err(ix>=0 and ix<(self.type:arrayLength())[1], "array idx out of bounds. is "..tostring(ix).." but should be < "..tostring((self.type:arrayLength())[1]))
+    
+    if iy==nil then iy=0 end
+    assert(iy>=0 and iy<(self.type:arrayLength())[2])
+
+    ty = self.type:arrayOver()
+  end
+
+  return fixed.new{kind="index", type=ty, ix=ix, iy=iy,inputs={self},loc=getloc()}
+end
+
+-- return the sign bit. true: positive (>=0), false: negative
+function fixedASTFunctions:sign()
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  return fixed.new{kind="sign", type=types.bool(), inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:addSign(inp)
+  err( fixed.isAST(inp), "input must be fixed AST" )
+  err( self:isSigned()==false, "attempting to add sign to something that alreayd has a sign")
+  return fixed.new{kind="addSign", type=fixed.type(true,self:precision()+1,self:exp()), inputs={self,inp}, loc=getloc()}
+end
+
+function fixedASTFunctions:abs()
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self:isSigned(), "abs value of a non-signed type is futile")
+
+  -- we actually _CANT_ throw out data here. signed number lose one value
+  -- (either the max or the min). But since one of the max or min remain,
+  -- we can't represent this without the full # of bits.
+  local ty = fixed.type(false, self:precision(), self:exp())
+  return fixed.new{kind="abs", type=ty, inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:neg()
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self:isSigned(), "neg value of a non-signed type is futile")
+  return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:isSigned()
@@ -198,7 +334,37 @@ function fixedASTFunctions:toSystolic()
           assert(false)
         end
       elseif n.kind=="hist" then
-        return args[1] -- cpu only
+        res = args[1] -- cpu only
+      elseif n.kind=="index" then
+        res = S.index( args[1], n.ix, n.iy)
+        if fixed.isFixedType(n.type) then
+          -- remove wrapper
+          res = S.index(res,0)
+        end
+      elseif n.kind=="toSigned" then
+        res = S.cast( args[1], fixed.extract(n.type) )
+      elseif n.kind=="abs" then
+        res = S.abs( args[1] )
+        res = S.cast( args[1], fixed.extract(n.type) )
+      elseif n.kind=="neg" then
+        res = S.neg(args[1])
+      elseif n.kind=="sign" then
+        res = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
+      elseif n.kind=="tuple" then
+        res = S.tuple(args)
+      elseif n.kind=="array2d" then
+        local inp = args
+        if fixed.isFixedType(n.inputs[1].type) then
+          for k,v in pairs(args) do
+            inp[k] = S.tuple{v,S.constant(0, self.inputs[1].type.list[2])}
+          end
+        end
+
+        res = S.cast(S.tuple(inp),n.type)
+      elseif n.kind=="addSign" then
+        local tsign = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
+        res = S.cast(args[1], fixed.extract(n.type) )
+        res = S.select(S.eq(tsign,args[2]),res,S.neg(res))
       else
         print(n.kind)
         assert(false)
@@ -296,6 +462,43 @@ function fixedASTFunctions:toTerra()
             end
           end
           in [args[1]] end
+      elseif n.kind=="index" then
+        if n.inputs[1].type:isArray() then
+          local W = (n.inputs[1].type:arrayLength())[1]
+          res = `[args[1]][n.iy*W+n.ix]
+        elseif n.inputs[1].type:isTuple() then
+          res = `[args[1]].["_"..n.ix]
+        else
+          assert(false)
+        end
+
+        if fixed.isFixedType(n.type) then
+          res = `res._0
+        end
+      elseif n.kind=="toSigned" then
+        res = `[fixed.extract(n.type):toTerraType()]([args[1]])
+      elseif n.kind=="abs" then
+        res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
+        res = `[fixed.extract(n.type):toTerraType()](res)
+      elseif n.kind=="sign" then
+        res = `terralib.select([args[1]]>=0,true,false)
+      elseif n.kind=="addSign" then
+        local sign = `terralib.select([args[1]]>=0,true,false)
+        res = `[fixed.extract(n.type):toTerraType()]([args[1]])
+        res = `terralib.select([args[2]]==sign,res,-res)
+      elseif n.kind=="neg" then
+        res = `-[args[1]]
+      elseif n.kind=="tuple" then
+        res = `{args}
+      elseif n.kind=="array2d" then
+        local inp = args
+        if fixed.isFixedType(n.inputs[1].type) then
+          for k,v in pairs(args) do
+            inp[k] = `{v,nil}
+          end
+        end
+
+        res = `arrayof([n.type:arrayOver():toTerraType()], inp)
       else
         print(n.kind)
         assert(false)
@@ -322,7 +525,7 @@ function fixedASTFunctions:toDarkroom(name,X)
   local terra tfn([terrainp], out:&out.type:toTerraType())
     @out = terraout
   end
-  tfn:printpretty(true,false)
+  --tfn:printpretty(true,false)
   return darkroom.lift( name, inp.type, out.type, 1, tfn, inp, out )
 end
 

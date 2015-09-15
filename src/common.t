@@ -421,12 +421,12 @@ function foldt(t, f, base)
 
   local res = {}
   local i=2
-  while t[i] do
+  while t[i]~=nil do
     table.insert(res, f(t[i-1],t[i]))
     i = i + 2
   end
   -- if we have an odd # of elements
-  if t[i-1] then table.insert(res, t[i-1]) end
+  if t[i-1]~=nil then table.insert(res, t[i-1]) end
 
   assert(#res>0)
   if #res==1 then return res[1] end
