@@ -26,7 +26,7 @@ out = d.apply( "a", d.map( a, T ), inp )
 out = d.apply( "b", d.map( b, T ), out )
 fn = d.lambda( "fixed_wide", inp, out )
 ------------
-hsfn = d.makeHandshake(d.makeStateful(fn))
+hsfn = d.makeHandshake(fn)
 
 harness.axi( "fixed_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
 

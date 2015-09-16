@@ -25,10 +25,6 @@ inp = d.input( ITYPE )
 out = d.apply( "plus100", d.map( p200, T ), inp )
 fn = d.lambda( "pointwise_wide", inp, out )
 ------------
---ITYPE = d.StatefulHandshake(ITYPE)
---inp = d.input( ITYPE )
---out = d.apply( "hs", d.makeHandshake(d.makeStateful(fn)), inp)
---hsfn = d.lambda( "pointwise_wide_hs", inp, out )
-hsfn = d.makeHandshake(d.makeStateful(fn))
+hsfn = d.makeHandshake(fn)
 
 harness.axi( "pointwise_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)

@@ -8,15 +8,14 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   local fixedTapInputType = tapInputType
   if tapInputType==nil then fixedTapInputType = types.null() end
 
-  local inp = d.input( d.StatefulHandshake(types.tuple{types.null(),fixedTapInputType}) )
-  local inpdata = d.apply("inpdata", d.makeHandshake(d.makeStateful(d.index(types.tuple{types.null(),fixedTapInputType},0))), inp)
-  local inptaps = d.apply("inptaps", d.makeHandshake(d.makeStateful(d.index(types.tuple{types.null(),fixedTapInputType},1))), inp)
+  local inp = d.input( d.Handshake(types.tuple{types.null(),fixedTapInputType}) )
+  local inpdata = d.apply("inpdata", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
+  local inptaps = d.apply("inptaps", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
   local out = d.apply("fread",d.makeHandshake(d.freadSeq(infile,inputType)),inpdata)
   local hsfninp = out
 
   if tapInputType~=nil then
-    hsfninp = d.tuple("hsfninp",{out,inptaps},false)
-    hsfninp = d.apply("HFN",d.packTuple({inputType,tapInputType},true),hsfninp)
+    hsfninp = d.apply("HFN",d.packTuple({inputType,tapInputType}), d.tuple("hsfninp",{out,inptaps},false))
   end
 
 
@@ -29,7 +28,7 @@ end
 local function harnessAxi( hsfn, outputCount)
   local inp = d.input(hsfn.inputType )
   local out = d.apply("hsfna",hsfn,inp)
-  out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractStatefulHandshake(hsfn.outputType), outputCount))), out)
+  out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
   return d.lambda( "harnessaxi", inp, out )
 end
 

@@ -23,13 +23,11 @@ H = inputH
 local convolve = C.convolveConstant( types.uint(8), ConvWidth, range(ConvArea), 8 )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
-ITYPE = d.Stateful(BASE_TYPE)
-inp = d.input( ITYPE )
+inp = d.input( BASE_TYPE )
 
---I = d.apply("crop", d.cropSeq(types.uint(8),W,H,T,ConvWidth,0,ConvWidth,0,0), inp)
 convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
-convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ) ), convLB )
-convpipe = d.apply( "conv", d.makeStateful( d.map( convolve, T ) ), convstencils )
+convstencils = d.apply( "convstencils", d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )
+convpipe = d.apply( "conv",  d.map( convolve, T ), convstencils )
 convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
 convpipe = d.lambda( "convpipe", inp, convpipe )

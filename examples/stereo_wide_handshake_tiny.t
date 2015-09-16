@@ -77,13 +77,13 @@ function make(filename)
   local ATYPE = types.array2d(A,2)
   local TYPE = types.array2d(ATYPE,4)
   local STENCIL_TYPE = types.array2d(A,SADWidth,SADWidth)
-  local hsfninp = d.input( d.StatefulHandshake(TYPE) )
+  local hsfninp = d.input( d.Handshake(TYPE) )
   local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(A,2),1,4,1)), hsfninp ) -- A[2][1]
-  local inp = d.apply("oi0", d.makeHandshake(d.makeStateful(d.index(types.array2d(types.array2d(A,2),1),0))), inp) -- A[2]
+  local inp = d.apply("oi0", d.makeHandshake(d.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = d.apply("inp_broadcast", d.broadcastStream(types.array2d(A,2),2), inp)
 
   -------------
-  local left = d.apply("left", d.makeHandshake(d.makeStateful(d.index(types.array2d(A,2),0))), d.selectStream("i0",inp_broadcast,0) )
+  local left = d.apply("left", d.makeHandshake(d.index(types.array2d(A,2),0)), d.selectStream("i0",inp_broadcast,0) )
   
   -- theoretically, the left and right branch may have the same delay, so may not need a fifo.
   -- but, fifo one of the branches to be safe.
@@ -91,29 +91,29 @@ function make(filename)
   table.insert( statements, d.applyMethod("s1",fifos[1],"store",left) )
   left = d.applyMethod("l1",fifos[1],"load")
 
-  local left = d.apply("AO",d.makeHandshake(d.makeStateful(C.arrayop(types.uint(8),1))),left)
+  local left = d.apply("AO",d.makeHandshake(C.arrayop(types.uint(8),1)),left)
   local left = d.apply( "LB", d.makeHandshake(d.stencilLinebuffer( types.uint(8), W, H, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
-  local left = d.apply( "lslice", d.makeHandshake(d.makeStateful(d.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1))), left)
-  left = d.apply( "llb", d.makeHandshake( d.makeStateful( d.unpackStencil( A, SADWidth, SADWidth, SearchWindow) ) ), left) -- A[SADWidth,SADWidth][SearchWindow]
+  local left = d.apply( "lslice", d.makeHandshake(d.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1)), left)
+  left = d.apply( "llb", d.makeHandshake( d.unpackStencil( A, SADWidth, SADWidth, SearchWindow)  ), left) -- A[SADWidth,SADWidth][SearchWindow]
 
   --------
-  local right = d.apply("right", d.makeHandshake( d.makeStateful(d.index(types.array2d(A,2),1))), d.selectStream("i1",inp_broadcast,1) )
+  local right = d.apply("right", d.makeHandshake( d.index(types.array2d(A,2),1)), d.selectStream("i1",inp_broadcast,1) )
 
   table.insert( fifos, d.instantiateRegistered("f2",d.fifo(A,128)) )
   table.insert( statements, d.applyMethod( "s2", fifos[2], "store", right ) )
   right = d.applyMethod("r1",fifos[#fifos],"load")
 
-  local right = d.apply("AOr", d.makeHandshake( d.makeStateful(C.arrayop(types.uint(8),1))),right) -- uint8[1]
+  local right = d.apply("AOr", d.makeHandshake( C.arrayop(types.uint(8),1)),right) -- uint8[1]
   local right = d.apply( "rightLB", d.makeHandshake( d.stencilLinebuffer( A, W, H, 1, -SADWidth+1, 0, -SADWidth+1, 0 )), right)
-  right = d.apply("rb", d.makeHandshake( d.makeStateful( d.broadcast( STENCIL_TYPE, SearchWindow ) ) ), right ) -- A[SADWidth,SADWidth][SearchWindow]
+  right = d.apply("rb", d.makeHandshake(  d.broadcast( STENCIL_TYPE, SearchWindow )  ), right ) -- A[SADWidth,SADWidth][SearchWindow]
   -------
 
-  local merged = d.apply("merge", d.SoAtoAoSStateful( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE}, true ), d.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
+  local merged = d.apply("merge", d.SoAtoAoSHandshake( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE} ), d.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
   local packStencils = d.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
-  local merged = d.apply("mer", d.makeHandshake(d.makeStateful(d.map(packStencils, SearchWindow) ) ), merged ) -- A[2][SADWidth, SADWidth][SearchWindow]
+  local merged = d.apply("mer", d.makeHandshake(d.map(packStencils, SearchWindow)  ), merged ) -- A[2][SADWidth, SADWidth][SearchWindow]
   
-  local res = d.apply("AM",d.makeHandshake(d.makeStateful(argmin(SearchWindow))),merged) -- {uint8,uint16}
-  local res = d.apply("display",d.makeHandshake(d.makeStateful(displayOutput())), res)
+  local res = d.apply("AM",d.makeHandshake(argmin(SearchWindow)),merged) -- {uint8,uint16}
+  local res = d.apply("display",d.makeHandshake(displayOutput()), res)
 
   local res = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), res )
 

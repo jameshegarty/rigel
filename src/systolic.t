@@ -2432,7 +2432,7 @@ end
 
 function systolicModuleConstructor:lookupFunction( funcName )
   --err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
-  if self.functions[funcName]==nil then print("Warning: Could not find function named '"..funcName.."' on module "..self.name) end
+  --if self.functions[funcName]==nil then print("Warning: Could not find function named '"..funcName.."' on module "..self.name) end
   return self.functions[funcName]
 end
 

@@ -16,7 +16,7 @@ scaleX = 2
 function MAKE(T)
   local ITYPE = types.array2d( types.uint(8), 8 ) -- always 8 for AXI
 
-  local inp = d.input( d.StatefulHandshake(ITYPE) )
+  local inp = d.input( d.Handshake(ITYPE) )
   local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,T)), inp )
   out = d.apply("DS", d.liftHandshake(d.liftDecimate(d.downsampleXSeq( types.uint(8), W,H,T,scaleX))), out)
   local downsampleT = math.max(T/scaleX,1)

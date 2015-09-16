@@ -34,11 +34,11 @@ local lbp = d.lambda("lbp", inp, out)
 local hsfn = d.liftHandshake(lbp)
 ]=]
 
-local ITYPE = d.StatefulHandshake(BASE_TYPE)
+local ITYPE = d.Handshake(BASE_TYPE)
 local inp = d.input( ITYPE )
 
 local out = d.apply( "convLB", d.stencilLinebufferPartial( types.uint(8), inputW, inputH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
-out = d.apply("extract",d.makeHandshake(d.makeStateful(extract)),out)
+out = d.apply("extract",d.makeHandshake(extract),out)
 out = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), inputW/T, inputH, 1, (ConvWidth-1)/T, 0, ConvWidth-1, 0, 0 )), out ) -- cut off the junk (undefined region)
 local hsfn = d.lambda("lbp", inp, out)
 

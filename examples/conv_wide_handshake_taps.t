@@ -44,17 +44,17 @@ convolve = d.lambda( "convolve", inp, conv )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = types.tuple{BASE_TYPE,STTYPE:makeConst()}
-inp = d.input( d.Stateful(ITYPE) )
+inp = d.input( ITYPE )
 
-local inpdata = d.apply( "i0", d.makeStateful(d.index(ITYPE,0)), inp)
-local inptaps = d.apply("idx1",d.makeStateful(d.index(ITYPE,1)), inp)
-local st_tap_inp = d.apply( "broad", d.makeStateful(d.broadcast(STTYPE:makeConst(),T)), inptaps )
+local inpdata = d.apply( "i0", d.index(ITYPE,0), inp)
+local inptaps = d.apply("idx1",d.index(ITYPE,1), inp)
+local st_tap_inp = d.apply( "broad", d.broadcast(STTYPE:makeConst(),T), inptaps )
 
 convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inpdata)
-convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ) ), convLB )
+convstencils = d.apply( "convstencils",  d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T  ), convLB )
 
-st_tap_inp = d.apply("ST",d.SoAtoAoSStateful(T,1,{STTYPE,STTYPE:makeConst()}), d.tuple("Sttap", {convstencils,st_tap_inp}))
-convpipe = d.apply( "conv", d.makeStateful( d.map( convolve, T ) ), st_tap_inp )
+st_tap_inp = d.apply("ST",d.SoAtoAoS(T,1,{STTYPE,STTYPE:makeConst()}), d.tuple("Sttap", {convstencils,st_tap_inp}))
+convpipe = d.apply( "conv",  d.map( convolve, T ), st_tap_inp )
 convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
 convpipe = d.lambda( "convpipe", inp, convpipe )

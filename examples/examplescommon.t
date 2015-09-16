@@ -162,13 +162,12 @@ end
 -- returns a function from A[T]->B[T]
 function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
   local BASE_TYPE = types.array2d( A, T )
-  local ITYPE = d.Stateful(BASE_TYPE)
-  local inp = d.input( ITYPE )
+  local inp = d.input( BASE_TYPE )
   
   --I = d.apply("crop", d.cropSeq(types.uint(8),W,H,T,ConvWidth,0,ConvWidth,0,0), inp)
   local convLB = d.apply( "convLB", d.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( A, stencilW, stencilH, T ) ), convLB )
-  local convpipe = d.apply( "conv", d.makeStateful( d.map( f, T ) ), convstencils )
+  local convstencils = d.apply( "convstencils", d.unpackStencil( A, stencilW, stencilH, T ), convLB )
+  local convpipe = d.apply( "conv", d.map( f, T ), convstencils )
   
   local convpipe = d.lambda( "convpipe", inp, convpipe )
   return convpipe
@@ -182,21 +181,20 @@ function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH,
   assert(type(stencilH)=="number")
 
   local BASE_TYPE = types.array2d( A, T )
-  local ITYPE_RAW = types.tuple{BASE_TYPE, tapType}
-  local ITYPE = d.Stateful( ITYPE_RAW )
+  local ITYPE = types.tuple{BASE_TYPE, tapType}
   local rawinp = d.input( ITYPE )
   
-  local inp = d.apply("idx0",d.makeStateful(d.index(ITYPE_RAW,0)),rawinp)
-  local taps = d.apply("idx1",d.makeStateful(d.index(ITYPE_RAW,1)),rawinp)
+  local inp = d.apply("idx0",d.index(ITYPE,0),rawinp)
+  local taps = d.apply("idx1",d.index(ITYPE,1),rawinp)
   
   local convLB = d.apply( "convLB", d.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( A, stencilW, stencilH, T ) ), convLB )
+  local convstencils = d.apply( "convstencils", d.unpackStencil( A, stencilW, stencilH, T ) , convLB )
   
-  local st_tap_inp = d.apply( "broad", d.makeStateful(d.broadcast(tapType,T)), taps )
+  local st_tap_inp = d.apply( "broad", d.broadcast(tapType,T), taps )
   st_tap_inp = d.tuple("sttapinp",{convstencils,st_tap_inp})
   local ST_TYPE = types.array2d( A, stencilW, stencilH )
-  st_tap_inp = d.apply("ST",d.SoAtoAoSStateful(T,1,{ST_TYPE,tapType}),st_tap_inp)
-  local convpipe = d.apply( "conv", d.makeStateful( d.map( f, T ) ), st_tap_inp )
+  st_tap_inp = d.apply("ST",d.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
+  local convpipe = d.apply( "conv", d.map( f, T ), st_tap_inp )
   
   local convpipe = d.lambda( "convpipe", rawinp, convpipe )
   return convpipe
@@ -210,7 +208,7 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
   assert(X==nil)
 
   local RW_TYPE = types.array2d( A, T ) -- simulate axi bus
-  local hsfninp = d.input( d.StatefulHandshake(RW_TYPE) )
+  local hsfninp = d.input( d.Handshake(RW_TYPE) )
   --local out = hsfninp
   --local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),8,T)), hsfninp )
   local internalL = upToNearest(T,L)

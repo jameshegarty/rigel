@@ -9,10 +9,9 @@ T = 8
 
 -------------
 RAWTYPE = types.array2d( types.uint(8), T )
-ITYPE = d.Stateful(RAWTYPE)
-inp = d.input( ITYPE )
+inp = d.input( RAWTYPE )
 convLB = d.apply( "convLB", d.linebuffer( types.uint(8), W,H, T, -4 ), inp)
-convpipe = d.apply( "slice", d.makeStateful(d.slice( types.array2d(types.uint(8),T,5), 0, T-1, 0, 0 ) ), convLB)
+convpipe = d.apply( "slice", d.slice( types.array2d(types.uint(8),T,5), 0, T-1, 0, 0 ), convLB)
 convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), W, H, T, 0, 0, 4, 0, 0 ), convpipe ) -- cut off the junk
 convpipe = d.lambda( "convpipe", inp, convpipe )
 hsfn = d.makeHandshake(convpipe)

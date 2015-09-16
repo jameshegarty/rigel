@@ -23,15 +23,13 @@ else
   DARKROOM_VERBOSE = false
 end
 
-darkroom.State = types.opaque("state")
 darkroom.StateR = types.opaque("stateR")
-darkroom.Handshake = types.opaque("handshake")
-function darkroom.Stateful(A) return types.tuple({A,darkroom.State}) end
-function darkroom.StatefulV(A) return types.tuple({types.tuple({A, types.bool()}), darkroom.State}) end
-function darkroom.StatefulRV(A) return types.tuple({types.tuple({A, types.bool()}),darkroom.StateR}) end
-function darkroom.StatefulHandshake(A) return types.tuple({ A, darkroom.State, darkroom.Handshake }) end
-function darkroom.StatefulHandshakeArray(A,N) return types.tuple({A,types.opaque("statefulHandshakeArray"..N)}) end
-function darkroom.StatefulHandshakeTmuxed(A,N) return types.tuple({A,types.opaque("statefulHandshakeTmuxed"..N)}) end
+darkroom.HandshakeToken = types.opaque("handshake")
+function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, types.bool()} end
+function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, types.bool(),darkroom.StateR} end
+function darkroom.Handshake(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({ A, darkroom.HandshakeToken }) end
+function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
+function darkroom.HandshakeTmuxed(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeTmuxed"..N)}) end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
 struct EmptyState {}
@@ -45,95 +43,75 @@ darkroom.ready = macro(function(i) return `i._2 end)
 local ready = darkroom.ready
 
 
-function darkroom.isStateful( a ) return (a==darkroom.State or a==darkroom.StateR) or (a:isTuple() and (a.list[2]==darkroom.State or a.list[2]==darkroom.StateR or darkroom.isStateful(a.list[1]))) end
-function darkroom.isStatefulHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,22)=="statefulHandshakeArray" end
-function darkroom.isStatefulHandshakeTmuxed(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,23)=="statefulHandshakeTmuxed" end
-function darkroom.isStatefulHandshake( a ) return a:isTuple() and a.list[2]==darkroom.State and a.list[3]==darkroom.Handshake end
-function darkroom.isStatefulV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.State and a.list[1].list[2]==types.bool() and a.list[1].list[3]==nil end
-function darkroom.isStatefulRV( a ) return a:isTuple() and a.list[1]:isTuple() and a.list[2]==darkroom.StateR and a.list[1].list[2]==types.bool() end
-function darkroom.isPure( a ) return darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false end
-function darkroom.expectPure( A, er ) if darkroom.isPure(A)==false then error(er or "type should be pure but is "..tostring(A)) end end
-function darkroom.expectStateful( A, er ) if darkroom.isStateful(A)==false or darkroom.isStatefulV(A) or darkroom.isStatefulRV(A) then error(er or "type should be stateful, but is "..tostring(A)) end end
-function darkroom.expectStatefulV( A, er ) if darkroom.isStatefulV(A)==false then error(er or "type should be statefulV but is "..tostring(A)) end end
-function darkroom.expectStatefulRV( A, er ) if darkroom.isStatefulRV(A)==false then error(er or "type should be statefulRV") end end
-function darkroom.expectStatefulHandshake( A, er ) if darkroom.isStatefulHandshake(A)==false then error(er or "type should be stateful handshake") end end
+function darkroom.isHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray" end
+function darkroom.isHandshakeTmuxed(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed" end
+function darkroom.isHandshake( a ) return a:isTuple() and a.list[2]==darkroom.HandshakeToken end
+function darkroom.isV( a ) return a:isTuple() and a.list[2]==types.bool() and a.list[3]==nil end
+function darkroom.isRV( a ) return a:isTuple() and a.list[2]==types.bool() and a.list[3]==darkroom.StateR end
+function darkroom.isBasic(A) return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTmuxed(A)==false end
+function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
+function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
+function darkroom.expectRV( A, er ) if darkroom.isRV(A)==false then error(er or "type should be RV") end end
+function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false then error(er or "type should be handshake") end end
 
-function darkroom.extractStateful( a, loc )
-  if darkroom.isStateful(a)==false then error("Not a stateful input, "..loc) end
-  return a.list[1]
-end
-
--- extractV(StatefulV(A)) == A
-function darkroom.extractV( a, loc )
-  if darkroom.isStatefulV(a)==false then error("Not a statefulV input, ") end
-  return a.list[1].list[1]
-end
-
--- extractRV(StatefulRV(A)) == A
-function darkroom.extractRV( a, loc )
-  if darkroom.isStatefulRV(a)==false then error("Not a statefulRV input, ") end
-  return a.list[1].list[1]
-end
 
 -- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
--- ie Stateful(A) => A
--- StatefulV(A) => {A,bool}
--- StatefulRV(A) => {A,bool}
--- StatefulHandshake(A) => {A,bool}
-function darkroom.extract( a, loc )
-  if a==darkroom.State then return types.null() 
-  elseif darkroom.isStatefulHandshake(a) or darkroom.isStatefulHandshakeArray(a) then
+-- ie V(A) => {A,bool}
+-- RV(A) => {A,bool}
+-- Handshake(A) => {A,bool}
+function darkroom.lower( a, loc )
+  assert(types.isType(a))
+  if darkroom.isHandshake(a) or darkroom.isHandshakeArray(a) then
     return types.tuple({a.list[1],types.bool()})
-  elseif darkroom.isStatefulHandshakeTmuxed(a) then
-    return types.tuple({a.list[1],types.uint(8)})
-  elseif a:isArray() and darkroom.isStatefulHandshake(a:arrayOver()) then
-    return types.array2d( darkroom.extract(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
-  elseif a:isTuple() and darkroom.isStateful(a.list[1]) then
-    return types.tuple(map(a.list, function(n) assert(darkroom.isStateful(n)); return darkroom.extract(n) end))
-  elseif darkroom.isStateful(a) then
-    return a.list[1]
-  elseif darkroom.isStateful(a)==false and darkroom.isStatefulHandshake(a)==false then 
+  elseif darkroom.isHandshakeTmuxed(a) then
+    return types.tuple{a.list[1],types.uint(8)}
+  elseif darkroom.isRV(a) or darkroom.isV(a) then 
+    return types.tuple{a.list[1],types.bool()}
+  elseif a:isArray() and darkroom.isBasic(a:arrayOver())==false then
+    return types.array2d( darkroom.lower(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
+  elseif a:isTuple() and darkroom.isBasic(a.list[1])==false then
+    return types.tuple(map(a.list, function(t) return darkroom.lower(t) end ))
+  elseif darkroom.isBasic(a) then 
     return a 
   end
   assert(false)
 end
 
 -- extract underlying actual data type.
--- ie Stateful(A) => A
--- StatefulV(A) => A
--- StatefulRV(A) => A
--- StatefulHandshake(A) => A
+-- V(A) => A
+-- RV(A) => A
+-- Handshake(A) => A
 function darkroom.extractData(a)
-  if darkroom.isStatefulHandshake(a) then return a.list[1]
-  elseif darkroom.isStatefulV(a) then return darkroom.extractV(a)
-  elseif darkroom.isStatefulRV(a) then return darkroom.extractRV(a)
-  elseif darkroom.isStateful(a) then return darkroom.extract(a)
-  elseif darkroom.isPure(a) then return a
-  else print("extractdata",a); assert(false) end
+  if darkroom.isHandshake(a) then return a.list[1]
+  elseif darkroom.isV(a) then return a.list[1]
+  elseif darkroom.isRV(a) then return a.list[1]
+  end
+  return a -- pure
 end
 
 function darkroom.hasReady(a)
-  if darkroom.isStatefulHandshake(a) then return true
-  elseif darkroom.isStatefulRV(a) then return true
-  elseif a:isTuple() and darkroom.isStatefulHandshake(a.list[1]) then
+  if darkroom.isHandshake(a) then return true
+  elseif darkroom.isRV(a) then return true
+  elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
     return true
-  elseif darkroom.isStatefulHandshakeArray(a) then
+  elseif darkroom.isHandshakeArray(a) then
     return true
-  elseif darkroom.isPure(a) or darkroom.isStateful(a) then
+  elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
+  else
+    print("UNKNOWN READY",a)
+    assert(false)
   end
-  print("unknown READY",a)
-  assert(false)
 end
 
 function darkroom.extractReady(a)
-  if darkroom.isStatefulHandshake(a) then return types.bool()
-  elseif darkroom.isStatefulV(a) then return types.bool()
-  elseif darkroom.isStatefulRV(a) then return types.bool()
-  elseif a:isTuple() and darkroom.isStatefulHandshake(a.list[1]) then
-    map(a.list,function(i) assert(darkroom.isStatefulHandshake(i)); end )
+  if darkroom.isHandshake(a) then return types.bool()
+  elseif darkroom.isV(a) then return types.bool()
+  elseif darkroom.isRV(a) then return types.bool()
+  elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
+    map(a.list,function(i) assert(darkroom.isHandshake(i)); end )
     return types.array2d(types.bool(),#a.list) -- we always use arrays for ready bits. no reason not to.
-  elseif darkroom.isStatefulHandshakeArray(a) then
+  elseif darkroom.isHandshakeArray(a) then
     return types.uint(8)
   else 
     print("COULD NOT EXTRACT READY",a)
@@ -142,15 +120,10 @@ function darkroom.extractReady(a)
 end
 
 function darkroom.extractValid(a)
-  if darkroom.isStatefulHandshakeTmuxed(a) then
+  if darkroom.isHandshakeTmuxed(a) then
     return types.uint(8)
   end
   return types.bool()
-end
-
-function darkroom.extractStatefulHandshake( a, loc )
-  if darkroom.isStatefulHandshake(a)==false then error("Not a stateful handshake input, ") end
-  return a.list[1]
 end
 
 -- t should be format {{number,number},{number,number},...}
@@ -323,9 +296,15 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert(false)
         end
       elseif n.kind=="apply" then
-        assert(#n.inputs==1)
-        res =  n.fn:sdfTransfer(args[1], "APPLY "..n.loc)
-        if DARKROOM_VERBOSE then print("APPLY",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+        if #n.inputs==0 then
+          assert(darkroom.isSDFRate(n.fn.sdfOutput))
+          res = {n.fn.sdfOutput,broadcast(true,#n.fn.sdfOutput)}
+        elseif #n.inputs==1 then
+          res =  n.fn:sdfTransfer(args[1], "APPLY "..n.loc)
+          if DARKROOM_VERBOSE then print("APPLY",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+        else
+          assert(false)
+        end
       elseif n.kind=="tuple" or n.kind=="array2d" then
         if n.packStreams then
           local IR, allConverged, ratesMatch
@@ -492,8 +471,12 @@ function darkroomIRFunctions:typecheck()
     function(n)
       if n.kind=="apply" then
         err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
-        assert( types.isType( n.inputs[1].type ) )
-        err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+        if #n.inputs==0 then
+          err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
+        else
+          assert( types.isType( n.inputs[1].type ) )
+          err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+        end
         n.type = n.fn.outputType
         return darkroom.newIR( n )
       elseif n.kind=="applyMethod" then
@@ -511,11 +494,6 @@ function darkroomIRFunctions:typecheck()
         return darkroom.newIR( n )
       elseif n.kind=="input" then
       elseif n.kind=="constant" then
-      elseif n.kind=="extractState" then
-        if darkroom.isStateful(n.inputs[1].type)==false then error("input to extractState must be stateful") end
-      elseif n.kind=="catState" then
-        n.type = n.inputs[1].type
-        return darkroom.newIR(n)
       elseif n.kind=="tuple" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
         return darkroom.newIR(n)
@@ -528,7 +506,7 @@ function darkroomIRFunctions:typecheck()
         return darkroom.newIR(n)
       elseif n.kind=="selectStream" then
         err(n.inputs[1].type:isArray(), "selectStream input must be array of handshakes, but is "..tostring(n.inputs[1].type) )
-        err( darkroom.isStatefulHandshake(n.inputs[1].type:arrayOver()), "selectStream input must be array of handshakes")
+        err( darkroom.isHandshake(n.inputs[1].type:arrayOver()), "selectStream input must be array of handshakes")
         err( n.i < n.inputs[1].type:channels(), "selectStream index out of bounds")
         n.type = n.inputs[1].type:arrayOver()
         return darkroom.newIR(n)
@@ -545,13 +523,11 @@ function darkroomIRFunctions:codegenSystolic( module )
     function(n, inputs)
       if n.kind=="input" then
         local res = {module:lookupFunction("process"):getInput()}
-        if darkroom.isStatefulRV(n.type) then res[2] = module:lookupFunction("ready"):getInput() end
+        if darkroom.isRV(n.type) then res[2] = module:lookupFunction("ready"):getInput() end
         return res
       elseif n.kind=="applyMethod" then
         assert( n.inst.fn.registered )
-
         local I = module:lookupInstance(n.inst.name)
-
         if n.fnname=="load" then 
           module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
           return {I:load(S.tuple{S.null(),S.constant(true,types.bool())})}
@@ -563,32 +539,34 @@ function darkroomIRFunctions:codegenSystolic( module )
         end
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
-
-        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.extract(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.extract(n.fn.inputType)) )
-        err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.extract(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.extract(n.fn.outputType)) )
+        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
+        err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         
         local params
-        if darkroom.isStatefulHandshake( n.fn.inputType ) then
+        if darkroom.isHandshake( n.fn.inputType ) then
           local IC = n.inputs[1]:sdfTotal(self)
           local OC = n:sdfTotal(self)
           params={INPUT_COUNT="(INPUT_COUNT*"..IC[1][1]..")/"..IC[1][2],OUTPUT_COUNT="(INPUT_COUNT*"..OC[1][1]..")/"..OC[1][2]}
         end
         
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
+        err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
-        if darkroom.isStatefulHandshake( n.fn.inputType ) or darkroom.isStatefulHandshakeArray( n.fn.inputType ) or darkroom.isStatefulHandshakeTmuxed( n.fn.inputType ) or darkroom.isStatefulHandshake(n.fn.outputType) then
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
+        if darkroom.isHandshake( n.fn.inputType ) or darkroom.isHandshakeArray( n.fn.inputType ) or darkroom.isHandshakeTmuxed( n.fn.inputType ) or darkroom.isHandshake(n.fn.outputType) then
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
-        elseif darkroom.isPure( n.fn.inputType )==false then
+        elseif n.fn.stateful then
           module:lookupFunction("reset"):addPipeline( I:reset() )
         end
                 
-        if darkroom.isStatefulV(n.inputs[1].type) then
+        if n.fn.inputType==types.null() then
+          return { I:process() }
+        elseif darkroom.isV(n.inputs[1].type) then
           return { I:process(inputs[1][1]), I:ready() }
-        elseif darkroom.isStatefulRV(n.inputs[1].type) then
+        elseif darkroom.isRV(n.inputs[1].type) then
           return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
-        elseif darkroom.isStatefulRV(n.type) then
-          -- the strange Stateful->StatefulRV case
-          err( false, "You shouldn't use Stateful->StatefulRV directly, loc "..n.loc )
+        elseif darkroom.isRV(n.type) then
+          -- the strange basic->RV case
+          err( false, "You shouldn't use Basic->RV directly, loc "..n.loc )
         else
           return {I:process(inputs[1][1])}
         end
@@ -597,10 +575,8 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="tuple" then
         return {S.tuple( map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="array2d" then
-        local outtype = types.array2d(darkroom.extract(n.type:arrayOver()),n.W,n.H)
+        local outtype = types.array2d(darkroom.lower(n.type:arrayOver()),n.W,n.H)
         return {S.cast(S.tuple( map(inputs,function(i) return i[1] end) ), outtype) }
-      elseif n.kind=="extractState" then
-        return {S.null()}
       elseif n.kind=="statements" then
         for i=2,#inputs do
           module:lookupFunction("process"):addPipeline( inputs[i][1] )
@@ -614,6 +590,7 @@ function darkroomIRFunctions:codegenSystolic( module )
       end
     end)
 end
+
 
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
@@ -636,13 +613,15 @@ function darkroom.SoAtoAoS( W, H, typelist, asArray )
   else
     res.outputType = types.array2d(types.tuple(typelist),W,H)
   end
---  res.sdfInput, res.sdfOutput = broadcast({1,#typelist},#typelist),{{1,1}}
+
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
+  res.stateful=false
+
   local struct PackTupleArrays { }
   terra PackTupleArrays:reset() end
 
-  terra PackTupleArrays:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra PackTupleArrays:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     for c = 0, [W*H] do
       escape
       if asArray then
@@ -665,56 +644,48 @@ function darkroom.SoAtoAoS( W, H, typelist, asArray )
       table.insert( arrList, S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end)) )
     end
   end
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),darkroom.extract(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),darkroom.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
 
   return darkroom.newFunction(res)
 end
 
--- converts {Stateful(a), Stateful(b)...} to Stateful{a,b}
--- Also {StatefulHandshake(a), StatefulHandshake(b)...} to StatefulHandshake{a,b}
+-- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
-function darkroom.packTuple( typelist, handshake )
+function darkroom.packTuple( typelist, X )
   assert(type(typelist)=="table")
-  err( handshake==nil or type(handshake)=="boolean", "handshake argument should be bool")
-
-  local res = {kind="packTuple", handshake=handshake}
-
-  map(typelist, function(t) darkroom.expectPure(t) end )
-  res.inputType = types.tuple( map(typelist, function(t) return sel( handshake, darkroom.StatefulHandshake(t), darkroom.Stateful(t) ) end) )
-  res.outputType = darkroom.Stateful( types.tuple(typelist) )
-  if handshake then res.outputType = darkroom.StatefulHandshake( types.tuple(typelist) ) end
---  res.sdfInput,res.sdfOutput = broadcast({1,#typelist},#typelist),{{1,1}}
---  res.sdfInput,res.sdfOutput = {{1,1}},{{1,1}}
+  assert(X==nil)
+  
+  local res = {kind="packTuple"}
+  
+  map(typelist, function(t) darkroom.expectBasic(t) end )
+  res.inputType = types.tuple( map(typelist, function(t) return darkroom.Handshake(t) end) )
+  res.outputType = darkroom.Handshake( types.tuple(typelist) )
+  res.stateful = false
   res.sdfOutput = {{1,1}}
-  if handshake then
-    res.sdfInput = map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
-  else
-    res.sdfInput = {{1,1}}
-  end
-
+  res.sdfInput = map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
+    
   res.delay = 0
   local struct PackTuple { ready:bool[#typelist], readyDownstream:bool, outputCount:uint32}
-
+    
   terra PackTuple:stats(name:&int8) self.outputCount=0 end
   
-  if handshake then
-    -- ignore the valid bit on const stuff: it is always considered valid
-    local activePorts = {}
-    for k,v in ipairs(typelist) do if v:const()==false then table.insert(activePorts, k) end end
+  -- ignore the valid bit on const stuff: it is always considered valid
+  local activePorts = {}
+  for k,v in ipairs(typelist) do if v:const()==false then table.insert(activePorts, k) end end
+    
+  -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
+  map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
+  terra PackTuple:reset() [map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
+  terra PackTuple:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
+    [map(activePorts, function(i) return quote 
+             if valid(inp.["_"..(i-1)]) and self.ready[i-1] then 
+               self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) 
+             end 
+                      end end )]
 
-    -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
-    map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
-    terra PackTuple:reset() [map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
-    terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-      [map(activePorts, function(i) return quote 
-               if valid(inp.["_"..(i-1)]) and self.ready[i-1] then 
-                 self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) 
-               end 
-                        end end )]
-
-      if self.readyDownstream then
+    if self.readyDownstream then
         var hasData = [foldt(map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), andopterra, true )]
 
         escape if DARKROOM_VERBOSE then map( typelist, function(t,k) 
@@ -741,8 +712,8 @@ function darkroom.packTuple( typelist, handshake )
       else
         if DARKROOM_VERBOSE then cstdio.printf("PackTuple Handshake NOT READY DOWNSTREAM Output Count:%d\n",self.outputCount) end
       end
-    end
-    terra PackTuple:calculateReady(readyDownstream:bool) 
+  end
+  terra PackTuple:calculateReady(readyDownstream:bool) 
       self.readyDownstream = readyDownstream; 
 
       escape
@@ -754,89 +725,73 @@ function darkroom.packTuple( typelist, handshake )
           end
         end
       end
-    end
-  else
-    terra PackTuple:reset() end
-
-    terra PackTuple:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
---      @out = { [map(range(0,#typelist-1), function(i) return `inp.["_"..i] end ) ] }
-      -- terra doesn't like us copying large structs by value
-      escape map( typelist, function(t,k) emit quote cstring.memcpy( &out.["_"..(k-1)], &inp.["_"..(k-1)], [t:sizeof()] ) end end ) end
-    end
   end
 
   res.terraModule = PackTuple
 
   res.systolicModule = S.moduleConstructor("packTuple_"..tostring(typelist))
   local CE
-  if handshake==false then CE = S.CE("CE") end
-  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,nil,CE) )
 
-  if handshake then
-    res.systolicModule:onlyWire(true)
-    --res.systolicModule:CE(false) -- nothing to stall
+  res.systolicModule:onlyWire(true)
 
-    local printStr = "IV ["..table.concat(broadcast("%d",#typelist),",").."] OV %d ready ["..table.concat(broadcast("%d",#typelist),",").."] readyDownstream %d"
-    local printInst 
-    if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple(broadcast(types.bool(),(#typelist)*2+2)), printStr):instantiate("printInst") ) end
+  local printStr = "IV ["..table.concat(broadcast("%d",#typelist),",").."] OV %d ready ["..table.concat(broadcast("%d",#typelist),",").."] readyDownstream %d"
+  local printInst 
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple(broadcast(types.bool(),(#typelist)*2+2)), printStr):instantiate("printInst") ) end
+  
+  local activePorts={}
+  for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
 
-    local activePorts={}
-    for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
-    --local activePorts = filter(typelist, function(t,k) activePort=k; return t:const()==false end )
-    if #activePorts>1 then
-      print("WARNING: NYI - packTuple with multiple active ports! This needs a fifo along all but one of the edges")
-    end
-
-    local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
-
-    -- valid bit is the AND of all the inputs
-    --local valid = foldt(map(range(0,#typelist-1),function(i) return S.index(S.index(sinp,i),1) end),function(a,b) return S.__and(a,b) end,"X")
-    local validInList = map(activePorts,function(i) return S.index(S.index(sinp,i-1),1) end)
-    local validInFullList = map(typelist,function(i,k) return S.index(S.index(sinp,k-1),1) end)
-    local validOut = foldt(validInList,function(a,b) return S.__and(a,b) end,"X")
-    --local valid = S.index(S.index(sinp,activePorts[1]-1),1)
-
-    local pipelines={}
-
-    local downstreamReady = S.parameter("ready_downstream", types.bool())
-    
-    -- we only want this module to be ready if _all_ streams have data.
-    -- WARNING: this makes ready depend on ValidIn
-    local readyOutList = {}
-    for i=1,#typelist do
-      if typelist[i]:const() then
-        table.insert( readyOutList, S.constant(true, types.bool()) )
-      else
-        -- if this stream doesn't have data, let it run regardless.
-        local valid_i = S.index(S.index(sinp,i-1),1)
-        table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
-      end
-    end
-
-    local readyOut = S.tuple(readyOutList)
-
-    if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
-
-    local out = S.tuple{outv, validOut}
-    res.systolicModule:addFunction( S.lambda("process", sinp, out, "process_output", pipelines) )
-
-    res.systolicModule:addFunction( S.lambda("ready", downstreamReady, readyOut, "ready" ) )
-  else
-    local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(sinp,i) end))
-    res.systolicModule:addFunction( S.lambda("process", sinp, outv, "process_output",nil,nil,CE) )
+  if #activePorts>1 then
+    print("WARNING: NYI - packTuple with multiple active ports! This needs a fifo along all but one of the edges")
   end
+    
+  local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
 
+  -- valid bit is the AND of all the inputs
+  --local valid = foldt(map(range(0,#typelist-1),function(i) return S.index(S.index(sinp,i),1) end),function(a,b) return S.__and(a,b) end,"X")
+  local validInList = map(activePorts,function(i) return S.index(S.index(sinp,i-1),1) end)
+  local validInFullList = map(typelist,function(i,k) return S.index(S.index(sinp,k-1),1) end)
+  local validOut = foldt(validInList,function(a,b) return S.__and(a,b) end,"X")
+  --local valid = S.index(S.index(sinp,activePorts[1]-1),1)
+  
+  local pipelines={}
+  
+  local downstreamReady = S.parameter("ready_downstream", types.bool())
+  
+  -- we only want this module to be ready if _all_ streams have data.
+  -- WARNING: this makes ready depend on ValidIn
+  local readyOutList = {}
+  for i=1,#typelist do
+    if typelist[i]:const() then
+      table.insert( readyOutList, S.constant(true, types.bool()) )
+    else
+      -- if this stream doesn't have data, let it run regardless.
+      local valid_i = S.index(S.index(sinp,i-1),1)
+      table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
+    end
+  end
+  
+  local readyOut = S.tuple(readyOutList)
+  
+  if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
+  
+  local out = S.tuple{outv, validOut}
+  res.systolicModule:addFunction( S.lambda("process", sinp, out, "process_output", pipelines) )
+  
+  res.systolicModule:addFunction( S.lambda("ready", downstreamReady, readyOut, "ready" ) )
+  
   return darkroom.newFunction(res)
 end
 
--- takes {Stateful(a[W,H]), Stateful(b[W,H]),...} to Stateful( {a,b}[W,H] )
--- Or, {StatefulHandshake(a[W,H]), StatefulHandshake(b[W,H]),...} to StatefulHandshake( {a,b}[W,H] )
+-- takes {Handshake(a[W,H]), Handshake(b[W,H]),...} to Handshake( {a,b}[W,H] )
 -- typelist should be a table of pure types
-function darkroom.SoAtoAoSStateful( W, H, typelist, handshake )
-  local f = darkroom.makeStateful(darkroom.SoAtoAoS(W,H,typelist))
-  if handshake==true then f = darkroom.makeHandshake(f) end
-  return darkroom.compose("SoAtoAoSStateful_W"..tostring(W).."_H"..tostring(H).."_HS"..tostring(handshake), f, darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end), handshake ) ) 
+function darkroom.SoAtoAoSHandshake( W, H, typelist, X )
+  assert(X==nil)
+  local f = darkroom.SoAtoAoS(W,H,typelist)
+  f = darkroom.makeHandshake(f)
+  return darkroom.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H), f, darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
 end
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
@@ -862,27 +817,28 @@ function darkroom.border(A,W,H,L,R,B,T,value)
   return darkroom.newFunction(res)
 end
 
-function darkroom.liftStateful(f)
-  local res = {kind="liftStateful", fn = f}
-  darkroom.expectStateful(f.inputType)
-  darkroom.expectStateful(f.outputType)
-  res.inputType = darkroom.Stateful(darkroom.extract(f.inputType))
-  res.outputType = darkroom.StatefulV(darkroom.extract(f.outputType))
+function darkroom.liftBasic(f)
+  local res = {kind="liftBasic", fn = f}
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectBasic(f.outputType)
+  res.inputType = f.inputType
+  res.outputType = darkroom.V(f.outputType)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
-  local struct LiftStateful { inner : f.terraModule}
-  terra LiftStateful:reset() self.inner:reset() end
-  terra LiftStateful:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  res.stateful = f.stateful
+  local struct LiftBasic { inner : f.terraModule}
+  terra LiftBasic:reset() self.inner:reset() end
+  terra LiftBasic:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     self.inner:process(inp,&data(out))
     valid(out) = true
   end
-  res.terraModule = LiftStateful
-  res.systolicModule = S.moduleConstructor("LiftStateful_"..f.systolicModule.name)
-  local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftStateful_inner") )
-  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  res.terraModule = LiftBasic
+  res.systolicModule = S.moduleConstructor("LiftBasic_"..f.systolicModule.name)
+  local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftBasic_inner") )
+  local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local CE = S.CE("CE")
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ inner:process(sinp), S.constant(true, types.bool())}, "process_output", nil, nil, CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool()),CE) )
+  if f.stateful then res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool()),CE) ) end
   res.systolicModule:complete()
   return darkroom.newFunction(res)
 end
@@ -908,7 +864,7 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
   end
 end
 
--- This takes a Stateful->StatefulR to StatefulV->StatefulRV
+-- This takes a basic->R to V->RV
 -- Compare to waitOnInput below: runIffReady is used when we want to take control of the ready bit purely for performance reasons, but don't want to amplify or decimate data.
 local function runIffReadySystolic( systolicModule, fns, passthroughFns )
   local res = S.moduleConstructor("RunIffReady_"..systolicModule.name)
@@ -922,7 +878,7 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
 
     err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
 
-    local sinp = S.parameter(fnname.."_input", darkroom.extract(darkroom.StatefulV(srcFn:getInput().type)) )
+    local sinp = S.parameter(fnname.."_input", darkroom.lower(darkroom.V(srcFn:getInput().type)) )
 
     local svalid = S.parameter(fnname.."_valid", types.bool())
     local runable = S.__and(inner[prefix.."ready"](inner), S.index(sinp,1) ):disablePipelining()
@@ -960,12 +916,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
     local printInst
     if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(),types.bool(),types.bool(),types.bool()}, "WaitOnInput "..systolicModule.name.." ready %d validIn %d runable %d RST %d", true ):instantiate(prefix.."printInst") ) end
 
-    local sinp
---    if srcFn:getInput()==nil then
---      sinp = S.parameter(fnname.."_input", types.bool() )
---    else
-      sinp = S.parameter(fnname.."_input", darkroom.extract(darkroom.StatefulV(srcFn:getInput().type)) )
---    end
+    local sinp = S.parameter(fnname.."_input", darkroom.lower(darkroom.V(srcFn:getInput().type)) )
 
     local svalid = S.parameter(fnname.."_valid", types.bool())
     local runable = S.__or(S.__not(inner[prefix.."ready"](inner)), S.index(sinp,1) ):disablePipelining()
@@ -990,25 +941,26 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
   return res
 end
 
--- f should be Stateful->StatefulRV
--- You should never use Stateful->StatefulRV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
+-- f should be basic->RV
+-- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
 -- if inner:ready()==true, inner will run iff valid(input)==true
 -- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
 function darkroom.waitOnInput(f)
   local res = {kind="waitOnInput", fn = f}
-  darkroom.expectStateful(f.inputType)
-  darkroom.expectStatefulRV(f.outputType)
-  res.inputType = darkroom.StatefulV(darkroom.extract(f.inputType))
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectRV(f.outputType)
+  res.inputType = darkroom.V(f.inputType)
   res.outputType = f.outputType
 
   err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
-
+  err( type(f.stateful)=="boolean", "Missing stateful annotation for fn "..f.kind)
+  res.stateful = f.stateful
   res.delay = f.delay
   local struct WaitOnInput { inner : f.terraModule, ready:bool }
   terra WaitOnInput:reset() self.inner:reset() end
   terra WaitOnInput:stats(name:&int8) self.inner:stats(name) end
-  terra WaitOnInput:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra WaitOnInput:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if self.inner.ready==false or valid(inp) then
       -- inner should just ignore the input if inner:ready()==false. We don't have to check for this
 --      if xor(self.inner:ready(),valid(inp)) then 
@@ -1038,14 +990,17 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     local prefix = fnname.."_"
     if fnname=="process" then prefix="" end
 
-    local sinp = S.parameter(fnname.."_input", darkroom.extract(darkroom.StatefulV(srcFn.inputParameter.type)) )
+    local sinp = S.parameter(fnname.."_input", darkroom.lower(darkroom.V(srcFn.inputParameter.type)) )
     local pout = inner[fnname]( inner, S.index(sinp,0), S.index(sinp,1) )
     local pout_data = S.index(pout,0)
     local pout_valid = S.index(pout,1)
     
     local CE = S.CE(prefix.."CE")
     res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, S.__and(pout_valid,S.index(sinp,1))}, fnname.."_output",nil,nil,CE ) )
-    res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool()), CE) )
+    if systolicModule:lookupFunction(prefix.."reset")~=nil then
+      -- stateless modules don't have a reset
+      res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool()), CE) )
+    end
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
   end
 
@@ -1054,13 +1009,16 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
   return res
 end
 
+-- takes basic->V to V->RV
 darkroom.liftDecimate = memoize(function(f)
   assert(darkroom.isFunction(f))
   local res = {kind="liftDecimate", fn = f}
-  darkroom.expectStateful(f.inputType)
-  darkroom.expectStatefulV(f.outputType)
-  res.inputType = darkroom.StatefulV(darkroom.extract(f.inputType))
-  res.outputType = darkroom.StatefulRV(darkroom.extractV(f.outputType))
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectV(f.outputType)
+  res.inputType = darkroom.V(f.inputType)
+  res.outputType = darkroom.RV(darkroom.extractData(f.outputType))
+  err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
+  res.stateful = f.stateful
 
   err( darkroom.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
@@ -1069,9 +1027,9 @@ darkroom.liftDecimate = memoize(function(f)
   local struct LiftDecimate { inner : f.terraModule; idleCycles:int, activeCycles:int, ready:bool}
   terra LiftDecimate:reset() self.inner:reset(); self.idleCycles = 0; self.activeCycles=0; end
   terra LiftDecimate:stats(name:&int8) cstdio.printf("LiftDecimate %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
-  terra LiftDecimate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra LiftDecimate:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if valid(inp) then
-      self.inner:process(&data(inp),[&darkroom.extract(f.outputType):toTerraType()](out))
+      self.inner:process(&data(inp),[&darkroom.lower(f.outputType):toTerraType()](out))
       self.activeCycles = self.activeCycles + 1
     else
       valid(out) = false
@@ -1087,20 +1045,23 @@ darkroom.liftDecimate = memoize(function(f)
   return darkroom.newFunction(res)
                                 end)
 
+-- converts V->RV to RV->RV
 function darkroom.RPassthrough(f)
   local res = {kind="RPassthrough", fn = f}
-  darkroom.expectStatefulV(f.inputType)
-  darkroom.expectStatefulRV(f.outputType)
-  res.inputType = darkroom.StatefulRV(darkroom.extractV(f.inputType))
-  res.outputType = darkroom.StatefulRV(darkroom.extractRV(f.outputType))
+  darkroom.expectV(f.inputType)
+  darkroom.expectRV(f.outputType)
+  res.inputType = darkroom.RV(darkroom.extractData(f.inputType))
+  res.outputType = darkroom.RV(darkroom.extractData(f.outputType))
   err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
+  err( type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
+  res.stateful = f.stateful
   res.delay = f.delay
   local struct RPassthrough { inner : f.terraModule, readyDownstream:bool, ready:bool}
   terra RPassthrough:reset() self.inner:reset() end
   terra RPassthrough:stats( name : &int8 ) self.inner:stats(name) end
-  terra RPassthrough:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
-    self.inner:process([&darkroom.extract(f.inputType):toTerraType()](inp),out)
+  terra RPassthrough:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
+    self.inner:process([&darkroom.lower(f.inputType):toTerraType()](inp),out)
   end
   terra RPassthrough:calculateReady( readyDownstream:bool ) 
     self.readyDownstream = readyDownstream
@@ -1112,22 +1073,25 @@ function darkroom.RPassthrough(f)
   err( f.systolicModule~=nil, "RPassthrough null module "..f.kind)
   res.systolicModule = S.moduleConstructor("RPassthrough_"..f.systolicModule.name)
   local inner = res.systolicModule:add( f.systolicModule:instantiate("RPassthrough_inner") )
-  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
 
   -- this is dumb: we don't actually use the 'ready' bit in the struct (it's provided by the ready function).
   -- but we include it to distinguish the types.
   local out = inner:process( S.tuple{ S.index(sinp,0), S.index(sinp,1)} )
   local CE = S.CE("CE")
   res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.index(out,1) }, "process_output", nil, nil, CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, S.parameter("reset",types.bool()), CE) )
+  if f.stateful then
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, S.parameter("reset",types.bool()), CE) )
+  end
   local rinp = S.parameter("ready_input", types.bool() )
   res.systolicModule:addFunction( S.lambda("ready", rinp, S.__and(inner:ready(),rinp):disablePipelining(), "ready", {} ) )
 
   return darkroom.newFunction(res)
 end
 
+-- takes basic->basic to RV->RV
 function darkroom.RVPassthrough(f)
-  return darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftStateful(f)))
+  return darkroom.RPassthrough(darkroom.liftDecimate(darkroom.liftBasic(f)))
 end
 
 local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
@@ -1202,21 +1166,22 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
   return res
 end
 
+-- takes V->RV to Handshake->Handshake
 darkroom.liftHandshake = memoize(function(f)
   local res = {kind="liftHandshake", fn=f}
-  darkroom.expectStatefulV(f.inputType)
-  darkroom.expectStatefulRV(f.outputType)
-  res.inputType = darkroom.StatefulHandshake(darkroom.extractV(f.inputType))
-  res.outputType = darkroom.StatefulHandshake(darkroom.extractRV(f.outputType))
+  darkroom.expectV(f.inputType)
+  darkroom.expectRV(f.outputType)
+  res.inputType = darkroom.Handshake(darkroom.extractData(f.inputType))
+  res.outputType = darkroom.Handshake(darkroom.extractData(f.outputType))
 
   err( darkroom.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
+  err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
+  res.stateful = f.stateful
 
-  --assert(f.delay>0)
   local delay = math.max(1, f.delay)
 
-  local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), delay, "liftHandshake"),
---                              fifo: simmodules.fifo( darkroom.extractStatefulHandshake(res.inputType):toTerraType(), DEFAULT_FIFO_SIZE, "liftHandshakefifo"),
+  local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.lower(f.outputType):toTerraType(), delay, "liftHandshake"),
                               inner: f.terraModule, ready:bool, readyDownstream:bool}
   terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
   terra LiftHandshake:stats(name:&int8) 
@@ -1224,7 +1189,7 @@ darkroom.liftHandshake = memoize(function(f)
     self.inner:stats(name) 
   end
 
-  terra LiftHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra LiftHandshake:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if self.readyDownstream then
       if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
 --     if valid(inp) and self.inner:ready() then
@@ -1239,13 +1204,8 @@ darkroom.liftHandshake = memoize(function(f)
         valid(out) = false
       end
 
---      var tinp : darkroom.extract(f.inputType):toTerraType()
-      var tout : darkroom.extract(f.outputType):toTerraType()
---      valid(tinp) = false
---      if valid(inp) and self.inner:ready() then
---        data(tinp) = data(inp)
---        valid(tinp) = true
---      end
+      var tout : darkroom.lower(f.outputType):toTerraType()
+
       self.inner:process(inp,&tout)
       self.delaysr:pushBack(&tout)
     end
@@ -1274,10 +1234,11 @@ darkroom.map = memoize(function( f, W, H )
   if H==nil then H=1 end
 
   local res = { kind="map", fn = f, W=W, H=H }
-  darkroom.expectPure( f.inputType, "mapped function must be a pure function")
-  darkroom.expectPure( f.outputType, "mapped function must be a pure function")
+
   res.inputType = types.array2d( f.inputType, W, H )
   res.outputType = types.array2d( f.outputType, W, H )
+  err(type(f.stateful)=="boolean", "Missing stateful annotation "..f.kind)
+  res.stateful = f.stateful
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
   local struct MapModule {fn:f.terraModule}
@@ -1346,9 +1307,9 @@ function darkroom.filterStateful( A, T, f )
   res.delay = 0
   local struct FilterStateful { inner: f.terraModule}
   terra FilterStateful:reset() self.inner:reset() end
-  terra FilterStateful:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra FilterStateful:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     var bout : bool[T]
-    var fakeinp : darkroom.extract(f.inputType):toTerraType()
+    var fakeinp : darkroom.lower(f.inputType):toTerraType()
     self.inner:process(&fakeinp, &bout)
     for i=0,T do data((@out)[i]) = (@inp)[i]; valid((@out)[i]) = bout[i] end
     
@@ -1366,7 +1327,7 @@ function darkroom.densify( A, T )
   res.delay = 0
   local struct Densify { fifo : simmodules.fifo( A:toTerraType(), T*2, "densifyfifo") }
   terra Densify:reset() self.fifo:reset() end
-  terra Densify:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra Densify:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     for i=0,T do 
       if valid((@inp)[i]) then self.fifo:pushBack(&data((@inp)[i])) end
     end
@@ -1384,7 +1345,7 @@ end
 
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
--- Stateful -> StatefulV
+-- basic -> V
 function darkroom.downsampleYSeq( A, W, H, T, scale )
   assert( types.isType(A) )
   map({W,H,T,scale},function(n) assert(type(n)=="number") end)
@@ -1415,7 +1376,7 @@ end
 
 -- takes A[W,H] to A[W/scale,H]
 -- lines where xcoord%scale==0 are kept
--- Stateful -> StatefulV
+-- basic -> V
 -- 
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
 function darkroom.downsampleXSeq( A, W, H, T, scale )
@@ -1467,7 +1428,7 @@ function darkroom.downsampleXSeq( A, W, H, T, scale )
   return darkroom.liftXYSeq( f, W, H, T, sdfOverride )
 end
 
--- StatefulV -> StatefulRV
+-- V -> RV
 function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
   --[=[
   map({W,H,T,scaleX,scaleY},function(n) assert(type(n)=="number") end)
@@ -1480,7 +1441,7 @@ function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
   return darkroom.compose("downsampleSeq",darkroom.densify(A,T),darkroom.filterStateful( A,T,f))
   ]=]
   
-  local inp = darkroom.input( darkroom.StatefulV(types.array2d(A,T)) )
+  local inp = darkroom.input( darkroom.V(types.array2d(A,T)) )
   local out = inp
   if scaleY>1 then
     out = darkroom.apply("downsampleSeq_Y", darkroom.liftDecimate(darkroom.downsampleYSeq( A, W, H, T, scaleY )), out)
@@ -1519,23 +1480,23 @@ function darkroom.broadcastWide( A, T, scale )
                        end, sinp, out)
 end
 
--- this has type StatefulV->StatefulRV
+-- this has type V->RV
 function darkroom.upsampleXSeq( A, T, scale, X )
   assert(X==nil)
 
   if T==1 then
     -- special case the EZ case of taking one value and writing it out N times
-    local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}}
+    local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}, stateful=true}
 
     local ITYPE = types.array2d(A,T)
-    res.inputType = darkroom.Stateful(ITYPE)
-    res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+    res.inputType = ITYPE
+    res.outputType = darkroom.RV(types.array2d(A,T))
     res.delay=0
 
     local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:int, ready:bool }
     terra UpsampleXSeq:reset() self.phase=0; end
     terra UpsampleXSeq:stats(name:&int8)  end
-    terra UpsampleXSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    terra UpsampleXSeq:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
       valid(out) = true
       if self.phase==0 then
         self.buffer = @(inp)
@@ -1572,11 +1533,11 @@ function darkroom.upsampleXSeq( A, T, scale, X )
 
     return darkroom.liftHandshake(darkroom.waitOnInput( darkroom.newFunction(res) ))
   else
-    return darkroom.compose("upsampleXSeq_"..T, darkroom.liftHandshake(darkroom.changeRate(A,1,T*scale,T)), darkroom.makeHandshake(darkroom.makeStateful(darkroom.broadcastWide(A,T,scale))))
+    return darkroom.compose("upsampleXSeq_"..T, darkroom.liftHandshake(darkroom.changeRate(A,1,T*scale,T)), darkroom.makeHandshake(darkroom.broadcastWide(A,T,scale)))
   end
 end
 
--- StatefulV -> StatefulRV
+-- V -> RV
 function darkroom.upsampleYSeq( A, W, H, T, scale )
   err( W%T==0,"W%T~=0")
   err( isPowerOf2(scale), "scale must be power of 2")
@@ -1584,14 +1545,15 @@ function darkroom.upsampleYSeq( A, W, H, T, scale )
 
   local res = {kind="upsampleYSeq", sdfInput={{1,scale}}, sdfOutput={{1,1}}}
   local ITYPE = types.array2d(A,T)
-  res.inputType = darkroom.Stateful(ITYPE)
-  res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+  res.inputType = ITYPE
+  res.outputType = darkroom.RV(types.array2d(A,T))
   res.delay=0
+  res.stateful = true
 
   local struct UpsampleYSeq { buffer : (ITYPE:toTerraType())[W/T], phase:int, xpos: int, ready:bool }
   terra UpsampleYSeq:reset() self.phase=0; self.xpos=0; end
   terra UpsampleYSeq:stats(name:&int8)  end
-  terra UpsampleYSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra UpsampleYSeq:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     valid(out) = true
     if self.phase==0 then
       self.buffer[self.xpos] = @(inp)
@@ -1638,7 +1600,7 @@ function darkroom.upsampleYSeq( A, W, H, T, scale )
   return darkroom.waitOnInput( darkroom.newFunction(res) )
 end
 
--- this is always Stateful Handshake
+-- this is always Handshake
 function darkroom.upsampleSeq( A, W, H, T, scaleX, scaleY )
   assert(scaleX>=1)
   assert(scaleY>=1)
@@ -1712,12 +1674,12 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
   local typelist = {}
 
   for i=1,levels do 
-    table.insert( typelist, darkroom.StatefulHandshake(types.array2d(A, T)))
+    table.insert( typelist, darkroom.Handshake(types.array2d(A, T)))
   end
 
   local res = { kind="packPyramid", levels=levels}
   res.inputType = types.tuple(typelist)
-  res.outputType = darkroom.StatefulHandshake(types.array2d( A, T ))
+  res.outputType = darkroom.Handshake(types.array2d( A, T ))
   res.delay = 0
   local struct PackPyramidSeq { fifos : (simmodules.fifo( types.array2d(A,T):toTerraType(), DEFAULT_FIFO_SIZE, "packPyramidfifo"))[levels]; 
                                 sm:int[2];
@@ -1755,8 +1717,8 @@ function darkroom.packPyramidSeq( A, W,H,T, levels, human )
 
   local stats = {}
   local mself = symbol(&PackPyramidSeq,"self")
-  local insymb = symbol(&darkroom.extract(res.inputType):toTerraType(),"inp")
-  local outsymb = symbol(&darkroom.extract(res.outputType):toTerraType(),"out")
+  local insymb = symbol(&darkroom.lower(res.inputType):toTerraType(),"inp")
+  local outsymb = symbol(&darkroom.lower(res.outputType):toTerraType(),"out")
   
   for i=0,levels-1 do
     table.insert(stats, quote if valid(insymb.["_"..i]) then mself.fifos[i]:pushBack(&data(insymb.["_"..i])) end end)
@@ -1804,10 +1766,10 @@ function darkroom.interleveSchedule( N, period )
   err(type(N)=="number", "N must be number")
   err( isPowerOf2(N), "N must be power of 2")
   err(type(period)=="number", "period must be number")
-  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=darkroom.Stateful(types.uint(8)), sdfInput={{1,1}}, sdfOutput={{1,1}} }
+  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
   local struct InterleveSchedule { phase: uint8 }
   terra InterleveSchedule:reset() self.phase=0 end
-  terra InterleveSchedule:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &uint8 )
+  terra InterleveSchedule:process( out : &uint8 )
     @out = (self.phase >> period) % N
     self.phase = self.phase+1
   end
@@ -1817,7 +1779,7 @@ function darkroom.interleveSchedule( N, period )
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
 
-  local inp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
   local log2N = math.log(N)/math.log(2)
 
@@ -1908,15 +1870,16 @@ end
 -- WARNING: validOut depends on readyDownstream
 function darkroom.toHandshakeArray( A, inputRates )
   err( types.isType(A), "A must be type" )
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   err( type(inputRates)=="table", "inputRates must be table")
   assert(darkroom.isSDFRate(inputRates))
 
   local res = {kind="toHandshakeArray", A=A, inputRates = inputRates}
-  res.inputType = types.array2d( darkroom.StatefulHandshake(A), #inputRates )
-  res.outputType = darkroom.StatefulHandshakeArray( A, #inputRates )
+  res.inputType = types.array2d( darkroom.Handshake(A), #inputRates )
+  res.outputType = darkroom.HandshakeArray( A, #inputRates )
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
+  res.stateful = false
   function res:sdfTransfer( I, loc ) 
     err(#I[1]==#inputRates, "toHandshakeArray: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
     return I 
@@ -1925,7 +1888,7 @@ function darkroom.toHandshakeArray( A, inputRates )
   local struct ToHandshakeArray {ready:bool[#inputRates], readyDownstream:uint8}
   terra ToHandshakeArray:reset()  end
   terra ToHandshakeArray:stats( name: &int8 ) end
-  terra ToHandshakeArray:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra ToHandshakeArray:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if self.readyDownstream < [#inputRates] then -- is ready bit true?
       if valid((@inp)[self.readyDownstream]) then
         valid(out) = true
@@ -1957,7 +1920,7 @@ function darkroom.toHandshakeArray( A, inputRates )
   local printInst
     if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple(concat(broadcast(types.bool(),#inputRates+1),{types.uint(8)})), printStr):instantiate("printInst") ) end
 
-  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter( "process_input", darkroom.lower(res.inputType) )
 
   local inpData = {}
   local inpValid = {}
@@ -1998,13 +1961,15 @@ function darkroom.serialize( A, inputRates, Schedule, X )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( darkroom.isSDFRate(inputRates) )
   err( darkroom.isFunction(Schedule), "schedule must be darkroom function")
-  err( darkroom.extract(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
-  darkroom.expectPure(A)
+  err( darkroom.lower(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+  darkroom.expectBasic(A)
   assert(X==nil)
 
   local res = {kind="serialize", A=A, inputRates=inputRates, schedule=Schedule}
-  res.inputType = darkroom.StatefulHandshakeArray( A, #inputRates )
-  res.outputType = darkroom.StatefulHandshakeTmuxed( A, #inputRates )
+  res.inputType = darkroom.HandshakeArray( A, #inputRates )
+  res.outputType = darkroom.HandshakeTmuxed( A, #inputRates )
+  err( type(Schedule.stateful)=="boolean", "Schedule missing stateful annotation")
+  res.stateful = Schedule.stateful
 
   local sdfSum = inputRates[1][1]/inputRates[1][2]
   for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
@@ -2019,16 +1984,16 @@ function darkroom.serialize( A, inputRates, Schedule, X )
   end
 
   local struct Serialize { schedule: Schedule.terraModule; nextId : uint8, ready:uint8, readyDownstream:bool}
-  terra Serialize:reset() self.schedule:reset(); self.schedule:process(nil,&self.nextId) end
+  terra Serialize:reset() self.schedule:reset(); self.schedule:process(&self.nextId) end
   terra Serialize:stats( name: &int8 ) end
-  terra Serialize:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra Serialize:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if self.readyDownstream then
       if valid(inp) then
         valid(out) = self.nextId
         data(out) = data(inp)
         -- step the schedule
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE\n") end
-        self.schedule:process( nil, &self.nextId)
+        self.schedule:process( &self.nextId)
       else
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: invalid input\n") end
         valid(out) = [#inputRates]
@@ -2054,7 +2019,7 @@ function darkroom.serialize( A, inputRates, Schedule, X )
   if DARKROOM_VERBOSE then printInst= res.systolicModule:add( S.module.print( types.tuple{types.uint(8),types.bool(),types.uint(8),types.bool()}, "Serialize OV %d/"..(#inputRates-1).." readyDownstream %d ready %d/"..(#inputRates-1).." stepSchedule %d"):instantiate("printInst") ) end
   local resetValid = S.parameter("reset_valid", types.bool() )
 
-  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter( "process_input", darkroom.lower(res.inputType) )
   local inpData = S.index(inp,0)
   local inpValid = S.index(inp,1)
   local readyDownstream = S.parameter( "ready_downstream", types.bool() )
@@ -2062,23 +2027,16 @@ function darkroom.serialize( A, inputRates, Schedule, X )
   local pipelines = {}
   local resetPipelines = {}
 
---  local nextFIFO = res.systolicModule:add( S.module.reg( types.uint(8), false ):instantiate("nextFIFO"):setArbitrate("valid") )  
---  local nextFIFOSet = res.systolicModule:add( S.module.reg( types.bool(), false ):instantiate("nextFIFOSet"):setArbitrate("valid") )
-
   local stepSchedule = S.__and( S.__and(inpValid, readyDownstream), S.__not(resetValid) )
 
   assert( Schedule.systolicModule:getDelay("process")==0 )
   local schedulerCE = S.__or(resetValid, readyDownstream)
   local nextFIFO = scheduler:process(nil,stepSchedule, schedulerCE)
---  table.insert( pipelines, nextFIFO:set( scheduler:process(nil,stepSchedule, schedulerCE), stepSchedule ) )
---  table.insert( pipelines, nextFIFOSet:set(S.constant(true,types.bool()), S.__not(resetValid)) )
---  table.insert( resetPipelines, nextFIFOSet:set(S.constant(false,types.bool()), resetValid) )
+
   table.insert( resetPipelines, scheduler:reset(nil, resetValid, schedulerCE ) )
 
---  local validOut = S.__and(inpValid,nextFIFOSet:get())
---  local validOut = inpValid
   local validOut = S.select(inpValid,nextFIFO,S.constant(#inputRates,types.uint(8)))
---  local readyOut = S.select( S.__and(nextFIFOSet:get(), readyDownstream), nextFIFO:get(), S.constant(#inputRates,types.uint(8)))
+
   local readyOut = S.select( readyDownstream, nextFIFO, S.constant(#inputRates,types.uint(8)))
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{validOut, readyDownstream, readyOut, stepSchedule} ) ) end
 
@@ -2095,13 +2053,14 @@ function darkroom.demux( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
   assert( darkroom.isSDFRate(rates) )
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   assert(X==nil)
 
   local res = {kind="demux", A=A, rates=rates}
 
-  res.inputType = darkroom.StatefulHandshakeTmuxed( A, #rates )
-  res.outputType = types.array2d(darkroom.StatefulHandshake(A), #rates)
+  res.inputType = darkroom.HandshakeTmuxed( A, #rates )
+  res.outputType = types.array2d(darkroom.Handshake(A), #rates)
+  res.stateful = false
 
   local sdfSum = rates[1][1]/rates[1][2]
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
@@ -2116,10 +2075,10 @@ function darkroom.demux( A, rates, X )
   end
 
   -- HACK: we don't have true bidirectional data transfer in the simulator, so fake it with a FIFO
-  local struct Demux { fifo: simmodules.fifo( darkroom.extract(res.inputType):toTerraType(), 8, "makeHandshake"), ready:bool, readyDownstream:bool[#rates]}
+  local struct Demux { fifo: simmodules.fifo( darkroom.lower(res.inputType):toTerraType(), 8, "makeHandshake"), ready:bool, readyDownstream:bool[#rates]}
   terra Demux:reset() self.fifo:reset() end
   terra Demux:stats( name: &int8 ) end
-  terra Demux:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra Demux:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     if self.ready then
       if DARKROOM_VERBOSE then cstdio.printf("DMUX: push to internal fifo\n") end
       self.fifo:pushBack(inp)
@@ -2161,11 +2120,10 @@ function darkroom.demux( A, rates, X )
   if DARKROOM_VERBOSE then printInst= res.systolicModule:add( S.module.print( types.tuple(concat({types.uint(8)},broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) end
   local resetValid = S.parameter("reset_valid", types.bool() )
 
-  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter( "process_input", darkroom.lower(res.inputType) )
   local inpData = S.index(inp,0)
   local inpValid = S.index(inp,1)  -- uint8
   local readyDownstream = S.parameter( "ready_downstream", types.array2d( types.bool(), #rates ) )
-
 
   local pipelines = {}
   local resetPipelines = {}
@@ -2186,7 +2144,7 @@ function darkroom.demux( A, rates, X )
   table.insert(printList,readyOut)
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(printList) ) ) end
 
-  res.systolicModule:addFunction( S.lambda("process", inp, S.cast(S.tuple(out),darkroom.extract(res.outputType)) , "process_output", pipelines ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast(S.tuple(out),darkroom.lower(res.outputType)) , "process_output", pipelines ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
 
   res.systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
@@ -2198,13 +2156,14 @@ function darkroom.flattenStreams( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
   assert( darkroom.isSDFRate(rates) )
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   assert(X==nil)
 
   local res = {kind="flattenStreams", A=A, rates=rates}
 
-  res.inputType = darkroom.StatefulHandshakeTmuxed( A, #rates )
-  res.outputType = darkroom.StatefulHandshake(A)
+  res.inputType = darkroom.HandshakeTmuxed( A, #rates )
+  res.outputType = darkroom.Handshake(A)
+  res.stateful = false
 
   local sdfSum = rates[1][1]/rates[1][2]
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
@@ -2216,7 +2175,7 @@ function darkroom.flattenStreams( A, rates, X )
   local struct FlattenStreams { ready:bool, readyDownstream:bool}
   terra FlattenStreams:reset()  end
   terra FlattenStreams:stats( name: &int8 ) end
-  terra FlattenStreams:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra FlattenStreams:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     valid(out) = (valid(inp)<[#rates])
     data(out) = data(inp)
   end
@@ -2231,7 +2190,7 @@ function darkroom.flattenStreams( A, rates, X )
 
   local resetValid = S.parameter("reset_valid", types.bool() )
 
-  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter( "process_input", darkroom.lower(res.inputType) )
   local inpData = S.index(inp,0)
   local inpValid = S.index(inp,1)
   local readyDownstream = S.parameter( "ready_downstream", types.bool() )
@@ -2249,7 +2208,7 @@ end
 
 -- takes A to A[T] by duplicating the input
 function darkroom.broadcast(A,T)
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   err( type(T)=="number", "T should be number")
   local OT = types.array2d(A,T)
   local sinp = S.parameter("inp",A)
@@ -2267,10 +2226,10 @@ end
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
 function darkroom.broadcastStream(A,N)
   err( types.isType(A), "A must be type")
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   err( type(N)=="number", "N must be number")
 
-  local res = {kind="broadcastStream", A=A, N=N, inputType = darkroom.StatefulHandshake(A), outputType = types.array2d( darkroom.StatefulHandshake(A), N)}
+  local res = {kind="broadcastStream", A=A, N=N, inputType = darkroom.Handshake(A), outputType = types.array2d( darkroom.Handshake(A), N), stateful=false}
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = broadcast({1,1},N)
@@ -2278,7 +2237,7 @@ function darkroom.broadcastStream(A,N)
   local struct BroadcastStream {ready:bool, readyDownstream:bool[N]}
   terra BroadcastStream:reset() end
   terra BroadcastStream:stats( name: &int8) end
-  terra BroadcastStream:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra BroadcastStream:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     for i=0,N do
       if self.ready then -- all of readyDownstream are true
         data((@out)[i]) = data(inp)
@@ -2304,7 +2263,7 @@ function darkroom.broadcastStream(A,N)
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple(broadcast(types.bool(),N+2)), printStr):instantiate("printInst") ) end
 
-  local inp = S.parameter( "process_input", darkroom.extract(res.inputType) )
+  local inp = S.parameter( "process_input", darkroom.lower(res.inputType) )
   local inpData = S.index(inp,0)
   local inpValid = S.index(inp,1)
   local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),N) )
@@ -2313,7 +2272,7 @@ function darkroom.broadcastStream(A,N)
   local allReady = foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
   local validOut = S.__and(inpValid,allReady)
   local out = S.tuple(broadcast(S.tuple{inpData, validOut}, N))
-  out = S.cast(out, darkroom.extract(res.outputType) )
+  out = S.cast(out, darkroom.lower(res.outputType) )
 
   local pipelines = {}
 
@@ -2342,7 +2301,7 @@ function darkroom.stencil( A, w, h, xmin, xmax, ymin, ymax )
   assert( type(ymax)=="number" )
   assert( ymax>=ymin )
 
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   if A:isArray() then error("Input to extract stencils must not be array") end
 
   local res = {kind="extractStencils", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
@@ -2381,13 +2340,14 @@ end
 darkroom.posSeq = memoize(function( W, H, T )
   assert(W>0); assert(H>0); assert(T>=1);
   local res = {kind="posSeq", T=T, W=W, H=H }
-  res.inputType = darkroom.State
-  res.outputType = darkroom.Stateful(types.array2d(types.tuple({types.uint(16),types.uint(16)}),T))
+  res.inputType = types.null()
+  res.outputType = types.array2d(types.tuple({types.uint(16),types.uint(16)}),T)
+  res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   local struct PosSeq { x:uint16, y:uint16 }
   terra PosSeq:reset() self.x=0; self.y=0 end
-  terra PosSeq:process( inp : &res.inputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra PosSeq:process( out : &darkroom.lower(res.outputType):toTerraType() )
     for i=0,T do 
       (@out)[i] = {self.x,self.y}
       self.x = self.x + 1
@@ -2432,17 +2392,17 @@ darkroom.liftXYSeq = memoize(function( f, W, H, T, sdfOverride )
   map({W,H,T},function(n) assert(type(n)=="number") end)
   assert( sdfOverride==nil or darkroom.isSDFRate(sdfOverride) )
 
-  darkroom.expectPure(f.inputType)
-  darkroom.expectPure(f.outputType)
+  --darkroom.expectBasic(f.inputType)
+  --darkroom.expectBasic(f.outputType)
 
   local inputType = f.inputType.list[2]
 
-  local inp = darkroom.input( darkroom.Stateful( inputType ) )
+  local inp = darkroom.input( inputType )
 
-  local p = darkroom.apply("p", darkroom.posSeq(W,H,T), darkroom.extractState("e",inp) )
+  local p = darkroom.apply("p", darkroom.posSeq(W,H,T) )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
-  local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
-  local out = darkroom.apply("m", darkroom.makeStateful(f), packed )
+  --local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
+  local out = darkroom.apply("m", f, darkroom.tuple("ptup", {p,inp}) )
   return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, nil, nil, sdfOverride )
 end)
 
@@ -2525,9 +2485,9 @@ function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top, X )
   if L%T==0 and R%T==0 then return darkroom.cropSeq( A, W, H, T, L, R, B, Top ) end
 
   local RResidual = R%T
-  local inp = darkroom.input( darkroom.Stateful(types.array2d( A, T )) )
+  local inp = darkroom.input( types.array2d( A, T ) )
   local out = darkroom.apply( "SSR", darkroom.SSR( A, T, -RResidual, 0 ), inp)
-  out = darkroom.apply( "slice", darkroom.makeStateful(darkroom.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0)), out)
+  out = darkroom.apply( "slice", darkroom.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = darkroom.apply( "crop", darkroom.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
   return darkroom.lambda( "cropHelperSeq", inp, out )
 end
@@ -2543,15 +2503,16 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value}
-  res.inputType = darkroom.Stateful(types.array2d(A,T))
-  res.outputType = darkroom.StatefulRV(types.array2d(A,T))
+  res.inputType = types.array2d(A,T)
+  res.outputType = darkroom.RV(types.array2d(A,T))
+  res.stateful = true
   res.sdfInput, res.sdfOutput = {{ (W*H)/T, ((W+L+R)*(H+B+Top))/T}}, {{1,1}}
   res.delay=0
 
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:stats(name:&int8) end -- not particularly interesting
-  terra PadSeq:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra PadSeq:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
     valid(out) = true
@@ -2579,7 +2540,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
 
-  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local pvalid = S.parameter("process_valid", types.bool() )
 
   local C1 = S.ge( posX:get(), S.constant(L,types.uint(16)))
@@ -2632,14 +2593,15 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
 
   err( maxRate % inputRate == 0, "maxRate % inputRate ~= 0")
   err( maxRate % outputRate == 0, "maxRate % outputRate ~=0")
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
 
   local inputCount = maxRate/inputRate
   local outputCount = maxRate/outputRate
 
   local res = {kind="changeRate", type=A, inputRate=inputRate, outputRate=outputRate}
-  res.inputType = darkroom.Stateful(types.array2d(A,inputRate,H))
-  res.outputType = darkroom.StatefulRV(types.array2d(A,outputRate,H))
+  res.inputType = types.array2d(A,inputRate,H)
+  res.outputType = darkroom.RV(types.array2d(A,outputRate,H))
+  res.stateful = true
   res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
 
   if inputRate>outputRate then -- 8 to 4
@@ -2654,13 +2616,13 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   res.systolicModule = S.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
   local svalid = S.parameter("process_valid", types.bool() )
   local rvalid = S.parameter("reset", types.bool() )
-  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
 
   local regs = map( range(maxRate), function(i) return res.systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
 
   if inputRate>outputRate then
     terra ChangeRate:reset() self.phase = 0; end
-    terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    terra ChangeRate:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", self.phase) end
       if self.phase==0 then
         for i=0,inputRate do self.buffer[i] = (@inp)[i] end
@@ -2690,7 +2652,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
 
   else -- inputRate <= outputRate. 4 to 8
     terra ChangeRate:reset() self.phase = 0; end
-    terra ChangeRate:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+    terra ChangeRate:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
       for i=0,inputRate do self.buffer[i+self.phase*inputRate] = (@(inp))[i] end
 
       if self.phase >= inputCount-1 then
@@ -2740,14 +2702,15 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   err( w%T==0, "Linebuffer error, W%T~=0")
 
   local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
-  darkroom.expectPure(A)
-  res.inputType = darkroom.Stateful(types.array2d(A,T))
-  res.outputType = darkroom.Stateful(types.array2d(A,T,-ymin+1))
+  darkroom.expectBasic(A)
+  res.inputType = types.array2d(A,T)
+  res.outputType = types.array2d(A,T,-ymin+1)
+  res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
-  terra Linebuffer:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra Linebuffer:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
     for i=0,[T] do
       self.SR:pushBack( &(@inp)[i] )
@@ -2766,14 +2729,14 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   res.terraModule = Linebuffer
 
   res.systolicModule = S.moduleConstructor("linebuffer")
-  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
 
   local outarray = {}
   local evicted
 
-  local bits = darkroom.extract(res.inputType):verilogBits()
-  local sizeInBytes = nearestPowerOf2((w/T)*darkroom.extract(res.inputType):verilogBits()/8)
+  local bits = darkroom.lower(res.inputType):verilogBits()
+  local sizeInBytes = nearestPowerOf2((w/T)*darkroom.lower(res.inputType):verilogBits()/8)
   local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
   local bramMod = S.module.bramSDP( true, sizeInBytes, bits, nil, init, true )
   local addrbits = math.log((sizeInBytes*8)/bits)/math.log(2)
@@ -2787,15 +2750,15 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
       -- last line doesn't need a ram
       local BRAM = res.systolicModule:add( bramMod:instantiate("lb_m"..math.abs(y)) )
 
---      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.extract(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
+--      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.lower(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
 
       evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), S.cast(lbinp,types.bits(bits))} )
-      evicted = S.cast( evicted, darkroom.extract(res.inputType) )
+      evicted = S.cast( evicted, darkroom.lower(res.inputType) )
     end
   end
 
   local CE = S.CE("CE")
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), darkroom.extract(res.outputType) ), "process_output", {addr:setBy(S.constant(true, types.bool()))}, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), darkroom.lower(res.outputType) ), "process_output", {addr:setBy(S.constant(true, types.bool()))}, nil, CE ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
 
   return darkroom.newFunction(res)
@@ -2808,13 +2771,14 @@ function darkroom.SSR( A, T, xmin, ymin )
   assert(xmin<=0)
   assert(T>0)
   local res = {kind="SSR", type=A, T=T, xmin=xmin, ymin=ymin }
-  res.inputType = darkroom.Stateful(types.array2d(A,T,-ymin+1))
-  res.outputType = darkroom.Stateful(types.array2d(A,T-xmin,-ymin+1))
+  res.inputType = types.array2d(A,T,-ymin+1)
+  res.outputType = types.array2d(A,T-xmin,-ymin+1)
+  res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay=0
   local struct SSR {SR:(A:toTerraType())[-xmin+T][-ymin+1]}
   terra SSR:reset() end
-  terra SSR:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra SSR:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
     for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+T] end end
     for y=0,-ymin+1 do for x=-xmin,-xmin+T do self.SR[y][x] = (@inp)[y*T+(x+xmin)] end end
@@ -2825,7 +2789,7 @@ function darkroom.SSR( A, T, xmin, ymin )
   res.terraModule = SSR
 
   res.systolicModule = S.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T)
-  local sinp = S.parameter("inp", darkroom.extract(res.inputType))
+  local sinp = S.parameter("inp", darkroom.lower(res.inputType))
   local pipelines = {}
   local SR = {}
   local out = {}
@@ -2855,7 +2819,7 @@ function darkroom.SSR( A, T, xmin, ymin )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), darkroom.extract(res.outputType)), "process_output", pipelines, nil, S.CE("process_CE") ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), darkroom.lower(res.outputType)), "process_output", pipelines, nil, S.CE("process_CE") ) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return darkroom.newFunction(res)
@@ -2874,12 +2838,13 @@ function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
   if fullOutput==nil then fullOutput=false end 
 
   local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin, stride=stride, fullOutput=fullOutput }
-  res.inputType = darkroom.Stateful(types.array2d(A,1,-ymin+1))
+  res.inputType = types.array2d(A,1,-ymin+1)
+  res.stateful = true
 
   if fullOutput then
-    res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1),-ymin+1))
+    res.outputType = darkroom.RV(types.array2d(A,(-xmin+1),-ymin+1))
   else
-    res.outputType = darkroom.StatefulRV(types.array2d(A,(-xmin+1)*T,-ymin+1))
+    res.outputType = darkroom.RV(types.array2d(A,(-xmin+1)*T,-ymin+1))
   end
 
   res.sdfInput, res.sdfOutput = {{1,1/T}},{{1,1}}
@@ -2887,7 +2852,7 @@ function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
   local struct SSRPartial {phase:int; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int, ready:bool}
   terra SSRPartial:reset() self.phase=0; self.activeCycles=0;self.idleCycles=0; end
   terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
-  terra SSRPartial:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra SSRPartial:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
     var phaseAtStart = self.phase
     --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
     if self.ready then
@@ -2920,7 +2885,7 @@ function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
   res.terraModule = SSRPartial
 
   res.systolicModule = S.moduleConstructor("SSRPartial")
-  local sinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local P = 1/T
 
   local shiftValues = {}
@@ -2989,6 +2954,8 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
   res.inputType = types.array2d( A, stencilW+T-1, stencilH)
   res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.stateful = false
   res.delay=0
   local struct UnpackStencil {}
   terra UnpackStencil:reset() end
@@ -3021,38 +2988,16 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   return darkroom.newFunction(res)
 end
 
-darkroom.makeStateful = memoize(function( f )
-  assert( darkroom.isFunction(f) )
-  local res = { kind="makeStateful", fn = f }
-  darkroom.expectPure(f.inputType)
-  darkroom.expectPure(f.outputType)
-  res.inputType = darkroom.Stateful(f.inputType)
-  res.outputType = darkroom.Stateful(f.outputType)
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  assert(types.isType(res.inputType))
-  res.delay = f.delay
-  res.terraModule = f.terraModule
-  assert(S.isModule(f.systolicModule))
-  res.systolicModule = S.moduleConstructor("MakeStateful_"..f.systolicModule.name)
-  local inner = res.systolicModule:add( f.systolicModule:instantiate("MakeStateful_inner") )
-  local sinp = S.parameter("process_input", f.inputType )
-  local CE = S.CE("CE")
-  res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp), "process_output",nil,nil,CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {},S.parameter("reset",types.bool()), CE) )
-
-  return darkroom.newFunction(res)
-                                end)
-
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
 darkroom.makeHandshake = memoize(function( f, tmuxRates )
   assert( darkroom.isFunction(f) )
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
   if tmuxRates~=nil then
-    darkroom.expectPure(f.inputType)
-    darkroom.expectPure(f.outputType)
-    res.inputType = darkroom.StatefulHandshakeTmuxed( f.inputType, #tmuxRates )
-    res.outputType = darkroom.StatefulHandshakeTmuxed (f.outputType, #tmuxRates )
+    darkroom.expectBasic(f.inputType)
+    darkroom.expectBasic(f.outputType)
+    res.inputType = darkroom.HandshakeTmuxed( f.inputType, #tmuxRates )
+    res.outputType = darkroom.HandshakeTmuxed (f.outputType, #tmuxRates )
     assert( darkroom.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = tmuxRates, tmuxRates
 
@@ -3062,18 +3007,19 @@ darkroom.makeHandshake = memoize(function( f, tmuxRates )
     end
 
   else
-    darkroom.expectStateful(f.inputType)
-    darkroom.expectStateful(f.outputType)
-    res.inputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.inputType))
-    res.outputType = darkroom.StatefulHandshake(darkroom.extractStateful(f.outputType))
+    darkroom.expectBasic(f.inputType)
+    darkroom.expectBasic(f.outputType)
+    res.inputType = darkroom.Handshake(f.inputType)
+    res.outputType = darkroom.Handshake(f.outputType)
     res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   end
+
+  res.stateful = f.stateful
 
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
-  local struct MakeHandshake{ delaysr: simmodules.fifo( darkroom.extract(res.outputType):toTerraType(), delay, "makeHandshake"),
---                              fifo: simmodules.fifo( darkroom.extract(f.outputType):toTerraType(), DEFAULT_FIFO_SIZE),
+  local struct MakeHandshake{ delaysr: simmodules.fifo( darkroom.lower(res.outputType):toTerraType(), delay, "makeHandshake"),
                               inner: f.terraModule,
                             ready:bool, readyDownstream:bool}
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
@@ -3081,13 +3027,13 @@ darkroom.makeHandshake = memoize(function( f, tmuxRates )
   
   -- if inner function is const, consider input to always be valid
   local innerconst = false
-  if tmuxRates==nil then innerconst = darkroom.extractStateful(f.outputType):const() end
+  if tmuxRates==nil then innerconst = f.outputType:const() end
 
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end
 
-  terra MakeHandshake:process( inp : &darkroom.extract(res.inputType):toTerraType(), 
-                               out : &darkroom.extract(res.outputType):toTerraType())
+  terra MakeHandshake:process( inp : &darkroom.lower(res.inputType):toTerraType(), 
+                               out : &darkroom.lower(res.outputType):toTerraType())
 
     if self.readyDownstream then
       if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
@@ -3095,12 +3041,12 @@ darkroom.makeHandshake = memoize(function( f, tmuxRates )
         var ot = self.delaysr:popFront()
         valid(out) = valid(ot)
 --        data(out) = data(ot)
-        cstring.memcpy( &data(out), &data(ot), [darkroom.extract(f.outputType):sizeof()])
+        cstring.memcpy( &data(out), &data(ot), [darkroom.lower(f.outputType):sizeof()])
       else
         valid(out)=validFalse
       end
 
-      var tout : darkroom.extract(res.outputType):toTerraType()
+      var tout : darkroom.lower(res.outputType):toTerraType()
       valid(tout) = valid(inp)
       if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
       self.delaysr:pushBack(&tout)
@@ -3117,15 +3063,14 @@ darkroom.makeHandshake = memoize(function( f, tmuxRates )
   if DARKROOM_VERBOSE then outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
 
   local printInst
-  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractValid(res.inputType),darkroom.extract(f.outputType), darkroom.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"):instantiate("printInst") ) end
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),darkroom.extractValid(res.inputType),darkroom.lower(f.outputType), darkroom.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"):instantiate("printInst") ) end
 
   local SRdefault = false
   if tmuxRates~=nil then SRdefault = #tmuxRates end
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( darkroom.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
   local inner = res.systolicModule:add(f.systolicModule:instantiate("inner"))
-  local pinp = S.parameter("process_input", darkroom.extract(res.inputType) )
+  local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local rst = S.parameter("reset",types.bool())
---  if f.systolicModule:lookupFunction("reset"):isPure() then rst = S.constant(false, types.bool()) end
 
   local pipelines = {}
   local asstInst = res.systolicModule:add( S.module.assert( "MakeHandshake: input valid bit should not be X!" ,false, false):instantiate("asstInst") )
@@ -3147,7 +3092,7 @@ darkroom.makeHandshake = memoize(function( f, tmuxRates )
   res.systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
 
   local resetOutput
-  if tmuxRates==nil then resetOutput = inner:reset(nil,rst,CE) end
+  if f.stateful then resetOutput = inner:reset(nil,rst,CE) end
 
   local resetPipelines = {}
   table.insert( resetPipelines, SR:reset(nil,rst,CE) )
@@ -3167,16 +3112,16 @@ local function promoteFifo(systolicModule)
 end
 
 darkroom.fifo = memoize(function( A, size )
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   err( type(size)=="number", "size must be number")
   err( size >0,"size<=0")
   
-  local res = {kind="fifo", inputType=darkroom.StatefulHandshake(A), outputType=darkroom.StatefulHandshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}}
+  local res = {kind="fifo", inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
 
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), ready:bool, readyDownstream:bool }
   terra Fifo:reset() self.fifo:reset() end
   terra Fifo:stats(name:&int8)  end
-  terra Fifo:store( inp : &darkroom.extract(res.inputType):toTerraType())
+  terra Fifo:store( inp : &darkroom.lower(res.inputType):toTerraType())
     if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.ready,valid(inp)) end
     -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
     -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
@@ -3185,7 +3130,7 @@ darkroom.fifo = memoize(function( A, size )
       self.fifo:pushBack(&data(inp)) 
     end
   end
-  terra Fifo:load( out : &darkroom.extract(res.outputType):toTerraType())
+  terra Fifo:load( out : &darkroom.lower(res.outputType):toTerraType())
     if self.readyDownstream then
       if self.fifo:hasData() then
         if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, hasData. size=%d\n", size, self.fifo:size()) end
@@ -3208,7 +3153,7 @@ darkroom.fifo = memoize(function( A, size )
   local fifo = res.systolicModule:add( fpgamodules.fifo128(A,DARKROOM_VERBOSE):instantiate("FIFO") )
   
   --------------
-  -- Stateful -> StatefulR
+  -- basic -> R
   local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
   local storeCE = S.CE("store_CE")
   store:setCE(storeCE)
@@ -3220,7 +3165,7 @@ darkroom.fifo = memoize(function( A, size )
   storeReset:setCE(storeCE)
   storeReset:addPipeline(fifo:pushBackReset())
   --------------
-  -- Stateful -> StatefulV
+  -- basic -> V
   local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
   local loadCE = S.CE("load_CE")
   load:setCE(loadCE)
@@ -3239,14 +3184,14 @@ darkroom.fifo = memoize(function( A, size )
 
 function darkroom.lut( inputType, outputType, values )
   err( types.isType(inputType), "inputType must be type")
-  darkroom.expectPure( inputType )
+  darkroom.expectBasic( inputType )
   err( types.isType(outputType), "outputType must be type")
-  darkroom.expectPure( outputType )
+  darkroom.expectBasic( outputType )
 
   local inputCount = math.pow(2, inputType:verilogBits())
   err( inputCount==#values, "values array has insufficient entries")
 
-  local res = {kind="lut", inputType=inputType, outputType=outputType, values=values }
+  local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 1
 
@@ -3275,13 +3220,16 @@ function darkroom.reduce( f, W, H )
   err(type(H)=="number", "reduce H must be number")
 
   local res = {kind="reduce", fn = f}
-  darkroom.expectPure(f.inputType)
-  darkroom.expectPure(f.outputType)
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectBasic(f.outputType)
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
     error("Reduction function f must be of type {A,A}->A, "..loc)
   end
   res.inputType = types.array2d( f.outputType, W, H )
   res.outputType = f.outputType
+  res.stateful = f.stateful
+  if f.stateful then print("WARNING: reducing with a stateful function - are you sure this is what you want to do?") end
+
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
   local struct ReduceModule { inner: f.terraModule }
@@ -3321,7 +3269,6 @@ function darkroom.reduce( f, W, H )
                        i = i + 1
                        return I:process(S.tuple{a,b}) end, nil )
   res.systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, S.CE("process_CE") ) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool())) )
 
   return darkroom.newFunction( res )
 end
@@ -3335,15 +3282,16 @@ function darkroom.reduceSeq( f, T )
   end
 
   local res = {kind="reduceSeq", fn=f}
-  darkroom.expectPure(f.outputType)
-  res.inputType = darkroom.Stateful(f.outputType)
-  res.outputType = darkroom.StatefulV(f.outputType)
+  darkroom.expectBasic(f.outputType)
+  res.inputType = f.outputType
+  res.outputType = darkroom.V(f.outputType)
   res.sdfInput, res.sdfOutput = {{1/T,1}},{{1,1}}
+  res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
   local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
-  terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
+  terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &darkroom.lower(res.outputType):toTerraType())
     if self.phase==0 and T==1 then -- T==1 mean this is a noop, passthrough
       self.phase = 0
       valid(out) = true
@@ -3404,13 +3352,13 @@ end
 
 -- surpresses output if we get more then _count_ inputs
 darkroom.overflow = memoize(function( A, count )
-  darkroom.expectPure(A)
+  darkroom.expectBasic(A)
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
-  local res = {kind="overflow", A=A, inputType=darkroom.Stateful(A), outputType=darkroom.StatefulV(A), count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
+  local res = {kind="overflow", A=A, inputType=A, outputType=darkroom.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
   local struct Overflow {cnt:int}
   terra Overflow:reset() self.cnt=0 end
-  terra Overflow:process( inp : &A:toTerraType(), out:&darkroom.extract(res.outputType):toTerraType())
+  terra Overflow:process( inp : &A:toTerraType(), out:&darkroom.lower(res.outputType):toTerraType())
     data(out) = @inp
     valid(out) = (self.cnt<count)
     self.cnt = self.cnt+1
@@ -3427,41 +3375,6 @@ darkroom.overflow = memoize(function( A, count )
 
   return darkroom.newFunction( res )
                             end)
-
-function darkroom.cat2d( A,T,w,h )
-  assert(types.isType(A))
-  assert(A:isArray()==false)
-  assert(T<1)
-  assert(type(w)=="number")
-  assert(type(h)=="number")
-  local res = {kind="cat2d"}
-  res.inputType=darkroom.Stateful(types.array2d(A,w*T,h))
-  res.outputType=darkroom.StatefulV(types.array2d(A,w,h))
-  res.delay=0
-  local struct Cat2d { phase:int; result: (A:toTerraType())[w*h] }
-  terra Cat2d:reset() self.phase=0 end
-  local W = w*T
-  terra Cat2d:process( inp : &darkroom.extract(res.inputType):toTerraType(), out : &darkroom.extract(res.outputType):toTerraType())
-    for y=0,h do
-      for X=0,W do
-        var x = X+self.phase*W
-        self.result[y*w+x] = (@inp)[y*W+X]
-      end
-    end
-
-    if self.phase==[1/T]-1 then
-      data(out) = self.result
-      valid(out) = true
-      self.phase=-1
-    else
-      valid(out) = false
-    end
-
-    self.phase = self.phase+1
-  end
-  res.terraModule = Cat2d
-  return darkroom.newFunction( res )
-end
 
 -- function argument
 function darkroom.input( type, sdfRate )
@@ -3498,17 +3411,28 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   res.inputType = input.type
   res.outputType = output.type
 
-  if darkroom.isStatefulHandshake( input.type ) == false and darkroom.isStatefulHandshake(output.type)==false then
+  res.stateful=false
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.fn.kind )
+        res.stateful = res.stateful or n.fn.stateful
+      elseif n.kind=="applyMethod" then
+        err( type(n.inst.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.inst.fn.kind )
+        res.stateful = res.stateful or n.inst.fn.stateful
+      end
+    end)
+
+  if darkroom.isHandshake( input.type ) == false and darkroom.isHandshake(output.type)==false then
   res.delay = output:visitEach(
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
         return 0
-      elseif n.kind=="extractState" then
-        return inputs[1]
       elseif n.kind=="tuple" or n.kind=="array2d" then
         return math.max(unpack(inputs))
       elseif n.kind=="apply" then
-        return inputs[1] + n.fn.delay
+        if n.fn.inputType==types.null() then return n.fn.delay
+        else return inputs[1] + n.fn.delay end
       else
         print(n.kind)
         assert(false)
@@ -3517,8 +3441,8 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   end
 
   local function docompile( fn )
-    local inputSymbol = symbol( &darkroom.extract(fn.input.type):toTerraType(), "lambdainput" )
-    local outputSymbol = symbol( &darkroom.extract(fn.output.type):toTerraType(), "lambdaoutput" )
+    local inputSymbol = symbol( &darkroom.lower(fn.input.type):toTerraType(), "lambdainput" )
+    local outputSymbol = symbol( &darkroom.lower(fn.output.type):toTerraType(), "lambdaoutput" )
 
     local stats = {}
     local resetStats = {}
@@ -3544,7 +3468,8 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
 
     local readyOutput
     
-    if darkroom.isPure(fn.output.type)==false then
+    -- build ready calculation
+    if darkroom.isBasic(fn.output.type)==false then
       fn.output:visitEachReverse(
       function(n, inputs)
         local inputList = {}
@@ -3579,10 +3504,10 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           readyOutput = input
         elseif n.kind=="apply" then
 --          print("systolic ready APPLY",n.fn.kind)
-          if darkroom.isStatefulHandshake(n.fn.outputType) or  darkroom.isStatefulRV(n.fn.inputType) or darkroom.isStatefulHandshakeArray(n.fn.outputType) or darkroom.isStatefulHandshakeTmuxed(n.fn.outputType) then
+          if darkroom.isHandshake(n.fn.outputType) or  darkroom.isRV(n.fn.inputType) or darkroom.isHandshakeArray(n.fn.outputType) or darkroom.isHandshakeTmuxed(n.fn.outputType) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady(input) end )
             res = `mself.[n.name].ready
-          elseif n.fn.outputType:isArray() and darkroom.isStatefulHandshake(n.fn.outputType:arrayOver()) then
+          elseif n.fn.outputType:isArray() and darkroom.isHandshake(n.fn.outputType:arrayOver()) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady(array(inputList)) end )
             res = `mself.[n.name].ready
           else
@@ -3625,14 +3550,14 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
       end, true)
     end
 
-    if darkroom.isStatefulRV(res.inputType) then
+    if darkroom.isRV(res.inputType) then
       assert(readyOutput~=nil)
       terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
-    elseif darkroom.isStatefulRV(res.outputType) then
+    elseif darkroom.isRV(res.outputType) then
       assert(readyOutput~=nil)
       -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
       terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
-    elseif darkroom.isStatefulHandshake(res.outputType) then
+    elseif darkroom.isHandshake(res.outputType) then
       terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = [readyOutput] end
     end
 
@@ -3647,7 +3572,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           out = outputSymbol
         elseif n.kind=="applyRegStore" then
         elseif n.kind~="input" then
-          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=darkroom.extract(n.type):toTerraType()} )
+          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=darkroom.lower(n.type):toTerraType()} )
           out = `&mself.["simstateoutput_"..n.name]
         end
 
@@ -3662,11 +3587,15 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
           table.insert( resetStats, quote mself.[n.name]:reset() end )
           table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
 
-          table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+          if n.fn.inputType==types.null() then
+            table.insert( stats, quote mself.[n.name]:process( out ) end )
+          else
+            table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+          end
 
           if DARKROOM_VERBOSE then
-            if n.type:isArray() and darkroom.isStatefulHandshake(n.type:arrayOver()) then
-            elseif darkroom.isStatefulHandshake(n.inputs[1].type) then
+            if n.type:isArray() and darkroom.isHandshake(n.type:arrayOver()) then
+            elseif darkroom.isHandshake(n.inputs[1].type) then
               table.insert( Module.entries, {field=n.name.."CNT", type=int} )
               table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
 
@@ -3682,7 +3611,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
                 if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
                 if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end
               end )
-            elseif  darkroom.isStatefulHandshake(n.type) then
+            elseif  darkroom.isHandshake(n.type) then
               -- input is not stateful handshake (some type of aggregate)... so we know less stuff
               table.insert( Module.entries, {field=n.name.."CNT", type=int} )
               table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
@@ -3722,11 +3651,11 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
 
           return out
         elseif n.kind=="tuple" then
-          map(inputs, function(m,i) local ty = darkroom.extract(darkroom.extract(n.type).list[i])
+          map(inputs, function(m,i) local ty = darkroom.lower(darkroom.lower(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
           return out
         elseif n.kind=="array2d" then
-          local ty = darkroom.extract(n.type):arrayOver()
+          local ty = darkroom.lower(n.type):arrayOver()
           map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
 --table.insert(stats, quote cstdio.printf("VAL %d %d\n",(@out)[0]._1,out[1]._1) end)
           return out
@@ -3786,20 +3715,16 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   end
 
   local function makeSystolic( fn )
-    local module = S.moduleConstructor( fn.name ):onlyWire(darkroom.isStatefulHandshake(fn.inputType) or darkroom.isStatefulHandshake(fn.outputType))
+    local module = S.moduleConstructor( fn.name ):onlyWire(darkroom.isHandshake(fn.inputType) or darkroom.isHandshake(fn.outputType))
 
-    if darkroom.isStatefulHandshake(fn.outputType) then
+    if darkroom.isHandshake(fn.outputType) then
       module:parameters{INPUT_COUNT=0, OUTPUT_COUNT=0}
     end
 
-    --local inp = S.parameter( "process_input", darkroom.extract(fn.inputType) )
-    --local rst = S.parameter( "reset", types.bool() )
-    --local readyInput = S.parameter( "ready_input", types.bool() )
-    --local resetPipelines = {}
-    local process = module:addFunction( systolic.lambdaConstructor( "process", darkroom.extract(fn.inputType), "process_input") )
+    local process = module:addFunction( systolic.lambdaConstructor( "process", darkroom.lower(fn.inputType), "process_input") )
     local reset = module:addFunction( systolic.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
-    if darkroom.isStatefulHandshake(fn.inputType)==false and darkroom.isStatefulHandshake(fn.outputType)==false then 
+    if darkroom.isHandshake(fn.inputType)==false and darkroom.isHandshake(fn.outputType)==false then 
       local CE = S.CE("CE")
       process:setCE(CE)
       reset:setCE(CE)
@@ -3816,17 +3741,20 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
 
     assert(systolic.isAST(out[1]))
 
-    err( out[1].type:constSubtypeOf(darkroom.extract(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.extract(res.outputType)).." function "..name )
+    err( out[1].type:constSubtypeOf(darkroom.lower(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(darkroom.lower(res.outputType)).." function "..name )
 
     assert(systolic.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
 
-    if darkroom.isStatefulRV( fn.inputType ) then
+    -- for the non-handshake (purely systolic) modules, the ready bit doesn't flow from outputs to inputs,
+    -- it flows from inputs to outputs. The reason is that upstream things can't stall downstream things anyway, so there's really no point of doing it the 'right' way.
+    -- this is kind of messed up!
+    if darkroom.isRV( fn.inputType ) then
       assert( S.isAST(out[2]) )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
-    elseif darkroom.isStatefulRV( fn.outputType ) then
+    elseif darkroom.isRV( fn.outputType ) then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
-    elseif darkroom.isStatefulHandshake( fn.inputType ) or darkroom.isStatefulHandshake( fn.outputType )  then
+    elseif darkroom.isHandshake( fn.inputType ) or darkroom.isHandshake( fn.outputType )  then
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
       local readyPipelines={}
@@ -3857,7 +3785,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
             return nil
           elseif n.kind=="apply" then
             --print("systolic ready APPLY",n.fn.kind)
-            if n.fn.outputType:isArray() and darkroom.isStatefulHandshake(n.fn.outputType:arrayOver()) then
+            if n.fn.outputType:isArray() and darkroom.isHandshake(n.fn.outputType:arrayOver()) then
               return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(),n.fn.outputType:channels())))
             else
               return module:lookupInstance(n.name):ready(input)
@@ -3898,7 +3826,6 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
         end, true)
 
       local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", readyPipelines ) )
-      --assert( readyfn:isPure() )
     end
 
     return module
@@ -3920,7 +3847,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   local struct LiftModule {}
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end
-  terra LiftModule:process(inp:&darkroom.extract(inputType):toTerraType(),out:&darkroom.extract(outputType):toTerraType()) terraFunction(inp,out) end
+  terra LiftModule:process(inp:&darkroom.lower(inputType):toTerraType(),out:&darkroom.lower(outputType):toTerraType()) terraFunction(inp,out) end
 
   err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
@@ -3929,7 +3856,7 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
   systolicModule:complete()
-  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput={{1,1}} }
+  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=false }
   return darkroom.newFunction( res )
 end
 
@@ -3948,7 +3875,7 @@ end
 function darkroom.apply( name, fn, input )
   assert( type(name) == "string" )
   assert( darkroom.isFunction(fn) )
-  err( darkroom.isIR( input ), "last argument to apply must be darkroom value" )
+  err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
 
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
 end
@@ -3976,10 +3903,11 @@ function darkroom.constSeq( value, A, w, h, T )
   assert(type(h)=="number")
 
   local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
-  res.inputType = darkroom.State
+  res.inputType = types.null()
   local W = w*T
   if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
-  res.outputType = darkroom.Stateful(types.array2d(A,W,h))
+  res.outputType = types.array2d(A,W,h)
+  res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
 
   res.delay = 0
@@ -3995,7 +3923,7 @@ function darkroom.constSeq( value, A, w, h, T )
     end
   end
   terra ConstSeqState.methods.reset([mself]) mself.phase = 0; [initstats] end
-  terra ConstSeqState:process( inp : &res.inputType:toTerraType(), out : &darkroom.extract(res.outputType):toTerraType() )
+  terra ConstSeqState:process( out : &darkroom.lower(res.outputType):toTerraType() )
     @out = self.data[self.phase]
     self.phase = self.phase + 1
     if self.phase == [1/T] then self.phase = 0 end
@@ -4087,7 +4015,7 @@ darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, 
     local OT = inputType.list[idxLow+1]
     local systolicInput = S.parameter("inp", inputType)
     local systolicOutput = S.index( systolicInput, idxLow )
-    local tfn = terra( inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = inp.["_"..idxLow] end
+    local tfn = terra( inp:&darkroom.lower(inputType):toTerraType(), out:&darkroom.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
     return darkroom.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
@@ -4105,7 +4033,7 @@ darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, 
 
     local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
     systolicOutput = S.cast( systolicOutput, OT )
-    local tfn = terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) 
+    local tfn = terra(inp:&darkroom.lower(inputType):toTerraType(), out:&darkroom.lower(OT):toTerraType()) 
       for iy = idyLow,idyHigh+1 do
         for ix = idxLow, idxHigh+1 do
           (@out)[(iy-idyLow)*(idxHigh-idxLow+1)+(ix-idxLow)] = (@inp)[ix+iy*W] 
@@ -4116,7 +4044,7 @@ darkroom.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, 
     if index then
       OT = inputType:arrayOver()
       systolicOutput = S.index( systolicInput, idxLow, idyLow )
-      tfn = terra(inp:&darkroom.extract(inputType):toTerraType(), out:&darkroom.extract(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
+      tfn = terra(inp:&darkroom.lower(inputType):toTerraType(), out:&darkroom.lower(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
     end
 
     return darkroom.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
@@ -4133,27 +4061,12 @@ function darkroom.index( inputType, idx, idy, X )
   return darkroom.slice( inputType, idx, idx, idy, idy, true )
 end
 
--- this is for driving stateful functions with no input
-function darkroom.extractState( name, input )
-  assert(type(name)=="string")
-  assert(darkroom.isIR( input ) )
-  assert( darkroom.isStateful(input.type) and darkroom.isStatefulV(input.type)==false and darkroom.isStatefulRV(input.type)==false)
-  return darkroom.newIR( {kind="extractState", name=name, loc=getloc(), inputs={input}, type=darkroom.State} )
-end
-
-function darkroom.catState( name, input, state )
-  assert(type(name)=="string")
-  assert(darkroom.isIR( input ) )
-  assert(darkroom.isIR( state ) )
-  return darkroom.newIR( {kind="catState", name=name, loc=getloc(), inputs={input,state}} )
-end
-
 darkroom.freadSeq = memoize(function( filename, ty )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
-  darkroom.expectPure(ty)
+  darkroom.expectBasic(ty)
   local filenameVerilog=filename
-  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=darkroom.Stateful(ty), inputType=darkroom.Stateful(types.null()), outputType=darkroom.Stateful(ty), delay=0}
+  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=types.null(), outputType=ty, stateful=true, delay=0}
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:reset() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -4178,9 +4091,9 @@ darkroom.freadSeq = memoize(function( filename, ty )
 function darkroom.fwriteSeq( filename, ty )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
-  darkroom.expectPure(ty)
+  darkroom.expectBasic(ty)
   local filenameVerilog=filename
-  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=darkroom.Stateful(ty), outputType=darkroom.Stateful(ty), delay=0}
+  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0}
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 
@@ -4214,14 +4127,14 @@ function darkroom.seqMap( f, W, H, T )
   err( type(W)=="number", "W must be a number")
   err( type(H)=="number", "H must be a number")
   err( type(T)=="number", "T must be a number")
-  darkroom.expectStateful(f.inputType)
-  darkroom.expectStateful(f.outputType)
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectBasic(f.outputType)
   local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
   terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var o : darkroom.extract(f.outputType):toTerraType()
+    var o : darkroom.lower(f.outputType):toTerraType()
     for i=0,W*H do self.inner:process(nil,&o) end
   end
   res.terraModule = SeqMap
@@ -4275,8 +4188,8 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
   err( type(outputT)=="number", "outputT must be a number")
   err( type(axi)=="boolean", "axi should be a bool")
 
-  darkroom.expectStatefulHandshake(f.inputType)
-  darkroom.expectStatefulHandshake(f.outputType)
+  darkroom.expectHandshake(f.inputType)
+  darkroom.expectHandshake(f.outputType)
 
   local inputTokens = (inputW*inputH)/inputT
   local expectedOutputTokens = (outputW*outputH)/outputT
@@ -4288,7 +4201,7 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
 
-  local innerinp = symbol(darkroom.extract(f.inputType):toTerraType(), "innerinp")
+  local innerinp = symbol(darkroom.lower(f.inputType):toTerraType(), "innerinp")
   local assntaps = quote end
   if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
 
@@ -4298,7 +4211,7 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     var [innerinp]
     [assntaps]
 
-    var o : darkroom.extract(f.outputType):toTerraType()
+    var o : darkroom.lower(f.outputType):toTerraType()
     var inpAddr = 0
     var outAddr = 0
     var downstreamReady = 0
@@ -4321,7 +4234,7 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
 
   if axi then
     local baseTypeI = inputType
-    local baseTypeO = darkroom.extractStatefulHandshake(f.outputType)
+    local baseTypeO = darkroom.extractData(f.outputType)
     err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
 
@@ -4378,7 +4291,7 @@ reg []]..rrlog2..[[:0] ready_downstream = 1;
 reg [15:0] doneCnt = 0;
 wire ready;
 ]]..tapreg..[[
-]]..S.declareWire( darkroom.extract(f.outputType), "process_output" )..[[
+]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
 
 ]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputTokens..[[),.OUTPUT_COUNT(]]..outputTokens..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
@@ -4407,7 +4320,7 @@ wire ready;
     if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus
-    if(]]..readybit..[[ && process_output[]]..(darkroom.extract(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
+    if(]]..readybit..[[ && process_output[]]..(darkroom.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
     ready_downstream <= ready_downstream + 1;
   end
 endmodule

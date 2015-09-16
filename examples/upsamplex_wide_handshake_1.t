@@ -16,10 +16,10 @@ scaleX = 2
 function MAKE(T)
   local ITYPE = types.array2d( types.uint(8), 8 ) -- always 8 for AXI
 
-  local inp = d.input( d.StatefulHandshake(ITYPE) )
+  local inp = d.input( d.Handshake(ITYPE) )
   local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,T)), inp )
   local out = d.apply("US", d.upsampleXSeq( types.uint(8), T,scaleX), out)
---  local upsampleT = T*scaleX
+
   out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
   local hsfn = d.lambda("hsfn", inp, out)
 

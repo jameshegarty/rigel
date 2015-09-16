@@ -18,7 +18,7 @@ ITYPE = types.array2d( types.uint(8), T )
 ------------
 local fifos = { d.instantiateRegistered("f1",d.fifo(ITYPE,128))}
 
-A = d.input( d.StatefulHandshake(ITYPE) )
+A = d.input( d.Handshake(ITYPE) )
 
 local muxout = d.applyMethod("L1", fifos[1],"load")
 

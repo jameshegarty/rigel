@@ -46,37 +46,25 @@ local rsinp = S.parameter( "inp", types.tuple { types.uint(32), types.uint(32) }
 local reduceSumUint32 = d.lift( "reduceSumUint32", types.tuple { types.uint(32), types.uint(32) }, types.uint(32), 1, terra( inp : &tuple(uint32,uint32), out : &uint32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
 local reduceSumUint32_0cyc = d.lift( "reduceSumUint32_0cyc", types.tuple { types.uint(32), types.uint(32) }, types.uint(32), 0, terra( inp : &tuple(uint32,uint32), out : &uint32 ) @out = inp._0 + inp._1 end, rsinp, (S.index(rsinp,0)+S.index(rsinp,1)):disablePipelining() )
 -------------
-local inp = d.input( darkroom.Stateful(types.array2d( types.uint(8), ConvWidth*T, ConvWidth ) ) )
+local inp = d.input( types.array2d( types.uint(8), ConvWidth*T, ConvWidth ) )
 local kernel = range(ConvWidth*ConvWidth)
-local r = d.apply( "convKernel", d.constSeq( kernel, types.uint(8), ConvWidth, ConvWidth, T ), d.extractState("inext", inp) )
+local r = d.apply( "convKernel", d.constSeq( kernel, types.uint(8), ConvWidth, ConvWidth, T ) )
 
-local packed = d.apply( "packedtup", d.SoAtoAoSStateful(ConvWidth*T,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
-local conv = d.apply( "partial", d.makeStateful(d.map( partial, ConvWidth*T, ConvWidth )), packed )
-local conv = d.apply( "sum", d.makeStateful(d.reduce( reduceSumUint32, ConvWidth*T, ConvWidth )), conv )
+local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth*T,ConvWidth,{types.uint(8),types.uint(8)}), d.tuple("ptup", {inp,r}) )
+local conv = d.apply( "partial", d.map( partial, ConvWidth*T, ConvWidth ), packed )
+local conv = d.apply( "sum", d.reduce( reduceSumUint32, ConvWidth*T, ConvWidth ), conv )
 
 local convseq = d.lambda( "convseq", inp, conv )
 ------------------
-inp = d.input( darkroom.StatefulV(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )) )
-conv = d.apply( "convseqapply", d.liftDecimate(d.liftStateful(convseq)), inp)
+inp = d.input( darkroom.V(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )) )
+conv = d.apply( "convseqapply", d.liftDecimate(d.liftBasic(convseq)), inp)
 conv = d.apply( "sumseq", d.RPassthrough(d.liftDecimate(d.reduceSeq( reduceSumUint32_0cyc, T ))), conv )
-conv = d.apply( "touint8", d.RVPassthrough(d.makeStateful(touint8Array1)), conv )
+conv = d.apply( "touint8", d.RVPassthrough(touint8Array1), conv )
 conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
 local convolve = d.lambda( "convolve", inp, conv )
-
--------------
-local BASE_TYPE = types.array2d( types.uint(8), 1 )
-local ITYPE = d.StatefulV(BASE_TYPE)
-local inp = d.input( ITYPE )
-
---I = d.apply("crop", d.cropSeq(types.uint(8),W,H,T,ConvWidth,0,ConvWidth,0,0), inp)
-
---local convstencils = d.apply( "convstencils", d.makeStateful( d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ) ), convLB )
-
-
---local convpipe = d.lambda( "convpipe", inp, convpipe )
 -------------
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
-local hsfninp = d.input( d.StatefulHandshake(RW_TYPE) )
+local hsfninp = d.input( d.Handshake(RW_TYPE) )
 --local out = hsfninp
 local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), hsfninp )
 local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)

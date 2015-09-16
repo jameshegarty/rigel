@@ -15,18 +15,6 @@ local ConvArea = math.pow( ConvWidth, 2 )
 local inputW = 128
 local inputH = 64
 
---local PadRadius = upToNearest(T, ConvRadius)
-
--- expand to include crop region
---W = upToNearest(T,128+ConvWidth-1)
---H = 64+ConvWidth-1
-
---local internalW = inputW+PadRadius*2
---local internalH = inputH+ConvRadius*2
-
---outputW = internalW
---outputH = internalH
-
 local outputW = inputW
 local outputH = inputH
 
