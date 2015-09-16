@@ -1916,7 +1916,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
     elseif self.inputBits==32 then
       width = 36
     else
-      error("unsupported BRAM2KSDP bitwidth,"..self.inputType:verilogBits() )
+      error("unsupported BRAM2KSDP bitwidth,"..self.inputBits )
       assert(false)
     end
 

@@ -23,10 +23,11 @@ else
   DARKROOM_VERBOSE = false
 end
 
-darkroom.StateR = types.opaque("stateR")
+darkroom.VToken = types.opaque("V")
+darkroom.RVToken = types.opaque("RV")
 darkroom.HandshakeToken = types.opaque("handshake")
-function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, types.bool()} end
-function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, types.bool(),darkroom.StateR} end
+function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.VToken} end
+function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.RVToken} end
 function darkroom.Handshake(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({ A, darkroom.HandshakeToken }) end
 function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
 function darkroom.HandshakeTmuxed(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeTmuxed"..N)}) end
@@ -46,8 +47,8 @@ local ready = darkroom.ready
 function darkroom.isHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray" end
 function darkroom.isHandshakeTmuxed(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed" end
 function darkroom.isHandshake( a ) return a:isTuple() and a.list[2]==darkroom.HandshakeToken end
-function darkroom.isV( a ) return a:isTuple() and a.list[2]==types.bool() and a.list[3]==nil end
-function darkroom.isRV( a ) return a:isTuple() and a.list[2]==types.bool() and a.list[3]==darkroom.StateR end
+function darkroom.isV( a ) return a:isTuple() and a.list[2]==darkroom.VToken end
+function darkroom.isRV( a ) return a:isTuple() and a.list[2]==darkroom.RVToken end
 function darkroom.isBasic(A) return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTmuxed(A)==false end
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
@@ -1014,9 +1015,17 @@ darkroom.liftDecimate = memoize(function(f)
   assert(darkroom.isFunction(f))
   local res = {kind="liftDecimate", fn = f}
   darkroom.expectBasic(f.inputType)
-  darkroom.expectV(f.outputType)
   res.inputType = darkroom.V(f.inputType)
-  res.outputType = darkroom.RV(darkroom.extractData(f.outputType))
+
+  if darkroom.isV(f.outputType) then
+    res.outputType = darkroom.RV(darkroom.extractData(f.outputType))
+  elseif f.outputType:isTuple() and #f.outputType.list==2 and f.outputType.list[2]==types.bool() then
+    -- "looks like" a V
+    res.outputType = darkroom.RV(f.outputType.list[1])
+  else
+    err(false, "expected V output type")
+  end
+
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
 
@@ -2728,7 +2737,7 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   end
   res.terraModule = Linebuffer
 
-  res.systolicModule = S.moduleConstructor("linebuffer")
+  res.systolicModule = S.moduleConstructor("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
   local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
 
@@ -2765,7 +2774,7 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
 end)
 
 -- xmin, ymin are inclusive
-function darkroom.SSR( A, T, xmin, ymin )
+darkroom.SSR = memoize(function( A, T, xmin, ymin )
   map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
   assert(ymin<=0)
   assert(xmin<=0)
@@ -2788,7 +2797,7 @@ function darkroom.SSR( A, T, xmin, ymin )
   end
   res.terraModule = SSR
 
-  res.systolicModule = S.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T)
+  res.systolicModule = S.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T.."_A"..tostring(A))
   local sinp = S.parameter("inp", darkroom.lower(res.inputType))
   local pipelines = {}
   local SR = {}
@@ -2797,23 +2806,17 @@ function darkroom.SSR( A, T, xmin, ymin )
     SR[y]={}
     local x = -xmin+T-1
     while(x>=0) do
-
-
       if x<-xmin-T then
         SR[y][x] = res.systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
         table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
         out[y*(-xmin+T)+x+1] = SR[y][x]:get()
       elseif x<-xmin then
         SR[y][x] = res.systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
---        table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
         table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+(T+xmin),y ) ) )
         out[y*(-xmin+T)+x+1] = SR[y][x]:get()
       else -- x>-xmin
         out[y*(-xmin+T)+x+1] = S.index(sinp,x+xmin,y)
-        --table.insert( pipelines, SR[y][x]:set(S.index(sinp,x+xmin,y)) )
       end
-
-
 
       x = x - 1
     end
@@ -2823,9 +2826,9 @@ function darkroom.SSR( A, T, xmin, ymin )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return darkroom.newFunction(res)
-end
+end)
 
-function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
+darkroom.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
   assert(T<=1); 
   assert(X==nil)
 
@@ -2915,7 +2918,7 @@ function darkroom.SSRPartial( A, T, xmin, ymin, stride, fullOutput, X )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), shifterReading, "ready", {} ) )
 
   return darkroom.newFunction(res)
-end
+end)
 
 darkroom.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(types.isType(A))
@@ -2926,7 +2929,7 @@ darkroom.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(xmax==0)
   assert(ymax==0)
 
-    return darkroom.compose("stencilLinebuffer_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), darkroom.SSR( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, T, ymin ) )
+  return darkroom.compose("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), darkroom.SSR( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, T, ymin ) )
 end)
 
 function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
@@ -3214,7 +3217,7 @@ function darkroom.lut( inputType, outputType, values )
   return darkroom.newFunction(res)
 end
 
-function darkroom.reduce( f, W, H )
+darkroom.reduce = memoize(function( f, W, H )
   if darkroom.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
   err(type(W)=="number", "reduce W must be number")
   err(type(H)=="number", "reduce H must be number")
@@ -3223,7 +3226,7 @@ function darkroom.reduce( f, W, H )
   darkroom.expectBasic(f.inputType)
   darkroom.expectBasic(f.outputType)
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
-    error("Reduction function f must be of type {A,A}->A, "..loc)
+    error("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
   end
   res.inputType = types.array2d( f.outputType, W, H )
   res.outputType = f.outputType
@@ -3271,7 +3274,7 @@ function darkroom.reduce( f, W, H )
   res.systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, S.CE("process_CE") ) )
 
   return darkroom.newFunction( res )
-end
+end)
 
 
 function darkroom.reduceSeq( f, T )

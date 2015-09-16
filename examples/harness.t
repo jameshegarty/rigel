@@ -1,6 +1,7 @@
 local d = require "darkroom"
 local types = require("types")
 local cstdlib = terralib.includec("stdlib.h")
+local fixed = require("fixed")
 
 local function harness( hsfn, infile, inputType, tapInputType, outfile, outputType, id, outputCount,X)
   assert(X==nil)
@@ -54,6 +55,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     (terra() 
        cstdio.printf("Start CPU Sim\n")
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
+    fixed.printHistograms()
   end
   ------
   for i=1,2 do

@@ -3,6 +3,7 @@ local Im = require "image"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
+local C = require "examplescommon"
 local cstdio = terralib.includec("stdio.h")
 local cstring = terralib.includec("string.h")
 local harness = require "harness"
@@ -63,8 +64,8 @@ function invert2x2( AType )
   local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), types.uint(8), types.bool()} )
   local fmatrix = finp:index(0)
   local fsignbit = finp:index(2)
-  local fdet = finp:index(1):lift(denom_exp+lut_exp):addSign(fsignbit)
-  local I0 = fdet*fmatrix:index(3)
+  local fdet = finp:index(1):lift(denom_exp+lut_exp):addSign(fsignbit):hist("fdet")
+  local I0 = (fdet*fmatrix:index(3)):hist("invert2x2_output0")
   local output_type = I0.type
   local fout = f.array2d({I0, fdet:neg()*fmatrix:index(1), fdet:neg()*fmatrix:index(2), fdet*fmatrix:index(0)},4)
   ---------
@@ -95,8 +96,10 @@ function makePartial(ltype,rtype)
 end
 
 function makeSumReduce(inputType)
+  print("MakeReduceSum",inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})
-  return (finp:index(0)+finp:index(1)):cast(inputType):toDarkroom("rsum")
+  local O = (finp:index(0)+finp:index(1)):cast(inputType)
+  return O:toDarkroom("rsum_"..tostring(inputType))
 end
 
 -- dType: type of derivative
@@ -114,13 +117,17 @@ function makeA( dType )
 
   local inp0 = d.apply("inp0", d.SoAtoAoS(window,window,{dType,dType}), d.tuple("o0",{Fdx,Fdx}) )
   local out0 = d.apply("out0", d.map(partial, window, window), inp0 )
+  local out0 = d.apply("out0red", d.reduce(rsum, window, window), out0 )
 
   local inp1 = d.apply("inp1", d.SoAtoAoS(window,window,{dType,dType}), d.tuple("o1",{Fdx,Fdy}) )
   local out1 = d.apply("out1", d.map(partial, window, window), inp1 )
+  local out1 = d.apply("out1red", d.reduce(rsum, window, window), out1 )
+
   local out2 = out1
 
   local inp3 = d.apply("inp3", d.SoAtoAoS(window,window,{dType,dType}), d.tuple("o3",{Fdy,Fdy}) )
   local out3 = d.apply("out3", d.map(partial, window, window), inp3 )
+  local out3 = d.apply("out3red", d.reduce(rsum, window, window), out3 )
 
   local out = d.array2d("out", {out0,out1,out2,out3}, 4 )
 
@@ -138,8 +145,8 @@ function makeB(dtype)
   f.expectFixed(dtype)
 
   -- arguments: frame1, frame2, fdx, fdy
-  local FTYPE = types.array2d(types.uint(8),window)
-  local DTYPE = types.array2d(dtype,window)
+  local FTYPE = types.array2d(types.uint(8),window,window)
+  local DTYPE = types.array2d(dtype,window,window)
   local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
   local finp = d.input( ITYPE )
   
@@ -156,14 +163,17 @@ function makeB(dtype)
   ---------
 
   local partial, partial_type = makePartial( dtype, gmf_type)
+  local rsum = makeSumReduce(partial_type)
 
   local out_0 = d.tuple("o0tup",{Fdx, gmf})
   local out_0 = d.apply("o0P", d.SoAtoAoS(window,window,{dtype,gmf_type}), out_0)
   local out_0 = d.apply("o0", d.map(partial, window, window), out_0)
+  local out_0 = d.apply("out0red", d.reduce(rsum, window, window), out_0 )
 
   local out_1 = d.tuple("o1tup",{Fdy, gmf})
   local out_1 = d.apply("o1P", d.SoAtoAoS(window,window,{dtype,gmf_type}), out_1)
   local out_1 = d.apply("o1", d.map(partial, window, window), out_1)
+  local out_1 = d.apply("out1red", d.reduce(rsum, window, window), out_1 )
 
   local out = d.array2d("arrrrry0t",{out_0,out_1},2)
 
@@ -193,10 +203,10 @@ function display(inpType)
   for i=0,1 do
     local I = inp:index(i)
     local B = I*f.constant(32,true,6,0)
-    table.insert(out, (B+f.constant(128,true,8,0):cast(B.type)):denormalize():truncate(8):lower())
+    table.insert(out, (B+f.constant(128,true,8,0):cast(B.type)):abs():denormalize():truncate(8):lower())
   end
-  table.insert(out, f.constant(0,true,8,0):lower())
-  out = f.array2d(out,3)
+--  table.insert(out, f.constant(0,true,8,0):lower())
+  out = f.array2d(out,2)
   return out:toDarkroom("display")
 end
 
@@ -207,23 +217,31 @@ function makeLK()
   local frame1 = d.apply("f1", d.index(INPTYPE, 1 ), inp)
 
   local st_type = types.array2d( types.uint(8), window+1, window+1 )
-  local lb0 = d.apply("lb0", d.stencilLinebuffer(types.uint(8), W,H, 1, -window-1, 0, -window-1, 0 ), frame0)
-  local lb1 = d.apply("lb1", d.stencilLinebuffer(types.uint(8), W,H, 1, -window-1, 0, -window-1, 0 ), frame1)
+  local frame0_arr = d.apply("f0_arr", C.arrayop(types.uint(8),1), frame0)
+  local frame1_arr = d.apply("f1_arr", C.arrayop(types.uint(8),1), frame1)
+  local lb0 = d.apply("lb0", d.stencilLinebuffer(types.uint(8), W,H, 1, -window, 0, -window, 0 ), frame0_arr)
+  local lb1 = d.apply("lb1", d.stencilLinebuffer(types.uint(8), W,H, 1, -window, 0, -window, 0 ), frame1_arr)
 
   local fdx = d.apply("slx", d.slice( st_type, window-2, window, window-1, window-1), lb0)
   local dx, dType = dx()
   local fdx = d.apply("fdx", dx, fdx)
+  local fdx_arr = d.apply("fdx_arr", C.arrayop(dType,1), fdx)
+  local fdx_stencil = d.apply("fdx_stencil", d.stencilLinebuffer(dType, W,H, 1, -window+1, 0, -window+1, 0 ), fdx_arr)
 
   local fdy = d.apply("sly", d.slice( st_type, window-1, window-1, window-2, window), lb0)
   local fdy = d.apply("fdy", dy(), fdy )
+  local fdy_arr = d.apply("fdy_arr", C.arrayop(dType,1), fdy)
+  local fdy_stencil = d.apply("fdy_stencil", d.stencilLinebuffer(dType, W,H, 1, -window+1, 0, -window+1, 0 ), fdy_arr)
 
   local Af, AType = makeA(dType)
-  local A = d.apply("A", Af, d.tuple("ainp",{fdx,fdy}))
+  local A = d.apply("A", Af, d.tuple("ainp",{fdx_stencil,fdy_stencil}))
   local fAinv, AInvType = invert2x2(AType)
   local Ainv = d.apply("Ainv", fAinv, A)
 
   local fB, BType = makeB(dType)
-  local b = d.apply("b",fB, d.tuple("btup",{frame0,frame1,fdx,fdy}))
+  local f0_slice = d.apply("f0slice", d.slice(st_type, 0, window-1, 0, window-1), lb0)
+  local f1_slice = d.apply("f1slice", d.slice(st_type, 0, window-1, 0, window-1), lb1)
+  local b = d.apply("b",fB, d.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
   local fSolve, SolveType = solve(AInvType,BType)
   local vectorField = d.apply("solve", fSolve, d.tuple("solveinp",{Ainv,b}))
   
@@ -232,11 +250,16 @@ function makeLK()
   return d.lambda("LK",inp,out)
 end
 
-local RW_TYPE = types.array2d( types.array2d(types.uint(8),2), 4 ) -- simulate axi bus
-local hsfninp = d.input( d.StatefulHandshake(RW_TYPE) )
+local ITYPE = types.array2d(types.uint(8),2)
+local T = 4
+
+local RW_TYPE = types.array2d( ITYPE, T ) -- simulate axi bus
+local hsfninp = d.input( d.Handshake(RW_TYPE) )
 local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,1)), hsfninp )
+local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
 out = d.apply("LK", d.makeHandshake(makeLK()), out )
+local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,1,4)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
-harness.axi( "pointwise_wide_handshake", hsfn, "lk_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness.axi( "lk_wide_handshake", hsfn, "lk_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)

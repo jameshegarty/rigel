@@ -23,7 +23,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="tuple" then
     return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="opaque" then
-    return "opaque_"..ty.str..const
+    return "opaque_"..ty.str
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -37,11 +37,11 @@ function types.bool(const) if const==true then return types._boolconst else retu
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
 
-types._opaque={[true]={},[false]={}}
-function types.opaque( str, const )
-  local c = (const==true)
-  types._opaque[c][str] = types._opaque[c][str] or setmetatable({kind="opaque",str=str,constant=c},TypeMT)
-  return types._opaque[c][str]
+types._opaque={}
+function types.opaque( str, X )
+  assert(X==nil)
+  types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
+  return types._opaque[str]
 end
 
 types._bits={[true]={},[false]={}}
@@ -581,7 +581,7 @@ function TypeFunctions:constSubtypeOf(A)
     return true
   elseif A.kind~=self.kind then
     return false
-  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isOpaque() then
+  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
     if self:const() and A:makeConst()==self then
       return true
     else
@@ -591,7 +591,8 @@ function TypeFunctions:constSubtypeOf(A)
     if #A.list~=#self.list then return false end
     return foldl( andop, true, map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
   elseif self:isArray() then
-    return self:arrayOver():constSubtypeOf(A:arrayOver())
+    local lenmatch = (self:arrayLength())[1]==(A:arrayLength())[1] and (self:arrayLength())[2]==(A:arrayLength())[2]
+    return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
   else
     print(":constSubtypeOf",self,A)
     assert(false)
@@ -608,7 +609,7 @@ function TypeFunctions:makeConst()
   elseif self:isBits() then
     return types.bits( self.precision, true )
   elseif self:isOpaque() then
-    return types.opaque( self.str, true )
+    return self -- doesn't matter
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
@@ -626,7 +627,7 @@ function TypeFunctions:stripConst()
   elseif self:isInt() then
     return types.int( self.precision, false )
   elseif self:isOpaque() then
-    return types.opaque( self.str, false )
+    return self -- doesn't matter
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
@@ -694,6 +695,8 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = int32
   elseif self:isInt() and self.precision>32 and self.precision<=64 then
     ttype = int64
+  elseif self:isUint() and self.precision>32 and self.precision<=64 then
+    ttype = uint64
   elseif self:isUint() and self.precision>16 and self.precision<=32 then
     ttype = uint32
   elseif self:isUint() and self.precision>8 and self.precision<=16 then
