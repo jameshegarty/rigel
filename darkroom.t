@@ -1594,10 +1594,8 @@ function darkroom.upsampleYSeq( A, W, H, T, scale )
   local phasebits = (math.log(scale)/math.log(2))
   local phase = S.cast(S.bitSlice( sPhase:get(), addrbits, addrbits+phasebits-1 ), types.uint(phasebits))
 
-  local sBuffer = res.systolicModule:add( S.module.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits(), ITYPE:verilogBits(),nil,true ):instantiate("buffer"):setCoherent(true) )
+  local sBuffer = res.systolicModule:add( S.module.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits()/8, ITYPE:verilogBits()/8,nil,true ):instantiate("buffer"):setCoherent(true) )
   local reading = S.eq( phase, S.constant(0,types.uint(phasebits)) ):disablePipelining()
-
-
 
   local pipelines = {sBuffer:writeAndReturnOriginal(S.tuple{xpos,S.cast(sinp,types.bits(ITYPE:verilogBits()))}, reading), sPhase:setBy( S.constant(1, types.uint(16)) )}
   local out = S.select( reading, sinp, S.cast(sBuffer:read(xpos),ITYPE) ) 
@@ -2505,7 +2503,8 @@ end
 -- sequentialized to throughput T
 function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
-  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number"); err(n>=0,"n<0") end)
+  map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number"); err(n>=0,"n<0") end)
+  err( A:toLuaType()==type(Value), "Value is incorrect lua type")
   err(T>=1, "padSeq, T<1")
 
   err( W%T==0, "padSeq, W%T~=0")
@@ -2528,7 +2527,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
     if interior then
       data(out) = @inp
     else
-      data(out) = arrayof([A:toTerraType()],[rep(Value,T)])
+      data(out) = arrayof([A:toTerraType()],[rep(A:valueToTerra(Value),T)])
     end
     
     self.posX = self.posX+T;
@@ -2569,7 +2568,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
 
 --  pipelines[4] = asstInst:process( S.__or(pinp_valid,S.eq(readybit,S.constant(false,types.bool()) ) ) )
 
-  local ValueBroadcast = S.cast(S.constant(Value,A),types.array2d(A,T))
+  local ValueBroadcast = S.cast( S.tuple(broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
   local ConstTrue = S.constant(true,types.bool())
   --local ConstFalse = S.constant(false,types.bool())
   --local border = S.select(S.ge(posY:get(),S.constant(H+Top+B,types.uint(16))),S.tuple{ValueBroadcast,ConstFalse},S.tuple{ValueBroadcast,ConstTrue})
@@ -2745,10 +2744,11 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   local evicted
 
   local bits = darkroom.lower(res.inputType):verilogBits()
-  local sizeInBytes = nearestPowerOf2((w/T)*darkroom.lower(res.inputType):verilogBits()/8)
+  local bytes = upToNearest(8,bits)/8
+  local sizeInBytes = nearestPowerOf2((w/T)*bytes)
   local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
-  local bramMod = S.module.bramSDP( true, sizeInBytes, bits, nil, init, true )
-  local addrbits = math.log((sizeInBytes*8)/bits)/math.log(2)
+  local bramMod = S.module.bramSDP( true, sizeInBytes, bytes, nil, init, true )
+  local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
 
   for y=0,-ymin do
     local lbinp = evicted
@@ -2759,9 +2759,11 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
       -- last line doesn't need a ram
       local BRAM = res.systolicModule:add( bramMod:instantiate("lb_m"..math.abs(y)) )
 
---      local BRAM = res.systolicModule:add( S.module.bram2KSDP( true, darkroom.lower(res.inputType), init ):instantiate("lb_m"..math.abs(y)))
+      local upcast = S.cast(lbinp,types.bits(bits))
+      upcast = S.cast(upcast,types.bits(bytes*8))
 
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), S.cast(lbinp,types.bits(bits))} )
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), upcast} )
+      evicted = S.bitSlice(evicted,0,bits-1)
       evicted = S.cast( evicted, darkroom.lower(res.inputType) )
     end
   end
@@ -3192,7 +3194,7 @@ function darkroom.lut( inputType, outputType, values )
   darkroom.expectBasic( outputType )
 
   local inputCount = math.pow(2, inputType:verilogBits())
-  err( inputCount==#values, "values array has insufficient entries")
+  err( inputCount==#values, "values array has insufficient entries, has "..tonumber(#values).." but should have "..tonumber(inputCount))
 
   local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
@@ -3206,7 +3208,7 @@ function darkroom.lut( inputType, outputType, values )
   res.terraModule = LUTModule
 
   res.systolicModule = S.moduleConstructor("LUT")
-  local lut = res.systolicModule:add( systolic.module.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits(), outputType:verilogBits(), values, true ):instantiate("LUT") )
+  local lut = res.systolicModule:add( systolic.module.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
   local sinp = S.parameter("process_input", res.inputType )
 

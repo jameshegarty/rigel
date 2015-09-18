@@ -2060,6 +2060,8 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
     err(#init==2048, "init table has size "..(#init))
   end
 
+  err(inputBits==8 or inputBits==16 or inputBits==32, "inputBits must be 8,16, or 32")
+
   local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
@@ -2082,15 +2084,32 @@ end
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
 -- if outputBits==nil, we don't make a read function (only a write function)
-systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBits, outputBits, init, CE, X)
+--
+-- The bram supports reading/writing at different bandwidths. So we specify total size to allocate (sizeInBytes),
+-- and the read/write BW.
+--
+-- notice that we don't allow non-byte input/output BW, non-power of two sizes here. The reason is that we expose the # of address bits correctly,
+-- so these need to be actual realistic values (address count must be power of 2 to make sense). Potentially, we could make a wrapper for this that
+-- allows for non-power-of-2 addressing, and has more flexibility in these values.
+systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, X)
   assert(X==nil)
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
-  err( type(inputBits)=="number", "inputBits must be a number")
-  err( outputBits==nil or type(outputBits)=="number", "outputBits must be a number")
+  err( type(inputBytes)=="number", "inputBytes must be a number")
+  err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
   err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
 
-  local bwcount = math.ceil(inputBits/32)
+  err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
+  local writeAddrs = sizeInBytes/inputBytes
+  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2")
+
+  if outputBytes~=nil then
+    err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))
+    local readAddrs = sizeInBytes/outputBytes
+    err( isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
+  end
+
+  local bwcount = math.ceil(inputBytes/4)
   local szcount = math.ceil(sizeInBytes/(2*1024))
   local count = math.max(bwcount,szcount)
 
@@ -2105,28 +2124,36 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
 
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    local addrbits = math.log((sizeInBytes*8)/inputBits)/math.log(2)
-    local mod = systolic.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBits.."_obw"..tostring(outputBits).."_CE"..tostring(CE).."_init"..tostring(init) )
-    local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBits)})
+    local addrbits = math.log(sizeInBytes/inputBytes)/math.log(2)
+
+    local mod = systolic.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init) )
+    local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBytes*8)})
     local sinpRead = systolic.parameter("inpRead",types.uint(addrbits))
     local inpAddr = systolic.index(sinp,0)
     local inpData = systolic.index(sinp,1)
+
+    local eachSizeBytes = math.min( 4, inputBytes )
+
+    local eachAddrbits = math.log((2048)/eachSizeBytes)/math.log(2)
     
-    local eachSize = math.min( 32, inputBits )
-    local eachAddrbits = math.log((2048*8)/eachSize)/math.log(2)
-    
-    local eachSizeOutput
-    if outputBits~=nil then eachSizeOutput = math.min( 32, outputBits ) end
+    local eachSizeOutputBytes
+    if outputBytes~=nil then eachSizeOutputBytes = math.min( 4, outputBytes ) end
 
     local out, outRead = {}, {}
     for bw=0,bwcount-1 do
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSize, eachSizeOutput, CE, init ):instantiate("bram_"..bw) )
-      local inp = systolic.bitSlice( inpData, bw*eachSize, (bw+1)*eachSize-1 )
+      local eachSizeOutputBits
+      if outputBytes~=nil then eachSizeOutputBits = eachSizeOutputBytes*8 end
+
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSizeBytes*8, eachSizeOutputBits, CE, init ):instantiate("bram_"..bw) )
+      local inp = systolic.bitSlice( inpData, bw*eachSizeBytes*8, (bw+1)*eachSizeBytes*8-1 )
+
       table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
-      if outputBits~=nil then table.insert( outRead, m:read( systolic.cast(inpAddr,types.uint(eachAddrbits)) ) ) end
+      if outputBytes~=nil then table.insert( outRead, m:read( systolic.cast(inpAddr,types.uint(eachAddrbits)) ) ) end
     end
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, systolic.cast(systolic.tuple(out),types.bits(inputBits)), "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
-    if outputBits~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBits)), "READ_OUT", nil, nil) ) end
+
+    local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
+    if outputBytes~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil) ) end
 
     return mod
   else

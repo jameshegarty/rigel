@@ -46,6 +46,7 @@ end
 
 types._bits={[true]={},[false]={}}
 function types.bits( prec, const )
+  assert(prec==math.floor(prec))
   local c = (const==true)
   types._bits[c][prec] = types._bits[c][prec] or setmetatable({kind="bits",precision=prec,constant=c},TypeMT)
   return types._bits[c][prec]
@@ -53,6 +54,7 @@ end
 
 types._uint={[true]={},[false]={}}
 function types.uint(prec,const)
+  err(prec==math.floor(prec), "uint precision should be integer, but is "..tostring(prec) )
   local c = (const==true)
   types._uint[c][prec] = types._uint[c][prec] or setmetatable({kind="uint",precision=prec,constant=c},TypeMT)
   return types._uint[c][prec]
@@ -60,6 +62,7 @@ end
 
 types._int={[true]={},[false]={}}
 function types.int(prec,const)
+  assert(prec==math.floor(prec))
   local c = (const==true)
   types._int[c][prec] = types._int[c][prec] or setmetatable({kind="int",precision=prec,constant=c},TypeMT)
   return types._int[c][prec]
@@ -67,6 +70,7 @@ end
 
 types._float={[true]={},[false]={}}
 function types.float(prec,const)
+  assert(prec==math.floor(prec))
   local c = (const==true)
   types._float[c][prec] = types._float[c][prec] or setmetatable({kind="float",precision=prec,constant=c},TypeMT)
   return types._float[c][prec]
@@ -418,6 +422,8 @@ function types.checkExplicitCast(from, to, ast)
     return true
   elseif from:constSubtypeOf(to) then
     return true
+  elseif to.kind=="bits" and from.kind=="bits" and to:verilogBits()>from:verilogBits() then
+    return true -- allow padding
   elseif to.kind=="bits" or from.kind=="bits" then
     -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
     err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
@@ -432,7 +438,6 @@ function types.checkExplicitCast(from, to, ast)
   elseif from:isTuple() then
     local allbits = foldt( map(from.list, function(n) return n:isBits() end), andop, 'X')
 
-
     if allbits then
       -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
       err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:"..tostring(from).." to "..tostring(to))
@@ -441,8 +446,11 @@ function types.checkExplicitCast(from, to, ast)
       -- casting {A} to A
       return true
     elseif to:isArray() then
-      if #from.list==to:channels() and from.list[1]==to:arrayOver() then
-        -- casting {A} to A[1]
+      local allTheSame = true
+      for k,v in pairs(from.list) do if v~=from.list[1] then allTheSame=false end end
+
+      if allTheSame and #from.list == to:channels() then
+        -- casting {A,A,A,A} to A[4]
         return true
       elseif from.list[1]:isArray() then
         -- we can cast {A[a],A[b],A[c]..} to A[a+b+c]
@@ -450,12 +458,6 @@ function types.checkExplicitCast(from, to, ast)
         map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
         err( channels==to:channels(), "channels don't match") 
         return true
-      else -- casting {A,A,A,A} to A[4]
-        local allTheSame = true
-        for k,v in pairs(from.list) do if v~=from.list[1] then allTheSame=false end end
-        if allTheSame and #from.list == to:channels() then
-          return true
-        end
       end
     end
 
@@ -500,7 +502,7 @@ function types.checkExplicitCast(from, to, ast)
   elseif from.kind=="float" and to.kind=="float" then
     return true
   else
-    print(from,to)
+    print("from",from,"to",to)
     assert(false) -- NYI
   end
 
@@ -608,6 +610,8 @@ function TypeFunctions:makeConst()
     return types.int( self.precision, true )
   elseif self:isBits() then
     return types.bits( self.precision, true )
+  elseif self:isFloat() then
+    return types.float( self.precision, true )
   elseif self:isOpaque() then
     return self -- doesn't matter
   elseif self:isArray() then
@@ -626,6 +630,8 @@ function TypeFunctions:stripConst()
     return types.uint( self.precision, false )
   elseif self:isInt() then
     return types.int( self.precision, false )
+  elseif self:isFloat() then
+    return types.float( self.precision, false )
   elseif self:isOpaque() then
     return self -- doesn't matter
   elseif self:isArray() then
@@ -779,6 +785,8 @@ function TypeFunctions:verilogBits()
   elseif self:isInt() or self:isUint() then
     return self.precision
   elseif self:isBits() then
+    return self.precision
+  elseif self:isFloat() then
     return self.precision
   elseif self:isOpaque() then
     return 0

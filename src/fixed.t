@@ -271,6 +271,37 @@ function fixedASTFunctions:neg()
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
+-- returns a floating exponant for this value, where the mantissa is stored in 'prec' bits.
+function fixedASTFunctions:msb(prec)
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self:isSigned()==false, "msb with signed value")
+
+  return fixed.new{kind="msb", type=types.int(8), precision = prec, inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:float(floatexp, prec)
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( floatexp.type==types.int(8), "float exp should be int8")
+  err( type(prec)=="number", "prec should be number" )
+  assert(prec>0)
+
+  local maxexp = self:exp()+self:precision()-prec
+  local minexp = self:exp()
+  assert(maxexp>minexp)
+
+  local res = fixed.new{kind="float", type=types.uint(prec), inputs={self,floatexp}, loc=getloc()}
+  return res, minexp, maxexp
+end
+
+function fixedASTFunctions:liftFloat(minExp, maxExp, floatExp)
+  err( floatExp.type==types.int(8), "float exp should be int8")
+  assert(maxExp>minExp)
+  assert(self.type:isUint())
+  local ty = fixed.type(false,self.type.precision+maxExp-minExp,minExp)
+  local res = fixed.new{kind="liftFloat", type=ty, inputs={self,floatExp}, loc=getloc()}
+  return res
+end
+
 function fixedASTFunctions:isSigned()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   return self.type.list[1]:isInt()
@@ -427,7 +458,8 @@ function fixedASTFunctions:toTerra()
         elseif dp > 0 then res = `[fixed.extract(n.type):toTerraType()]([args[1]]>>dp)
         else res = `[fixed.extract(n.type):toTerraType()]([args[1]]<<[-dp]) end
       elseif n.kind=="hist" then
-        local g = global(uint[n:precision()])
+        local gpos = global(uint[n:precision()])
+        local gneg = global(uint[n:precision()])
         local gbits = global(uint[n:precision()])
         local terra tfn()
           cstdio.printf("--------------------- %s, exp %d, prec %d\n",n.name, [n:exp()],[n:precision()])
@@ -435,11 +467,11 @@ function fixedASTFunctions:toTerra()
             var r = i+[n:exp()]
             if i==0 then
               -- this always includes 0, and things less than smallest type
-              cstdio.printf("0+: %d\n", g[i])
+              cstdio.printf("0+: %d\n", gpos[i])
             elseif r<0 then
-              cstdio.printf("1/%d: %d\n", i, g[i])
+              cstdio.printf("1/%d: +%d, -%d\n", i, gpos[i], gneg[i])
             else
-              cstdio.printf("%d-%d: %d\n", [uint](cmath.pow(2,r)), [uint](cmath.pow(2,r+1)-1), g[i])
+              cstdio.printf("%d-%d: +%d, -%d\n", [uint](cmath.pow(2,r)), [uint](cmath.pow(2,r+1)-1), gpos[i], gneg[i])
             end
           end
 
@@ -450,9 +482,17 @@ function fixedASTFunctions:toTerra()
         end
         table.insert(hists, tfn)
         res = quote 
-          var v : uint = 0
-          if [args[1]]>0 then v = [uint](cmath.floor(cmath.log([args[1]])/cmath.log(2.f))) end
-          g[v] = g[v] + 1
+          if [args[1]]>0 then 
+            var v : uint = [uint](cmath.floor(cmath.log([args[1]])/cmath.log(2.f))) 
+            gpos[v] = gpos[v] + 1
+          elseif [args[1]]<0 then
+            var v : uint = [uint](cmath.floor(cmath.log(-[args[1]])/cmath.log(2.f))) 
+            gneg[v] = gneg[v] + 1
+          elseif [args[1]]==0 then
+            gneg[0] = gneg[0] + 1
+            gpos[0] = gpos[0] + 1
+          end
+
           --cstdio.printf("%d %d\n",[args[1]],v)
           ------
           for i=0,[n:precision()] do
