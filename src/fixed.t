@@ -1,6 +1,7 @@
 local IR = require("ir")
 local types = require("types")
 local cmath = terralib.includec("math.h")
+local cstdlib = terralib.includec("stdlib.h")
 
 local fixed = {}
 
@@ -67,10 +68,15 @@ __add=function(l,r)
   return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
 end, 
 __sub=function(l,r) 
-  err(l:isSigned() and r:isSigned(), "-: must be signed")
-  err(l:exp()==r:exp(), "-: exp must match")
-  local p = math.max(l:precision(),r:precision())+1
-  return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
+  if l.type:isInt() and r.type:isInt() then
+    assert(l.type==r.type)
+    return fixed.new({kind="binop",op="-",inputs={l,r}, type=l.type, loc=getloc()})
+  else
+    err(l:isSigned() and r:isSigned(), "-: must be signed")
+    err(l:exp()==r:exp(), "-: exp must match")
+    local p = math.max(l:precision(),r:precision())+1
+    return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
+  end
  end,
 __mul=function(l,r) 
   err(l:isSigned() == r:isSigned(), "*: lhs/rhs sign must match but is ("..tostring(l:isSigned())..","..tostring(r:isSigned())..")")
@@ -111,6 +117,12 @@ function fixed.tuple( tab )
   return fixed.new{kind="tuple", inputs=inps, type=types.tuple(ty), loc=getloc()}
 end
 
+function fixed.select( cond,a,b )
+  err( cond.type==types.bool(), "cond should be bool")
+  assert(a.type==b.type)
+  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type, loc=getloc()}
+end
+
 function fixed.array2d( tab, w, h )
   local inps = {}
   for k,v in pairs(tab) do 
@@ -121,7 +133,21 @@ function fixed.array2d( tab, w, h )
 end
 
 function fixed.constant( value, signed, precision, exp )
+  if precision==nil then precision = math.ceil(math.log(value)/math.log(2))+1 end
+  if exp==nil then exp=0 end
+  if signed==nil then 
+    signed = (value<0) 
+    if signed then precision = precision + 1 end
+  end
+
+  err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range")
+
   return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp),inputs={},loc=getloc()}
+end
+
+function fixed.plainconstant( value, ty )
+  assert(types.isType(ty))
+  return fixed.new{kind="plainconstant", value=value, type=ty,inputs={},loc=getloc()}
 end
 
 function fixedASTFunctions:lift(exponant)
@@ -152,9 +178,9 @@ end
 function fixedASTFunctions:pad(precision,exp)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( precision>=self:precision(), "pad shouldn't make precision smaller")
-  err( exp>=self:exp(), "pad shouldn't make exp smaller")
+  err( exp<=self:exp(), "pad shouldn't make exp larger") -- making exponant larger => bits shift right
   local ty = fixed.type(self:isSigned(), precision, exp)
-  return fixed.new{kind="truncate", type=ty,inputs={self},loc=getloc()}
+  return fixed.new{kind="pad", type=ty,inputs={self},loc=getloc()}
 end
 
 -- removes exponant.
@@ -197,12 +223,15 @@ function fixedASTFunctions:rshift(N)
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
 end
 
+--[=[
 function fixedASTFunctions:cast(to)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( fixed.isFixedType(to), "expected cast to fixed type: "..self.loc)
 
   err( self:isSigned()==fixed.extractSigned(to), "sign must match")
   
+  print("CAST",self.type, to)
+
   local res = self
   if fixed.extractExp(to)<res:exp() then
     res = res:rshift( res:exp() - fixed.extractExp(to) )
@@ -213,13 +242,14 @@ function fixedASTFunctions:cast(to)
   if fixed.extractPrecision(to) < res:precision() then
     res = res:truncate(fixed.extractPrecision(to))
   elseif fixed.extractPrecision(to) > res:precision() then
-    res = res:pad(fixed.extractPrecision(to),res:exp())
+    res = res:pad(fixed.extractPrecision(to),)
   end
   
   err( res.type==to, "fixed cast failed, from "..tostring(self.type).." to "..tostring(to))
 
   return res
 end
+]=]
 
 function fixedASTFunctions:index(ix,iy)
   err(self.type:isTuple() or self.type:isArray(), "attempting to index into something other than an array or tuple")
@@ -245,11 +275,13 @@ end
 -- return the sign bit. true: positive (>=0), false: negative
 function fixedASTFunctions:sign()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self:isSigned(), "getting the sign of a unsigned type is futile")
   return fixed.new{kind="sign", type=types.bool(), inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:addSign(inp)
   err( fixed.isAST(inp), "input must be fixed AST" )
+  err( inp.type==types.bool(), "input must be bool")
   err( self:isSigned()==false, "attempting to add sign to something that alreayd has a sign")
   return fixed.new{kind="addSign", type=fixed.type(true,self:precision()+1,self:exp()), inputs={self,inp}, loc=getloc()}
 end
@@ -266,8 +298,8 @@ function fixedASTFunctions:abs()
 end
 
 function fixedASTFunctions:neg()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  err( self:isSigned(), "neg value of a non-signed type is futile")
+  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self.type:isInt() or self:isSigned(), "neg value of a non-signed type is futile")
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
@@ -289,7 +321,7 @@ function fixedASTFunctions:float(floatexp, prec)
   local minexp = self:exp()
   assert(maxexp>minexp)
 
-  local res = fixed.new{kind="float", type=types.uint(prec), inputs={self,floatexp}, loc=getloc()}
+  local res = fixed.new{kind="float", type=types.uint(prec), inputs={self,floatexp}, minexp=minexp, maxexp=maxexp, loc=getloc()}
   return res, minexp, maxexp
 end
 
@@ -298,7 +330,7 @@ function fixedASTFunctions:liftFloat(minExp, maxExp, floatExp)
   assert(maxExp>minExp)
   assert(self.type:isUint())
   local ty = fixed.type(false,self.type.precision+maxExp-minExp,minExp)
-  local res = fixed.new{kind="liftFloat", type=ty, inputs={self,floatExp}, loc=getloc()}
+  local res = fixed.new{kind="liftFloat", type=ty, inputs={self,floatExp}, loc=getloc(), minexp = minExp, maxexp = maxExp}
   return res
 end
 
@@ -350,6 +382,8 @@ function fixedASTFunctions:toSystolic()
         res = args[1]
       elseif n.kind=="constant" then
         res = S.constant( n.value, fixed.extract(n.type) )
+      elseif n.kind=="plainconstant" then
+        res = S.constant( n.value, n.type )
       elseif n.kind=="normalize" or n.kind=="denormalize" then
         local dp = n.inputs[1]:precision()-n:precision()
         if dp==0 then
@@ -396,6 +430,20 @@ function fixedASTFunctions:toSystolic()
         local tsign = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
         res = S.cast(args[1], fixed.extract(n.type) )
         res = S.select(S.eq(tsign,args[2]),res,S.neg(res))
+      elseif n.kind=="msb" then
+        -- NYIIIIIIIIIIIIIII
+        res = S.constant(0,types.int(8))
+      elseif n.kind=="float" then
+        -- NYIIIIIIIIIIIIIII
+        res = S.cast(args[1], n.type)
+      elseif n.kind=="liftFloat" then
+        -- NYIIIIIIIIIIIIIII
+        res = S.cast(args[1], fixed.extract(n.type) )
+      elseif n.kind=="pad" then
+        -- NYIIIIIIIIIIIIIII
+        res = S.cast(args[1], fixed.extract(n.type) )
+      elseif n.kind=="select" then
+        res = S.select(args[1],args[2],args[3])
       else
         print(n.kind)
         assert(false)
@@ -443,6 +491,9 @@ function fixedASTFunctions:toTerra()
         res = args[1]
       elseif n.kind=="constant" then
         res = `[fixed.extract(n.type):toTerraType()](n.value)
+      elseif n.kind=="plainconstant" then
+        --res = `[n.type:toTerraType()](n.value)
+        res = n.type:valueToTerra(n.value)
       elseif n.kind=="rshift" then
         --res = `[fixed.extract(n.type):toTerraType()]([args[1]]>>n.shift)
         res = args[1]
@@ -497,7 +548,9 @@ function fixedASTFunctions:toTerra()
           ------
           for i=0,[n:precision()] do
             var mask = [fixed.extract(n.type):toTerraType()](1) << i
-            if ([args[1]] and mask) > 0 then
+            var inp = [args[1]]
+            if inp<0 then inp = -inp end -- deal with negative numbers
+            if (inp and mask) ~= 0 then
               gbits[i] = gbits[i] + 1
             end
           end
@@ -521,11 +574,17 @@ function fixedASTFunctions:toTerra()
         res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
         res = `[fixed.extract(n.type):toTerraType()](res)
       elseif n.kind=="sign" then
-        res = `terralib.select([args[1]]>=0,true,false)
+        --res = `[args[1]]<0
+        res = quote
+          var r:bool = [args[1]]>=0
+--          cstdio.printf("SIGN inp %d res %d\n",[args[1]],r)
+          in r end
       elseif n.kind=="addSign" then
-        local sign = `terralib.select([args[1]]>=0,true,false)
         res = `[fixed.extract(n.type):toTerraType()]([args[1]])
-        res = `terralib.select([args[2]]==sign,res,-res)
+        res = quote
+          var r = terralib.select([args[2]],res,-res)
+--          cstdio.printf("ADDSIGN inp %d inpsign %d res %d\n",[args[1]],[args[2]],r)
+                        in r end
       elseif n.kind=="neg" then
         res = `-[args[1]]
       elseif n.kind=="tuple" then
@@ -539,6 +598,45 @@ function fixedASTFunctions:toTerra()
         end
 
         res = `arrayof([n.type:arrayOver():toTerraType()], inp)
+      elseif n.kind=="msb" then
+        local minexp = n.inputs[1]:exp()
+        local maxexp = n.inputs[1]:exp()+n.inputs[1]:precision()-n.precision
+        res = quote
+          var msb : int8 = minexp-[n.precision]
+          var tmp = [args[1]] and ( (1 << [n.inputs[1]:precision()])-1)
+          var orig = tmp
+          while tmp>0 do tmp = tmp >> 1; msb=msb+1; end
+          if msb<minexp then msb = minexp end
+--          if msb<[minexp] then cstdio.printf("msb below minexp\n");cstdlib.exit(1); end
+          if msb>[maxexp] then cstdio.printf("msb above maxexp, msb %d max %d prec %d\n",msb,maxexp,[n.inputs[1]:precision()]);cstdlib.exit(1); end
+          
+          var flt = [args[1]] >> (msb-[minexp])
+          flt = flt << (msb-[minexp])
+          --cstdio.printf("MSB inp %d, realinp %d, inp_precision %d, msb %d flt %d\n",orig, [args[1]], [n.inputs[1]:precision()], msb,flt)
+--          cstdio.printf("MSB %d min %d max %d\n",msb,minexp,maxexp)
+          in msb end
+      elseif n.kind=="float" then
+        res = quote
+          if [args[2]]<[n.minexp] then cstdio.printf("Float below minexp\n") end
+          if [args[2]]>[n.maxexp] then cstdio.printf("Float above maxexp\n") end
+          var r = [args[1]]>>([args[2]]-[n.minexp])
+          in [n.type:toTerraType()](r) end
+      elseif n.kind=="liftFloat" then
+        print("LIFTFLOAT",n.type)
+        res = quote
+          if [args[2]]<[n.minexp] then cstdio.printf("LiftFloat below minexp is:%d expected%d\n",[args[2]],[n.minexp]) end
+          if [args[2]]>[n.maxexp] then cstdio.printf("LiftFloat exp %d above maxexp %d\n",[args[2]],[n.maxexp]) end
+          var inp : fixed.extract(n.type):toTerraType() = [args[1]]
+          var r = inp<<([args[2]]-[n.minexp])
+          --cstdio.printf("liftFloat v %d exp %d minexp %d out %d\n",[args[1]], [args[2]], [n.minexp], r)
+          in [fixed.extract(n.type):toTerraType()](r) end
+      elseif n.kind=="pad" then
+        local lshift = n.inputs[1]:exp() - n:exp()
+        assert(lshift>=0)
+--        print("PADLSHIFT",lshift)
+        res = `([fixed.extract(n.type):toTerraType()]([args[1]])) << lshift
+      elseif n.kind=="select" then
+        res = `terralib.select([args[1]],[args[2]],[args[3]])
       else
         print(n.kind)
         assert(false)

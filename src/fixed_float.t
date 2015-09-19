@@ -67,6 +67,12 @@ function fixed.tuple( tab )
   return fixed.new{kind="tuple", inputs=inps, type=types.tuple(ty), loc=getloc()}
 end
 
+function fixed.select( cond,a,b )
+  err( cond.type==types.bool(), "cond should be bool")
+  assert(a.type==b.type)
+  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type, loc=getloc()}
+end
+
 function fixed.array2d( tab, w, h )
   assert(type(w)=="number")
   assert(type(h)=="number" or h==nil)
@@ -82,6 +88,11 @@ end
 function fixed.constant( value, signed, precision, exp )
   assert(exp==nil or exp==0)
   return fixed.new{kind="constant", value=value, type=types.float(32),inputs={},loc=getloc()}
+end
+
+function fixed.plainconstant( value, ty )
+  assert(types.isType(ty))
+  return fixed.new{kind="plainconstant", value=value, type=ty,inputs={},loc=getloc()}
 end
 
 function fixedASTFunctions:lift(exponant)
@@ -156,7 +167,7 @@ end
 
 -- return the sign bit. true: positive (>=0), false: negative
 function fixedASTFunctions:sign()
-  assert(false)
+  return fixed.new{kind="sign", type=types.bool(), inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:addSign(inp)
@@ -185,13 +196,12 @@ end
 
 function fixedASTFunctions:exp()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  local op = self.type.list[2]
-  return tonumber(op.str:sub(6))
+  return 32
 end
 
 function fixedASTFunctions:precision()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  return self.type.list[1].precision
+  return 32
 end
 
 function fixedASTFunctions:toSystolic()
@@ -222,6 +232,8 @@ function fixedASTFunctions:toSystolic()
         res = S.cast(args[1],n.type)
       elseif n.kind=="constant" then
         res = S.constant( n.value, fixed.extract(n.type) )
+      elseif n.kind=="plainconstant" then
+        res = S.constant( n.value, n.type )
       elseif n.kind=="normalize" or n.kind=="denormalize" or n.kind=="invert" then
         res = args[1]
       elseif n.kind=="hist" then
@@ -242,6 +254,8 @@ function fixedASTFunctions:toSystolic()
         res = S.cast(S.tuple(args),n.type)
       elseif n.kind=="addSign" then
         res = args[1]
+      elseif n.kind=="select" then
+        res = S.select(args[1],args[2],args[3])
       else
         print(n.kind)
         assert(false)
@@ -292,13 +306,17 @@ function fixedASTFunctions:toTerra()
         res = `[n.type:toTerraType()]([args[1]])
       elseif n.kind=="constant" then
         res = `[n.type:toTerraType()](n.value)
+      elseif n.kind=="plainconstant" then
+        res = n.type:valueToTerra(n.value)
       elseif n.kind=="rshift" then
         res = `[args[1]]/cmath.pow(2,n.shift)
       elseif n.kind=="truncate" or n.kind=="hist" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="toSigned" then
         res = args[1]
       elseif n.kind=="abs" then
         res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
-      elseif n.kind=="sign" or n.kind=="addSign" then
+      elseif n.kind=="sign" then
+        res = `[args[1]]>=0
+      elseif n.kind=="addSign" then
         assert(false)
       elseif n.kind=="neg" then
         res = `-[args[1]]
@@ -308,6 +326,8 @@ function fixedASTFunctions:toTerra()
         res = `arrayof([n.type:arrayOver():toTerraType()], args)
       elseif n.kind=="invert" then
         res = `terralib.select([args[1]]==0,[float](0),1.f/[args[1]])
+      elseif n.kind=="select" then
+        res = `terralib.select([args[1]],[args[2]],[args[3]])
       else
         print(n.kind)
         assert(false)

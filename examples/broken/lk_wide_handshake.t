@@ -22,22 +22,29 @@ local PadRadius = window/2
 internalW = W+window
 internalH = H+window
 
-function invtable(exp)
-  local out = {}
-  local terra inv(a:uint32) 
-    if a==0 then 
-      return 0 
-    else
-      var o = [math.pow(2,exp)]/a
-      if o>255 then return 255 end
-      return o
-    end 
-  end
-
-  for i=0,math.pow(2,exp)-1 do table.insert(out, inv(i)) end
-  return out
+function toUint8Sign(ty)
+  assert(f.FLOAT or f.extractSigned(ty))
+  local inp = f.parameter("touint8",ty)
+  local outtype = types.array2d(types.uint(8),2)
+  local out = f.select(inp:sign(),f.plainconstant({255,255},outtype), f.plainconstant({0,0},outtype))
+  return out:toDarkroom("toUint8")
 end
 
+function toUint8(ty)
+  local inp = f.parameter("touint8",ty)
+
+  if f.FLOAT then
+    local out = inp*f.constant(2^10)
+    local out = out:lower(types.uint(8))
+    local out = f.array2d({out,out},2)
+    return out:toDarkroom("toUint8")
+  else
+    inp = inp*f.constant(2^10,inp:isSigned())
+    local out = inp:abs():denormalize():truncate(8):lower()
+    local out = f.array2d({out,out},2)
+    return out:toDarkroom("toUint8")
+  end
+end
 -- note that we use our convetion here:
 -- index 0,0 is bottom left of matrix. index 1,1 is top right
 -- Atype: type of entries of A matrix
@@ -56,37 +63,33 @@ function invert2x2( AType )
   else
     --------
     local finp = f.parameter( "finp", types.array2d(AType,4) )
-    local fdenom = (finp:index(0):hist("matrix0"))*finp:index(3)-finp:index(1)*finp:index(2)
-    --fdenom = fdenom:hist("denom"):truncate(30):normalize(10)
-    local signbit = fdenom:sign()
-    local fdenom = fdenom:abs() -- fdenom now uint8.e
-    print("denom prec", fdenom:precision())
-    local denom_exp = fdenom:exp()
-    local denom_prec = fdenom:precision()
-    print("denom exp", denom_exp)
-    local fdenom_floatexp = fdenom:msb(8)
-    local fdenom, fdenom_minexp, fdenom_maxexp = fdenom:float(fdenom_floatexp,8) -- fdenom is now uint8
-    local fdenom = f.tuple{fdenom,signbit,fdenom_floatexp}
+    local fdenom = ((finp:index(0):hist("matrix0"))*finp:index(3))-(finp:index(1)*finp:index(2))
+    fdenom = fdenom:normalize(31)
+    fdenom = fdenom:hist("fdenom")
+    local fdenom_type = fdenom.type
     fdenom = fdenom:toDarkroom("denom")
     --------
     
-    local lutbits = 8
     local denom = d.apply("denom", fdenom, inp)
-    local denom_denom = d.apply("denom_denom", d.index(fdenom.outputType,0), denom)
-    local denom_signbit = d.apply("denom_signbit", d.index(fdenom.outputType,1), denom)
-    local det = d.apply("det", d.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), denom_denom)
+    local fdetfn, fdet_type = C.lutinvert(fdenom_type)
+    local det = d.apply("det", fdetfn, denom)
     
     ---------
-    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), types.uint(8), types.bool(), types.uint(8)} )
+    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type} )
     local fmatrix = finp:index(0)
-    local fsignbit = finp:index(2)
-    local floatexp = finp:index(3)
-    local fdet = finp:index(1):liftFloat( -fdenom_maxexp-lutbits, -fdenom_minexp-lutbits, floatexp:neg()-f.plainconstant(lutbits) ):addSign(fsignbit):hist("fdet")
-    local I0 = (fdet*fmatrix:index(3)):hist("invert2x2_output0")
-    output_type = I0.type
-    local fout = f.array2d({I0, fdet:neg()*fmatrix:index(1), fdet:neg()*fmatrix:index(2), fdet*fmatrix:index(0)},4)
+    local fdet = finp:index(1)
+
+    local OT = {(fdet*fmatrix:index(3)):hist("invert2x2_output0"), ((fdet:neg())*fmatrix:index(1)), ((fdet:neg())*fmatrix:index(2)), (fdet*fmatrix:index(0))}
+
+    for k,v in pairs(OT) do
+      OT[k] = v:normalize(34):truncate(19)
+    end
+
+    output_type = OT[1].type
+
+    local fout = f.array2d(OT,4)
     ---------
-    out = d.apply("out", fout:toDarkroom("fout"), d.tuple("ftupp",{inp,det, denom_signbit}))
+    out = d.apply("out", fout:toDarkroom("fout"), d.tuple("ftupp",{inp,det}))
   end
 
   print("invert2x2 output type:", output_type)
@@ -116,7 +119,8 @@ makeSumReduce = memoize(function(inputType)
                           assert(types.isType(inputType))
   print("MakeReduceSum",inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})
-  local O = (finp:index(0)+finp:index(1)):cast(inputType)
+  local inp0 = finp:index(0)
+  local O = (inp0+finp:index(1)):truncate(inp0:precision())
   return O:toDarkroom("rsum_"..tostring(inputType))
                         end)
 
@@ -179,11 +183,13 @@ function makeB(dtype)
   local gmf = d.tuple("mfgmf",{frame1,frame0})
   gmf = d.apply("SA",d.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type = minus(types.uint(8))
+  print("GMF type", gmf_type)
   gmf = d.apply("SSM",d.map(m,window,window), gmf)
   ---------
 
   local partial = makePartial( dtype, gmf_type)
   local partial_type = partial[2]
+  print("MakeB Partial Type",partial_type)
   partial = partial[1]
   local rsum = makeSumReduce(partial_type)
 
@@ -210,8 +216,8 @@ function solve(AinvType, btype)
   local inp = f.parameter( "solveinp", types.tuple{types.array2d(AinvType,4), types.array2d(btype,2)} )
   local Ainv = inp:index(0)
   local b = inp:index(1)
-  local out_0 = (Ainv:index(0)*(b:index(0):neg()) + Ainv:index(1)*(b:index(1):neg()))
-  local out_1 = Ainv:index(2)*(b:index(0):neg()) + Ainv:index(3)*(b:index(1):neg())
+  local out_0 = (Ainv:index(0)*(b:index(0):neg())) + (Ainv:index(1)*(b:index(1):neg()))
+  local out_1 = (Ainv:index(2)*(b:index(0):neg())) + (Ainv:index(3)*(b:index(1):neg()))
   local out = f.array2d({out_0,out_1},2)
   print("Solve Output Type", out_0.type,out.type,Ainv.type)
   return out:toDarkroom("solve"), out_0.type
@@ -224,8 +230,8 @@ function display(inpType)
   local out = {}
   for i=0,1 do
     local I = inp:index(i)
-    local B = I*f.constant(32,true,6,0)
-    local FF = (B+f.constant(128,true,8,0):cast(B.type)):abs()
+    local B = I*f.constant(32,true,7,0)
+    local FF = (B+f.constant(128,true,9,0):pad(B:precision(),B:exp())):abs()
     local FF_den = FF:denormalize()
     print("FFDEN TYPE",FF_den.type)
     local FF_trunc = FF_den:truncate(8)
@@ -265,15 +271,22 @@ function makeLK()
   local fAinv, AInvType = invert2x2(AType)
   local Ainv = d.apply("Ainv", fAinv, A)
 
+
   local fB, BType = makeB(dType)
   local f0_slice = d.apply("f0slice", d.slice(st_type, 0, window-1, 0, window-1), lb0)
   local f1_slice = d.apply("f1slice", d.slice(st_type, 0, window-1, 0, window-1), lb1)
   local b = d.apply("b",fB, d.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
+
+
+--  local A0 = d.apply("A0", d.index(fB.outputType,1),b)
+--  local fdx_dbg = d.apply("fdx_dbg", toUint8Sign(BType), A0)
+
+
   local fSolve, SolveType = solve(AInvType,BType)
   local vectorField = d.apply("solve", fSolve, d.tuple("solveinp",{Ainv,b}))
   
   local out = d.apply("display", display(SolveType), vectorField)
-
+--out=fdx_dbg
   return d.lambda("LK",inp,out)
 end
 
@@ -292,4 +305,4 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE,
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,1,4)), out )
 local hsfn = d.lambda("hsfn", hsfninp, out)
 
-harness.axi( "lk_wide_handshake", hsfn, "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+harness.axi( "lk_wide_handshake"..sel(f.FLOAT,"_float",""), hsfn, "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)

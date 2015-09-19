@@ -228,4 +228,74 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
 end
 
 -------------
+local function invtable(exp)
+  local out = {}
+  local terra inv(a:uint32) 
+    if a==0 then 
+      return 0 
+    else
+      var o = [math.pow(2,exp)]/a
+      if o>255 then return 255 end
+      return o
+    end 
+  end
+
+  for i=0,math.pow(2,exp)-1 do table.insert(out, inv(i)) end
+  return out
+end
+
+function C.lutinvert(ty)
+  local fixed = require "fixed"
+  fixed.expectFixed(ty)
+  local signed = fixed.extractSigned(ty)
+
+  --------------------
+  local ainp = fixed.parameter("ainp",ty)
+  local a = ainp:hist("lutinvert_input")
+  local a_sign
+  if signed then 
+    a_sign = a:sign()
+    a = a:abs()
+  end
+  local a_exp = a:msb(8)
+  local a_float, a_min, a_max = a:float(a_exp,8)
+  local aout
+  if signed then
+    aout = fixed.tuple({a_float,a_exp,a_sign})
+  else
+    aout = fixed.tuple({a_float,a_exp})
+  end
+  local afn = aout:toDarkroom("lutinvert_a")
+  --------------------
+  local lutbits = 8
+  ------------
+  local binp
+  if signed then
+    binp = fixed.parameter("binp", types.tuple{types.uint(8),types.int(8),types.bool()} )
+  else
+    binp = fixed.parameter("binp", types.tuple{types.uint(8),types.int(8)} )
+  end
+  local b_inv = binp:index(0)
+  local b_exp = binp:index(1)
+  local b = b_inv:liftFloat(-a_max-lutbits,-a_min-lutbits, b_exp:neg()-fixed.plainconstant(lutbits, types.int(8)) )
+  if signed then b = b:addSign(binp:index(2)) end
+  b = b:hist("lutinvert_output")
+  local bfn = b:toDarkroom("lutinvert_b")
+  ---------------
+
+  local inp = d.input( ty )
+  local aout = d.apply( "a", afn, inp )
+  local aout_float = d.apply("aout_float", d.index(afn.outputType,0), aout)
+  local aout_exp = d.apply("aout_exp", d.index(afn.outputType,1), aout)
+  local aout_sign
+  if signed then aout_sign = d.apply("aout_sign", d.index(afn.outputType,2), aout) end
+
+  local inv = d.apply("inv", d.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float)
+  local out = d.apply( "b", bfn, d.tuple("binp",{inv,aout_exp,aout_sign}) )
+  local fn = d.lambda( "lutinvert", inp, out )
+
+  return fn, fn.outputType
+end
+
+-------------
 return C
