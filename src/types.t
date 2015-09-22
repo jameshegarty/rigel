@@ -619,6 +619,8 @@ function TypeFunctions:makeConst()
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
+  elseif self:isTuple() then
+    return types.tuple(map(self.list,function(t) return t:makeConst() end ) )
   elseif self:isBool() then
     return types.bool(true)
   else

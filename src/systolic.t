@@ -20,7 +20,7 @@ function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
   assert(#tab.inputs==keycount(tab.inputs))
-  if tab.name==nil then tab.name="unnamed"..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
+  if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
   if tab.pipelined==nil then tab.pipelined=true end
@@ -642,7 +642,9 @@ function systolicASTFunctions:removeDelays( )
       -- they have a valid bit b/c their semantics say they shift whenever the function is called
       local CENAME=""
       if cebit~=nil then CENAME="_CE"..cebit.name end
-      local reg = systolic.module.reg( node.type, cebit~=nil ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME):setCoherent(false)
+      local hasvalid = true
+      if validbit==nil or validbit.kind=="null" then hasvalid=false end
+      local reg = systolic.module.reg( node.type, cebit~=nil, nil, hasvalid ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME):setCoherent(false)
       table.insert( pipelineRegisters, reg )
       local d = getDelayed(node, delay-1, validbit, cebit)
       delayCache[node][validbit][celookup][delay] = reg:delay( d, validbit, cebit )
@@ -678,6 +680,8 @@ function systolicASTFunctions:internalDelay()
     end
   elseif self.kind=="tuple" or self.kind=="callArbitrate" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
     return 0,0 -- purely wiring, or inputs
+  elseif self.kind=="delay" then
+    return 0,0
   else
     print("KIND",self.kind)
     assert(false)
@@ -726,30 +730,11 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
   local pipelineRegisters = {}
   local fnDelays = {}
 
-  local delayCache = {}
   local function getDelayed( node, delay, orig )
     assert( systolic.isAST(orig) )
-
-    -- if node is a constant, we don't need to put it in a register.
-    if node.type:const() then return node end
-    
-    delayCache[node] = delayCache[node] or {}
-    if delay==0 then return node
-    elseif delayCache[node][delay]==nil then
-      -- pipeline registers don't have a valid bit (valid==false is a pipeline bubble, we just want it to pass down the pipe)
-      -- They do however have a CE (if the pipe stalls, we want the pipeline registers to stall)
-
-      assert(stallDomains[orig]~=nil)
-      local hasCE = false
-      local CE
-      if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then hasCE, CE = true, stallDomains[orig] end
-      
-      local reg = systolic.module.reg( node.type, hasCE, nil, false ):instantiate(node.name.."_pipeline"..delay):setCoherent(false)
-      table.insert( pipelineRegisters, reg )
-      local d = getDelayed(node, delay-1, orig)
-      delayCache[node][delay] = reg:delay( d, systolic.null(), CE )
-    end
-    return delayCache[node][delay]
+    local CE
+    if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then CE = stallDomains[orig] end
+    return systolicAST.new{kind="delay",delay=delay,inputs={node,systolic.null(),CE},type=node.type,loc=getloc()}
   end
 
   local finalOut = self:process(
@@ -814,28 +799,35 @@ function systolicASTFunctions:calculateStallDomains()
         return n.fn.CE
       elseif n:parentCount(self)==0 then
         return "___UNKNOWN"
-      elseif n.type:const() then
-        return "___CONST"
       else
         local seen
+        local seenloc
         for k,v in pairs(args) do
           if seen==nil or seen=="___NOSTALL" or seen=="___CONST" then
             seen = v
+            seenloc = k.loc
           elseif v~="___NOSTALL" and v~="___CONST" then
-            if seen~=v then 
+            -- notice: it's OK if something constant ends up under multiple stall domains, just surpress the error.
+            -- if somehow something constant has a unconstant input (can happen with slice), and that ends up having 
+            -- multiple stall domains, then that's an error. So we keep going to make sure that doesn't happen.
+            if seen~=v and n.type:const()==false then 
               print("multiple stall LOC",n.loc) 
               if type(seen)=="string" then
                 print("Domain 1:"..seen)
               else
                 print("Domain 1:"..seen.name)
               end
+              print("Domain 1 Site:"..seenloc)
               if type(v)=="string" then
                 print("Domain 2:"..v)
               else
                 print("Domain 2:"..v.name)
               end
+              print("Domain 2 Site:"..k.loc)
+
+              print("Op is under multiple stall domains! "..tostring(seen).." "..tostring(v).."KIND:"..n.kind.."TYPE:"..tostring(n.type) )
+              assert(false)
             end
-            err( seen==v, "Op is under multiple stall domains! "..tostring(seen).." "..tostring(v).."KIND:"..n.kind.."TYPE:"..tostring(n.type) )
           end
         end
         assert(seen~=nil)
@@ -1633,6 +1625,17 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
 
 
   t.ast = t:lower()
+
+  -- the idea here is that we first do the pipelineing, before _any_ CSE.
+  -- the reason is that pipeline registers need a clock enable. For callsites under multiple
+  -- domains, we want to create multiple sets of pipelining registers for them (with different CE's)
+  -- Running pipelining before CSE allows that to happen. Then, we run CSE after. If pipeline registers ended up with same CE, they should be deduped.
+  if onlyWire==nil or onlyWire==false then
+    local pipelineRegisters
+    local stallDomains = t.ast:calculateStallDomains()
+    t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline(stallDomains)
+  end
+
   t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
   t.ast = t.ast:mergeCallsites()
 
@@ -1640,18 +1643,12 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   t.ast, delayRegisters = t.ast:removeDelays()
   t.instances = concat(t.instances, delayRegisters)
 
+  t.ast = t.ast:CSE()
+
   map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
 
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
-  
-  if onlyWire==nil or onlyWire==false then
-    local pipelineRegisters
-    local stallDomains = t.ast:calculateStallDomains()
-    t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline(stallDomains)
-    t.ast = t.ast:CSE() -- after pipeline bits are cleared, some more stuff can be CSE'd
-    map( pipelineRegisters, function(p) table.insert( t.instances, p ) end )
-  end
 
   return t
 end

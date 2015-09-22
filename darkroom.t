@@ -4098,7 +4098,7 @@ function darkroom.fwriteSeq( filename, ty )
   err( types.isType(ty), "type must be a type")
   darkroom.expectBasic(ty)
   local filenameVerilog=filename
-  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0}
+    local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 

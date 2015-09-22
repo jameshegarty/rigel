@@ -63,8 +63,11 @@ setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
   if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
-    assert(l.type==r.type)
-    return fixed.new({kind="binop",op="+",inputs={l,r}, type=l.type, loc=getloc()})
+    local ty
+    if l.type==r.type then ty=l.type -- keep constness
+    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    else assert(false) end
+    return fixed.new({kind="binop",op="+",inputs={l,r}, type=ty, loc=getloc()})
   else
     err(l:isSigned()==r:isSigned(), "+: sign must match")
     err(l:exp()==r:exp(), "+: exp must match")
@@ -74,8 +77,12 @@ __add=function(l,r)
 end, 
 __sub=function(l,r) 
   if l.type:isInt() and r.type:isInt() then
-    assert(l.type==r.type)
-    return fixed.new({kind="binop",op="-",inputs={l,r}, type=l.type, loc=getloc()})
+    local ty
+    if l.type==r.type then ty=l.type -- keep constness
+    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    else assert(false) end
+
+    return fixed.new({kind="binop",op="-",inputs={l,r}, type=ty, loc=getloc()})
   else
     err(l:isSigned() and r:isSigned(), "-: must be signed")
     err(l:exp()==r:exp(), "-: exp must match")
@@ -151,12 +158,12 @@ function fixed.constant( value, signed, precision, exp )
 
   err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
-  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp),inputs={},loc=getloc()}
+  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
 end
 
 function fixed.plainconstant( value, ty )
   assert(types.isType(ty))
-  return fixed.new{kind="plainconstant", value=value, type=ty,inputs={},loc=getloc()}
+  return fixed.new{kind="plainconstant", value=value, type=ty:makeConst(),inputs={},loc=getloc()}
 end
 
 function fixedASTFunctions:lift(exponant)
@@ -442,9 +449,10 @@ function fixedASTFunctions:toSystolic()
 
         res = S.cast(S.tuple(inp),n.type)
       elseif n.kind=="addSign" then
-        local tsign = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
+        --local tsign = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
         res = S.cast(args[1], fixed.extract(n.type) )
-        res = S.select(S.eq(tsign,args[2]),res,S.neg(res))
+        --res = S.select(S.eq(tsign,args[2]),res,S.neg(res))
+        res = S.select(args[2],res,S.neg(res))
       elseif n.kind=="msb" then
         local bits = n.inputs[1]:precision()
         local minexp = n.inputs[1]:exp()
@@ -452,17 +460,19 @@ function fixedASTFunctions:toSystolic()
         for i=0,bits-1 do
           local bittrue = S.bitSlice(args[1],i,i)
           bittrue = S.cast(bittrue,types.bool())
-          table.insert(tab, S.tuple{bittrue,S.constant(i-minexp-n.precision,types.int(8))} )
+          table.insert(tab, S.tuple{bittrue,S.constant(i-minexp-n.precision+1,types.int(8))} )
         end
 
-        local out = foldt(tab,function(l,r) return S.select(S.index(l,0),l,r) end, 'X')
+        local out = foldt(tab,function(l,r) return S.select(S.index(r,0),r,l) end, 'X')
 
         res = S.select(S.eq(args[1],S.constant(0,fixed.extract(n.inputs[1].type))),S.constant(minexp,types.int(8)),S.index(out,1))
       elseif n.kind=="float" then
         local lshiftamt = S.cast(S.constant(n.minexp,types.int(8))-args[2],types.uint(8))
         local lshift = S.lshift(args[1],lshiftamt)
+
         local rshiftamt = S.cast(args[2]-S.constant(n.minexp,types.int(8)), types.uint(8))
         local rshift = S.rshift(args[1],rshiftamt)
+
         res = S.select(S.lt(args[2],S.constant(n.minexp,types.int(8))),lshift,rshift)
         res = S.cast(res,n.type)
       elseif n.kind=="liftFloat" then
