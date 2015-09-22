@@ -228,22 +228,63 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
 end
 
 -------------
-local function invtable(exp)
+local function invtable(bits)
   local out = {}
   local terra inv(a:uint32) 
     if a==0 then 
       return 0 
     else
-      var o = [math.pow(2,exp)]/a
+      var o = ([math.pow(2,17)]/([uint32](255)+a))-[uint32](256)
       if o>255 then return 255 end
       return o
     end 
   end
 
-  for i=0,math.pow(2,exp)-1 do table.insert(out, inv(i)) end
+  local function round(x) if (x%1>=0.5) then return math.ceil(x) else return math.floor(x) end end
+
+  for i=0,math.pow(2,bits)-1 do 
+    --local v = inv(i)
+    --
+    local v = (math.pow(2,17)/(256+i)) - 256
+    if v>255 then v = 255 end
+    v = round(v)
+    print("LUT ",i,v)
+    table.insert(out, v) 
+  end
   return out
 end
 
+function stripMSB(totalbits)
+  local ITYPE = types.uint(totalbits)
+  local inp = d.input(ITYPE)
+  local sinp = S.parameter("sinp",types.uint(totalbits))
+--  local sout = S.bitSlice(sinp,0,7)
+  local sout = S.cast(sinp,types.uint(totalbits-1))
+  return darkroom.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,
+                       terra(inp:&uint16, out:&uint8)
+--                         @out = @inp
+                         var ot : uint8 = @inp
+                         cstdio.printf("stripmsb %d to %d\n",@inp,ot)
+                         @out = ot
+                       end,sinp,sout)
+end
+
+-- We want to calculate 1/x
+--
+-- we take the input x, and convert it to the floating point representation 1.ffffffff * 2^n
+-- where f is the fractional component.
+--
+-- observe that (1/(1+fffff)) is between 0.5 and 1
+--
+-- in integer form, we have input 9 bit input in form (2^8+ffffffff) * 2^n
+-- So we compute 2^9/((2^8+ffffffff)*2^n) = 2^(-n) * (2^9 / (2^8+ffffffff) )
+--
+-- put the (2^9 / (2^8+ffffffff) ) part in a lookup table. Since this is from 0.5 to 1,
+-- we normalize to make good use of the bits in the LUT:
+-- (2^17 / (2^8 + ffffffff)) - 256, which goes from 0 to 255
+--
+-- Plug this back in, and to find the real value, we have:
+-- LUT(ffffffff) + 256, which has exponant n-17
 function C.lutinvert(ty)
   local fixed = require "fixed"
   fixed.expectFixed(ty)
@@ -257,8 +298,8 @@ function C.lutinvert(ty)
     a_sign = a:sign()
     a = a:abs()
   end
-  local a_exp = a:msb(8)
-  local a_float, a_min, a_max = a:float(a_exp,8)
+  local a_exp = a:msb(9)
+  local a_float, a_min, a_max = a:float(a_exp,9)
   local aout
   if signed then
     aout = fixed.tuple({a_float,a_exp,a_sign})
@@ -277,7 +318,7 @@ function C.lutinvert(ty)
   end
   local b_inv = binp:index(0)
   local b_exp = binp:index(1)
-  local b = b_inv:liftFloat(-a_max-lutbits,-a_min-lutbits, b_exp:neg()-fixed.plainconstant(lutbits, types.int(8)) )
+  local b = (b_inv:cast(types.uint(9))+fixed.plainconstant(256,types.uint(9))):liftFloat(-a_max-17,-a_min-17+8, b_exp:neg()-fixed.plainconstant(17, types.int(8)) )
   if signed then b = b:addSign(binp:index(2)) end
   b = b:hist("lutinvert_output")
   local bfn = b:toDarkroom("lutinvert_b")
@@ -290,7 +331,9 @@ function C.lutinvert(ty)
   local aout_sign
   if signed then aout_sign = d.apply("aout_sign", d.index(afn.outputType,2), aout) end
 
-  local inv = d.apply("inv", d.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float)
+  local aout_float_lsbs = d.apply("aout_float_lsbs", stripMSB(9), aout_float)
+
+  local inv = d.apply("inv", d.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
   local out = d.apply( "b", bfn, d.tuple("binp",{inv,aout_exp,aout_sign}) )
   local fn = d.lambda( "lutinvert", inp, out )
 

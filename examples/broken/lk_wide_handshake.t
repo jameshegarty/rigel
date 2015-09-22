@@ -7,8 +7,8 @@ local C = require "examplescommon"
 local cstdio = terralib.includec("stdio.h")
 local cstring = terralib.includec("string.h")
 local harness = require "harness"
---local f = require "fixed_float"
-local f = require "fixed"
+local f = require "fixed_float"
+--local f = require "fixed"
 
 W = 128
 H = 128

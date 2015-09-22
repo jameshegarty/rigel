@@ -13,11 +13,10 @@ W = 128
 H = 64
 T = 8
 
-
-
 ------------
 local ainp = fixed.parameter("ainp",types.uint(8))
-local a = (ainp:lift(0)*ainp:lift(0)*fixed.constant(256,false,9,-8)):hist("a_norm")
+--local a = (ainp:lift(0)*ainp:lift(0)*fixed.constant(256,false,9,-8)):hist("a_norm")
+local a = (ainp:lift(0)*ainp:lift(0)):hist("a_norm")
 a = a:toSigned()
 local afn = a:toDarkroom("a")
 ------------

@@ -1144,7 +1144,8 @@ function systolicASTFunctions:toVerilog( module )
             return "{"..bitdiff.."'b0,"..expr.."}"
           elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
             -- casting smaller int to larger int. must sign extend
-            return "{ {"..(8*(toType:sizeof() - fromType:sizeof())).."{"..expr.."["..(fromType:sizeof()*8-1).."]}},"..expr.."["..(fromType:sizeof()*8-1)..":0]}"
+            expr = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )
+            return "{ {"..(toType:verilogBits() - fromType:verilogBits()).."{"..expr.."["..(fromType:verilogBits()-1).."]}},"..expr.."["..(fromType:verilogBits()-1)..":0]}"
           elseif (fromType:isUint() or fromType:isInt()) and (toType:isInt() or toType:isUint()) and fromType.precision>toType.precision then
             -- truncation. I don't know how this works
             local exp = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for truncation")
@@ -1239,7 +1240,9 @@ function systolicASTFunctions:toVerilog( module )
               local lhs = n.inputs[1]
               local rhs = n.inputs[2]
               if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
-                res = "($signed("..args[1]..")"..n.op.."$signed("..args[2].."))"
+                local lhsv = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for $signed")
+                local rhsv = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, args[2], "// wire for $signed")
+                res = "($signed("..lhsv..")"..n.op.."$signed("..rhsv.."))"
               elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
                 res = "(("..args[1]..")"..n.op.."("..args[2].."))"
               else
@@ -1254,9 +1257,15 @@ function systolicASTFunctions:toVerilog( module )
               local op = binopToVerilog[n.op]
               if type(op)~="string" then print("OP",n.op); assert(false) end
               local lhs = args[1]
-              if n.inputs[1].type:baseType():isInt() then lhs = "$signed("..lhs..")" end
+              if n.inputs[1].type:baseType():isInt() then 
+                lhs = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, lhs, "// wire for $signed")
+                lhs = "$signed("..lhs..")" 
+              end
               local rhs = args[2]
-              if n.inputs[2].type:baseType():isInt() then rhs = "$signed("..rhs..")" end
+              if n.inputs[2].type:baseType():isInt() then 
+                rhs = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, rhs, "// wire for $signed")
+                rhs = "$signed("..rhs..")" 
+              end
               res = "("..lhs..op..rhs..")"
             end
 
@@ -1269,10 +1278,7 @@ function systolicASTFunctions:toVerilog( module )
                 assert(false)
               end
             elseif n.op=="-" then
-              assert(n.type:baseType():isInt())
-              table.insert(resDeclarations, declareReg(n.type:baseType(), callsite..n:cname(c)))
-              table.insert(resClockedLogic, callsite..n:cname(c).." <= -"..inputs.expr[c].."; // unary sub")
-              res = callsite..n:cname(c)
+              res = "(-"..args[1]..")"
             elseif n.op=="not" then
               res = "(~"..args[1]..")"
             elseif n.op=="isX" then

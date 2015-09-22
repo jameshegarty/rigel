@@ -62,10 +62,15 @@ setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
 fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
-  err(l:isSigned()==r:isSigned(), "+: sign must match")
-  err(l:exp()==r:exp(), "+: exp must match")
-  local p = math.max(l:precision(),r:precision())+1
-  return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
+  if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
+    assert(l.type==r.type)
+    return fixed.new({kind="binop",op="+",inputs={l,r}, type=l.type, loc=getloc()})
+  else
+    err(l:isSigned()==r:isSigned(), "+: sign must match")
+    err(l:exp()==r:exp(), "+: exp must match")
+    local p = math.max(l:precision(),r:precision())+1
+    return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
+  end
 end, 
 __sub=function(l,r) 
   if l.type:isInt() and r.type:isInt() then
@@ -133,14 +138,18 @@ function fixed.array2d( tab, w, h )
 end
 
 function fixed.constant( value, signed, precision, exp )
-  if precision==nil then precision = math.ceil(math.log(value)/math.log(2))+1 end
-  if exp==nil then exp=0 end
   if signed==nil then 
     signed = (value<0) 
+  end
+
+  if precision==nil then 
+    precision = math.ceil(math.log(value)/math.log(2))+1 
     if signed then precision = precision + 1 end
   end
 
-  err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range")
+  if exp==nil then exp=0 end
+
+  err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
   return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp),inputs={},loc=getloc()}
 end
@@ -221,6 +230,12 @@ end
 function fixedASTFunctions:rshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:cast(to)
+  assert( fixed.isFixedType(self.type)==false )
+  assert(types.isType(to))
+  return fixed.new{kind="cast",type=to, inputs={self}, loc=getloc()}
 end
 
 --[=[
@@ -431,19 +446,37 @@ function fixedASTFunctions:toSystolic()
         res = S.cast(args[1], fixed.extract(n.type) )
         res = S.select(S.eq(tsign,args[2]),res,S.neg(res))
       elseif n.kind=="msb" then
-        -- NYIIIIIIIIIIIIIII
-        res = S.constant(0,types.int(8))
+        local bits = n.inputs[1]:precision()
+        local minexp = n.inputs[1]:exp()
+        local tab = {}
+        for i=0,bits-1 do
+          local bittrue = S.bitSlice(args[1],i,i)
+          bittrue = S.cast(bittrue,types.bool())
+          table.insert(tab, S.tuple{bittrue,S.constant(i-minexp-n.precision,types.int(8))} )
+        end
+
+        local out = foldt(tab,function(l,r) return S.select(S.index(l,0),l,r) end, 'X')
+
+        res = S.select(S.eq(args[1],S.constant(0,fixed.extract(n.inputs[1].type))),S.constant(minexp,types.int(8)),S.index(out,1))
       elseif n.kind=="float" then
-        -- NYIIIIIIIIIIIIIII
-        res = S.cast(args[1], n.type)
+        local lshiftamt = S.cast(S.constant(n.minexp,types.int(8))-args[2],types.uint(8))
+        local lshift = S.lshift(args[1],lshiftamt)
+        local rshiftamt = S.cast(args[2]-S.constant(n.minexp,types.int(8)), types.uint(8))
+        local rshift = S.rshift(args[1],rshiftamt)
+        res = S.select(S.lt(args[2],S.constant(n.minexp,types.int(8))),lshift,rshift)
+        res = S.cast(res,n.type)
       elseif n.kind=="liftFloat" then
-        -- NYIIIIIIIIIIIIIII
-        res = S.cast(args[1], fixed.extract(n.type) )
+        res = S.cast(args[1], fixed.extract(n.type))
+        local lshiftamt = S.cast(args[2]-S.constant(n.minexp,types.int(8)), types.uint(8))
+        res = S.lshift(res, lshiftamt)
       elseif n.kind=="pad" then
-        -- NYIIIIIIIIIIIIIII
-        res = S.cast(args[1], fixed.extract(n.type) )
+        local lshift = n.inputs[1]:exp() - n:exp()
+        assert(lshift>=0)
+        res = S.lshift(S.cast(args[1],fixed.extract(n.type)),lshift)
       elseif n.kind=="select" then
         res = S.select(args[1],args[2],args[3])
+      elseif n.kind=="cast" then
+        res = S.cast(args[1],n.type)
       else
         print(n.kind)
         assert(false)
@@ -605,27 +638,45 @@ function fixedASTFunctions:toTerra()
           var msb : int8 = minexp-[n.precision]
           var tmp = [args[1]] and ( (1 << [n.inputs[1]:precision()])-1)
           var orig = tmp
-          while tmp>0 do tmp = tmp >> 1; msb=msb+1; end
-          if msb<minexp then msb = minexp end
---          if msb<[minexp] then cstdio.printf("msb below minexp\n");cstdlib.exit(1); end
+
+          if orig==0 then
+            msb = minexp
+          else
+            while tmp>0 do tmp = tmp >> 1; msb=msb+1; end
+--          if msb<minexp then msb = minexp end
+            --          if msb<[minexp] then cstdio.printf("msb below minexp\n");cstdlib.exit(1); end
+          end
           if msb>[maxexp] then cstdio.printf("msb above maxexp, msb %d max %d prec %d\n",msb,maxexp,[n.inputs[1]:precision()]);cstdlib.exit(1); end
           
-          var flt = [args[1]] >> (msb-[minexp])
-          flt = flt << (msb-[minexp])
-          --cstdio.printf("MSB inp %d, realinp %d, inp_precision %d, msb %d flt %d\n",orig, [args[1]], [n.inputs[1]:precision()], msb,flt)
---          cstdio.printf("MSB %d min %d max %d\n",msb,minexp,maxexp)
+          --[=[ -- debugging
+          var flt : fixed.extract(n.inputs[1].type):toTerraType()
+          if msb < minexp then
+            flt = [args[1]] << ([minexp]-msb)
+          elseif msb > minexp then
+            flt = [args[1]] >> (msb-[minexp])
+          end
+          var recovered = flt << (msb-[minexp])
+          cstdio.printf("MSB inp %d, realinp %d, inp_precision %d, msb %d flt %d reconstructed %d\n",orig, [args[1]], [n.inputs[1]:precision()], msb,flt, recovered)
+          cstdio.printf("MSB value:%d msb:%d min %d max %d\n",[args[1]],msb,minexp,maxexp)
+          ]=]
           in msb end
       elseif n.kind=="float" then
         res = quote
-          if [args[2]]<[n.minexp] then cstdio.printf("Float below minexp\n") end
-          if [args[2]]>[n.maxexp] then cstdio.printf("Float above maxexp\n") end
-          var r = [args[1]]>>([args[2]]-[n.minexp])
+          --if [args[2]]<[n.minexp] then cstdio.printf("Float below minexp\n");cstdlib.exit(1); end
+          if [args[2]]>[n.maxexp] then cstdio.printf("Float above maxexp\n");cstdlib.exit(1); end
+          var r : n.type:toTerraType() = [args[1]]
+          if [args[2]]<[n.minexp] then
+            r = [args[1]]<<([n.minexp] - [args[2]])
+          elseif [args[2]]>[n.minexp] then
+            r = [args[1]]>>([args[2]]-[n.minexp])
+          end
+
           in [n.type:toTerraType()](r) end
       elseif n.kind=="liftFloat" then
         print("LIFTFLOAT",n.type)
         res = quote
-          if [args[2]]<[n.minexp] then cstdio.printf("LiftFloat below minexp is:%d expected%d\n",[args[2]],[n.minexp]) end
-          if [args[2]]>[n.maxexp] then cstdio.printf("LiftFloat exp %d above maxexp %d\n",[args[2]],[n.maxexp]) end
+          if [args[2]]<[n.minexp] then cstdio.printf("LiftFloat below minexp is:%d expected%d\n",[args[2]],[n.minexp]);cstdlib.exit(1); end
+          if [args[2]]>[n.maxexp] then cstdio.printf("LiftFloat exp %d above maxexp %d\n",[args[2]],[n.maxexp]);cstdlib.exit(1); end
           var inp : fixed.extract(n.type):toTerraType() = [args[1]]
           var r = inp<<([args[2]]-[n.minexp])
           --cstdio.printf("liftFloat v %d exp %d minexp %d out %d\n",[args[1]], [args[2]], [n.minexp], r)
@@ -637,6 +688,8 @@ function fixedASTFunctions:toTerra()
         res = `([fixed.extract(n.type):toTerraType()]([args[1]])) << lshift
       elseif n.kind=="select" then
         res = `terralib.select([args[1]],[args[2]],[args[3]])
+      elseif n.kind=="cast" then
+        res = `[n.type:toTerraType()]([args[1]])
       else
         print(n.kind)
         assert(false)

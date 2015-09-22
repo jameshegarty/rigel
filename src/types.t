@@ -562,8 +562,10 @@ end
 
 -- is the type const?
 function TypeFunctions:const()
-  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() or self:isOpaque() then
+  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
     return self.constant
+  elseif self:isOpaque() then
+    return true -- why not?
   elseif self:isArray() then
     return self:arrayOver():const()
   elseif self:isTuple() then
