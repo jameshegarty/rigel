@@ -139,7 +139,7 @@ function fixed.array2d( tab, w, h )
   local inps = {}
   for k,v in pairs(tab) do 
     table.insert(inps,v) 
-    assert(v.type==tab[1].type)
+    err(v.type==tab[1].type,"array2d: types don't match")
   end
   return fixed.new{kind="array2d", inputs=inps, type=types.array2d(tab[1].type,w,h), loc=getloc()}
 end
@@ -206,6 +206,20 @@ function fixedASTFunctions:denormalize()
   local prec = self:precision()+self:exp()
   err( prec>0, "denormalize: this value is purely fractional! all data will be lost")
   return fixed.new{kind="denormalize", type=fixed.type(self:isSigned(), prec, 0),inputs={self},loc=getloc()}
+end
+
+-- remove 'msbs' bits of the MSBs, 'lsbs' bits of the LSBs
+function fixedASTFunctions:reduceBits(msbs,lsbs)
+  assert(type(msbs)=="number")
+  assert(type(lsbs)=="number")
+  if msbs >= self:precision() then msbs = self:precision()-1 end
+  if msbs+lsbs >= self:precision() then lsbs = self:precision()-msbs-1 end
+
+  assert(msbs+lsbs<self:precision())
+
+  local OT = self:normalize(self:precision()-lsbs):truncate(self:precision()-lsbs-msbs)
+  assert(OT:precision()==self:precision()-lsbs-msbs)
+  return OT
 end
 
 function fixedASTFunctions:hist(name)
@@ -372,6 +386,35 @@ function fixedASTFunctions:precision()
   return self.type.list[1].precision
 end
 
+function fixedASTFunctions:cost()
+  local inp
+  return self:visitEach(
+    function( n, args )
+      local cost
+      if n.kind=="parameter" or n.kind=="rshift"  or n.kind=="truncate"  or n.kind=="lift"  or n.kind=="lower"  or n.kind=="constant" or n.kind=="plainconstant" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="hist" or n.kind=="index" or n.kind=="toSigned" or n.kind=="tuple" or n.kind=="array2d" or n.kind=="pad" then
+        cost = 0
+      elseif n.kind=="abs" or n.kind=="neg" or n.kind=="sign" or n.kind=="addSign" or n.kind=="select" then
+        cost = n:precision()
+      elseif n.kind=="msb" or n.kind=="float" or n.kind=="liftFloat" then
+        cost = n:precision()*2
+      elseif n.kind=="binop" then
+        if n.op=="+" or n.op=="-" then
+          cost = n:precision()
+        elseif n.op=="*" then
+          cost = 2*n:precision()
+        else
+          assert(false)
+        end
+      else
+        assert(false)
+      end
+
+      for k,v in pairs(args) do cost = cost + v end
+      assert(type(cost)=="number")
+      return cost
+    end)
+end
+
 function fixedASTFunctions:toSystolic()
   local inp
   local res = self:visitEach(
@@ -482,7 +525,7 @@ function fixedASTFunctions:toSystolic()
       elseif n.kind=="pad" then
         local lshift = n.inputs[1]:exp() - n:exp()
         assert(lshift>=0)
-        res = S.lshift(S.cast(args[1],fixed.extract(n.type)),lshift)
+        res = S.lshift(S.cast(args[1],fixed.extract(n.type)),S.constant(lshift,fixed.extract(n.type)))
       elseif n.kind=="select" then
         res = S.select(args[1],args[2],args[3])
       elseif n.kind=="cast" then

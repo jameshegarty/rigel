@@ -1165,8 +1165,16 @@ function systolicASTFunctions:toVerilog( module )
           expr = args[1]
         elseif n.type:isBits() or n.inputs[1].type:isBits() then
           -- noop: verilog is blind to types anyway
-          assert(n.type:verilogBits()==n.inputs[1].type:verilogBits())
-          expr = args[1]
+          --err(n.type:verilogBits()==n.inputs[1].type:verilogBits(), "bad cast? "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
+          local diff = n.type:verilogBits()-n.inputs[1].type:verilogBits()
+          if diff>0 then
+            -- pad it with some 0's
+            expr = "{"..tostring(diff).."'b0,"..args[1].."}"
+          elseif diff==0 then
+            expr = args[1]
+          else
+            assert(false)
+          end
         elseif n.type:isArray() and n.inputs[1].type:isTuple() then
           --err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
           --for k,v in pairs(n.inputs[1].type.list) do

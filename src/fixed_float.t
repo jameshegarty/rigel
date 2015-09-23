@@ -119,6 +119,10 @@ function fixedASTFunctions:denormalize()
   return self
 end
 
+function fixedASTFunctions:reduceBits(msbs,lsbs)
+  return self
+end
+
 function fixedASTFunctions:hist(name)
   return self
 end
@@ -203,6 +207,8 @@ function fixedASTFunctions:precision()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   return 32
 end
+
+function fixedASTFunctions:cost() return 0 end
 
 function fixedASTFunctions:toSystolic()
   local inp

@@ -264,7 +264,7 @@ function stripMSB(totalbits)
                        terra(inp:&uint16, out:&uint8)
 --                         @out = @inp
                          var ot : uint8 = @inp
-                         cstdio.printf("stripmsb %d to %d\n",@inp,ot)
+--                         cstdio.printf("stripmsb %d to %d\n",@inp,ot)
                          @out = ot
                        end,sinp,sout)
 end

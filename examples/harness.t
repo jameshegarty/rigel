@@ -35,14 +35,7 @@ end
 
 local H = {}
 
-function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
-  assert(X==nil)
-  assert( tapType==nil or types.isType(tapType) )
-  assert( types.isType(inputType) )
-  assert( types.isType(outputType) )
-  assert(type(outputH)=="number")
-  assert(type(inputFilename)=="string")
-
+function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
   local outputCount = (outputW*outputH)/outputT
 
   -------------
@@ -57,6 +50,21 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
   end
+
+end
+
+function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
+  assert(X==nil)
+  assert( tapType==nil or types.isType(tapType) )
+  assert( types.isType(inputType) )
+  assert( types.isType(outputType) )
+  assert(type(outputH)=="number")
+  assert(type(inputFilename)=="string")
+
+  local outputCount = (outputW*outputH)/outputT
+
+  H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
+
   ------
   for i=1,2 do
     local ext=""

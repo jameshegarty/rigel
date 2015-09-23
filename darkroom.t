@@ -3879,7 +3879,7 @@ end
 
 function darkroom.apply( name, fn, input )
   assert( type(name) == "string" )
-  assert( darkroom.isFunction(fn) )
+  err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
 
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
