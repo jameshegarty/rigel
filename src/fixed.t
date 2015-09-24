@@ -70,7 +70,15 @@ __add=function(l,r)
     return fixed.new({kind="binop",op="+",inputs={l,r}, type=ty, loc=getloc()})
   else
     err(l:isSigned()==r:isSigned(), "+: sign must match")
+
+    if l:exp()>r:exp() then
+      l = l:pad(l:precision()+(l:exp()-r:exp()),r:exp())
+    elseif r:exp()>l:exp() then
+      r = r:pad(r:precision()+(r:exp()-l:exp()),l:exp())
+    end
+
     err(l:exp()==r:exp(), "+: exp must match")
+
     local p = math.max(l:precision(),r:precision())+1
     return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
   end
@@ -86,6 +94,13 @@ __sub=function(l,r)
   else
     err(l:isSigned() and r:isSigned(), "-: must be signed")
     err(l:exp()==r:exp(), "-: exp must match")
+
+    if l:exp()>r:exp() then
+      l = l:pad(l:precision()+(l:exp()-r:exp()),r:exp())
+    elseif r:exp()>l:exp() then
+      r = r:pad(r:precision()+(r:exp()-l:exp()),l:exp())
+    end
+
     local p = math.max(l:precision(),r:precision())+1
     return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
   end
@@ -193,8 +208,8 @@ end
 
 function fixedASTFunctions:pad(precision,exp)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
-  err( precision>=self:precision(), "pad shouldn't make precision smaller")
   err( exp<=self:exp(), "pad shouldn't make exp larger") -- making exponant larger => bits shift right
+  err( precision>=self:precision()+(self:exp()-exp), "pad shouldn't throw out data")
   local ty = fixed.type(self:isSigned(), precision, exp)
   return fixed.new{kind="pad", type=ty,inputs={self},loc=getloc()}
 end
@@ -387,8 +402,8 @@ function fixedASTFunctions:precision()
 end
 
 function fixedASTFunctions:cost()
-  local inp
-  return self:visitEach(
+  local totalCost = 0
+  self:visitEach(
     function( n, args )
       local cost
       if n.kind=="parameter" or n.kind=="rshift"  or n.kind=="truncate"  or n.kind=="lift"  or n.kind=="lower"  or n.kind=="constant" or n.kind=="plainconstant" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="hist" or n.kind=="index" or n.kind=="toSigned" or n.kind=="tuple" or n.kind=="array2d" or n.kind=="pad" then
@@ -409,10 +424,11 @@ function fixedASTFunctions:cost()
         assert(false)
       end
 
-      for k,v in pairs(args) do cost = cost + v end
       assert(type(cost)=="number")
-      return cost
+      totalCost = totalCost + cost
     end)
+
+  return totalCost
 end
 
 function fixedASTFunctions:toSystolic()

@@ -86,8 +86,8 @@ function dx(bits)
 
   local inp = f.parameter("dxinp", types.array2d(types.uint(8),3,1))
   local out = ((inp:index(2):lift(0):toSigned()) - (inp:index(0):lift(0):toSigned())):rshift(1)
-  bits.dx[3] = out:precision()
-  out = out:reduceBits(bits.dx[1],bits.dx[2])
+  bits.d[3] = out:precision()
+  out = out:reduceBits(bits.d[1],bits.d[2])
   return out:toDarkroom("dx"), out.type, out:cost()
 end
 
@@ -96,8 +96,8 @@ function dy(bits)
 
   local inp = f.parameter("dyinp", types.array2d(types.uint(8),1,3))
   local out = ((inp:index(0,2):lift(0):toSigned()) - (inp:index(0,0):lift(0):toSigned())):rshift(1)
-  bits.dy[3] = out:precision()
-  return out:reduceBits(bits.dy[1],bits.dy[2]):toDarkroom("dy")
+  bits.d[3] = out:precision()
+  return out:reduceBits(bits.d[1],bits.d[2]):toDarkroom("dy")
 end
 
 makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
@@ -256,7 +256,7 @@ function display(inpType)
   for i=0,1 do
     local I = inp:index(i)
     local B = I*f.constant(32,true,7,0)
-    local FF = (B+f.constant(128,true,9,0):pad(B:precision(),B:exp())):abs()
+    local FF = (B+f.constant(128,true,9,0)):abs()
     local FF_den = FF:denormalize()
     print("FFDEN TYPE",FF_den.type)
     local FF_trunc = FF_den:truncate(8)
