@@ -1272,7 +1272,8 @@ function systolicASTFunctions:toVerilog( module )
           elseif n.kind=="unary" then
             if n.op=="abs" then
               if n.type:isInt() then
-                res = "(("..args[1].."["..(n.type:verilogBits()-1).."])?(-"..args[1].."):("..args[1].."))"
+                res = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for abs")
+                res = "(("..res.."["..(n.type:verilogBits()-1).."])?(-"..res.."):("..res.."))"
               else
                 --              return inputs.expr[c] -- must be unsigned
                 assert(false)

@@ -1260,11 +1260,13 @@ darkroom.map = memoize(function( f, W, H )
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
   local resetPipelines={}
-  for x=0,W-1 do for y=0,H-1 do
-    local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
-    table.insert( out, inst:process( S.index( inp, x, y ) ) )
+  for y=0,H-1 do
+    for x=0,W-1 do 
+      local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
+      table.insert( out, inst:process( S.index( inp, x, y ) ) )
     --table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
-  end end
+    end 
+  end
   res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
 

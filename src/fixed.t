@@ -268,6 +268,11 @@ function fixedASTFunctions:rshift(N)
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
 end
 
+function fixedASTFunctions:lshift(N)
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  return fixed.new{kind="lshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()+N),shift=N,inputs={self},loc=getloc()}
+end
+
 function fixedASTFunctions:cast(to)
   assert( fixed.isFixedType(self.type)==false )
   assert(types.isType(to))
@@ -453,7 +458,7 @@ function fixedASTFunctions:toSystolic()
           assert(false)
         end
         --res = S.ast.new({kind="binop",op=n.op,inputs={args[1],args[2]},loc=n.loc,type=fixed.extract(n.type)})
-      elseif n.kind=="rshift" then
+      elseif n.kind=="rshift" or n.kind=="lshift" then
         --res = S.rshift(args[1],S.constant( n.shift, fixed.extract(n.inputs[1].type)))
         res = args[1]
       elseif n.kind=="truncate" then
@@ -491,7 +496,7 @@ function fixedASTFunctions:toSystolic()
         res = S.cast( args[1], fixed.extract(n.type) )
       elseif n.kind=="abs" then
         res = S.abs( args[1] )
-        res = S.cast( args[1], fixed.extract(n.type) )
+        res = S.cast( res, fixed.extract(n.type) )
       elseif n.kind=="neg" then
         res = S.neg(args[1])
       elseif n.kind=="sign" then
@@ -519,7 +524,7 @@ function fixedASTFunctions:toSystolic()
         for i=0,bits-1 do
           local bittrue = S.bitSlice(args[1],i,i)
           bittrue = S.cast(bittrue,types.bool())
-          table.insert(tab, S.tuple{bittrue,S.constant(i-minexp-n.precision+1,types.int(8))} )
+          table.insert(tab, S.tuple{bittrue,S.constant(i+minexp-n.precision+1,types.int(8))} )
         end
 
         local out = foldt(tab,function(l,r) return S.select(S.index(r,0),r,l) end, 'X')
@@ -533,6 +538,7 @@ function fixedASTFunctions:toSystolic()
         local rshift = S.rshift(args[1],rshiftamt)
 
         res = S.select(S.lt(args[2],S.constant(n.minexp,types.int(8))),lshift,rshift)
+        --res = S.select(S.eq(args[2],S.constant(0,types.int(8))),args[1],res)
         res = S.cast(res,n.type)
       elseif n.kind=="liftFloat" then
         res = S.cast(args[1], fixed.extract(n.type))
@@ -596,7 +602,7 @@ function fixedASTFunctions:toTerra()
       elseif n.kind=="plainconstant" then
         --res = `[n.type:toTerraType()](n.value)
         res = n.type:valueToTerra(n.value)
-      elseif n.kind=="rshift" then
+      elseif n.kind=="rshift" or n.kind=="lshift" then
         --res = `[fixed.extract(n.type):toTerraType()]([args[1]]>>n.shift)
         res = args[1]
       elseif n.kind=="truncate" then
