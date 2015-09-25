@@ -447,7 +447,7 @@ function types.checkExplicitCast(from, to, ast)
       return true
     elseif to:isArray() then
       local allTheSame = true
-      for k,v in pairs(from.list) do if v~=from.list[1] then allTheSame=false end end
+      for k,v in pairs(from.list) do if v:constSubtypeOf(from.list[1])==false then allTheSame=false end end
 
       if allTheSame and #from.list == to:channels() then
         -- casting {A,A,A,A} to A[4]

@@ -38,6 +38,10 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   inp.sparse = false
   inp.isSigned = false
 
+  if inp.channels==2 then
+    inp:addChannels(1)
+  end
+
   cstdio.printf("%d %d %d %d\n",inp.width,inp.height,inp.channels,totalSize)
   -- remember: when using the simulator, the raw file you send in has to be upside down (bottom left pixels comes first
   -- thus, image is flipped). It turns out this is the same convention as BMP, so no flip at the end is necessary.

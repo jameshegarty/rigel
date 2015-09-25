@@ -1534,4 +1534,34 @@ terra Image:fromDarkroomFormat()
   return self:toAOS()
 end
 
+-- add n channels
+terra Image:addChannels(n:int)
+  var size = self.width*self.height*(self.channels+n)*(self.bits/8)
+  var temp : &uint8
+  cstdlib.posix_memalign( [&&opaque](&temp), pageSize, size)
+
+  orionAssert(self.stride==self.width," no stride allowed")
+  orionAssert(self.bits==8,"8 bit only")
+
+  var inF = [&uint8](self.data)
+
+  var lineWidth = self.width*(self.channels+n)
+  for y = 0, self.height do
+    for x = 0, self.width do
+      for c = 0, self.channels+n do
+        var aa : uint8 = 0
+        if c<self.channels then
+          aa = inF[y*self.channels*self.width + x*self.channels + c]
+        end
+        temp[y*lineWidth + x*(self.channels+n) + c] = aa
+      end
+    end
+  end
+
+  self:free()
+  self.data = temp
+  self.dataPtr = temp
+  self.channels = self.channels+n
+end
+
 return Image
