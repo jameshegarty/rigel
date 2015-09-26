@@ -30,7 +30,7 @@ require "lk_core"
 
 bits = {
   inv22={15,26,0},
-  inv22inp={11,12,0},
+  inv22inp={0,10,0},
   d={0,0,0},
   Apartial={0,0,0},
   Bpartial={0,0,0},

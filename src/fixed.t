@@ -79,9 +79,7 @@ __add=function(l,r)
 
     err(l:exp()==r:exp(), "+: exp must match")
 
-    -- HACK(?): I don't understand why we have to give this 2 bits (1 seems like it should suffice)
-    -- but if we don't, the verilog code doesn't match the CPU code
-    local p = math.max(l:precision(),r:precision())+2
+    local p = math.max(l:precision(),r:precision())+1
     return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
   end
 end, 
@@ -103,16 +101,15 @@ __sub=function(l,r)
       r = r:pad(r:precision()+(r:exp()-l:exp()),l:exp())
     end
 
-    -- see note in _add
-    local p = math.max(l:precision(),r:precision())+2
+    local p = math.max(l:precision(),r:precision())+1
     return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
   end
  end,
 __mul=function(l,r) 
   err(l:isSigned() == r:isSigned(), "*: lhs/rhs sign must match but is ("..tostring(l:isSigned())..","..tostring(r:isSigned())..")")
   local exp = l:exp() + r:exp()
-  -- see note in _add
-  local p = l:precision() + r:precision() + 2
+
+  local p = l:precision() + r:precision()
   local ty = fixed.type( l:isSigned(), p, l:exp()+r:exp() )
   return fixed.new({kind="binop",op="*",inputs={l,r}, type=ty, loc=getloc()})
  end,
@@ -610,23 +607,28 @@ function fixedASTFunctions:toTerra()
         --res = `[fixed.extract(n.type):toTerraType()]([args[1]]>>n.shift)
         res = args[1]
       elseif n.kind=="truncate" then
-        -- notice that we don't bother bitmasking here.
-        -- "in theory" all of the ops in this language _never_ lose precision. So the ops themselves can't overflow.
-        -- We will have extra garbage in the upper bits compared to HW, but as long as we don't intentially examine it,
-        -- it should stay in the upper bits and never affect the result.
+        -- "in theory" we may be able to avoid doing the bitmask here, if all the ops that inspect the number are
+        -- aware that they should ignore the upper bits (abs, msb, float, etc).
+        -- for simplicity, just do the bitmask.
 
---[=[        
         if n:isSigned() then
           local outbits = n:precision()
           res = quote
-            var mask = ([fixed.extract(n.inputs[1].type):toTerraType()](1) << outbits) - 1
+            var mask = ([fixed.extract(types.uint(n.inputs[1]:precision())):toTerraType()](1) << outbits) - 1
+            var msb = [fixed.extract(types.uint(n.inputs[1]:precision())):toTerraType()](1) << (outbits-1)
             var notmask = not mask
-            var r : fixed.extract(n.type):toTerraType()
-            if [args[1]]<0 then
-              r = [args[1]] or notmask
-            else
-              r = [args[1]] and mask
+
+            var inpuint = [fixed.extract(types.uint(n.inputs[1]:precision())):toTerraType()]([args[1]])
+            var masked = inpuint and mask
+
+            -- extend the sign bit so that the CPU thinks this number has the correct sign
+            -- note that we set the sign bit based on the MSB of the _masked_ portion. This is what verilog will do.
+            -- DO NOT set sign bit based on sign bit of (unmaked) input.
+            if (masked and msb) ~=0 then
+              masked = masked or notmask
             end
+
+            var r = [fixed.extract(n.type):toTerraType()](masked)
             in r end
         else
           local outbits = n:precision()
@@ -635,8 +637,8 @@ function fixedASTFunctions:toTerra()
             var r = [fixed.extract(n.type):toTerraType()]([args[1]] and mask)
             in r end
     end
-    ]=]
-          res = `[fixed.extract(n.type):toTerraType()]([args[1]])
+
+--          res = `[fixed.extract(n.type):toTerraType()]([args[1]])
       elseif n.kind=="normalize" or n.kind=="denormalize" then
         local dp = n.inputs[1]:precision()-n:precision()
         if dp==0 then return args[1]

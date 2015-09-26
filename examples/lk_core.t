@@ -328,7 +328,7 @@ function LKTop(W,H,window,bits)
   assert(type(bits)=="table")
 
   local internalW = W+window
-  local internalH = H+window
+  local internalH = H+window+1
   local PadRadius = window/2
 
   local ITYPE = types.array2d(types.uint(8),2)
@@ -337,12 +337,12 @@ function LKTop(W,H,window,bits)
   local RW_TYPE = types.array2d( ITYPE, T ) -- simulate axi bus
   local hsfninp = d.input( d.Handshake(RW_TYPE) )
   local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,1)), hsfninp )
-  local out = d.apply("pad", d.liftHandshake(d.padSeq(ITYPE, W, H, 1, PadRadius, PadRadius, PadRadius, PadRadius, {0,0})), out)
+  local out = d.apply("pad", d.liftHandshake(d.padSeq(ITYPE, W, H, 1, PadRadius, PadRadius, PadRadius+1, PadRadius, {0,0})), out)
   local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
   local lkfn, lkcost = makeLK( internalW, internalH, window, bits )
   out = d.apply("LK", d.makeHandshake( lkfn), out )
   local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2, 0))), out)
+  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0))), out)
   local out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,1,4)), out )
   local hsfn = d.lambda("hsfn", hsfninp, out)
   return hsfn, lkcost
