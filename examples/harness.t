@@ -49,6 +49,8 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
        cstdio.printf("Start CPU Sim\n")
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
+
+    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
   end
 
 end
@@ -73,8 +75,6 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
-    
-    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
   end
   
 end
