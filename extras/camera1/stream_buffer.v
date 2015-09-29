@@ -17,7 +17,7 @@ module StreamBuffer(
     // Logic to convert 16 bit input to 64 bit input
     reg [1:0] cnt;
     reg din_valid_p;
-    reg [15:0] data_packed[4]
+    reg [15:0] data_packed[3:0];
 
     reg running;
     always @(posedge clk or negedge rst_n) begin

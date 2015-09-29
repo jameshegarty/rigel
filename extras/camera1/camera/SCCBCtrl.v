@@ -85,7 +85,7 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
          end else if (rw_i == 1 && stm == 36) begin
             stm <= 65;
          end else if (stm < 68) begin
-            stm <= stm + 1;
+            stm <= stm + 1'b1;
          end
 
          if (start_i == 1) begin

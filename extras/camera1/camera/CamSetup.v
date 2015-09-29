@@ -98,7 +98,7 @@ module CamSetup (clk_i, rst_i, start_i, done_o, sioc_o, siod_io);
             sccb_clk <= 0;
         end else begin
             if (sccb_clk_cnt < SCCB_PERIOD) begin
-                sccb_clk_cnt <= sccb_clk_cnt + 1;
+                sccb_clk_cnt <= sccb_clk_cnt + 1'b1;
             end else begin
                 sccb_clk <= ~sccb_clk;
                 sccb_clk_cnt <= 0;
@@ -134,7 +134,7 @@ module CamSetup (clk_i, rst_i, start_i, done_o, sioc_o, siod_io);
         // once registers have been written we need to wait for T_SREG ms. 
         end
         else if (run_state) begin
-            else if (do_tsreg_delay == 1) begin   
+            if (do_tsreg_delay == 1) begin   
                 if (reg_setup_tmr == SREG_CYCLES)
                     done_o <= 1;
                 else 

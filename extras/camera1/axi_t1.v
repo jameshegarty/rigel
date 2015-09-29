@@ -5,6 +5,7 @@
 // The axi bus expects the number of valid data items to exactly match the # of addresses we send.
 // This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
 // lengthOutput is in bytes
+
 module UnderflowShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
    parameter WAIT_CYCLES = 2048;
    
@@ -82,9 +83,9 @@ module stage
   assign ARESETN = fclkresetn[0];
   
 
-    wire CAM_VSYNC_D;
-    wire CAM_HREF_D;
-    wire [7:0] CAM_DIN_D;
+    reg CAM_VSYNC_D;
+    reg CAM_HREF_D;
+    reg [7:0] CAM_DIN_D;
 
     IBUFG pclk_buffer( .I(CAM_PCLK), .O(PCLK));
     always @(posedge PCLK) begin
@@ -99,7 +100,7 @@ module stage
     wire XCLK_DIV;
 
     // TODO might need to change the frequency for XCLK
-    assign XCLK_DIV = FLCK0;
+    assign XCLK_DIV = FCLK0;
 
     ODDR2 #(
         .DDR_ALIGNMENT("NONE"), // Sets output alignment to "NONE", "C0" or "C1" 
@@ -181,11 +182,11 @@ module stage
     wire WRITER_READY;
     
     // debug counters
-    reg [31:0] debug_cnt[3];
+    reg [31:0] debug_cnt[3:0];
 
     assign MMIO_READY = READER_READY && WRITER_READY;
     
-    MMIO mmio(
+    MMIO_slave mmio(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),
     .S_AXI_ARADDR(PS7_ARADDR), 
@@ -215,7 +216,7 @@ module stage
     .MMIO_CMD(MMIO_CMD),
     .STREAM_SRC(STREAM_SRC),
     .STREAM_DEST(STREAM_DEST),
-    .CONFIG_LEN(CONFIG_LEN),
+    .STREAM_LEN(CONFIG_LEN),
     .debug0(debug_cnt[0]),
     .debug1(debug_cnt[1]),
     .debug2(debug_cnt[2]),
@@ -260,9 +261,9 @@ module stage
     wire sb2dramw_valid;
     wire sb2dramw_ready;
 
-    StreamBuffer(
+    StreamBuffer stream_buffer(
         .clk(FCLK0),
-        .rst_n(ARESTN),
+        .rst_n(ARESETN),
         
         .start(1'b0),
 
@@ -272,11 +273,11 @@ module stage
 
         .dout(sb2dramw_data),
         .dout_valid(sb2dramw_valid),
-        .dout_ready(sb2dramw_ready),
-    )
+        .dout_ready(sb2dramw_ready)
+    );
 
 
-    always @(posedge clk or negedge ARESETN) begin
+    always @(posedge FCLK0 or negedge ARESETN) begin
         if (ARESETN==0) begin
             debug_cnt[0] <= 32'h0;
             debug_cnt[1] <= 32'h0;
@@ -285,12 +286,13 @@ module stage
         end
         else begin
             debug_cnt[0] <= camsetup_done ? 32'h1 : 32'h0;
-            debug_cnt[1] <= vstart ? debug_cnt[1]+1'b1 : debug_cnt[1] ;
-            debug_cnt[2] <= hstart ? debug_cnt[2]+1'b1 : debug_cnt[2] ;
-            debug_cnt[3] <= cr_pixel_valid && (cr_pixel != 16'h0) ? debug_cnt[3]+1'b1 : debug_cnt[3] ;
+            debug_cnt[1] <= vstart ? (debug_cnt[1]+1'b1) : debug_cnt[1] ;
+            debug_cnt[2] <= hstart ? (debug_cnt[2]+1'b1) : debug_cnt[2] ;
+            debug_cnt[3] <= (cr_pixel_valid && (cr_pixel != 16'h0)) ? (debug_cnt[3]+1'b1) : debug_cnt[3] ;
         end
     end
 
+   wire [31:0] lengthOutput;
     // TODO deal with the addresses and maybe padding/timing of dram writer on axi
     DRAMWriter writer(
         .ACLK(FCLK0),
@@ -312,8 +314,8 @@ module stage
         .M_AXI_AWSIZE(M_AXI_AWSIZE),
         .M_AXI_AWBURST(M_AXI_AWBURST),
         
-        .MMIO_VALID(MMIO_VALID),
-        .MMIO_READY(WRITER_READY),
+        .CONFIG_VALID(MMIO_VALID),
+        .CONFIG_READY(WRITER_READY),
         .CONFIG_START_ADDR(STREAM_DEST),
         .CONFIG_NBYTES(lengthOutput),
 
@@ -321,6 +323,41 @@ module stage
         .din_valid(sb2dramw_valid),
         .din(sb2dramw_data)
     );
+   
+    // lengthInput/lengthOutput are in bytes
+    wire [31:0] lengthInput;
+    assign lengthInput = {4'b0000,CONFIG_LEN[27:0]};
+    assign lengthOutput = (CONFIG_LEN[27:0] << 8'd8) >> CONFIG_LEN[31:28];
+
+  DRAMReader reader(
+    .ACLK(FCLK0),
+    .ARESETN(ARESETN),
+    .M_AXI_ARADDR(M_AXI_ARADDR),
+    .M_AXI_ARREADY(M_AXI_ARREADY),
+    .M_AXI_ARVALID(M_AXI_ARVALID),
+    .M_AXI_RDATA(M_AXI_RDATA),
+    .M_AXI_RREADY(M_AXI_RREADY),
+    .M_AXI_RRESP(M_AXI_RRESP),
+    .M_AXI_RVALID(M_AXI_RVALID),
+    .M_AXI_RLAST(M_AXI_RLAST),
+    .M_AXI_ARLEN(M_AXI_ARLEN),
+    .M_AXI_ARSIZE(M_AXI_ARSIZE),
+    .M_AXI_ARBURST(M_AXI_ARBURST),
+    
+    .CONFIG_VALID(MMIO_VALID),
+    .CONFIG_READY(READER_READY),
+    .CONFIG_START_ADDR(STREAM_SRC),
+    .CONFIG_NBYTES(lengthInput),
+
+    .dout_ready(1'b0),
+    .dout_valid(),
+    .dout()
+    
+    //.dout_ready(pipelineReady),
+    //.dout_valid(pipelineInputValid),
+    //.dout(pipelineInput)
+  );
+  
 
 PS7 ps7_0(
     .DMA0DATYPE(), 	// out std_logic_vector(1 downto 0);
@@ -956,13 +993,8 @@ PS7 ps7_0(
 
 
 
-/*
-   // lengthInput/lengthOutput are in bytes
-   wire [31:0] lengthInput;
-   assign lengthInput = {4'b0000,CONFIG_LEN[27:0]};
-   wire [31:0] lengthOutput;
-   assign lengthOutput = (CONFIG_LEN[27:0] << 8'd8) >> CONFIG_LEN[31:28];
 
+/*
   always @(posedge FCLK0 or negedge ARESETN) begin
     if(ARESETN == 0)
         LED <= 0;
@@ -988,33 +1020,7 @@ PS7 ps7_0(
 
    UnderflowShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(MMIO_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
   */
-
 /*
-  DRAMReader reader(
-    .ACLK(FCLK0),
-    .ARESETN(ARESETN),
-    .M_AXI_ARADDR(M_AXI_ARADDR),
-    .M_AXI_ARREADY(M_AXI_ARREADY),
-    .M_AXI_ARVALID(M_AXI_ARVALID),
-    .M_AXI_RDATA(M_AXI_RDATA),
-    .M_AXI_RREADY(M_AXI_RREADY),
-    .M_AXI_RRESP(M_AXI_RRESP),
-    .M_AXI_RVALID(M_AXI_RVALID),
-    .M_AXI_RLAST(M_AXI_RLAST),
-    .M_AXI_ARLEN(M_AXI_ARLEN),
-    .M_AXI_ARSIZE(M_AXI_ARSIZE),
-    .M_AXI_ARBURST(M_AXI_ARBURST),
-    
-    .MMIO_VALID(MMIO_VALID),
-    .MMIO_READY(READER_READY),
-    .CONFIG_START_ADDR(STREAM_SRC),
-    .CONFIG_NBYTES(lengthInput),
-
-    .dout_ready(pipelineReady),
-    .dout_valid(pipelineInputValid),
-    .dout(pipelineInput)
-  );
-  
 
   DRAMWriter writer(
     .ACLK(FCLK0),

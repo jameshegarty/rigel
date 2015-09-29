@@ -23,7 +23,7 @@
 //
 //##################################################################################################
 
-module RGB16Receive (d_i, vsync_i, href_i, pclk_i, rst_i, pixelReady_o, pixel_o);
+module RGB16Receive (d_i, vsync_i, href_i, pclk_i, rst_i, pixelReady_o, pixel_o, vstart, hstart);
                      
     input       [7:0] d_i;        // D0 - D7
     input       vsync_i;          // VSYNC
@@ -45,13 +45,11 @@ module RGB16Receive (d_i, vsync_i, href_i, pclk_i, rst_i, pixelReady_o, pixel_o)
     always @(posedge pclk_i) begin
         pixelReady_o <= 0;
         vstart <= 1'b0;
-        hstart <= 1'b0;
         href_p2 <= href_i;
         if (rst_i == 0) begin
             odd <= 0;
             frameValid <= 0;
             vstart <= 1'b0;
-            hstart <= 1'b0;
             saw_vsync <= 1'b0;
         end else begin
             if (frameValid == 1 && vsync_i == 0 && href_i == 1) begin

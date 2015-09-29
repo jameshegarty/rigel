@@ -1,3 +1,4 @@
+//`include "Math.v"
 
 module MMIO_slave(
     input ACLK,
@@ -33,10 +34,10 @@ module MMIO_slave(
     output [31:0] STREAM_DEST,
     output [31:0] STREAM_LEN,
     
-    input [31:0] debug0;
-    input [31:0] debug1;
-    input [31:0] debug2;
-    input [31:0] debug3;
+    input [31:0] debug0,
+    input [31:0] debug1,
+    input [31:0] debug2,
+    input [31:0] debug3,
     
     output MMIO_IRQ
     );
@@ -105,16 +106,20 @@ module MMIO_slave(
     .M_AXI_WVALID(LITE_WVALID)
   );
 
+`include "Math.v"
+
 // Needs to be at least 4
-parameter MMIO_SIZE = 16;
+parameter MMIO_SIZE = 8;
 
 parameter [31:0] MMIO_STARTADDR = 32'h7000_0000;
 parameter W = 32;
 
-//This will only work on Verilog 2005
-localparam MMIO_BITS = $clog2(MMIO_SIZE);
 
-reg [W-1:0] data[MMIO_REG-1:0];
+//This will only work on Verilog 2005
+// TODO 
+localparam MMIO_BITS = clog2(MMIO_SIZE);
+
+reg [W-1:0] data[MMIO_SIZE-1:0];
 
 parameter IDLE = 0, RWAIT = 1;
 parameter OK = 2'b00, SLVERR = 2'b10;
@@ -123,13 +128,13 @@ reg [31:0] counter;
 
 //READS
 reg r_state;
-wire [1:0] r_select;
+wire [MMIO_BITS-1:0] r_select;
 assign r_select  = LITE_ARADDR[MMIO_BITS+1:2];
 assign ar_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_ARADDR[1:0]} == MMIO_STARTADDR;
 assign LITE_ARREADY = (r_state == IDLE);
 assign LITE_RVALID = (r_state == RWAIT);
 
-wire [31:0] read_data;
+reg [31:0] read_data;
 always @(*) begin
     case(r_select)
         0 : read_data = counter;
@@ -152,7 +157,7 @@ always @(posedge ACLK) begin
         IDLE: begin
             if(LITE_ARVALID) begin
                 LITE_RRESP <= ar_good ? OK : SLVERR;
-                LITE_RDATA <= (r_select == 2'b0) ? counter : data[r_select];
+                LITE_RDATA <= read_data;
                 r_state <= RWAIT;
             end
         end
@@ -165,11 +170,11 @@ end
 
 //WRITES
 reg w_state;
-reg [1:0] w_select_r;
+reg [MMIO_BITS-1:0] w_select_r;
 reg w_wrotedata;
 reg w_wroteresp;
 
-wire [1:0] w_select;
+wire [MMIO_BITS-1:0] w_select;
 assign w_select  = LITE_AWADDR[3:2];
 assign aw_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_AWADDR[1:0]} == MMIO_STARTADDR;
 
@@ -251,7 +256,7 @@ always @(posedge ACLK) begin
         busy_last <= 0;
     end else begin
         if (MMIO_READY) begin
-            busy <= MMIO_VALID ? 1 : 0;
+            busy <= MMIO_VALID ? 1'b1 : 1'b0;
         end
         busy_last <= busy;
     end

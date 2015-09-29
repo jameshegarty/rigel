@@ -23,7 +23,7 @@
 //
 //##################################################################################################
 
-module CamReader (d_i, vsync_i, href_i, pclk_i, rst_i, pixel_valid_o, pixel_o);
+module CamReader (d_i, vsync_i, href_i, pclk_i, rst_i, pixel_valid_o, pixel_o, vstart_o, hstart_o);
                      
     input       [7:0] d_i;        // D0 - D7
     input       vsync_i;          // VSYNC
@@ -41,17 +41,15 @@ module CamReader (d_i, vsync_i, href_i, pclk_i, rst_i, pixel_valid_o, pixel_o);
     reg         href_p2;
  
     // Only anding with pixel_valid just in case
-    assign hstart = !href_p2 && href_i && pixel_valid_o;
+    assign hstart_o = !href_p2 && href_i && pixel_valid_o;
     always @(posedge pclk_i) begin
         pixel_valid_o <= 0;
-        vstart <= 1'b0;
-        hstart <= 1'b0;
+        vstart_o <= 1'b0;
         href_p2 <= href_i;
         if (rst_i == 0) begin
             odd <= 0;
             frameValid <= 0;
-            vstart <= 1'b0;
-            hstart <= 1'b0;
+            vstart_o <= 1'b0;
             saw_vsync <= 1'b0;
         end else begin
             if (frameValid == 1 && vsync_i == 0 && href_i == 1) begin
@@ -63,7 +61,7 @@ module CamReader (d_i, vsync_i, href_i, pclk_i, rst_i, pixel_valid_o, pixel_o);
                     pixel_valid_o <= 1;
                     if (saw_vsync) begin
                         saw_vsync <= 1'b0;
-                        vstart <=1'b0;
+                        vstart_o <=1'b0;
                     end
                 end
                 odd <= ~odd;

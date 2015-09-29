@@ -1,36 +1,12 @@
+verilog work "axi_t1.v"
+verilog work "dramreader.v"
+verilog work "dramwriter.v"
 verilog work "ict106_axilite_conv.v"
-verilog work "conf.v"
-verilog work "ramreader.v"
-verilog work "ramwriter.v"
-verilog work "system.v"
-
-
-.:
-axi_t1.v
-axi.v
-camera
-dramreader.v
-dramwriter.v
-fifos
-ict106_axilite_conv.v
-makefile
-MMIO_slave.v
-processimage
-processimage.c
-ps7_constraints.ucf
-stream_buffer.v
-system.prj
-system.ucf
-system.ucf~
-system.xst
-
-./camera:
-CamReader.v
-CamSetup.v
-OV7670Init.v
-RGB16Receive.v
-SCCBCtrl.v
-
-./fifos:
-vfifo32x1024.v
-vfifo64x1024.v
+verilog work "MMIO_slave.v"
+verilog work "stream_buffer.v"
+verilog work "camera/CamReader.v"
+verilog work "camera/CamSetup.v"
+verilog work "camera/OV7670Init.v"
+verilog work "camera/RGB16Receive.v"
+verilog work "camera/SCCBCtrl.v"
+verilog work "fifos/vfifo64x1024.v"
