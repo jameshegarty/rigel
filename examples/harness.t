@@ -90,6 +90,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(inputW)=="number")
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
+  err(d.isFunction(hsfn), "second argument to harness.axi must be function")
 
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH)

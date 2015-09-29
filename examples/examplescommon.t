@@ -157,6 +157,40 @@ function C.SAD( A, reduceType, Width, X )
   return convolve
 end
 
+
+function C.SADFixed( A, reduceType, Width, X )
+  local fixed = require "fixed"
+  assert(X==nil)
+  fixed.expectFixed(reduceType)
+  assert(fixed.extractSigned(reduceType)==false)
+  assert(fixed.extractExp(reduceType)==0)
+
+  local inp = d.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+
+  -------
+  local ABS_inp = fixed.parameter("abs_inp", types.array2d(A,2))
+  local ABS_l, ABS_r = ABS_inp:index(0):lift(0):toSigned(), ABS_inp:index(1):lift(0):toSigned()
+  local ABS = (ABS_l-ABS_r):abs():pad(fixed.extractPrecision(reduceType),0)
+  ------
+  local SUM_inp = fixed.parameter("sum_inp", types.tuple{reduceType,reduceType})
+  local SUM_l, SUM_r = SUM_inp:index(0), SUM_inp:index(1)
+  local SUM = (SUM_l+SUM_r)
+
+  SUM = SUM:truncate(fixed.extractPrecision(reduceType))
+
+--  SUM = SUM:normalize(fixed.extractPrecision(reduceType))
+--  SUM = SUM:truncate(fixed.extractPrecision(reduceType))
+--  SUM = SUM:lower(true):lift(0)
+
+  ------
+
+  local conv = d.apply( "partial", d.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
+  local conv = d.apply( "sum", d.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
+
+  local convolve = d.lambda( "SAD", inp, conv )
+  return convolve
+end
+
 ------------
 -- takes a function f:A[StencilW,stencilH]->B
 -- returns a function from A[T]->B[T]

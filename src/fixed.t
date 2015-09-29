@@ -207,6 +207,7 @@ function fixedASTFunctions:truncate(precision)
   return fixed.new{kind="truncate", type=ty,inputs={self},loc=getloc()}
 end
 
+-- pad to a target precision and exp
 function fixedASTFunctions:pad(precision,exp)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( exp<=self:exp(), "pad shouldn't make exp larger") -- making exponant larger => bits shift right
