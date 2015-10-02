@@ -12,6 +12,7 @@ if string.find(arg[0],"float") then
   f = require "fixed_float"
 else
   f = require "fixed"
+  f.DEEP_MULTIPLY = true
 end
 
 local W = 128
@@ -20,7 +21,7 @@ local H = 128
 
 -- lk_full is 584x388, 2 channel
 
-local window = 8
+local window = 6
 
 local T = 4
 local RW_TYPE = types.array2d(types.array2d(types.uint(8),2),T)
@@ -38,7 +39,7 @@ bits = {
 }
 
 if f.FLOAT then
-  harness.terraOnly( "lk_wide_handshake_float", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.terraOnly( "lk_wide_handshake_6_float", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 else
-  harness.axi( "lk_wide_handshake", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.axi( "lk_wide_handshake_6", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 end

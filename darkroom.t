@@ -2505,7 +2505,7 @@ end
 -- sequentialized to throughput T
 function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
-  map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number"); err(n>=0,"n<0") end)
+  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k) assert(type(n)=="number"); err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); err(n>=0,"n<0") end)
   err( A:toLuaType()==type(Value), "Value is incorrect lua type")
   err(T>=1, "padSeq, T<1")
 
@@ -3844,7 +3844,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   return darkroom.newFunction( res )
 end
 
-function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput )
+function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput, systolicInstances )
   err( type(name)=="string", "lift name must be string" )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
@@ -3859,6 +3859,11 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
   local systolicModule = S.moduleConstructor(name)
+
+  if systolicInstances~=nil then
+    for k,v in pairs(systolicInstances) do systolicModule:add(v) end
+  end
+
   systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )

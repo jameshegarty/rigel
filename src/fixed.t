@@ -2,8 +2,11 @@ local IR = require("ir")
 local types = require("types")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
+local fpgamodules = require("fpgamodules")
 
 local fixed = {}
+-- use Xilinx deeply pipelined multipliers instead of regular multipliers
+fixed.DEEP_MULTIPLY = false
 
 local function getloc()
 --  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
@@ -439,6 +442,7 @@ function fixedASTFunctions:cost()
 end
 
 function fixedASTFunctions:toSystolic()
+  local instances = {}
   local inp
   local res = self:visitEach(
     function( n, args )
@@ -451,15 +455,29 @@ function fixedASTFunctions:toSystolic()
           res = S.index(res,0)
         end
       elseif n.kind=="binop" then
-        local l = S.cast(args[1], fixed.extract(n.type))
-        local r = S.cast(args[2], fixed.extract(n.type))
-        if n.op=="+" then res = l+r
-        elseif n.op=="-" then res = l-r
-        elseif n.op=="*" then res = l*r
+
+        if fixed.DEEP_MULTIPLY and fixed.isFixedType(n.type) and n:precision()>=20 and n.op=="*" and 
+          n.inputs[1].type:const()==false and
+          n.inputs[2].type:const()==false then
+          local I = fpgamodules.multiply(fixed.extract(n.inputs[1].type),fixed.extract(n.inputs[2].type),fixed.extract(n.type)):instantiate("UNNAMEDINST"..tostring(#instances))
+          table.insert(instances,I)
+          res = I:process(S.tuple{args[1],args[2]})
         else
-          assert(false)
+          local l = S.cast(args[1], fixed.extract(n.type))
+          local r = S.cast(args[2], fixed.extract(n.type))
+
+          if n.op=="+" then res = l+r
+          elseif n.op=="-" then res = l-r
+          elseif n.op=="*" then res = l*r
+          else
+            assert(false)
+          end
+          
+          if fixed.isFixedType(n.type) and n:precision()>20 then
+            print("riduclous binop "..tostring(n.inputs[1].type).." "..tostring(n.inputs[2].type).." "..tostring(n.type)..n.loc)
+          end
         end
-        --res = S.ast.new({kind="binop",op=n.op,inputs={args[1],args[2]},loc=n.loc,type=fixed.extract(n.type)})
+
       elseif n.kind=="rshift" or n.kind=="lshift" then
         --res = S.rshift(args[1],S.constant( n.shift, fixed.extract(n.inputs[1].type)))
         res = args[1]
@@ -567,7 +585,7 @@ function fixedASTFunctions:toSystolic()
     res = S.tuple{res,c}
   end
 
-  return res, inp
+  return res, inp, instances
 end
 
 local hists = {}
@@ -814,14 +832,14 @@ function fixedASTFunctions:toDarkroom(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp = self:toSystolic()
+  local out, inp, instances = self:toSystolic()
   local terraout, terrainp = self:toTerra()
 
   local terra tfn([terrainp], out:&out.type:toTerraType())
     @out = terraout
   end
   --tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, out.type, 1, tfn, inp, out )
+  return darkroom.lift( name, inp.type, out.type, 1, tfn, inp, out, instances )
 end
 
 return fixed
