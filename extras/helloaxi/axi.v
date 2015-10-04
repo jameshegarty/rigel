@@ -182,9 +182,9 @@ module stage
    
   wire [64:0] pipelineOutputPacked;
   wire [63:0] pipelineOutput;
-//  assign pipelineOutput = pipelineOutputPacked[63:0];   
+  assign pipelineOutput = pipelineOutputPacked[63:0];   
   wire pipelineOutputValid;
-//  assign pipelineOutputValid = pipelineOutputPacked[64];
+  assign pipelineOutputValid = pipelineOutputPacked[64];
    
   wire       pipelineReady;
   wire      downstreamReady;
@@ -193,7 +193,7 @@ module stage
     
   ___PIPELINE_MODULE_NAME  #(.INPUT_COUNT(___PIPELINE_INPUT_COUNT),.OUTPUT_COUNT(___PIPELINE_OUTPUT_COUNT)) pipeline(.CLK(FCLK0),.reset(CONFIG_READY),.ready(pipelineReady),.ready_downstream(downstreamReady),.process_input({pipelineInputValid,___PIPELINE_INPUT}),.process_output(pipelineOutputPacked));
 
-   UnderflowShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
+//   UnderflowShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
    
   DRAMReader reader(
     .ACLK(FCLK0),

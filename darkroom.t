@@ -23,6 +23,11 @@ else
   DARKROOM_VERBOSE = false
 end
 
+local function getloc()
+  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
+end
+
+
 darkroom.VToken = types.opaque("V")
 darkroom.RVToken = types.opaque("RV")
 darkroom.HandshakeToken = types.opaque("handshake")
@@ -130,9 +135,14 @@ end
 -- t should be format {{number,number},{number,number},...}
 function darkroom.isSDFRate(t)
   if type(t)~="table" then return false end
+  if keycount(t)~=#t then return false end
   for _,v in pairs(t) do
-    if v~="x" and type(v)~="table" then return false end
-    if v~="x" and (type(v[1])~="number" or type(v[2])~="number") then return false end
+    if v=="x" then
+      -- ok
+    else
+      if type(v)~="table" then return false end
+      if (type(v[1])~="number" or type(v[2])~="number") then return false end
+    end
   end
   return true
 end
@@ -251,6 +261,12 @@ function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDep
 
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
+
+  assert(darkroom.isSDFRate(tab.sdfInput))
+  assert(darkroom.isSDFRate(tab.sdfOutput))
+  assert(tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1)
+  assert(tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1)
+
   return setmetatable( tab, darkroomFunctionMT )
 end
 
@@ -276,7 +292,10 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
       local res
       if n.kind=="input" or n.kind=="constant" then
         local rate = {{1,1}}
-        if n.kind=="input" and n.sdfRate~=nil then rate=n.sdfRate; end
+        if n.kind=="input" and n.sdfRate~=nil then 
+          err(darkroom.isSDFRate(n.sdfRate),"sdf rate not an sdf rate? "..n.kind..n.loc)
+          rate=n.sdfRate; 
+        end
         res = {rate,broadcast(true,#rate)}
       elseif n.kind=="extractState" then
         res = args[1]
@@ -383,88 +402,71 @@ function darkroomIRFunctions:sdfTotal(root)
   return __sdfTotalCache[self]
 end
 
--- assuming that the inputs are running at {1,1}, what is the utilization of this node?
--- 0.5: only active every other cycle. 2: somehow active twice a cycle? (a bug)
-function darkroomIRFunctions:sdfUtilization(root)
+-- This converts our stupid internal represention into the SDF 'rate' used in the SDF paper
+-- i.e. the number you multiply the input/output rate by to make the rates match.
+-- Meaning for us: if < 1, then not is underutilized (sits idle). If >1, then node is
+-- oversubscribed (will limit speed)
+function darkroomIRFunctions:calcSdfRate(root)
   assert(darkroom.isIR(root))
 
   if self.kind=="apply" then
+    assert(#self.inputs<=1)
     local total = self:sdfTotal(root)
-
-    -- by convention, either input or output (or both) are running at a rate of 1.
-    -- (we don't intentially design modules that sit idle)
-    -- we can then look at the rate on the end with rate==1 to find the utilization
-    -- 1-> (1/N): a downsample
-    -- (1/N) -> 1 : a upsample
-    -- 1->1 no rate change
-
-    return (total[1][1]/total[1][2])*(self.fn.sdfOutput[1][2]/self.fn.sdfOutput[1][1])
-
---[=[
-    if #self.fn.sdfOutput==1 and (self.fn.sdfOutput[1][1]/self.fn.sdfOutput[1][2])==1 then
-      -- this also covers the case where inputRate==1/1
-      return total[1][1]/total[1][2]
-    elseif #self.fn.sdfInput==1 and (self.fn.sdfInput[1][1]/self.fn.sdfInput[1][2])==1 then
-      local tot = self.inputs[1]:sdfTotal(root)
-      return tot[1][1]/tot[1][2]
-    elseif #self.fn.sdfInput>1 and #self.fn.sdfOutput>1 then
-      return (total[1][1]/total[1][2])*(self.fn.sdfInput[1][2]/self.fn.sdfInput[1][1])
-    else
-      print("SDFFIAL",self.name,#self.fn.sdfInput, #self.fn.sdfOutput)
-      print("SDFI",self.fn.sdfInput[1][1],self.fn.sdfInput[1][2])
-      print("SDFO",self.fn.sdfOutput[1][1],self.fn.sdfOutput[1][2])
-      assert(false)
-    end
-    ]=]
+    local res = fracMultiply({total[1][1],total[1][2]},{self.fn.sdfOutput[1][2],self.fn.sdfOutput[1][1]})
+    if DARKROOM_VERBOSE then print("SDF RATE",self.name,res[1],res[2],"sdfINP",self.fn.sdfInput[1][1],self.fn.sdfInput[1][2],"SDFOUT",self.fn.sdfOutput[1][1],self.fn.sdfOutput[1][2]) end
+    return res
   else
     --print("sdfUtilization",self.kind)
     --assert(false)
-    return 1
+    return nil
   end
 end
 
 -- assuming that the inputs are running at {1,1}, wht is the lowest/highest SDF utilization in this DAG?
 -- (this will limit the speed of the whole pipe)
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
-local __sdfExtremeUtilizationCache = {}
-function darkroomIRFunctions:sdfExtremeUtilization( highest )
+local __sdfExtremeRateCache = {}
+function darkroomIRFunctions:sdfExtremeRate( highest )
   assert(type(highest)=="boolean")
 
-  __sdfExtremeUtilizationCache[self] = __sdfExtremeUtilizationCache[self] or {}
+  __sdfExtremeRateCache[self] = __sdfExtremeRateCache[self] or {}
 
-  if __sdfExtremeUtilizationCache[self][highest]==nil then
-    __sdfExtremeUtilizationCache[self][highest] = self:visitEach(
+  if __sdfExtremeRateCache[self][highest]==nil then
+
+    self:visitEach(
       function( n, args )
-        local r = n:sdfUtilization(self)
-          
-        -- leaf functions can't have a worse utilization than their input/output rate.
-        -- lambdas however can: (you can run something slow in the middle)
-        local fnloc = ""
-        if n.kind=="apply" and n.fn.kind=="lambda" then
-          local a,b = n.fn.output:sdfExtremeUtilization( highest )
-          r = r * a
-          fnloc = b
+        local r = n:calcSdfRate(self)
+        assert(isFrac(r) or r==nil)
+        
+        local res 
+--        for _,v in pairs(args) do
+--          if v~=nil then
+        if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
+          __sdfExtremeRateCache[self][highest] = {r,n.loc}
+        elseif highest and r~=nil and fracToNumber(r)>=fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+          __sdfExtremeRateCache[self][highest] = {r,n.loc}
+        elseif highest==false and r~=nil and fracToNumber(r)<=fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+          __sdfExtremeRateCache[self][highest] = {r,n.loc}
         end
+--              res = v
+--            end
+--          end
+--        end
+--        if res==nil and r~=nil then res = {r,n.loc} end -- no inputs
 
-        local res
-        for _,v in pairs(args) do
-          if highest and r>=v[1] then
-            res = {r,self.loc.."; "..fnloc}
-          elseif highest==false and r<=v[1] then
-            res = {r,self.loc..";"..fnloc}
-          else
-            res = v
-          end
-        end
-        if res==nil then res = {1,"NONE"} end
-
-        assert(type(res[1])=="number")
-        assert(type(res[2])=="string")
-        return res
+--        assert(res==nil or isFrac(res[1]))
+--        assert(res==nil or type(res[2])=="string")
+--        return res
       end)
+
+    if __sdfExtremeRateCache[self][highest]==nil then
+      -- no function calls => no changes to rate. (none of our other operators change rate)
+      return {1,1},"NO_APPLIES"
+    end
   end
-  
-  return __sdfExtremeUtilizationCache[self][highest][1], __sdfExtremeUtilizationCache[self][highest][2]
+
+
+  return __sdfExtremeRateCache[self][highest][1], __sdfExtremeRateCache[self][highest][2]
 end
 
 function darkroomIRFunctions:typecheck()
@@ -819,6 +821,7 @@ function darkroom.border(A,W,H,L,R,B,T,value)
 end
 
 function darkroom.liftBasic(f)
+  err(darkroom.isFunction(f),"liftBasic argument should be darkroom function")
   local res = {kind="liftBasic", fn = f}
   darkroom.expectBasic(f.inputType)
   darkroom.expectBasic(f.outputType)
@@ -947,6 +950,7 @@ end
 -- if inner:ready()==true, inner will run iff valid(input)==true
 -- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
 function darkroom.waitOnInput(f)
+  err(darkroom.isFunction(f),"waitOnInput argument should be darkroom function")
   local res = {kind="waitOnInput", fn = f}
   darkroom.expectBasic(f.inputType)
   darkroom.expectRV(f.outputType)
@@ -1380,9 +1384,9 @@ function darkroom.downsampleYSeq( A, W, H, T, scale )
                              var y = (inp._0)[0]._1
                              data(out) = inp._1
                              valid(out) = (y%scale==0)
-                           end, sinp, S.tuple{sdata,svalid})
+                           end, sinp, S.tuple{sdata,svalid}, nil, {{1,scale}})
 
-  return darkroom.liftXYSeq( f, W, H, T, {{1,scale}} )
+  return darkroom.liftXYSeq( f, W, H, T )
 end
 
 -- takes A[W,H] to A[W/scale,H]
@@ -1434,9 +1438,9 @@ function darkroom.downsampleXSeq( A, W, H, T, scale )
     end
   end
 
-  local f = darkroom.lift( "DownsampleXSeq", innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid})
+  local f = darkroom.lift( "DownsampleXSeq", innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid},nil,sdfOverride)
 
-  return darkroom.liftXYSeq( f, W, H, T, sdfOverride )
+  return darkroom.liftXYSeq( f, W, H, T )
 end
 
 -- V -> RV
@@ -1823,6 +1827,20 @@ local function sdfNormalize( tab )
   return res
 end
 
+function isFrac(a)
+  return type(a)=="table" and type(a[1])=="number" and type(a[2])=="number"
+end
+
+function fracToNumber(a)
+  assert(isFrac(a))
+  return a[1]/a[2]
+end
+
+function fracInvert(a)
+  assert(isFrac(a))
+  return {a[2],a[1]}
+end
+
 -- format {n,d}
 local function fracSum(a,b)
   local denom = a[2]*b[2]
@@ -1831,26 +1849,33 @@ local function fracSum(a,b)
   return {n,d}
 end
 
-local function fracMultiply(a,b)
+function fracMultiply(a,b)
   local n,d = simplify(a[1]*b[1],a[2]*b[2])
   return {n,d}
 end
 
-local function sdfSum(tab)
+function sdfSum(tab)
   assert( darkroom.isSDFRate(tab) )
   
   local sum = {0,1}
   for k,v in pairs(tab) do 
-    sum = fracSum(sum,v)
+    if v~="x" then sum = fracSum(sum,v) end
   end
 
   return sum
 end
 
-local function sdfMultiply(tab,n,d)
+function sdfMultiply(tab,n,d)
+  assert(type(n)=="number")
+  assert(type(d)=="number")
+
   local res = {}
   for k,v in pairs(tab) do
-    table.insert(res, fracMultiply(v,{n,d}))
+    if v=="x" then
+      table.insert(res,v)
+    else
+      table.insert(res, fracMultiply(v,{n,d}))
+    end
   end
   return res
 end
@@ -2396,13 +2421,10 @@ darkroom.posSeq = memoize(function( W, H, T )
 -- and drives the first tuple with (x,y) coord
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
-darkroom.liftXYSeq = memoize(function( f, W, H, T, sdfOverride )
+darkroom.liftXYSeq = memoize(function( f, W, H, T, X )
   assert(darkroom.isFunction(f))
   map({W,H,T},function(n) assert(type(n)=="number") end)
-  assert( sdfOverride==nil or darkroom.isSDFRate(sdfOverride) )
-
-  --darkroom.expectBasic(f.inputType)
-  --darkroom.expectBasic(f.outputType)
+  assert(X==nil)
 
   local inputType = f.inputType.list[2]
 
@@ -2412,7 +2434,7 @@ darkroom.liftXYSeq = memoize(function( f, W, H, T, sdfOverride )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   --local packed = darkroom.apply( "packedtup", darkroom.packTuple({xyType,inputType}), darkroom.tuple("ptup", {p,inp}) )
   local out = darkroom.apply("m", f, darkroom.tuple("ptup", {p,inp}) )
-  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out, nil, nil, sdfOverride )
+  return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out )
 end)
 
 -- this takes a function f : {{int32,int32},inputType} -> outputType
@@ -2482,9 +2504,9 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
                              data(out) = inp._1
                              valid(out) = (x>=L and y>=B and x<W-R and y<H-Top)
                              if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
-                           end, sinp, S.tuple{sdata,svalid})
+                           end, sinp, S.tuple{sdata,svalid}, nil, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
-  return darkroom.liftXYSeq( f, W, H, T, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}} )
+  return darkroom.liftXYSeq( f, W, H, T  )
 end
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
@@ -3292,7 +3314,7 @@ function darkroom.reduceSeq( f, T )
   darkroom.expectBasic(f.outputType)
   res.inputType = f.outputType
   res.outputType = darkroom.V(f.outputType)
-  res.sdfInput, res.sdfOutput = {{1/T,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1/T}}
   res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
@@ -3360,6 +3382,9 @@ end
 -- surpresses output if we get more then _count_ inputs
 darkroom.overflow = memoize(function( A, count )
   darkroom.expectBasic(A)
+
+  assert(count<2^32-1)
+
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=A, outputType=darkroom.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
@@ -3372,22 +3397,99 @@ darkroom.overflow = memoize(function( A, count )
   end
   res.terraModule = Overflow
   res.systolicModule = S.moduleConstructor("Overflow_"..count)
-  local cnt = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIf()):CE(true):instantiate("cnt") )
+  local cnt = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
 
   local sinp = S.parameter("process_input", A )
   local CE = S.CE("CE")
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sinp, S.lt(cnt:get(), S.constant( count, types.uint(16))) }, "process_output", {cnt:setBy(S.constant(true,types.bool()))}, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sinp, S.lt(cnt:get(), S.constant( count, types.uint(32))) }, "process_output", {cnt:setBy(S.constant(true,types.bool()))}, nil, CE ) )
 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool()), CE) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(32)))}, S.parameter("reset",types.bool()), CE) )
 
   return darkroom.newFunction( res )
                             end)
+
+-- provides fake output if we get less then _count_ inputs after _cyclecount_ cycles
+-- if thing thing is done before tooSoonCycles, throw an assert
+darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
+  darkroom.expectBasic(A)
+  assert(type(count)=="number")
+  assert(type(cycles)=="number")
+  err(cycles==math.floor(cycles),"cycles must be an integer")
+
+  assert(count<2^32-1)
+  err(cycles<2^32-1,"cycles >32 bit:"..tostring(cycles))
+
+  -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
+  -- But in theory you should only put this at the very end of your pipe, so whatever...
+  local res = {kind="underflow", A=A, inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
+
+  local struct Underflow {ready:bool; readyDownstream:bool}
+  terra Underflow:reset() end
+  terra Underflow:process( inp : &darkroom.lower(res.inputType):toTerraType(), out:&darkroom.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  terra Underflow:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
+  terra Underflow:stats(name:&int8) end
+  res.terraModule = Underflow
+
+  res.systolicModule = S.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+
+  local printInst
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
+
+  local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+  local cycleCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("cycleCount"):setCoherent(false) )
+
+  local rst = S.parameter("reset",types.bool())
+
+  local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
+  local pready = S.parameter("ready_downstream", types.bool())
+  local CE = S.__or(pready,rst)
+  local pvalid = S.index(pinp,1)
+  local pdata = S.index(pinp,0)
+
+  local fixupMode = S.gt(cycleCount:get(),S.constant(cycles,types.uint(32)))
+
+  local pipelines = {}
+  table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.__not(rst), CE) )
+  table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.__not(rst), CE) )
+
+  local outData = S.select(fixupMode,S.cast(S.constant(3735928559,types.bits(A:verilogBits())),A),pdata)
+  local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
+
+  if tooSoonCycles~=nil then
+    local asstInst = res.systolicModule:add( S.module.assert( "pipeline completed eariler than expected", true, false ):instantiate("asstInst") )
+    local tooSoon = S.eq(cycleCount:get(),S.constant(tooSoonCycles,types.uint(32)))
+    tooSoon = S.__and(tooSoon,S.ge(outputCount:get(),S.constant(count,types.uint(32))))
+    table.insert( pipelines, asstInst:process(S.__not(tooSoon),S.__not(rst),CE) )
+
+    -- ** throw in valids to mess up result
+    -- just raising an assert doesn't work b/c verilog is dumb
+    outValid = S.__or(outValid,tooSoon)
+  end
+
+
+  if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple{outputCount:get(),cycleCount:get(),outValid}) ) end
+
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{outData,outValid}, "process_output", pipelines) ) 
+
+  local resetPipelines = {}
+  table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(32)),rst,CE) )
+  table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst,CE) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
+
+  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
+
+  return darkroom.newFunction( res )
+    end)
 
 -- function argument
 function darkroom.input( type, sdfRate )
   err( types.isType( type ), "darkroom.input: first argument should be type" )
   assert( sdfRate==nil or darkroom.isSDFRate(sdfRate))
-  return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate} )
+  if sdfRate==nil then sdfRate={{1,1}} end
+  return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
 
 function callOnEntries( T, fnname )
@@ -3397,9 +3499,51 @@ function callOnEntries( T, fnname )
   T.methods[fnname] = terra([TS]) [ssStats] end
 end
 
+-- this takes in a darkroom IR graph and normalizes the input SDF rate so that
+-- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
+-- and (2) no node should have SDF rate > 1
+local function lambdaSDFNormalize(input,output)
+  local sdfMaxRate = output:sdfExtremeRate(true)
+  err(fracToNumber(sdfMaxRate)>=1, "sdf max rate is <1?")
+
+  if input.sdfRate~=nil then
+    --local sdfInputSum = sdfSum(input.sdfRate)
+    for k,v in pairs(input.sdfRate) do
+      err(v[1]/v[2]<=1, "error, lambda declared with input BW > 1")
+    end
+  end
+
+  local outputBW = output:sdfTotal(output)
+  local outputBW = sdfSum(outputBW)
+
+  -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
+  -- we already checked that the input is <1, so that won't limit us.
+  local scaleFactor
+  print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW))
+  if fracToNumber(sdfMaxRate) > fracToNumber(outputBW) then
+    scaleFactor = fracInvert(sdfMaxRate)
+  else
+    scaleFactor = fracInvert(outputBW)
+  end
+
+  local newInput
+  local newOutput = output:process(
+    function(n,orig)
+      if n.kind=="input" then
+        assert(n.id==input.id)
+        n.sdfRate = sdfMultiply(n.sdfRate,scaleFactor[1],scaleFactor[2])
+        assert(darkroom.isSDFRate(n.sdfRate))
+        newInput = darkroom.newIR(n)
+        return newInput
+      end
+      end)
+
+  return newInput, newOutput
+end
+
 -- function definition
 -- output, inputs
-function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride, X )
+function darkroom.lambda( name, input, output, instances, pipelines, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   assert(X==nil)
@@ -3411,9 +3555,12 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   if instances~=nil then map( instances, function(n) assert(darkroom.isInstance(n)) end ) end
   assert( pipelines==nil or type(pipelines)=="table")
   if pipelines~=nil then map( pipelines, function(n) assert(darkroom.isIR(n)) end ) end
-  assert( sdfOverride==nil or darkroom.isSDFRate(sdfOverride))
+
 
   local output = output:typecheck()
+
+  input, output = lambdaSDFNormalize(input,output)
+
   local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines }
   res.inputType = input.type
   res.outputType = output.type
@@ -3693,17 +3840,15 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   end
 
   res.terraModule = docompile(res)
-  
-  res.sdfInput = {{1,1}}
-  if input.sdfRate~=nil then res.sdfInput=input.sdfRate end
-  if sdfOverride~=nil then
-    res.sdfOutput = sdfOverride
-  else
-    res.sdfOutput = output:sdfTotal(output)
-  end
+
+  assert(darkroom.isSDFRate(input.sdfRate))
+  res.sdfInput = input.sdfRate
+  res.sdfOutput = output:sdfTotal(output)
 
   local isum = sdfSum(res.sdfInput)
   local osum = sdfSum(res.sdfOutput)
+
+  if DARKROOM_VERBOSE then print("LAMBDA",name,"INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
 
   if (isum[1]/isum[2]<=1 and osum[1]/osum[2]<=1)  then
     -- normal. it is possible for a function to have input AND output rate <1.
@@ -3711,10 +3856,10 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   elseif (isum[1]/isum[2])*#res.sdfOutput == (osum[1]/osum[2])*#res.sdfInput then
     -- this is OK. This is like a packTuple. it takes in 2 streams at rate 1 (sum=2), and produces 1 stream of rate 1 (sum=1)
     -- we normalize by the number of streams. 
-  elseif (osum[1]/osum[2]>1) then
+--  elseif (osum[1]/osum[2]>1) then
     -- it's impossible to produce more than one output per cycle
-    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
-    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
+--    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
+--    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
   else
     print("INP",#res.sdfInput,res.sdfInput[1][1],res.sdfInput[1][2])
     print("out",#res.sdfOutput,res.sdfOutput[1][1],res.sdfOutput[1][2])
@@ -3844,12 +3989,16 @@ function darkroom.lambda( name, input, output, instances, pipelines, sdfOverride
   return darkroom.newFunction( res )
 end
 
-function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput, systolicInstances )
+function darkroom.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput, systolicInstances, sdfOutput, X )
   err( type(name)=="string", "lift name must be string" )
   assert( types.isType(inputType ) )
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
   err( systolic.isAST(systolicOutput), "missing systolic output")
+  err(sdfOutput==nil or darkroom.isSDFRate(sdfOutput),"SDF output must be SDF")
+  assert(X==nil)
+
+  if sdfOutput==nil then sdfOutput = {{1,1}} end
 
   local struct LiftModule {}
   terra LiftModule:reset() end
@@ -3868,12 +4017,8 @@ function darkroom.lift( name, inputType, outputType, delay, terraFunction, systo
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
   systolicModule:complete()
-  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=false }
+  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
   return darkroom.newFunction( res )
-end
-
-local function getloc()
-  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
 end
 
 function darkroom.instantiateRegistered( name, fn )
@@ -4079,6 +4224,8 @@ darkroom.freadSeq = memoize(function( filename, ty )
   darkroom.expectBasic(ty)
   local filenameVerilog=filename
   local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=types.null(), outputType=ty, stateful=true, delay=0}
+  res.sdfInput={{1,1}}
+  res.sdfOutput={{1,1}}
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:reset() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -4209,6 +4356,8 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
   err(outputTokens==expectedOutputTokens, "Error, seqMapHandshake, SDF output tokens ("..tostring(outputTokens)..") does not match stated output tokens ("..tostring(expectedOutputTokens)..")")
 
   local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, inputT=inputT, outputT=outputT,inputType=types.null(),outputType=types.null()}
+  res.sdfInput = f.sdfInput
+  res.sdfOutput = f.sdfOutput
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
@@ -4256,15 +4405,16 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
 
     -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
-    local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
-    print("MAX UTILIZATION",maxUtilization,LL)
+    --local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
+    --print("MAX UTILIZATION",maxUtilization,LL)
 
-    local minUtilization, MLL = f.output:sdfExtremeUtilization(false)
-    print("MIN UTILIZATION",minUtilization,MLL)
+    --local minUtilization, MLL = f.output:sdfExtremeUtilization(false)
+    --print("MIN UTILIZATION",minUtilization,MLL)
     
     -- this is the worst utilization of a unit, accounting for the fact that all units must have utilization < 1
-    local totalMinUtilization = minUtilization/maxUtilization
-    print("TOTAL MIN UTILIZATION",totalMinUtilization)
+    --local totalMinUtilization = minUtilization/maxUtilization
+    --print("TOTAL MIN UTILIZATION",totalMinUtilization)
+    local maxUtilization = 1
 
     axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens*maxUtilization)+1024) -- just give it 1024 cycles of slack
     if tapInputType~=nil then

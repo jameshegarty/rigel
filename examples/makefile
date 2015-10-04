@@ -5,12 +5,14 @@ SRCS = $(filter-out harness.t examplescommon.t lk_core.t stereo_tr_core.t ,$(SRC
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
 
-TERRA = $(patsubst %.t,out/%.raw,$(SRCS))
-TERRA += $(patsubst %.t,out/%_half.raw,$(SRCS))
-TERRA += $(patsubst %.t,out/%.bmp,$(SRCS))
-TERRA += $(patsubst %.t,out/%_half.bmp,$(SRCS))
-TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
-TERRA += $(patsubst %.t,out/%_half.correct.txt,$(GOLDS))
+TERRASRCS = $(filter-out underflow.t, $(SRCS))
+
+TERRA = $(patsubst %.t,out/%.raw,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
 SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t,$(SRCS))

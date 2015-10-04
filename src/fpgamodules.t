@@ -17,11 +17,12 @@ modules.sumwrap = memoize(function( ty, limit, X)
                   end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function(inc)
+modules.incIf=memoize(function(inc,ty)
                         if inc==nil then inc=1 end
-      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+                        if ty==nil then ty=types.uint(16) end
+      local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
 
-      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,types.uint(16)), S.index(swinp,0) ):disablePipelining()
+      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
       return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
