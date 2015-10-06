@@ -1,2 +1,5 @@
 This folder is for any xilinx specific IP created using coregen.
-Stick the <core>.veo and <core>.ngc in this folder.
+When creating a new ip, put the following files HERE.
+    <core>.v
+    <core>.veo
+    <core>.ngc

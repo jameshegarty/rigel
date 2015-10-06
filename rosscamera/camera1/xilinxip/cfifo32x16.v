@@ -25,8 +25,8 @@
 *     (c) Copyright 1995-2015 Xilinx, Inc.                                     *
 *     All rights reserved.                                                     *
 *******************************************************************************/
-// You must compile the wrapper file vfifo64x1024.v when simulating
-// the core, vfifo64x1024. When compiling the wrapper file, be sure to
+// You must compile the wrapper file cfifo32x16.v when simulating
+// the core, cfifo32x16. When compiling the wrapper file, be sure to
 // reference the XilinxCoreLib Verilog simulation library. For detailed
 // instructions, please refer to the "CORE Generator Help".
 
@@ -36,7 +36,7 @@
 
 `timescale 1ns/1ps
 
-module vfifo64x1024(
+module cfifo32x16(
   rst,
   wr_clk,
   rd_clk,
@@ -45,20 +45,18 @@ module vfifo64x1024(
   rd_en,
   dout,
   full,
-  empty,
-  rd_data_count
+  empty
 );
 
 input rst;
 input wr_clk;
 input rd_clk;
-input [63 : 0] din;
+input [31 : 0] din;
 input wr_en;
 input rd_en;
-output [63 : 0] dout;
+output [31 : 0] dout;
 output full;
 output empty;
-output [10 : 0] rd_data_count;
 
 // synthesis translate_off
 
@@ -88,9 +86,9 @@ output [10 : 0] rd_data_count;
     .C_AXIS_TYPE(0),
     .C_COMMON_CLOCK(0),
     .C_COUNT_TYPE(0),
-    .C_DATA_COUNT_WIDTH(10),
+    .C_DATA_COUNT_WIDTH(4),
     .C_DEFAULT_VALUE("BlankString"),
-    .C_DIN_WIDTH(64),
+    .C_DIN_WIDTH(32),
     .C_DIN_WIDTH_AXIS(1),
     .C_DIN_WIDTH_RACH(32),
     .C_DIN_WIDTH_RDCH(64),
@@ -98,7 +96,7 @@ output [10 : 0] rd_data_count;
     .C_DIN_WIDTH_WDCH(64),
     .C_DIN_WIDTH_WRCH(2),
     .C_DOUT_RST_VAL("0"),
-    .C_DOUT_WIDTH(64),
+    .C_DOUT_WIDTH(32),
     .C_ENABLE_RLOCS(0),
     .C_ENABLE_RST_SYNC(1),
     .C_ERROR_INJECTION_TYPE(0),
@@ -145,7 +143,7 @@ output [10 : 0] rd_data_count;
     .C_HAS_PROG_FLAGS_WACH(0),
     .C_HAS_PROG_FLAGS_WDCH(0),
     .C_HAS_PROG_FLAGS_WRCH(0),
-    .C_HAS_RD_DATA_COUNT(1),
+    .C_HAS_RD_DATA_COUNT(0),
     .C_HAS_RD_RST(0),
     .C_HAS_RST(1),
     .C_HAS_SLAVE_CE(0),
@@ -169,17 +167,17 @@ output [10 : 0] rd_data_count;
     .C_MSGON_VAL(1),
     .C_OPTIMIZATION_MODE(0),
     .C_OVERFLOW_LOW(0),
-    .C_PRELOAD_LATENCY(0),
+    .C_PRELOAD_LATENCY(2),
     .C_PRELOAD_REGS(1),
-    .C_PRIM_FIFO_TYPE("1kx36"),
-    .C_PROG_EMPTY_THRESH_ASSERT_VAL(4),
+    .C_PRIM_FIFO_TYPE("512x36"),
+    .C_PROG_EMPTY_THRESH_ASSERT_VAL(2),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_AXIS(1022),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_RACH(1022),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_RDCH(1022),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_WACH(1022),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_WDCH(1022),
     .C_PROG_EMPTY_THRESH_ASSERT_VAL_WRCH(1022),
-    .C_PROG_EMPTY_THRESH_NEGATE_VAL(5),
+    .C_PROG_EMPTY_THRESH_NEGATE_VAL(3),
     .C_PROG_EMPTY_TYPE(0),
     .C_PROG_EMPTY_TYPE_AXIS(0),
     .C_PROG_EMPTY_TYPE_RACH(0),
@@ -187,14 +185,14 @@ output [10 : 0] rd_data_count;
     .C_PROG_EMPTY_TYPE_WACH(0),
     .C_PROG_EMPTY_TYPE_WDCH(0),
     .C_PROG_EMPTY_TYPE_WRCH(0),
-    .C_PROG_FULL_THRESH_ASSERT_VAL(1023),
+    .C_PROG_FULL_THRESH_ASSERT_VAL(13),
     .C_PROG_FULL_THRESH_ASSERT_VAL_AXIS(1023),
     .C_PROG_FULL_THRESH_ASSERT_VAL_RACH(1023),
     .C_PROG_FULL_THRESH_ASSERT_VAL_RDCH(1023),
     .C_PROG_FULL_THRESH_ASSERT_VAL_WACH(1023),
     .C_PROG_FULL_THRESH_ASSERT_VAL_WDCH(1023),
     .C_PROG_FULL_THRESH_ASSERT_VAL_WRCH(1023),
-    .C_PROG_FULL_THRESH_NEGATE_VAL(1022),
+    .C_PROG_FULL_THRESH_NEGATE_VAL(12),
     .C_PROG_FULL_TYPE(0),
     .C_PROG_FULL_TYPE_AXIS(0),
     .C_PROG_FULL_TYPE_RACH(0),
@@ -203,10 +201,10 @@ output [10 : 0] rd_data_count;
     .C_PROG_FULL_TYPE_WDCH(0),
     .C_PROG_FULL_TYPE_WRCH(0),
     .C_RACH_TYPE(0),
-    .C_RD_DATA_COUNT_WIDTH(11),
-    .C_RD_DEPTH(1024),
+    .C_RD_DATA_COUNT_WIDTH(4),
+    .C_RD_DEPTH(16),
     .C_RD_FREQ(1),
-    .C_RD_PNTR_WIDTH(10),
+    .C_RD_PNTR_WIDTH(4),
     .C_RDCH_TYPE(0),
     .C_REG_SLICE_MODE_AXIS(0),
     .C_REG_SLICE_MODE_RACH(0),
@@ -219,7 +217,7 @@ output [10 : 0] rd_data_count;
     .C_USE_COMMON_OVERFLOW(0),
     .C_USE_COMMON_UNDERFLOW(0),
     .C_USE_DEFAULT_SETTINGS(0),
-    .C_USE_DOUT_RST(0),
+    .C_USE_DOUT_RST(1),
     .C_USE_ECC(0),
     .C_USE_ECC_AXIS(0),
     .C_USE_ECC_RACH(0),
@@ -227,15 +225,15 @@ output [10 : 0] rd_data_count;
     .C_USE_ECC_WACH(0),
     .C_USE_ECC_WDCH(0),
     .C_USE_ECC_WRCH(0),
-    .C_USE_EMBEDDED_REG(0),
+    .C_USE_EMBEDDED_REG(1),
     .C_USE_FIFO16_FLAGS(0),
-    .C_USE_FWFT_DATA_COUNT(1),
+    .C_USE_FWFT_DATA_COUNT(0),
     .C_VALID_LOW(0),
     .C_WACH_TYPE(0),
     .C_WDCH_TYPE(0),
     .C_WR_ACK_LOW(0),
-    .C_WR_DATA_COUNT_WIDTH(11),
-    .C_WR_DEPTH(1024),
+    .C_WR_DATA_COUNT_WIDTH(4),
+    .C_WR_DEPTH(16),
     .C_WR_DEPTH_AXIS(1024),
     .C_WR_DEPTH_RACH(16),
     .C_WR_DEPTH_RDCH(1024),
@@ -243,7 +241,7 @@ output [10 : 0] rd_data_count;
     .C_WR_DEPTH_WDCH(1024),
     .C_WR_DEPTH_WRCH(16),
     .C_WR_FREQ(1),
-    .C_WR_PNTR_WIDTH(10),
+    .C_WR_PNTR_WIDTH(4),
     .C_WR_PNTR_WIDTH_AXIS(10),
     .C_WR_PNTR_WIDTH_RACH(4),
     .C_WR_PNTR_WIDTH_RDCH(10),
@@ -263,7 +261,6 @@ output [10 : 0] rd_data_count;
     .DOUT(dout),
     .FULL(full),
     .EMPTY(empty),
-    .RD_DATA_COUNT(rd_data_count),
     .BACKUP(),
     .BACKUP_MARKER(),
     .CLK(),
@@ -286,6 +283,7 @@ output [10 : 0] rd_data_count;
     .VALID(),
     .UNDERFLOW(),
     .DATA_COUNT(),
+    .RD_DATA_COUNT(),
     .WR_DATA_COUNT(),
     .PROG_FULL(),
     .PROG_EMPTY(),
