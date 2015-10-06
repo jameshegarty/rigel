@@ -98,21 +98,21 @@ int main(int argc, char *argv[]) {
   //unsigned int downsample = downsampleX*downsampleY;
   //unsigned int downsampleShift = mylog2(downsample);
   //printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
-  assert(scaleN==1 || scaleD==1);
+  //  assert(scaleN==1 || scaleD==1);
   // b/c we send the shift, only power of two scales are supported
-  assert(isPowerOf2(scaleN) && isPowerOf2(scaleD));
+  //  assert(isPowerOf2(scaleN) && isPowerOf2(scaleD));
   
-  int downsampleShift;
-  if(scaleN==1){
+  int downsampleShift=0;
+  //  if(scaleN==1){
     // a downsample
-    downsampleShift = mylog2(scaleD)+8;
-  }else if(scaleD==1){
+  //    downsampleShift = mylog2(scaleD)+8;
+  //  }else if(scaleD==1){
     // a upsample
-    downsampleShift = 8-mylog2(scaleN);
-  }
-  assert( downsampleShift>=0 && downsampleShift<16 );
+  //    downsampleShift = 8-mylog2(scaleN);
+  //  }
+  //assert( downsampleShift>=0 && downsampleShift<16 );
   printf("Scale %d/%d, shift:%d\n",scaleN,scaleD,downsampleShift);
-
+  
 	unsigned page_size = sysconf(_SC_PAGESIZE);
 
 	printf("GPIO access through /dev/mem. %d\n", page_size);
@@ -133,20 +133,31 @@ int main(int argc, char *argv[]) {
   FILE* imfile = openImage(argv[2], &lenInRaw);
   printf("file LEN %d\n",lenInRaw);
   
-  unsigned lenOutRaw = (lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
+  unsigned ln = (lenInRaw*scaleN*outputBytesPerPixel);
+  unsigned ld = (scaleD*inputBytesPerPixel);
+  assert(ln%ld==0);
+  unsigned lenOutRaw = ln/ld;
 
-  unsigned int lenIn;
-  unsigned int lenOut;
+  unsigned int lenIn = lenInRaw;
+  unsigned int lenOut = lenOutRaw;
+
+  if (lenIn%(8*16)!=0){
+    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
+  }
+
+  if (lenOut%(8*16)!=0){
+    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+  }
 
   // we pad out the length to 128 bytes as required, but just leave it filled with garbage.
   // pad the smallest of the input/output, and upscale the padded size
-  if(lenOutRaw<=lenInRaw){ // a downscale
-    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
-    lenIn = (lenOut*scaleD*inputBytesPerPixel)/(scaleN*outputBytesPerPixel);
-  }else{ // scaleD==1, a upsample
-    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
-    lenOut = (lenIn*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
-  }
+  //  if(lenOutRaw<=lenInRaw){ // a downscale
+  //    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+  ///    lenIn = (lenOut*scaleD*inputBytesPerPixel)/(scaleN*outputBytesPerPixel);
+  //  }else{ // scaleD==1, a upsample
+  //    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
+  //    lenOut = (lenIn*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
+  //  }
 
   printf("LENOUT %d\n", lenOut);
   assert(lenIn % (8*16) == 0);
@@ -179,7 +190,7 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(1);
 
-  saveImage(argv[3],ptr+lenIn,(lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel));
+  saveImage(argv[3],ptr+lenIn,lenOut);
   //saveImage(argv[3],ptr,lenRaw);
 
   return 0;

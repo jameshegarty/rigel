@@ -945,6 +945,50 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
   return res
 end
 
+-- This is basically just for testing: artificially reduces the throughput along a path
+function darkroom.reduceThroughput(A,factor)
+  assert(type(factor)=="number")
+  assert(factor>1)
+  assert(math.floor(factor)==factor)
+  local res = {kind="reduceThroughput",factor=factor}
+  res.inputType = A
+  res.outputType = darkroom.RV(A)
+  res.sdfInput = {{1,factor}}
+  res.sdfOutput = {{1,factor}}
+  res.stateful = true
+  res.delay = 0
+  local struct ReduceThroughput {ready:bool; phase:int}
+  terra ReduceThroughput:reset() self.phase=0 end
+  terra ReduceThroughput:stats(inp:&int8)  end
+  terra ReduceThroughput:process(inp:&A:toTerraType(),out:&darkroom.lower(res.outputType):toTerraType()) 
+    data(out) = @inp
+    valid(out) = self.ready
+    self.phase = self.phase+1
+    if self.phase==factor then self.phase=0 end
+  end
+  terra ReduceThroughput:calculateReady() 
+    self.ready = (self.phase==0) 
+  end
+  res.terraModule = ReduceThroughput
+  res.systolicModule = S.moduleConstructor("ReduceThroughput_"..factor)
+
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+
+  local reading = S.eq( phase:get(), S.constant(0,types.uint(16)) ):disablePipelining()
+
+  local sinp = S.parameter( "inp", A )
+
+  local pipelines = {}
+  table.insert(pipelines, phase:setBy(S.constant(true,types.bool())))
+
+  local CE = S.CE("CE")
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{sinp,reading}, "process_output", pipelines, nil, CE) )
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+
+  return darkroom.waitOnInput( darkroom.newFunction(res) )
+end
+
 -- f should be basic->RV
 -- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
 -- if inner:ready()==true, inner will run iff valid(input)==true
@@ -3423,8 +3467,8 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="underflow", A=A, inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
 
-  local struct Underflow {ready:bool; readyDownstream:bool}
-  terra Underflow:reset() end
+  local struct Underflow {ready:bool; readyDownstream:bool;cycles:uint32; outputCount:uint32}
+  terra Underflow:reset() self.cycles=0; self.outputCount=0 end
   terra Underflow:process( inp : &darkroom.lower(res.inputType):toTerraType(), out:&darkroom.lower(res.outputType):toTerraType())
     @out = @inp
   end
@@ -3438,6 +3482,8 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
 
   local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+
+  -- NOTE THAT WE Are counting cycles where downstream_ready == true
   local cycleCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("cycleCount"):setCoherent(false) )
 
   local rst = S.parameter("reset",types.bool())
@@ -3456,6 +3502,7 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
 
   local outData = S.select(fixupMode,S.cast(S.constant(3735928559,types.bits(A:verilogBits())),A),pdata)
   local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
+  outValid = S.__and(outValid,S.__not(rst))
 
   if tooSoonCycles~=nil then
     local asstInst = res.systolicModule:add( S.module.assert( "pipeline completed eariler than expected", true, false ):instantiate("asstInst") )
@@ -3519,7 +3566,7 @@ local function lambdaSDFNormalize(input,output)
   -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
   -- we already checked that the input is <1, so that won't limit us.
   local scaleFactor
-  print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW))
+  --print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW))
   if fracToNumber(sdfMaxRate) > fracToNumber(outputBW) then
     scaleFactor = fracInvert(sdfMaxRate)
   else
@@ -4376,6 +4423,7 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     var inpAddr = 0
     var outAddr = 0
     var downstreamReady = 0
+
     while inpAddr<inputW*inputH or outAddr<outputW*outputH do
       valid(innerinp)=(inpAddr<inputW*inputH)
       self.inner:calculateReady(downstreamReady==0)
@@ -4391,8 +4439,6 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
 
   local verilogStr
 
-
-
   if axi then
     local baseTypeI = inputType
     local baseTypeO = darkroom.extractData(f.outputType)
@@ -4403,6 +4449,12 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
+
+    -- input/output tokens are one axi bus transaction => they are 8 bytes
+    local inputBytes = upToNearest(128,inputTokens*8)
+    local outputBytes = upToNearest(128,outputTokens*8)
+    axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
+    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
 
     -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
     --local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
@@ -4476,9 +4528,9 @@ wire ready;
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
 ]]..tapRST..[[
-    if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end
+    if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end // I think we have this _NOT_ finish so that it outputs an invalid file
     if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && doneCnt==1024 ) begin $finish(); end
-    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ ) begin doneCnt <= doneCnt+1; end
+    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
     if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus

@@ -213,7 +213,7 @@ module stage
     .CONFIG_VALID(CONFIG_VALID),
     .CONFIG_READY(READER_READY),
     .CONFIG_START_ADDR(CONFIG_SRC),
-    .CONFIG_NBYTES(lengthInput),
+    .CONFIG_NBYTES(___PIPELINE_INPUT_BYTES),
 
     .DATA_READY_DOWNSTREAM(pipelineReady),
     .DATA_VALID(pipelineInputValid),
@@ -243,7 +243,7 @@ module stage
     .CONFIG_VALID(CONFIG_VALID),
     .CONFIG_READY(WRITER_READY),
     .CONFIG_START_ADDR(CONFIG_DEST),
-    .CONFIG_NBYTES(lengthOutput),
+    .CONFIG_NBYTES(___PIPELINE_OUTPUT_BYTES),
 
     .DATA_READY(downstreamReady),
     .DATA_VALID(pipelineOutputValid),
