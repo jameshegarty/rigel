@@ -46,6 +46,10 @@ module OV7670Init (index_i, data_o);
          //6'd0 : data_o = {16'h0A76, 1'b0}; 
          6'd0 : data_o = {16'h1280, 1'b1};   // COM7     Reset.
          6'd1 : data_o = {16'hf0f0, 1'b1};   // Denotes delay.
+         6'd2 : data_o = {16'h1180, 1'b1};   // CLKRC     Use external clock? 
+         6'd3 : data_o = {16'h1205, 1'b1};   // COM12     Set RGB 
+         
+         /*
          6'd2 : data_o = {16'h1204, 1'b1};   // COM7     Set RGB (06 enables color bar overlay).
          6'd3 : data_o = {16'h1100, 1'b1};   // CLKRC    Use external clock directly.
          6'd4 : data_o = {16'h0C00, 1'b1};   // COM3     Disable DCW & scalling. + RSVD bits.
@@ -84,7 +88,7 @@ module OV7670Init (index_i, data_o);
          6'd34: data_o = {16'hb10c, 1'b1};   // ABLC1    Enable ABLC function. + RSVD bits.
          6'd35: data_o = {16'hb20e, 1'b1};   // RSVD     ?
          6'd36: data_o = {16'hb380, 1'b1};   // THL_ST   ABLC Target.
-         /*6'd37: data_o = {16'h7a20, 1'b1};   // SLOP     Gamma Curve Highest Segment Slope 
+         6'd37: data_o = {16'h7a20, 1'b1};   // SLOP     Gamma Curve Highest Segment Slope 
          6'd38: data_o = {16'h7b10, 1'b1};   // GAM1
          6'd39: data_o = {16'h7c1e, 1'b1};   // GAM2
          6'd40: data_o = {16'h7d35, 1'b1};   // GAM3
@@ -99,8 +103,9 @@ module OV7670Init (index_i, data_o);
          6'd49: data_o = {16'h86af, 1'b1};   // GAM12
          6'd50: data_o = {16'h87c4, 1'b1};   // GAM13
          6'd51: data_o = {16'h88d7, 1'b1};   // GAM14
-         6'd52: data_o = {16'h89e8, 1'b1};   // GAM15*/
-         default: data_o = {16'hffff, 1'b1};
+         6'd52: data_o = {16'h89e8, 1'b1};   // GAM15
+        */ 
+        default: data_o = {16'hffff, 1'b1};
       endcase
    end
 

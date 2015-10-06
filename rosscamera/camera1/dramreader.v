@@ -1,7 +1,7 @@
 module DRAMReader(
     //AXI port
     input ACLK,
-    input ARESETN,
+    input rst_n,
     output reg [31:0] M_AXI_ARADDR,
     input M_AXI_ARREADY,
     output  M_AXI_ARVALID,
@@ -35,8 +35,8 @@ parameter IDLE = 0, RWAIT = 1;
 reg [31:0] a_count;
 reg a_state;  
 assign M_AXI_ARVALID = (a_state == RWAIT);
-always @(posedge ACLK or negedge ARESETN) begin
-    if (ARESETN == 0) begin
+always @(posedge ACLK or negedge rst_n) begin
+    if (rst_n == 0) begin
         a_state <= IDLE;
         M_AXI_ARADDR <= 0;
         a_count <= 0;
@@ -63,8 +63,8 @@ end
 reg [31:0] b_count;
 reg r_state;
 assign M_AXI_RREADY = (r_state == RWAIT) && dout_ready;
-always @(posedge ACLK or negedge ARESETN) begin
-    if (ARESETN == 0) begin
+always @(posedge ACLK or negedge rst_n) begin
+    if (rst_n == 0) begin
         r_state <= IDLE;
         b_count <= 0;
     end else case(r_state)

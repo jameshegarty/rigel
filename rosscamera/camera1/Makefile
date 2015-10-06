@@ -1,7 +1,15 @@
-all: out/t1.bit
+all: t1.bit
 
-out/%.bit: 
+
+
+%.compile:
 	mkdir -p out/build_$*
+	cp xilinxip/*.ngc out/build_$*/.
+	cd out/build_$*; xst -ifn ../../system.xst | tee OUT_xst.log
+
+%.bit:
+	mkdir -p out/build_$*
+	cp xilinxip/*.ngc out/build_$*/.
 	cd out/build_$*; xst -ifn ../../system.xst | tee OUT_xst.log
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../ps7_constraints.ucf -uc ../../system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
 	cd out/build_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt

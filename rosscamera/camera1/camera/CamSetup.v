@@ -25,63 +25,148 @@
 // done_o signal.
 //
 // Other camera models require modification of register set and timing parameters.
-// After a hardware reset delay for 1ms prior to raising rst_i.
+// After a hardware reset delay for 1ms prior to raising rst_n.
 // External pull-up register (4.7k should be enough) is required on SIOD line. FPGA`s internal 
 // pull-ups may not be sufficient.
 //
 //##################################################################################################
 
 `timescale 1ns / 1ps
+`include "macros.vh"
 
-module CamSetup (clk_i, rst_i, start_i, done_o, sioc_o, siod_io);
-
-    `include "Math.v" 
-
-    parameter   IN_FREQ = 24_000_000;   // clk_i frequency in Hz.
-    parameter   CAM_ID = 8'h42;         // OV7670 ID. Bit 0 is Don't Care since we specify r/w op in register lookup table.
+module CamSetup (
     
-    input       clk_i;                  // Main clock.
-    input       rst_i;                  // 0 - reset.
-    input       start_i;
-    output reg  done_o;                   // 0 - setup in progress. 1 - setup has completed.
-    output      sioc_o;                 // Camera's SIOC.
-    inout       siod_io;                // Camera's SIOD. Should have a pullup resistor.
- 
- 
+    input       clk,                  // Main clock.
+    input       rst_n,                  // 0 - reset.
+    
+    //Camera reg read/write cmd,
+    input [16:0] rw_cmd,            //{rw, rw_addr[7:0], rw_data7:0
+    input       rw_cmd_valid,
+    output reg     rw_cmd_ready,
+
+    //camera reg resonse
+    output [16:0] rw_resp,
+    output reg     rw_resp_valid,
+
+    output      sioc_o,                 // Camera's SIOC.
+    inout       siod_io                // Camera's SIOD. Should have a pullup resistor.
+);
+
+    `include "math.v" 
+    parameter   IN_FREQ = 25_000_000;   // clk frequency in Hz.
+    parameter   CAM_ID = 8'h42;         // OV7670 ID. Bit 0 is Don't Care since we specify r/w op in register lookup table.
+
+    
     localparam  SCCB_FREQ = 100_000;    // SCCB frequency in Hz.
     localparam  T_SREG = 300;           // Register setup time in ms. 300ms for OV7670.
  
     localparam  integer SREG_CYCLES = (IN_FREQ/1000)*T_SREG;   
     localparam  SCCB_PERIOD = IN_FREQ/SCCB_FREQ/2;
                 
-    reg         [clog2(SCCB_PERIOD):0] sccb_clk_cnt = 0;
-    reg         sccb_clk = 0;
-    reg         [1:0] stm = 0;
-    reg         [5:0] reg_data_index = 0; 
+    reg         [clog2(SCCB_PERIOD):0] sccb_clk_cnt;
+    reg         sccb_clk;
     wire        [7:0] reg_data_rcvd;
-    wire        [16:0] reg_data_snd;
-    reg         rw;
     reg         sccb_start;
     wire        transact_done;
-    wire        ack_error;
-    reg         [clog2(SREG_CYCLES):0] reg_setup_tmr = 0;
-    wire        data_pulse = (sccb_clk_cnt == SCCB_PERIOD/2 && sccb_clk == 0); 
-    reg         do_tsreg_delay = 0;
+    reg         [clog2(SREG_CYCLES):0] reg_setup_cnt;
+    reg         [clog2(SREG_CYCLES):0] reg_setup_cnt_n;
+    wire        data_pulse;
+   
+    reg [7:0] rw_addr;
+    reg [7:0] rw_data;
+    reg         rw; // (0: read, 1: writea)
+    wire delay_cmd;
+    assign delay_cmd = (rw==1 && rw_addr==8'hF0 && rw_data==8'hF0);
+   
+    assign  data_pulse = (sccb_clk_cnt == SCCB_PERIOD/2 && sccb_clk == 0); 
+
+    always @(posedge clk) begin
+        if(rw_cmd_valid && rw_cmd_ready) begin
+            rw_addr <= rw_cmd[15:8];
+            rw_data <= rw_cmd[7:0];
+            rw <= rw_cmd[16];
+        end
+    end
     
-    OV7670Init caminit
-    (
-        .index_i(reg_data_index),
-        .data_o(reg_data_snd)
-    );
- 
+    assign rw_resp = rw ? {rw,rw_addr,rw_data} : {rw,rw_addr,reg_data_rcvd};
+    
+    reg [2:0] cs, ns;
+    localparam IDLE=3'h0, CMD=3'h1, DELAY=3'h2, RW=3'h3, DONE=3'h4; 
+
+    /*
+    inputs 
+        rw_cmd_valid
+        delay_cmd
+        data_pulse
+        ack_error
+        transact_done
+    
+    control
+        ns
+        sccb_start 
+        reg_setup_cnt_n
+        rw_cmd_ready
+        rw_resp_valid
+    */
+    always @(*) begin
+        (* parallel_case *) case(cs)
+            IDLE: begin
+                ns = rw_cmd_valid ? CMD : IDLE ;
+                sccb_start = 0;
+                reg_setup_cnt_n = 0;
+                rw_cmd_ready = 1;
+                rw_resp_valid = 0;
+            end
+            CMD: begin
+                ns = data_pulse ? (delay_cmd ? DELAY : RW) : CMD ;
+                sccb_start = (data_pulse && !delay_cmd) ? 1: 0;
+                reg_setup_cnt_n = 0;
+                rw_cmd_ready = 0;
+                rw_resp_valid = 0;
+            end
+            DELAY: begin
+                ns = reg_setup_cnt==SREG_CYCLES ? DONE : DELAY;
+                sccb_start = 0;
+                reg_setup_cnt_n = reg_setup_cnt+1'b1;
+                rw_cmd_ready = 0;
+                rw_resp_valid = 0;
+            end
+            RW: begin
+                ns = (data_pulse&&transact_done) ? (ack_error ? CMD : DONE) : RW ;
+                sccb_start = 1;
+                reg_setup_cnt_n = 0 ;
+                rw_cmd_ready = 0;
+                rw_resp_valid = 0;
+            end
+            DONE: begin
+                ns = IDLE;
+                sccb_start = 0;
+                reg_setup_cnt_n = 0;
+                rw_cmd_ready = 0;
+                rw_resp_valid = 1;
+            end
+            default: begin
+                ns = IDLE;
+                sccb_start = 0;
+                reg_setup_cnt_n = 0;
+                rw_cmd_ready = 0;
+                rw_resp_valid = 0;
+            end
+        endcase
+    end
+    
+    `REG(clk, cs, 0, ns)
+    // Read/Write the registers.
+    `REG(clk, reg_setup_cnt, 0, reg_setup_cnt_n)
+   
     SCCBCtrl sccbcntl 
     (   
-        .clk_i(clk_i),
-        .rst_i(rst_i),
+        .clk_i(clk),
+        .rst_i(rst_n),
         .sccb_clk_i(sccb_clk),
         .data_pulse_i(data_pulse),
         .addr_i(CAM_ID),
-        .data_i(reg_data_snd[16:1]),
+        .data_i({rw_addr[7:0],rw_data[7:0]}),
         .rw_i(rw),
         .start_i(sccb_start),
         .ack_error_o(ack_error),
@@ -92,8 +177,8 @@ module CamSetup (clk_i, rst_i, start_i, done_o, sioc_o, siod_io);
     );    
  
     // Generate clock for the SCCB.
-    always @(posedge clk_i or negedge rst_i) begin
-        if (rst_i == 0) begin
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n == 0) begin
             sccb_clk_cnt <= 0;
             sccb_clk <= 0;
         end else begin
@@ -106,87 +191,4 @@ module CamSetup (clk_i, rst_i, start_i, done_o, sioc_o, siod_io);
         end
     end
  
-
-    // TODO This state machine is garbage ad hoc. Should recode to an actual state machine.
-    
-    reg run_state; // 0 is not running, 1 is running
-    
-    always @(posedge clk_i or negedge rst_i) begin
-        if (rst_i==0) begin
-            run_state <= 0;
-        end
-        else begin
-            run_state <= start_i ? 1'b1 : run_state ;
-        end
-    end
-    
-    // Read/Write the registers.
-    always @(posedge clk_i or negedge rst_i) begin
-    
-        if (rst_i == 0) begin
-            done_o <= 0;
-            reg_data_index <= 0;
-            stm <= 0;
-            sccb_start <= 0;
-            rw <= 0;   
-            reg_setup_tmr <= 0;
-            do_tsreg_delay <= 0;
-        // once registers have been written we need to wait for T_SREG ms. 
-        end
-        else if (run_state) begin
-            if (do_tsreg_delay == 1) begin   
-                if (reg_setup_tmr == SREG_CYCLES)
-                    done_o <= 1;
-                else 
-                reg_setup_tmr <= reg_setup_tmr + 1;
-            // delay for T_SREG ms if needed 
-            end
-            else if  (reg_data_snd == {16'hf0f0, 1'b1}) begin
-                if (reg_setup_tmr  == SREG_CYCLES)
-                    reg_data_index <= reg_data_index + 1;
-                else
-                    reg_setup_tmr <= reg_setup_tmr + 1;
-            end 
-            else if (data_pulse) begin
-                if(reg_data_snd != {16'hffff, 1'b1}) begin
-                    done_o <= 0;
-                    (* parallel_case *) case(stm)
-                    2'd0: begin
-                        if (transact_done == 1) 
-                           stm <= 2'd0;
-                        else 
-                           stm <= 2'd1;
-          
-                        sccb_start <= 1;
-                        rw <= reg_data_snd[0];
-                    end
-                    2'd1: begin
-                        if (transact_done == 1) begin
-                            if (ack_error == 1) 
-                                stm <= 2'd0;
-                            else 
-                                stm <= 2'd2;
-                        
-                            rw <= reg_data_snd[0];
-                            sccb_start <= 0;
-                        end
-                    end
-                    2'd2: begin
-                        reg_data_index <= reg_data_index + 1;
-                        stm <= 0;
-                        sccb_start <= 0;
-                        rw <= reg_data_snd[0];
-                    end
-                    endcase
-                end 
-                else begin
-                    stm <= 3;
-                    sccb_start <= 0;
-                    rw <= 0;
-                    do_tsreg_delay <= 1;
-                    reg_setup_tmr <= 0;
-                end
-            end
-        end
-    end
 endmodule

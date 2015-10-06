@@ -1,3 +1,5 @@
+
+`include "../macros.vh"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -22,50 +24,67 @@
 // Module for receiving RGB565 pixel data from OV camera.
 //
 //##################################################################################################
-
-module CamReader (d_i, vsync_i, href_i, pclk_i, rst_i, pixel_valid_o, pixel_o, vstart_o, hstart_o);
-                     
-    input       [7:0] d_i;        // D0 - D7
-    input       vsync_i;          // VSYNC
-    input       href_i;           // HREF
-    input       pclk_i;           // PCLK
-    input       rst_i;            // 0 - Reset.
-    output reg  pixel_valid_o;     // Indicates that a pixel has been received.
-    output reg  [15:0] pixel_o;   // RGB565 pixel.
-    output      vstart_o;           // first pixel of frame
-    output      hstart_o;           // first pixel of line
+// TODO Note this module reads in raw (1 byte) data
+// This is also ordering the data as follows
+// MSB |15-----8|7-----0| LSB
+// PIX |  N+1   |   N   |
+module CamReader (
     
-    reg         odd = 0;
-    reg         frameValid = 0;
+    input       pclk,           // PCLK
+    input       rst_n,            // 0 - Reset.
+    input       [7:0] din,        // D0 - D7
+    input       vsync,          // VSYNC
+    input       href,           // HREF
+    output reg  pixel_valid,     // Indicates that a pixel has been received.
+    output reg  [15:0] pixel,   // RGB565 pixel.
+    output      vstart,           // first pixel of frame
+    output      hstart,           // first pixel of line
+
+    input       raw,
+    input       start, // pulse
+    input       stop    // TODO does not do anythingh
+    );
+
+    reg         odd;
+    reg         frameValid;
     reg         href_p2;
-    reg         vsync_p2;
-    // TODO vstart is actually a vsync pulse CHANGE TO ACTUAL VSTART
+    reg         saw_vsync;
+    
     // Only anding with pixel_valid just in case
-    assign hstart_o = !href_p2 && href_i && pixel_valid_o;
-    assign vstart_o = !vsync_p2 && vsync_i;
-    always @(posedge pclk_i or negedge rst_i) begin
-        if (rst_i == 0) begin
-            pixel_valid_o <= 0;
+    assign hstart = !href_p2 && href ;
+    assign vstart = hstart && saw_vsync ;
+    
+    `REG(pclk, saw_vsync, 0, 
+        vsync ? 1'b1 : (vstart ? 1'b0 : saw_vsync)
+    )
+    
+    reg running;
+    `REG(pclk, running, 0,
+        start ? 1'b1 : running
+    )
+    wire [7:0] din2;
+    assign din2 = din;//{din[0],din[1],din[2],din[3],din[4],din[5],din[6],din[7]};
+    always @(posedge pclk or negedge rst_n) begin
+        if (rst_n == 0) begin
+            pixel_valid <= 0;
             odd <= 0;
             frameValid <= 0;
             href_p2 <= 1'b0;
-            vsync_p2 <= 1'b0;
         end 
         else begin
-            href_p2 <= href_i;
-            vsync_p2 <= vsync_i;
-            if (frameValid == 1 && vsync_i == 0 && href_i == 1) begin
-                if (odd == 0) begin    
-                    pixel_o[15:8] <= d_i;
+            href_p2 <= href;
+            if (frameValid == 1 && vsync == 0 && href == 1) begin
+                if (odd != raw ) begin    
+                    pixel[7:0] <= din2;
                 end
                 else begin
-                    pixel_o[7:0] <= d_i;
-                    pixel_valid_o <= 1;
+                    pixel[15:8] <= din2;
+                    pixel_valid <= 1;
                 end
                 odd <= ~odd;
                 // skip inital frame in case we started receiving in the middle of it
             end 
-            else if (frameValid == 0 && vsync_i == 1) begin
+            else if (running && frameValid == 0 && vsync == 1) begin
                 frameValid <= 1;
             end
         end

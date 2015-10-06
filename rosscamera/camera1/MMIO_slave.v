@@ -1,8 +1,7 @@
-//`include "Math.v"
 
 module MMIO_slave(
     input ACLK,
-    input ARESETN,
+    input rst_n,
     //AXI Inputs
     input [31:0] S_AXI_ARADDR,
     input [11:0] S_AXI_ARID,
@@ -27,18 +26,22 @@ module MMIO_slave(
     input [3:0] S_AXI_WSTRB,
     input S_AXI_WVALID,
     
-    output MMIO_VALID,
     input MMIO_READY,
     output [31:0] MMIO_CMD,
-    output [31:0] STREAM_SRC,
-    output [31:0] STREAM_DEST,
-    output [31:0] STREAM_LEN,
-    
+    output [31:0] STREAMBUF_NBYTES,
+    output [31:0] STREAMBUF_ADDR,
+    input [31:0] MMIO_STATUS,
+
     input [31:0] debug0,
     input [31:0] debug1,
     input [31:0] debug2,
     input [31:0] debug3,
     
+    output [16:0] rw_cmd,
+    output reg rw_cmd_valid,
+    input [17:0] rw_resp,
+    input rw_resp_valid,
+   
     output MMIO_IRQ
     );
 
@@ -63,7 +66,7 @@ module MMIO_slave(
     
     ict106_axilite_conv axilite(
     .ACLK(ACLK),
-    .ARESETN(ARESETN),
+    .ARESETN(rst_n),
     .S_AXI_ARADDR(S_AXI_ARADDR), 
     .S_AXI_ARID(S_AXI_ARID),  
     .S_AXI_ARREADY(S_AXI_ARREADY), 
@@ -106,17 +109,16 @@ module MMIO_slave(
     .M_AXI_WVALID(LITE_WVALID)
   );
 
-`include "Math.v"
+`include "math.v"
 
 // Needs to be at least 4
-parameter MMIO_SIZE = 8;
+parameter MMIO_SIZE = 16;
 
 parameter [31:0] MMIO_STARTADDR = 32'h7000_0000;
 parameter W = 32;
 
 
 //This will only work on Verilog 2005
-// TODO 
 localparam MMIO_BITS = clog2(MMIO_SIZE);
 
 reg [W-1:0] data[MMIO_SIZE-1:0];
@@ -124,7 +126,6 @@ reg [W-1:0] data[MMIO_SIZE-1:0];
 parameter IDLE = 0, RWAIT = 1;
 parameter OK = 2'b00, SLVERR = 2'b10;
 
-reg [31:0] counter;
 
 //READS
 reg r_state;
@@ -134,24 +135,59 @@ assign ar_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_ARADDR[
 assign LITE_ARREADY = (r_state == IDLE);
 assign LITE_RVALID = (r_state == RWAIT);
 
+reg [31:0] cam_cmd;
+        
+// TODO can_cmd_write might be valid for multiple cycles??
+wire cam_cmd_write;
+assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==8);
+`REG(ACLK, rw_cmd_valid, 0, cam_cmd_write)
+assign rw_cmd = data[8][16:0];
+
+
+reg [31:0] cam_resp;
+reg [31:0] cam_resp_cnt;
+always @(posedge ACLK or negedge rst_n) begin
+    if (!rst_n) begin
+        cam_resp <= 32'h0;
+        cam_resp_cnt[12:0] <= 0;
+    end
+    else if (rw_resp_valid) begin
+        cam_resp <= {14'h0,rw_resp[17:0]};
+        cam_resp_cnt <= cam_resp_cnt + 1'b1;
+    end
+end
+
+
+
 reg [31:0] read_data;
 always @(*) begin
     case(r_select)
-        0 : read_data = counter;
+        0 : read_data = data[0];
         1 : read_data = data[1];
         2 : read_data = data[2];
-        3 : read_data = data[3];
+        3 : read_data = MMIO_STATUS;
         4 : read_data = debug0;
         5 : read_data = debug1;
         6 : read_data = debug2;
         7 : read_data = debug3;
-        default : read_data = 32'h0;
+        8 : read_data = cam_cmd;
+        9 : read_data = cam_resp;
+        10 : read_data = cam_resp_cnt;
+        default : read_data = 32'hDEAD_BEEF;
 
     endcase
 end
 
+// MMIO Mappings
+assign MMIO_CMD = data[0];
+
+// Rename all of these
+assign STREAMBUF_NBYTES = data[1];
+assign STREAMBUF_ADDR = data[2];
+
+
 always @(posedge ACLK) begin
-    if(ARESETN == 0) begin
+    if(rst_n == 0) begin
         r_state <= IDLE;
     end else case(r_state)
         IDLE: begin
@@ -175,7 +211,7 @@ reg w_wrotedata;
 reg w_wroteresp;
 
 wire [MMIO_BITS-1:0] w_select;
-assign w_select  = LITE_AWADDR[3:2];
+assign w_select  = LITE_AWADDR[MMIO_BITS+1:2];
 assign aw_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_AWADDR[1:0]} == MMIO_STARTADDR;
 
 assign LITE_AWREADY = (w_state == IDLE);
@@ -183,7 +219,7 @@ assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
 assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
 
 always @(posedge ACLK) begin
-    if(ARESETN == 0) begin
+    if(rst_n == 0) begin
         w_state <= IDLE;
         w_wrotedata <= 0;
         w_wroteresp <= 0;
@@ -198,24 +234,28 @@ always @(posedge ACLK) begin
             end
         end
         RWAIT: begin
-            if (LITE_WREADY)
+            data[0] <= 0;
+            if (LITE_WREADY) begin
                 data[w_select_r] <= LITE_WDATA;
+            end
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
                 w_state <= IDLE;
-            end else if (LITE_WVALID)
+            end 
+            else if (LITE_WVALID) begin
                 w_wrotedata <= 1;
-            else if (LITE_BREADY)
+            end
+            else if (LITE_BREADY) begin
                 w_wroteresp <= 1;
+            end
         end
     endcase
 end
 
 reg v_state;
-assign MMIO_VALID = (v_state == RWAIT);
 always @(posedge ACLK) begin
-    if (ARESETN == 0)
+    if (rst_n == 0)
         v_state <= IDLE;
     else case(v_state)
         IDLE:
@@ -228,41 +268,8 @@ always @(posedge ACLK) begin
 end
 
 
-// MMIO Mappings
-assign MMIO_CMD = data[0];
-
-// Rename all of these
-assign STREAM_SRC = data[1];
-assign STREAM_DEST = data[2];
-assign STREAM_LEN = data[3];
-
-
-//how many cycles does the operation take?
-always @(posedge ACLK) begin
-    if (ARESETN == 0)
-        counter <= 0;
-    else if (MMIO_READY && MMIO_VALID)
-        counter <= 0;
-    else if (!MMIO_READY)
-        counter <= counter + 1;
-end
-
-// The fuck is this?
-reg busy;
-reg busy_last;
-always @(posedge ACLK) begin
-    if (ARESETN == 0) begin
-        busy <= 0;
-        busy_last <= 0;
-    end else begin
-        if (MMIO_READY) begin
-            busy <= MMIO_VALID ? 1'b1 : 1'b0;
-        end
-        busy_last <= busy;
-    end
-end
-
-assign MMIO_IRQ = !busy;
+// Might need to change for reads TODO
+assign MMIO_IRQ = 1;
 
 endmodule // Conf
 

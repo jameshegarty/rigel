@@ -12,37 +12,44 @@
 #include <assert.h>
 #include <stdbool.h>
 
-void usage(void) {
-	printf("*argv[0] -g <GPIO_ADDRESS> -i|-o <VALUE>\n");
-	printf("    -g <GPIO_ADDR>   GPIO physical address\n");
-	printf("    -i               Input from GPIO\n");
-	printf("    -o <VALUE>       Output to GPIO\n");
-	return;
-}
-
-#define MMIO_SIZE 8
+#define MMIO_SIZE 16
 #define MMIO_CMD 0
-#define MMIO_SRC 1
-#define MMIO_DEST 2
-#define MMIO_LEN 3
+#define MMIO_STREAMBUF_NBYTES 1
+#define MMIO_STREAMBUF_ADDR 2
+#define MMIO_STATUS 3
 #define MMIO_DEBUG0 4
 #define MMIO_DEBUG1 5
 #define MMIO_DEBUG2 6
 #define MMIO_DEBUG3 7
+#define MMIO_CAM_CMD 8
+#define MMIO_CAM_RESP 9
+#define MMIO_CAM_RESP_CNT 10
+
+#define CAM_DELAY 0xF0F0
+#define CAM_RESET 0x1280
 
 typedef struct {
     uint32_t mmio[MMIO_SIZE];
 } Conf;
 
-void write_mmio(volatile Conf* conf, int addr, uint32_t data) {
-    printf("MMIO WRITE: %x to addr %x\n",data,addr);
-    conf->mmio[addr] = data;
+
+void write_mmio(volatile Conf* conf, int offset, uint32_t data) {
+    printf("MMIO WRITE: 0x%x to offset %x\n",data,offset);
+    conf->mmio[offset] = data;
 }
 
-uint32_t read_mmio(volatile Conf* conf, int addr) {
-    uint32_t data = conf->mmio[addr];
-    printf("MMIO READ: %d from addr %x\n",data,addr);
+uint32_t read_mmio(volatile Conf* conf, int offset) {
+    uint32_t data = conf->mmio[offset];
+    printf("MMIO READ: 0x%x from addr %x\n",data,offset);
     return data;
+}
+
+void poll_mmio(volatile Conf* conf, int offset, uint32_t val) {
+    uint32_t data;
+    do {
+        //data = conf->mmio[offset];
+        data = read_mmio(conf,offset);
+    } while (data != val);
 }
 
 void print_debug_regs(volatile Conf* conf) {
@@ -52,14 +59,60 @@ void print_debug_regs(volatile Conf* conf) {
     read_mmio(conf, MMIO_DEBUG3);
 }
 
-/*
-typedef struct {
-    int32_t cmd;
-    int32_t src;
-    int32_t dest;
-    uint32_t len;
-} Conf;
-*/
+// cam_data should contain the cam addr in the lowest byte
+uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
+
+    //cam data should only contain 8 bits
+    if (cam_data & 0xFFFFFF00) {
+        printf("Bad cam addr! needs to be 1 byte");
+        exit(1);
+    }
+    cam_data = (cam_data<<8); //bit 16 needs to be 0
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT);
+    printf("cam_resp_cnt=%d",cam_resp_cnt);
+    write_mmio(conf,MMIO_CAM_CMD, cam_data);
+    // Wait for response (CAM_RESP_CNT will increment
+    poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP);
+    //Error checking
+    // first 16:8 bits should be the same as cam_data;
+    if ((cam_data & 0x0001FF00)!=(cam_resp & 0x0001FF00)) {
+        printf("cam response is not the same as cam_data!!\n");
+        exit(1);
+    }
+    //check that the error is not set
+    if ((cam_data & 0x00020000) != (cam_resp & 0x00020000) ) {
+        printf("Cam response reports an error! Did you write before checking the response??\n");
+        exit(1);
+    }
+    return (cam_resp & 0x000000FF);
+}
+
+void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
+    //cam data should only contain 16 bits
+    if (cam_data & 0xFFFF0000) {
+        printf("Bad cam reg data! %x should be 1byte addr, 1byte data",cam_data);
+        exit(1);
+    }
+    cam_data |= 0x10000; //bit 16 is the write cmd
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT);
+    printf("cam_resp_cnt=%d",cam_resp_cnt);
+    write_mmio(conf,MMIO_CAM_CMD, cam_data);
+    // Wait for response (CAM_RESP_CNT will increment
+    poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP);
+    //Error checking
+    // first 16 bits should be the same as cam_data;
+    if ((cam_data & 0x0001FFFF)!=(cam_resp & 0x0001FFFF)) {
+        printf("cam response is not the same as cam_data!!\n");
+        exit(1);
+    }
+    //check that the error is not set
+    if ((cam_data & 0x00020000) != (cam_resp & 0x00020000) ) {
+        printf("Cam response reports an error! Did you write before checking the response??\n");
+        exit(1);
+    }
+}
 
 FILE* openImage(char* filename, int* numbytes){
   FILE* infile = fopen(filename, "rb");
@@ -95,140 +148,120 @@ unsigned int mylog2(unsigned int x){
   while(x=x>>1){printf("H%d\n",x);res++;}
   return res;
 }
+char* ppmheader = "P6 640 480 255 ";
+int header_len;
+int saveImagePPM(char* filename,  volatile void* address, int numbytes){
+    FILE* outfile = fopen(filename, "wb");
+    if(outfile==NULL){
+        printf("could not open for writing %s\n",filename);
+        exit(1);
+    }
+    //write header
+    int headerlen = printf("%s",ppmheader);
+    int outlen = fwrite(ppmheader, 1, headerlen, outfile);
+    if(outlen!=headerlen) {
+        printf("ERROR HEADER, %d, %d\n", outlen, headerlen);
+    }
+    for (int n=0; n<numbytes; n++) {
+        for (int i=0; i<3; i++) {
+            outlen = fwrite(address+3*n+i,1,1,outfile);
+            if(outlen!=numbytes){
+                printf("ERROR WRITING\n");
+                exit(0);
+            }
+       }
+    }
+
+    fclose(outfile);
+}
+
 
 int saveImage(char* filename,  volatile void* address, int numbytes){
-  FILE* outfile = fopen(filename, "wb");
-  if(outfile==NULL){
-    printf("could not open for writing %s\n",filename);
-    exit(1);
-  }
-  int outlen = fwrite(address,1,numbytes,outfile);
-  if(outlen!=numbytes){
-    printf("ERROR WRITING\n");
-  }
+    FILE* outfile = fopen(filename, "wb");
+    if(outfile==NULL){
+        printf("could not open for writing %s\n",filename);
+        exit(1);
+    }
+    int outlen = fwrite(address,1,numbytes,outfile);
+    if(outlen!=numbytes){
+        printf("ERROR WRITING\n");
+    }
+    printf("Saving image %s, at address %p, with numbytes %d, bytes written %d\n",filename,address, numbytes,outlen);
+    fclose(outfile);
+}
 
-  fclose(outfile);
+void init_camera(volatile Conf* conf) {
+    write_cam_reg(conf, 0x1280); // Reset
+    write_cam_reg(conf, 0xF0F0); // delay
+
+    write_cam_reg(conf, 0x1180); // external pclk
+    uint32_t rd = read_cam_reg(conf, 0x11); // external pclk
+    if (rd != 0x80) {
+        printf("Bad read value for 0x11\n");
+        printf("read=%x, expect=%x\n",rd,0x80);
+    }
+    write_cam_reg(conf, 0xF0F0); // delay
+    write_cam_reg(conf, 0xF0F0); // delay
 }
 
 int main(int argc, char *argv[]) {
-	unsigned gpio_addr = 0x70000000;
-	unsigned copy_addr = atoi(argv[1]);
+    unsigned gpio_addr = 0x70000000;
+    unsigned stream_addr = 0x30008000;
+    uint32_t frame_size = 640*480;
+    int streambuf_size = frame_size * 8;
+    unsigned page_size = sysconf(_SC_PAGESIZE);
+    
+    char* raw_name= "/tmp/out.raw";
+    char* ppm_name = "out.ppm";
+    
+    printf("GPIO access through /dev/mem. %d\n", page_size);
 
-  if(argc!=6){
-    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel\n");
-  }
+    int fd = open ("/dev/mem", O_RDWR);
+    if (fd < 1) {
+        perror(argv[0]);
+        return -1;
+    }
 
-  // dirty tricks: we want to support both upsamples and downsamples.
-  // We use 4 bits to store the amount we shift the input size.
-  // So, can shift the input size by 2^4-1=15 bits.
-  // When shift==0, we shift by 8 bits left, resulting in a 256x upsample.
-  // When shift==8, we shift an aggreagte of 0 bits.
-  // when shift=15, we shift an aggregate of 7 bits, 128x downsample.
-  unsigned int scaleN = atoi(argv[4]);
-  unsigned int scaleD = atoi(argv[5]);
-
-  unsigned int inputBytesPerPixel = atoi(argv[6]);
-  unsigned int outputBytesPerPixel = atoi(argv[7]);
-
-  //unsigned int downsample = downsampleX*downsampleY;
-  //unsigned int downsampleShift = mylog2(downsample);
-  //printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
-  assert(scaleN==1 || scaleD==1);
-  // b/c we send the shift, only power of two scales are supported
-  assert(isPowerOf2(scaleN) && isPowerOf2(scaleD));
-  
-  int downsampleShift;
-  if(scaleN==1){
-    // a downsample
-    downsampleShift = mylog2(scaleD)+8;
-  }else if(scaleD==1){
-    // a upsample
-    downsampleShift = 8-mylog2(scaleN);
-  }
-  assert( downsampleShift>=0 && downsampleShift<16 );
-  printf("Scale %d/%d, shift:%d\n",scaleN,scaleD,downsampleShift);
-
-	unsigned page_size = sysconf(_SC_PAGESIZE);
-
-	printf("GPIO access through /dev/mem. %d\n", page_size);
-
-	if (gpio_addr == 0) {
-		printf("GPIO physical address is required.\n");
-		usage();
-		return -1;
-	}
-	
-	int fd = open ("/dev/mem", O_RDWR);
-	if (fd < 1) {
-		perror(argv[0]);
-		return -1;
-  }
-
-  unsigned lenInRaw;
-  FILE* imfile = openImage(argv[2], &lenInRaw);
-  printf("file LEN %d\n",lenInRaw);
-  
-  unsigned lenOutRaw = (lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
-
-  unsigned int lenIn;
-  unsigned int lenOut;
-
-  // we pad out the length to 128 bytes as required, but just leave it filled with garbage.
-  // pad the smallest of the input/output, and upscale the padded size
-  if(lenOutRaw<=lenInRaw){ // a downscale
-    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
-    lenIn = (lenOut*scaleD*inputBytesPerPixel)/(scaleN*outputBytesPerPixel);
-  }else{ // scaleD==1, a upsample
-    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
-    lenOut = (lenIn*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
-  }
-
-  printf("LENOUT %d\n", lenOut);
-  assert(lenIn % (8*16) == 0);
-  printf("LENIN %d\n",lenIn);
-  assert(lenOut % (8*16) == 0);
-
-  printf("mapping %08x\n",copy_addr);
-  void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
-
-  loadImage( imfile, ptr, lenInRaw );
-  //memset(ptr+len,0,len);
-  // zero out the output region
-  for(int i=0; i<lenOut; i++){ *(unsigned char*)(ptr+lenIn+i)=0; }
-  //saveImage("before.raw",ptr,len);
-
-  // mmap the device into memory 
-  // This mmaps the control region (the MMIO for the control registers).
-  // Image data is located at addr 'copy_addr'
-  void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
-  
-  volatile Conf * conf = (Conf*) gpioptr;
-
-  //conf->src = copy_addr;
-  //conf->dest = copy_addr + lenIn;
-  unsigned int lenPacked = lenIn | (downsampleShift << 28);
-  printf("LEN PACKED %d\n",lenPacked);
-  //conf->len = lenPacked;
-  //conf->cmd = 3;
-    int d=0;
-    write_mmio(conf, MMIO_SRC, copy_addr);
-    write_mmio(conf, MMIO_DEST, copy_addr+lenIn);
-    write_mmio(conf, MMIO_LEN, lenPacked);
-    read_mmio(conf, MMIO_SRC);
-    read_mmio(conf, MMIO_DEST);
-    read_mmio(conf, MMIO_LEN);
+    printf("mapping %08x\n",stream_addr);
+    void * stream_ptr = mmap(NULL, streambuf_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, stream_addr);
+    if (stream_ptr == MAP_FAILED) {
+        printf("FAILED mmap for streamaddr %x\n",stream_addr);
+        exit(1);
+    }
+    
+    // mmap the device into memory 
+    // This mmaps the control region (the MMIO for the control registers).
+    void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
+    if (gpioptr == MAP_FAILED) {
+        printf("FAILED mmap for gpio_addr %x\n",gpio_addr);
+        exit(1);
+    }
+   
+    volatile Conf * conf = (Conf*) gpioptr;
+    
+    
+    write_mmio(conf, MMIO_STREAMBUF_ADDR, stream_addr);
+    write_mmio(conf, MMIO_STREAMBUF_NBYTES, frame_size*4);
     print_debug_regs(conf);
 
-    write_mmio(conf, MMIO_CMD, 0x7);
+    // writes camera registers
     
-    for (int i=0; i<10; i++) {
-        printf("WAIT 1s\n");
-        sleep(1);
-        print_debug_regs(conf);
-    }
-  
-  saveImage(argv[3],ptr+lenIn,(lenInRaw*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel));
-  //saveImage(argv[3],ptr,lenRaw);
+    printf("Camera programmed!s\n");
+    init_camera(conf);
+    
+    printf("WAIT 1s\n");
+    sleep(1);
+    // Start stream
+    printf("START STREAM\n");
+    write_mmio(conf, MMIO_CMD, 0x5);
+    printf("WAIT 5s\n");
+    sleep(2);
+    print_debug_regs(conf);
+    //write_mmio(conf, MMIO_CMD, 0x9);
+    
+    saveImage(raw_name,stream_ptr,frame_size);
+    //saveImagePPM(ppm_name,ptr,frame_size);
+
 
   return 0;
 }

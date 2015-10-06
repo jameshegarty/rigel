@@ -3,7 +3,7 @@ run
 -ofn system
 -ofmt NGC
 -p xc7z020-1-clg484
--top stage
+-top top
 -opt_mode Speed
 -opt_level 1
 -power NO
