@@ -5,15 +5,17 @@ SRCS = $(filter-out harness.t examplescommon.t lk_core.t stereo_tr_core.t ,$(SRC
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
 
-TERRA = $(patsubst %.t,out/%.raw,$(SRCS))
-TERRA += $(patsubst %.t,out/%_half.raw,$(SRCS))
-TERRA += $(patsubst %.t,out/%.bmp,$(SRCS))
-TERRA += $(patsubst %.t,out/%_half.bmp,$(SRCS))
-TERRA += $(patsubst %.t,out/%.correct.txt,$(GOLDS))
-TERRA += $(patsubst %.t,out/%_half.correct.txt,$(GOLDS))
+TERRASRCS = $(filter-out underflow.t, $(SRCS))
+
+TERRA = $(patsubst %.t,out/%.raw,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
+TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_float.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
@@ -24,7 +26,7 @@ SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t stereo_wide_handshake_medi.t lk_wide_handshake_float.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
@@ -59,6 +61,8 @@ out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
+	# we don't actually use this - just keep a copy for reference
+	cp out/$*.axi.v out/build_$*/$*.axi.v
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
@@ -69,7 +73,7 @@ out/%.axi.bit: out/%.axi.v
 	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
 	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
 	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	mv out/build_$*/system.bit $@
+	cp out/build_$*/system.bit $@
 
 ZYNQ_WRITE_PATH=/var/volatile
 ZYNQ_ADDR=192.168.2.2

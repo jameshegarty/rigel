@@ -17,11 +17,12 @@ modules.sumwrap = memoize(function( ty, limit, X)
                   end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function(inc)
+modules.incIf=memoize(function(inc,ty)
                         if inc==nil then inc=1 end
-      local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.bool()})
+                        if ty==nil then ty=types.uint(16) end
+      local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
 
-      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,types.uint(16)), S.index(swinp,0) ):disablePipelining()
+      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
       return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
@@ -1695,5 +1696,32 @@ end
 endmodule]=]}
 
 end
+
+function readAll(file)
+  print("LOAD FILE "..file)
+  local f = io.open(file, "rb")
+  local content = f:read("*all")
+  f:close()
+  return content
+end
+
+modules.multiply = memoize(function(lhsType,rhsType,outType)
+                             assert(types.isType(outType))
+--  if inpType == types.int(20) and outType==types.int(40) then
+                             local str = "mul_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
+                             local vstring = readAll("../extras/"..str..".v")
+
+                             local delaystring = readAll("../extras/"..str..".delay")
+                             print("DELAY",delaystring)
+    local fns = {}
+    local inp = S.parameter("inp",types.tuple{lhsType,rhsType})
+    --table.insert(fns,)
+    fns.process = S.lambda("process",inp,S.constant(0,outType),"out",nil,nil,S.CE("ce"))
+    local m = systolic.module.new(str,fns,{},true,nil,nil,vstring,{process=tonumber(delaystring)})
+    return m
+--  else
+--    assert(false)
+--  end
+                           end)
 
 return modules
