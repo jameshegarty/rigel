@@ -43,19 +43,22 @@ assign M_AXI_WSTRB = 8'b11111111;
 parameter IDLE = 0, RWAIT = 1;
 
 reg stopping;
-`REG(ACLK, stopping, 0, stop ? 1'b1 : stopping)
+`REG(ACLK, stopping, 0, stop ? 1'b1 : (a_state==IDLE) ? 1'b0 : stopping)
 
-// TODO shut down nicely?
 //ADDR logic
 reg a_state;  
 assign M_AXI_AWVALID = (a_state == RWAIT);
-wire wrap = M_AXI_AWREADY && ((M_AXI_AWADDR + 128)==(STREAMBUF_ADDR+STREAMBUF_NBYTES));
-// Create stall logic 
+
+wire wrap;
+assign wrap = (M_AXI_AWADDR + 128)==(STREAMBUF_ADDR+STREAMBUF_NBYTES);
+
 always @(posedge ACLK or negedge rst_n) begin
     if (rst_n == 0) begin
         a_state <= IDLE;
         M_AXI_AWADDR <= 0;
-    end else case(a_state)
+    end 
+    else begin
+        case(a_state)
         IDLE: begin
             if (start) begin
                 M_AXI_AWADDR <= STREAMBUF_ADDR;
@@ -63,14 +66,13 @@ always @(posedge ACLK or negedge rst_n) begin
             end
         end
         RWAIT: begin
-            if (stopping && wrap) begin
-                a_state <= IDLE;
-            end
-            else if (M_AXI_AWREADY == 1) begin
+            if (M_AXI_AWREADY == 1) begin
                 M_AXI_AWADDR <= wrap ? STREAMBUF_ADDR : (M_AXI_AWADDR+128);
+                a_state <= (stopping && wrap) ? IDLE : RWAIT ;
             end
         end
-    endcase
+        endcase
+    end
 end
 assign STREAMBUF_CURADDR = M_AXI_AWADDR;
 

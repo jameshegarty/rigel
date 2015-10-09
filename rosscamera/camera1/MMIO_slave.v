@@ -135,9 +135,8 @@ assign ar_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_ARADDR[
 assign LITE_ARREADY = (r_state == IDLE);
 assign LITE_RVALID = (r_state == RWAIT);
 
-reg [31:0] cam_cmd;
-        
-// TODO can_cmd_write might be valid for multiple cycles??
+
+// TODO cam_cmd_write might be valid for multiple cycles??
 wire cam_cmd_write;
 assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==8);
 `REG(ACLK, rw_cmd_valid, 0, cam_cmd_write)
@@ -170,7 +169,7 @@ always @(*) begin
         5 : read_data = debug1;
         6 : read_data = debug2;
         7 : read_data = debug3;
-        8 : read_data = cam_cmd;
+        8 : read_data = rw_cmd;
         9 : read_data = cam_resp;
         10 : read_data = cam_resp_cnt;
         default : read_data = 32'hDEAD_BEEF;

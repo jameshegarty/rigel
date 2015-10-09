@@ -58,11 +58,11 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
                      stm >= 16 && stm <= 23 || stm == 25 ||
                      stm >= 27 && stm <= 34 || stm == 36 ||
                      stm >= 44 && stm <= 51 || stm == 53 ||
-                     stm >= 55 && stm <= 62 || stm == 64)) ? sccb_clk_i : sccb_stm_clk;
+                     stm >= 55 && stm <= 61 || stm == 63)) ? sccb_clk_i : sccb_stm_clk;
                      
    // Output acks and read data only.
    assign   siod_io = (stm == 13 || stm == 14 || stm == 24 || stm == 25 || stm == 35 || stm == 36 ||
-                        stm == 52 || stm == 53 || stm >= 54 && stm <= 62) ? 1'bz : bit_out;
+                        stm == 52 || stm == 53 || stm > 54 && stm <= 61) ? 1'bz : bit_out;
                         
    assign   ack_error_o = ack_err1 | ack_err2 | ack_err3;
    
@@ -83,8 +83,8 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
          end else if (rw_i == 0 && stm == 25) begin
             stm <= 37;
          end else if (rw_i == 1 && stm == 36) begin
-            stm <= 65;
-         end else if (stm < 68) begin
+            stm <= 64;
+         end else if (stm < 67) begin
             stm <= stm + 1'b1;
          end
 
@@ -170,13 +170,12 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
                   7'd60: data_o[1] <= siod_io;
                   7'd61: data_o[0] <= siod_io;
                   7'd62: bit_out <= 1;
-                  7'd63: bit_out <= 1;
-                  7'd64: bit_out <= 0;
+                  7'd63: bit_out <= 0;
 
                   // Stop transaction.
-                  7'd65: sccb_stm_clk <= 0;
-                  7'd66: sccb_stm_clk <= 1;
-                  7'd67: begin 
+                  7'd64: sccb_stm_clk <= 0;
+                  7'd65: sccb_stm_clk <= 1;
+                  7'd66: begin 
                      bit_out <= 1;
                      done_o <= 1;
                   end

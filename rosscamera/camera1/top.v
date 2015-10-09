@@ -35,13 +35,32 @@ module top
     
   );
 
-  wire [3:0] fclk;
-  wire [3:0] fclkresetn;
-  wire FCLK0;
-  BUFG bufg(.I(fclk[0]),.O(FCLK0));
-  wire rst_n;
-  assign ARESETN = fclkresetn[0];
-  assign rst_n = ARESETN;
+    wire [3:0] fclk;
+    wire [3:0] fclkresetn;
+    
+    wire FCLK0;
+    BUFG bufg(.I(fclk[0]),.O(FCLK0));
+    
+    wire rst_n;
+    assign ARESETN = fclkresetn[0];
+    assign rst_n = ARESETN;
+    
+    wire CLK_25175kHz;
+    wire CLK_50MHz;
+    wire CLK_40MHz;
+    wire clks_valid;
+   
+      
+    ClkCtrl clks(
+        .CLKIN_100700kHz(FCLK0),
+        .CLK_25175kHz(CLK_25175kHz),
+        .CLK_50MHz(CLK_50MHz),
+        .rst_n(rst_n),
+        .clks_valid(clks_valid)
+    );
+
+    reg [31:0] debug_cnt;
+    `REG(CLK_25175kHz, debug_cnt, 2, debug_cnt+1'b1)
 
     wire XCLK_DIV;
 
@@ -149,7 +168,7 @@ module top
         .MMIO_STATUS(32'h0),
         .debug0(cam_debug[0]),
         .debug1(cam_debug[1]),
-        .debug2(cam_debug[2]),
+        .debug2(debug_cnt),
         .debug3(STREAMBUF_CURADDR),
         .rw_cmd(rw_cmd[16:0]),  //{rw,addr,data}
         .rw_cmd_valid(rw_cmd_valid), 
@@ -175,6 +194,7 @@ module top
     CamOV7660 camOV7660_inst(
         //general
         .fclk(FCLK0),
+        .CLK_25MHz(CLK_25175kHz),
         .rst_n(rst_n),
         // Camera IO
         .CAM_DIN(CAM_DIN[9:2]),
@@ -246,7 +266,8 @@ module top
         //.din(big_pix_cnt)
         .din(cam2dramw_data)
     );
-   
+    
+
 
     wire [31:0] lengthOutput;
     // lengthInput/lengthOutput are in bytes

@@ -161,15 +161,15 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
                   7'd53: bit_out <= 0;
                   
                   // Read register value. This concludes 2-phase read transaction.
-                  7'd54: data_o[7] <= siod_io;
-                  7'd55: data_o[6] <= siod_io; 
-                  7'd56: data_o[5] <= siod_io; 
-                  7'd57: data_o[4] <= siod_io;
-                  7'd58: data_o[3] <= siod_io;
-                  7'd59: data_o[2] <= siod_io; 
-                  7'd60: data_o[1] <= siod_io;
-                  7'd61: data_o[0] <= siod_io;
-                  7'd62: bit_out <= 1;
+                  7'd54: bit_out <= 0; 
+                  7'd55: data_o[7] <= siod_io;
+                  7'd56: data_o[6] <= siod_io; 
+                  7'd57: data_o[5] <= siod_io; 
+                  7'd58: data_o[4] <= siod_io;
+                  7'd59: data_o[3] <= siod_io;
+                  7'd60: data_o[2] <= siod_io; 
+                  7'd61: data_o[1] <= siod_io;
+                  7'd62: data_o[0] <= siod_io;
                   7'd63: bit_out <= 1;
                   7'd64: bit_out <= 0;
 

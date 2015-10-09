@@ -33,30 +33,33 @@ typedef struct {
 } Conf;
 
 
-void write_mmio(volatile Conf* conf, int offset, uint32_t data) {
-    printf("MMIO WRITE: 0x%x to offset %x\n",data,offset);
+void write_mmio(volatile Conf* conf, int offset, uint32_t data, int verbose) {
+    if(verbose) {
+        printf("MMIO WRITE: 0x%x to offset %x\n",data,offset);
+    }
     conf->mmio[offset] = data;
 }
 
-uint32_t read_mmio(volatile Conf* conf, int offset) {
+uint32_t read_mmio(volatile Conf* conf, int offset, int verbose) {
     uint32_t data = conf->mmio[offset];
-    printf("MMIO READ: 0x%x from addr %x\n",data,offset);
+    if (verbose) {
+        printf("MMIO READ: 0x%x from addr %x\n",data,offset);
+    }
     return data;
 }
 
 void poll_mmio(volatile Conf* conf, int offset, uint32_t val) {
     uint32_t data;
     do {
-        //data = conf->mmio[offset];
-        data = read_mmio(conf,offset);
+        data = read_mmio(conf,offset,0);
     } while (data != val);
 }
 
 void print_debug_regs(volatile Conf* conf) {
-    read_mmio(conf, MMIO_DEBUG0);
-    read_mmio(conf, MMIO_DEBUG1);
-    read_mmio(conf, MMIO_DEBUG2);
-    read_mmio(conf, MMIO_DEBUG3);
+    read_mmio(conf, MMIO_DEBUG0,1);
+    read_mmio(conf, MMIO_DEBUG1,1);
+    read_mmio(conf, MMIO_DEBUG2,1);
+    read_mmio(conf, MMIO_DEBUG3,1);
 }
 
 // cam_data should contain the cam addr in the lowest byte
@@ -64,26 +67,33 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
 
     //cam data should only contain 8 bits
     if (cam_data & 0xFFFFFF00) {
-        printf("Bad cam addr! needs to be 1 byte");
+        printf("ERROR: Bad cam addr! needs to be 1 byte\n");
         exit(1);
     }
     cam_data = (cam_data<<8); //bit 16 needs to be 0
-    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT);
-    printf("cam_resp_cnt=%d",cam_resp_cnt);
-    write_mmio(conf,MMIO_CAM_CMD, cam_data);
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+    //printf("cam_resp_cnt=%d\n",cam_resp_cnt);
+    write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
-    poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
-    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP);
+    //poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
+    uint32_t cnt = 0;
+    do {
+        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+    } while (cnt != cam_resp_cnt+1);
+    read_mmio(conf, MMIO_DEBUG0,0);
+    
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP,0);
+    printf("RD: Addr 0x%02x, data 0x%02x\n",cam_data>>8,(cam_resp)&0x000000FF);
     //Error checking
     // first 16:8 bits should be the same as cam_data;
     if ((cam_data & 0x0001FF00)!=(cam_resp & 0x0001FF00)) {
-        printf("cam response is not the same as cam_data!!\n");
-        exit(1);
+        printf("ERROR: cam response is not the same as cam_data!!\n");
+        //exit(1);
     }
     //check that the error is not set
     if ((cam_data & 0x00020000) != (cam_resp & 0x00020000) ) {
-        printf("Cam response reports an error! Did you write before checking the response??\n");
-        exit(1);
+        printf("ERROR: Cam response reports an error! Did you write before checking the response??\n");
+        //exit(1);
     }
     return (cam_resp & 0x000000FF);
 }
@@ -91,26 +101,31 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
 void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     //cam data should only contain 16 bits
     if (cam_data & 0xFFFF0000) {
-        printf("Bad cam reg data! %x should be 1byte addr, 1byte data",cam_data);
+        printf("ERROR:Bad cam reg data! %x should be 1byte addr, 1byte data\n",cam_data);
         exit(1);
     }
     cam_data |= 0x10000; //bit 16 is the write cmd
-    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT);
-    printf("cam_resp_cnt=%d",cam_resp_cnt);
-    write_mmio(conf,MMIO_CAM_CMD, cam_data);
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+    //printf("cam_resp_cnt=%d\n",cam_resp_cnt);
+    write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
-    poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
-    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP);
+    uint32_t cnt = 0;
+    do {
+        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+    } while (cnt != cam_resp_cnt+1);
+    read_mmio(conf, MMIO_DEBUG0,0);
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP,0);
+    printf("WR: Addr 0x%02x, data 0x%02x\n",(cam_data>>8)&0x000000FF,(cam_resp)&0x000000FF);
     //Error checking
     // first 16 bits should be the same as cam_data;
     if ((cam_data & 0x0001FFFF)!=(cam_resp & 0x0001FFFF)) {
-        printf("cam response is not the same as cam_data!!\n");
-        exit(1);
+        printf("ERROR: cam response is not the same as cam_data!!\n");
+        //exit(1);
     }
     //check that the error is not set
     if ((cam_data & 0x00020000) != (cam_resp & 0x00020000) ) {
-        printf("Cam response reports an error! Did you write before checking the response??\n");
-        exit(1);
+        printf("ERROR:Cam response reports an error! Did you write before checking the response??\n");
+        //exit(1);
     }
 }
 
@@ -148,33 +163,6 @@ unsigned int mylog2(unsigned int x){
   while(x=x>>1){printf("H%d\n",x);res++;}
   return res;
 }
-char* ppmheader = "P6 640 480 255 ";
-int header_len;
-int saveImagePPM(char* filename,  volatile void* address, int numbytes){
-    FILE* outfile = fopen(filename, "wb");
-    if(outfile==NULL){
-        printf("could not open for writing %s\n",filename);
-        exit(1);
-    }
-    //write header
-    int headerlen = printf("%s",ppmheader);
-    int outlen = fwrite(ppmheader, 1, headerlen, outfile);
-    if(outlen!=headerlen) {
-        printf("ERROR HEADER, %d, %d\n", outlen, headerlen);
-    }
-    for (int n=0; n<numbytes; n++) {
-        for (int i=0; i<3; i++) {
-            outlen = fwrite(address+3*n+i,1,1,outfile);
-            if(outlen!=numbytes){
-                printf("ERROR WRITING\n");
-                exit(0);
-            }
-       }
-    }
-
-    fclose(outfile);
-}
-
 
 int saveImage(char* filename,  volatile void* address, int numbytes){
     FILE* outfile = fopen(filename, "wb");
@@ -189,17 +177,37 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
     printf("Saving image %s, at address %p, with numbytes %d, bytes written %d\n",filename,address, numbytes,outlen);
     fclose(outfile);
 }
+void write_cam_safe(volatile Conf* conf, uint32_t cam_data) {
+    write_cam_reg(conf,cam_data);
+    uint32_t cam_a = 0x000000FF & (cam_data>>8);
+    uint32_t cam_d = 0x000000FF & (cam_data);
+    uint32_t rd = read_cam_reg(conf,cam_a);
+    if(cam_d != rd) {
+        printf("ERROR:\nExpt: %08x\nRead:%08x\n",cam_data,rd);
+    }
+}
 
 void init_camera(volatile Conf* conf) {
+    int x = 0;
+    write_cam_reg(conf, 0xF0F0); // delay
     write_cam_reg(conf, 0x1280); // Reset
     write_cam_reg(conf, 0xF0F0); // delay
-
-    write_cam_reg(conf, 0x1180); // external pclk
-    uint32_t rd = read_cam_reg(conf, 0x11); // external pclk
-    if (rd != 0x80) {
-        printf("Bad read value for 0x11\n");
-        printf("read=%x, expect=%x\n",rd,0x80);
+    write_cam_reg(conf, 0xF0F0); // delay
+    printf("\n\n");
+    write_cam_safe(conf,0x1140);
+    write_cam_safe(conf,0x1205);
+    write_cam_safe(conf,0x1500);
+    
+    /*
+    for(x=0; x<256; x++) {
+        read_cam_reg(conf, x);
+        write_cam_reg(conf, (x<<8)|0xAA); 
+        read_cam_reg(conf, x);
+        write_cam_reg(conf, (x<<8)|0x55); 
+        read_cam_reg(conf, x);
+        printf("--------------------\n");
     }
+    */
     write_cam_reg(conf, 0xF0F0); // delay
     write_cam_reg(conf, 0xF0F0); // delay
 }
@@ -239,29 +247,22 @@ int main(int argc, char *argv[]) {
    
     volatile Conf * conf = (Conf*) gpioptr;
     
-    
-    write_mmio(conf, MMIO_STREAMBUF_ADDR, stream_addr);
-    write_mmio(conf, MMIO_STREAMBUF_NBYTES, frame_size*4);
-    print_debug_regs(conf);
-
     // writes camera registers
-    
-    printf("Camera programmed!s\n");
     init_camera(conf);
-    
+    printf("Camera programmed!s\n");
+    write_mmio(conf, MMIO_STREAMBUF_ADDR, stream_addr,1);
+    write_mmio(conf, MMIO_STREAMBUF_NBYTES, frame_size*4,1);
+    print_debug_regs(conf);
     printf("WAIT 1s\n");
     sleep(1);
     // Start stream
     printf("START STREAM\n");
-    write_mmio(conf, MMIO_CMD, 0x5);
+    write_mmio(conf, MMIO_CMD, 0x5,1);
     printf("WAIT 5s\n");
-    sleep(2);
+    sleep(5);
     print_debug_regs(conf);
-    //write_mmio(conf, MMIO_CMD, 0x9);
     
     saveImage(raw_name,stream_ptr,frame_size);
-    //saveImagePPM(ppm_name,ptr,frame_size);
-
 
   return 0;
 }

@@ -44,16 +44,17 @@ module CamSetup (
     input       rw_cmd_valid,
     output reg     rw_cmd_ready,
 
+    output [31:0] debug,
+
     //camera reg resonse
     output [16:0] rw_resp,
     output reg     rw_resp_valid,
-
     output      sioc_o,                 // Camera's SIOC.
     inout       siod_io                // Camera's SIOD. Should have a pullup resistor.
 );
 
     `include "math.v" 
-    parameter   IN_FREQ = 25_000_000;   // clk frequency in Hz.
+    parameter   IN_FREQ = 100_700_000;   // clk frequency in Hz.
     parameter   CAM_ID = 8'h42;         // OV7670 ID. Bit 0 is Don't Care since we specify r/w op in register lookup table.
 
     
@@ -87,7 +88,9 @@ module CamSetup (
             rw <= rw_cmd[16];
         end
     end
-    
+    wire [6:0] stm;
+    assign debug = {1'h0, (stm[6:0]+1'b1),3'h0,rw,1'b0, cs[2:0], rw_addr[7:0], rw_data[7:0]};
+
     assign rw_resp = rw ? {rw,rw_addr,rw_data} : {rw,rw_addr,reg_data_rcvd};
     
     reg [2:0] cs, ns;
@@ -132,18 +135,19 @@ module CamSetup (
                 rw_resp_valid = 0;
             end
             RW: begin
-                ns = (data_pulse&&transact_done) ? (ack_error ? CMD : DONE) : RW ;
+                //ns = (data_pulse&&transact_done) ? (ack_error ? CMD : DONE) : RW ;
+                ns = (data_pulse&&transact_done) ? (DONE) : RW ;
                 sccb_start = 1;
                 reg_setup_cnt_n = 0 ;
                 rw_cmd_ready = 0;
                 rw_resp_valid = 0;
             end
             DONE: begin
-                ns = IDLE;
+                ns = data_pulse ? IDLE : DONE;
                 sccb_start = 0;
                 reg_setup_cnt_n = 0;
                 rw_cmd_ready = 0;
-                rw_resp_valid = 1;
+                rw_resp_valid = data_pulse ? 1 : 0;
             end
             default: begin
                 ns = IDLE;
@@ -173,7 +177,8 @@ module CamSetup (
         .done_o(transact_done),
         .data_o(reg_data_rcvd),
         .sioc_o(sioc_o),
-        .siod_io(siod_io)
+        .siod_io(siod_io),
+        .stm(stm)
     );    
  
     // Generate clock for the SCCB.

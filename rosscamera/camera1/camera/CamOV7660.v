@@ -5,7 +5,8 @@ module CamOV7660 (
     //general
     input fclk,
     input rst_n,
-    
+    input CLK_25MHz,
+
     // Camera IO
     input [9:2] CAM_DIN,
     input CAM_VSYNC,
@@ -57,11 +58,8 @@ module CamOV7660 (
   
     assign CAM_PWDN = 1'b0; // 0: Normal mode
 
-    wire XCLK_DIV;
 
-    // TODO might need to change the frequency for XCLK
-    assign XCLK_DIV = fclk;
-    OBUF xclk_buffer(.I(XCLK_DIV), .O(CAM_XCLK));
+    assign CAM_XCLK = CLK_25MHz;
 
     wire cfifo_full;
     wire cfifo_empty;
@@ -92,17 +90,20 @@ module CamOV7660 (
     // debug counters
     reg [31:0] debug_cnt[2:0];
 
+    wire [16:0] rw_resp_internal;
     reg camsetup_err;
     `REG_ERR(fclk, camsetup_err, rw_cmd_valid && !rw_cmd_ready)
-    assign rw_resp[17] = camsetup_err;
+    assign rw_resp = {camsetup_err, rw_resp_internal[16:0]};
     // Camera set up
+    wire [31:0] debug_camsetup;
     CamSetup camsetup(
         .clk(fclk),
         .rst_n(rst_n),
+        .debug(debug_camsetup),
         .rw_cmd(rw_cmd[16:0]),
         .rw_cmd_valid(rw_cmd_valid),
         .rw_cmd_ready(rw_cmd_ready),
-        .rw_resp(rw_resp[16:0]),
+        .rw_resp(rw_resp_internal[16:0]),
         .rw_resp_valid(rw_resp_valid),
         .sioc_o(CAM_SIO_C),
         .siod_io(CAM_SIO_D)
@@ -173,7 +174,7 @@ module CamOV7660 (
         end
     end
 
-    assign debug0 = debug_cnt[0];
+    assign debug0 = debug_camsetup | {camsetup_err,31'h0};// debug_cnt[0];
     assign debug1 = debug_cnt[1];
     assign debug2 = debug_cnt[2];
 

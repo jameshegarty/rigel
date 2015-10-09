@@ -165,12 +165,12 @@
 #                                                           #
 #############################################################
 
-NET "CAM_PCLK" period = 25ns;
-NET "CAM_SIO_C" IOSTANDARD = LVCMOS33 | LOC = "M21"; #3 B29     B34_L15_P
-NET "CAM_SIO_D" IOSTANDARD = LVCMOS33 | LOC = "N20"; #4 C29     B34_L14_N
+NET "CAM_SIO_C" IOSTANDARD = LVCMOS33 | LOC = "M21" | SLEW=FAST; #3 B29     B34_L15_P
+#NET "CAM_SIO_D" IOSTANDARD = LVCMOS33 | LOC = "N20" | SLEW=FAST | PULLUP; #4 C29     B34_L14_N
+NET "CAM_SIO_D" IOSTANDARD = LVCMOS33 | LOC = "N20" | SLEW=FAST; #4 C29     B34_L14_N
 NET "CAM_VSYNC" IOSTANDARD = LVCMOS33 | LOC = "M20"; #5 B28     B34_L13_N
 NET "CAM_HREF" IOSTANDARD = LVCMOS33 | LOC = "N19"; #6 C28     B34_L14_P
-NET "CAM_PCLK" IOSTANDARD = LVCMOS33 | LOC = "M19" | period = 25ns | CLOCK_DEDICATED_ROUTE = FALSE; #7 B27     B34_L13_P
+NET "CAM_PCLK" IOSTANDARD = LVCMOS33 | LOC = "M19" |  CLOCK_DEDICATED_ROUTE = FALSE; #7 B27     B34_L13_P
 NET "CAM_XCLK" IOSTANDARD = LVCMOS33 | LOC = "T18"; #8 C27     B34_L23_N
 NET "CAM_DIN[9]" IOSTANDARD = LVCMOS33 | LOC = "P18"; #9 B26     B34_L20_N
 NET "CAM_DIN[8]" IOSTANDARD = LVCMOS33 | LOC = "R18"; #10 C26     B34_L23_P
@@ -181,3 +181,13 @@ NET "CAM_DIN[4]" IOSTANDARD = LVCMOS33 | LOC = "J20"; #14 C24     B34_L9_P
 NET "CAM_DIN[3]" IOSTANDARD = LVCMOS33 | LOC = "J15"; #15 B23     B34_L1_P
 NET "CAM_DIN[2]" IOSTANDARD = LVCMOS33 | LOC = "T19"; #16 C23     B34_L22_N
 NET "CAM_PWDN" IOSTANDARD = LVCMOS33 | LOC = "J18"; #17 B22     B34_L7_P
+
+# Input clock periods. These duplicate the values entered for the
+#  input clocks. You can use these to time your system
+#----------------------------------------------------------------
+NET "FCLK0" TNM_NET = "FCLK0";
+TIMESPEC "TS_FCLK0" = PERIOD "FCLK0" 9.930 ns HIGH 50% INPUT_JITTER 100.0ps;
+
+
+# FALSE PATH constraints 
+#PIN "RESET" TIG;
