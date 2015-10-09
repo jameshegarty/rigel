@@ -245,7 +245,8 @@ return function( ast, newNodeFn )
 
   -- sanity check: out is const <=> inputs are all const
   if (ast.type:const() and allConstInput==false) then
-    if ast.kind~="slice" then
+    if ast.kind~="slice" and ast.kind~="select" then
+      -- select: cond can be non-const, but values are const
       print("Inputs aren't const, but output is!",ast.kind)
       assert(false)
     end

@@ -24,7 +24,17 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   local fixedTapInputType = tapInputType
   if tapInputType==nil then fixedTapInputType = types.null() end
 
-  local inp = d.input( d.Handshake(types.tuple{types.null(),fixedTapInputType}) )
+  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,300)
+  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-300)
+  if earlyOverride~=nil then ECTooSoon=earlyOverride end
+  local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst width
+  local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst width
+
+  local ITYPE = types.tuple{types.null(),fixedTapInputType}
+  local inpSymb = d.input( d.Handshake(ITYPE) )
+  -- we give this a less strict timing requirement b/c this counts absolute cycles
+  -- on our quarter throughput test, this means this will appear to take 4x as long as it should
+  local inp = d.apply("underflow_US", d.underflow(ITYPE, inputBytes/8, EC*4, true, ECTooSoon), inpSymb)
   local inpdata = d.apply("inpdata", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
   local inptaps = d.apply("inptaps", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
   local out = d.apply("fread",d.makeHandshake(d.freadSeq(infile,inputType)),inpdata)
@@ -36,22 +46,23 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
 
   local out = d.apply("HARNESS_inner", hsfn, hsfninp )
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(outputType, outputCount))), out)
-  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,300)
-  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-300)
-  if earlyOverride~=nil then ECTooSoon=earlyOverride end
-  local outputBytes = upToNearest(128,outputCount*8)
-  out = d.apply("underflow", d.underflow(outputType, outputBytes/8, EC, ECTooSoon), out)
+  out = d.apply("underflow", d.underflow(outputType, outputBytes/8, EC, false, ECTooSoon), out)
   local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,outputType)), out )
-  return d.lambda( "harness"..id, inp, out )
+  return d.lambda( "harness"..id, inpSymb, out )
 end
 
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
-  local inp = d.input(hsfn.inputType )
+  local inpSymb = d.input(hsfn.inputType )
+
+  local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
+  local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
+
+  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1024)
+  local inp = d.apply("underflow_US", d.underflow( d.extractData(hsfn.inputType), inputBytes/8, EC, true ), inpSymb)
   local out = d.apply("hsfna",hsfn,inp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
-  local outputBytes = upToNearest(128,outputCount*8)
-  out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, expectedCycles(hsfn,inputCount,outputCount,underflowTest,1024) ), out)
-  return d.lambda( "harnessaxi", inp, out )
+  out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
+  return d.lambda( "harnessaxi", inpSymb, out )
 end
 
 local H = {}

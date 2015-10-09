@@ -3454,11 +3454,12 @@ darkroom.overflow = memoize(function( A, count )
 
 -- provides fake output if we get less then _count_ inputs after _cyclecount_ cycles
 -- if thing thing is done before tooSoonCycles, throw an assert
-darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
+darkroom.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles )
   darkroom.expectBasic(A)
   assert(type(count)=="number")
   assert(type(cycles)=="number")
   err(cycles==math.floor(cycles),"cycles must be an integer")
+  assert(type(upstream)=="boolean")
 
   assert(count<2^32-1)
   err(cycles<2^32-1,"cycles >32 bit:"..tostring(cycles))
@@ -3476,7 +3477,7 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
   terra Underflow:stats(name:&int8) end
   res.terraModule = Underflow
 
-  res.systolicModule = S.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+  res.systolicModule = S.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
@@ -3490,15 +3491,21 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
 
   local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local pready = S.parameter("ready_downstream", types.bool())
-  local CE = S.__or(pready,rst)
   local pvalid = S.index(pinp,1)
   local pdata = S.index(pinp,0)
 
   local fixupMode = S.gt(cycleCount:get(),S.constant(cycles,types.uint(32)))
 
+  local CE = S.__or(pready,rst)
+  local CE_cycleCount = CE  
+  if upstream then  
+    CE = S.__or(CE,fixupMode) 
+    CE_cycleCount = S.constant(true,types.bool())
+  end
+
   local pipelines = {}
   table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.__not(rst), CE) )
-  table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.__not(rst), CE) )
+  table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.__not(rst), CE_cycleCount) )
 
   local outData = S.select(fixupMode,S.cast(S.constant(3735928559,types.bits(A:verilogBits())),A),pdata)
   local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
@@ -3515,18 +3522,22 @@ darkroom.underflow = memoize(function( A, count, cycles, tooSoonCycles )
     outValid = S.__or(outValid,tooSoon)
   end
 
-
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple{outputCount:get(),cycleCount:get(),outValid}) ) end
 
   res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{outData,outValid}, "process_output", pipelines) ) 
 
   local resetPipelines = {}
   table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(32)),rst,CE) )
-  table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst,CE) )
+  table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst,CE_cycleCount) )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
 
-  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
+  local readyOut = pready
+  if upstream then
+    readyOut = S.__or(pready,fixupMode)
+  end
+
+  res.systolicModule:addFunction( S.lambda("ready", pready, readyOut, "ready" ) )
 
   return darkroom.newFunction( res )
     end)
