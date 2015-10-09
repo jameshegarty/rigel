@@ -34,5 +34,8 @@ local out = darkroom.apply("demux", darkroom.demux(ITYPE,{{1,2},{1,2}}), multipl
 
 hsfn = d.lambda( "tmux_wide", A, d.statements{ d.selectStream("i1",out,1), d.applyMethod("s1",fifos[1],"store",d.selectStream("i0",out,0)) }, fifos )
 
-
-harness.axi( "tmux_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+-- b/c this thing has a FIFO in it to recirculate data, it actually finishes earlier than the SDF predicts
+-- (in the case of half throughput downstream - where it has time to process data while SDF thinks it would be stalled).
+-- This leads to a 2x perf improvement over expected
+EARLY_OVERRIDE = 1200
+harness.axi( "tmux_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H,nil,EARLY_OVERRIDE)

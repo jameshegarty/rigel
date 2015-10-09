@@ -23,7 +23,24 @@ modules.incIf=memoize(function(inc,ty)
       local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
 
       local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_"..inc, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
+      return S.module.new( "incif_"..inc..tostring(ty), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
+              end)
+
+-- this will never wrap around
+modules.incIfNowrap=memoize(function(inc,ty)
+                        if inc==nil then inc=1 end
+                        if ty==nil then ty=types.uint(16) end
+
+                        local max
+                        if ty:isUint() then
+                          max = math.pow(2,ty.precision)-1
+                        else
+                          assert(false)
+                        end
+      local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
+
+      local ot = S.select( S.__and(S.index(swinp,1),S.lt(S.index(swinp,0),S.constant(max,ty))), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
+      return S.module.new( "incifnowrap_"..inc..tostring(ty), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
 -- we generally want to use incIf if we are going to increment a variable based on some (calculated) condition.

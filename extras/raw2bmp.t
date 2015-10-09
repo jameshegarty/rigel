@@ -6,7 +6,7 @@ cstdio = terralib.includec("stdio.h")
 
 local metadata = dofile(arg[3])
 
-terra raw2bmp(infile : &int8, outfile : &int8)
+terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
   cstdio.printf("START RAW@BMP\n")
   var inp : Image
 --  inp:loadRaw(infile,128,64,8)
@@ -21,6 +21,10 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   cstdio.fseek(imgIn, 0, cstdio.SEEK_SET);
   
   var expectedOutputSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
+  if axiround then
+    --cstdio.printf("Round to AXI size\n")
+    expectedOutputSize = upToNearestTerra(128,expectedOutputSize) -- round to AXI burst size
+  end
   if sz~=expectedOutputSize then
     cstdio.printf("File Size: %d, expected size:%d\n",sz, expectedOutputSize)
     darkroomAssert(false, "Incorrect file size!")
@@ -49,4 +53,4 @@ terra raw2bmp(infile : &int8, outfile : &int8)
   inp:save(outfile)
 end
 
-raw2bmp(arg[1], arg[2])
+raw2bmp(arg[1], arg[2], arg[4]=="1")

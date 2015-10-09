@@ -26,7 +26,7 @@ SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t pad_wide_handshake.t pad2_wide_handshake.t stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
@@ -99,13 +99,13 @@ out/%.sim.raw: out/%.sim.v
 	mv out/sim_$*/$*.sim.raw out
 
 out/%.sim.bmp: out/%.sim.raw
-	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua
+	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 
 out/%.axi.bmp: out/%.axi.raw
-	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua
+	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
 
 out/%.bmp: out/%.raw
-	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua
+	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
 
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff

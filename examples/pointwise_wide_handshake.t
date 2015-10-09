@@ -11,6 +11,13 @@ W = 128
 H = 64
 T = 8
 
+local f1080p = string.find(arg[0],"1080p")
+
+if f1080p~=nil then
+  W=1920
+  H=1080
+end
+
 inp = S.parameter("inp",types.uint(8))
 plus100 = d.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 
@@ -27,4 +34,4 @@ fn = d.lambda( "pointwise_wide", inp, out )
 ------------
 hsfn = d.makeHandshake(fn)
 
-harness.axi( "pointwise_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness.axi( "pointwise_wide_handshake"..sel(f1080p~=nil,"_1080p",""), hsfn, sel(f1080p~=nil,"1080p.raw","frame_128.raw"), nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)

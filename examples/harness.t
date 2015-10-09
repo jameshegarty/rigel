@@ -7,20 +7,16 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,offset)
   assert(type(outputCount)=="number")
   assert(type(offset)=="number")
 
-  --local extreme, extremeloc = hsfn:sdfExtremeUtilization(true)
-  --local low, lowloc = hsfn:sdfExtremeUtilization(false)
   local EC = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
 
-  print("Expected cycles:",EC,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2])
+  if DARKROOM_VERBOSE then print("Expected cycles:",EC,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
 
-
-  --local EC = math.max(inputCount*extreme,outputCount)
   EC = math.ceil(EC) + offset
   if underflowTest then EC = 1 end
   return EC
 end
 
-local function harness( hsfn, infile, inputType, tapInputType, outfile, outputType, id, inputCount, outputCount, underflowTest, X)
+local function harness( hsfn, infile, inputType, tapInputType, outfile, outputType, id, inputCount, outputCount, underflowTest, earlyOverride, X)
   assert(X==nil)
   assert(type(inputCount)=="number")
   assert(type(outputCount)=="number")
@@ -42,7 +38,9 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(outputType, outputCount))), out)
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,300)
   local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-300)
-  out = d.apply("underflow", d.underflow(outputType, outputCount, EC, ECTooSoon), out)
+  if earlyOverride~=nil then ECTooSoon=earlyOverride end
+  local outputBytes = upToNearest(128,outputCount*8)
+  out = d.apply("underflow", d.underflow(outputType, outputBytes/8, EC, ECTooSoon), out)
   local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,outputType)), out )
   return d.lambda( "harness"..id, inp, out )
 end
@@ -51,7 +49,8 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
   local inp = d.input(hsfn.inputType )
   local out = d.apply("hsfna",hsfn,inp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
-  out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputCount, expectedCycles(hsfn,inputCount,outputCount,underflowTest,1024) ), out)
+  local outputBytes = upToNearest(128,outputCount*8)
+  out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, expectedCycles(hsfn,inputCount,outputCount,underflowTest,1024) ), out)
   return d.lambda( "harnessaxi", inp, out )
 end
 
@@ -78,7 +77,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
 
 end
 
-function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, X)
+function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, X)
   assert(X==nil)
   assert( tapType==nil or types.isType(tapType) )
   assert( types.isType(inputType) )
@@ -95,7 +94,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../../"..inputFilename, inputType, tapType, filename..ext..".sim.raw",outputType,2+i, inputCount, outputCount, underflowTest), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
+    local f = d.seqMapHandshake( harness(hsfn, "../../"..inputFilename, inputType, tapType, filename..ext..".sim.raw",outputType,2+i, inputCount, outputCount, underflowTest, earlyOverride), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
@@ -104,7 +103,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 end
 
 -- AXI must have T=8
-function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,X)
+function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
 
   assert(X==nil)
   assert( types.isType(inputType) )
@@ -117,7 +116,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   err(d.isFunction(hsfn), "second argument to harness.axi must be function")
 
 -- axi runs the sim as well
-H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest)
+H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
 local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest)
 local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, true )
