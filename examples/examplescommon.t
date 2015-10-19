@@ -11,25 +11,25 @@ end)
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
-function C.multiply(A,B,outputType)
+C.multiply = memoize(function(A,B,outputType)
   local sinp = S.parameter( "inp", types.tuple {A,B} )
-  local partial = d.lift( "partial", types.tuple {A,B}, outputType, 1,
+  local partial = d.lift( "partial_mult", types.tuple {A,B}, outputType, 1,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)*[outputType:toTerraType()](a._1)
                   end, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
   return partial
-end
+                     end)
 ------------
 -- return A+B as a darkroom FN. A,B are types
 -- returns something of type outputType
-function C.sum(A,B,outputType)
+C.sum = memoize(function(A,B,outputType)
   local sinp = S.parameter( "inp", types.tuple {A,B} )
   local partial = d.lift( "sum", types.tuple {A,B}, outputType, 1,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
                   end, sinp, S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType) )
   return partial
-end
+                end)
 
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
@@ -100,11 +100,19 @@ end
 ------------
 -- returns a darkroom FN that casts type 'from' to type 'to'
 -- performs [to](from >> shift)
-function C.shiftAndCast(from, to, shift)
+C.shiftAndCast = memoize(function(from, to, shift)
   local touint8inp = S.parameter("inp", from)
   local touint8 = d.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
   return touint8
-end
+                         end)
+
+C.shiftAndCastSaturate = memoize(function(from, to, shift)
+  local touint8inp = S.parameter("inp", from)
+  local OT = S.rshift(touint8inp,S.constant(shift,from))
+  local touint8 = d.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
+  return touint8
+                         end)
+
 -------------
 -- returns a function of type {A[ConvWidth,ConvWidth], A_const[ConvWidth,ConvWidth]}
 -- that convolves the two arrays

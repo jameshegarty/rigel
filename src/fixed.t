@@ -150,8 +150,8 @@ end
 
 function fixed.select( cond,a,b )
   err( cond.type==types.bool(), "cond should be bool")
-  assert(a.type==b.type)
-  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type, loc=getloc()}
+  assert(a.type:stripConst()==b.type:stripConst())
+  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type:stripConst(), loc=getloc()}
 end
 
 function fixed.array2d( tab, w, h )
@@ -312,6 +312,34 @@ function fixedASTFunctions:cast(to)
 end
 ]=]
 
+local function boolbinop(op,l,r)
+  if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
+    local ty
+    if l.type==r.type then ty=l.type -- keep constness
+    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    else assert(false) end
+    return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
+  else
+    err(l:isSigned()==r:isSigned(), op..": sign must match")
+
+    if l:exp()>r:exp() then
+      l = l:pad(l:precision()+(l:exp()-r:exp()),r:exp())
+    elseif r:exp()>l:exp() then
+      r = r:pad(r:precision()+(r:exp()-l:exp()),l:exp())
+    end
+
+    err(l:exp()==r:exp(), op..": exp must match")
+
+    local p = math.max(l:precision(),r:precision())+1
+    return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
+  end
+
+end
+
+function fixedASTFunctions:gt(r)
+  return boolbinop(">",self,r)
+end
+
 function fixedASTFunctions:index(ix,iy)
   err(self.type:isTuple() or self.type:isArray(), "attempting to index into something other than an array or tuple")
   err( type(ix)=="number", "ix must be number")
@@ -463,18 +491,22 @@ function fixedASTFunctions:toSystolic()
           table.insert(instances,I)
           res = I:process(S.tuple{args[1],args[2]})
         else
-          local l = S.cast(args[1], fixed.extract(n.type))
-          local r = S.cast(args[2], fixed.extract(n.type))
-
-          if n.op=="+" then res = l+r
-          elseif n.op=="-" then res = l-r
-          elseif n.op=="*" then res = l*r
+          if n.op==">" then
+            res = S.gt(args[1],args[2])
           else
-            assert(false)
-          end
-          
-          if fixed.isFixedType(n.type) and n:precision()>20 then
-            print("riduclous binop "..tostring(n.inputs[1].type).." "..tostring(n.inputs[2].type).." "..tostring(n.type)..n.loc)
+            local l = S.cast(args[1], fixed.extract(n.type))
+            local r = S.cast(args[2], fixed.extract(n.type))
+            
+            if n.op=="+" then res = l+r
+            elseif n.op=="-" then res = l-r
+            elseif n.op=="*" then res = l*r
+            else
+              assert(false)
+            end
+            
+            if fixed.isFixedType(n.type) and n:precision()>20 then
+              print("riduclous binop "..tostring(n.inputs[1].type).." "..tostring(n.inputs[2].type).." "..tostring(n.type)..n.loc)
+            end
           end
         end
 
@@ -605,14 +637,18 @@ function fixedASTFunctions:toTerra()
           res = `res._0
         end
       elseif n.kind=="binop" then
-        local l = `[fixed.extract(n.type):toTerraType()]([args[1]])
-        local r = `[fixed.extract(n.type):toTerraType()]([args[2]])
-        if n.op=="+" then res = `l+r
-        elseif n.op=="-" then res = `l-r
-        elseif n.op=="*" then res = `l*r
+        if n.op==">" then
+          res = `[args[1]]>[args[2]]
         else
-          print("OP",n.op)
-          assert(false)
+          local l = `[fixed.extract(n.type):toTerraType()]([args[1]])
+          local r = `[fixed.extract(n.type):toTerraType()]([args[2]])
+          if n.op=="+" then res = `l+r
+          elseif n.op=="-" then res = `l-r
+          elseif n.op=="*" then res = `l*r
+          else
+            print("OP",n.op)
+            assert(false)
+          end
         end
       elseif n.kind=="lift" or n.kind=="lower" then
         -- noop: we only add wrapper at very end
