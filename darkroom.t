@@ -2481,7 +2481,7 @@ darkroom.liftXYSeq = memoize(function( f, W, H, T, X )
   return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out )
 end)
 
--- this takes a function f : {{int32,int32},inputType} -> outputType
+-- this takes a function f : {{uint16,uint16},inputType} -> outputType
 -- and returns a function of type inputType[T]->outputType[T]
 function darkroom.liftXYSeqPointwise( f, W, H, T )
   assert(f.inputType:isTuple())
@@ -3857,6 +3857,8 @@ function darkroom.lambda( name, input, output, instances, pipelines, X )
         elseif n.kind=="constant" then
           if n.type:isArray() then
             map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
+          elseif n.type:isInt() or n.type:isUint() then
+            table.insert( stats, quote (@out) = n.value end)
           else
             assert(false)
           end
