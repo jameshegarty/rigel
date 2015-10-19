@@ -164,6 +164,9 @@ function fixed.array2d( tab, w, h )
 end
 
 function fixed.constant( value, signed, precision, exp )
+  assert(type(value)=="number")
+  assert(value==math.floor(value))
+
   if signed==nil then 
     signed = (value<0) 
   end

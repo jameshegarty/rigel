@@ -260,10 +260,11 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
   local internalW, internalH = W+internalL+internalR,H+B+Top
 
   local out = d.apply("pad", d.liftHandshake(d.padSeq(A, W, H, T, internalL, internalR, B, Top, borderValue)), hsfninp)
-  local out = d.apply("HH",f(internalW, internalH), out)
+  local internalFn = f(internalW, internalH)
+  local out = d.apply("HH",internalFn, out)
   local padL = internalL-L
   local padR = internalR-R
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(A, internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
+  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(d.extractData(internalFn.outputType):arrayOver(), internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
   --local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
   local hsfn = d.lambda("hsfn", hsfninp, out)
   return hsfn

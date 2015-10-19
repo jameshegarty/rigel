@@ -149,6 +149,8 @@ end
 
 function valueToVerilogLL(value,signed,bits)
   assert(type(value)=="number")
+  assert(value==math.floor(value))
+  if signed==false then assert(value>=0) end
 
   if signed then
     if value==0 then
@@ -168,18 +170,9 @@ function systolic.valueToVerilog( value, ty )
   assert(types.isType(ty))
 
   if ty:isInt() then
-    assert(type(value)=="number")
-    if value==0 then
-      return (ty:sizeof()*8).."'d0"
-    elseif value<0 then
-      return "-"..(ty:sizeof()*8).."'d"..math.abs(value)
-    else
-      return (ty:sizeof()*8).."'d"..value
-    end
+    return valueToVerilogLL( value, true, ty:verilogBits() )
   elseif ty:isUint() or ty:isBits() then
-    assert(type(value)=="number")
-    assert(value>=0)
-    return (ty:verilogBits()).."'d"..value
+    return valueToVerilogLL( value, false, ty:verilogBits() )
   elseif ty:isBool() then
     assert(type(value)=="boolean")
     if value then
@@ -445,6 +438,10 @@ function systolic.constant( v, ty )
     err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
   else
     err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
+    if type(v)=="number" then
+      err( v==math.floor(v), "systolic constant must be integer")
+      err( ty:isInt() or v>=0, "systolic uint const must be positive")
+    end
   end
 
   return typecheck({ kind="constant", value=v, type = ty, loc=getloc(), inputs={} })

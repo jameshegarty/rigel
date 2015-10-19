@@ -13,12 +13,16 @@ local C = require "examplescommon"
 W = 512
 H = 512
 T = 8
+phaseX=1
+phaseY=1
+
 
 ----------------
 function blackLevel( pedestal )
   local blackLevelInput = f.parameter("blInput",types.uint(8))
   local bli = blackLevelInput:lift(0)
   local res = 128*(255/(255-pedestal))
+  res = math.floor(res)
   print("RESCALE",res)
   local rescale = f.constant(res,false,8,-7)
   local out = (bli:toSigned()-f.constant(pedestal,false,8,0):toSigned())*rescale:toSigned()
@@ -29,7 +33,7 @@ function blackLevel( pedestal )
   return out:truncate(8):lower():toDarkroom("blackLevel")
 end
 
-function demosaic(inputType)
+function demosaic(internalW,internalH)
   -- BG
   -- GR
 
@@ -82,12 +86,10 @@ function demosaic(inputType)
     local ITYPE = types.tuple{types.uint(16),types.uint(16)}
     local kernelSelectInput = S.parameter("ksi",ITYPE)
 
-    local x = S.cast(S.index(kernelSelectInput,0),types.uint(16))
-    x = S.__and(x,S.constant(3,types.uint(16)))
-    local y = S.cast(S.index(kernelSelectInput,1),types.uint(16))
-    y = S.__and(y,S.constant(3,types.uint(16)))
-    local x = x + S.constant(phaseX,types.uint(16))
-    local y = y + S.constant(phaseY,types.uint(16))
+    local x = S.cast(S.index(kernelSelectInput,0),types.uint(16)) + S.constant(phaseX,types.uint(16))
+    x = S.__and(x,S.constant(1,types.uint(16)))
+    local y = S.cast(S.index(kernelSelectInput,1),types.uint(16)) + S.constant(phaseY,types.uint(16))
+    y = S.__and(y,S.constant(1,types.uint(16)))
     local phase = x+(y*S.constant(2,types.uint(16)))
 
     local tt = {}
@@ -114,8 +116,6 @@ function demosaic(inputType)
   local xy = d.apply("xy",d.index(DTYPE,0),deminp)
   local st = d.apply("dat",d.index(DTYPE,1),deminp)
 
-  local phaseX,phaseY=1,0
-
   local out = {}
   for i=1,3 do
     local kern = d.apply("k"..i,KSI(kerns[i],"kern"..i,phaseX,phaseY),xy)
@@ -131,11 +131,11 @@ function demosaic(inputType)
   end
 
   local dem = d.lambda("dem", deminp, d.array2d("ot",out,3))
-  dem = darkroom.liftXYSeqPointwise(dem,W,H,T)
+  dem = darkroom.liftXYSeqPointwise(dem,internalW,internalH,T)
 
   ---------------
   local demtop = d.input(types.array2d(types.uint(8),T))
-  local st = d.apply( "st", d.stencilLinebuffer(types.uint(8),W,H,T,-2,0,-2,0), demtop)
+  local st = d.apply( "st", d.stencilLinebuffer(types.uint(8),internalW,internalH,T,-2,0,-2,0), demtop)
   local st = d.apply( "convstencils", d.unpackStencil( types.uint(8), 3, 3, T ) , st )
   local demtopout = d.apply("dem",dem,st)
 
@@ -150,9 +150,9 @@ function makeCCM(tab)
   local ccminp = f.parameter("ccminp",types.array2d(types.uint(8),3))
   local out = {}
   for c=1,3 do
-    out[c] = f.constant(tab[c][1]*128,false,8,-7)*ccminp:index(0):lift(0)
+    out[c] = f.constant(math.floor(tab[c][1]*128),false,8,-7)*ccminp:index(0):lift(0)
     for i=2,3 do
-      out[c] = out[c] + f.constant(tab[c][i]*128,false,8,-7)*ccminp:index(i-1):lift(0)
+      out[c] = out[c] + f.constant(math.floor(tab[c][i]*128),false,8,-7)*ccminp:index(i-1):lift(0)
     end
     out[c] = out[c]:denormalize()
     local a = f.constant(255,false,out[c]:precision(),0)
@@ -184,18 +184,31 @@ local ITYPE = types.array2d(types.uint(8),T)
 local rgbType = types.array2d(types.uint(8),4)
 local OTYPE = types.array2d(rgbType,2)
 
-local inp = d.input(ITYPE)
-local bl = d.apply("bl",d.map(blackLevel(10),T),inp)
-local dem = d.apply("dem",demosaic(),bl)
-local ccm = d.apply("ccm",d.map(makeCCM(ccmtab),T),dem)
-local gam = d.apply("gam",d.map(d.map(d.lut(types.uint(8),types.uint(8),makeGamma(1/2.4)),3),T),ccm)
-local out = d.apply("addchan",d.map(addchan(),T),gam)
---local dem = d.apply("fake",d.map(C.arrayop(types.uint(8),4),T),bl)
-local campipe = d.lambda("campipe",inp,out)
+function makeCampipe(internalW,internalH)
+  local inp = d.input(ITYPE)
+  local bl = d.apply("bl",d.map(blackLevel(10),T),inp)
+  local dem = d.apply("dem",demosaic(internalW,internalH),bl)
+  local ccm = d.apply("ccm",d.map(makeCCM(ccmtab),T),dem)
+  local gam = d.apply("gam",d.map(d.map(d.lut(types.uint(8),types.uint(8),makeGamma(1/2.4)),3),T),ccm)
+  local out = d.apply("addchan",d.map(addchan(),T),gam)
+  --local dem = d.apply("fake",d.map(C.arrayop(types.uint(8),4),T),bl)
+  local campipe = d.lambda("campipe",inp,out)
+  
+--  local hsfninp = d.input(d.Handshake(ITYPE))
+--  local hsfnout = d.apply("O1",d.makeHandshake(campipe),hsfninp)
+--  local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
+--  local hsfn = d.lambda("hsfn",hsfninp,hsfnout)
+
+  return d.makeHandshake(campipe)
+end
+
+local campipe = C.padcrop(types.uint(8),W,H,T,1,1,1,1,0,makeCampipe)
+--print("HSFN",hsfn.outputType)
+--hsfn = d.compose("hsfn",hsfn,d.liftHandshake(d.changeRate(rgbType,1,T,2)))
 
 local hsfninp = d.input(d.Handshake(ITYPE))
-local hsfnout = d.apply("O1",d.makeHandshake(campipe),hsfninp)
+local hsfnout = d.apply("O1",campipe,hsfninp)
 local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
-local hsfn = d.lambda("hsfn",hsfninp,hsfnout)
+local hsfn = d.lambda("hsfnfin",hsfninp,hsfnout)
 
 harness.axi( "campipe", hsfn, "300d_w512_h512.raw", nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)

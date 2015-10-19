@@ -468,8 +468,8 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
     out = map( exprs, function(expr,i) return S.select( reading, expr, regs[((i-1+stride)%#exprs)+1]:get() ) end )
 
     if verbose then
-      local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
-      table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
+      --local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
+      --table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
     end
   end
 
