@@ -1720,12 +1720,14 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, X )
   assert(hasValid==nil or type(hasValid)=="boolean")
   if hasValid==nil then hasValid=true end
 
+  -- ******** Note that hasValid==false makes this module pure!!!!!!!!!!!
+
   local t = {kind="reg",initial=initial,type=ty,options={coherent=true}, hasCE=hasCE, hasValid=hasValid}
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT",CE=systolic.CE("CE")}
-  t.functions.delay.isPure = function() return false end
+  t.functions.delay.isPure = function() return hasValid==false end
   t.functions.set={name="set", output={type=types.null()}, inputParameter={name="SET_INPUT",type=ty},outputName="SET_OUTPUT",CE=systolic.CE("CE")}
-  t.functions.set.isPure = function() return false end
+  t.functions.set.isPure = function() return hasValid==false end
   t.functions.get={name="get", output={type=ty}, inputParameter={name="GET_INPUT",type=types.null()},outputName="GET_OUTPUT"}
   t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
