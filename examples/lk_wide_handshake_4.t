@@ -12,6 +12,7 @@ if string.find(arg[0],"float") then
   f = require "fixed_float"
 else
   f = require "fixed"
+  f.DEEP_MULTIPLY = true
 end
 
 local W = 128

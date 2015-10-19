@@ -3221,7 +3221,7 @@ darkroom.fifo = memoize(function( A, size )
   terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
   res.terraModule = Fifo
 
-  res.systolicModule = S.moduleConstructor("fifo_"..size)
+  res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A))
 
   local fifo = res.systolicModule:add( fpgamodules.fifo128(A,DARKROOM_VERBOSE):instantiate("FIFO") )
   

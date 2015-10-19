@@ -153,6 +153,12 @@ function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, redu
   
   local res = d.apply("AM",d.liftHandshake(d.liftDecimate(argmin(A,T,SearchWindow,SADWidth,OffsetX,f.type(false,reducePrecision,0)))),merged)
 
+  -- this FIFO is only for improving timing
+  local argminType = types.tuple{types.uint(8),types.uint(reducePrecision)}
+  table.insert( fifos, d.instantiateRegistered("f3",d.fifo(argminType,128)) )
+  table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",res) )
+  res = d.applyMethod("l13",fifos[#fifos],"load")
+
   local res = d.apply("display",d.makeHandshake( displayOutput(types.uint(reducePrecision),errorThreshold) ), res)
 
   local res = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), res )
