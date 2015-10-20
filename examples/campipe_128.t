@@ -12,9 +12,16 @@ local C = require "examplescommon"
 
 W = 512
 H = 512
+
 T = 8
 phaseX=1
 phaseY=1
+
+if string.find(arg[0],"128") then
+  W,H = 128,128
+--  phaseX, phaseY = 1,0
+end
+
 
 
 ----------------
@@ -211,4 +218,4 @@ local hsfnout = d.apply("O1",campipe,hsfninp)
 local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
 local hsfn = d.lambda("hsfnfin",hsfninp,hsfnout)
 
-harness.axi( "campipe", hsfn, "300d_w512_h512.raw", nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)
+harness.axi( "campipe_"..W, hsfn, "300d_w"..W.."_h"..H..".raw", nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)

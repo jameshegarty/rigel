@@ -12,7 +12,10 @@ if string.find(arg[0],"float") then
   f = require "fixed_float"
 else
   f = require "fixed"
-  f.DEEP_MULTIPLY = true
+  if string.find(arg[0],"axi") then
+    -- don't use this multiplier in simulator - too slow!
+    f.DEEP_MULTIPLY = true
+  end
 end
 
 local W = 128
@@ -41,5 +44,5 @@ bits = {
 if f.FLOAT then
   harness.terraOnly( "lk_wide_handshake_4_float", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 else
-  harness.axi( "lk_wide_handshake_4", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.axi( "lk_wide_handshake_4"..sel(f.DEEP_MULTIPLY,"_axi",""), LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 end

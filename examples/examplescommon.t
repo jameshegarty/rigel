@@ -256,17 +256,37 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
   local internalL = upToNearest(T,L)
   local internalR = upToNearest(T,R)
 
+  local fifos = {}
+  local statements = {}
+
 --  local internalL,internalR=L,R
   local internalW, internalH = W+internalL+internalR,H+B+Top
 
   local out = d.apply("pad", d.liftHandshake(d.padSeq(A, W, H, T, internalL, internalR, B, Top, borderValue)), hsfninp)
+
+  -- this FIFO is only for improving timing
+  table.insert( fifos, d.instantiateRegistered("f1",d.fifo(types.array2d(A,T),128)) )
+  table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",out) )
+  out = d.applyMethod("l13",fifos[#fifos],"load")
+  -----------------
+
   local internalFn = f(internalW, internalH)
   local out = d.apply("HH",internalFn, out)
   local padL = internalL-L
   local padR = internalR-R
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(d.extractData(internalFn.outputType):arrayOver(), internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
+  local fnOutType = d.extractData(internalFn.outputType):arrayOver()
+  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(fnOutType, internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
   --local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
-  local hsfn = d.lambda("hsfn", hsfninp, out)
+
+  -- this FIFO is only for improving timing
+  table.insert( fifos, d.instantiateRegistered("f2",d.fifo(types.array2d(fnOutType,T),128)) )
+  table.insert( statements, d.applyMethod("s2",fifos[#fifos],"store",out) )
+  out = d.applyMethod("l2",fifos[#fifos],"load")
+  -----------------
+
+  table.insert(statements,1,out)
+
+  local hsfn = d.lambda("hsfn", hsfninp, d.statements(statements), fifos )
   return hsfn
 end
 
