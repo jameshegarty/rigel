@@ -42,8 +42,11 @@ terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
   inp.sparse = false
   inp.isSigned = false
 
+  -- we can't write 3 channels per pixel over axi.
   if inp.channels==2 then
     inp:addChannels(1)
+  elseif inp.channels==4 then
+    inp:addChannels(-1)
   end
 
   cstdio.printf("%d %d %d %d\n",inp.width,inp.height,inp.channels,totalSize)

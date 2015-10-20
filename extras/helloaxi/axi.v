@@ -31,7 +31,7 @@ module UnderflowShim(input CLK, input RST, input [31:0] lengthOutput, input [63:
 
    assign out = (fixupMode)?(64'hDEAD):(inp);
    assign out_valid = (RST)?(1'b0):((fixupMode)?(outCnt<outLen):(inp_valid));
-endmodule // OutputShim
+endmodule
 
 module stage
   (
@@ -56,7 +56,7 @@ module stage
     inout [3:0] DDR_DQS_n,
     inout DDR_VRN,
     inout DDR_VRP,
-    output reg [7:0] LED
+    output [7:0] LED
   );
 
   wire [3:0] fclk;
@@ -170,11 +170,17 @@ module stage
    wire [31:0] lengthOutput;
    assign lengthOutput = (CONFIG_LEN[27:0] << 8'd8) >> CONFIG_LEN[31:28];
 
+   reg [31:0]  clkcnt = 0;
+//   assign LED = clkcnt[20:13];
+   assign  LED = clkcnt[28:21];
+   
   always @(posedge FCLK0) begin
-    if(ARESETN == 0)
-        LED <= 0;
-    else if(CONFIG_VALID)
-        LED <= {CONFIG_CMD[1:0],CONFIG_SRC[2:0],CONFIG_DEST[2:0]};
+//    if(ARESETN == 0)
+//        LED <= 0;
+//    else if(CONFIG_VALID)
+//        LED <= {CONFIG_CMD[1:0],CONFIG_SRC[2:0],CONFIG_DEST[2:0]};
+     clkcnt <= clkcnt+1;
+
   end
 
   wire [63:0] pipelineInput;

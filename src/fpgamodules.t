@@ -198,13 +198,21 @@ modules.fifo128 = memoize(function(ty,verbose)
 
   -- size
   local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
-  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), 128 ) --( writeAddr:get() - readAddr:get() ):disablePipelining()
+  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), 128 ):disablePipelining()
   sizeFn:setOutput( fsize, "size" )
 
   -- ready (not full)
+  -- HACK: this is definitely an abuse of registers w/no valid bit. No valid bit=>isPure()==true. So then this function is pure.
+  -- Calculating the ready bit can take a bit of time, and we don't want the fifo to limit the speed of our design
+  -- So, we pipeline the ready bit calculation. This means that the ready bit will be READY_PIPELINE cycles out of date of what it should be.
+  -- ie when it is getting full, it will be true for READY_PIPELINE more cycles than it should be.
+  -- To account for this, pretend the FIFO size is READY_PIPELINE entries smaller. Then, when we run over the end, it won't cause errors.
+  local readyReg = fifo:add( S.module.reg(types.bool(),false,nil,false):instantiate("readyReg") )
+  local READY_PIPELINE = 1
   local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
-  local ready = S.lt( fsize, S.constant(126,types.uint(8)) ):disablePipelining()
-  readyFn:setOutput( ready, "ready" )
+  local ready = S.lt( fsize, S.constant(126-READY_PIPELINE,types.uint(8)) ):disablePipelining()
+  readyFn:addPipeline( readyReg:set(ready) )
+  readyFn:setOutput( readyReg:get(), "ready" )
 
   -- has data
   local hasDataFn = fifo:addFunction( S.lambdaConstructor("hasData") )
@@ -218,7 +226,8 @@ modules.fifo128 = memoize(function(ty,verbose)
   local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
   pushBack:setCE(pushCE)
   local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true ):instantiate("pushBackAssert") )
-  pushBack:addPipeline( pushBackAssert:process( ready )  )
+  local hasSpace = S.lt( fsize, S.constant(126,types.uint(8)) ):disablePipelining() -- note that this is different than ready
+  pushBack:addPipeline( pushBackAssert:process( hasSpace )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
   for b=1,bits do
     pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
@@ -468,8 +477,8 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
     out = map( exprs, function(expr,i) return S.select( reading, expr, regs[((i-1+stride)%#exprs)+1]:get() ) end )
 
     if verbose then
-      local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
-      table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
+      --local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
+      --table.insert( pipelines, printInst:process( S.tuple{phase:get(), reading, out}) )
     end
   end
 

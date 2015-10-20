@@ -2481,7 +2481,7 @@ darkroom.liftXYSeq = memoize(function( f, W, H, T, X )
   return darkroom.lambda( "liftXYSeq_"..f.kind, inp, out )
 end)
 
--- this takes a function f : {{int32,int32},inputType} -> outputType
+-- this takes a function f : {{uint16,uint16},inputType} -> outputType
 -- and returns a function of type inputType[T]->outputType[T]
 function darkroom.liftXYSeqPointwise( f, W, H, T )
   assert(f.inputType:isTuple())
@@ -3221,7 +3221,7 @@ darkroom.fifo = memoize(function( A, size )
   terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
   res.terraModule = Fifo
 
-  res.systolicModule = S.moduleConstructor("fifo_"..size)
+  res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A))
 
   local fifo = res.systolicModule:add( fpgamodules.fifo128(A,DARKROOM_VERBOSE):instantiate("FIFO") )
   
@@ -3577,12 +3577,14 @@ local function lambdaSDFNormalize(input,output)
   -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
   -- we already checked that the input is <1, so that won't limit us.
   local scaleFactor
-  --print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW))
+
   if fracToNumber(sdfMaxRate) > fracToNumber(outputBW) then
     scaleFactor = fracInvert(sdfMaxRate)
   else
     scaleFactor = fracInvert(outputBW)
   end
+
+  if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW), "scaleFactor",fracToNumber(scaleFactor)) end
 
   local newInput
   local newOutput = output:process(
@@ -3807,7 +3809,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, X )
 
           if DARKROOM_VERBOSE then
             if n.type:isArray() and darkroom.isHandshake(n.type:arrayOver()) then
-            elseif darkroom.isHandshake(n.inputs[1].type) then
+            elseif #n.inputs>0 and darkroom.isHandshake(n.inputs[1].type) then
               table.insert( Module.entries, {field=n.name.."CNT", type=int} )
               table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
 
@@ -3857,6 +3859,8 @@ function darkroom.lambda( name, input, output, instances, pipelines, X )
         elseif n.kind=="constant" then
           if n.type:isArray() then
             map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
+          elseif n.type:isInt() or n.type:isUint() then
+            table.insert( stats, quote (@out) = n.value end)
           else
             assert(false)
           end
@@ -3906,7 +3910,7 @@ function darkroom.lambda( name, input, output, instances, pipelines, X )
   local isum = sdfSum(res.sdfInput)
   local osum = sdfSum(res.sdfOutput)
 
-  if DARKROOM_VERBOSE then print("LAMBDA",name,"INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
+  if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
 
   if (isum[1]/isum[2]<=1 and osum[1]/osum[2]<=1)  then
     -- normal. it is possible for a function to have input AND output rate <1.
