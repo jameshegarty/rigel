@@ -5,9 +5,9 @@ module StreamBuffer(
 
     input start,
 
-    input [15:0]    din,
     input           din_valid,
     output          din_ready,
+    input [7:0]    din,
 
     output [63:0]   dout,
     output          dout_valid,
@@ -17,12 +17,12 @@ module StreamBuffer(
     output [10:0]   fifo_cnt
 );
 
-    wire data_packed_ready;
+    reg data_packed_ready;
     wire [10:0] vfifo_count;
     // Logic to convert 16 bit input to 64 bit input
-    reg [1:0] cnt;
+    reg [2:0] cnt;
     reg din_valid_p;
-    reg [15:0] data_packed[3:0];
+    reg [7:0] data_packed[7:0];
 
     reg running;
     always @(posedge pclk or negedge rst_n) begin
@@ -37,21 +37,27 @@ module StreamBuffer(
 
     always @(posedge pclk or negedge rst_n) begin
         if (rst_n==0) begin
-            cnt <= 0;
+            cnt <= 3'h0;
+            data_packed_ready <= 1'b0;
         end
-        else if (din_valid && running) begin
-            data_packed[cnt] <= din;
-            cnt <= cnt + 1'b1; // Should wrap
+        else begin
+            data_packed_ready <= 1'b0;
+            if (din_valid && running) begin
+                data_packed[cnt] <= din[7:0];
+                cnt <= cnt + 1'b1; // Should wrap
+                data_packed_ready <= (cnt==3'd7) ? 1'b1 : 1'b0;
+            end
         end
     end
     
-    assign data_packed_ready = din_valid_p && (cnt==2'h3);
+    reg [63:0] data64;
+    assign data64[63:0] = {data_packed[7],data_packed[6],data_packed[5],data_packed[4],data_packed[3],data_packed[2],data_packed[1],data_packed[0]};
 
     vfifo64x1024 your_instance_name (
         .rst(!rst_n), // input rst
         .wr_clk(pclk), // input wr_clk
         .rd_clk(fclk), // input rd_clk
-        .din({data_packed[3],data_packed[2],data_packed[1],data_packed[0]}), // input [63 : 0] din
+        .din(data64[63:0]), // input [63 : 0] din
         .wr_en(data_packed_ready), // input wr_en
         .rd_en(dout_ready), // input rd_en
         .dout(dout), // output [63 : 0] dout

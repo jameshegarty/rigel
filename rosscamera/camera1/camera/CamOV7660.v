@@ -5,7 +5,8 @@ module CamOV7660 (
     //general
     input fclk,
     input rst_n,
-    input CLK_25MHz,
+    input CLK_24M,
+    input CLK_48M,
 
     // Camera IO
     input [9:2] CAM_DIN,
@@ -38,28 +39,35 @@ module CamOV7660 (
     // debug signals
     output [31:0] debug0,
     output [31:0] debug1,
-    output [31:0] debug2
+    output [31:0] debug2,
+    output [31:0] debug3
 );
 
     wire pclk;
   
 
-    reg CAM_VSYNC_D;
-    reg CAM_HREF_D;
-    reg [7:0] CAM_DIN_D;
 
-    IBUFG pclk_buffer( .I(CAM_PCLK), .O(pclk));
-    //assign pclk = CAM_PCLK;
-    always @(posedge pclk) begin
-        CAM_VSYNC_D <= CAM_VSYNC;
-        CAM_HREF_D <= CAM_HREF;
-        CAM_DIN_D <= CAM_DIN;
-    end
+    //IBUFG pclk_buffer( .I(CAM_PCLK), .O(pclk));
+    assign pclk = CLK_24M;
+    
+    reg CAM_VSYNC_p1;
+    reg CAM_HREF_p1;
+    reg [7:0] CAM_DIN_p1;
+    reg CAM_VSYNC_p2;
+    reg CAM_HREF_p2;
+    reg [7:0] CAM_DIN_p2;
   
+    `REG(pclk, CAM_VSYNC_p1, 0, CAM_VSYNC)
+    `REG(pclk, CAM_HREF_p1, 0, CAM_HREF)
+    `REG(pclk, CAM_DIN_p1, 0, CAM_DIN)
+    `REG(pclk, CAM_VSYNC_p2, 0, CAM_VSYNC_p1)
+    `REG(pclk, CAM_HREF_p2, 0, CAM_HREF_p1)
+    `REG(pclk, CAM_DIN_p2, 0, CAM_DIN_p1)
+
+
+
     assign CAM_PWDN = 1'b0; // 0: Normal mode
-
-
-    assign CAM_XCLK = CLK_25MHz;
+    assign CAM_XCLK = CLK_48M;
 
     wire cfifo_full;
     wire cfifo_empty;
@@ -109,39 +117,32 @@ module CamOV7660 (
         .siod_io(CAM_SIO_D)
     );
 
-    wire [15:0] cr_pixel;
-    wire vstart;
-    wire hstart;
-
+    wire [7:0] cr_pixel;
+    wire [31:0] hlen;
+    wire [31:0] vlen;
     wire start_stream;
 
     // TODO make module for this if I want it more commands
-    assign start_stream = pcam_cmd_valid && (pcam_cmd == 5);
+    assign start_stream = pcam_cmd_valid && (pcam_cmd == `CMD_START);
 
+    // Reads in raw data byte by byte
     CamReader camreader(
-        .din(CAM_DIN_D),        // D0 - D7
-        .vsync(CAM_VSYNC_D),          // VSYNC
-        .href(CAM_HREF_D),           // HREF
+        .din(CAM_DIN_p2),        // D0 - D7
+        .vsync(CAM_VSYNC_p2),          // VSYNC
+        .href(CAM_HREF_p2),           // HREF
         .pclk(pclk),           // PCLK 
         .rst_n(rst_n),            // 0 - Reset.
         .pixel_valid(cr_pixel_valid),     // Indicates that a pixel has been received.
-        .pixel(cr_pixel),   // RGB565 pixel.
-        .vstart(vstart),           // first pixel of frame
-        .hstart(hstart),    // first pixel of line
-        .raw(1'b1),     // TODO control this?
+        .pixel(cr_pixel[7:0]),   // raw
         .start(start_stream), 
-        .stop(1'b0)    // TODO
+        .stop(1'b0),
+        .hlen(hlen[31:0]),
+        .vlen(vlen[31:0])
     );
     
-    // check if vstart and hstart are on valid pixels
-    reg camreader_err;
-    `REG_ERR(pclk, camreader_err, 
-        running && (vstart || hstart) && !cr_pixel_valid 
-    );
-
     wire [10:0] fifo_cnt;
     wire cr_pixel_ready;
-    // Guarentees that once data is accepted it will stay valid for at least 16 
+    // burst_valid guarentees that once data is accepted it will stay valid for at least 16 
     StreamBuffer stream_buffer(
         .pclk(pclk),
         .fclk(fclk),
@@ -149,9 +150,9 @@ module CamOV7660 (
         
         .start(start_stream),
 
-        .din(cr_pixel),
         .din_valid(cr_pixel_valid),
         .din_ready(cr_pixel_ready), //this should never be not ready
+        .din(cr_pixel[7:0]),
 
         .dout(sdata),
         .dout_valid(sdata_valid),
@@ -159,23 +160,19 @@ module CamOV7660 (
         .burst_valid(sdata_burst_valid),
         .fifo_cnt(fifo_cnt)
     );
-    reg running;
-    `REG(pclk, running, 0, start_stream ? 1'b1 : running);
-    always @(posedge pclk or negedge rst_n) begin
-        if (rst_n==0) begin
-            debug_cnt[0] <= 32'h0;
-            debug_cnt[1] <= 32'h0;
-            debug_cnt[2] <= 32'h0;
-        end
-        else begin
-            debug_cnt[0] <= (running & vstart) ? (debug_cnt[0]+1'b1) : debug_cnt[0] ;
-            debug_cnt[1] <= (running & hstart) ? (debug_cnt[1]+1'b1) : debug_cnt[1] ;
-            debug_cnt[2] <= {camreader_err,20'h0,fifo_cnt};
-        end
-    end
+    
+    `REG(pclk, debug_cnt[2], 32'h0, {1'b0,20'h0,fifo_cnt})
 
-    assign debug0 = debug_camsetup | {camsetup_err,31'h0};// debug_cnt[0];
+    reg running;
+    `REG(pclk, running, 0, start_stream ? 1'b1 : running)
+ 
+    `REG(CLK_24M, debug_cnt[0], 32'h0, debug_cnt[0]+1'b1)
+    `REG(pclk, debug_cnt[1], 32'h0, debug_cnt[1]+1'b1)
+
+
+    assign debug0 = debug_cnt[0];
     assign debug1 = debug_cnt[1];
-    assign debug2 = debug_cnt[2];
+    assign debug2 = vlen[31:0];
+    assign debug3 = hlen[31:0];
 
 endmodule

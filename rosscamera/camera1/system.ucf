@@ -159,6 +159,38 @@
 
 #NET FCLK0 PERIOD=5.0ns;
 
+#B0      VS      A13     B35-L17_N   D21
+#B1      HS      A12     B35-L17_P   E21
+#B2      BLUE0   A11     B35-L13_N   B20
+#B3      BLUE1   A10     B35-L13_P   B19
+#B4      GREEN0  A9      B35-L14_N   C20
+#B5      GREEN1  A8      B35-L14_P   D20
+#B6      GREEN2  A7      B35-L12_N   C19
+#B7      RED0    A6      B35-L12_P   D18
+#B8      RED1    A5      B35-L19_N   H20
+#B9      RED2    A4      B35-L19_P   H19
+
+
+NET "VGA_VS_n" IOSTANDARD = LVCMOS33 | LOC="D21";
+NET "VGA_HS_n" IOSTANDARD = LVCMOS33 | LOC="E21";
+NET "VGA_blue[0]" IOSTANDARD = LVCMOS33 | LOC="B20";
+NET "VGA_blue[1]" IOSTANDARD = LVCMOS33 | LOC="B19";
+NET "VGA_green[0]" IOSTANDARD = LVCMOS33 | LOC="C20";
+NET "VGA_green[1]" IOSTANDARD = LVCMOS33 | LOC="D20";
+NET "VGA_green[2]" IOSTANDARD = LVCMOS33 | LOC="C19";
+NET "VGA_red[0]" IOSTANDARD = LVCMOS33 | LOC="D18";
+NET "VGA_red[1]" IOSTANDARD = LVCMOS33 | LOC="H20";
+NET "VGA_red[2]" IOSTANDARD = LVCMOS33 | LOC="H19";
+
+NET "LED[0]" IOSTANDARD = LVCMOS33 | LOC="C18";
+NET "LED[1]" IOSTANDARD = LVCMOS33 | LOC="C17";
+NET "LED[2]" IOSTANDARD = LVCMOS33 | LOC="F22";
+NET "LED[3]" IOSTANDARD = LVCMOS33 | LOC="F21";
+NET "LED[4]" IOSTANDARD = LVCMOS33 | LOC="E18";
+NET "LED[5]" IOSTANDARD = LVCMOS33 | LOC="F18";
+NET "LED[6]" IOSTANDARD = LVCMOS33 | LOC="F17";
+NET "LED[7]" IOSTANDARD = LVCMOS33 | LOC="G17";
+
 #############################################################
 #                                                           #
 # Pins for Camera module                                    #
@@ -166,7 +198,6 @@
 #############################################################
 
 NET "CAM_SIO_C" IOSTANDARD = LVCMOS33 | LOC = "M21" | SLEW=FAST; #3 B29     B34_L15_P
-#NET "CAM_SIO_D" IOSTANDARD = LVCMOS33 | LOC = "N20" | SLEW=FAST | PULLUP; #4 C29     B34_L14_N
 NET "CAM_SIO_D" IOSTANDARD = LVCMOS33 | LOC = "N20" | SLEW=FAST; #4 C29     B34_L14_N
 NET "CAM_VSYNC" IOSTANDARD = LVCMOS33 | LOC = "M20"; #5 B28     B34_L13_N
 NET "CAM_HREF" IOSTANDARD = LVCMOS33 | LOC = "N19"; #6 C28     B34_L14_P

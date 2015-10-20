@@ -1,5 +1,5 @@
                 J1
-C-num   C-name  B-num   bad-name    FPGA name
+C-num   C-name  B-num   bad-name    UCF
 1       VCC     B32     VCCIO34
 2       GND     C30     GND
 3       SIOC    B29     B34_L15_P   M21
@@ -20,6 +20,31 @@ C-num   C-name  B-num   bad-name    FPGA name
 18      (None)  C22     B34_L22_P   R19
 19      (None)  B21     B34_L7_N    K18
 20      (None)  C21     B34_L2_P    J16
+
+
+                J1
+Pap     VGA     B-num   bad-name    UCF
+B0      VS      A13     B35-L17_N   D21
+B1      HS      A12     B35-L17_P   E21
+B2      BLUE0   A11     B35-L13_N   B20
+B3      BLUE1   A10     B35-L13_P   B19
+B4      GREEN0  A9      B35-L14_N   C20
+B5      GREEN1  A8      B35-L14_P   D20
+B6      GREEN2  A7      B35-L12_N   C19
+B7      RED0    A6      B35-L12_P   D18
+B8      RED1    A5      B35-L19_N   H20
+B9      RED2    A4      B35-L19_P   H19
+
+                J1
+Pap     Name    B-num   bad-name    UCF
+C8      LED0    B10     B35_L11_N   C18
+C9      LED1    B9      B35_L11_P   C17
+C10     LED2    B8      B35_L23_N   F22
+C11     LED3    B7      B35_L23_P   F21
+C12     LED4    B6      B35_L5_N    E18
+C13     LED5    B5      B35_L5_P    F18
+C14     LED6    B4      B35_L6_N    F17
+C15     LED7    B3      B35_L6_P    G17
 
 
 

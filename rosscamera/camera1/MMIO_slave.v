@@ -1,8 +1,9 @@
 
 module MMIO_slave(
-    input ACLK,
+    input fclk,
     input rst_n,
     //AXI Inputs
+    output S_AXI_ACLK,
     input [31:0] S_AXI_ARADDR,
     input [11:0] S_AXI_ARID,
     output S_AXI_ARREADY,
@@ -30,6 +31,8 @@ module MMIO_slave(
     output [31:0] MMIO_CMD,
     output [31:0] STREAMBUF_NBYTES,
     output [31:0] STREAMBUF_ADDR,
+    output [31:0] VGABUF_NBYTES,
+    output [31:0] VGABUF_ADDR,
     input [31:0] MMIO_STATUS,
 
     input [31:0] debug0,
@@ -44,7 +47,7 @@ module MMIO_slave(
    
     output MMIO_IRQ
     );
-
+    assign S_AXI_ACLK = fclk;
     //Convert Input signals to AXI lite, to avoid ID matching
     wire [31:0] LITE_ARADDR;
     wire LITE_ARREADY;
@@ -65,7 +68,7 @@ module MMIO_slave(
     wire LITE_WVALID;
     
     ict106_axilite_conv axilite(
-    .ACLK(ACLK),
+    .ACLK(S_AXI_ACLK),
     .ARESETN(rst_n),
     .S_AXI_ARADDR(S_AXI_ARADDR), 
     .S_AXI_ARID(S_AXI_ARID),  
@@ -138,14 +141,14 @@ assign LITE_RVALID = (r_state == RWAIT);
 
 // TODO cam_cmd_write might be valid for multiple cycles??
 wire cam_cmd_write;
-assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==8);
-`REG(ACLK, rw_cmd_valid, 0, cam_cmd_write)
-assign rw_cmd = data[8][16:0];
+assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==10);
+`REG(fclk, rw_cmd_valid, 0, cam_cmd_write)
+assign rw_cmd = data[10][16:0];
 
 
 reg [31:0] cam_resp;
 reg [31:0] cam_resp_cnt;
-always @(posedge ACLK or negedge rst_n) begin
+always @(posedge fclk or negedge rst_n) begin
     if (!rst_n) begin
         cam_resp <= 32'h0;
         cam_resp_cnt[12:0] <= 0;
@@ -162,16 +165,18 @@ reg [31:0] read_data;
 always @(*) begin
     case(r_select)
         0 : read_data = data[0];
-        1 : read_data = data[1];
-        2 : read_data = data[2];
-        3 : read_data = MMIO_STATUS;
-        4 : read_data = debug0;
-        5 : read_data = debug1;
-        6 : read_data = debug2;
-        7 : read_data = debug3;
-        8 : read_data = rw_cmd;
-        9 : read_data = cam_resp;
-        10 : read_data = cam_resp_cnt;
+        1 : read_data = STREAMBUF_NBYTES[31:0];
+        2 : read_data = STREAMBUF_ADDR[31:0];
+        3 : read_data = VGABUF_NBYTES[31:0];
+        4 : read_data = VGABUF_ADDR[31:0];
+        5 : read_data = MMIO_STATUS;
+        6 : read_data = debug0;
+        7 : read_data = debug1;
+        8 : read_data = debug2;
+        9 : read_data = debug3;
+        10 : read_data = rw_cmd;
+        11 : read_data = cam_resp;
+        12 : read_data = cam_resp_cnt;
         default : read_data = 32'hDEAD_BEEF;
 
     endcase
@@ -183,9 +188,11 @@ assign MMIO_CMD = data[0];
 // Rename all of these
 assign STREAMBUF_NBYTES = data[1];
 assign STREAMBUF_ADDR = data[2];
+assign VGABUF_NBYTES = data[3];
+assign VGABUF_ADDR = data[4];
 
 
-always @(posedge ACLK) begin
+always @(posedge fclk) begin
     if(rst_n == 0) begin
         r_state <= IDLE;
     end else case(r_state)
@@ -217,7 +224,7 @@ assign LITE_AWREADY = (w_state == IDLE);
 assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
 assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
 
-always @(posedge ACLK) begin
+always @(posedge fclk) begin
     if(rst_n == 0) begin
         w_state <= IDLE;
         w_wrotedata <= 0;
@@ -253,7 +260,7 @@ always @(posedge ACLK) begin
 end
 
 reg v_state;
-always @(posedge ACLK) begin
+always @(posedge fclk) begin
     if (rst_n == 0)
         v_state <= IDLE;
     else case(v_state)
@@ -267,8 +274,8 @@ always @(posedge ACLK) begin
 end
 
 
-// Might need to change for reads TODO
-assign MMIO_IRQ = 1;
+// interrupts
+assign MMIO_IRQ = 0;
 
 endmodule // Conf
 

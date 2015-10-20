@@ -1,6 +1,10 @@
 `ifndef MACROS_VH
 `define MACROS_VH
 
+
+`define CMD_START 32'h5
+`define CMD_STOP 32'h9
+
 `define REG(clk, r, init, in) \
     always @(posedge clk or negedge rst_n) begin \
         if (!rst_n) r <= (init); \

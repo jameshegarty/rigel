@@ -1,7 +1,9 @@
 module ClkCtrl(
-    input CLKIN_100700kHz,
-    output CLK_25175kHz,
-    output CLK_50MHz,
+    input CLKIN_100M,
+    input CLKIN_96M,
+    output CLK_25M,
+    output CLK_24M,
+    output CLK_48M,
     input rst_n,
     output clks_valid
 );
@@ -16,14 +18,23 @@ module ClkCtrl(
     );      // OUT
 */
     
-    reg [1:0] cnt;
-    always @(posedge CLKIN_100700kHz or negedge rst_n) begin
-        if (!rst_n) cnt[1:0] <= 2'h0;
-        else cnt[1:0] <= cnt[1:0] + 1'b1;
+    reg [1:0] cnt100;
+    always @(posedge CLKIN_100M or negedge rst_n) begin
+        if (!rst_n) cnt100[1:0] <= 2'h0;
+        else cnt100[1:0] <= cnt100[1:0] + 1'b1;
+    end
+    reg [1:0] cnt96;
+    always @(posedge CLKIN_96M or negedge rst_n) begin
+        if (!rst_n) cnt96[1:0] <= 2'h0;
+        else cnt96[1:0] <= cnt96[1:0] + 1'b1;
     end
 
-    assign CLK_25175kHz = cnt[1];
-    assign CLK_50MHz = cnt[0];
+    assign CLK_25M = cnt100[1];
+    assign CLK_24M = cnt96[1];
+    assign CLK_48M = cnt96[0];
+    
+    
+    
     assign clks_valid = 1'b1;
 
 endmodule : ClkCtrl

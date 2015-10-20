@@ -54,7 +54,7 @@ module CamSetup (
 );
 
     `include "math.v" 
-    parameter   IN_FREQ = 100_700_000;   // clk frequency in Hz.
+    parameter   IN_FREQ = 100_000_000;   // clk frequency in Hz.
     parameter   CAM_ID = 8'h42;         // OV7670 ID. Bit 0 is Don't Care since we specify r/w op in register lookup table.
 
     
@@ -70,7 +70,7 @@ module CamSetup (
     reg         sccb_start;
     wire        transact_done;
     reg         [clog2(SREG_CYCLES):0] reg_setup_cnt;
-    reg         [clog2(SREG_CYCLES):0] reg_setup_cnt_n;
+    reg         [clog2(SREG_CYCLES):0] reg_setup_cnt_nxt;
     wire        data_pulse;
    
     reg [7:0] rw_addr;
@@ -107,7 +107,7 @@ module CamSetup (
     control
         ns
         sccb_start 
-        reg_setup_cnt_n
+        reg_setup_cnt_nxt
         rw_cmd_ready
         rw_resp_valid
     */
@@ -116,43 +116,43 @@ module CamSetup (
             IDLE: begin
                 ns = rw_cmd_valid ? CMD : IDLE ;
                 sccb_start = 0;
-                reg_setup_cnt_n = 0;
+                reg_setup_cnt_nxt = 0;
                 rw_cmd_ready = 1;
                 rw_resp_valid = 0;
             end
             CMD: begin
                 ns = data_pulse ? (delay_cmd ? DELAY : RW) : CMD ;
                 sccb_start = (data_pulse && !delay_cmd) ? 1: 0;
-                reg_setup_cnt_n = 0;
+                reg_setup_cnt_nxt = 0;
                 rw_cmd_ready = 0;
                 rw_resp_valid = 0;
             end
             DELAY: begin
                 ns = reg_setup_cnt==SREG_CYCLES ? DONE : DELAY;
                 sccb_start = 0;
-                reg_setup_cnt_n = reg_setup_cnt+1'b1;
+                reg_setup_cnt_nxt = reg_setup_cnt+1'b1;
                 rw_cmd_ready = 0;
                 rw_resp_valid = 0;
             end
-            RW: begin
+            RW: begin // TODO add ERR state and check ack_error
                 //ns = (data_pulse&&transact_done) ? (ack_error ? CMD : DONE) : RW ;
                 ns = (data_pulse&&transact_done) ? (DONE) : RW ;
                 sccb_start = 1;
-                reg_setup_cnt_n = 0 ;
+                reg_setup_cnt_nxt = 0 ;
                 rw_cmd_ready = 0;
                 rw_resp_valid = 0;
             end
             DONE: begin
                 ns = data_pulse ? IDLE : DONE;
                 sccb_start = 0;
-                reg_setup_cnt_n = 0;
+                reg_setup_cnt_nxt = 0;
                 rw_cmd_ready = 0;
                 rw_resp_valid = data_pulse ? 1 : 0;
             end
             default: begin
                 ns = IDLE;
                 sccb_start = 0;
-                reg_setup_cnt_n = 0;
+                reg_setup_cnt_nxt = 0;
                 rw_cmd_ready = 0;
                 rw_resp_valid = 0;
             end
@@ -161,7 +161,7 @@ module CamSetup (
     
     `REG(clk, cs, 0, ns)
     // Read/Write the registers.
-    `REG(clk, reg_setup_cnt, 0, reg_setup_cnt_n)
+    `REG(clk, reg_setup_cnt, 0, reg_setup_cnt_nxt)
    
     SCCBCtrl sccbcntl 
     (   

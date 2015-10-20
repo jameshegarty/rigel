@@ -25,9 +25,9 @@
 //
 //##################################################################################################
 // TODO Note this module reads in raw (1 byte) data
-// This is also ordering the data as follows
-// MSB |15-----8|7-----0| LSB
-// PIX |  N+1   |   N   |
+
+`define NUM_LINES 480
+`define PIX_PER_LINE 640
 module CamReader (
     
     input       pclk,           // PCLK
@@ -35,59 +35,96 @@ module CamReader (
     input       [7:0] din,        // D0 - D7
     input       vsync,          // VSYNC
     input       href,           // HREF
-    output reg  pixel_valid,     // Indicates that a pixel has been received.
-    output reg  [15:0] pixel,   // RGB565 pixel.
-    output      vstart,           // first pixel of frame
-    output      hstart,           // first pixel of line
+    output      pixel_valid,     // Indicates that a pixel has been received.
+    output reg  [7:0] pixel,   // Raw pixel
 
-    input       raw,
     input       start, // pulse
-    input       stop    // TODO does not do anythingh
+    input       stop,    // TODO does not do anythingh
+    output reg [31:0] hlen,
+    output reg [31:0] vlen
     );
 
     reg         odd;
     reg         frameValid;
+    reg         href_p1;
     reg         href_p2;
-    reg         saw_vsync;
+    reg         vsync_p1;
+    reg         vsync_p2;
     
-    // Only anding with pixel_valid just in case
-    assign hstart = !href_p2 && href ;
-    assign vstart = hstart && saw_vsync ;
-    
-    `REG(pclk, saw_vsync, 0, 
-        vsync ? 1'b1 : (vstart ? 1'b0 : saw_vsync)
-    )
-    
+    wire real_href;
+    wire real_vsync;
+    reg real_vsync_p1;
+    wire href_posedge;
+    wire href_negedge;
+    wire vsync_posedge;
+
+
+
+
     reg running;
-    `REG(pclk, running, 0,
-        start ? 1'b1 : running
-    )
-    wire [7:0] din2;
-    assign din2 = din;//{din[0],din[1],din[2],din[3],din[4],din[5],din[6],din[7]};
-    always @(posedge pclk or negedge rst_n) begin
-        if (rst_n == 0) begin
-            pixel_valid <= 0;
-            odd <= 0;
-            frameValid <= 0;
-            href_p2 <= 1'b0;
-        end 
-        else begin
-            href_p2 <= href;
-            if (frameValid == 1 && vsync == 0 && href == 1) begin
-                if (odd != raw ) begin    
-                    pixel[7:0] <= din2;
-                end
-                else begin
-                    pixel[15:8] <= din2;
-                    pixel_valid <= 1;
-                end
-                odd <= ~odd;
-                // skip inital frame in case we started receiving in the middle of it
-            end 
-            else if (running && frameValid == 0 && vsync == 1) begin
-                frameValid <= 1;
+    `REG(pclk, running, 0, start ? 1'b1 : running)
+    `REG(pclk, frameValid, 0, (running && !frameValid && real_vsync) ? 1'b1 : frameValid)
+
+    `REG(pclk, pixel[7:0], 8'hFF, din[7:0])
+    localparam IDLE=0, HBLANK=1, HACT=2;
+    reg [10:0] pix_cnt_n;
+    reg [10:0] pix_cnt;
+    
+    reg [1:0] pix_ns;
+    reg [1:0] pix_cs;
+
+    assign pixel_valid = (pix_cs == HACT);
+    always @(*) begin
+        case(pix_cs)
+            IDLE : begin
+                pix_ns = frameValid ? HBLANK : IDLE;
+                pix_cnt_n = 0;
             end
-        end
+            HBLANK : begin
+                pix_ns = real_href ? HACT : HBLANK ;
+                pix_cnt_n = real_href ? `PIX_PER_LINE : 0;
+            end
+            HACT : begin
+                pix_ns = (pix_cnt == 1) ? HBLANK : HACT ;
+                pix_cnt_n = pix_cnt - 1'b1;
+            end
+            default : begin
+                pix_ns = IDLE ;
+                pix_cnt_n = 0;
+            end
+        endcase
+
     end
-   
+    `REG(pclk, pix_cs, IDLE, pix_ns) 
+    `REG(pclk, pix_cnt, 0, pix_cnt_n) 
+
+
+    assign href_posedge = !href_p1 && href ;
+    assign href_negedge = href_p1 && !href ;
+    assign vsync_posedge = !real_vsync_p1 && real_vsync;
+    assign real_href = href && !vsync;
+    assign real_vsync = vsync && vsync_p1 && vsync_p2;
+
+    `REG(pclk, href_p1, 1'b0, href)
+    `REG(pclk, href_p2, 1'b0, href_p1)
+    `REG(pclk, vsync_p1, 1'b0, vsync)
+    `REG(pclk, vsync_p2, 1'b0, vsync_p1)
+    `REG(pclk, real_vsync_p1, 1'b0, real_vsync)
+
+
+    reg pixel_valid_p1;
+    `REG(pclk, pixel_valid_p1, 0, pixel_valid)
+
+    reg [10:0] st_pix_cnt;
+    `REG(pclk, st_pix_cnt, 32'h0,
+        pixel_valid ? (st_pix_cnt+1'b1) : 0 )
+    `REG(pclk, hlen, 0, (frameValid && pixel_valid_p1 && !pixel_valid && (st_pix_cnt!= 640)) ? st_pix_cnt : hlen)
+    
+    reg [10:0] ln_cnt;
+    `REG(pclk, ln_cnt, 32'h0, 
+        real_vsync ? 32'h0 : (pixel_valid && !pixel_valid_p1 ? ln_cnt+1'b1 : ln_cnt))
+    `REG(pclk, vlen, 32'h0, (vsync_posedge && (ln_cnt !=480) ) ? ln_cnt : vlen)
+
+
+
 endmodule

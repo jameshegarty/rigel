@@ -1,6 +1,7 @@
 module DRAMWriter(
+    input fclk,
     //AXI port
-    input ACLK,
+    output M_AXI_ACLK,
     input rst_n,
     output reg [31:0] M_AXI_AWADDR,
     input M_AXI_AWREADY,
@@ -34,41 +35,46 @@ module DRAMWriter(
     input din_valid
     
 );
-
+assign M_AXI_ACLK = fclk;
 assign M_AXI_AWLEN = 4'b1111; // 16 transfers??
 assign M_AXI_AWSIZE = 2'b11; // Represents 8 Bytes per "Transfer" (64 bit wide data bus)
 assign M_AXI_AWBURST = 2'b01; // Represents Type "Incr"
 assign M_AXI_WSTRB = 8'b11111111;
 
-parameter IDLE = 0, RWAIT = 1;
+parameter IDLE = 0, RWAIT = 1, INIT=2;
 
 reg stopping;
-`REG(ACLK, stopping, 0, stop ? 1'b1 : (a_state==IDLE) ? 1'b0 : stopping)
+`REG(fclk, stopping, 0, stop ? 1'b1 : (a_state==IDLE) ? 1'b0 : stopping)
 
 //ADDR logic
-reg a_state;  
-assign M_AXI_AWVALID = (a_state == RWAIT);
+reg [1:0] a_state;  
+assign M_AXI_AWVALID = (a_state == IDLE && burst_valid && M_AXI_AWREADY);
 
 wire wrap;
 assign wrap = (M_AXI_AWADDR + 128)==(STREAMBUF_ADDR+STREAMBUF_NBYTES);
 
-always @(posedge ACLK or negedge rst_n) begin
+always @(posedge fclk or negedge rst_n) begin
     if (rst_n == 0) begin
-        a_state <= IDLE;
+        a_state <= INIT;
         M_AXI_AWADDR <= 0;
     end 
     else begin
         case(a_state)
-        IDLE: begin
+        INIT: begin
             if (start) begin
                 M_AXI_AWADDR <= STREAMBUF_ADDR;
+                a_state <= IDLE;
+            end
+        end
+        IDLE: begin
+            if (burst_valid & M_AXI_AWREADY) begin
                 a_state <= RWAIT;
             end
         end
         RWAIT: begin
-            if (M_AXI_AWREADY == 1) begin
+            if (w_state == IDLE) begin
                 M_AXI_AWADDR <= wrap ? STREAMBUF_ADDR : (M_AXI_AWADDR+128);
-                a_state <= (stopping && wrap) ? IDLE : RWAIT ;
+                a_state <= (stopping && wrap) ? INIT : IDLE ;
             end
         end
         endcase
@@ -77,23 +83,23 @@ end
 assign STREAMBUF_CURADDR = M_AXI_AWADDR;
 
 //WRITE logic
-reg [5:0] b_count;
+reg [3:0] b_count;
 reg w_state;
-always @(posedge ACLK or negedge rst_n) begin
+always @(posedge fclk or negedge rst_n) begin
     if (rst_n == 0) begin
         w_state <= IDLE;
         b_count <= 0;
     end else case(w_state)
         IDLE: begin
-            if(burst_valid) begin
-                b_count <= 16;
+            if (a_state==IDLE && burst_valid && M_AXI_AWREADY) begin
+                b_count <= 4'd15;
                 w_state <= RWAIT;
             end
         end
         RWAIT: begin
             if (M_AXI_WREADY && M_AXI_WVALID) begin
                 //use M_AXI_WDATA
-                if(b_count == 5'h1) begin
+                if(b_count == 4'h0) begin
                     w_state <= IDLE;
                 end
                 b_count <= b_count - 1'b1;
@@ -102,14 +108,14 @@ always @(posedge ACLK or negedge rst_n) begin
     endcase
 end
 
-assign M_AXI_WLAST = (b_count == 5'h1);
+assign M_AXI_WLAST = (b_count == 5'h0);
 
 assign M_AXI_WVALID = (w_state == RWAIT) && din_valid;
 
 assign din_ready = (w_state == RWAIT) && M_AXI_WREADY;
    
 
-assign M_AXI_BREADY = 1;
+assign M_AXI_BREADY = 1'b1;
 
 assign M_AXI_WDATA = din;
 

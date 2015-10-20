@@ -12,18 +12,23 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#define CMD_START 5
+#define CMD_STOP 9
+
 #define MMIO_SIZE 16
 #define MMIO_CMD 0
 #define MMIO_STREAMBUF_NBYTES 1
 #define MMIO_STREAMBUF_ADDR 2
-#define MMIO_STATUS 3
-#define MMIO_DEBUG0 4
-#define MMIO_DEBUG1 5
-#define MMIO_DEBUG2 6
-#define MMIO_DEBUG3 7
-#define MMIO_CAM_CMD 8
-#define MMIO_CAM_RESP 9
-#define MMIO_CAM_RESP_CNT 10
+#define MMIO_VGABUF_NBYTES 3
+#define MMIO_VGABUF_ADDR 4
+#define MMIO_STATUS 5
+#define MMIO_DEBUG0 6
+#define MMIO_DEBUG1 7
+#define MMIO_DEBUG2 8
+#define MMIO_DEBUG3 9
+#define MMIO_CAM_CMD 10
+#define MMIO_CAM_RESP 11
+#define MMIO_CAM_RESP_CNT 12
 
 #define CAM_DELAY 0xF0F0
 #define CAM_RESET 0x1280
@@ -36,6 +41,7 @@ typedef struct {
 void write_mmio(volatile Conf* conf, int offset, uint32_t data, int verbose) {
     if(verbose) {
         printf("MMIO WRITE: 0x%x to offset %x\n",data,offset);
+        fflush(stdout);
     }
     conf->mmio[offset] = data;
 }
@@ -44,6 +50,7 @@ uint32_t read_mmio(volatile Conf* conf, int offset, int verbose) {
     uint32_t data = conf->mmio[offset];
     if (verbose) {
         printf("MMIO READ: 0x%x from addr %x\n",data,offset);
+        fflush(stdout);
     }
     return data;
 }
@@ -95,6 +102,7 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
         printf("ERROR: Cam response reports an error! Did you write before checking the response??\n");
         //exit(1);
     }
+    fflush(stdout);
     return (cam_resp & 0x000000FF);
 }
 
@@ -106,7 +114,6 @@ void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     }
     cam_data |= 0x10000; //bit 16 is the write cmd
     uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
-    //printf("cam_resp_cnt=%d\n",cam_resp_cnt);
     write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
     uint32_t cnt = 0;
@@ -127,6 +134,7 @@ void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
         printf("ERROR:Cam response reports an error! Did you write before checking the response??\n");
         //exit(1);
     }
+    fflush(stdout);
 }
 
 FILE* openImage(char* filename, int* numbytes){
@@ -184,6 +192,7 @@ void write_cam_safe(volatile Conf* conf, uint32_t cam_data) {
     uint32_t rd = read_cam_reg(conf,cam_a);
     if(cam_d != rd) {
         printf("ERROR:\nExpt: %08x\nRead:%08x\n",cam_data,rd);
+        exit(1);
     }
 }
 
@@ -193,21 +202,10 @@ void init_camera(volatile Conf* conf) {
     write_cam_reg(conf, 0x1280); // Reset
     write_cam_reg(conf, 0xF0F0); // delay
     write_cam_reg(conf, 0xF0F0); // delay
-    printf("\n\n");
-    write_cam_safe(conf,0x1140);
     write_cam_safe(conf,0x1205);
+    //write_cam_safe(conf,0x1180);
     write_cam_safe(conf,0x1500);
-    
-    /*
-    for(x=0; x<256; x++) {
-        read_cam_reg(conf, x);
-        write_cam_reg(conf, (x<<8)|0xAA); 
-        read_cam_reg(conf, x);
-        write_cam_reg(conf, (x<<8)|0x55); 
-        read_cam_reg(conf, x);
-        printf("--------------------\n");
-    }
-    */
+    write_cam_safe(conf,0x0E80);
     write_cam_reg(conf, 0xF0F0); // delay
     write_cam_reg(conf, 0xF0F0); // delay
 }
@@ -216,7 +214,10 @@ int main(int argc, char *argv[]) {
     unsigned gpio_addr = 0x70000000;
     unsigned stream_addr = 0x30008000;
     uint32_t frame_size = 640*480;
-    int streambuf_size = frame_size * 8;
+    int streambuf_size = frame_size * 2;
+    int vgabuf_size = frame_size *2;
+    unsigned vga_addr = stream_addr;
+    
     unsigned page_size = sysconf(_SC_PAGESIZE);
     
     char* raw_name= "/tmp/out.raw";
@@ -236,6 +237,19 @@ int main(int argc, char *argv[]) {
         printf("FAILED mmap for streamaddr %x\n",stream_addr);
         exit(1);
     }
+    void * vga_ptr = mmap(NULL, vgabuf_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, vga_addr);
+    if (vga_ptr == MAP_FAILED) {
+        printf("FAILED mmap for vgabuf %x\n",stream_addr);
+        exit(1);
+    }
+    unsigned lenInRaw;
+    FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
+    printf("file LEN %d\n",lenInRaw);
+    printf("framesize %d\n",frame_size);
+    loadImage( imfile, vga_ptr, lenInRaw );
+    for(uint32_t i=0;lenInRaw+i<vgabuf_size; i++ ) {
+        *(unsigned char*)(vga_ptr+lenInRaw+i)= ((i%256)); 
+    }
     
     // mmap the device into memory 
     // This mmaps the control region (the MMIO for the control registers).
@@ -251,19 +265,30 @@ int main(int argc, char *argv[]) {
     init_camera(conf);
     printf("Camera programmed!s\n");
     write_mmio(conf, MMIO_STREAMBUF_ADDR, stream_addr,1);
-    write_mmio(conf, MMIO_STREAMBUF_NBYTES, frame_size*4,1);
+    write_mmio(conf, MMIO_STREAMBUF_NBYTES, streambuf_size,1);
+    write_mmio(conf, MMIO_VGABUF_ADDR, vga_addr,1);
+    write_mmio(conf, MMIO_VGABUF_NBYTES, vgabuf_size,1);
     print_debug_regs(conf);
-    printf("WAIT 1s\n");
-    sleep(1);
+    printf("WAIT 3s\n");
+    fflush(stdout);
     // Start stream
     printf("START STREAM\n");
-    write_mmio(conf, MMIO_CMD, 0x5,1);
-    printf("WAIT 5s\n");
-    sleep(5);
-    print_debug_regs(conf);
-    
+    fflush(stdout);
+    //print_debug_regs(conf);
+    write_mmio(conf, MMIO_CMD, CMD_START,1);
+    for (int i=0; i<20;i++) {
+        printf("RUNNING STREAM  %d\n", 20-i);
+        print_debug_regs(conf);
+        fflush(stdout);
+        sleep(1);
+    }
     saveImage(raw_name,stream_ptr,frame_size);
-
+    write_mmio(conf, MMIO_CMD, CMD_STOP,1);
+    printf("STOPPING STREAM\n");
+    fflush(stdout);
+    sleep(1);
+    print_debug_regs(conf);
+    fflush(stdout);
   return 0;
 }
 
