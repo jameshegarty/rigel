@@ -19,7 +19,7 @@
 #define MMIO_CMD 0
 #define MMIO_STREAMBUF_NBYTES 1
 #define MMIO_STREAMBUF_ADDR 2
-#define MMIO_VGABUF_NBYTES 3
+#define MMIO_FRAME_BYTES 3
 #define MMIO_VGABUF_ADDR 4
 #define MMIO_STATUS 5
 #define MMIO_DEBUG0 6
@@ -198,24 +198,23 @@ void write_cam_safe(volatile Conf* conf, uint32_t cam_data) {
 
 void init_camera(volatile Conf* conf) {
     int x = 0;
-    write_cam_reg(conf, 0xF0F0); // delay
-    write_cam_reg(conf, 0x1280); // Reset
-    write_cam_reg(conf, 0xF0F0); // delay
-    write_cam_reg(conf, 0xF0F0); // delay
+    write_cam_reg(conf, CAM_DELAY); // delay
+    write_cam_reg(conf, CAM_RESET); // Reset
+    write_cam_reg(conf, CAM_DELAY); // delay
     write_cam_safe(conf,0x1205);
     //write_cam_safe(conf,0x1180);
     write_cam_safe(conf,0x1500);
     write_cam_safe(conf,0x0E80);
-    write_cam_reg(conf, 0xF0F0); // delay
-    write_cam_reg(conf, 0xF0F0); // delay
+    write_cam_reg(conf, CAM_DELAY); // delay
+    write_cam_reg(conf, CAM_DELAY); // delay
 }
 
 int main(int argc, char *argv[]) {
     unsigned gpio_addr = 0x70000000;
     unsigned stream_addr = 0x30008000;
     uint32_t frame_size = 640*480;
-    int streambuf_size = frame_size * 2;
-    int vgabuf_size = frame_size *2;
+    int streambuf_size = frame_size * 3;
+    int vgabuf_size = frame_size *3;
     unsigned vga_addr = stream_addr;
     
     unsigned page_size = sysconf(_SC_PAGESIZE);
@@ -246,9 +245,14 @@ int main(int argc, char *argv[]) {
     FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
     printf("file LEN %d\n",lenInRaw);
     printf("framesize %d\n",frame_size);
-    loadImage( imfile, vga_ptr, lenInRaw );
-    for(uint32_t i=0;lenInRaw+i<vgabuf_size; i++ ) {
-        *(unsigned char*)(vga_ptr+lenInRaw+i)= ((i%256)); 
+    for(uint32_t i=0;i<frame_size; i++ ) {
+        *(unsigned char*)(vga_ptr+i)= 0; 
+    }
+    for(uint32_t i=0;i<frame_size; i++ ) {
+        *(unsigned char*)(vga_ptr+frame_size+i)= 128; 
+    }
+    for(uint32_t i=0;i<frame_size; i++ ) {
+        *(unsigned char*)(vga_ptr+2*frame_size+i)= 255; 
     }
     
     // mmap the device into memory 
@@ -267,7 +271,7 @@ int main(int argc, char *argv[]) {
     write_mmio(conf, MMIO_STREAMBUF_ADDR, stream_addr,1);
     write_mmio(conf, MMIO_STREAMBUF_NBYTES, streambuf_size,1);
     write_mmio(conf, MMIO_VGABUF_ADDR, vga_addr,1);
-    write_mmio(conf, MMIO_VGABUF_NBYTES, vgabuf_size,1);
+    write_mmio(conf, MMIO_FRAME_BYTES, frame_size,1);
     print_debug_regs(conf);
     printf("WAIT 3s\n");
     fflush(stdout);
@@ -276,8 +280,9 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     //print_debug_regs(conf);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    for (int i=0; i<20;i++) {
-        printf("RUNNING STREAM  %d\n", 20-i);
+    int time = 60;
+    for (int i=0; i<time;i++) {
+        printf("RUNNING STREAM  %d\n", time-i);
         print_debug_regs(conf);
         fflush(stdout);
         sleep(1);

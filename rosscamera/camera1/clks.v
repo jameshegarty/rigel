@@ -1,11 +1,11 @@
 module ClkCtrl(
+    input rst_n,
     input CLKIN_100M,
     input CLKIN_96M,
+    
     output CLK_25M,
     output CLK_24M,
-    output CLK_48M,
-    input rst_n,
-    output clks_valid
+    output CLK_48M
 );
 
 /*
@@ -34,7 +34,5 @@ module ClkCtrl(
     assign CLK_48M = cnt96[0];
     
     
-    
-    assign clks_valid = 1'b1;
 
 endmodule : ClkCtrl

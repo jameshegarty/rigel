@@ -1,29 +1,9 @@
 module display(
-    //AXI port
-    output M_AXI_ACLK,
-    output [31:0] M_AXI_ARADDR,
-    input M_AXI_ARREADY,
-    output  M_AXI_ARVALID,
-    input [63:0] M_AXI_RDATA,
-    output M_AXI_RREADY,
-    input [1:0] M_AXI_RRESP,
-    input M_AXI_RVALID,
-    input M_AXI_RLAST,
-    output [3:0] M_AXI_ARLEN,
-    output [1:0] M_AXI_ARSIZE,
-    output [1:0] M_AXI_ARBURST,
-
+  
     input fclk,
     input rst_n,
     input vgaclk,
 
-    input [31:0] VGABUF_NBYTES,
-    input [31:0] VGABUF_ADDR,
-    output [31:0] VGABUF_CURADDR,
-
-    input start,
-    input stop,
-    
     input [31:0] vga_cmd,
     input vga_cmd_valid,
     output vga_cmd_ready,
@@ -34,77 +14,45 @@ module display(
     output reg [7:0] VGA_green,
     output reg [7:0] VGA_blue,
 
-    output [7:0] debug
+    output [7:0] debug,
+
+    output sdata_burst_ready,
+    input sdata_valid,
+    output sdata_ready,
+    input [63:0] sdata
+
+
 );
     
-    assign M_AXI_ACLK = fclk;
-    wire vr_start;
-    wire vr_stop;
-    wire vr_burst_ready;
-    
-    wire [63:0] vr2fifo_data;
-    wire vr2fifo_ready;
-    wire vr2fifo_valid;
-
-    assign vr_start = start;
-    assign vr_stop = stop;
-    VideoReader videoreader(
-        .ACLK(M_AXI_ACLK),
-        .M_AXI_ARADDR(M_AXI_ARADDR),
-        .M_AXI_ARREADY(M_AXI_ARREADY),
-        .M_AXI_ARVALID(M_AXI_ARVALID),
-        .M_AXI_RDATA(M_AXI_RDATA),
-        .M_AXI_RREADY(M_AXI_RREADY),
-        .M_AXI_RRESP(M_AXI_RRESP),
-        .M_AXI_RVALID(M_AXI_RVALID),
-        .M_AXI_RLAST(M_AXI_RLAST),
-        .M_AXI_ARLEN(M_AXI_ARLEN),
-        .M_AXI_ARSIZE(M_AXI_ARSIZE),
-        .M_AXI_ARBURST(M_AXI_ARBURST),
-        
-        .rst_n(rst_n),
-
-        .start(vr_start), 
-        .stop(vr_stop),
-        .burst_ready(vr_burst_ready),
-        .VGABUF_NBYTES(VGABUF_NBYTES),
-        .VGABUF_ADDR(VGABUF_ADDR),
-        .VGABUF_CURADDR(VGABUF_CURADDR),
-        
-        .dout_ready(vr2fifo_ready),
-        .dout_valid(vr2fifo_valid),
-        .dout(vr2fifo_data[63:0])
-    );
-    assign vr2fifo_ready = 1'b1;
+    assign sdata_ready = 1'b1;
     
     wire fifo_read_en;
     wire [7:0] fifo_dout;
     wire fifo_full;
     wire fifo_empty;
+    
     // Magic number 850 is just a number less than 1024-128
     // This is required so that there is enough room in the fifo for the axi burst
     wire [12:0] fifo_rd_data_count;
     wire [9:0] fifo_wr_data_count;
-    assign vr_burst_ready = (fifo_wr_data_count[9:0] < (10'd256));
+    assign sdata_burst_ready = (fifo_wr_data_count[9:0] < (10'd850));
+    
+    
     reg fifo_full_err;
     `REG_ERR(fclk, fifo_full_err, fifo_full)
-    wire [63:0] vr2fifo_data_swapped;
-    //assign vr2fifo_data_swapped = {vr2fifo_data[39:32],vr2fifo_data[47:40],vr2fifo_data[55:48],vr2fifo_data[63:56], vr2fifo_data[7:0],vr2fifo_data[15:8],vr2fifo_data[23:16],vr2fifo_data[31:24]};
-    assign vr2fifo_data_swapped = {
-        vr2fifo_data[7:0],vr2fifo_data[15:8],vr2fifo_data[23:16],vr2fifo_data[31:24],
-        vr2fifo_data[39:32],vr2fifo_data[47:40],vr2fifo_data[55:48],vr2fifo_data[63:56]
+    
+    wire [63:0] fifo_data_swapped;
+    assign fifo_data_swapped = {
+        sdata[7:0],sdata[15:8],sdata[23:16],sdata[31:24],
+        sdata[39:32],sdata[47:40],sdata[55:48],sdata[63:56]
     };
-    wire [63:0] swap;
-    assign swap = {vr2fifo_data_swapped[55:0],vr2fifo_data[63:56]};
 
-    vgafifo_64w_8r_1024d your_instance_name (
+    vgafifo_64w_8r_1024d vgafifo (
           .rst(!rst_n), // input rst
           .wr_clk(fclk), // input wr_clk
           .rd_clk(vgaclk), // input rd_clk
-          //.din(swap[63:0]), // input [63 : 0] din
-          .din(vr2fifo_data_swapped[63:0]), // input [63 : 0] din
-          //.din(vr2fifo_data[63:0]), // input [63 : 0] din
-          .wr_en(vr2fifo_valid), // input wr_en
+          .din(fifo_data_swapped[63:0]), // input [63 : 0] din
+          .wr_en(sdata_valid), // input wr_en
           .rd_en(fifo_read_en), // input rd_en
           .dout(fifo_dout), // output [7 : 0] dout
           .full(fifo_full), // output full

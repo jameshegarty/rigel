@@ -50,7 +50,7 @@ module StreamBuffer(
         end
     end
     
-    reg [63:0] data64;
+    wire [63:0] data64;
     assign data64[63:0] = {data_packed[7],data_packed[6],data_packed[5],data_packed[4],data_packed[3],data_packed[2],data_packed[1],data_packed[0]};
 
     vfifo64x1024 your_instance_name (

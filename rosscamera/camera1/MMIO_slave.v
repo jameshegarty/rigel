@@ -31,7 +31,7 @@ module MMIO_slave(
     output [31:0] MMIO_CMD,
     output [31:0] STREAMBUF_NBYTES,
     output [31:0] STREAMBUF_ADDR,
-    output [31:0] VGABUF_NBYTES,
+    output [31:0] FRAME_BYTES,
     output [31:0] VGABUF_ADDR,
     input [31:0] MMIO_STATUS,
 
@@ -110,172 +110,172 @@ module MMIO_slave(
     .M_AXI_WREADY(LITE_WREADY),
     .M_AXI_WSTRB(LITE_WSTRB),
     .M_AXI_WVALID(LITE_WVALID)
-  );
+);
 
-`include "math.v"
+    `include "math.v"
 
-// Needs to be at least 4
-parameter MMIO_SIZE = 16;
+    // Needs to be at least 4
+    parameter MMIO_SIZE = 16;
 
-parameter [31:0] MMIO_STARTADDR = 32'h7000_0000;
-parameter W = 32;
-
-
-//This will only work on Verilog 2005
-localparam MMIO_BITS = clog2(MMIO_SIZE);
-
-reg [W-1:0] data[MMIO_SIZE-1:0];
-
-parameter IDLE = 0, RWAIT = 1;
-parameter OK = 2'b00, SLVERR = 2'b10;
+    parameter [31:0] MMIO_STARTADDR = 32'h7000_0000;
+    parameter W = 32;
 
 
-//READS
-reg r_state;
-wire [MMIO_BITS-1:0] r_select;
-assign r_select  = LITE_ARADDR[MMIO_BITS+1:2];
-assign ar_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_ARADDR[1:0]} == MMIO_STARTADDR;
-assign LITE_ARREADY = (r_state == IDLE);
-assign LITE_RVALID = (r_state == RWAIT);
+    //This will only work on Verilog 2005
+    localparam MMIO_BITS = clog2(MMIO_SIZE);
+
+    reg [W-1:0] data[MMIO_SIZE-1:0];
+
+    parameter IDLE = 0, RWAIT = 1;
+    parameter OK = 2'b00, SLVERR = 2'b10;
 
 
-// TODO cam_cmd_write might be valid for multiple cycles??
-wire cam_cmd_write;
-assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==10);
-`REG(fclk, rw_cmd_valid, 0, cam_cmd_write)
-assign rw_cmd = data[10][16:0];
+    //READS
+    reg r_state;
+    wire [MMIO_BITS-1:0] r_select;
+    assign r_select  = LITE_ARADDR[MMIO_BITS+1:2];
+    assign ar_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_ARADDR[1:0]} == MMIO_STARTADDR;
+    assign LITE_ARREADY = (r_state == IDLE);
+    assign LITE_RVALID = (r_state == RWAIT);
 
 
-reg [31:0] cam_resp;
-reg [31:0] cam_resp_cnt;
-always @(posedge fclk or negedge rst_n) begin
-    if (!rst_n) begin
-        cam_resp <= 32'h0;
-        cam_resp_cnt[12:0] <= 0;
+    // TODO cam_cmd_write might be valid for multiple cycles??
+    wire cam_cmd_write;
+    assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==10);
+    `REG(fclk, rw_cmd_valid, 0, cam_cmd_write)
+    assign rw_cmd = data[10][16:0];
+
+
+    reg [31:0] cam_resp;
+    reg [31:0] cam_resp_cnt;
+    always @(posedge fclk or negedge rst_n) begin
+        if (!rst_n) begin
+            cam_resp <= 32'h0;
+            cam_resp_cnt[12:0] <= 0;
+        end
+        else if (rw_resp_valid) begin
+            cam_resp <= {14'h0,rw_resp[17:0]};
+            cam_resp_cnt <= cam_resp_cnt + 1'b1;
+        end
     end
-    else if (rw_resp_valid) begin
-        cam_resp <= {14'h0,rw_resp[17:0]};
-        cam_resp_cnt <= cam_resp_cnt + 1'b1;
+
+
+
+    reg [31:0] read_data;
+    always @(*) begin
+        case(r_select)
+            0 : read_data = data[0];
+            1 : read_data = STREAMBUF_NBYTES[31:0];
+            2 : read_data = STREAMBUF_ADDR[31:0];
+            3 : read_data = FRAME_BYTES[31:0];
+            4 : read_data = VGABUF_ADDR[31:0];
+            5 : read_data = MMIO_STATUS;
+            6 : read_data = debug0;
+            7 : read_data = debug1;
+            8 : read_data = debug2;
+            9 : read_data = debug3;
+            10 : read_data = rw_cmd;
+            11 : read_data = cam_resp;
+            12 : read_data = cam_resp_cnt;
+            default : read_data = 32'hDEAD_BEEF;
+
+        endcase
     end
-end
+
+    // MMIO Mappings
+    assign MMIO_CMD = data[0];
+
+    // Rename all of these
+    assign STREAMBUF_NBYTES = data[1];
+    assign STREAMBUF_ADDR = data[2];
+    assign FRAME_BYTES = data[3];
+    assign VGABUF_ADDR = data[4];
 
 
-
-reg [31:0] read_data;
-always @(*) begin
-    case(r_select)
-        0 : read_data = data[0];
-        1 : read_data = STREAMBUF_NBYTES[31:0];
-        2 : read_data = STREAMBUF_ADDR[31:0];
-        3 : read_data = VGABUF_NBYTES[31:0];
-        4 : read_data = VGABUF_ADDR[31:0];
-        5 : read_data = MMIO_STATUS;
-        6 : read_data = debug0;
-        7 : read_data = debug1;
-        8 : read_data = debug2;
-        9 : read_data = debug3;
-        10 : read_data = rw_cmd;
-        11 : read_data = cam_resp;
-        12 : read_data = cam_resp_cnt;
-        default : read_data = 32'hDEAD_BEEF;
-
-    endcase
-end
-
-// MMIO Mappings
-assign MMIO_CMD = data[0];
-
-// Rename all of these
-assign STREAMBUF_NBYTES = data[1];
-assign STREAMBUF_ADDR = data[2];
-assign VGABUF_NBYTES = data[3];
-assign VGABUF_ADDR = data[4];
-
-
-always @(posedge fclk) begin
-    if(rst_n == 0) begin
-        r_state <= IDLE;
-    end else case(r_state)
-        IDLE: begin
-            if(LITE_ARVALID) begin
-                LITE_RRESP <= ar_good ? OK : SLVERR;
-                LITE_RDATA <= read_data;
-                r_state <= RWAIT;
+    always @(posedge fclk) begin
+        if(rst_n == 0) begin
+            r_state <= IDLE;
+        end else case(r_state)
+            IDLE: begin
+                if(LITE_ARVALID) begin
+                    LITE_RRESP <= ar_good ? OK : SLVERR;
+                    LITE_RDATA <= read_data;
+                    r_state <= RWAIT;
+                end
             end
-        end
-        RWAIT: begin
-            if(LITE_RREADY)
-                r_state <= IDLE;
-        end
-    endcase
-end 
-
-//WRITES
-reg w_state;
-reg [MMIO_BITS-1:0] w_select_r;
-reg w_wrotedata;
-reg w_wroteresp;
-
-wire [MMIO_BITS-1:0] w_select;
-assign w_select  = LITE_AWADDR[MMIO_BITS+1:2];
-assign aw_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_AWADDR[1:0]} == MMIO_STARTADDR;
-
-assign LITE_AWREADY = (w_state == IDLE);
-assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
-assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
-
-always @(posedge fclk) begin
-    if(rst_n == 0) begin
-        w_state <= IDLE;
-        w_wrotedata <= 0;
-        w_wroteresp <= 0;
-    end else case(w_state)
-        IDLE: begin
-            if(LITE_AWVALID) begin
-                LITE_BRESP <= aw_good ? OK : SLVERR;
-                w_select_r <= w_select;
-                w_state <= RWAIT; 
-                w_wrotedata <= 0;
-                w_wroteresp <= 0;
+            RWAIT: begin
+                if(LITE_RREADY)
+                    r_state <= IDLE;
             end
-        end
-        RWAIT: begin
-            data[0] <= 0;
-            if (LITE_WREADY) begin
-                data[w_select_r] <= LITE_WDATA;
-            end
-            if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
-                w_wrotedata <= 0;
-                w_wroteresp <= 0;
-                w_state <= IDLE;
-            end 
-            else if (LITE_WVALID) begin
-                w_wrotedata <= 1;
-            end
-            else if (LITE_BREADY) begin
-                w_wroteresp <= 1;
-            end
-        end
-    endcase
-end
+        endcase
+    end 
 
-reg v_state;
-always @(posedge fclk) begin
-    if (rst_n == 0)
-        v_state <= IDLE;
-    else case(v_state)
-        IDLE:
-            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00)
-                v_state <= RWAIT;
-        RWAIT:
-            if (MMIO_READY)
-                v_state <= IDLE;
-    endcase
-end
+    //WRITES
+    reg w_state;
+    reg [MMIO_BITS-1:0] w_select_r;
+    reg w_wrotedata;
+    reg w_wroteresp;
+
+    wire [MMIO_BITS-1:0] w_select;
+    assign w_select  = LITE_AWADDR[MMIO_BITS+1:2];
+    assign aw_good = {LITE_ARADDR[31:(2+MMIO_BITS)], {MMIO_BITS{1'b0}}, LITE_AWADDR[1:0]} == MMIO_STARTADDR;
+
+    assign LITE_AWREADY = (w_state == IDLE);
+    assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
+    assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
+
+    always @(posedge fclk) begin
+        if(rst_n == 0) begin
+            w_state <= IDLE;
+            w_wrotedata <= 0;
+            w_wroteresp <= 0;
+        end else case(w_state)
+            IDLE: begin
+                if(LITE_AWVALID) begin
+                    LITE_BRESP <= aw_good ? OK : SLVERR;
+                    w_select_r <= w_select;
+                    w_state <= RWAIT; 
+                    w_wrotedata <= 0;
+                    w_wroteresp <= 0;
+                end
+            end
+            RWAIT: begin
+                data[0] <= 0;
+                if (LITE_WREADY) begin
+                    data[w_select_r] <= LITE_WDATA;
+                end
+                if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
+                    w_wrotedata <= 0;
+                    w_wroteresp <= 0;
+                    w_state <= IDLE;
+                end 
+                else if (LITE_WVALID) begin
+                    w_wrotedata <= 1;
+                end
+                else if (LITE_BREADY) begin
+                    w_wroteresp <= 1;
+                end
+            end
+        endcase
+    end
+
+    reg v_state;
+    always @(posedge fclk) begin
+        if (rst_n == 0)
+            v_state <= IDLE;
+        else case(v_state)
+            IDLE:
+                if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00)
+                    v_state <= RWAIT;
+            RWAIT:
+                if (MMIO_READY)
+                    v_state <= IDLE;
+        endcase
+    end
 
 
-// interrupts
-assign MMIO_IRQ = 0;
+    // interrupts
+    assign MMIO_IRQ = 0;
 
 endmodule // Conf
 

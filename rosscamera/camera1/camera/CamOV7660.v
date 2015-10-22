@@ -31,10 +31,11 @@ module CamOV7660 (
     output cam_cmd_ready,
 
     //camera output
-    output [63:0] sdata,
-    output sdata_valid,
     output sdata_burst_valid, // Only valid if the next N (16) are valid
+    output sdata_valid,
     input sdata_ready,
+    output [63:0] sdata,
+
 
     // debug signals
     output [31:0] debug0,
@@ -170,7 +171,7 @@ module CamOV7660 (
     `REG(pclk, debug_cnt[1], 32'h0, debug_cnt[1]+1'b1)
 
 
-    assign debug0 = debug_cnt[0];
+    assign debug0 = fifo_cnt;
     assign debug1 = debug_cnt[1];
     assign debug2 = vlen[31:0];
     assign debug3 = hlen[31:0];
