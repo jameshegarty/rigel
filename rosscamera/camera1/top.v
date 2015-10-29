@@ -84,25 +84,34 @@ module top
 
     wire XCLK_DIV;
     
-    wire [31:0] MMIO_CMD;
   
     // debug counters
     
     wire [31:0] cam_debug[3:0];
-    wire [31:0] STREAMBUF_NBYTES;
-    wire [31:0] STREAMBUF_ADDR;
-    wire [31:0] FRAME_BYTES;
-    wire [31:0] VGABUF_ADDR;
     
     wire [7:0] display_debug;
     //assign LED[7:0] = display_debug[7:0];
     //assign LED[7:4] = cam_debug[0][25:22];
     //assign LED[3:0] = cam_debug[1][25:22];
     
-    wire [16:0] rw_cmd;
+    wire [31:0] MMIO_CMD;
+    wire [31:0] MMIO_CAM_CMD;
+    wire [31:0] MMIO_FRAME_BYTES0;
+    wire [31:0] MMIO_TRIBUF_ADDR0;
+    wire [31:0] MMIO_FRAME_BYTES1;
+    wire [31:0] MMIO_TRIBUF_ADDR1;
+    wire [31:0] MMIO_FRAME_BYTES2;
+    wire [31:0] MMIO_TRIBUF_ADDR2;
+
     wire rw_cmd_valid;
     wire [17:0] rw_resp;
     wire rw_resp_valid;
+    
+    reg [15:0] cntCmdValid;
+    `REG(FCLK0,cntCmdValid,0,cntCmdValid+rw_cmd_valid)
+    reg [15:0] cntRespValid;
+    `REG(FCLK0,cntRespValid,0,cntRespValid+rw_resp_valid)
+
     MMIO_slave mmio(
         .fclk(FCLK0),
         .rst_n(rst_n),
@@ -129,24 +138,32 @@ module top
         .S_AXI_WREADY(S2M_GP0_AXI_WREADY), 
         .S_AXI_WSTRB(S2M_GP0_AXI_WSTRB), 
         .S_AXI_WVALID(S2M_GP0_AXI_WVALID),
-        .MMIO_READY(1'b1),
-        .MMIO_CMD(MMIO_CMD),
-        .STREAMBUF_NBYTES(STREAMBUF_NBYTES[31:0]),
-        .STREAMBUF_ADDR(STREAMBUF_ADDR[31:0]),
-        .FRAME_BYTES(FRAME_BYTES),
-        .VGABUF_ADDR(VGABUF_ADDR),
-        .MMIO_STATUS(32'h0),
-        .debug0(cam_debug[0]),
+
+        .MMIO_CMD(MMIO_CMD[31:0]),
+        .MMIO_CAM_CMD(MMIO_CAM_CMD[31:0]),
+        .MMIO_FRAME_BYTES0(MMIO_FRAME_BYTES0[31:0]),
+        .MMIO_TRIBUF_ADDR0(MMIO_TRIBUF_ADDR0[31:0]),
+        .MMIO_FRAME_BYTES1(MMIO_FRAME_BYTES1[31:0]),
+        .MMIO_TRIBUF_ADDR1(MMIO_TRIBUF_ADDR1[31:0]),
+        .MMIO_FRAME_BYTES2(MMIO_FRAME_BYTES2[31:0]),
+        .MMIO_TRIBUF_ADDR2(MMIO_TRIBUF_ADDR2[31:0]),
+        .debug0(cam_debug[2]),
         .debug1(cam_debug[3]),
-        .debug2(debug_cnt),
-        .debug3(wfd_cnt[31:0]),
-        .rw_cmd(rw_cmd[16:0]),  //{rw,addr,data}
+        .debug2(MMIO_CAM_CMD[31:0]),
+        .debug3({cntCmdValid[15:0],cntRespValid}),
         .rw_cmd_valid(rw_cmd_valid), 
         .rw_resp(rw_resp[17:0]),// {err,rw,addr,data}
         .rw_resp_valid(rw_resp_valid),
         
         .MMIO_IRQ()
     );
+
+
+    wire startall;
+    wire stopall;
+    assign startall = (MMIO_CMD == `CMD_START);
+    assign stopall = (MMIO_CMD == `CMD_STOP);
+
 
     wire wr_sync; // Allows you to sync frames
     wire wr_frame_valid;
@@ -176,15 +193,15 @@ module top
     assign LED[7:4] = {wr_cs[1:0], wr_astate[1:0]};
     assign LED[3:0] = {rd_cs[1:0], rd_astate[1:0]};
     
-    tribuf_ctrl tribuf_ctrl_inst(
+    tribuf_ctrl tribuf_ctrl_inst0(
 
         .fclk(FCLK0),
         .rst_n(rst_n),
 
         //MMIO interface
-        .MMIO_CMD(MMIO_CMD[31:0]),
-        .FRAME_BYTES(FRAME_BYTES[31:0]),
-        .TRIBUF_ADDR(VGABUF_ADDR[31:0]),
+        .start(startall),
+        .FRAME_BYTES(MMIO_FRAME_BYTES0[31:0]),
+        .TRIBUF_ADDR(MMIO_TRIBUF_ADDR0[31:0]),
 
         //Write interface (final renderer)
         
@@ -211,10 +228,6 @@ module top
     reg [31:0] wfd_cnt;
     `REG(FCLK0, wfd_cnt[31:0], 0, wfd_cnt + wr_frame_done)
 
-    wire startall;
-    wire stopall;
-    assign startall = (MMIO_CMD == `CMD_START);
-    assign stopall = (MMIO_CMD == `CMD_STOP);
 
     wire [63:0] cam2dramw_data;
     wire cam2dramw_valid;
@@ -238,7 +251,7 @@ module top
         .CAM_SIO_D(CAM_SIO_D),
         //Camera register setup
         
-        .rw_cmd(rw_cmd[16:0]),  //{rw,addr,data}
+        .rw_cmd(MMIO_CAM_CMD[16:0]),  //{rw,addr,data}
         .rw_cmd_valid(rw_cmd_valid), 
         .rw_resp(rw_resp[17:0]),// {err,rw,addr,data}
         .rw_resp_valid(rw_resp_valid),
@@ -345,8 +358,6 @@ module top
         .dout_valid(dramr2display_valid),
         .dout(dramr2display_data[63:0])
     );
- 
-    
     
     
     display vga_display(
@@ -378,12 +389,6 @@ module top
 
 
 /*
-  always @(posedge FCLK0 or negedge ARESETN) begin
-    if(ARESETN == 0)
-        LED <= 0;
-    else if(MMIO_VALID)
-        LED <= {MMIO_CMD[1:0],STREAM_SRC[2:0],STREAM_DEST[2:0]};
-  end
 
   wire [63:0] pipelineInput;
   wire       pipelineInputValid;
@@ -405,42 +410,4 @@ module top
   */
 
 endmodule : top
-
-//-----------------------------------------------------------------------------
-// system.v
-//-----------------------------------------------------------------------------
-
-// The axi bus expects the number of valid data items to exactly match the # of addresses we send.
-// This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
-// lengthOutput is in bytes
-
-module UnderflowShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
-   parameter WAIT_CYCLES = 2048;
-   
-   reg [31:0] outCnt;
-   reg [31:0] outLen;
-
-   reg        fixupMode;
-   reg [31:0]  outClks = 0;
-   
-   
-   always@(posedge CLK) begin
-     if (RST) begin 
-        outCnt <= 32'd0;
-        outLen <= lengthOutput;
-        fixupMode <= 1'b0;
-        outClks <= 32'd0;
-     end else begin
-        outClks <= outClks + 32'd1;
-        
-        if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd8; end // AXI does 8 bytes per clock
-        if(outClks > WAIT_CYCLES) begin fixupMode <= 1'b1; end
-     end
-   end
-
-   assign out = (fixupMode) ? (64'hDEAD_BEEF) : (inp);
-   assign out_valid = (RST)?(1'b0):((fixupMode)?(outCnt<outLen):(inp_valid));
-endmodule // OutputShim
-
-
 

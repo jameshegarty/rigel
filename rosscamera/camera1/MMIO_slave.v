@@ -1,4 +1,3 @@
-
 module MMIO_slave(
     input fclk,
     input rst_n,
@@ -27,26 +26,30 @@ module MMIO_slave(
     input [3:0] S_AXI_WSTRB,
     input S_AXI_WVALID,
     
-    input MMIO_READY,
+
+    // MMIO regs
     output [31:0] MMIO_CMD,
-    output [31:0] STREAMBUF_NBYTES,
-    output [31:0] STREAMBUF_ADDR,
-    output [31:0] FRAME_BYTES,
-    output [31:0] VGABUF_ADDR,
-    input [31:0] MMIO_STATUS,
+    output [31:0] MMIO_CAM_CMD,
+    output [31:0] MMIO_FRAME_BYTES0,
+    output [31:0] MMIO_TRIBUF_ADDR0,
+    output [31:0] MMIO_FRAME_BYTES1,
+    output [31:0] MMIO_TRIBUF_ADDR1,
+    output [31:0] MMIO_FRAME_BYTES2,
+    output [31:0] MMIO_TRIBUF_ADDR2,
+
 
     input [31:0] debug0,
     input [31:0] debug1,
     input [31:0] debug2,
     input [31:0] debug3,
     
-    output [16:0] rw_cmd,
     output reg rw_cmd_valid,
     input [17:0] rw_resp,
     input rw_resp_valid,
    
     output MMIO_IRQ
     );
+
     assign S_AXI_ACLK = fclk;
     //Convert Input signals to AXI lite, to avoid ID matching
     wire [31:0] LITE_ARADDR;
@@ -66,6 +69,9 @@ module MMIO_slave(
     wire LITE_WREADY;
     wire [3:0] LITE_WSTRB;
     wire LITE_WVALID;
+    
+    wire MMIO_READY;
+    assign MMIO_READY = 1;
     
     ict106_axilite_conv axilite(
     .ACLK(S_AXI_ACLK),
@@ -113,9 +119,10 @@ module MMIO_slave(
 );
 
     `include "math.v"
+    `include "macros.vh"
 
-    // Needs to be at least 4
-    parameter MMIO_SIZE = 16;
+    // Needs to be at least 
+    parameter MMIO_SIZE = `MMIO_SIZE;
 
     parameter [31:0] MMIO_STARTADDR = 32'h7000_0000;
     parameter W = 32;
@@ -141,9 +148,8 @@ module MMIO_slave(
 
     // TODO cam_cmd_write might be valid for multiple cycles??
     wire cam_cmd_write;
-    assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==10);
+    assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==`MMIO_CAM_CMD);
     `REG(fclk, rw_cmd_valid, 0, cam_cmd_write)
-    assign rw_cmd = data[10][16:0];
 
 
     reg [31:0] cam_resp;
@@ -159,37 +165,29 @@ module MMIO_slave(
         end
     end
 
-
-
+    // Only need to specify read only registers
     reg [31:0] read_data;
     always @(*) begin
         case(r_select)
-            0 : read_data = data[0];
-            1 : read_data = STREAMBUF_NBYTES[31:0];
-            2 : read_data = STREAMBUF_ADDR[31:0];
-            3 : read_data = FRAME_BYTES[31:0];
-            4 : read_data = VGABUF_ADDR[31:0];
-            5 : read_data = MMIO_STATUS;
-            6 : read_data = debug0;
-            7 : read_data = debug1;
-            8 : read_data = debug2;
-            9 : read_data = debug3;
-            10 : read_data = rw_cmd;
-            11 : read_data = cam_resp;
-            12 : read_data = cam_resp_cnt;
-            default : read_data = 32'hDEAD_BEEF;
-
+            `MMIO_DEBUG(0) : read_data = debug0;
+            `MMIO_DEBUG(1) : read_data = debug1;
+            `MMIO_DEBUG(2) : read_data = debug2;
+            `MMIO_DEBUG(3) : read_data = debug3;
+            `MMIO_CAM_RESP : read_data = cam_resp;
+            `MMIO_CAM_RESP_CNT : read_data = cam_resp_cnt;
+            default : read_data = data[r_select];
         endcase
     end
 
     // MMIO Mappings
-    assign MMIO_CMD = data[0];
-
-    // Rename all of these
-    assign STREAMBUF_NBYTES = data[1];
-    assign STREAMBUF_ADDR = data[2];
-    assign FRAME_BYTES = data[3];
-    assign VGABUF_ADDR = data[4];
+    assign MMIO_CMD            = data[`MMIO_CMD             ];
+    assign MMIO_CAM_CMD        = data[`MMIO_CAM_CMD         ];
+    assign MMIO_FRAME_BYTES0   = data[`MMIO_FRAME_BYTES(0)  ];
+    assign MMIO_TRIBUF_ADDR0   = data[`MMIO_TRIBUF_ADDR(0)  ];
+    assign MMIO_FRAME_BYTES1   = data[`MMIO_FRAME_BYTES(1)  ];
+    assign MMIO_TRIBUF_ADDR1   = data[`MMIO_TRIBUF_ADDR(1)  ];
+    assign MMIO_FRAME_BYTES2   = data[`MMIO_FRAME_BYTES(2)  ];
+    assign MMIO_TRIBUF_ADDR2   = data[`MMIO_TRIBUF_ADDR(2)  ];
 
 
     always @(posedge fclk) begin

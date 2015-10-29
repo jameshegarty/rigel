@@ -1,6 +1,8 @@
 verilog work "top.v"
 verilog work "DramWriter.v"
 verilog work "DramReader.v"
+verilog work "serializer.v"
+verilog work "deserializer.v"
 verilog work "ict106_axilite_conv.v"
 verilog work "MMIO_slave.v"
 verilog work "ps7_wrap.v"

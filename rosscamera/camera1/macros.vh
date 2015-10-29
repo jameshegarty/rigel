@@ -2,8 +2,27 @@
 `define MACROS_VH
 
 
-`define CMD_START 32'h5
-`define CMD_STOP 32'h9
+`define MMIO_OFFSET_SIZE        4
+`define MMIO_TRIBUF_NUM         3
+`define MMIO_SIZE               `MMIO_OFFSET_SIZE*(3+`MMIO_TRIBUF_NUM)
+
+`define MMIO_BASIC_OFFSET       0*`MMIO_OFFSET_SIZE
+`define MMIO_CMD                `MMIO_BASIC_OFFSET+0
+    `define CMD_START 5
+    `define CMD_STOP 9
+
+`define MMIO_DEBUG_OFFSET       1*`MMIO_OFFSET_SIZE
+`define MMIO_DEBUG(n)           (`MMIO_DEBUG_OFFSET + n)
+
+`define MMIO_CAM_OFFSET         2*`MMIO_OFFSET_SIZE
+`define MMIO_CAM_CMD            `MMIO_CAM_OFFSET+0
+`define MMIO_CAM_RESP           `MMIO_CAM_OFFSET+1
+`define MMIO_CAM_RESP_CNT       `MMIO_CAM_OFFSET+2
+
+`define MMIO_TRIBUF_OFFSET(n)   (3*`MMIO_OFFSET_SIZE + n*`MMIO_OFFSET_SIZE)
+`define MMIO_FRAME_BYTES(n)     `MMIO_TRIBUF_OFFSET(n)+0
+`define MMIO_TRIBUF_ADDR(n)     `MMIO_TRIBUF_OFFSET(n)+1
+
 
 `define REG(clk, r, init, in) \
     always @(posedge clk or negedge rst_n) begin \

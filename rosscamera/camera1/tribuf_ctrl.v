@@ -7,7 +7,7 @@ module tribuf_ctrl(
     input rst_n,
 
     //MMIO interface
-    input [31:0] MMIO_CMD,
+    input start,
     input [31:0] FRAME_BYTES,
     input [31:0] TRIBUF_ADDR,
 
@@ -34,7 +34,7 @@ module tribuf_ctrl(
 );
 
     wire grand_start;
-    assign grand_start = (MMIO_CMD==`CMD_START);
+    assign grand_start = start;
 
     wire [31:0] buf0;
     wire [31:0] buf1;

@@ -51,7 +51,7 @@ module DramReader(
     localparam A_IDLE = 0, A_FRAME_IDLE = 1, A_FRAME_WAIT=2;
     //ADDR logic
     reg [1:0] a_state;
-    wire [1:0] debug_astate;
+    //wire [1:0] debug_astate;
     assign debug_astate = a_state;
     always @(posedge fclk or negedge rst_n) begin
         if (!rst_n) begin

@@ -22,12 +22,24 @@ all: t1.bit
 	mv out/build_$*/system.bit $@
 
 
+CC = arm-linux-gnueabi-gcc
+CFLAGS = -std=c99
+DEPS = processimagelib.h
+OBJ = processimage.o processimagelib.o
 
+c: processimage cclean
 
-c: processimage
+%.o: %.c $(DEPS)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-%:  %.c
-	arm-linux-gnueabi-gcc -std=c99  $< -o $@
+processimage: $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $^
+	
+#%:  %.c %.h
+#	arm-linux-gnueabi-gcc -std=c99  $< -o $@
 
-clean: 
+bclean: 
 	rm -rf out/*
+
+cclean:
+	rm *.o

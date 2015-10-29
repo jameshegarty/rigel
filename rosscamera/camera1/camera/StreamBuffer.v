@@ -17,57 +17,49 @@ module StreamBuffer(
     output [10:0]   fifo_cnt
 );
 
-    reg data_packed_ready;
-    wire [10:0] vfifo_count;
-    // Logic to convert 16 bit input to 64 bit input
-    reg [2:0] cnt;
-    reg din_valid_p;
-    reg [7:0] data_packed[7:0];
 
     reg running;
-    always @(posedge pclk or negedge rst_n) begin
-        if (!rst_n) running <= 1'b0;
-        else running <= start ? 1'b1 : running;
-    end
+    `REG(pclk, running, 0, start ? 1 : running)
 
+    wire de2fifo_valid;
+    wire de2fifo_ready;
+    wire [63:0] de2fifo_data;
 
-    always @(posedge pclk) begin
-        din_valid_p <= (din_valid && running);
-    end
+    deserializer #(.INLOGBITS(3), .OUTLOGBITS(6)) inst_deserial(
+        
+        .clk(pclk),
+        .rst_n(rst_n),
 
-    always @(posedge pclk or negedge rst_n) begin
-        if (rst_n==0) begin
-            cnt <= 3'h0;
-            data_packed_ready <= 1'b0;
-        end
-        else begin
-            data_packed_ready <= 1'b0;
-            if (din_valid && running) begin
-                data_packed[cnt] <= din[7:0];
-                cnt <= cnt + 1'b1; // Should wrap
-                data_packed_ready <= (cnt==3'd7) ? 1'b1 : 1'b0;
-            end
-        end
-    end
-    
-    wire [63:0] data64;
-    assign data64[63:0] = {data_packed[7],data_packed[6],data_packed[5],data_packed[4],data_packed[3],data_packed[2],data_packed[1],data_packed[0]};
+        .in_valid(din_valid && running),
+        .in_ready(din_ready),
+        .in_data(din[7:0]),
 
-    vfifo64x1024 your_instance_name (
+        .out_valid(de2fifo_valid),
+        .out_ready(de2fifo_ready),
+        .out_data(de2fifo_data)
+
+    );
+
+    wire vfifo_full;
+    wire vfifo_empty;
+    wire [8:0] vfifo_count;
+
+    fifo_64w_64r_512d sfifo_inst (
         .rst(!rst_n), // input rst
         .wr_clk(pclk), // input wr_clk
         .rd_clk(fclk), // input rd_clk
-        .din(data64[63:0]), // input [63 : 0] din
-        .wr_en(data_packed_ready), // input wr_en
+        .din(de2fifo_data[63:0]), // input [63 : 0] din
+        .wr_en(de2fifo_valid), // input wr_en
         .rd_en(dout_ready), // input rd_en
         .dout(dout), // output [63 : 0] dout
         .full(vfifo_full), // output full
         .empty(vfifo_empty), // output empty
-        .rd_data_count(vfifo_count) // output [10 : 0] rd_data_count
+        .rd_data_count(vfifo_count), // output [8 : 0] rd_data_count
+        .wr_data_count() // output [8 : 0] wr_data_count
     );
-    assign din_ready = !vfifo_full;
+    assign de2fifo_ready = !vfifo_full;
     // I need to guarentee that 16 data entries are read out always
-    assign burst_valid = (vfifo_count > 11'd25);
+    assign burst_valid = (vfifo_count > 9'd25);
     assign dout_valid = !vfifo_empty;
     assign fifo_cnt = vfifo_count;
 
