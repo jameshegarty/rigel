@@ -1,3 +1,10 @@
+local function FIFO(fifos,statements,A,inp)
+  local id = #fifos
+  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id),d.fifo(A,128)) )
+  table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
+  return d.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+end
+
 function toUint8Sign(ty)
   assert(f.FLOAT or f.extractSigned(ty))
   local inp = f.parameter("touint8",ty)
@@ -193,6 +200,9 @@ function makeB( T, dtype, window, bits )
   assert(T<=1)
   assert(window*T == math.floor(window*T))
 
+  local fifos = {}
+  local statements = {}
+
   local cost = 0
 
   -- arguments: frame1, frame2, fdx, fdy
@@ -200,11 +210,16 @@ function makeB( T, dtype, window, bits )
   local DTYPE = types.array2d(dtype,window*T,window)
   local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
   local finp = d.input( d.Handshake(ITYPE) )
+  local finp_brd = d.apply("finp_broadcast", d.broadcastStream(ITYPE,4), finp)
   
-  local frame0 = d.apply("frame0", d.makeHandshake(d.index(ITYPE,0)), finp)
-  local frame1 = d.apply("frame1", d.makeHandshake(d.index(ITYPE,1)), finp)
-  local Fdx = d.apply("fdx", d.makeHandshake(d.index(ITYPE,2)), finp)
-  local Fdy = d.apply("fdy", d.makeHandshake(d.index(ITYPE,3)), finp)
+  local frame0 = d.apply("frame0", d.makeHandshake(d.index(ITYPE,0)), d.selectStream("i0",finp_brd,0))
+  local frame0 = FIFO( fifos, statements, FTYPE, frame0)
+  local frame1 = d.apply("frame1", d.makeHandshake(d.index(ITYPE,1)), d.selectStream("i1",finp_brd,1))
+  local frame1 = FIFO( fifos, statements, FTYPE, frame1)
+  local Fdx = d.apply("fdx", d.makeHandshake(d.index(ITYPE,2)), d.selectStream("i2",finp_brd,2))
+  local Fdx = FIFO( fifos, statements, DTYPE, Fdx)
+  local Fdy = d.apply("fdy", d.makeHandshake(d.index(ITYPE,3)), d.selectStream("i3",finp_brd,3))
+  local Fdy = FIFO( fifos, statements, DTYPE, Fdy)
 
   ---------
   local gmf = d.tuple("mfgmf",{frame1,frame0},false)
@@ -213,6 +228,7 @@ function makeB( T, dtype, window, bits )
   print("GMF type", gmf_type)
   cost = cost + gmf_cost*window*window
   gmf = d.apply("SSM",d.makeHandshake(d.map(m,window*T,window)), gmf)
+  gmf = FIFO( fifos, statements, types.array2d(gmf_type,window*T,window), gmf)
   ---------
 
   local partial = makePartial( dtype, gmf_type, bits.Bpartial[1], bits.Bpartial[2] )
@@ -240,8 +256,10 @@ function makeB( T, dtype, window, bits )
   out = d.apply("PT",d.packTuple({partial_type,partial_type}),out)
   out = d.apply("PTC",d.makeHandshake(C.tupleToArray(partial_type,2)),out)
 
+  table.insert(statements,1,out)
+
   print("B output type", partial_type)
-  return d.lambda("b", finp, out), partial_type, cost
+  return d.lambda("b", finp, d.statements(statements),fifos), partial_type, cost
 end
 
 function solve( AinvType, btype, bits )
@@ -285,13 +303,6 @@ function display(inpType)
   return out:toDarkroom("display"), out:cost()
 end
 
-local function FIFO(fifos,statements,A,inp)
-  local id = #fifos
-  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id),d.fifo(A,128)) )
-  table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
-  return d.applyMethod("l"..tostring(id),fifos[#fifos],"load")
-end
-
 function makeLK( internalT, internalW, internalH, window, bits )
   assert(type(window)=="number")
   assert(type(bits)=="table")
@@ -309,6 +320,7 @@ function makeLK( internalT, internalW, internalH, window, bits )
 
   local frame0_arr = d.apply("f0_arr", d.makeHandshake(C.arrayop(types.uint(8),1)), frame0)
   local frame0_arr_brd = d.apply("f0_arr_broadcast", d.broadcastStream(types.array2d(types.uint(8),1),2), frame0_arr)
+--  local frame0_arr_brd = frame0_arr
   local frame1_arr = d.apply("f1_arr", d.makeHandshake(C.arrayop(types.uint(8),1)), frame1)
 
   local st_sl_type = types.array2d( types.uint(8), window*internalT, window+1 )
@@ -353,6 +365,7 @@ function makeLK( internalT, internalW, internalH, window, bits )
 
   local A = d.apply("APT",d.packTuple{stDType,stDType},d.tuple("ainp",{fdx_stencil_0,fdy_stencil_0},false))
   local A = d.apply("A", Af, A)
+
   local fAinv, AInvType = invert2x2( AType, bits )
   local Ainv = d.apply("Ainv", d.makeHandshake(fAinv), A)
   local Ainv = FIFO(fifos,statements,types.array2d(AInvType,4),Ainv)
@@ -372,12 +385,12 @@ function makeLK( internalT, internalW, internalH, window, bits )
   local vectorField = d.apply("VF", d.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, d.tuple("solveinp",{Ainv,b},false) )
   local vectorField = d.apply("solve", d.makeHandshake(fSolve), vectorField)
   cost = cost + SolveCost
-  
+
+--  local vectorField = d.apply("OT", d.makeHandshake(d.slice(types.array2d(AInvType,4),0,1,0,0)), Ainv)
+
   local displayfn, displaycost = display(SolveType)
   local out = d.apply("display", d.makeHandshake(displayfn), vectorField)
   cost = cost + displaycost
-
---  local out = d.apply("OT", d.makeHandshake(d.slice(types.array2d(AType,4),0,1,0,0)), A)
 
   table.insert(statements,1,out)
 --out=fdx_dbg

@@ -1,5 +1,5 @@
 SRCFILES = $(wildcard *.t)
-SRCS = $(filter-out harness.t examplescommon.t lk_core.t stereo_tr_core.t ,$(SRCFILES))
+SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_tr_core.t ,$(SRCFILES))
 
 # some images have intentially invalid pixels in them, so we can't compare with golds
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
@@ -15,7 +15,7 @@ TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t campipe_512.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t campipe_512.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
@@ -26,7 +26,7 @@ SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t lk_tr_handshake_4_4.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
