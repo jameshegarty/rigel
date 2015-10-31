@@ -790,12 +790,13 @@ end
 
 -- takes {Handshake(a[W,H]), Handshake(b[W,H]),...} to Handshake( {a,b}[W,H] )
 -- typelist should be a table of pure types
-function darkroom.SoAtoAoSHandshake( W, H, typelist, X )
+darkroom.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
   assert(X==nil)
   local f = darkroom.SoAtoAoS(W,H,typelist)
   f = darkroom.makeHandshake(f)
-  return darkroom.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H), f, darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
-end
+  
+  return darkroom.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, darkroom.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
+                                     end)
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function darkroom.border(A,W,H,L,R,B,T,value)
@@ -993,7 +994,7 @@ end
 -- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
 -- if inner:ready()==true, inner will run iff valid(input)==true
 -- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
-function darkroom.waitOnInput(f)
+darkroom.waitOnInput = memoize(function(f)
   err(darkroom.isFunction(f),"waitOnInput argument should be darkroom function")
   local res = {kind="waitOnInput", fn = f}
   darkroom.expectBasic(f.inputType)
@@ -1027,7 +1028,7 @@ function darkroom.waitOnInput(f)
   res.systolicModule = waitOnInputSystolic( f.systolicModule, {"process"},{})
 
   return darkroom.newFunction(res)
-end
+                               end)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
   local res = S.moduleConstructor("LiftDecimate_"..systolicModule.name)
@@ -1304,7 +1305,7 @@ darkroom.map = memoize(function( f, W, H )
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
-  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name)
+  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
   local resetPipelines={}
@@ -2302,7 +2303,7 @@ end
 -- We do that here by modifying the valid bit combinationally!! This could potentially
 -- cause a combinationaly loop (validOut depends on readyDownstream) if another later unit does the opposite
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
-function darkroom.broadcastStream(A,N)
+darkroom.broadcastStream = memoize(function(A,N)
   err( types.isType(A), "A must be type")
   darkroom.expectBasic(A)
   err( type(N)=="number", "N must be number")
@@ -2334,7 +2335,7 @@ function darkroom.broadcastStream(A,N)
   end
   res.terraModule = BroadcastStream
 
-  res.systolicModule = S.moduleConstructor("BroadcastStream_"..N):onlyWire(true)
+  res.systolicModule = S.moduleConstructor("BroadcastStream_"..tostring(A):gsub('%W','_').."_"..N):onlyWire(true)
 
 
   local printStr = "IV %d readyDownstream ["..table.concat(broadcast("%d",N),",").."] ready %d"
@@ -2364,7 +2365,7 @@ function darkroom.broadcastStream(A,N)
   res.systolicModule:addFunction( S.lambda("ready", readyDownstream, allReady, "ready" ) )
 
   return darkroom.newFunction(res)
-end
+                                   end)
 
 -- broadcast : ( v : A , n : number ) -> A[n]
 --darkroom.broadcast = darkroom.newDarkroomFunction( { kind = "broadcast" } )
@@ -2957,7 +2958,7 @@ darkroom.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X 
   terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
   res.terraModule = SSRPartial
 
-  res.systolicModule = S.moduleConstructor("SSRPartial")
+  res.systolicModule = S.moduleConstructor("SSRPartial_"..tostring(A):gsub('%W','_').."_T"..tostring(T))
   local sinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local P = 1/T
 
@@ -2999,10 +3000,10 @@ darkroom.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(xmax==0)
   assert(ymax==0)
 
-  return darkroom.compose("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), darkroom.SSR( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, T, ymin ) )
+  return darkroom.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), darkroom.SSR( A, T, xmin, ymin), darkroom.linebuffer( A, w, h, T, ymin ) )
 end)
 
-function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
+darkroom.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
   assert(xmin<xmax)
@@ -3011,8 +3012,8 @@ function darkroom.stencilLinebufferPartial( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(ymax==0)
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return darkroom.compose("stencilLinebufferPartial", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
-end
+  return darkroom.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))), darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin )) )
+                                            end)
 
 -- purely wiring
 function darkroom.unpackStencil( A, stencilW, stencilH, T )
@@ -3330,7 +3331,7 @@ darkroom.reduce = memoize(function( f, W, H )
   end
   res.terraModule = ReduceModule
 
-  res.systolicModule = S.moduleConstructor("reduce_"..f.systolicModule.name)
+  res.systolicModule = S.moduleConstructor("reduce_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
   local resetPipelines = {}
   local sinp = S.parameter("process_input", res.inputType )
   local t = map( range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
@@ -3347,7 +3348,7 @@ darkroom.reduce = memoize(function( f, W, H )
 end)
 
 
-function darkroom.reduceSeq( f, T )
+darkroom.reduceSeq = memoize(function( f, T )
   assert(T<=1)
 
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
@@ -3389,7 +3390,8 @@ function darkroom.reduceSeq( f, T )
   end
   res.terraModule = ReduceSeq
 
-  err( f.systolicModule:getDelay("process") == 0, "ReduceSeq function must have delay==0" )
+  local del = f.systolicModule:getDelay("process")
+  err( del == 0, "ReduceSeq function must have delay==0 but instead has delay of "..del )
 
   res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name)
   local printInst
@@ -3421,7 +3423,7 @@ function darkroom.reduceSeq( f, T )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool()),CE) )
 
   return darkroom.newFunction( res )
-end
+    end)
 
 -- surpresses output if we get more then _count_ inputs
 darkroom.overflow = memoize(function( A, count )
