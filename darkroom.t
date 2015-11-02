@@ -2521,7 +2521,7 @@ function darkroom.borderSeq( A, W, H, T, L, R, B, Top, Value )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
+darkroom.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
   err(T>=1,"cropSeq T<1")
 
@@ -2543,7 +2543,7 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
   local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
   local svalid = S.__and(S.__and(S.ge(sx,sL),S.ge(sy,sB)),S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop)))
 
-  local f = darkroom.lift( "CropSeq", innerInputType, outputType, 0, 
+  local f = darkroom.lift( "CropSeq_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T), innerInputType, outputType, 0, 
                            terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
                              var x,y = (inp._0)[0]._0, (inp._0)[0]._1
                              data(out) = inp._1
@@ -2552,7 +2552,7 @@ function darkroom.cropSeq( A, W, H, T, L, R, B, Top )
                            end, sinp, S.tuple{sdata,svalid}, nil, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
   return darkroom.liftXYSeq( f, W, H, T  )
-end
+                           end)
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
@@ -2570,7 +2570,7 @@ end
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
+darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
   map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k) assert(type(n)=="number"); err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); err(n>=0,"n<0") end)
   err( A:toLuaType()==type(Value), "Value is incorrect lua type")
@@ -2653,7 +2653,7 @@ function darkroom.padSeq( A, W, H, T, L, R, B, Top, Value )
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
 
   return darkroom.waitOnInput(darkroom.newFunction(res))
-end
+                          end)
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
@@ -3016,7 +3016,7 @@ darkroom.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ym
                                             end)
 
 -- purely wiring
-function darkroom.unpackStencil( A, stencilW, stencilH, T )
+darkroom.unpackStencil = memoize(function( A, stencilW, stencilH, T )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
   assert(stencilW>0)
@@ -3044,7 +3044,7 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   end
   res.terraModule = UnpackStencil
 
-  res.systolicModule = S.moduleConstructor("unpackStencil")
+  res.systolicModule = S.moduleConstructor("unpackStencil_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
   local sinp = S.parameter("inp", res.inputType)
   local out = {}
   for i=1,T do
@@ -3060,7 +3060,7 @@ function darkroom.unpackStencil( A, stencilW, stencilH, T )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return darkroom.newFunction(res)
-end
+                                 end)
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
 darkroom.makeHandshake = memoize(function( f, tmuxRates )

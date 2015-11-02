@@ -597,6 +597,8 @@ function TypeFunctions:constSubtypeOf(A)
   elseif self:isArray() then
     local lenmatch = (self:arrayLength())[1]==(A:arrayLength())[1] and (self:arrayLength())[2]==(A:arrayLength())[2]
     return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
+  elseif self:isOpaque() then
+    return self.str==A.str
   else
     print(":constSubtypeOf",self,A)
     assert(false)
