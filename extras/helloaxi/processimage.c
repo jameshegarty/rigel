@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 	
-	int fd = open ("/dev/mem", O_RDWR);
+	int fd = open ("/dev/mem", O_RDWR | O_SYNC );
 	if (fd < 1) {
 		perror(argv[0]);
 		return -1;

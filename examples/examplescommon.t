@@ -2,6 +2,32 @@ local d = require "darkroom"
 local cstdlib = terralib.includec("stdlib.h")
 local C = {}
 
+C.cast = memoize(function(A,B)
+                   assert(A:isTuple()==false)
+
+  local sinp = S.parameter( "inp", A )
+  local docast = d.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0,
+                          terra( a : &A:toTerraType(), out : &B:toTerraType() )
+                            @out = [B:toTerraType()](@a)
+                  end, sinp, S.cast(sinp,B) )
+  return docast
+end)
+
+C.tupleToArray = memoize(function(A,N)
+                           local atup = types.tuple(rep(A,N))
+                           local B = types.array2d(A,N)
+
+  local sinp = S.parameter( "inp", atup )
+  local docast = d.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
+                          terra( a : &atup:toTerraType(), out : &B:toTerraType() )
+                            escape
+                            for i=0,N-1 do
+                              emit quote (@out)[i] = a.["_"..i] end
+                            end
+                          end
+                  end, sinp, S.cast(sinp,B) )
+return docast
+                         end)
 -- A -> A[W,H]
 C.arrayop = memoize(function(A,W,H)
   local inp = d.input(A)
@@ -402,6 +428,32 @@ function C.lutinvert(ty)
 
   return fn, fn.outputType
 end
+-------------
+C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
+  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  assert(T<=1); assert(w>0); assert(h>0);
+  assert(xmin<xmax)
+  assert(ymin<ymax)
+  assert(xmax==0)
+  assert(ymax==0)
+
+  local ST_W = -xmin+1
+  local ssr_region = ST_W - offset - overlap
+  local stride = ssr_region*T
+  assert(stride==math.floor(stride))
+
+  local LB = darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin ))
+  local SSR = darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin, stride, true )))
+
+  local inp = d.input( LB.inputType )
+  local out = d.apply("LB", LB, inp)
+  out = d.apply("SSR", SSR, out)
+  out = d.apply("slice", d.makeHandshake(d.slice(types.array2d(types.uint(8),ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
+
+  return d.lambda("stencilLinebufferPartialOverlap",inp,out)
+  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
+  --return darkroom.compose("stencilLinebufferPartialOffsetOverlap", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))),  )
+                                                  end)
 
 -------------
 return C

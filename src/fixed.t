@@ -261,6 +261,10 @@ function fixedASTFunctions:lower(allowExp)
   return fixed.new{kind="lower", type=fixed.extract(self.type),inputs={self},loc=getloc()}
 end
 
+function fixedASTFunctions:disablePipelining()
+  return fixed.new{kind="disablePipelining", type=self.type,inputs={self},loc=getloc()}
+end
+
 function fixedASTFunctions:toSigned()
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   if self:isSigned() then
@@ -447,7 +451,7 @@ function fixedASTFunctions:cost()
   self:visitEach(
     function( n, args )
       local cost
-      if n.kind=="parameter" or n.kind=="rshift"  or n.kind=="truncate"  or n.kind=="lift"  or n.kind=="lower"  or n.kind=="constant" or n.kind=="plainconstant" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="hist" or n.kind=="index" or n.kind=="toSigned" or n.kind=="tuple" or n.kind=="array2d" or n.kind=="pad" then
+      if n.kind=="parameter" or n.kind=="rshift"  or n.kind=="truncate"  or n.kind=="lift"  or n.kind=="lower"  or n.kind=="constant" or n.kind=="plainconstant" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="hist" or n.kind=="index" or n.kind=="toSigned" or n.kind=="tuple" or n.kind=="array2d" or n.kind=="pad" or n.kind=="disablePipelining" then
         cost = 0
       elseif n.kind=="abs" or n.kind=="neg" or n.kind=="sign" or n.kind=="addSign" or n.kind=="select" then
         cost = n:precision()
@@ -462,6 +466,7 @@ function fixedASTFunctions:cost()
           assert(false)
         end
       else
+        print(n.kind)
         assert(false)
       end
 
@@ -607,6 +612,8 @@ function fixedASTFunctions:toSystolic()
         res = S.select(args[1],args[2],args[3])
       elseif n.kind=="cast" then
         res = S.cast(args[1],n.type)
+      elseif n.kind=="disablePipelining" then
+        res = args[1]:disablePipelining()
       else
         print(n.kind)
         assert(false)
@@ -851,6 +858,8 @@ function fixedASTFunctions:toTerra()
         res = `terralib.select([args[1]],[args[2]],[args[3]])
       elseif n.kind=="cast" then
         res = `[n.type:toTerraType()]([args[1]])
+      elseif n.kind=="disablePipelining" then
+        res = args[1]
       else
         print(n.kind)
         assert(false)
@@ -878,7 +887,7 @@ function fixedASTFunctions:toDarkroom(name,X)
     @out = terraout
   end
   --tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, out.type, 1, tfn, inp, out, instances )
+  return darkroom.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
 end
 
 return fixed
