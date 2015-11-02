@@ -17,11 +17,35 @@ T = 8
 phaseX=1
 phaseY=1
 
+local inputFilename = "300d_w"..W.."_h"..H..".raw"
+local outputFilename = "campipe_"..W
+
+local pedestal = 10
+
+ccmtab={ {255/142,0,0},
+{0, 196/255, 0},
+{0,0,1}}
+
+gamma = 2.4
+
 if string.find(arg[0],"128") then
   W,H = 128,128
+  inputFilename = "300d_w"..W.."_h"..H..".raw"
+  outputFilename = "campipe_"..W
 --  phaseX, phaseY = 1,0
-end
+elseif string.find(arg[0],"ov7660") then
+  W,H=640,480
+  inputFilename = "ov7660.raw"
+--  inputFilename = "outrgb.raw"
+  outputFilename = "campipe_ov7660"
+  pedestal = 90
+  gamma = 1.2
+ccmtab={ {255/176,0,0},
+{0, 289/255, 0},
+{0,0,255/176}}
 
+--  phaseX, phaseY = 0,0
+end
 
 
 ----------------
@@ -149,10 +173,6 @@ function demosaic(internalW,internalH)
   return d.lambda("demtop",demtop,demtopout)
 end
 
-ccmtab={ {255/142,0,0},
-{0, 196/255, 0},
-{0,0,1}}
-
 function makeCCM(tab)
   local ccminp = f.parameter("ccminp",types.array2d(types.uint(8),3))
   local out = {}
@@ -193,10 +213,10 @@ local OTYPE = types.array2d(rgbType,2)
 
 function makeCampipe(internalW,internalH)
   local inp = d.input(ITYPE)
-  local bl = d.apply("bl",d.map(blackLevel(10),T),inp)
+  local bl = d.apply("bl",d.map(blackLevel(pedestal),T),inp)
   local dem = d.apply("dem",demosaic(internalW,internalH),bl)
   local ccm = d.apply("ccm",d.map(makeCCM(ccmtab),T),dem)
-  local gam = d.apply("gam",d.map(d.map(d.lut(types.uint(8),types.uint(8),makeGamma(1/2.4)),3),T),ccm)
+  local gam = d.apply("gam",d.map(d.map(d.lut(types.uint(8),types.uint(8),makeGamma(1/gamma)),3),T),ccm)
   local out = d.apply("addchan",d.map(addchan(),T),gam)
   --local dem = d.apply("fake",d.map(C.arrayop(types.uint(8),4),T),bl)
   local campipe = d.lambda("campipe",inp,out)
@@ -218,4 +238,4 @@ local hsfnout = d.apply("O1",campipe,hsfninp)
 local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
 local hsfn = d.lambda("hsfnfin",hsfninp,hsfnout)
 
-harness.axi( "campipe_"..W, hsfn, "300d_w"..W.."_h"..H..".raw", nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)
+harness.axi( outputFilename, hsfn, inputFilename, nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)
