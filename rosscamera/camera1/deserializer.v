@@ -29,28 +29,28 @@ module deserializer
     wire [OUTWIDTH-1:0] out_data_new;
     reg [OUTWIDTH-1:0] out_data_next;
 
-    assign out_data_shifted = (out_data << INWIDTH);
-    assign out_data_new = {out_data_shifted[OUTWIDTH-1:INWIDTH],in_data};
+    assign out_data_shifted = (out_data >> INWIDTH);
+    assign out_data_new = {in_data,out_data_shifted[OUTWIDTH-INWIDTH-1:0]};
 
     always @(*) begin
         in_ready = 1;
         out_valid_next = 0;
         out_data_next = out_data;
         cnt_next = cnt;
-        if (cnt == MAXCNT && in_valid && out_ready) begin
+        if (cnt == 0 && in_valid && out_ready) begin
             out_data_next = out_data_new;
-            cnt_next = cnt + 1'b1; // Should wrap
+            cnt_next = cnt - 1'b1; // Should wrap
             out_valid_next = 1;
         end
-        else if (cnt == MAXCNT && !out_ready) begin
+        else if (cnt == 0 && !out_ready) begin
             in_ready = 0;
         end
         else if (in_valid) begin
             out_data_next = out_data_new;
-            cnt_next = cnt + 1'b1; // Should wrap
+            cnt_next = cnt - 1'b1; // Should wrap
         end
     end
-    `REG(clk, cnt, 0, cnt_next)
+    `REG(clk, cnt, MAXCNT, cnt_next)
     `REG(clk, out_valid, 0, out_valid_next)
     `REG(clk, out_data, 0, out_data_next)
 

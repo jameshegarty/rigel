@@ -8,6 +8,7 @@ module tribuf_ctrl(
 
     //MMIO interface
     input start,
+    input stop,
     input [31:0] FRAME_BYTES,
     input [31:0] TRIBUF_ADDR,
 
@@ -64,6 +65,9 @@ module tribuf_ctrl(
     reg [1:0] wr_ns;
     assign debug_wr_cs = wr_cs;
 
+    reg stopping;
+    `REG(fclk, stopping, 0, stop ? 1 : (start ? 0 : stopping))
+
     localparam STOPPED=0, WAIT=1, WORKING=2;
     always @(*) begin
         case(wr_cs)
@@ -73,8 +77,8 @@ module tribuf_ctrl(
                 wr_frame_done = 0;
             end 
             WAIT : begin
-                wr_ns = wr_frame_ready && wr_sync ? WORKING : WAIT;
-                wr_frame_valid = wr_frame_ready && wr_sync ? 1 : 0 ;
+                wr_ns = stopping ? STOPPED : (wr_frame_ready && wr_sync ? WORKING : WAIT);
+                wr_frame_valid = !stopping && wr_frame_ready && wr_sync ? 1 : 0 ;
                 wr_frame_done = 0;
             end 
             WORKING : begin

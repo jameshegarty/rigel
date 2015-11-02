@@ -27,11 +27,13 @@ void init_camera(volatile Conf* conf) {
 
 int main(int argc, char *argv[]) {
     unsigned gpio_addr = 0x70000000;
-    unsigned stream_addr = 0x30008000;
     uint32_t frame_size = 640*480;
-    int streambuf_size = frame_size * 3;
-    int vgabuf_size = frame_size *3;
-    unsigned vga_addr = stream_addr;
+    
+    unsigned tribuf0_addr = 0x30008000;
+    int tribuf0_size = frame_size * 3;
+    
+    unsigned  tribuf1_addr = tribuf0_addr + tribuf0_size;
+    int tribuf1_size = frame_size*4 *3;
     
     unsigned page_size = sysconf(_SC_PAGESIZE);
     
@@ -46,29 +48,29 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    printf("mapping %08x\n",stream_addr);
-    void * stream_ptr = mmap(NULL, streambuf_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, stream_addr);
-    if (stream_ptr == MAP_FAILED) {
-        printf("FAILED mmap for streamaddr %x\n",stream_addr);
+    printf("mapping %08x\n",tribuf0_addr);
+    void * tribuf0_ptr = mmap(NULL, tribuf0_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, tribuf0_addr);
+    if (tribuf0_ptr == MAP_FAILED) {
+        printf("FAILED mmap for tribuf0 %x\n",tribuf0_addr);
         exit(1);
     }
-    void * vga_ptr = mmap(NULL, vgabuf_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, vga_addr);
-    if (vga_ptr == MAP_FAILED) {
-        printf("FAILED mmap for vgabuf %x\n",stream_addr);
+    void * tribuf1_ptr = mmap(NULL, tribuf1_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, tribuf1_addr);
+    if (tribuf1_ptr == MAP_FAILED) {
+        printf("FAILED mmap for vgabuf %x\n",tribuf1_addr);
         exit(1);
     }
-    unsigned lenInRaw;
-    FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
-    printf("file LEN %d\n",lenInRaw);
+    //unsigned lenInRaw;
+    //FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
+    //printf("file LEN %d\n",lenInRaw);
     printf("framesize %d\n",frame_size);
     for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(vga_ptr+i)= 0; 
+        *(unsigned char*)(tribuf1_ptr+i)= 0; 
     }
     for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(vga_ptr+frame_size+i)= 128; 
+        *(unsigned char*)(tribuf1_ptr+frame_size+i)= 128; 
     }
     for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(vga_ptr+2*frame_size+i)= 255; 
+        *(unsigned char*)(tribuf1_ptr+2*frame_size+i)= 255; 
     }
     
     // mmap the device into memory 
@@ -84,8 +86,10 @@ int main(int argc, char *argv[]) {
     // writes camera registers
     init_camera(conf);
     printf("Camera programmed!s\n");
-    write_mmio(conf, MMIO_TRIBUF_ADDR(0), vga_addr,1);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,1);
     write_mmio(conf, MMIO_FRAME_BYTES(0), frame_size,1);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(1), tribuf1_addr,1);
+    write_mmio(conf, MMIO_FRAME_BYTES(1), frame_size*4,1);
     print_debug_regs(conf);
     printf("WAIT 3s\n");
     fflush(stdout);
@@ -94,14 +98,14 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     //print_debug_regs(conf);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    int time = 60;
+    int time = 20;
     for (int i=0; i<time;i++) {
         printf("RUNNING STREAM  %d\n", time-i);
         print_debug_regs(conf);
         fflush(stdout);
         sleep(1);
     }
-    saveImage(raw_name,stream_ptr,frame_size);
+    saveImage(raw_name,tribuf0_ptr,frame_size);
     write_mmio(conf, MMIO_CMD, CMD_STOP,1);
     printf("STOPPING STREAM\n");
     fflush(stdout);

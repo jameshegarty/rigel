@@ -37,8 +37,8 @@ module display(
     // Magic number 450 is just a number less than 512-16
     // This is required so that there is enough room in the fifo for the axi burst
     wire [8:0] rd_data_count;
-    wire [8:0] fifo_wr_data_count;
-    assign sdata_burst_ready = (fifo_wr_data_count[8:0] < (9'd450));
+    wire [8:0] wr_data_count;
+    assign sdata_burst_ready = (wr_data_count[8:0] < (9'd450));
 
     fifo_64w_64r_512d vgafifo (
           .rst(!rst_n), // input rst
@@ -51,15 +51,15 @@ module display(
           .full(fifo_full), // output full
           .empty(fifo_empty), // output empty
           .rd_data_count(rd_data_count[8:0]), // output [8 : 0] rd_data_count
-          .wr_data_count(fifo_wr_data_count[8:0]) // output [8 : 0] wr_data_count
+          .wr_data_count(wr_data_count[8:0]) // output [8 : 0] wr_data_count
     );
 
     assign fifo2se_valid = !fifo_empty;
 
     wire pixel_valid;
     wire pixel_ready;
-    wire [7:0] pixel_data;
-    serializer #(.INLOGBITS(6), .OUTLOGBITS(3)) inst_serial(
+    wire [31:0] pixel_data;
+    serializer #(.INLOGBITS(6), .OUTLOGBITS(5)) inst_serial(
         
         .clk(vgaclk),
         .rst_n(rst_n),
@@ -70,7 +70,7 @@ module display(
 
         .out_valid(pixel_valid),
         .out_ready(pixel_ready),
-        .out_data(pixel_data[7:0])
+        .out_data(pixel_data[31:0])
 
     );
    
@@ -149,8 +149,8 @@ module display(
     // Need to read a cycle early in order to flop the data
     assign pixel_ready = !vga_stopping && vga_running_nxt && vga_pixel_valid;
     assign VGA_red_nxt = pixel_ready ? pixel_data[7:0] : pattern_red[7:0];
-    assign VGA_green_nxt = pixel_ready ? pixel_data[7:0] : pattern_green[7:0];
-    assign VGA_blue_nxt = pixel_ready ? pixel_data[7:0] : pattern_blue[7:0];
+    assign VGA_green_nxt = pixel_ready ? pixel_data[15:8] : pattern_green[7:0];
+    assign VGA_blue_nxt = pixel_ready ? pixel_data[23:0] : pattern_blue[7:0];
 
     assign pattern_red = (vga_col <=210) ? 8'hFF : 8'h0;
     assign pattern_green = ((vga_col >210) && (vga_col <= 420)) ? 8'hFF : 8'h0;
