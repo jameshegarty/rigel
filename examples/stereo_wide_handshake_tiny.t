@@ -64,7 +64,7 @@ function make(filename)
     W,H = 256,16
     SearchWindow = 4
   elseif filename=="medi" then
-    W,H = 360,203
+    W,H = 352,200
     SearchWindow = 64
   else
     print("UNKNOWN FILENAME "..filename)

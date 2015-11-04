@@ -1,6 +1,9 @@
 SRCFILES = $(wildcard *.t)
 SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_tr_core.t ,$(SRCFILES))
 
+RAWS = $(wildcard *.raw)
+DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
+
 # some images have intentially invalid pixels in them, so we can't compare with golds
 #GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
 GOLDS = $(SRCS)
@@ -18,12 +21,14 @@ TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.raw,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.raw,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.v,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
+SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
 AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t,$(SRCS))
@@ -50,6 +55,8 @@ RES += $(AXI)
 
 CD = cd out;
 all: $(RES)
+
+dups: $(DUPS)
 
 terra: $(TERRA)
 
@@ -140,15 +147,21 @@ out/%.axi100.raw: out/%.axi100.bit.bin
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
 
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
-out/%.sim.raw: out/%.sim.v
+out/%.sim.raw: out/%.sim.v $(DUPS)
 	mkdir -p out/sim_$*
 	cd out/sim_$*; vlogcomp ../$*.sim.v
 	cd out/sim_$*; fuse -o $* -lib $* -L unisim -L unimacro -top sim
 	cd out/sim_$*; echo "run all" | ./$*
-	mv out/sim_$*/$*.sim.raw out
+	split -n 2 -d out/sim_$*/$*.sim.raw out/sim_$*/S
+	mv out/sim_$*/S00 out/$*.sim.raw
+	mv out/sim_$*/S01 out/$*.sim.1.raw
+#	mv out/sim_$*/$*.sim.raw out
 
 out/%.sim.bmp: out/%.sim.raw
 	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+
+out/%.sim.1.bmp: out/%.sim.raw
+	terra ../extras/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 
 out/%.axi.bmp: out/%.axi.raw
 	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
@@ -175,6 +188,10 @@ out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
 	test ! -s out/$*.sim.diff && touch $@
 
+out/%.sim.1.correct.txt : out/%.sim.1.bmp
+	diff out/$*.sim.1.bmp gold/$*.bmp > out/$*.sim.1.diff
+	test ! -s out/$*.sim.1.diff && touch $@
+
 out/%_half.correct.txt : out/%_half.bmp
 	diff out/$*_half.bmp gold/$*.bmp > out/$*_half.diff
 	test ! -s out/$*_half.diff && touch $@
@@ -183,3 +200,6 @@ out/%.correct.txt : out/%.bmp
 	diff out/$*.bmp gold/$*.bmp > out/$*.diff
 	test ! -s out/$*.diff && touch $@
 
+out/%.raw.dup : %.raw
+	cat $*.raw > $@
+	cat $*.raw >> $@

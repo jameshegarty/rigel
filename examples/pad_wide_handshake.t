@@ -12,9 +12,9 @@ ConvArea = math.pow(ConvWidth,2)
 inputW = 128
 inputH = 64
 
--- expand to include crop region
-W = upToNearest(T,128+ConvWidth-1)
-H = 64+ConvWidth-1
+-- must be aligned to axi burst size
+W = inputW+32
+H = inputH+4
 
 BASE_TYPE = types.array2d( types.uint(8), T )
 

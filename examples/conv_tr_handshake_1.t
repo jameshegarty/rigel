@@ -60,7 +60,7 @@ inp = d.input( darkroom.V(types.array2d( types.uint(8), ConvWidth*T, ConvWidth )
 conv = d.apply( "convseqapply", d.liftDecimate(d.liftBasic(convseq)), inp)
 conv = d.apply( "sumseq", d.RPassthrough(d.liftDecimate(d.reduceSeq( reduceSumUint32_0cyc, T ))), conv )
 conv = d.apply( "touint8", d.RVPassthrough(touint8Array1), conv )
-conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
+--conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
 local convolve = d.lambda( "convolve", inp, conv )
 -------------
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus

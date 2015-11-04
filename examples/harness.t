@@ -24,12 +24,19 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
   local fixedTapInputType = tapInputType
   if tapInputType==nil then fixedTapInputType = types.null() end
 
-  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,300)
-  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-300)
+  local slack = math.floor(math.max(outputCount*0.3,inputCount*0.3))
+  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,slack)
+  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-slack)
   if earlyOverride~=nil then ECTooSoon=earlyOverride end
-  local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst width
-  local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst width
 
+  local outputBytes = outputCount*8
+  local inputBytes = inputCount*8
+
+  -- check that we end up with a multiple of the axi burst size.  If not, just fail.
+  -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
+  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes not aligned to axi burst size")
+  err(inputBytes/128==math.floor(inputBytes/128), "outputBytes not aligned to axi burst size")
+ 
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
   local inpSymb = d.input( d.Handshake(ITYPE) )
   -- we give this a less strict timing requirement b/c this counts absolute cycles
@@ -96,16 +103,22 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
 
+
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
 
   H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
 
+  local simInputH = inputH*2
+  local simOutputH = outputH*2
+  local simInputCount = (inputW*simInputH)/inputT
+  local simOutputCount = (outputW*simOutputH)/outputT
+
   ------
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../../"..inputFilename, inputType, tapType, filename..ext..".sim.raw",outputType,2+i, inputCount, outputCount, underflowTest, earlyOverride), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
+    local f = d.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, underflowTest, earlyOverride), inputType, tapType, tapValue, inputW, simInputH, inputT, outputW, simOutputH, outputT, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
