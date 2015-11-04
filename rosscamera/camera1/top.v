@@ -112,6 +112,11 @@ module top
     reg [15:0] cntRespValid;
     `REG(FCLK0,cntRespValid,0,cntRespValid+rw_resp_valid)
 
+    wire [31:0] pipe_in_cnt;
+    wire [31:0] pipe_out_cnt;
+    wire [31:0] pipe_in_tot;
+    wire [31:0] pipe_out_tot;
+
     MMIO_slave mmio(
         .fclk(FCLK0),
         .rst_n(rst_n),
@@ -147,10 +152,10 @@ module top
         .MMIO_TRIBUF_ADDR1(MMIO_TRIBUF_ADDR1[31:0]),
         .MMIO_FRAME_BYTES2(MMIO_FRAME_BYTES2[31:0]),
         .MMIO_TRIBUF_ADDR2(MMIO_TRIBUF_ADDR2[31:0]),
-        .debug0(cam_debug[2]),
-        .debug1(cam_debug[3]),
-        .debug2(MMIO_CAM_CMD[31:0]),
-        .debug3({cntCmdValid[15:0],cntRespValid}),
+        .debug0(pipe_in_cnt[31:0]),
+        .debug1(pipe_out_cnt[31:0]),
+        .debug2(pipe_in_tot[31:0]),
+        .debug3(pipe_out_tot[31:0]),
         .rw_cmd_valid(rw_cmd_valid), 
         .rw_resp(rw_resp[17:0]),// {err,rw,addr,data}
         .rw_resp_valid(rw_resp_valid),
@@ -373,7 +378,6 @@ module top
     
 //-----------------------------------------------------------------------------  
     
-    wire dramr2pipe_burst_ready;
     wire dramr2pipe_valid;
     wire dramr2pipe_ready;
     wire [63:0] dramr2pipe_data;
@@ -406,63 +410,45 @@ module top
         .dout_valid(dramr2pipe_valid),
         .dout(dramr2pipe_data[63:0])
     );
-
-    wire [63:0] pipe2serial_data;
-    wire pipe2serial_valid;
-    wire pipe2serial_ready;
     
-    wire [63:0] serial2dramw_data;
-    wire [15:0] serial_out_data;
-    wire serial2dramw_valid;
-    wire serial2dramw_ready;
+    wire [63:0] pipe2dramw_data;
+    wire pipe2dramw_valid;
+    wire pipe2dramw_ready;
 
 
 // PIPELINE
-
-    reg sync_reset;
-    `REG(FCLK0, sync_reset, 1'b1,  startall ? 1'b0 : sync_reset)
-
-
-    wire [64:0] pipe_out;
-    MakeHandshake_pointwise_wide pipeinst(
-        .CLK(FCLK0),
-        .ready_downstream(pipe2serial_ready),
-        .ready(dramr2pipe_ready),
-        .reset(sync_reset),
-        .process_input({dramr2pipe_valid,dramr2pipe_data}),
-        .process_output(pipe_out)
-    );
- 
-    assign pipe2serial_valid = pipe_out[64] && !sync_reset;
-    assign pipe2serial_data = pipe_out[63:0];
-   
-    serializer #(.INLOGBITS(6), .OUTLOGBITS(4)) pipe_serializer(
-        
+    wire [3:0] num_frames;
+    pipeWrap pipeWrap_inst(
         .clk(FCLK0),
         .rst_n(rst_n),
 
-        .in_valid(pipe2serial_valid),
-        .in_ready(pipe2serial_ready),
-        .in_data(pipe2serial_data),
+        .start(startall),
 
-        .out_valid(serial2dramw_valid),
-        .out_ready(serial2dramw_ready),
-        .out_data(serial_out_data)
+        .in_valid(dramr2pipe_valid),
+        .in_ready(dramr2pipe_ready),
+        .in_data(dramr2pipe_data[63:0]),
 
+        .out_valid(pipe2dramw_valid),
+        .out_ready(pipe2dramw_ready),
+        .out_data(pipe2dramw_data[63:0]),
+        
+        .debug_cnt_in(pipe_in_cnt[31:0]),
+        .debug_cnt_out(pipe_out_cnt[31:0]),
+        .debug_tot_in(pipe_in_tot[31:0]),
+        .debug_tot_out(pipe_out_tot[31:0]),
+        .num_frames(num_frames)
     );
 
-    assign serial2dramw_data[63:0] = {
-        8'h0, {3{serial_out_data[15:8]}},
-        8'h0, {3{serial_out_data[7:0]}}
-    };
+    
 
-    assign LED[0] = serial2dramw_ready;
-    assign LED[1] = serial2dramw_valid;
 
-    assign LED[5:2] = 4'h0;
+    assign LED[0] = dramr2pipe_ready;
+    assign LED[1] = dramr2pipe_valid;
+    assign LED[2] = pipe2dramw_valid;
+    assign LED[3] = pipe2dramw_ready;
 
-    assign LED[7] = dramr2pipe_valid;
-    assign LED[6] = dramr2pipe_ready;
+    assign LED[7:4] = num_frames[3:0];
+
 
     DramWriterBuf pipe_writer1(
         .fclk(FCLK0),
@@ -493,9 +479,9 @@ module top
     
         .debug_astate(),
 
-        .din_valid(serial2dramw_valid),
-        .din_ready(serial2dramw_ready),
-        .din(serial2dramw_data[63:0])
+        .din_valid(pipe2dramw_valid),
+        .din_ready(pipe2dramw_ready),
+        .din(pipe2dramw_data[63:0])
     );
 
 

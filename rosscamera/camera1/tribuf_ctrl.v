@@ -60,7 +60,6 @@ module tribuf_ctrl(
     assign rd_FRAME_BYTES = FRAME_BYTES[31:0];
     assign rd_BUF_ADDR = (rd_ptr==2'h0) ? buf0 : (rd_ptr==2'h1) ? buf1 : buf2 ;
     
-    // Maybe make these into a state machine
     reg [1:0] wr_cs;
     reg [1:0] wr_ns;
     assign debug_wr_cs = wr_cs;

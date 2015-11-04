@@ -53,13 +53,11 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
     //printf("cam_resp_cnt=%d\n",cam_resp_cnt);
     write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
-    read_mmio(conf,MMIO_CAM_CMD,1);
     // Wait for response (CAM_RESP_CNT will increment
     //poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
     uint32_t cnt = 0;
     do {
         cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
-        read_mmio(conf,MMIO_CAM_RESP,0);
     } while (cnt != cam_resp_cnt+1);
     read_mmio(conf, MMIO_DEBUG(0),0);
     
@@ -89,12 +87,10 @@ void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     cam_data |= 0x10000; //bit 16 is the write cmd
     uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
     write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
-    read_mmio(conf,MMIO_CAM_CMD,1);
     // Wait for response (CAM_RESP_CNT will increment
     uint32_t cnt = 0;
     do {
         cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,1);
-        print_debug_regs(conf);
     } while (cnt != cam_resp_cnt+1);
     read_mmio(conf, MMIO_DEBUG(0),0);
     uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP,0);

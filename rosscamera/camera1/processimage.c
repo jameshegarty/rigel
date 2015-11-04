@@ -37,7 +37,8 @@ int main(int argc, char *argv[]) {
     
     unsigned page_size = sysconf(_SC_PAGESIZE);
     
-    char* raw_name= "/tmp/out.raw";
+    char* raw_name= "/tmp/outraw.raw";
+    char* pix_name= "/tmp/outpix.raw";
     char* ppm_name = "out.ppm";
     
     printf("GPIO access through /dev/mem. %d\n", page_size);
@@ -98,7 +99,7 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     //print_debug_regs(conf);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    int time = 20;
+    int time = 60;
     for (int i=0; i<time;i++) {
         printf("RUNNING STREAM  %d\n", time-i);
         print_debug_regs(conf);
@@ -106,6 +107,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
     saveImage(raw_name,tribuf0_ptr,frame_size);
+    saveImage(pix_name,tribuf1_ptr,frame_size*4);
     write_mmio(conf, MMIO_CMD, CMD_STOP,1);
     printf("STOPPING STREAM\n");
     fflush(stdout);

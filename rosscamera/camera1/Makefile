@@ -39,7 +39,7 @@ processimage: $(OBJ)
 #	arm-linux-gnueabi-gcc -std=c99  $< -o $@
 
 bclean: 
-	rm -rf out/*
+	rm -rf out/* t1.bit
 
 cclean:
 	rm *.o
