@@ -233,6 +233,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
       -- don't care
     else
       local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
+      thisR[1],thisR[2] = simplify(thisR[1],thisR[2])
       if R==nil then R=thisR end
       consistantRatio = consistantRatio and (R[1]==thisR[1] and R[2]==thisR[2])
       --    if consistantRatio==false then  print("RATIO",R[1],R[2],thisR[1],thisR[2])   end
@@ -320,7 +321,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert(darkroom.isSDFRate(n.fn.sdfOutput))
           res = {n.fn.sdfOutput,broadcast(true,#n.fn.sdfOutput)}
         elseif #n.inputs==1 then
-          res =  n.fn:sdfTransfer(args[1], "APPLY "..n.loc)
+          res =  n.fn:sdfTransfer(args[1], "APPLY "..n.name.." "..n.loc)
           if DARKROOM_VERBOSE then print("APPLY",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
         else
           assert(false)
@@ -1406,7 +1407,7 @@ end
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
 -- basic -> V
-function darkroom.downsampleYSeq( A, W, H, T, scale )
+darkroom.downsampleYSeq = memoize(function( A, W, H, T, scale )
   assert( types.isType(A) )
   map({W,H,T,scale},function(n) assert(type(n)=="number") end)
   assert(scale>=1)
@@ -1424,7 +1425,7 @@ function darkroom.downsampleYSeq( A, W, H, T, scale )
   local sy = S.index(S.index(S.index(sinp,0),0),1)
   local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
 
-  local f = darkroom.lift( "DownsampleYSeq", innerInputType, outputType, 0, 
+  local f = darkroom.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale), innerInputType, outputType, 0, 
                            terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
                              var y = (inp._0)[0]._1
                              data(out) = inp._1
@@ -1432,14 +1433,14 @@ function darkroom.downsampleYSeq( A, W, H, T, scale )
                            end, sinp, S.tuple{sdata,svalid}, nil, {{1,scale}})
 
   return darkroom.liftXYSeq( f, W, H, T )
-end
+                                  end)
 
 -- takes A[W,H] to A[W/scale,H]
 -- lines where xcoord%scale==0 are kept
 -- basic -> V
 -- 
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
-function darkroom.downsampleXSeq( A, W, H, T, scale )
+darkroom.downsampleXSeq = memoize(function( A, W, H, T, scale )
   assert( types.isType(A) )
   map({W,H,T,scale},function(n) assert(type(n)=="number") end)
   assert(scale>=1)
@@ -1483,10 +1484,10 @@ function darkroom.downsampleXSeq( A, W, H, T, scale )
     end
   end
 
-  local f = darkroom.lift( "DownsampleXSeq", innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid},nil,sdfOverride)
+  local f = darkroom.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid},nil,sdfOverride)
 
   return darkroom.liftXYSeq( f, W, H, T )
-end
+                                  end)
 
 -- V -> RV
 function darkroom.downsampleSeq( A, W, H, T, scaleX, scaleY )
@@ -1851,11 +1852,61 @@ function darkroom.interleveSchedule( N, period )
   return darkroom.newFunction(res)
 end
 
+-- wtop is the width of the largest (top) pyramid level
+function darkroom.pyramidSchedule( depth, wtop, T )
+  err(type(depth)=="number", "depth must be number")
+  err(type(wtop)=="number", "wtop must be number")
+  err(type(T)=="number", "T must be number")
+  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
+  local struct PyramidSchedule { depth: uint8; w:uint }
+  terra PyramidSchedule:reset() self.depth=0; self.w=0 end
+  terra PyramidSchedule:process( out : &uint8 )
+    @out = self.depth
+    var targetW : int = (wtop*cmath.pow(2,depth-1))/cmath.pow(4,self.depth)
+    if targetW<T then
+      cstdio.printf("Error, targetW < T\n")
+      cstdlib.exit(1)
+    end
+    targetW = targetW/T
+    
+--    cstdio.printf("PS depth %d w %d targetw %d\n",self.depth,self.w,targetW)
+    self.w = self.w + 1
+    if self.w==targetW then
+--      cstdio.printf("INCD %d %d\n",self.depth,[depth])
+      self.w=0
+      self.depth = self.depth+1
+      if self.depth==[depth] then
+        self.depth=0
+      end
+    else
+--      cstdio.printf("NOINC %d %d\n",self.w,targetW)
+    end
+  end
+  res.terraModule = PyramidSchedule
+
+  res.systolicModule = S.moduleConstructor("PyramidSchedule_"..depth.."_"..wtop)
+  local printInst
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
+
+  local inp = S.parameter("process_input", darkroom.lower(res.inputType) )
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
+  local log2N = math.log(depth)/math.log(2)
+
+  local CE = S.CE("CE")
+  local pipelines = {phase:setBy( S.constant(true,types.bool()))}
+  if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(phase:get())) end
+
+  res.systolicModule:addFunction( S.lambda("process", inp, S.constant(0, types.uint(8)), "process_output", pipelines, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(8)))}, S.parameter("reset",types.bool()),CE) )
+
+  return darkroom.newFunction(res)
+end
+
 -- normalizes a table of SDF rates so that they sum to 1
-local function sdfNormalize( tab )
+function darkroom.sdfNormalize( tab )
   assert( darkroom.isSDFRate(tab) )
 
-  local sum = tab[1]
+  local sum = {tab[1][1],tab[1][2]}
   for i=2,#tab do
     local b = tab[i]
     -- (a/b)+(c/d) == (a*d/b*d) + (c*b/b*d)
@@ -1865,7 +1916,8 @@ local function sdfNormalize( tab )
   
   local res = {}
   for i=1,#tab do
-    local n,d = simplify(tab[i][1]*sum[2],tab[i][2]*sum[1])
+    local nn,dd = tab[i][1]*sum[2], tab[i][2]*sum[1]
+    local n,d = simplify(nn,dd)
     res[i] = {n,d}
   end
   
@@ -2054,6 +2106,7 @@ function darkroom.serialize( A, inputRates, Schedule, X )
   for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
   err(sdfSum==1, "inputRates must sum to 1")
 
+  -- the output rates had better be the same as the inputs!
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
 
@@ -2247,6 +2300,10 @@ function darkroom.flattenStreams( A, rates, X )
   local sdfSum = rates[1][1]/rates[1][2]
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
   err(sdfSum==1, "rates must sum to 1")
+
+  for i=1,#rates do
+    print("flattenStreams",i,rates[i][1],rates[i][2])
+  end
 
   res.sdfInput = rates
   res.sdfOutput = {{1,1}}
@@ -2530,6 +2587,7 @@ darkroom.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   err( W%T==0, "cropSeq, W%T~=0")
   err( L%T==0, "cropSeq, L%T~=0")
   err( R%T==0, "cropSeq, R%T~=0")
+  err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T~=0")
 
   local inputType = types.array2d(A,T)
   local outputType = types.tuple{inputType,types.bool()}
@@ -2556,17 +2614,19 @@ darkroom.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
-function darkroom.cropHelperSeq( A, W, H, T, L, R, B, Top, X )
+darkroom.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err(X==nil, "cropHelperSeq, too many arguments")
   if L%T==0 and R%T==0 then return darkroom.cropSeq( A, W, H, T, L, R, B, Top ) end
+
+  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
 
   local RResidual = R%T
   local inp = darkroom.input( types.array2d( A, T ) )
   local out = darkroom.apply( "SSR", darkroom.SSR( A, T, -RResidual, 0 ), inp)
   out = darkroom.apply( "slice", darkroom.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = darkroom.apply( "crop", darkroom.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
-  return darkroom.lambda( "cropHelperSeq", inp, out )
-end
+  return darkroom.lambda( "cropHelperSeq_W"..W.."_H"..H.."_L"..L.."_R"..R, inp, out )
+                                 end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
@@ -2577,6 +2637,8 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err(T>=1, "padSeq, T<1")
 
   err( W%T==0, "padSeq, W%T~=0")
+  err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0")
+  err( R==0 or (R>=T and R%T==0), "padSeq, R<T or R%T~=0")
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value}

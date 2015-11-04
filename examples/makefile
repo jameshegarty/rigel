@@ -15,7 +15,7 @@ TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))

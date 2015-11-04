@@ -3,6 +3,8 @@ local types = require("types")
 local typecheckAST = require("typecheck")
 local systolic={}
 
+local ARTEM = false
+
 systolicModuleFunctions = {}
 systolicModuleMT={__index=systolicModuleFunctions}
 
@@ -89,14 +91,14 @@ function systolic.declareWire( ty, name, str, comment )
   if str == nil or str=="" then
     str = ""
   else
-    str = " = "..str
+    str = "assign "..name.." = "..str.."; "
   end
 
   assert( ty~=types.null() )
   if ty:isBool() then
-    return "wire "..name..str..";"..comment
+    return "wire "..name..";"..str..comment
   else
-    return "wire ["..(ty:verilogBits()-1)..":0] "..name..str..";"..comment
+    return "wire ["..(ty:verilogBits()-1)..":0] "..name..";"..str..comment
   end
 end
 declareWire = systolic.declareWire
@@ -785,6 +787,50 @@ function systolicASTFunctions:pipeline(stallDomains)
   end
 
   return self:addPipelineRegisters( delaysAtInput, stallDomains )
+end
+
+artemOp = memoize(function(op,lhsType,rhsType,pipelined,X)
+                    assert(type(op)=="string")
+                    assert(types.isType(lhsType))
+                    assert(types.isType(rhsType))
+                    assert(type(pipelined)=="boolean")
+                    assert(X==nil)
+  local opToStr = {["*"]="MULT",["+"]="PLUS",["-"]="SUB"}
+  local MN = opToStr[op].."_"..tostring(lhsType).."_"..tostring(rhsType).."_pipelined"..tostring(pipelined)
+  print("artemOp",MN,op,lhsType,rhsType)
+  local res = systolic.moduleConstructor(MN)
+  local sinp = systolic.parameter("process_input", types.tuple{lhsType,rhsType} )
+  local out
+
+  local function BNOP(lhs, rhs, op)
+    lhs, rhs = checkast(lhs), checkast(rhs)
+    return typecheck({kind="binop",op=op,ARTEM_HACK=true,inputs={lhs,rhs},loc=getloc(),pipelined=pipelined})
+  end
+
+  out = BNOP(systolic.index(sinp,0),S.index(sinp,1),op)
+
+  local CE = S.CE("process_CE")
+  if pipelined==false then CE=nil end
+  res:addFunction(systolic.lambda("process",sinp,out,"process_output",nil,nil,CE))
+  res:complete()
+  print("ARET",res)
+  return res
+  end)
+
+function systolicASTFunctions:artem()
+  local inst = {}
+
+  local finalOut = self:process(
+    function(n)
+      if n.kind=="binop" and (n.op=="+" or n.op=="*" or n.op=="-") and n.ARTEM_HACK==nil then
+        assert(#n.inputs==2)
+        local I = artemOp(n.op,n.inputs[1].type,n.inputs[2].type,n.pipelined):instantiate(n.name.."_PL"..tostring(n.pipelined))
+        table.insert(inst,I)
+        return I:process(systolic.tuple{n.inputs[1],n.inputs[2]})
+      end
+    end)
+
+  return finalOut, inst
 end
 
 function systolicASTFunctions:calculateStallDomains()
@@ -1494,22 +1540,36 @@ function userModuleFunctions:toVerilog()
     local t = {}
 
     local CEseen = {}
-    table.insert(t,"module "..self.name.."(input CLK")
+    table.insert(t,"module "..self.name.."(")
+
+    local portlist = {{"CLK",types.bool(),true}}
+
     for fnname,fn in pairs(self.functions) do
       -- our purity analysis isn't smart enough to know whether a valid bit is needed when onlyWire==true.
       -- EG, if we use the valid bit to control clock enables or something. So just do what the user said (include the valid unless it was implicit)
       if fn:isPure()==false or self.onlyWire then 
         if self.onlyWire and fn.implicitValid then
-        else table.insert(t,", input "..fn.valid.name) end
+        else table.insert(portlist,{fn.valid.name,types.bool(),true}) end
       end
 
-      if fn.CE~=nil and CEseen[fn.CE.name]==nil then CEseen[fn.CE.name]=1; table.insert(t,", input "..fn.CE.name) end
+      if fn.CE~=nil and CEseen[fn.CE.name]==nil then CEseen[fn.CE.name]=1; table.insert(portlist,{fn.CE.name,types.bool(),true}) end
 
-      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.inputParameter.type, fn.inputParameter.name, true)) end
-      if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(t,", "..declarePort( fn.output.type, fn.outputName, false ))  end
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then 
+        table.insert(portlist,{ fn.inputParameter.name, fn.inputParameter.type, true})
+      end
+
+      if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
-    table.insert(t,");\n")
+    if ARTEM then      
+      table.insert(t,table.concat(map(portlist,function(n) return n[1] end),","))
+      table.insert(t,");\n")
+      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),"; ")..";")
+    else
+      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
+      table.insert(t,");\n")
+    end
+
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
     if type(self.parameters)=="table" then
       for k,v in pairs(self.parameters) do
@@ -1629,6 +1689,16 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, coherentDefault=coherentDefault, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog}
   setmetatable(t,userModuleMT)
 
+
+  if ARTEM then
+    for _,fn in pairs(t.functions) do
+      if fn.output~=nil then
+        local inst
+        fn.output, inst = fn.output:artem()
+        t.instances = concat(t.instances, inst)
+      end
+    end
+  end
 
   t.ast = t:lower()
 
