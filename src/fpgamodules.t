@@ -185,20 +185,58 @@ function modules.linebuffer( maxDelayX, maxDelayY, datatype, stripWidth )
 end
 modules.linebuffer = memoize( modules.linebuffer )
 
-modules.fifo128 = memoize(function(ty,verbose)
+local terra bitselect(a : uint, bit : uint)
+  return a and bit
+end
+
+-- make an array of ram128s to service a certain bandwidth
+modules.ram128 = function(ty, init)
   assert(types.isType(ty))
+  local ram128 = systolic.moduleConstructor("ram128_"..sanitize(tostring(ty)) )
+  local bits = ty:verilogBits()
+  
+  assert(type(init)=="table")
+  local slicedInit = {}
+  for b=1,bits do
+    slicedInit[b] = {}
+    for i=1,#init do
+      slicedInit[b][i] = (bitselect(init[i],math.pow(2,b-1))~=0)
+    end
+  end
+
+  local rams = map( range( bits ), function(v) return ram128:add(systolic.module.ram128(false,true,slicedInit[v]):instantiate("ram"..v)) end )
+
+  local read = ram128:addFunction( systolic.lambdaConstructor("read",types.uint(8),"read_input") )
+--  pushBackReset:setCE(pushCE)
+
+  local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( read:getInput(), types.uint(7)) ) end)
+  read:setOutput( systolic.cast( S.tuple(bitfield), ty), "read_output" )
+
+  return ram128
+end
+
+modules.fifo = memoize(function(ty,items,verbose)
+  assert(types.isType(ty))
+  assert(type(items)=="number")
   assert(type(verbose)=="boolean")
 
-  local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty)) )
+  local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),127), true ):instantiate("writeAddr"))
   local readAddr = fifo:add( systolic.module.regBy( types.uint(8), modules.incIfWrap(types.uint(8),127), true ):instantiate("readAddr"))
   local bits = ty:verilogBits()
-  local rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
+  local bytes = bits/8
+
+  local rams, ram
+  if items <= 128 then
+    rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
+  else
+    ram = fifo:add(systolic.module.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
+  end
 
   -- size
   local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
-  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), 128 ):disablePipelining()
+  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), items ):disablePipelining()
   sizeFn:setOutput( fsize, "size" )
 
   -- ready (not full)
@@ -210,7 +248,7 @@ modules.fifo128 = memoize(function(ty,verbose)
   local readyReg = fifo:add( S.module.reg(types.bool(),false,nil,false):instantiate("readyReg") )
   local READY_PIPELINE = 1
   local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
-  local ready = S.lt( fsize, S.constant(126-READY_PIPELINE,types.uint(8)) ):disablePipelining()
+  local ready = S.lt( fsize, S.constant(items-2-READY_PIPELINE,types.uint(8)) ):disablePipelining()
   readyFn:addPipeline( readyReg:set(ready) )
   readyFn:setOutput( readyReg:get(), "ready" )
 
@@ -226,11 +264,16 @@ modules.fifo128 = memoize(function(ty,verbose)
   local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
   pushBack:setCE(pushCE)
   local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true ):instantiate("pushBackAssert") )
-  local hasSpace = S.lt( fsize, S.constant(126,types.uint(8)) ):disablePipelining() -- note that this is different than ready
+  local hasSpace = S.lt( fsize, S.constant(items-2,types.uint(8)) ):disablePipelining() -- note that this is different than ready
   pushBack:addPipeline( pushBackAssert:process( hasSpace )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
-  for b=1,bits do
-    pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
+
+  if items<=128 then
+    for b=1,bits do
+      pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
+    end
+  else
+    pushBack:addPipeline( ram:writeAndReturnOriginal( S.tuple{ S.cast(writeAddr:get(),types.uint(8)), S.cast(pushBack:getInput(),types.bits(bits))} )  )
   end
 
   -- pushBackReset
@@ -251,8 +294,12 @@ modules.fifo128 = memoize(function(ty,verbose)
   end
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
 
-  local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
-  popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
+  if items<=128 then
+    local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
+    popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
+  else
+    popFront:setOutput( S.cast(ram:read(readAddr:get()),ty), "popFront" )
+  end
 
   -- popFrontReset
   local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("popFrontReset" ) )
@@ -262,6 +309,8 @@ modules.fifo128 = memoize(function(ty,verbose)
   return fifo
                           end)
 
+
+modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
 function modules.fifonoop(ty)
   assert(darkroom.type.isType(ty))

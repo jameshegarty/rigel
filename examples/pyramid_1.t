@@ -17,11 +17,18 @@ local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
 TARGET_DEPTH = tonumber(TARGET_DEPTH)
 
 
-local function FIFO(fifos,statements,A,inp)
+local function FIFOp(fifos,statements,A,inp)
   local id = #fifos
-  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id),d.fifo(A,1024)) )
+  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id),d.fifo(A,128)) )
   table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
   return d.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+end
+
+local function FIFO(fifos,statements,A,inp)
+  for i=0,3 do
+    inp = FIFOp(fifos,statements,A,inp)
+  end
+  return inp
 end
 
 function gaussian(W,sigma)
@@ -129,24 +136,31 @@ for depth=1,TARGET_DEPTH do
   end
 
   local THIS_TYPE = types.array2d(types.uint(8),curT)
+  local TOP_TYPE = types.array2d(A,T)
   if depth==TARGET_DEPTH then
-    -- last level
-    out = FIFO(fifos,statements,THIS_TYPE, out)
-
     if curT~=8 then
+      -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
       out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), out)
     end
+
+    -- last level
+    out = FIFO(fifos,statements,TOP_TYPE, out)
+
     L[depth] = out
 
   else
     print("curT",curT)
     out= d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
     out0 = FIFO(fifos,statements,THIS_TYPE,d.selectStream("i0"..depth,out,0))
-    out1 = FIFO(fifos,statements,THIS_TYPE,d.selectStream("i1"..depth,out,1))
 
     if curT<8 then
-      out1 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), out1)
+      out1 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), d.selectStream("i1"..depth,out,1))
+    else
+      out1 = d.selectStream("i1"..depth,out,1)
     end
+
+    out1 = FIFO(fifos,statements,TOP_TYPE, out1)
+
     L[depth] = out1
 
     out = out0

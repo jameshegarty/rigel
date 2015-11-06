@@ -1884,20 +1884,47 @@ function darkroom.pyramidSchedule( depth, wtop, T )
   end
   res.terraModule = PyramidSchedule
 
+  --------------------
+  local pattern = {}
+  local minTargetW = math.pow(2,depth-1)/math.pow(4,depth-1)
+  local totalW = 0
+  for d=0,depth-1 do
+    local targetW = math.pow(2,depth-1)/math.pow(4,d)
+    targetW = targetW/minTargetW
+
+    for t=1,targetW do
+      table.insert(pattern,d)
+    end
+  end
+  --------------------
+  assert(#pattern<=128)
+  local patternTotal = #pattern
+  while #pattern<128 do table.insert(pattern,0) end
+
+  local log2N = math.ceil(math.log(depth)/math.log(2))
+
   res.systolicModule = S.moduleConstructor("PyramidSchedule_"..depth.."_"..wtop)
   local printInst
-  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(8), types.uint(16),types.uint(log2N)}, "pyramid schedule addr %d wcnt %d out %d", true):instantiate("printInst") ) end
+
+  local tokensPerAddr = (wtop*minTargetW)/T
 
   local inp = S.parameter("process_input", darkroom.lower(res.inputType) )
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
-  local log2N = math.log(depth)/math.log(2)
+  local addr = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), patternTotal-1, 1 ) ):setInit(0):CE(true):instantiate("patternAddr") )
+  local wcnt = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), tokensPerAddr-1, 1 ) ):setInit(0):CE(true):instantiate("wcnt") )
+  local patternRam = res.systolicModule:add(fpgamodules.ram128(types.uint(log2N), pattern):instantiate("patternRam"))
+
 
   local CE = S.CE("CE")
-  local pipelines = {phase:setBy( S.constant(true,types.bool()))}
-  if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(phase:get())) end
+  local pipelines = {addr:setBy( S.eq(wcnt:get(),S.constant(tokensPerAddr-1,types.uint(16))):disablePipelining() )}
+  table.insert(pipelines, wcnt:setBy( S.constant(true,types.bool()) ) )
 
-  res.systolicModule:addFunction( S.lambda("process", inp, S.constant(0, types.uint(8)), "process_output", pipelines, nil, CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(8)))}, S.parameter("reset",types.bool()),CE) )
+  local out = patternRam:read(addr:get())
+
+  if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{addr:get(),wcnt:get(),out})) end
+
+  res.systolicModule:addFunction( S.lambda("process", inp, out, "process_output", pipelines, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(8))), wcnt:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool()),CE) )
 
   return darkroom.newFunction(res)
 end
@@ -3286,7 +3313,7 @@ darkroom.fifo = memoize(function( A, size )
 
   res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A))
 
-  local fifo = res.systolicModule:add( fpgamodules.fifo128(A,DARKROOM_VERBOSE):instantiate("FIFO") )
+  local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
   
   --------------
   -- basic -> R

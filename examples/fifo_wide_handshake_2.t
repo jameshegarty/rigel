@@ -19,7 +19,7 @@ local p100 = d.makeHandshake(d.map( plus100, T))
 ------------
 ITYPE = types.array2d( types.uint(8), T )
 local inp = d.input( d.Handshake(ITYPE) )
-local regs = {d.instantiateRegistered("f1",d.fifo(ITYPE,1)),d.instantiateRegistered("f2",d.fifo(ITYPE,1))}
+local regs = {d.instantiateRegistered("f1",d.fifo(ITYPE,128)),d.instantiateRegistered("f2",d.fifo(ITYPE,128))}
 --local pipelines = {d.applyStore("s1",regs[1],inp)}
 
 ------

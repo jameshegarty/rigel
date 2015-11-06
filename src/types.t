@@ -638,6 +638,8 @@ function TypeFunctions:stripConst()
     return types.int( self.precision, false )
   elseif self:isFloat() then
     return types.float( self.precision, false )
+  elseif self:isBits() then
+    return types.bits( self.precision, false )
   elseif self:isOpaque() then
     return self -- doesn't matter
   elseif self:isArray() then

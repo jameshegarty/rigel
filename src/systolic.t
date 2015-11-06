@@ -1864,13 +1864,6 @@ setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; re
 ram128ModuleFunctions={}
 setmetatable(ram128ModuleFunctions,{__index=systolicModuleFunctions})
 ram128ModuleMT={__index=ram128ModuleFunctions}
-local __ram128 = {kind="ram128", functions={}}
-__ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
-__ram128.functions.read.isPure = function() return true end
-__ram128.functions.write={name="write", inputParameter={name="WRITE",type=types.tuple{types.uint(7),types.bits(1)}},outputName="WRITE_OUTPUT", output={type=types.bits(1)}, CE=systolic.CE("CE")}
-__ram128.functions.write.isPure = function() return false end
-
-setmetatable(__ram128,ram128ModuleMT)
 
 function ram128ModuleFunctions:getDelay(fnname) return 0 end
 function ram128ModuleFunctions:getDependenciesLL() return {} end
@@ -1905,19 +1898,40 @@ wire ]]..instance.name..[[_READ_OUTPUT;
 wire [6:0] ]]..instance.name..[[_writeAddr;
 wire [6:0] ]]..instance.name..[[_readAddr;
                                ]=]
-err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
 
-local writeInput = instance.verilogCompilerState[module].write[1]
-local writeData = instance.name.."_writeInput[7]"
-local writeAddr = instance.name.."_writeInput[6:0]"
+
 local readAddr = instance.verilogCompilerState[module].read[1]
 
-local valid = instance.verilogCompilerState[module].write[2]
-local CE = instance.verilogCompilerState[module].write[3]
-local WE = valid.." && "..CE
+local writeInput, writeData, writeAddr, valid, CE, WE
+if self.hasWrite then
+  err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
+
+  writeInput = instance.verilogCompilerState[module].write[1]
+  writeData = instance.name.."_writeInput[7]"
+  writeAddr = instance.name.."_writeInput[6:0]"
+
+  valid = instance.verilogCompilerState[module].write[2]
+  CE = instance.verilogCompilerState[module].write[3]
+  WE = valid.." && "..CE
+
+else
+  WE="1'b0"
+  CE="1'b0"
+  writeInput="8'd0"
+  writeData="1'b0"
+  writeAddr="7'd0"
+end
+
+local initS = ""
+if self.init~=nil then
+  local strlst = map(self.init,function(n) assert(type(n)=="boolean"); if n then return "1" else return "0" end end)
+  strlst = reverse(strlst)
+  initS = " #(.INIT(128'b"..table.concat( strlst,"")..")) "
+end
+
 return [[wire [7:0] ]]..instance.name..[[_writeInput = ]]..writeInput..[[;
 wire ]]..instance.name..[[_writeOut;
-RAM128X1D ]]..instance.name..[[  (
+RAM128X1D ]]..initS..instance.name..[[  (
   .WCLK(CLK),
   .D(]]..writeData..[[),
   .WE(]]..WE..[[),
@@ -1928,7 +1942,25 @@ RAM128X1D ]]..instance.name..[[  (
 ]]
 end
 
-function systolic.module.ram128() return __ram128 end
+function systolic.module.ram128(hasWrite,hasRead,init)
+  if hasWrite==nil then hasWrite=true else assert(type(hasWrite)=="boolean") end
+  if hasRead==nil then hasRead=true else assert(type(hasRead)=="boolean") end
+
+  local __ram128 = {kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead}
+  if hasRead then
+    __ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
+    __ram128.functions.read.isPure = function() return true end
+  end
+
+  if hasWrite then
+    __ram128.functions.write={name="write", inputParameter={name="WRITE",type=types.tuple{types.uint(7),types.bits(1)}},outputName="WRITE_OUTPUT", output={type=types.bits(1)}, CE=systolic.CE("CE")}
+    __ram128.functions.write.isPure = function() return false end
+  end
+
+  setmetatable(__ram128,ram128ModuleMT)
+
+  return __ram128 
+end
 
 --------------------
 bramModuleFunctions={}
@@ -2194,7 +2226,7 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   local szcount = math.ceil(sizeInBytes/(2*1024))
   local count = math.max(bwcount,szcount)
 
-  assert(szcount==1)
+  err(szcount==1, "NYI - size ("..tostring(sizeInBytes)..") would result in multiple rams")
 
   if init~=nil then
     err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
