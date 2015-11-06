@@ -232,6 +232,7 @@ modules.fifo = memoize(function(ty,items,verbose)
     rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
     ram = fifo:add(systolic.module.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
+    assert(false) -- NYI
   end
 
   -- size
