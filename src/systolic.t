@@ -798,9 +798,10 @@ artemOp = memoize(function(kind,op,pipelined,hasCE,aType,bType,cType,X)
                     assert(bType==nil or types.isType(bType))
                     assert(cType==nil or types.isType(cType))
                     assert(X==nil)
+
                     local opToStr = {["binop"]={["*"]="MULT",["+"]="PLUS",["-"]="SUB",["and"]="AND",[">>"]="RSHIFT",["=="]="EQ",["or"]="OR",[">="]="GE",["<"]="LT",[">"]="GT"}}
                     opToStr.select={["select"]="SELECT"}
-                    opToStr.unary={["not"]="NOT"}
+                    opToStr.unary={["not"]="NOT",["isX"]="ISX"}
 
   print("artemOp",kind,op,pipelined,aType,bType,cType,X)
 
@@ -814,8 +815,7 @@ artemOp = memoize(function(kind,op,pipelined,hasCE,aType,bType,cType,X)
                     end
 
   local res = systolic.moduleConstructor(MN)
-  local ITYPE = types.tuple{aType,bType}
-  if cType~=nil then ITYPE = types.tuple{aType,bType,cType} end
+  local ITYPE = types.tuple{aType,bType,cType}
   local sinp = systolic.parameter("process_input", ITYPE )
   local out
 
@@ -842,12 +842,13 @@ artemOp = memoize(function(kind,op,pipelined,hasCE,aType,bType,cType,X)
   return res
   end)
 
-function systolicASTFunctions:artem(stallDomains)
+function systolicASTFunctions:artem(stallDomains,onlyWire)
   local inst = {}
   local inames = {}
   local finalOut = self:process(
     function(n,orig)
       if (n.kind=="binop" or n.kind=="unary" or n.kind=="select") and n.ARTEM_HACK==nil then
+--      if (n.kind=="binop") and n.ARTEM_HACK==nil then
         assert(#n.inputs>=1 and #n.inputs<=3)
         local at = n.inputs[1].type
         local bt,ct
@@ -865,12 +866,14 @@ function systolicASTFunctions:artem(stallDomains)
         local CE
         if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then CE = stallDomains[orig] end
         
-        local I = artemOp(n.kind,n.op or n.kind,n.pipelined,CE~=nil,at,bt,ct):instantiate(INAME)
-        table.insert(inst,I)
-        
-        local res = I:process(systolic.tuple{n.inputs[1],n.inputs[2],n.inputs[3]},S.constant(true,types.bool()),CE)
-        
-        return res
+        if (bt==nil or bt:verilogBits()>0) then
+          local I = artemOp(n.kind,n.op or n.kind,n.pipelined and onlyWire==false,CE~=nil,at,bt,ct):instantiate(INAME)
+          table.insert(inst,I)
+          
+          local res = I:process(systolic.tuple{n.inputs[1],n.inputs[2],n.inputs[3]},S.constant(true,types.bool()),CE)
+          
+          return res
+        end
       end
     end)
 
@@ -1608,7 +1611,7 @@ function userModuleFunctions:toVerilog()
     if ARTEM then      
       table.insert(t,table.concat(map(portlist,function(n) return n[1] end),","))
       table.insert(t,");\n")
-      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),"; ")..";")
+      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),"; ")..";\n")
     else
       table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
       table.insert(t,");\n")
@@ -1738,7 +1741,7 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   if ARTEM then
     local stallDomains = t.ast:calculateStallDomains()
     local inst
-    t.ast, inst = t.ast:artem(stallDomains)
+    t.ast, inst = t.ast:artem(stallDomains,onlyWire==true)
     t.instances = concat(t.instances, inst)
   end
 
