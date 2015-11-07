@@ -789,17 +789,34 @@ function systolicASTFunctions:pipeline(stallDomains)
   return self:addPipelineRegisters( delaysAtInput, stallDomains )
 end
 
-artemOp = memoize(function(op,lhsType,rhsType,pipelined,X)
+artemOp = memoize(function(kind,op,pipelined,hasCE,aType,bType,cType,X)
+                    assert(type(kind)=="string")
                     assert(type(op)=="string")
-                    assert(types.isType(lhsType))
-                    assert(types.isType(rhsType))
                     assert(type(pipelined)=="boolean")
+                    assert(types.isType(aType))
+                    assert(type(hasCE)=="boolean")
+                    assert(bType==nil or types.isType(bType))
+                    assert(cType==nil or types.isType(cType))
                     assert(X==nil)
-  local opToStr = {["*"]="MULT",["+"]="PLUS",["-"]="SUB"}
-  local MN = opToStr[op].."_"..tostring(lhsType).."_"..tostring(rhsType).."_pipelined"..tostring(pipelined)
-  print("artemOp",MN,op,lhsType,rhsType)
+                    local opToStr = {["binop"]={["*"]="MULT",["+"]="PLUS",["-"]="SUB",["and"]="AND",[">>"]="RSHIFT",["=="]="EQ",["or"]="OR",[">="]="GE",["<"]="LT",[">"]="GT"}}
+                    opToStr.select={["select"]="SELECT"}
+                    opToStr.unary={["not"]="NOT"}
+
+  print("artemOp",kind,op,pipelined,aType,bType,cType,X)
+
+                    local MN = opToStr[kind][op].."_pipelined"..tostring(pipelined).."_"..tostring(aType).."_"..tostring(bType)
+                    MN = MN.."_"..tostring(cType)
+
+                    if hasCE then
+                      MN = MN.."_CE"
+                    else
+                      MN = MN.."_NOCE"
+                    end
+
   local res = systolic.moduleConstructor(MN)
-  local sinp = systolic.parameter("process_input", types.tuple{lhsType,rhsType} )
+  local ITYPE = types.tuple{aType,bType}
+  if cType~=nil then ITYPE = types.tuple{aType,bType,cType} end
+  local sinp = systolic.parameter("process_input", ITYPE )
   local out
 
   local function BNOP(lhs, rhs, op)
@@ -807,26 +824,53 @@ artemOp = memoize(function(op,lhsType,rhsType,pipelined,X)
     return typecheck({kind="binop",op=op,ARTEM_HACK=true,inputs={lhs,rhs},loc=getloc(),pipelined=pipelined})
   end
 
-  out = BNOP(systolic.index(sinp,0),S.index(sinp,1),op)
+  if kind=="binop" then
+    out = BNOP(systolic.index(sinp,0),S.index(sinp,1),op)
+  elseif kind=="select" then
+    out = typecheck({kind="select",inputs={systolic.index(sinp,0),S.index(sinp,1),S.index(sinp,2)},ARTEM_HACK=true,loc=getloc(),pipelined=pipelined})
+  elseif kind=="unary" then
+    out = typecheck{kind="unary",op=op,inputs={S.index(sinp,0)},loc=getloc(),pipelined=pipelined,ARTEM_HACK=true}
+  else
+    assert(false)
+  end
 
   local CE = S.CE("process_CE")
-  if pipelined==false then CE=nil end
+  if hasCE==false then CE=nil end
   res:addFunction(systolic.lambda("process",sinp,out,"process_output",nil,nil,CE))
   res:complete()
   print("ARET",res)
   return res
   end)
 
-function systolicASTFunctions:artem()
+function systolicASTFunctions:artem(stallDomains)
   local inst = {}
-
+  local inames = {}
   local finalOut = self:process(
-    function(n)
-      if n.kind=="binop" and (n.op=="+" or n.op=="*" or n.op=="-") and n.ARTEM_HACK==nil then
-        assert(#n.inputs==2)
-        local I = artemOp(n.op,n.inputs[1].type,n.inputs[2].type,n.pipelined):instantiate(n.name.."_PL"..tostring(n.pipelined))
+    function(n,orig)
+      if (n.kind=="binop" or n.kind=="unary" or n.kind=="select") and n.ARTEM_HACK==nil then
+        assert(#n.inputs>=1 and #n.inputs<=3)
+        local at = n.inputs[1].type
+        local bt,ct
+        if n.inputs[2]~=nil then bt = n.inputs[2].type end
+        if n.inputs[3]~=nil then ct = n.inputs[3].type end
+        local INAME = n.name.."_PL"..tostring(n.pipelined)
+        
+        if inames[INAME]~=nil then
+          inames[INAME] = inames[INAME] + 1
+          INAME = INAME.."_"..inames[INAME]
+        else
+          inames[INAME] = 1
+        end
+
+        local CE
+        if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then CE = stallDomains[orig] end
+        
+        local I = artemOp(n.kind,n.op or n.kind,n.pipelined,CE~=nil,at,bt,ct):instantiate(INAME)
         table.insert(inst,I)
-        return I:process(systolic.tuple{n.inputs[1],n.inputs[2]})
+        
+        local res = I:process(systolic.tuple{n.inputs[1],n.inputs[2],n.inputs[3]},S.constant(true,types.bool()),CE)
+        
+        return res
       end
     end)
 
@@ -1689,18 +1733,14 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, coherentDefault=coherentDefault, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog}
   setmetatable(t,userModuleMT)
 
+  t.ast = t:lower()
 
   if ARTEM then
-    for _,fn in pairs(t.functions) do
-      if fn.output~=nil then
-        local inst
-        fn.output, inst = fn.output:artem()
-        t.instances = concat(t.instances, inst)
-      end
-    end
+    local stallDomains = t.ast:calculateStallDomains()
+    local inst
+    t.ast, inst = t.ast:artem(stallDomains)
+    t.instances = concat(t.instances, inst)
   end
-
-  t.ast = t:lower()
 
   -- the idea here is that we first do the pipelineing, before _any_ CSE.
   -- the reason is that pipeline registers need a clock enable. For callsites under multiple
