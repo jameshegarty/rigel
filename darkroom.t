@@ -2776,7 +2776,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     res.sdfInput, res.sdfOutput = {{1,1}},{{inputRate,outputRate}}
   end
 
-  local struct ChangeRate { buffer : (A:toTerraType())[maxRate]; phase:int, ready:bool}
+  local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
   terra ChangeRate:stats(name:&int8) end
   res.systolicModule = S.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
@@ -2791,10 +2791,14 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     terra ChangeRate:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", self.phase) end
       if self.phase==0 then
-        for i=0,inputRate do self.buffer[i] = (@inp)[i] end
+        for y=0,H do
+          for i=0,inputRate do self.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
+        end
       end
 
-      for i=0,outputRate do (data(out))[i] = self.buffer[i+self.phase*outputRate] end
+      for y=0,H do
+        for i=0,outputRate do (data(out))[i+y*outputRate] = self.buffer[i+self.phase*outputRate+y*inputRate] end
+      end
       valid(out) = true
 
       self.phase = self.phase + 1
@@ -2817,6 +2821,7 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
 
   else -- inputRate <= outputRate. 4 to 8
+    assert(H==1) -- NYI
     terra ChangeRate:reset() self.phase = 0; end
     terra ChangeRate:process( inp : &darkroom.lower(res.inputType):toTerraType(), out : &darkroom.lower(res.outputType):toTerraType() )
       for i=0,inputRate do self.buffer[i+self.phase*inputRate] = (@(inp))[i] end
