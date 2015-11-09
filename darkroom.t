@@ -24,7 +24,7 @@ else
 end
 
 local function getloc()
-  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
+  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
 
@@ -822,7 +822,7 @@ function darkroom.border(A,W,H,L,R,B,T,value)
   return darkroom.newFunction(res)
 end
 
-function darkroom.liftBasic(f)
+darkroom.liftBasic = memoize(function(f)
   err(darkroom.isFunction(f),"liftBasic argument should be darkroom function")
   local res = {kind="liftBasic", fn = f}
   darkroom.expectBasic(f.inputType)
@@ -847,7 +847,7 @@ function darkroom.liftBasic(f)
   if f.stateful then res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool()),CE) ) end
   res.systolicModule:complete()
   return darkroom.newFunction(res)
-end
+                             end)
 
 local function passthroughSystolic( res, systolicModule, inner, passthroughFns, onlyWire )
   assert(type(passthroughFns)=="table")
@@ -1105,7 +1105,7 @@ darkroom.liftDecimate = memoize(function(f)
                                 end)
 
 -- converts V->RV to RV->RV
-function darkroom.RPassthrough(f)
+darkroom.RPassthrough = memoize(function(f)
   local res = {kind="RPassthrough", fn = f}
   darkroom.expectV(f.inputType)
   darkroom.expectRV(f.outputType)
@@ -1146,7 +1146,7 @@ function darkroom.RPassthrough(f)
   res.systolicModule:addFunction( S.lambda("ready", rinp, S.__and(inner:ready(),rinp):disablePipelining(), "ready", {} ) )
 
   return darkroom.newFunction(res)
-end
+                                end)
 
 -- takes basic->basic to RV->RV
 function darkroom.RVPassthrough(f)
@@ -3386,7 +3386,7 @@ darkroom.reduce = memoize(function( f, W, H )
   darkroom.expectBasic(f.inputType)
   darkroom.expectBasic(f.outputType)
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
-    error("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
+    err("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
   end
   res.inputType = types.array2d( f.outputType, W, H )
   res.outputType = f.outputType
@@ -3438,10 +3438,10 @@ end)
 
 
 darkroom.reduceSeq = memoize(function( f, T )
-  assert(T<=1)
+  err(T<=1, "reduceSeq T>1")
 
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
-    error("Reduction function f must be of type {A,A}->A, "..loc)
+    err("Reduction function f must be of type {A,A}->A, "..loc)
   end
 
   local res = {kind="reduceSeq", fn=f}
@@ -3482,7 +3482,7 @@ darkroom.reduceSeq = memoize(function( f, T )
   local del = f.systolicModule:getDelay("process")
   err( del == 0, "ReduceSeq function must have delay==0 but instead has delay of "..del )
 
-  res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name)
+  res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name.."_T"..tostring(1/T))
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),f.outputType,f.outputType}, "ReduceSeq "..f.systolicModule.name.." phase %d input %d output %d", true):instantiate("printInst") ) end
   local sinp = S.parameter("process_input", f.outputType )
@@ -4183,7 +4183,7 @@ function darkroom.instantiateRegistered( name, fn )
 end
 
 function darkroom.apply( name, fn, input )
-  assert( type(name) == "string" )
+  err( type(name) == "string", "first argument to apply must be name" )
   err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
 
@@ -4200,11 +4200,11 @@ function darkroom.applyMethod( name, inst, fnname, input )
 end
 
 
-function darkroom.constSeq( value, A, w, h, T )
+darkroom.constSeq = memoize(function( value, A, w, h, T, X )
   assert(type(value)=="table")
   assert(type(value[1])=="number")
   assert(#value==w*h)
-
+  assert(X==nil)
 
 --  assert(type(value[1][1])=="number")
   assert(T<=1)
@@ -4239,7 +4239,7 @@ function darkroom.constSeq( value, A, w, h, T )
     if self.phase == [1/T] then self.phase = 0 end
   end
   res.terraModule = ConstSeqState
-  res.systolicModule = S.moduleConstructor("constSeq")
+  res.systolicModule = S.moduleConstructor("constSeq_"..tostring(value):gsub('%W','_').."_T"..tostring(1/T))
   local sconsts = map(range(1/T), function() return {} end)
   for C=0, (1/T)-1 do
     for y=0, h-1 do
@@ -4261,7 +4261,7 @@ function darkroom.constSeq( value, A, w, h, T )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("process_nilinp", types.null() ), nil, "process_reset", {}, S.parameter("reset", types.bool() ) ) )
 
   return darkroom.newFunction( res )
-end
+end)
 
 function darkroom.constant( name, value, ty )
   assert( type(name) == "string" )
