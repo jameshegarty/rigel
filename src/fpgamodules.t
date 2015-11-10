@@ -17,13 +17,18 @@ modules.sumwrap = memoize(function( ty, limit, X)
                   end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function(inc,ty)
+modules.incIf=memoize(function(inc,ty,hasCE)
                         if inc==nil then inc=1 end
                         if ty==nil then ty=types.uint(16) end
+                        if hasCE==nil then hasCE=true end
+                        assert(type(hasCE)=="boolean")
+
       local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
 
       local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_"..inc..tostring(ty), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
+      local CE = S.CE("CE")
+      if hasCE==false then CE=nil end
+      return S.module.new( "incif_"..inc..tostring(ty).."_CE"..tostring(CE), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{},nil,true)
               end)
 
 -- this will never wrap around

@@ -128,6 +128,7 @@ out/%.axi.raw: out/%.axi.bit
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT)"
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
+	terra ../extras/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
 
 ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
@@ -155,6 +156,7 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	split -n 2 -d out/sim_$*/$*.sim.raw out/sim_$*/S
 	mv out/sim_$*/S00 out/$*.sim.raw
 	mv out/sim_$*/S01 out/$*.sim.1.raw
+	terra ../extras/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
 #	mv out/sim_$*/$*.sim.raw out
 
 out/%.sim.bmp: out/%.sim.raw

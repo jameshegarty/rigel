@@ -23,7 +23,14 @@ terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
   var expectedOutputSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
   if axiround then
     --cstdio.printf("Round to AXI size\n")
-    expectedOutputSize = upToNearestTerra(128,expectedOutputSize) -- round to AXI burst size
+    --expectedOutputSize = upToNearestTerra(128,expectedOutputSize) -- round to AXI burst size
+    if expectedOutputSize % 128 ~=0 then
+      cstdio.printf("Error, expected output size should be mod 128 (axi burst size)\n")
+      cstdlib.exit(1)
+    end
+
+    -- include 1 AXI burst worth of metadata
+    expectedOutputSize = expectedOutputSize+128
   end
   if sz~=expectedOutputSize then
     cstdio.printf("File Size: %d, expected size:%d\n",sz, expectedOutputSize)

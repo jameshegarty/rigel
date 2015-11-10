@@ -3638,6 +3638,88 @@ darkroom.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles
   return darkroom.newFunction( res )
     end)
 
+
+-- record the # of cycles needed to complete the computation, and write it into the last axi burst
+darkroom.cycleCounter = memoize(function( A, count )
+  darkroom.expectBasic(A)
+  assert(type(count)=="number")
+
+  assert(count<2^32-1)
+
+    -- # of cycles we need to write out metadata
+  local padCount = (128*8) / A:verilogBits()
+
+  -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
+  -- But in theory you should only put this at the very end of your pipe, so whatever...
+  local res = {kind="cycleCounter", A=A, inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), stateful=true, count=count, sdfInput={{count,count+padCount}}, sdfOutput={{1,1}}, delay=0}
+
+  local struct CycleCounter {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32}
+  terra CycleCounter:reset() self.cycles=0; self.outputCount=0 end
+  terra CycleCounter:process( inp : &darkroom.lower(res.inputType):toTerraType(), out:&darkroom.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  terra CycleCounter:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
+  terra CycleCounter:stats(name:&int8) end
+  res.terraModule = CycleCounter
+
+  res.systolicModule = S.moduleConstructor( "CycleCounter_A"..tostring(A).."_count"..count ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+
+  local printInst
+  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool(),types.bool()}, "cycleCounter outputCount %d cycleCount %d outValid %d metadataMode %d"):instantiate("printInst") ) end
+
+  local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+  local cycleCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):instantiate("cycleCount"):setCoherent(false) )
+
+  local rst = S.parameter("reset",types.bool())
+
+  local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
+  local pready = S.parameter("ready_downstream", types.bool())
+  local pvalid = S.index(pinp,1)
+  local pdata = S.index(pinp,0)
+
+  local done = S.ge(outputCount:get(),S.constant(count,types.uint(32)))
+--  assert( (128*8) / A:verilogBits() == 16 )
+--  local metadataNotDone = S.lt(outputCount:get(),S.constant(count+32,types.uint(32)))
+--  local metadataMode = S.__and(done,metadataNotDone)
+  local metadataMode = done
+
+  local CE = S.__or(pready,rst)
+
+  local pipelines = {}
+  table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,metadataMode)), S.__not(rst), CE) )
+  table.insert( pipelines, cycleCount:setBy(S.__not(done), S.__not(rst)) )
+
+  local outData
+
+  if padCount == 16 then
+    local cycleOutput = S.tuple{cycleCount:get(),cycleCount:get()}
+    cycleOutput = S.cast(cycleOutput, types.bits(A:verilogBits()))
+    outData = S.select(metadataMode,S.cast(cycleOutput,A),pdata)
+  else
+    -- degenerate case: not axi bus size. Just return garbage
+    outData = S.select(metadataMode,S.cast(S.constant(0,types.bits(A:verilogBits())),A),pdata)
+  end
+
+  local outValid = S.__or(metadataMode,pvalid)
+  outValid = S.__and(outValid,S.__not(rst))
+
+  if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple{outputCount:get(),cycleCount:get(),outValid,metadataMode}) ) end
+
+  res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{outData,outValid}, "process_output", pipelines) ) 
+
+  local resetPipelines = {}
+  table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(32)),rst,CE) )
+  table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst) )
+
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
+
+  local readyOut = S.__and(pready,S.__not(metadataMode))
+
+  res.systolicModule:addFunction( S.lambda("ready", pready, readyOut, "ready" ) )
+
+  return darkroom.newFunction( res )
+    end)
+
 -- function argument
 function darkroom.input( type, sdfRate )
   err( types.isType( type ), "darkroom.input: first argument should be type" )
@@ -4492,28 +4574,23 @@ local function readAll(file)
     return content
 end
 
-function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, axi, readyRate )
+function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, X )
   err( darkroom.isFunction(f), "fn must be a function")
   err( types.isType(inputType), "inputType must be a type")
   err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
   err( tapInputType==nil or type(tapValue)==tapInputType:toLuaType(), "tapValue must match tapInputType")
-  err( type(inputW)=="number", "inputW must be a number")
-  err( type(inputH)=="number", "inputH must be a number")
-  err( type(outputW)=="number", "outputW must be a number")
-  err( type(outputH)=="number", "outputH must be a number")
-  err( type(inputT)=="number", "inputT must be a number")
-  err( type(outputT)=="number", "outputT must be a number")
+  err( type(inputCount)=="number", "inputCount must be a number")
+  err( type(outputCount)=="number", "outputCount must be a number")
   err( type(axi)=="boolean", "axi should be a bool")
+  assert(X==nil)
 
   darkroom.expectHandshake(f.inputType)
   darkroom.expectHandshake(f.outputType)
 
-  local inputTokens = (inputW*inputH)/inputT
-  local expectedOutputTokens = (outputW*outputH)/outputT
-  local outputTokens = (inputTokens*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
-  err(outputTokens==expectedOutputTokens, "Error, seqMapHandshake, SDF output tokens ("..tostring(outputTokens)..") does not match stated output tokens ("..tostring(expectedOutputTokens)..")")
+  local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
+  err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
 
-  local res = {kind="seqMapHandshake", inputW=inputW, inputH=inputH, outputW=outputW, outputH=outputH, inputT=inputT, outputT=outputT,inputType=types.null(),outputType=types.null()}
+  local res = {kind="seqMapHandshake", inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
   res.sdfInput = f.sdfInput
   res.sdfOutput = f.sdfOutput
   local struct SeqMap { inner: f.terraModule}
@@ -4535,13 +4612,13 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     var outAddr = 0
     var downstreamReady = 0
 
-    while inpAddr<inputW*inputH or outAddr<outputW*outputH do
-      valid(innerinp)=(inpAddr<inputW*inputH)
+    while inpAddr<inputCount or outAddr<outputCount do
+      valid(innerinp)=(inpAddr<inputCount)
       self.inner:calculateReady(downstreamReady==0)
-      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d\n", inpAddr, (inputW*inputH), outAddr, (outputW*outputH), self.inner.ready, downstreamReady==0) end
+      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0) end
       self.inner:process(&innerinp,&o)
-      if self.inner.ready then inpAddr = inpAddr + inputT end
-      if valid(o) and (downstreamReady==0) then outAddr = outAddr + outputT end
+      if self.inner.ready then inpAddr = inpAddr + 1 end
+      if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
       downstreamReady = downstreamReady+1
       if downstreamReady==readyRate then downstreamReady=0 end
     end
@@ -4558,13 +4635,14 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
 
     local axiv = readAll("../extras/helloaxi/axi.v")
     axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
-    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputTokens)
-    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputTokens)
+    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
+    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
 
     -- input/output tokens are one axi bus transaction => they are 8 bytes
-    local inputBytes = upToNearest(128,inputTokens*8)
-    local outputBytes = upToNearest(128,outputTokens*8)
+    local inputBytes = upToNearest(128,inputCount*8)
+    local outputBytes = upToNearest(128,outputCount*8)
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
+    -- extra 128 is for the extra AXI burst that contains metadata
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
 
     -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
@@ -4579,7 +4657,7 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
     --print("TOTAL MIN UTILIZATION",totalMinUtilization)
     local maxUtilization = 1
 
-    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputTokens*maxUtilization)+1024) -- just give it 1024 cycles of slack
+    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
     if tapInputType~=nil then
       local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
       local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
@@ -4605,8 +4683,6 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputW,
       tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
     end
 
-    local outputCount = ((outputW*outputH)/outputT)
-    local inputCount = ((inputW*inputH)/inputT)
     verilogStr = [[module sim();
 reg CLK = 0;
 integer i = 0;
@@ -4618,7 +4694,7 @@ wire ready;
 ]]..tapreg..[[
 ]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
 
-]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputTokens..[[),.OUTPUT_COUNT(]]..outputTokens..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
+]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
@@ -4640,8 +4716,8 @@ wire ready;
     // keep simulating for N cycles to make sure we don't send any more
 ]]..tapRST..[[
     if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end // I think we have this _NOT_ finish so that it outputs an invalid file
-    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && doneCnt==1024 ) begin $finish(); end
-    if(validCnt>= ]]..((outputW*outputH)/outputT)..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
+    if(validCnt>= ]]..outputCount..[[ && doneCnt==1024 ) begin $finish(); end
+    if(validCnt>= ]]..outputCount..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
     if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus
@@ -4652,7 +4728,7 @@ endmodule
 ]]
   end
 
-  res.systolicModule = S.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputW.."_"..inputH.."_rr"..readyRate):verilog(verilogStr)
+  res.systolicModule = S.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
   res.systolicModule:add(f.systolicModule:instantiate("inst"))
 
   return darkroom.newFunction(res)
@@ -4673,7 +4749,7 @@ function darkroom.writeMetadata(filename, inputBytesPerPixel, inputWidth, inputH
   local scale = fracMultiply(scaleX,scaleY)
 
   io.output(filename)
-  io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
+    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
   io.close()
 end
 

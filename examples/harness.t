@@ -7,25 +7,37 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,offset)
   assert(type(outputCount)=="number")
   assert(type(offset)=="number")
 
-  local EC = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
+  local EC_RAW = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
+  EC_RAW = math.ceil(EC_RAW)
 
-  if DARKROOM_VERBOSE then print("Expected cycles:",EC,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
+  if DARKROOM_VERBOSE then print("Expected cycles:",EC_RAW,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
 
-  EC = math.ceil(EC) + offset
+  local EC = EC_RAW + offset
   if underflowTest then EC = 1 end
-  return EC
+  return EC, EC_RAW
 end
 
-local function harness( hsfn, infile, inputType, tapInputType, outfile, outputType, id, inputCount, outputCount, underflowTest, earlyOverride, X)
+local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
   assert(X==nil)
   assert(type(inputCount)=="number")
   assert(type(outputCount)=="number")
   err( darkroom.isFunction(hsfn), "hsfn must be a function")
+  assert(type(frames)=="number")
+
   local fixedTapInputType = tapInputType
   if tapInputType==nil then fixedTapInputType = types.null() end
 
   local slack = math.floor(math.max(outputCount*0.3,inputCount*0.3))
-  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,slack)
+  local EC, EC_RAW = expectedCycles(hsfn,inputCount,outputCount,underflowTest,slack)
+
+  if outfileraw~=nil then
+    local fi = outfileraw..".cycles.txt"
+    print("WRITE CYCLES",fi)
+    io.output(fi)
+    io.write(EC_RAW/frames)
+    io.close()
+  end
+
   local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-slack)
   if earlyOverride~=nil then ECTooSoon=earlyOverride end
 
@@ -53,7 +65,11 @@ local function harness( hsfn, infile, inputType, tapInputType, outfile, outputTy
 
   local out = d.apply("HARNESS_inner", hsfn, hsfninp )
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(outputType, outputCount))), out)
-  out = d.apply("underflow", d.underflow(outputType, outputBytes/8, EC, false, ECTooSoon), out)
+  out = d.apply("underflow", d.underflow(outputType, (outputBytes/8), EC, false, ECTooSoon), out)
+  if disableCycleCounter==nil or disableCycleCounter==false then 
+    out = d.apply("cycleCounter", d.cycleCounter(d.extractData(hsfn.outputType), outputBytes/(8*frames) ), out)
+  end
+
   local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,outputType)), out )
   return d.lambda( "harness"..id, inpSymb, out )
 end
@@ -69,6 +85,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
   local out = d.apply("hsfna",hsfn,inp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
   out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
+  out = d.apply("cycleCounter", d.cycleCounter(d.extractData(hsfn.outputType), outputBytes/8 ), out)
   return d.lambda( "harnessaxi", inpSymb, out )
 end
 
@@ -82,7 +99,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount ), inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, false, i )
+    local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
@@ -109,16 +126,18 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 
   H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
 
-  local simInputH = inputH*2
-  local simOutputH = outputH*2
+  local frames = 2
+  local simInputH = inputH*frames
+  local simOutputH = outputH*frames
   local simInputCount = (inputW*simInputH)/inputT
   local simOutputCount = (outputW*simOutputH)/outputT
 
+  local cycleCountPixels = (128*8)/(outputType:verilogBits())
   ------
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, underflowTest, earlyOverride), inputType, tapType, tapValue, inputW, simInputH, inputT, outputW, simOutputH, outputT, false, i )
+    local f = d.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
@@ -139,11 +158,15 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(inputFilename)=="string")
   err(d.isFunction(hsfn), "second argument to harness.axi must be function")
 
+  local inputCount = (inputW*inputH)/inputT
+  local outputCount = (outputW*outputH)/outputT
+
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
 local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest)
-local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputW, inputH, inputT, outputW, outputH, outputT, true )
+local cycleCountPixels = 128/8
+local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
 io.write(fnaxi:toVerilog())
 io.close()
