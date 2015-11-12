@@ -164,6 +164,7 @@ function valueToVerilogLL(value,signed,bits)
     end
   else
     assert(value>=0)
+    err(value < math.pow(2,bits),"valueToVerilog: value out of range for type, "..tostring(value)..", bits:"..tostring(bits)) -- probably a mistake
     return bits.."'d"..math.abs(value)
   end
 end
@@ -443,6 +444,9 @@ function systolic.constant( v, ty )
     if type(v)=="number" then
       err( v==math.floor(v), "systolic constant must be integer")
       err( ty:isInt() or v>=0, "systolic uint const must be positive")
+      if ty:isUint() or ty:isBits() then
+        err( v<math.pow(2,ty:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(ty))
+      end
     end
   end
 
@@ -2111,12 +2115,13 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            readFirst = true}
 
     if VCS.read~=nil then
+
       conf.B={chunk=self.outputBits/8,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_READ_OUTPUT",
            ADDR = VCS.read[1],
            CLK = "CLK",
-           EN=CEvar,
+           EN=VCS.read[3],
            WE = "1'd0",
            readFirst = true}
 
@@ -2222,11 +2227,11 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=S.CE("CE")}
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=S.CE("CE_write")}
     t.functions.writeAndReturnOriginal.isPure = function() return false end
 
     if outputBits~=nil then
-      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)}}
+      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)},CE=S.CE("CE_read")}
       t.functions.read.isPure = function() return true end
     end
   else
@@ -2304,12 +2309,13 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
       local inp = systolic.bitSlice( inpData, bw*eachSizeBytes*8, (bw+1)*eachSizeBytes*8-1 )
 
       table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
-      if outputBytes~=nil then table.insert( outRead, m:read( systolic.cast(inpAddr,types.uint(eachAddrbits)) ) ) end
+      if outputBytes~=nil then table.insert( outRead, m:read( systolic.cast(sinpRead,types.uint(eachAddrbits)) ) ) end
     end
 
     local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
     mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
-    if outputBytes~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil) ) end
+
+    if outputBytes~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, sel(CE,S.CE("read_CE"),nil) ) ) end
 
     return mod
   else

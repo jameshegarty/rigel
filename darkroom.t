@@ -3603,7 +3603,13 @@ darkroom.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles
   table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.__not(rst), CE) )
   table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.__not(rst), CE_cycleCount) )
 
-  local outData = S.select(fixupMode,S.cast(S.constant(3735928559,types.bits(A:verilogBits())),A),pdata)
+  local outData
+  if A:verilogBits()==0 then
+    outData = pdata
+  else
+    outData = S.select(fixupMode,S.cast(S.constant(math.min(3735928559,math.pow(2,A:verilogBits())-1),types.bits(A:verilogBits())),A),pdata)
+  end
+
   local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
   outValid = S.__and(outValid,S.__not(rst))
 
