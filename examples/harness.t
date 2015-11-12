@@ -3,16 +3,16 @@ local types = require("types")
 local cstdlib = terralib.includec("stdlib.h")
 local fixed = require("fixed")
 
-local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,offset)
+local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPercent)
   assert(type(outputCount)=="number")
-  assert(type(offset)=="number")
+  assert(type(slackPercent)=="number")
 
   local EC_RAW = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
   EC_RAW = math.ceil(EC_RAW)
 
   if DARKROOM_VERBOSE then print("Expected cycles:",EC_RAW,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
 
-  local EC = EC_RAW + offset
+  local EC = math.floor(EC_RAW*slackPercent) -- slack
   if underflowTest then EC = 1 end
   return EC, EC_RAW
 end
@@ -27,8 +27,8 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
   local fixedTapInputType = tapInputType
   if tapInputType==nil then fixedTapInputType = types.null() end
 
-  local slack = math.floor(math.max(outputCount*0.3,inputCount*0.3))
-  local EC, EC_RAW = expectedCycles(hsfn,inputCount,outputCount,underflowTest,slack)
+--  local slack = math.floor(math.max(outputCount*0.3,inputCount*0.3))
+  local EC, EC_RAW = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.5)
 
   if outfileraw~=nil then
     local fi = outfileraw..".cycles.txt"
@@ -38,7 +38,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
     io.close()
   end
 
-  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,-slack)
+  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,0.5)
   if earlyOverride~=nil then ECTooSoon=earlyOverride end
 
   local outputBytes = outputCount*8
@@ -80,7 +80,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
   local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
   local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
 
-  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1024)
+  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.75)
   local inp = d.apply("underflow_US", d.underflow( d.extractData(hsfn.inputType), inputBytes/8, EC, true ), inpSymb)
   local out = d.apply("hsfna",hsfn,inp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)

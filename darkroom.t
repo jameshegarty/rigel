@@ -3319,7 +3319,6 @@ darkroom.fifo = memoize(function( A, size )
   res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A))
 
   local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
-  
   --------------
   -- basic -> R
   local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
@@ -3749,9 +3748,10 @@ local function lambdaSDFNormalize(input,output)
   err(fracToNumber(sdfMaxRate)>=1, "sdf max rate is <1?")
 
   if input.sdfRate~=nil then
+    err(darkroom.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
     --local sdfInputSum = sdfSum(input.sdfRate)
     for k,v in pairs(input.sdfRate) do
-      err(v[1]/v[2]<=1, "error, lambda declared with input BW > 1")
+      err(v=="x" or v[1]/v[2]<=1, "error, lambda declared with input BW > 1")
     end
   end
 

@@ -255,7 +255,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   local readyReg = fifo:add( S.module.reg(types.bool(),false,nil,false):instantiate("readyReg") )
   local READY_PIPELINE = 1
   local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
-  local ready = S.lt( fsize, S.constant(items-2-READY_PIPELINE,types.uint(8)) ):disablePipelining()
+  local ready = S.lt( fsize, S.constant(items-2-READY_PIPELINE,types.uint(addrBits)) ):disablePipelining()
   readyFn:addPipeline( readyReg:set(ready) )
   readyFn:setOutput( readyReg:get(), "ready" )
 
@@ -272,7 +272,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
   pushBack:setCE(pushCE)
   local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true ):instantiate("pushBackAssert") )
-  local hasSpace = S.lt( fsize, S.constant(items-2,types.uint(8)) ):disablePipelining() -- note that this is different than ready
+  local hasSpace = S.lt( fsize, S.constant(items-2,types.uint(addrBits)) ):disablePipelining() -- note that this is different than ready
   pushBack:addPipeline( pushBackAssert:process( hasSpace )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
 
@@ -281,7 +281,7 @@ modules.fifo = memoize(function(ty,items,verbose)
       pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
     end
   else
-    pushBack:addPipeline( ram:writeAndReturnOriginal( S.tuple{ S.cast(writeAddr:get(),types.uint(8)), S.cast(pushBack:getInput(),types.bits(bits))} )  )
+    pushBack:addPipeline( ram:writeAndReturnOriginal( S.tuple{ S.cast(writeAddr:get(),types.uint(addrBits-1)), S.cast(pushBack:getInput(),types.bits(bits))} )  )
   end
 
   -- pushBackReset
@@ -306,7 +306,7 @@ modules.fifo = memoize(function(ty,items,verbose)
     local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
     popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
   else
-    popFront:setOutput( S.cast(ram:read(S.cast(readAddr:get(),types.uint(8))),ty), "popFront" )
+    popFront:setOutput( S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),ty), "popFront" )
   end
 
   -- popFrontReset

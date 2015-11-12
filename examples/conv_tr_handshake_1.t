@@ -32,7 +32,7 @@ local internalH = inputH+ConvRadius*2
 local outputW = inputW
 local outputH = inputH
 
-local convolve = C.convolveConstantTR( types.uint(8), ConvWidth, T, range(ConvWidth*ConvWidth), 7)
+local convolve = C.convolveConstantTR( types.uint(8), ConvWidth, ConvWidth, T, range(ConvWidth*ConvWidth), 7)
 -------------
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 local hsfninp = d.input( d.Handshake(RW_TYPE) )
