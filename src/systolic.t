@@ -2290,10 +2290,11 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
 
   assert(count <= inputBytes) -- must read at least 1 byte per ram
 
-  local eachInputBytes = sel(count==sizelimit,sizeInBytes/(count*2048),math.min(inputBytes,4))
+--  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
+  local eachInputBytes = math.max(inputBytes/count,1)
   local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
 
-  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes)
+  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
   assert(eachInputBytes>=1 and eachInputBytes<=4)
   assert(eachInputBytes<=inputBytes)
   assert(eachInputBytes*count==inputBytes)
@@ -2301,7 +2302,9 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   local eachOutputBytes, outputAddrBits
   if outputBytes~=nil then
     assert(count <= outputBytes) -- must read at least 1 byte per ram
-    eachOutputBytes = sel(count==sizelimit,sizeInBytes/(count*2048), math.min(outputBytes,4))
+    eachOutputBytes = math.max(outputBytes/count,1)
+--    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
+--    eachOutputBytes = math.max(eachOutputBytes,1)
     print("eachOutputBytes",eachOutputBytes)
     assert(eachOutputBytes>=1 and eachOutputBytes<=4)
     assert(eachOutputBytes<=outputBytes)

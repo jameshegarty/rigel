@@ -6,8 +6,9 @@ local function FIFOp(fifos,statements,A,inp)
   local id = #fifos
   
   -- prevent underutilization
-  --local sz = 2048/(math.min(4,A:verilogBits()/8))
-  local sz = 2048
+  local sz = 2048/(math.min(4,A:verilogBits()/8))
+  sz = math.max(sz,1024)
+--  local sz = 2048
   print("FIFO SZ",sz)
   table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id), d.fifo(A,sz)) )
   table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
@@ -136,8 +137,8 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth)
   local convT = internalT
   if doDownsample then
     out = darkroom.apply("downsampleSeq_Y", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleYSeq( st_type, W, H, internalT, scaleY ))), out)
-    out = P.FIFO(fifos,statements,types.array2d(st_type,convT),out)
     out = darkroom.apply("downsampleSeq_X", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleXSeq( st_type, W, H, internalT, scaleX ))), out)
+    out = P.FIFO(fifos,statements,types.array2d(st_type,convT/2),out)
 
     convT = internalT/4
     assert(convT==math.floor(convT))
