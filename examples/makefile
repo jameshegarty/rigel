@@ -18,7 +18,7 @@ TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
@@ -31,7 +31,7 @@ SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
@@ -75,13 +75,18 @@ clean:
 
 out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t 
 	terra $<
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.axi.v out/build_$*
+	cp out/$*.sim.v out/build_$*
+	cp out/$*.cycles.txt out/build_$*
 
 #	$(CD) xst -ifn ../../extras/helloaxi/system.xst
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
 	# we don't actually use this - just keep a copy for reference
-	cp out/$*.axi.v out/build_$*/$*.axi.v
+	#	cp out/$*.axi.v out/build_$*/$*.axi.v
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
@@ -97,7 +102,7 @@ out/%.axi.bit: out/%.axi.v
 out/%.axi100.bit: out/%.axi.v
 	mkdir -p out/build100_$*
 	# we don't actually use this - just keep a copy for reference
-	cp out/$*.axi.v out/build100_$*/$*.axi.v
+	#cp out/$*.axi.v out/build100_$*/$*.axi.v
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build100_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z100-2ffg900 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
 	cd out/build100_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints_100.ucf -uc ../../../extras/helloaxi/system_100.ucf -p xc7z100-2ffg900  system.ngc system.ngd > OUT_ngd.txt
@@ -129,6 +134,9 @@ out/%.axi.raw: out/%.axi.bit
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
 	terra ../extras/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+	# keep copy for future reference
+	cp out/$*.axi.cycles.txt out/build_$*
+
 
 ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
@@ -146,6 +154,8 @@ out/%.axi100.raw: out/%.axi100.bit.bin
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT)"
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
+	# keep copy for future reference
+	cp out/$*.axi100.cycles.txt out/build_$*
 
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
 out/%.sim.raw: out/%.sim.v $(DUPS)
@@ -157,22 +167,39 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	mv out/sim_$*/S00 out/$*.sim.raw
 	mv out/sim_$*/S01 out/$*.sim.1.raw
 	terra ../extras/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
-#	mv out/sim_$*/$*.sim.raw out
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.sim.cycles.txt out/build_$*
 
 out/%.sim.bmp: out/%.sim.raw
 	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.sim.bmp out/build_$*
 
 out/%.sim.1.bmp: out/%.sim.raw
 	terra ../extras/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.sim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw
 	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.axi.bmp out/build_$*
 
 out/%.axi100.bmp: out/%.axi100.raw
 	terra ../extras/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.axi100.bmp out/build_$*
 
 out/%.bmp: out/%.raw
 	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.bmp out/build_$*
 
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff

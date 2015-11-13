@@ -6,10 +6,10 @@ local harness = require "harness"
 local C = require "examplescommon"
 
 --T = 8 -- throughput
-function MAKE(T)
+function MAKE(T,ConvWidth)
 --ConvRadius = 1
-local ConvRadius = 2
-local ConvWidth = ConvRadius*2
+local ConvRadius = ConvWidth/2
+--local ConvWidth = ConvRadius*2
 local ConvArea = math.pow( ConvWidth, 2 )
 
 local inputW = 128
@@ -33,7 +33,7 @@ local outputH = inputH
 local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
 -------------
 -------------
-local convKernel = C.convolveTaps( types.uint(8), ConvWidth)
+local convKernel = C.convolveTaps( types.uint(8), ConvWidth, sel(ConvWidth==4,7,11))
 local kernel = C.stencilKernelTaps( types.uint(8), T, TAP_TYPE, internalW, internalH, ConvWidth, ConvWidth, convKernel)
 -------------
 local BASE_TYPE = types.array2d( types.uint(8), T )
@@ -54,9 +54,13 @@ local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
 local hsfn = d.lambda("hsfn", hsfninp_raw, out)
 
-harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, "frame_128.raw", TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
+harness.axi( "convpadcrop_wide_handshake_"..ConvWidth.."_"..T, hsfn, "frame_128.raw", TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
 --harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, types.array2d( types.uint(8), 4 ), outputW, outputH )
 end
 
-local t = string.sub(arg[0],string.find(arg[0],"%d+"))
-MAKE(tonumber(t))
+local first = string.find(arg[0],"%d+")
+local convwidth = string.sub(arg[0],first,first)
+local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
+print("ConvWidth",convwidth,"T",t)
+
+MAKE(tonumber(t),tonumber(convwidth))
