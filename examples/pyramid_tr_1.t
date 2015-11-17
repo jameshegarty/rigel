@@ -6,7 +6,7 @@ local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
 
-T = 8 -- internal throughput
+T = 4 -- throughput
 A = types.uint(8)
 
 local ConvWidth = 8
@@ -17,19 +17,21 @@ local inputH = 64
 local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
 TARGET_DEPTH = tonumber(TARGET_DEPTH)
 
+local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
+local DATA_TYPE = types.array2d(A,8)
+local HST = types.tuple{DATA_TYPE,TAP_TYPE}
 
-
---local convolvefn = C.convolveConstant( types.uint(8), ConvWidth, rep(1,ConvWidth*ConvWidth), 6 )
-
-local inp = d.input( d.Handshake(types.array2d(A,T)) )
-local out
-if T==8 then
-  out = inp
-else
-  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,T)), inp)
+local inp = d.input( d.Handshake(HST) )
+--local out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,T)), inp)
+local out = d.apply("idx0",d.makeHandshake(d.index(HST,0)),inp)
+if T<8 then
+  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,T)), out)
 end
 
+local tapinp =  d.apply("idx1",d.makeHandshake(d.index(HST,1)),inp)
+
 curT = T
+--vecT = T
 curW = inputW
 curH = inputH
 local L = {}
@@ -44,46 +46,69 @@ local statements = {}
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus
 
 for depth=1,TARGET_DEPTH do
-  print("DODEPTH",depth)
-  local PI = P.pyramidIter(depth,depth>1,T,curW,curH,ConvWidth)
+  print("DODEPTH",depth,"T",curT)
+  local PI
+
+  if curT>1 then
+    PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth)
+    local piinp = d.apply("CPI"..depth, darkroom.packTuple({types.array2d(A,curT),TAP_TYPE}), d.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
+    out = d.apply("p"..depth, PI, piinp)
+  else
+    PI = P.pyramidIterTR(depth,curT,curW,curH,ConvWidth)
+    out = d.apply("p"..depth, PI, out)
+  end
+
   print("PI",PI.inputType,PI.outputType)
   print(PI.sdfInput[1][1],PI.sdfInput[1][2])
   print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
-  out = d.apply("p"..depth, PI, out)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
   print("thisW",thisW,thisW/outputH)
   outputW = outputW + thisW/outputH
 
   if depth>1 then
-    curT = T/2 -- we do changeRate so that this is always true for this implementation
+    curT = curT/4
+--    vecT = vecT/2
     curW = curW/2
     curH=curH/2
   end
 
-  local THIS_TYPE = types.array2d(types.uint(8),curT)
+  local THIS_TYPE = types.array2d( types.uint(8), math.max(curT,1) )
   local TOP_TYPE = types.array2d(A,T)
   if depth==TARGET_DEPTH then
-    if curT~=T then
+    if curT<T then
       -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-      out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,T)), out)
+      out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,math.max(curT,1),T)), out)
     end
 
     -- last level
     out = P.FIFO(fifos,statements,TOP_TYPE, out)
+
     L[depth] = out
+
   else
     print("curT",curT)
+    out= d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
+    out0 = P.FIFO(fifos,statements,THIS_TYPE,d.selectStream("i0"..depth,out,0))
 
     if curT<T then
-      out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,T)), out )
+      out1 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,math.max(curT,1),T)), d.selectStream("i1"..depth,out,1))
+    else
+      out1 = d.selectStream("i1"..depth,out,1)
     end
 
-    out = d.apply("out_broadcast"..depth, d.broadcastStream(TOP_TYPE,2), out)
-    out0 = P.FIFO(fifos,statements,TOP_TYPE, d.selectStream("i0"..depth,out,0) )
-    out1 = P.FIFO(fifos,statements,TOP_TYPE, d.selectStream("i1"..depth,out,1) )
+    -- due to the downsample in Y, we actually have to halve the vector size by another 2x
+--    if curT>=1 and curT<8 then
+--      out0 = d.apply("CRb"..depth,d.liftHandshake(d.changeRate(A,1,vecT,curT)), out0)
+-- ******************
+--      vecT = curT 
+--    end
+
+
+    out1 = P.FIFO(fifos,statements,TOP_TYPE, out1)
 
     L[depth] = out1
+
     out = out0
   end
 
@@ -108,6 +133,8 @@ if TARGET_DEPTH>1 then
   out = d.apply("flatten", d.flattenStreams(RW_TYPE, SDF), out )
 end
 
+--out = d.apply("CRbot",d.liftHandshake(d.changeRate(A,1,T,8)), out)
+
 if T~=8 then
   out = d.apply("CRend",d.liftHandshake(d.changeRate(A,1,T,8)), out)
 end
@@ -118,4 +145,5 @@ hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
 
 local scale = math.pow(2,TARGET_DEPTH-1)
 
-harness.axi( "pyramid_"..tostring(TARGET_DEPTH), hsfn, "frame_128.raw", nil, nil, RW_TYPE, T, inputW, inputH, RW_TYPE, T,outputW, outputH )
+local IO_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
+harness.axi( "pyramid_tr_"..tostring(TARGET_DEPTH), hsfn, "frame_128.raw", TAP_TYPE, P.G, IO_TYPE, 8, inputW, inputH, IO_TYPE, 8, outputW, outputH )

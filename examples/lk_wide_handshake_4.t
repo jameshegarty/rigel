@@ -18,8 +18,8 @@ else
   end
 end
 
-local W = 128
-local H = 128
+local W = 64
+local H = 64
 --T = 8
 
 -- lk_full is 584x388, 2 channel
@@ -42,7 +42,7 @@ bits = {
 }
 
 if f.FLOAT then
-  harness.terraOnly( "lk_wide_handshake_4_float", LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.terraOnly( "lk_wide_handshake_4_float", LKTop(W,H,window,bits), "trivial_64.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 else
-  harness.axi( "lk_wide_handshake_4"..sel(f.DEEP_MULTIPLY,"_axi",""), LKTop(W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.axi( "lk_wide_handshake_4"..sel(f.DEEP_MULTIPLY,"_axi",""), LKTop(W,H,window,bits), "trivial_64.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 end

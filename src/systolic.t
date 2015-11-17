@@ -164,6 +164,7 @@ function valueToVerilogLL(value,signed,bits)
     end
   else
     assert(value>=0)
+    err(value < math.pow(2,bits),"valueToVerilog: value out of range for type, "..tostring(value)..", bits:"..tostring(bits)) -- probably a mistake
     return bits.."'d"..math.abs(value)
   end
 end
@@ -443,6 +444,9 @@ function systolic.constant( v, ty )
     if type(v)=="number" then
       err( v==math.floor(v), "systolic constant must be integer")
       err( ty:isInt() or v>=0, "systolic uint const must be positive")
+      if ty:isUint() or ty:isBits() then
+        err( v<math.pow(2,ty:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(ty))
+      end
     end
   end
 
@@ -1287,10 +1291,11 @@ function systolicASTFunctions:toVerilog( module )
           end
           expr = "{"..expr
         elseif n.type:isArray() and n.inputs[1].type:isArray() and n.type:baseType()==n.inputs[1].type:baseType() then
-          assert(false)
-          assert(n.type:channels() == n.expr.type:channels())
-          expr = inputs.expr[c]
-          cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
+--          assert(false)
+          assert(n.type:channels() == n.inputs[1].type:channels())
+          -- array reshaping is noop
+          expr = args[1]
+          --cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
         elseif n.inputs[1].type:isTuple() and #n.inputs[1].type.list==1 and n.inputs[1].type.list[1]==n.type then
           -- {A} to A.  Noop
           expr = args[1]
@@ -2111,12 +2116,13 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            readFirst = true}
 
     if VCS.read~=nil then
+
       conf.B={chunk=self.outputBits/8,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_READ_OUTPUT",
            ADDR = VCS.read[1],
            CLK = "CLK",
-           EN=CEvar,
+           EN=VCS.read[3],
            WE = "1'd0",
            readFirst = true}
 
@@ -2222,11 +2228,11 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=S.CE("CE")}
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=S.CE("CE_write")}
     t.functions.writeAndReturnOriginal.isPure = function() return false end
 
     if outputBits~=nil then
-      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)}}
+      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)},CE=S.CE("CE_read")}
       t.functions.read.isPure = function() return true end
     end
   else
@@ -2264,12 +2270,51 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
     local readAddrs = sizeInBytes/outputBytes
     err( isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
   end
+  
+  -- the idea here is that we want to pack the data into the smallest # of brams possible.
+  -- we are limited by (a) the number of addressable items, and (b) the bw of each bram.
+  -- if we have more than 2048 addressable items, we can't pack into brams (would need additional multiplexers)
+  local minbw = inputBytes
+  if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
+  local maxbw = inputBytes
+  if outputBytes~=nil then maxbw = math.min(inputBytes, outputBytes) end
+  local addressable = sizeInBytes/minbw
 
-  local bwcount = math.ceil(inputBytes/4)
-  local szcount = math.ceil(sizeInBytes/(2*1024))
-  local count = math.max(bwcount,szcount)
+  err(addressable<=2048,"Error, bramSDP arguments have more addressable items than are supported by 1 bram (size:"..tostring(sizeInBytes)..", inputBytes:"..tostring(inputBytes)..")")
 
-  err(szcount==1, "NYI - size ("..tostring(sizeInBytes)..") would result in multiple rams")
+  -- find the # brams if we're bw limited, or size limited
+  local bwlimit = maxbw/4
+  local sizelimit = (addressable*maxbw)/2048
+
+  local count = math.max(bwlimit, sizelimit, 1)
+
+  assert(count <= inputBytes) -- must read at least 1 byte per ram
+
+--  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
+  local eachInputBytes = math.max(inputBytes/count,1)
+  local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
+
+  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
+  assert(eachInputBytes>=1 and eachInputBytes<=4)
+  assert(eachInputBytes<=inputBytes)
+  assert(eachInputBytes*count==inputBytes)
+
+  local eachOutputBytes, outputAddrBits
+  if outputBytes~=nil then
+    assert(count <= outputBytes) -- must read at least 1 byte per ram
+    eachOutputBytes = math.max(outputBytes/count,1)
+--    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
+--    eachOutputBytes = math.max(eachOutputBytes,1)
+    print("eachOutputBytes",eachOutputBytes)
+    assert(eachOutputBytes>=1 and eachOutputBytes<=4)
+    assert(eachOutputBytes<=outputBytes)
+    assert(eachOutputBytes*count==outputBytes)
+    outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2)
+  end
+
+  if sizeInBytes < count*2048 then
+    print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
+  end
 
   if init~=nil then
     err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
@@ -2279,37 +2324,36 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   end
 
   if writeAndReturnOriginal then
-    --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    local addrbits = math.log(sizeInBytes/inputBytes)/math.log(2)
-
     local mod = systolic.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init) )
-    local sinp = systolic.parameter("inp",types.tuple{types.uint(addrbits),types.bits(inputBytes*8)})
-    local sinpRead = systolic.parameter("inpRead",types.uint(addrbits))
+    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
+    local sinpRead
+    if outputBytes~=nil then sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits)) end
     local inpAddr = systolic.index(sinp,0)
     local inpData = systolic.index(sinp,1)
 
-    local eachSizeBytes = math.min( 4, inputBytes )
-
-    local eachAddrbits = math.log((2048)/eachSizeBytes)/math.log(2)
-    
-    local eachSizeOutputBytes
-    if outputBytes~=nil then eachSizeOutputBytes = math.min( 4, outputBytes ) end
-
     local out, outRead = {}, {}
-    for bw=0,bwcount-1 do
-      local eachSizeOutputBits
-      if outputBytes~=nil then eachSizeOutputBits = eachSizeOutputBytes*8 end
+    for ram=0,count-1 do
+      local eachOutputBits
+      if outputBytes~=nil then eachOutputBits = eachOutputBytes*8 end
 
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachSizeBytes*8, eachSizeOutputBits, CE, init ):instantiate("bram_"..bw) )
-      local inp = systolic.bitSlice( inpData, bw*eachSizeBytes*8, (bw+1)*eachSizeBytes*8-1 )
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachInputBytes*8, eachOutputBits, CE, init ):instantiate("bram_"..ram) )
+      local inp = systolic.bitSlice( inpData, ram*eachInputBytes*8, (ram+1)*eachInputBytes*8-1 )
 
-      table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(eachAddrbits)),inp} ) )
-      if outputBytes~=nil then table.insert( outRead, m:read( systolic.cast(inpAddr,types.uint(eachAddrbits)) ) ) end
+      local internalInputAddrBits = math.log(2048/eachInputBytes)/math.log(2)
+      table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(internalInputAddrBits)),inp} ) )
+
+      if outputBytes~=nil then 
+        local internalOutputAddrBits = math.log(2048/eachOutputBytes)/math.log(2)
+        table.insert( outRead, m:read( systolic.cast(sinpRead,types.uint(internalOutputAddrBits)) ) ) 
+      end
     end
 
     local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
     mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
-    if outputBytes~=nil then mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil) ) end
+
+    if outputBytes~=nil then 
+      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, sel(CE,S.CE("read_CE"),nil) ) ) 
+    end
 
     return mod
   else

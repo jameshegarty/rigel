@@ -39,7 +39,7 @@ end)
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
   local sinp = S.parameter( "inp", types.tuple {A,B} )
-  local partial = d.lift( "partial_mult", types.tuple {A,B}, outputType, 1,
+  local partial = d.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)*[outputType:toTerraType()](a._1)
                   end, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
@@ -48,12 +48,17 @@ C.multiply = memoize(function(A,B,outputType)
 ------------
 -- return A+B as a darkroom FN. A,B are types
 -- returns something of type outputType
-C.sum = memoize(function(A,B,outputType)
+C.sum = memoize(function(A,B,outputType,async)
+                  if async==nil then async=false end
+
   local sinp = S.parameter( "inp", types.tuple {A,B} )
-  local partial = d.lift( "sum", types.tuple {A,B}, outputType, 1,
+  local delay = 1
+  local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
+  if async then delay=0; sout = sout:disablePipelining() end
+  local partial = d.lift( "sum_async"..tostring(async), types.tuple {A,B}, outputType, delay,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
-                  end, sinp, S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType) )
+                  end, sinp, sout )
   return partial
                 end)
 
@@ -142,7 +147,9 @@ C.shiftAndCastSaturate = memoize(function(from, to, shift)
 -------------
 -- returns a function of type {A[ConvWidth,ConvWidth], A_const[ConvWidth,ConvWidth]}
 -- that convolves the two arrays
-function C.convolveTaps(A,ConvWidth)
+function C.convolveTaps( A, ConvWidth, shift )
+  if shift==nil then shift=7 end
+
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
   local TAP_TYPE_CONST = TAP_TYPE:makeConst()
 
@@ -152,9 +159,9 @@ function C.convolveTaps(A,ConvWidth)
   local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
   local conv = d.apply( "partial", d.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed )
   local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
-  local conv = d.apply( "touint8", C.shiftAndCast(types.uint(32),A,7), conv )
+  local conv = d.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
 
-  local convolve = d.lambda( "convolve", inp, conv )
+  local convolve = d.lambda( "convolveTaps", inp, conv )
   return convolve
 end
 
@@ -172,7 +179,36 @@ function C.convolveConstant( A, ConvWidth, tab, shift, X )
   local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
   local conv = d.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
 
-  local convolve = d.lambda( "convolve", inp, conv )
+  local convolve = d.lambda( "convolveConstant", inp, conv )
+  return convolve
+end
+
+------------
+-- returns a function from A[ConvWidth*T,ConvWidth]->A, with throughput T
+function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
+  assert(type(shift)=="number")
+  assert(type(T)=="number")
+  assert(T<=1)
+  assert(type(shift)=="number")
+  assert(X==nil)
+
+  local inp = d.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
+  local r = d.apply( "convKernel", d.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
+
+  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), d.tuple("ptup", {inp,r}) )
+  local conv = d.apply( "partial", d.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
+  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
+
+  local convseq = d.lambda( "convseq_T"..tostring(1/T), inp, conv )
+------------------
+  inp = d.input( darkroom.V(types.array2d( A, ConvWidth*T, ConvHeight )) )
+  conv = d.apply( "convseqapply", d.liftDecimate(d.liftBasic(convseq)), inp)
+  conv = d.apply( "sumseq", d.RPassthrough(d.liftDecimate(d.reduceSeq( C.sum(types.uint(32),types.uint(32),types.uint(32),true), T ))), conv )
+  conv = d.apply( "touint8", d.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
+  conv = d.apply( "arrayop", d.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
+  --conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
+  local convolve = d.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
+
   return convolve
 end
 

@@ -81,7 +81,7 @@ types._array={}
 function types.array2d( _type, w, h )
   err( types.isType(_type), "first index to array2d must be type" )
   assert( type(w)=="number" )
-  assert( type(h)=="number" or h==nil)
+  err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..type(h))
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
   err(w==math.floor(w), "non integer array width "..tostring(w))
   assert(h==math.floor(h))

@@ -41,10 +41,14 @@ bits = {
   solve={0,0,0}
 }
 
-internalT = 1/6
+local _,first = string.find(arg[0],"%d+")
+local t = string.sub(arg[0],string.find(arg[0],"%d+",first+1))
+print("T=",t)
+
+internalT = 1/t
 
 if f.FLOAT then
-  harness.terraOnly( "lk_tr_handshake_6_6_float", LKTop(internalT,W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.terraOnly( "lk_tr_handshake_6_"..tostring(t).."_float", LKTop(internalT,W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 else
-  harness.axi( "lk_tr_handshake_6_6"..sel(f.DEEP_MULTIPLY,"_axi",""), LKTop(internalT,W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
+  harness.axi( "lk_tr_handshake_6_"..tostring(t)..sel(f.DEEP_MULTIPLY,"_axi",""), LKTop(internalT,W,H,window,bits), "trivial_128.raw", nil, nil, RW_TYPE, T,W,H, RW_TYPE,T,W,H)
 end

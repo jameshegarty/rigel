@@ -149,6 +149,9 @@ int main(int argc, char *argv[]) {
     lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
   }
 
+  // extra axi burst of metadata
+  lenOut = lenOut + 128;
+
   // we pad out the length to 128 bytes as required, but just leave it filled with garbage.
   // pad the smallest of the input/output, and upscale the padded size
   //  if(lenOutRaw<=lenInRaw){ // a downscale
