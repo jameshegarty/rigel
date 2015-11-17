@@ -42,7 +42,7 @@ void print_debug_regs(volatile Conf* conf) {
 }
 
 // cam_data should contain the cam addr in the lowest byte
-uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
+uint32_t read_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
 
     //cam data should only contain 8 bits
     if (cam_data & 0xFFFFFF00) {
@@ -50,19 +50,19 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
         exit(1);
     }
     cam_data = (cam_data<<8); //bit 16 needs to be 0
-    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),0);
     //printf("cam_resp_cnt=%d\n",cam_resp_cnt);
-    write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
+    write_mmio(conf,MMIO_CAM_CMD(camid), cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
-    //poll_mmio(conf, MMIO_CAM_RESP_CNT, cam_resp_cnt+1);
+    //poll_mmio(conf, MMIO_CAM_RESP_CNT(camid), cam_resp_cnt+1);
     uint32_t cnt = 0;
     do {
-        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
+        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),0);
     } while (cnt != cam_resp_cnt+1);
     read_mmio(conf, MMIO_DEBUG(0),0);
     
-    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP,0);
-    printf("RD: Addr 0x%02x, data 0x%02x\n",cam_data>>8,(cam_resp)&0x000000FF);
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP(camid),0);
+    printf("RD CAM%d: Addr 0x%02x, data 0x%02x\n",camid, cam_data>>8,(cam_resp)&0x000000FF);
     //Error checking
     // first 16:8 bits should be the same as cam_data;
     if ((cam_data & 0x0001FF00)!=(cam_resp & 0x0001FF00)) {
@@ -78,23 +78,25 @@ uint32_t read_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     return (cam_resp & 0x000000FF);
 }
 
-void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
+void write_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
     //cam data should only contain 16 bits
+    printf("WRITING CAM%d REG %x\n",camid,cam_data);
+    fflush(stdout);
     if (cam_data & 0xFFFF0000) {
         printf("ERROR:Bad cam reg data! %x should be 1byte addr, 1byte data\n",cam_data);
         exit(1);
     }
     cam_data |= 0x10000; //bit 16 is the write cmd
-    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,0);
-    write_mmio(conf,MMIO_CAM_CMD, cam_data,0);
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),0);
+    write_mmio(conf,MMIO_CAM_CMD(camid), cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
     uint32_t cnt = 0;
     do {
-        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT,1);
+        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),1);
     } while (cnt != cam_resp_cnt+1);
     read_mmio(conf, MMIO_DEBUG(0),0);
-    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP,0);
-    printf("WR: Addr 0x%02x, data 0x%02x\n",(cam_data>>8)&0x000000FF,(cam_resp)&0x000000FF);
+    uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP(camid),0);
+    printf("WR cam%d: Addr 0x%02x, data 0x%02x\n",camid, (cam_data>>8)&0x000000FF,(cam_resp)&0x000000FF);
     //Error checking
     // first 16 bits should be the same as cam_data;
     if ((cam_data & 0x0001FFFF)!=(cam_resp & 0x0001FFFF)) {
@@ -108,11 +110,11 @@ void write_cam_reg(volatile Conf* conf, uint32_t cam_data) {
     }
     fflush(stdout);
 }
-void write_cam_safe(volatile Conf* conf, uint32_t cam_data) {
-    write_cam_reg(conf,cam_data);
+void write_cam_safe(volatile Conf* conf, int camid, uint32_t cam_data) {
+    write_cam_reg(conf, camid,cam_data);
     uint32_t cam_a = 0x000000FF & (cam_data>>8);
     uint32_t cam_d = 0x000000FF & (cam_data);
-    uint32_t rd = read_cam_reg(conf,cam_a);
+    uint32_t rd = read_cam_reg(conf, camid,cam_a);
     if(cam_d != rd) {
         printf("ERROR:\nExpt: %08x\nRead:%08x\n",cam_data,rd);
         exit(1);

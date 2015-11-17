@@ -22,29 +22,207 @@ C-num   C-name  B-num   bad-name    UCF
 20      (None)  C21     B34_L2_P    J16
 
 
-                J1
-Pap     VGA     B-num   bad-name    UCF
-B0      VS      A13     B35-L17_N   D21
-B1      HS      A12     B35-L17_P   E21
-B2      BLUE0   A11     B35-L13_N   B20
-B3      BLUE1   A10     B35-L13_P   B19
-B4      GREEN0  A9      B35-L14_N   C20
-B5      GREEN1  A8      B35-L14_P   D20
-B6      GREEN2  A7      B35-L12_N   C19
-B7      RED0    A6      B35-L12_P   D18
-B8      RED1    A5      B35-L19_N   H20
-B9      RED2    A4      B35-L19_P   H19
+
+
 
                 J1
-Pap     Name    B-num   bad-name    UCF
-C8      LED0    B10     B35_L11_N   C18
-C9      LED1    B9      B35_L11_P   C17
-C10     LED2    B8      B35_L23_N   F22
-C11     LED3    B7      B35_L23_P   F21
-C12     LED4    B6      B35_L5_N    E18
-C13     LED5    B5      B35_L5_P    F18
-C14     LED6    B4      B35_L6_N    F17
-C15     LED7    B3      B35_L6_P    G17
+Pap     VGA     B-num   bad-name    UCF
+B0      VS      J1_A13     B35-L17_N   D21
+B1      HS      J1_A12     B35-L17_P   E21
+B2      BLUE0   J1_A11     B35-L13_N   B20
+B3      BLUE1   J1_A10     B35-L13_P   B19
+B4      GREEN0  J1_A9      B35-L14_N   C20
+B5      GREEN1  J1_A8      B35-L14_P   D20
+B6      GREEN2  J1_A7      B35-L12_N   C19
+B7      RED0    J1_A6      B35-L12_P   D18
+B8      RED1    J1_A5      B35-L19_N   H20
+B9      RED2    J1_A4      B35-L19_P   H19
+
+                J1
+Pap     Name    B-num       bad-name    UCF
+C8      LED0    J1_B10     B35_L11_N   C18
+C9      LED1    J1_B9      B35_L11_P   C17
+C10     LED2    J1_B8      B35_L23_N   F22
+C11     LED3    J1_B7      B35_L23_P   F21
+C12     LED4    J1_B6      B35_L5_N    E18
+C13     LED5    J1_B5      B35_L5_P    F18
+C14     LED6    J1_B4      B35_L6_N    F17
+C15     LED7    J1_B3      B35_L6_P    G17
+
+PAP         Bad name    UCF
+J1_A4       B35_L19_P   H19
+J1_A5       B35_L19_N   H20
+J1_A6       B35_L12_P   D18
+J1_A7       B35_L12_N   C19
+J1_A8       B35_L14_P   D20
+J1_A9       B35_L14_N   C20
+J1_A10      B35_L13_P   B19
+J1_A11      B35_L13_N   B20
+J1_A12      B35_L17_P   E21
+J1_A13      B35_L17_N   D21
+J1_A14      B35_L7_P    C15
+J1_A15      B35_L7_N    B15
+J1_A16      B35_L9_P    A16
+J1_A17      B35_L9_N    A17
+J1_A18      B35_L16_P   D22
+J1_A19      B35_L16_N   C22
+J1_A20      B34_L12_N   L19
+J1_A21      B34_L12_P   L18
+J1_A22      B34_L5_N    N18
+J1_A23      B34_L5_P    N17
+J1_A24      B34_L18_P   P20
+J1_A25      B34_L18_N   P21
+J1_A26      B34_L10_P   L21
+J1_A27      B34_L10_N   L22
+J1_A28      B34_L21_P   T16
+J1_A29      B34_L21_N   T17
+J1_A30      B34_L17_P   R20
+J1_A31      B34_L17_N   R21
+
+
+PAP         Bad name    UCF
+J1_B3       B35_L6_P    G17
+J1_B4       B35_L6_N    F17
+J1_B5       B35_L5_P    F18
+J1_B6       B35_L5_N    E18
+J1_B7       B35_L23_P   F21
+J1_B8       B35_L23_N   F22
+J1_B9       B35_L11_P   C17
+J1_B10      B35_L11_N   C18
+J1_B11      B35_L8_P    B16
+J1_B12      B35_L8_N    B17
+J1_B13      B35_L22_P   G20
+J1_B14      B35_L22_N   G21
+J1_B15      B35_L18_P   B21
+J1_B16      B35_L18_N   B22
+J1_B17      B35_L10_P   A18
+J1_B18      B35_L10_N   A19
+J1_B19      B34_L4_N    M17
+J1_B20      B34_L4_P    L17
+J1_B21      B34_L7_N    K18
+J1_B22      B34_L7_P    J18
+J1_B23      B34_L1_P    J15
+J1_B24      B34_L1_N    K15
+J1_B25      B34_L20_P   P17
+J1_B26      B34_L20_N   P18
+J1_B27      B34_L13_P   M19
+J1_B28      B34_L13_N   M20
+J1_B29      B34_L15_P   M21
+J1_B30      B34_L15_N   M22
+
+
+PAP         Bad name    UCF
+J1_C2       B35_L1_P    F16
+J1_C3       B35_L1_N    E16
+J1_C4       B35_L3_P    E15
+J1_C5       B35_L3_N    D15
+J1_C6       B35_L20_P   G19
+J1_C7       B35_L20_N   F19
+J1_C8       B35_L4_P    G15
+J1_C9       B35_L4_N    G16
+J1_C10      B35_L21_P   E19
+J1_C11      B35_L21_N   E20
+J1_C12      B35_L2_P    D16
+J1_C13      B35_L2_N    D17
+J1_C14      B35_L15_P   A21
+J1_C15      B35_L15_N   A22
+J1_C16      B35_L24_P   H22
+J1_C17      B35_L24_N   G22
+J1_C18      B34_L8_N    J22
+J1_C19      B34_L8_P    J21
+J1_C20      B34_L2_N    J17
+J1_C21      B34_L2_P    J16
+J1_C22      B34_L22_P   R19
+J1_C23      B34_L22_N   T19
+J1_C24      B34_L9_P    J20
+J1_C25      B34_L9_N    K21
+J1_C26      B34_L23_P   R18
+J1_C27      B34_L23_N   T18
+J1_C28      B34_L14_P   N19
+J1_C29      B34_L14_N   N20
+
+J2_A4       B13_L18_N   AA4
+J2_A5       B13_L18_P   Y4
+J2_A6       B13_L19_N   T6
+J2_A7       B13_L19_P   R6
+J2_A8       B13_L23_N   W7
+J2_A9       B13_L23_P   V7
+J2_A10      B13_L10_N   Y10
+J2_A11      B13_L10_P   Y11
+J2_A12      B13_L4_N    W12
+J2_A13      B13_L4_P    V12
+J2_A14      B13_L14_N   AA6
+J2_A15      B13_L14_P   AA7
+J2_A16      B13_L1_N    V9
+J2_A17      B13_L1_P    V10
+J2_A18      B13_L5_N    U11
+J2_A19      B13_L5_P    U12
+J2_A20      B33_L13_N   W18
+J2_A21      B33_L13_P   W17
+J2_A22      B33_L11_N   AA19
+J2_A23      B33_L11_P   Y19
+J2_A24      B33_L7_N    AB22
+J2_A25      B33_L7_P    AA22
+
+
+J2_B3       B13_L21_N   V4
+J2_B4       B13_L21_P   V5
+J2_B5       B13_L22_N   U5
+J2_B6       B13_L22_P   U6
+J2_B7       B13_L24_N   W5
+J2_B8       B13_L24_P   W6
+J2_B9       B13_L2_N    W8
+J2_B10      B13_L2_P    V8
+J2_B11      B13_L3_N    W10
+J2_B12      B13_L3_P    W11
+J2_B13      B13_L13_N   Y5
+J2_B14      B13_L13_P   Y6
+J2_B15      B13_L12_N   Y8
+J2_B16      B13_L12_P   Y9
+J2_B17      B13_L6_N    U9
+J2_B18      B13_L6_P    U10
+J2_B19      B33_L14_N   Y16
+J2_B20      B33_L14_P   W16
+J2_B21      B33_L4_N    W21
+J2_B22      B33_L4_P    W20
+J2_B23      B33_L8_N    AB21
+J2_B24      B33_L8_P    AA21
+
+J2_C2       B13_L15_N   AB1
+J2_C3       B13_L15_P   AB2
+J2_C4       B13_L16_N   AB4
+J2_C5       B13_L16_P   AB5
+J2_C6       B13_L17_N   AB6
+J2_C7       B13_L17_P   AB7
+J2_C8       B13_L20_N   U4
+J2_C9       B13_L20_P   T4
+J2_C10      B13_L9_N    AB9
+J2_C11      B13_L9_P    AB10
+J2_C12      B13_L11_N   AA8
+J2_C13      B13_L11_P   AA9
+J2_C14      B13_L8_N    AB11
+J2_C15      B13_L8_P    AA11
+J2_C16      B13_L7_N    AB12
+J2_C17      B13_L7_P    AA12
+J2_C18      B33_L18_N   AB16
+J2_C19      B33_L18_P   AA16
+J2_C20      B33_L17_N   AB17
+J2_C21      B33_L17_P   AA17
+J2_C22      B33_L12_N   AA18
+J2_C23      B33_L12_P   Y18
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -52,7 +230,7 @@ C15     LED7    B3      B35_L6_P    G17
 
 LEDS/Buttons
 
-Color   PCB     SCN     
+Color   PCB     SCN
 Red     D1      ULED1   ????
 Red     D3      FLED1
 Green   D2      ULED2
