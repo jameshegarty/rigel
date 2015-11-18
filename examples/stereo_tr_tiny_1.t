@@ -42,4 +42,8 @@ local hsfn = makeStereo(filename,1/tonumber(T),W,H,A,SearchWindow,SADWidth,Offse
 local ATYPE = types.array2d(A,2)
 local ITYPE = types.array2d(ATYPE,4)
 local OUT_TYPE = types.array2d(types.uint(8),8)
-harness.axi( "stereo_tr_"..filename.."_"..T, hsfn,"stereo_"..filename..".raw",nil, nil,  ITYPE,  4, W, H, OUT_TYPE, 8, W, H )
+
+local outfile = "stereo_tr_"..filename.."_"..T
+harness.axi( outfile, hsfn,"stereo_"..filename..".raw",nil, nil,  ITYPE,  4, W, H, OUT_TYPE, 8, W, H )
+io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()

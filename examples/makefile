@@ -18,7 +18,7 @@ TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
 # too slow
-SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_float.t lk_wide_handshake_6.t lk_wide_handshake_6_float.t lk_wide_handshake_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t,$(SRCS))
+SIMSRCS = $(filter-out stereo_wide_handshake_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_axi.t lk_wide_handshake_6_4_float.t lk_wide_handshake_6_1_axi.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_4_4_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t campipe_512.t campipe_ov7660.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t lk_wide_handshake_12_1_float.t,$(SRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
@@ -31,23 +31,29 @@ SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_float.t lk_wide_handshake_6_float.t lk_wide_handshake_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
+
+AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t lk_wide_handshake_4_4_float.t  lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
 
-AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(AXISRCS))
-AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(AXISRCS))
+AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(AXI100SRCS))
+AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(AXI100SRCS))
 
 AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
 AXI += $(AXIBITS)
 
-AXI100 = $(patsubst %.t,out/%.axi100.correct.txt,$(AXISRCS))
-AXI100 += $(patsubst %.t,out/%.axi100.raw,$(AXISRCS))
-AXI100 += $(patsubst %.t,out/%.axi100.bmp,$(AXISRCS))
+AXI100 = $(patsubst %.t,out/%.axi100.correct.txt,$(AXI100SRCS))
+AXI100 += $(patsubst %.t,out/%.axi100.raw,$(AXI100SRCS))
+AXI100 += $(patsubst %.t,out/%.axi100.bmp,$(AXI100SRCS))
 AXI100 += $(AXIBITS100)
+
+STATS = $(patsubst %.t,out/%.stats.txt,$(AXISRCS))
+
+STATS100 = $(patsubst %.t,out/%.stats100.txt,$(AXI100SRCS))
 
 RES = $(TERRA)
 RES += $(SIM)
@@ -61,6 +67,10 @@ dups: $(DUPS)
 terra: $(TERRA)
 
 sim: $(SIM)
+
+stats: $(STATS)
+
+stats100: $(STATS100)
 
 axi: $(AXI)
 
@@ -77,16 +87,14 @@ out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t
 	terra $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*.axi.v out/build_$*
-	cp out/$*.sim.v out/build_$*
-	cp out/$*.cycles.txt out/build_$*
+	- cp out/$*.axi.v out/build_$*
+	- cp out/$*.sim.v out/build_$*
+	- cp out/$*.cycles.txt out/build_$*
 
 #	$(CD) xst -ifn ../../extras/helloaxi/system.xst
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
-	# we don't actually use this - just keep a copy for reference
-	#	cp out/$*.axi.v out/build_$*/$*.axi.v
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints.ucf -uc ../../../extras/helloaxi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
@@ -101,8 +109,6 @@ out/%.axi.bit: out/%.axi.v
 
 out/%.axi100.bit: out/%.axi.v
 	mkdir -p out/build100_$*
-	# we don't actually use this - just keep a copy for reference
-	#cp out/$*.axi.v out/build100_$*/$*.axi.v
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build100_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z100-2ffg900 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
 	cd out/build100_$*; ngdbuild -nt timestamp -uc ../../../extras/helloaxi/ps7_constraints_100.ucf -uc ../../../extras/helloaxi/system_100.ucf -p xc7z100-2ffg900  system.ngc system.ngd > OUT_ngd.txt
@@ -154,8 +160,9 @@ out/%.axi100.raw: out/%.axi100.bit.bin
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT)"
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
+	terra ../extras/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
 	# keep copy for future reference
-	cp out/$*.axi100.cycles.txt out/build_$*
+	cp out/$*.axi100.cycles.txt out/build100_$*
 
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
 out/%.sim.raw: out/%.sim.v $(DUPS)
@@ -192,8 +199,8 @@ out/%.axi.bmp: out/%.axi.raw
 out/%.axi100.bmp: out/%.axi100.raw
 	terra ../extras/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.axi100.bmp out/build_$*
+	mkdir -p out/build100_$*
+	cp out/$*.axi100.bmp out/build100_$*
 
 out/%.bmp: out/%.raw
 	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
@@ -204,22 +211,37 @@ out/%.bmp: out/%.raw
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
 	test ! -s out/$*.axi.diff && touch $@
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	test ! -s out/$*.axi.diff && touch out/build_$*/$*.axi.correct.txt
 
 out/%.axi100.correct.txt : out/%.axi100.bmp
 	diff out/$*.axi100.bmp gold/$*.bmp > out/$*.axi100.diff
 	test ! -s out/$*.axi100.diff && touch $@
+	# keep copy for future reference
+	mkdir -p out/build100_$*
+	test ! -s out/$*.axi100.diff && touch out/build100_$*/$*.axi100.correct.txt
 
 out/%_half.sim.correct.txt : out/%_half.sim.bmp
 	diff out/$*_half.sim.bmp gold/$*.bmp > out/$*_half.sim.diff
 	test ! -s out/$*_half.sim.diff && touch $@
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	test ! -s out/$*_half.sim.diff && touch out/build_$*/$*_half.sim.correct.txt
 
 out/%.sim.correct.txt : out/%.sim.bmp
 	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
 	test ! -s out/$*.sim.diff && touch $@
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	test ! -s out/$*.sim.diff && touch out/build_$*/$*.sim.correct.txt
 
 out/%.sim.1.correct.txt : out/%.sim.1.bmp
 	diff out/$*.sim.1.bmp gold/$*.bmp > out/$*.sim.1.diff
 	test ! -s out/$*.sim.1.diff && touch $@
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	test ! -s out/$*.sim.1.diff && touch out/build_$*/$*.sim.1.correct.txt
 
 out/%_half.correct.txt : out/%_half.bmp
 	diff out/$*_half.bmp gold/$*.bmp > out/$*_half.diff
@@ -232,3 +254,9 @@ out/%.correct.txt : out/%.bmp
 out/%.raw.dup : %.raw
 	cat $*.raw > $@
 	cat $*.raw >> $@
+
+out/%.stats.txt : out/%.axi.bmp
+	../extras/stats.sh out/build_$* out/$* $* axi $@
+
+out/%.stats100.txt : out/%.axi100.bmp
+	../extras/stats.sh out/build100_$* out/$* $* axi100 $@

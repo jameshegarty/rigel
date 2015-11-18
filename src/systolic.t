@@ -2262,8 +2262,9 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   err( type(CE)=="boolean", "CE must be boolean")
 
   err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
+  err( isPowerOf2(inputBytes), "inputBytes is now power of 2")
   local writeAddrs = sizeInBytes/inputBytes
-  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2")
+  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
 
   if outputBytes~=nil then
     err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))

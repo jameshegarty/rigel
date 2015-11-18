@@ -126,7 +126,11 @@ function make(filename)
 --  local OUT_TYPE = types.array2d(types.tuple{types.uint(8),types.uint(16)},4)
   local OUT_TYPE = types.array2d(types.uint(8),8)
   -- output rate is half input rate, b/c we remove one channel.
-  harness.axi( "stereo_wide_handshake_"..filename, hsfn,"stereo_"..filename..".raw",nil, nil,  TYPE,  4, W, H, OUT_TYPE, 8, W, H )
+  local outfile = "stereo_wide_handshake_"..filename
+  harness.axi( outfile, hsfn,"stereo_"..filename..".raw",nil, nil,  TYPE,  4, W, H, OUT_TYPE, 8, W, H )
+
+  io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth); io.close()
+  io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()
 end
 
 make(string.sub(arg[0],#arg[0]-5,#arg[0]-2))

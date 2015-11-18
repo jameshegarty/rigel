@@ -1,1 +1,1 @@
-lk_tr_handshake_6_6.t
+lk_tr_handshake_4_4.t

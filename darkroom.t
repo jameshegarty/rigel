@@ -1314,11 +1314,16 @@ darkroom.map = memoize(function( f, W, H )
     for x=0,W-1 do 
       local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
       table.insert( out, inst:process( S.index( inp, x, y ) ) )
-    --table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
+      if f.stateful then
+        table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
+      end
     end 
   end
-  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
+  local CE = S.CE("process_CE")
+  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
+  if f.stateful then
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+  end
 
   return darkroom.newFunction(res)
 end)
@@ -2664,7 +2669,7 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err(T>=1, "padSeq, T<1")
 
   err( W%T==0, "padSeq, W%T~=0")
-  err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0")
+  err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
   err( R==0 or (R>=T and R%T==0), "padSeq, R<T or R%T~=0")
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
 
@@ -2907,7 +2912,7 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   local evicted
 
   local bits = darkroom.lower(res.inputType):verilogBits()
-  local bytes = upToNearest(8,bits)/8
+  local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
   local sizeInBytes = nearestPowerOf2((w/T)*bytes)
   local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
   local bramMod = S.module.bramSDP( true, sizeInBytes, bytes, nil, init, true )

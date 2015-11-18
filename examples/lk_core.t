@@ -268,82 +268,104 @@ function display(inpType)
   return out:toDarkroom("display"), out:cost()
 end
 
-function makeLK( internalW, internalH, window, bits )
+function makeLK( T, internalW, internalH, window, bits )
   assert(type(window)=="number")
   assert(type(bits)=="table")
 
   local cost = 9
 
   local INPTYPE = types.array2d(types.uint(8),2)
-  local inp = d.input(INPTYPE)
-  local frame0 = d.apply("f0", d.index(INPTYPE, 0 ), inp)
-  local frame1 = d.apply("f1", d.index(INPTYPE, 1 ), inp)
+  local inp = d.input(types.array2d(INPTYPE,T))
+  local frame0 = d.apply("f0", d.map(d.index(INPTYPE, 0 ),T), inp)
+  local frame1 = d.apply("f1", d.map(d.index(INPTYPE, 1 ),T), inp)
 
   local st_type = types.array2d( types.uint(8), window+1, window+1 )
-  local frame0_arr = d.apply("f0_arr", C.arrayop(types.uint(8),1), frame0)
-  local frame1_arr = d.apply("f1_arr", C.arrayop(types.uint(8),1), frame1)
-  local lb0 = d.apply("lb0", d.stencilLinebuffer(types.uint(8), internalW, internalH, 1, -window, 0, -window, 0 ), frame0_arr)
-  local lb1 = d.apply("lb1", d.stencilLinebuffer(types.uint(8), internalW, internalH, 1, -window, 0, -window, 0 ), frame1_arr)
+  --local frame0_arr = d.apply("f0_arr", C.arrayop(types.uint(8),1), frame0)
+  --local frame1_arr = d.apply("f1_arr", C.arrayop(types.uint(8),1), frame1)
+  local lb0 = d.apply("lb0", d.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame0)
+  local lb0 = d.apply( "lb0_st", d.unpackStencil( types.uint(8), window+1, window+1, T ) , lb0 )
+  local lb1 = d.apply("lb1", d.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame1)
+  local lb1 = d.apply( "lb1_st", d.unpackStencil( types.uint(8), window+1, window+1, T ) , lb1 )
 
-  local fdx = d.apply("slx", d.slice( st_type, window-2, window, window-1, window-1), lb0)
+  local fdx = d.apply("slx", d.map(d.slice( st_type, window-2, window, window-1, window-1),T), lb0)
   local dx, dType, dxcost = dx(bits)
-  local fdx = d.apply("fdx", dx, fdx)
-  local fdx_arr = d.apply("fdx_arr", C.arrayop(dType,1), fdx)
-  local fdx_stencil = d.apply("fdx_stencil", d.stencilLinebuffer(dType, internalW, internalH, 1, -window+1, 0, -window+1, 0 ), fdx_arr)
+  local fdx = d.apply("fdx", d.map(dx,T), fdx)
+  --local fdx_arr = d.apply("fdx_arr", C.arrayop(dType,1), fdx)
+  local fdx_stencil = d.apply("fdx_stencil", d.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdx)
+  local fdx_stencil = d.apply( "fdx_stencil_st", d.unpackStencil( dType, window, window, T ) , fdx_stencil )
 
-  local fdy = d.apply("sly", d.slice( st_type, window-1, window-1, window-2, window), lb0)
-  local fdy = d.apply("fdy", dy(bits), fdy )
-  local fdy_arr = d.apply("fdy_arr", C.arrayop(dType,1), fdy)
-  local fdy_stencil = d.apply("fdy_stencil", d.stencilLinebuffer(dType, internalW, internalH, 1, -window+1, 0, -window+1, 0 ), fdy_arr)
+  local fdy = d.apply("sly", d.map(d.slice( st_type, window-1, window-1, window-2, window),T), lb0)
+  local fdy = d.apply("fdy", d.map(dy(bits),T), fdy )
+  --local fdy_arr = d.apply("fdy_arr", C.arrayop(dType,1), fdy)
+  local fdy_stencil = d.apply("fdy_stencil", d.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdy)
+  local fdy_stencil = d.apply( "fdy_stencil_st", d.unpackStencil( dType, window, window, T ) , fdy_stencil )
 
   cost = cost + dxcost*2
 
+  local dst_type = types.array2d(dType,window,window)
   local Af, AType, Acost = makeA( dType, window, bits )
-  local A = d.apply("A", Af, d.tuple("ainp",{fdx_stencil,fdy_stencil}))
+  local Ainp = d.apply("Ainp",darkroom.SoAtoAoS(T,1,{dst_type,dst_type},false),d.tuple("ainp",{fdx_stencil,fdy_stencil}) )
+  local A = d.apply("A", d.map(Af,T), Ainp)
   local fAinv, AInvType = invert2x2( AType, bits )
-  local Ainv = d.apply("Ainv", fAinv, A)
+  local Ainv = d.apply("Ainv", d.map(fAinv,T), A)
   cost = cost + Acost
 
   local fB, BType, Bcost = makeB( dType, window, bits )
-  local f0_slice = d.apply("f0slice", d.slice(st_type, 0, window-1, 0, window-1), lb0)
-  local f1_slice = d.apply("f1slice", d.slice(st_type, 0, window-1, 0, window-1), lb1)
-  local b = d.apply("b",fB, d.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
+  local f0_slice = d.apply("f0slice", d.map(d.slice(st_type, 0, window-1, 0, window-1),T), lb0)
+  local f1_slice = d.apply("f1slice", d.map(d.slice(st_type, 0, window-1, 0, window-1),T), lb1)
+  local sm_type = types.array2d(types.uint(8),window,window)
+  local binp = d.apply("binp", d.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), d.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
+  local b = d.apply("b", d.map(fB,T), binp)
   cost = cost + Bcost
 
 --  local A0 = d.apply("A0", d.index(fB.outputType,1),b)
 --  local fdx_dbg = d.apply("fdx_dbg", toUint8Sign(BType), A0)
 
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
-  local vectorField = d.apply("solve", fSolve, d.tuple("solveinp",{Ainv,b}))
+  local sinp = d.apply("sinp", d.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), d.tuple("solveinp",{Ainv,b}))
+  local vectorField = d.apply("solve", d.map(fSolve,T), sinp)
   cost = cost + SolveCost
   
   local displayfn, displaycost = display(SolveType)
-  local out = d.apply("display", displayfn, vectorField)
+  local out = d.apply("display", d.map(displayfn,T), vectorField)
   cost = cost + displaycost
 --out=fdx_dbg
   return d.lambda("LK",inp,out), cost
 end
 
-function LKTop(W,H,window,bits)
+function LKTop(T,W,H,window,bits)
+  assert(type(T)=="number")
+  assert(T>=1)
   assert(type(bits)=="table")
 
-  local internalW = W+window
-  local internalH = H+window+1
   local PadRadius = window/2
+  local PadRadiusAligned = upToNearest(T,window/2)
+  local PadExtra = PadRadiusAligned - PadRadius
+  print("PadRadius",PadRadius,"PRA",PadRadiusAligned)
+
+  local internalW = W+PadRadiusAligned*2
+  local internalH = H+window+1
 
   local ITYPE = types.array2d(types.uint(8),2)
-  local T = 4
   
-  local RW_TYPE = types.array2d( ITYPE, T ) -- simulate axi bus
+  local RW_TYPE = types.array2d( ITYPE, 4 ) -- simulate axi bus
   local hsfninp = d.input( d.Handshake(RW_TYPE) )
-  local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,1)), hsfninp )
-  local out = d.apply("pad", d.liftHandshake(d.padSeq(ITYPE, W, H, 1, PadRadius, PadRadius, PadRadius+1, PadRadius, {0,0})), out)
-  local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
-  local lkfn, lkcost = makeLK( internalW, internalH, window, bits )
-  out = d.apply("LK", d.makeHandshake( lkfn), out )
-  local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0))), out)
-  local out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,1,4)), out )
+
+  local out = hsfninp
+  if T~=4 then
+    out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,T)), hsfninp )
+  end
+
+  local out = d.apply("pad", d.liftHandshake(d.padSeq(ITYPE, W, H, T, PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius, {0,0})), out)
+  --local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
+  local lkfn, lkcost = makeLK( T, internalW, internalH, window, bits )
+  out = d.apply("LK", d.makeHandshake( lkfn ), out )
+  --local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
+  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)
+  if T~=4 then
+    out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,T,4)), out )
+  end
+
   local hsfn = d.lambda("hsfn", hsfninp, out)
   return hsfn, lkcost
 end

@@ -19,28 +19,28 @@ else
 end
 
 function makeLK(T,window)
-  assert(type(T)=="number")
-  assert(type(window)=="number")
-  assert(T>=1)
+  assert(T<=4)
 
   local W = 64
   local H = 64
-  --T = 8
 
   if window==6 then
     W,H = 128,128
+  elseif window==12 then
+    W,H = 128,128
   end
+  
+--T = 8
 
-  -- lk_full is 584x388, 2 channel
+-- lk_full is 584x388, 2 channel
 
-  --local window = 4
+--local window = 4
 
---  local T = 4
-  local externalT = 4
-  local RW_TYPE = types.array2d(types.array2d(types.uint(8),2),externalT)
+--local T = 4
+  local RW_TYPE = types.array2d(types.array2d(types.uint(8),2),4)
 
 
-  require "lk_tr_core"
+  require "lk_core"
 
   local bits = {
     inv22={15,26,0},
@@ -53,24 +53,27 @@ function makeLK(T,window)
 
   if window==6 then
     bits.inv22inp={0,10,0}
+  elseif window==12 then
+    bits.inv22inp={0,10,0}
   end
 
   local inputFilename = "trivial_64.raw"
-
   if window==6 then
+    inputFilename = "trivial_128.raw"
+  elseif window==12 then
     inputFilename = "trivial_128.raw"
   end
 
-  local internalT = 1/T
+  local externalT = 4
 
   if f.FLOAT then
-    harness.terraOnly( "lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+    harness.terraOnly( "lk_wide_handshake_"..tostring(window).."_"..tostring(T).."_float", LKTop(T,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
   else
-    local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
-    harness.axi( outfile, LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
-
+    local outfile = "lk_wide_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
+    harness.axi( outfile, LKTop(T,W,H,window,bits), inputFilename, nil, nil, RW_TYPE,externalT,W,H, RW_TYPE,externalT,W,H)
+    
     io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..window.."x"..window); io.close()
-    io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()
+    io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
   end
 end
 
