@@ -13,16 +13,15 @@
 #include <stdbool.h>
 #include "processimagelib.h"
 
-void init_camera(volatile Conf* conf) {
-    write_cam_reg(conf, CAM_DELAY); // delay
-    write_cam_reg(conf, CAM_RESET); // Reset
-    write_cam_reg(conf, CAM_DELAY); // delay
-    write_cam_safe(conf,0x1205);
-    //write_cam_safe(conf,0x1180);
-    write_cam_safe(conf,0x1500);
-    write_cam_safe(conf,0x0E80);
-    write_cam_reg(conf, CAM_DELAY); // delay
-    write_cam_reg(conf, CAM_DELAY); // delay
+void init_camera(volatile Conf* conf, int camid) {
+    write_cam_reg(conf, camid, CAM_DELAY); // delay
+    write_cam_reg(conf, camid, CAM_RESET); // Reset
+    write_cam_reg(conf, camid, CAM_DELAY); // delay
+    write_cam_safe(conf, camid,0x1205);
+    write_cam_safe(conf, camid,0x1500);
+    write_cam_safe(conf, camid,0x0E80);
+    write_cam_reg(conf, camid, CAM_DELAY); // delay
+    write_cam_reg(conf, camid, CAM_DELAY); // delay
 }
 
 int main(int argc, char *argv[]) {
@@ -33,11 +32,15 @@ int main(int argc, char *argv[]) {
     int tribuf0_size = frame_size * 3;
     
     unsigned  tribuf1_addr = tribuf0_addr + tribuf0_size;
-    int tribuf1_size = frame_size*4 *3;
+    int tribuf1_size = frame_size*3;
+    
+    unsigned  tribuf2_addr = tribuf1_addr + tribuf1_size;
+    int tribuf2_size = frame_size*4 *3;
     
     unsigned page_size = sysconf(_SC_PAGESIZE);
     
-    char* raw_name= "/tmp/outraw.raw";
+    char* raw_name0= "/tmp/cam0.raw";
+    char* raw_name1= "/tmp/cam1.raw";
     char* pix_name= "/tmp/outpix.raw";
     char* ppm_name = "out.ppm";
     
@@ -57,21 +60,26 @@ int main(int argc, char *argv[]) {
     }
     void * tribuf1_ptr = mmap(NULL, tribuf1_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, tribuf1_addr);
     if (tribuf1_ptr == MAP_FAILED) {
-        printf("FAILED mmap for vgabuf %x\n",tribuf1_addr);
+        printf("FAILED mmap for tribuf1 %x\n",tribuf1_addr);
+        exit(1);
+    }
+    void * tribuf2_ptr = mmap(NULL, tribuf2_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, tribuf2_addr);
+    if (tribuf2_ptr == MAP_FAILED) {
+        printf("FAILED mmap for tribuf2 %x\n",tribuf2_addr);
         exit(1);
     }
     //unsigned lenInRaw;
     //FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
     //printf("file LEN %d\n",lenInRaw);
     printf("framesize %d\n",frame_size);
-    for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(tribuf1_ptr+i)= 0; 
+    for(uint32_t i=0;i<frame_size*4; i++ ) {
+        *(unsigned char*)(tribuf2_ptr+i)= 0; 
     }
     for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(tribuf1_ptr+frame_size+i)= 128; 
+        *(unsigned char*)(tribuf2_ptr+frame_size*4+i)= 128; 
     }
     for(uint32_t i=0;i<frame_size; i++ ) {
-        *(unsigned char*)(tribuf1_ptr+2*frame_size+i)= 255; 
+        *(unsigned char*)(tribuf2_ptr+2*frame_size*4+i)= 255; 
     }
     
     // mmap the device into memory 
@@ -85,12 +93,18 @@ int main(int argc, char *argv[]) {
     volatile Conf * conf = (Conf*) gpioptr;
 
     // writes camera registers
-    init_camera(conf);
+    init_camera(conf,0);
+    init_camera(conf,1);
     printf("Camera programmed!s\n");
     write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,1);
     write_mmio(conf, MMIO_FRAME_BYTES(0), frame_size,1);
     write_mmio(conf, MMIO_TRIBUF_ADDR(1), tribuf1_addr,1);
-    write_mmio(conf, MMIO_FRAME_BYTES(1), frame_size*4,1);
+    write_mmio(conf, MMIO_FRAME_BYTES(1), frame_size,1);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(2), tribuf2_addr,1);
+    write_mmio(conf, MMIO_FRAME_BYTES(2), frame_size*4,1);
+    read_mmio(conf, MMIO_TRIBUF_ADDR(2), 1);
+    read_mmio(conf, MMIO_FRAME_BYTES(2), 1);
+   
     print_debug_regs(conf);
     printf("WAIT 3s\n");
     fflush(stdout);
@@ -99,15 +113,16 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     //print_debug_regs(conf);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    int time = 60;
+    int time = 80;
     for (int i=0; i<time;i++) {
         printf("RUNNING STREAM  %d\n", time-i);
         print_debug_regs(conf);
         fflush(stdout);
         sleep(1);
     }
-    saveImage(raw_name,tribuf0_ptr,frame_size);
-    saveImage(pix_name,tribuf1_ptr,frame_size*4);
+    saveImage(raw_name0,tribuf0_ptr,frame_size);
+    saveImage(raw_name1,tribuf1_ptr,frame_size);
+    saveImage(pix_name,tribuf2_ptr,frame_size*4);
     write_mmio(conf, MMIO_CMD, CMD_STOP,1);
     printf("STOPPING STREAM\n");
     fflush(stdout);

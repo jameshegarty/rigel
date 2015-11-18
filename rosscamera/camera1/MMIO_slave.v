@@ -29,7 +29,8 @@ module MMIO_slave(
 
     // MMIO regs
     output [31:0] MMIO_CMD,
-    output [31:0] MMIO_CAM_CMD,
+    output [31:0] MMIO_CAM0_CMD,
+    output [31:0] MMIO_CAM1_CMD,
     output [31:0] MMIO_FRAME_BYTES0,
     output [31:0] MMIO_TRIBUF_ADDR0,
     output [31:0] MMIO_FRAME_BYTES1,
@@ -43,10 +44,14 @@ module MMIO_slave(
     input [31:0] debug2,
     input [31:0] debug3,
     
-    output reg rw_cmd_valid,
-    input [17:0] rw_resp,
-    input rw_resp_valid,
+    output reg rw_cam0_cmd_valid,
+    input [17:0] rw_cam0_resp,
+    input rw_cam0_resp_valid,
    
+    output reg rw_cam1_cmd_valid,
+    input [17:0] rw_cam1_resp,
+    input rw_cam1_resp_valid,
+    
     output MMIO_IRQ
     );
 
@@ -146,22 +151,42 @@ module MMIO_slave(
     assign LITE_RVALID = (r_state == RWAIT);
 
 
-    // TODO cam_cmd_write might be valid for multiple cycles??
-    wire cam_cmd_write;
-    assign  cam_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==`MMIO_CAM_CMD);
-    `REG(fclk, rw_cmd_valid, 0, cam_cmd_write)
+    // TODO cam0_cmd_write might be valid for multiple cycles??
+    wire cam0_cmd_write;
+    assign  cam0_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==`MMIO_CAM_CMD(0));
+    `REG(fclk, rw_cam0_cmd_valid, 0, cam0_cmd_write)
 
 
-    reg [31:0] cam_resp;
-    reg [31:0] cam_resp_cnt;
+    reg [31:0] cam0_resp;
+    reg [31:0] cam0_resp_cnt;
     always @(posedge fclk or negedge rst_n) begin
         if (!rst_n) begin
-            cam_resp <= 32'h0;
-            cam_resp_cnt[12:0] <= 0;
+            cam0_resp <= 32'h0;
+            cam0_resp_cnt[12:0] <= 0;
         end
-        else if (rw_resp_valid) begin
-            cam_resp <= {14'h0,rw_resp[17:0]};
-            cam_resp_cnt <= cam_resp_cnt + 1'b1;
+        else if (rw_cam0_resp_valid) begin
+            cam0_resp <= {14'h0,rw_cam0_resp[17:0]};
+            cam0_resp_cnt <= cam0_resp_cnt + 1'b1;
+        end
+    end
+
+
+    // TODO cam1_cmd_write might be valid for multiple cycles??
+    wire cam1_cmd_write;
+    assign  cam1_cmd_write = (w_state==RWAIT) && LITE_WREADY && (w_select_r==`MMIO_CAM_CMD(1));
+    `REG(fclk, rw_cam1_cmd_valid, 0, cam1_cmd_write)
+
+
+    reg [31:0] cam1_resp;
+    reg [31:0] cam1_resp_cnt;
+    always @(posedge fclk or negedge rst_n) begin
+        if (!rst_n) begin
+            cam1_resp <= 32'h0;
+            cam1_resp_cnt[12:0] <= 0;
+        end
+        else if (rw_cam1_resp_valid) begin
+            cam1_resp <= {14'h0,rw_cam1_resp[17:0]};
+            cam1_resp_cnt <= cam1_resp_cnt + 1'b1;
         end
     end
 
@@ -173,15 +198,18 @@ module MMIO_slave(
             `MMIO_DEBUG(1) : read_data = debug1;
             `MMIO_DEBUG(2) : read_data = debug2;
             `MMIO_DEBUG(3) : read_data = debug3;
-            `MMIO_CAM_RESP : read_data = cam_resp;
-            `MMIO_CAM_RESP_CNT : read_data = cam_resp_cnt;
+            `MMIO_CAM_RESP(0) : read_data = cam0_resp;
+            `MMIO_CAM_RESP_CNT(0) : read_data = cam0_resp_cnt;
+            `MMIO_CAM_RESP(1) : read_data = cam1_resp;
+            `MMIO_CAM_RESP_CNT(1) : read_data = cam1_resp_cnt;
             default : read_data = data[r_select];
         endcase
     end
 
     // MMIO Mappings
     assign MMIO_CMD            = data[`MMIO_CMD             ];
-    assign MMIO_CAM_CMD        = data[`MMIO_CAM_CMD         ];
+    assign MMIO_CAM0_CMD       = data[`MMIO_CAM_CMD(0)      ];
+    assign MMIO_CAM1_CMD       = data[`MMIO_CAM_CMD(1)      ];
     assign MMIO_FRAME_BYTES0   = data[`MMIO_FRAME_BYTES(0)  ];
     assign MMIO_TRIBUF_ADDR0   = data[`MMIO_TRIBUF_ADDR(0)  ];
     assign MMIO_FRAME_BYTES1   = data[`MMIO_FRAME_BYTES(1)  ];

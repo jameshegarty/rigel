@@ -91,8 +91,6 @@ module DramWriter(
         end
     end
     
-    // TODO DEBUG WORK
-    // For some reason write transactions are broken. fucking shit. It gets stuck in A_FRAME_IDLE
     localparam W_IDLE=0, W_WAIT=1;
 
     //WRITE logic

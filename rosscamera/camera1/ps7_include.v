@@ -957,7 +957,8 @@
     */
 
     // Master HP2
-     axi_master_stub axi_master_HP2_stub (
+    /*
+    axi_master_stub axi_master_HP2_stub (
         .M2S_AXI_ACLK(M2S_HP2_AXI_ACLK),
 
         //Read Transaction
@@ -994,6 +995,7 @@
         .M2S_AXI_BREADY(M2S_HP2_AXI_BREADY),
         .M2S_AXI_BRESP(M2S_HP2_AXI_BRESP[1:0])
     );
+    */
 
     // Master HP3
      axi_master_stub axi_master_HP3_stub (
