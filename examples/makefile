@@ -31,9 +31,9 @@ SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 
-AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
+AXISRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(SRCS))
 
-AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t lk_wide_handshake_4_4_float.t  lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t,$(SRCS))
+AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t lk_wide_handshake_4_4_float.t  lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(SRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))

@@ -118,4 +118,9 @@ hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
 
 local scale = math.pow(2,TARGET_DEPTH-1)
 
-harness.axi( "pyramid_"..tostring(TARGET_DEPTH), hsfn, "frame_128.raw", nil, nil, RW_TYPE, T, inputW, inputH, RW_TYPE, T,outputW, outputH )
+local outfile = "pyramid_"..tostring(TARGET_DEPTH)
+harness.axi( outfile, hsfn, "frame_128.raw", nil, nil, RW_TYPE, T, inputW, inputH, RW_TYPE, T,outputW, outputH )
+
+io.output("out/"..outfile..".design.txt"); io.write("Pyramid"); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
+io.output("out/"..outfile..".extra.txt"); io.write(TARGET_DEPTH); io.close()

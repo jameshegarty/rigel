@@ -27,4 +27,6 @@ cat $examplepath.design.txt  >> $output
 printf ", " >> $output
 cat $examplepath.designT.txt  >> $output
 printf ", " >> $output
+cat $examplepath.extra.txt  >> $output
+printf ", " >> $output
 identify -ping -format '%[fx:w*h]' $examplepath.$axiname.bmp >> $output
