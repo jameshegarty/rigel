@@ -23,8 +23,8 @@ cat $examplepath.sim.cycles.txt  >> $output
 printf ", " >> $output
 cat $examplepath.$axiname.cycles.txt >> $output
 printf ", " >> $output
-identify -ping -format '%[fx:w*h]' $examplepath.$axiname.bmp >> $output
-printf ", " >> $output
 cat $examplepath.design.txt  >> $output
 printf ", " >> $output
 cat $examplepath.designT.txt  >> $output
+printf ", " >> $output
+identify -ping -format '%[fx:w*h]' $examplepath.$axiname.bmp >> $output
