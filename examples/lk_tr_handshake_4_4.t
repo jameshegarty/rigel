@@ -30,7 +30,7 @@ function makeLK(T,window)
   if window==6 then
     W,H = 128,128
   elseif window==12 then
-    W,H = 128,128
+    W,H = 1920, 1080
   end
 
   -- lk_full is 584x388, 2 channel
@@ -64,7 +64,7 @@ function makeLK(T,window)
   if window==6 then
     inputFilename = "trivial_128.raw"
   elseif window==12 then
-    inputFilename = "trivial_128.raw"
+    inputFilename = "packed_v0000.raw"
   end
 
   local internalT = 1/T

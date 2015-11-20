@@ -2219,7 +2219,7 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
 
   if init~=nil then
     assert(type(init)=="table")
-    err(#init==2048, "init table has size "..(#init))
+    err(#init==2048, "init table has size "..(#init).." but should have size 2048")
   end
 
   err(inputBits==8 or inputBits==16 or inputBits==32, "inputBits must be 8,16, or 32")

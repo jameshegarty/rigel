@@ -91,12 +91,16 @@ end
 
 local H = {}
 
-function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
+function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, doHalfTest, X)
+  if doHalfTest==nil then doHalfTest=true end
+  assert(X==nil)
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
 
+  local bound = 2
+  if doHalfTest==false then bound=1 end
   -------------
-  for i=1,2 do
+  for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
     local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )

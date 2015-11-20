@@ -2914,8 +2914,8 @@ darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
   local bits = darkroom.lower(res.inputType):verilogBits()
   local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
   local sizeInBytes = nearestPowerOf2((w/T)*bytes)
-  local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
-  local bramMod = S.module.bramSDP( true, sizeInBytes, bytes, nil, init, true )
+  --local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
+  local bramMod = S.module.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
   local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
 
   for y=0,-ymin do
