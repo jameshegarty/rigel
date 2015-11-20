@@ -6,7 +6,7 @@ local harness = require "harness"
 local C = require "examplescommon"
 
 --T = 8 -- throughput
-function MAKE(T,ConvWidth)
+function MAKE(T,ConvWidth,size1080p)
   --ConvRadius = 1
   local ConvRadius = ConvWidth/2
   --local ConvWidth = ConvRadius*2
@@ -14,7 +14,12 @@ function MAKE(T,ConvWidth)
   
   local inputW = 128
   local inputH = 64
-  
+
+  if size1080p then
+    print("1080p")
+    inputW, inputH = 1920, 1080
+  end
+
   local PadRadius = upToNearest(T, ConvRadius)
   
   -- expand to include crop region
@@ -54,9 +59,20 @@ function MAKE(T,ConvWidth)
   local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
   local hsfn = d.lambda("hsfn", hsfninp_raw, out)
   
+  local infile = "frame_128.raw"
   local outfile = "convpadcrop_wide_handshake_"..ConvWidth.."_"..T
-  harness.axi( outfile, hsfn, "frame_128.raw", TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
-  io.output("out/"..outfile..".design.txt"); io.write("Convolution "..ConvWidth.."x"..ConvWidth); io.close()
+
+  if size1080p then 
+    infile="1080p.raw" 
+    outfile = outfile.."_1080p"
+  end
+
+  harness.axi( outfile, hsfn, infile, TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
+
+  local sizestr = "128 "
+  if size1080p then sizestr = "" end
+
+  io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
 
   --harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, types.array2d( types.uint(8), 4 ), outputW, outputH )
@@ -67,4 +83,4 @@ local convwidth = string.sub(arg[0],first,first)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
 print("ConvWidth",convwidth,"T",t)
 
-MAKE(tonumber(t),tonumber(convwidth))
+MAKE(tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"))

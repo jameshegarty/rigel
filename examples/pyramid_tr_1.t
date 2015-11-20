@@ -150,6 +150,6 @@ local IO_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 local outfile = "pyramid_tr_"..tostring(TARGET_DEPTH)
 harness.axi( outfile, hsfn, "frame_128.raw", TAP_TYPE, P.G, IO_TYPE, 8, inputW, inputH, IO_TYPE, 8, outputW, outputH )
 
-io.output("out/"..outfile..".design.txt"); io.write("Pyramid"); io.close()
+io.output("out/"..outfile..".design.txt"); io.write("Gaussian Pyramid"); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
 io.output("out/"..outfile..".extra.txt"); io.write(TARGET_DEPTH); io.close()

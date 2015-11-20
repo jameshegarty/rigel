@@ -29,6 +29,8 @@ function makeLK(T,window)
 
   if window==6 then
     W,H = 128,128
+  elseif window==12 then
+    W,H = 128,128
   end
 
   -- lk_full is 584x388, 2 channel
@@ -53,11 +55,15 @@ function makeLK(T,window)
 
   if window==6 then
     bits.inv22inp={0,10,0}
+  elseif window==12 then
+    bits.inv22inp={0,10,0}
   end
 
   local inputFilename = "trivial_64.raw"
 
   if window==6 then
+    inputFilename = "trivial_128.raw"
+  elseif window==12 then
     inputFilename = "trivial_128.raw"
   end
 
