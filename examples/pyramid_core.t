@@ -2,23 +2,25 @@ local d = require "darkroom"
 local C = require "examplescommon"
 local P = {}
 
-local function FIFOp(fifos,statements,A,inp)
+local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
   local id = #fifos
   
-  -- prevent underutilization
+  -- prevent underutilization. if bit width < 4, we might as well use whole bram.
   local sz = 2048/(math.min(4,A:verilogBits()/8))
-  sz = math.max(sz,1024)
+  sz = math.max(sz,size)
 --  local sz = 2048
   print("FIFO SZ",sz)
-  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id), d.fifo(A,sz)) )
+  if name==nil then name = "fifo"..tostring(id) end
+  table.insert( fifos, d.instantiateRegistered(name, d.fifo(A,sz,nil,W,H,T)) )
   table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
   return d.applyMethod("l"..tostring(id),fifos[#fifos],"load")
 end
 
-function P.FIFO(fifos,statements,A,inp,size)
+function P.FIFO(fifos,statements,A,inp,size, name,W,H,T)
+  if size==nil then size=1024 end
 --  if size==nil then size = 4 end
 --  for i=0,size-1 do
-    inp = FIFOp(fifos,statements,A,inp)
+    inp = FIFOp(fifos,statements,A,inp, size, name,W,H,T)
 --  end
   return inp
 end
@@ -98,8 +100,10 @@ end
 
 local convolvefntaps = C.convolveTaps( types.uint(8), TConvWidth, 6 )
 
-function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth)
+function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,X)
   assert(type(ConvWidth)=="number")
+  assert(type(nofifo)=="boolean")
+  assert(X==nil)
   
   local DATA_TYPE = types.array2d(A,internalT)
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()
@@ -138,7 +142,7 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth)
   if doDownsample then
     out = darkroom.apply("downsampleSeq_Y", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleYSeq( st_type, W, H, internalT, scaleY ))), out)
     out = darkroom.apply("downsampleSeq_X", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleXSeq( st_type, W, H, internalT, scaleX ))), out)
-    out = P.FIFO(fifos,statements,types.array2d(st_type,convT/2),out)
+    if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,convT/2),out,nil,"downsample"..i,W,H,internalT) end
 
     convT = internalT/4
     assert(convT==math.floor(convT))
@@ -160,10 +164,11 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth)
 --  
 end
 
-function P.pyramidIterTR(i, internalT, W, H, ConvWidth, X)
+function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
   assert(type(internalT)=="number")
   assert(internalT<=1)
   assert(type(ConvWidth)=="number")
+  assert(type(nofifo)=="boolean")
   assert(X==nil)
 
   local fifos = {}
@@ -190,7 +195,7 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, X)
   local scaleX, scaleY = 2,2
 
   out = darkroom.apply("downsampleSeq_Y", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleYSeq( st_type, W, H, 1, scaleY ))), out)
-  out = P.FIFO(fifos,statements,types.array2d(st_type,1),out)
+  if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,1),out,nil,"downsampleY"..i,W,H,1) end
   out = darkroom.apply("downsampleSeq_X", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleXSeq( st_type, W, H, 1, scaleX ))), out)
 
   local convT = internalT/4 -- T after downsample
@@ -209,8 +214,12 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, X)
   end
 --  out = d.apply("AO", d.makeHandshake(C.arrayop(types.uint(8),1,1)), out)
 
-  table.insert(statements,1,out)
-  return darkroom.lambda("pyramid"..i, inp, d.statements(statements), fifos )
+  if nofifo then
+    return darkroom.lambda("pyramid"..i, inp, out )
+  else
+    table.insert(statements,1,out)
+    return darkroom.lambda("pyramid"..i, inp, d.statements(statements), fifos )
+  end
 end
 
 return P

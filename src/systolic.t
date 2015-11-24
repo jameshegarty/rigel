@@ -1562,7 +1562,7 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
   end
 
-  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME("]]..instance.name..[[")]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");"
+  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME({INSTANCE_NAME,"_]]..instance.name..[["})]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");"
 end
 
 function userModuleFunctions:lower()
@@ -2496,7 +2496,13 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
 
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
 assign ]]..instance.name..[[ = ]]..datavar..[[;
-always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
+]]
+
+  if self.showIfInvalid then
+    decl = decl..[[always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
+  else
+    decl = decl..[[always @(posedge CLK) begin if(]]..validvar..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME,]]..datalist..[[);end end]]
+  end
 
   return "___NULL_PRINT_OUT", decl, true
 end
@@ -2505,14 +2511,17 @@ function printModuleFunctions:toVerilog() return "" end
 function printModuleFunctions:getDependenciesLL() return {} end
 function printModuleFunctions:getDelay(fnname) return 0 end
 
-function systolic.module.print( ty, str, CE, X )
+-- showIfInvalid: should we display the print in invalid cycles? default true
+function systolic.module.print( ty, str, CE, showIfInvalid, X )
   assert(X==nil)
   err( types.isType(ty), "type input to print module should be type")
   err( type(str)=="string", "string input to print module should be string")
   err( CE==nil or type(CE)=="boolean", "CE must be bool")
+  err( showIfInvalid==nil or type(showIfInvalid)=="boolean", "showIfInvalid should be nil or bool")
   if CE==nil then CE=false end
+  if showIfInvalid==nil then showIfInvalid=true end
 
-  local res = {kind="print",str=str, type=ty, CE=CE}
+  local res = {kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end

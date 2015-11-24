@@ -874,7 +874,7 @@ end
 -- Compare to waitOnInput below: runIffReady is used when we want to take control of the ready bit purely for performance reasons, but don't want to amplify or decimate data.
 local function runIffReadySystolic( systolicModule, fns, passthroughFns )
   local res = S.moduleConstructor("RunIffReady_"..systolicModule.name)
-  local inner = res:add( systolicModule:instantiate("RunIffReady_inner") )
+  local inner = res:add( systolicModule:instantiate("RunIffReady") )
 
   for _,fnname in pairs(fns) do
     local srcFn = systolicModule:lookupFunction(fnname)
@@ -1033,7 +1033,7 @@ darkroom.waitOnInput = memoize(function(f)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
   local res = S.moduleConstructor("LiftDecimate_"..systolicModule.name)
-  local inner = res:add( systolicModule:instantiate("LiftDecimate_inner_"..systolicModule.name) )
+  local inner = res:add( systolicModule:instantiate("LiftDecimate") )
 
   for _,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
@@ -3284,10 +3284,16 @@ local function promoteFifo(systolicModule)
   
 end
 
-darkroom.fifo = memoize(function( A, size )
+-- nostall: unsafe -> ready always set to true
+-- W,H,T: used for debugging (calculating last cycle)
+darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
   darkroom.expectBasic(A)
   err( type(size)=="number", "size must be number")
   err( size >0,"size<=0")
+  err(nostall==nil or type(nostall)=="boolean", "nostall should be nil or boolean")
+  err(W==nil or type(W)=="number", "W should be nil or number")
+  err(H==nil or type(H)=="number", "H should be nil or number")
+  err(T==nil or type(T)=="number", "T should be nil or number")
   
   local res = {kind="fifo", inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
 
@@ -3321,7 +3327,7 @@ darkroom.fifo = memoize(function( A, size )
   terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
   res.terraModule = Fifo
 
-  res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A))
+  res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T))
 
   local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
   --------------
@@ -3345,6 +3351,20 @@ darkroom.fifo = memoize(function( A, size )
   local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
   loadReset:setCE(loadCE)
   loadReset:addPipeline(fifo:popFrontReset())
+  --------------
+  -- debug
+  if W~=nil then
+    local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):instantiate("outputCount") )
+    load:addPipeline(outputCount:setBy(fifo:hasData()))
+    loadReset:addPipeline(outputCount:set(S.constant(0,types.uint(32))))
+
+    local maxSize = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):CE(true):setInit(0):instantiate("maxSize") ) 
+    local printInst = res.systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
+    load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
+    local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
+    load:addPipeline(printInst:process(maxSize:get(), lastCycle))
+    loadReset:addPipeline(maxSize:set(S.constant(0,types.uint(16))))
+  end
   --------------
 
   res.systolicModule = liftDecimateSystolic(res.systolicModule,{"load"},{"store"})
@@ -4702,6 +4722,7 @@ wire valid;
 reg []]..rrlog2..[[:0] ready_downstream = 1;
 reg [15:0] doneCnt = 0;
 wire ready;
+reg [31:0] totalClocks = 0;
 ]]..tapreg..[[
 ]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
 
@@ -4712,7 +4733,7 @@ wire ready;
 
       RST = 0;
       //valid = 1;
-
+      totalClocks = 0;
       while(1) begin CLK = 0; #10; CLK = 1; #10; end
    end
 
@@ -4722,7 +4743,7 @@ wire ready;
   assign valid = (RST==0 && validInCnt < ]]..inputCount..[[);
 
   always @(posedge CLK) begin
-    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
+    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
 ]]..tapRST..[[
@@ -4734,6 +4755,7 @@ wire ready;
     // ignore the output when we're in reset mode - output is probably bogus
     if(]]..readybit..[[ && process_output[]]..(darkroom.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
     ready_downstream <= ready_downstream + 1;
+    totalClocks <= totalClocks + 1;
   end
 endmodule
 ]]

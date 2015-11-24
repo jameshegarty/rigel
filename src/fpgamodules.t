@@ -61,13 +61,20 @@ modules.incIfWrap=memoize(function(ty,limit,inc)
 
       local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
       local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_wrap"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
+      return S.module.new( "incif_wrap"..tostring(ty).."_"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
               end)
 
 
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
 modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
+------------
+modules.max = memoize(function(ty,hasCE)
+                        local swinp = S.parameter("process_input", types.tuple{ty,ty})
+                        local CE = S.CE("CE")
+                        if hasCE==false then CE=nil end
+                        return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil,CE)},{},nil,true)
+                      end)
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
 modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{},nil,true)
