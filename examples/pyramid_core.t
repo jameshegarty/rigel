@@ -17,7 +17,7 @@ local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
 end
 
 function P.FIFO(fifos,statements,A,inp,size, name,W,H,T)
-  if size==nil then size=1024 end
+  if size==nil then size=2048 end
 --  if size==nil then size = 4 end
 --  for i=0,size-1 do
     inp = FIFOp(fifos,statements,A,inp, size, name,W,H,T)

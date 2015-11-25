@@ -80,7 +80,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
   local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
   local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
 
-  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.75)
+  local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   local inp = d.apply("underflow_US", d.underflow( d.extractData(hsfn.inputType), inputBytes/8, EC, true ), inpSymb)
   local out = d.apply("hsfna",hsfn,inp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)

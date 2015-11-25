@@ -8,6 +8,9 @@ local SADWidth = 8
 local OffsetX = 20 -- we search the range [-OffsetX-SearchWindow, -OffsetX]
 local A = types.uint(8)
 
+local NOSTALL = string.find(arg[0],"nostall")
+NOSTALL = (NOSTALL~=nil)
+
 -- This function is used to select and format the output we want to display to the user
 -- (either the index, or SAD value)
 function displayOutput()
@@ -113,7 +116,19 @@ function make(filename)
   local merged = d.apply("mer", d.makeHandshake(d.map(packStencils, SearchWindow)  ), merged ) -- A[2][SADWidth, SADWidth][SearchWindow]
   
   local res = d.apply("AM",d.makeHandshake(argmin(SearchWindow)),merged) -- {uint8,uint16}
+
   local res = d.apply("display",d.makeHandshake(displayOutput()), res)
+
+  -- FIFO to improve timing
+  if false then
+  else
+    local sz = 128
+    if NOSTALL then sz = 2048 end
+    table.insert( fifos, d.instantiateRegistered("f_timing",d.fifo(types.array2d(types.uint(8),1),sz,NOSTALL)) )
+    table.insert( statements, d.applyMethod( "s_timing", fifos[#fifos], "store", res ) )
+    res = d.applyMethod("r_timing",fifos[#fifos],"load")
+  end
+
 
   local res = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), res )
 
@@ -126,10 +141,10 @@ function make(filename)
 --  local OUT_TYPE = types.array2d(types.tuple{types.uint(8),types.uint(16)},4)
   local OUT_TYPE = types.array2d(types.uint(8),8)
   -- output rate is half input rate, b/c we remove one channel.
-  local outfile = "stereo_wide_handshake_"..filename
+  local outfile = "stereo_wide_handshake_"..sel(NOSTALL,"nostall_","")..filename
   harness.axi( outfile, hsfn,"stereo_"..filename..".raw",nil, nil,  TYPE,  4, W, H, OUT_TYPE, 8, W, H )
 
-  io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth); io.close()
+  io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth..sel(NOSTALL," NOSTALL","")); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()
 end
 

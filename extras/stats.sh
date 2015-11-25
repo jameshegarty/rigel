@@ -28,5 +28,15 @@ printf ", " >> $output
 cat $examplepath.designT.txt  >> $output
 printf ", " >> $output
 cat $examplepath.extra.txt  >> $output
+
+##
+grep "+inner_RunIffReady_LiftDecimate_fifo" $builddir/system_map.mrp > $examplepath.fifolist.txt
+# first part deletes all but the stuff folling the last 'BYTES', Second deletes all but numbers
+cat $examplepath.fifolist.txt |sed -n -e 's/.*BYTES//p' | sed 's/[^0-9]*//g' >  $examplepath.fifosizes.txt
+##
+
+printf ", " >> $output
+awk '{ sum += $1 } END {printf "%d",sum}' $examplepath.fifosizes.txt >> $output
+
 printf ", " >> $output
 identify -ping -format '%[fx:w*h]' $examplepath.$axiname.bmp >> $output

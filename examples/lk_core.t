@@ -333,10 +333,12 @@ function makeLK( T, internalW, internalH, window, bits )
   return d.lambda("LK",inp,out), cost
 end
 
-function LKTop(T,W,H,window,bits)
+function LKTop(T,W,H,window,bits,nostall,X)
   assert(type(T)=="number")
   assert(T>=1)
   assert(type(bits)=="table")
+  assert(type(nostall)=="boolean")
+  assert(X==nil)
 
   local PadRadius = window/2
   local PadRadiusAligned = upToNearest(T,window/2)
@@ -351,6 +353,9 @@ function LKTop(T,W,H,window,bits)
   local RW_TYPE = types.array2d( ITYPE, 4 ) -- simulate axi bus
   local hsfninp = d.input( d.Handshake(RW_TYPE) )
 
+  local fifos = {}
+  local statements = {}
+
   local out = hsfninp
   if T~=4 then
     out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,T)), hsfninp )
@@ -360,12 +365,27 @@ function LKTop(T,W,H,window,bits)
   --local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
   local lkfn, lkcost = makeLK( T, internalW, internalH, window, bits )
   out = d.apply("LK", d.makeHandshake( lkfn ), out )
+
+  -- FIFO to improve timing
+  if false then
+  else
+    local sz = 128
+    if nostall then sz = 2048 end
+    table.insert( fifos, d.instantiateRegistered("f_timing",d.fifo(types.array2d(ITYPE,T),sz,nostall)) )
+    table.insert( statements, d.applyMethod( "s_timing", fifos[#fifos], "store", out ) )
+    out = d.applyMethod("r_timing",fifos[#fifos],"load")
+  end
+
   --local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
   local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)
   if T~=4 then
     out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,T,4)), out )
   end
 
-  local hsfn = d.lambda("hsfn", hsfninp, out)
+  table.insert(statements,1,out)
+
+  local hsfn = d.lambda("hsfn", hsfninp, d.statements(statements), fifos)
+
+--  local hsfn = d.lambda("hsfn", hsfninp, out)
   return hsfn, lkcost
 end

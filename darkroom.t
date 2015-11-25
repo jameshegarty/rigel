@@ -3327,7 +3327,8 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
   terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
   res.terraModule = Fifo
 
-  res.systolicModule = S.moduleConstructor("fifo_"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T))
+  local bytes = (size*A:verilogBits())/8
+  res.systolicModule = S.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
 
   local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
   --------------
@@ -3338,7 +3339,11 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
   store:addPipeline( fifo:pushBack( store:getInput() ) )
   --store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
   local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
-  storeReady:setOutput( fifo:ready(), "store_ready" )
+  if nostall then
+    storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
+  else
+    storeReady:setOutput( fifo:ready(), "store_ready" )
+  end
   local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
   storeReset:setCE(storeCE)
   storeReset:addPipeline(fifo:pushBackReset())
