@@ -144,7 +144,7 @@ function make(filename)
   local outfile = "stereo_wide_handshake_"..sel(NOSTALL,"nostall_","")..filename
   harness.axi( outfile, hsfn,"stereo_"..filename..".raw",nil, nil,  TYPE,  4, W, H, OUT_TYPE, 8, W, H )
 
-  io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth..sel(NOSTALL," NOSTALL","")); io.close()
+  io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()
 end
 
