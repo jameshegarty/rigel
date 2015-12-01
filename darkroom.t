@@ -1358,6 +1358,84 @@ function darkroom.scale( A, w, h, scaleX, scaleY )
   return darkroom.newFunction(res)
 end
 
+-- type {A,bool}->A
+-- rate: this will have a valid output every 1/rate cycles
+function darkroom.filterSeq( A, W,H, rate, fifoSize )
+  assert(types.isType(A))
+  err(type(W)=="number", "W must be number")
+  err(type(H)=="number", "H must be number")
+  err(type(rate)=="number", "rate must be number")
+  err(rate>1, "rate must be >1")
+  err(type(fifoSize)=="number", "fifoSize must be number")
+  err(isPowerOf2(rate), "rate should be power of 2")
+
+  local logRate = math.log(rate)/math.log(2)
+
+  local res = { kind="filterSeq", A=A }
+  res.inputType = types.tuple{A,types.bool()}
+  res.outputType = darkroom.V(A)
+  res.delay = 0
+  res.stateful = true
+  res.sdfInput = {{1,1}}
+  res.sdfOutput = {{1,rate}}
+
+  local struct FilterSeq { phase:int; cyclesSinceOutput:int; currentFifoSize: int; remainingInputs : int; remainingOutputs : int }
+  terra FilterSeq:reset() self.phase=0; self.cyclesSinceOutput=0; self.currentFifoSize=0; self.remainingInputs=W*H; self.remainingOutputs=W*H/rate; end
+  terra FilterSeq:stats(name:&int8) end
+  terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&darkroom.lower(res.outputType):toTerraType() )
+    data(out) = inp._0
+    
+    valid(out) = inp._1
+
+    -- if it has been RATE cycles since we had an output, force us to have an output
+    var underflow = (self.currentFifoSize==0 and self.cyclesSinceOutput==rate)
+    valid(out) = valid(out) or underflow
+
+    -- if fifo is full, surpress output
+    var fifoHasSpace = (self.currentFifoSize<fifoSize)
+    valid(out) = valid(out) and fifoHasSpace
+
+    -- we're running out of possible outputs
+--    var remainingInputOptions = (self.remainingInputs >> logRate) + (fifoSize-self.currentFifoSize)
+    --var remainingInputOptions = (self.remainingInputs) + (fifoSize-self.currentFifoSize)
+    var outaTime = (self.remainingInputs < self.remainingOutputs*rate)
+    valid(out) = valid(out) or outaTime
+
+    if DARKROOM_VERBOSE then cstdio.printf("FilterSeq data %d inputvalid %d outputvalid %d underflow %d fifoHasSpace %d outaTime %d currentFifoSize %d phase %d remainingOutputs %d\n",data(out),inp._1,valid(out),underflow,fifoHasSpace, outaTime, self.currentFifoSize, self.phase, self.remainingOutputs) end
+    --cstdio.printf("remainingInputs %d remainingInputs>>logRate %d remainingOutputs %d\n", self.remainingInputs, self.remainingInputs >> logRate, self.remainingOutputs)
+--    cstdio.printf("rate %d\n",rate)
+
+    if valid(out) then
+      if self.phase<rate-1 then
+        -- if self.phase==rate, we consume in the same cycle (net change=0)
+        self.currentFifoSize = self.currentFifoSize + 1
+      end
+
+      self.remainingOutputs = self.remainingOutputs - 1
+      self.cyclesSinceOutput = 0
+    else
+      if self.phase==rate-1 and self.currentFifoSize>0 then self.currentFifoSize = self.currentFifoSize-1 end
+      self.cyclesSinceOutput = self.cyclesSinceOutput + 1
+    end
+
+    self.remainingInputs = self.remainingInputs - 1
+    self.phase = self.phase + 1
+    if self.phase==rate then self.phase = 0 end
+  end
+  
+  res.terraModule = FilterSeq
+
+  res.systolicModule = S.moduleConstructor("filterSeq")
+  local inp = S.parameter("process_input", res.inputType )
+
+  local resetPipelines = {}
+  local CE = S.CE("process_CE")
+  res.systolicModule:addFunction( S.lambda("process", inp, S.tuple{S.index( inp, 0 ),S.constant(true,types.bool())}, "process_output", nil, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+
+  return darkroom.newFunction(res)
+end
+
 -- this expects f to be a stateful function
 function darkroom.filterStateful( A, T, f )
   assert(types.isType(A))
@@ -2633,7 +2711,7 @@ darkroom.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
   local svalid = S.__and(S.__and(S.ge(sx,sL),S.ge(sy,sB)),S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop)))
 
-  local f = darkroom.lift( "CropSeq_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T), innerInputType, outputType, 0, 
+  local f = darkroom.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T), innerInputType, outputType, 0, 
                            terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
                              var x,y = (inp._0)[0]._0, (inp._0)[0]._1
                              data(out) = inp._1
@@ -2703,7 +2781,7 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
   res.terraModule = PadSeq
 
-  res.systolicModule = S.moduleConstructor("PadSeq_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
+  res.systolicModule = S.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
 
 
   local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
@@ -3094,8 +3172,8 @@ darkroom.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(types.isType(A))
   map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T>=1); assert(w>0); assert(h>0);
-  assert(xmin<xmax)
-  assert(ymin<ymax)
+  err(xmin<=xmax,"xmin>xmax")
+  err(ymin<=ymax,"ymin>ymax")
   assert(xmax==0)
   assert(ymax==0)
 
@@ -3143,7 +3221,7 @@ darkroom.unpackStencil = memoize(function( A, stencilW, stencilH, T )
   end
   res.terraModule = UnpackStencil
 
-  res.systolicModule = S.moduleConstructor("unpackStencil_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.systolicModule = S.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
   local sinp = S.parameter("inp", res.inputType)
   local out = {}
   for i=1,T do
@@ -3561,6 +3639,9 @@ darkroom.overflow = memoize(function( A, count )
   terra Overflow:reset() self.cnt=0 end
   terra Overflow:process( inp : &A:toTerraType(), out:&darkroom.lower(res.outputType):toTerraType())
     data(out) = @inp
+    if self.cnt>=count then
+      cstdio.printf("OUTPUT OVERFLOW %d\n",self.cnt)
+    end
     valid(out) = (self.cnt<count)
     self.cnt = self.cnt+1
   end

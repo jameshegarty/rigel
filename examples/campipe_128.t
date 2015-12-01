@@ -28,6 +28,83 @@ ccmtab={ {255/142,0,0},
 
 gamma = 2.4
 
+local r_tl = {1,0,1,
+              0,0,0,
+              1,0,1}
+local r_tr = {0,2,0,
+              0,0,0,
+              0,2,0}
+local r_bl = {0,0,0,
+              2,0,2,
+              0,0,0}
+local r_br = {0,0,0,
+              0,4,0,
+              0,0,0}
+DEMOSAIC_R = {r_bl,r_br,r_tl,r_tr}
+
+local g_tl = {0,1,0,
+              1,0,1,
+              0,1,0}
+local g_tr = {0,0,0,
+              0,4,0,
+              0,0,0}
+local g_bl = {0,0,0,
+              0,4,0,
+              0,0,0}
+local g_br = {0,1,0,
+              1,0,1,
+              0,1,0}
+DEMOSAIC_G = {g_bl,g_br,g_tl,g_tr}
+
+local b_tl = {0,0,0,
+              0,4,0,
+              0,0,0}
+local b_tr = {0,0,0,
+              2,0,2,
+              0,0,0}
+local b_bl = {0,2,0,
+              0,0,0,
+              0,2,0}
+local b_br = {1,0,1,
+              0,0,0,
+              1,0,1}
+DEMOSAIC_B = {b_bl,b_br,b_tl,b_tr}
+
+DEMOSAIC_W = 3
+DEMOSAIC_H = 3
+
+-- pad 3x3 to 5x5
+function kernelPad(t)
+  local out = {}
+  for y=0,2 do
+    for x=0,6 do
+      if x>=2 and x<=4 then
+        table.insert(out,t[y*3+(x-2)+1])
+      else
+        table.insert(out,0)
+      end
+    end
+  end
+
+  return out
+end
+
+function shiftKernel(t,W,H,xs,ys)
+  for k,v in ipairs(t) do print(v) end
+
+  local out = {}
+  for y=0,H-1 do
+    for x=0,W-1 do
+      local rx = (x+xs)%W
+      local ry = (y+ys)%H
+      table.insert(out, t[ry*W+rx+1])
+    end
+  end
+
+  for k,v in ipairs(out) do print("OUT",v) end
+  return out
+end
+
 if string.find(arg[0],"128") then
   W,H = 128,128
   inputFilename = "300d_w"..W.."_h"..H..".raw"
@@ -35,6 +112,30 @@ if string.find(arg[0],"128") then
 --  phaseX, phaseY = 1,0
 elseif string.find(arg[0],"ov7660") then
   W,H=640,480
+
+  -- for some reason the two greens of the ov7660 don't line up. just ignore one
+  local g_tl = {0,2,0,
+                0,0,0,
+                0,2,0}
+  local g_tr = {1,0,1,
+                0,0,0,
+                1,0,1}
+  local g_bl = {0,0,0,
+                0,4,0,
+                0,0,0}
+  local g_br = {0,0,0,
+                2,0,2,
+                0,0,0}
+  DEMOSAIC_G = {g_bl,g_br,g_tl,g_tr}
+
+  DEMOSAIC_R = map(DEMOSAIC_R,kernelPad)
+  DEMOSAIC_R = map(DEMOSAIC_R, function(t) return shiftKernel(t,7,3,2,0) end )
+  DEMOSAIC_G = map(DEMOSAIC_G,kernelPad)
+  DEMOSAIC_B = map(DEMOSAIC_B,kernelPad)
+
+  DEMOSAIC_W = 7
+  DEMOSAIC_H = 3
+
   inputFilename = "ov7660.raw"
 --  inputFilename = "outrgb.raw"
   outputFilename = "campipe_ov7660"
@@ -68,49 +169,7 @@ function demosaic(internalW,internalH)
   -- BG
   -- GR
 
-  local r_tl = {1,0,1,
-                0,0,0,
-                1,0,1}
-  local r_tr = {0,2,0,
-                0,0,0,
-                0,2,0}
-  local r_bl = {0,0,0,
-                2,0,2,
-                0,0,0}
-  local r_br = {0,0,0,
-                0,4,0,
-                0,0,0}
-  local r = {r_bl,r_br,r_tl,r_tr}
-
-  local g_tl = {0,1,0,
-                1,0,1,
-                0,1,0}
-  local g_tr = {0,0,0,
-                0,4,0,
-                0,0,0}
-  local g_bl = {0,0,0,
-                0,4,0,
-                0,0,0}
-  local g_br = {0,1,0,
-                1,0,1,
-                0,1,0}
-  local g = {g_bl,g_br,g_tl,g_tr}
-
-  local b_tl = {0,0,0,
-                0,4,0,
-                0,0,0}
-  local b_tr = {0,0,0,
-                2,0,2,
-                0,0,0}
-  local b_bl = {0,2,0,
-                0,0,0,
-                0,2,0}
-  local b_br = {1,0,1,
-                0,0,0,
-                1,0,1}
-  local b = {b_bl,b_br,b_tl,b_tr}
-
-  local kerns = {r,g,b}
+  local kerns = { DEMOSAIC_R, DEMOSAIC_G, DEMOSAIC_B }
 
   -----------
   local function KSI(tab,name,phaseX,phaseY)
@@ -124,25 +183,25 @@ function demosaic(internalW,internalH)
     local phase = x+(y*S.constant(2,types.uint(16)))
 
     local tt = {}
-    local ATYPE = types.array2d(types.uint(8),3,3)
+    local ATYPE = types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)
     for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
     local kernelSelectOut = modules.wideMux( tt, phase )
     return darkroom.lift(name, ITYPE, ATYPE, 5,
-                         terra(inp:&tuple(uint16,uint16),out:&uint8[9])
+                         terra(inp:&tuple(uint16,uint16),out:&uint8[DEMOSAIC_W*DEMOSAIC_H])
                            var x,y = inp._0,inp._1
                            var phase = ((x+phaseX)%2)+((y+phaseY)%2)*2
-                           var ot : int32[9]
+                           var ot : int32[DEMOSAIC_W*DEMOSAIC_H]
                            if phase==0 then ot = array([tab[1]])
                            elseif phase==1 then ot = array([tab[2]])
                            elseif phase==2 then ot = array([tab[3]])
                            else ot = array([tab[4]]) end
-                           for i=0,9 do (@out)[i] = ot[i] end
+                           for i=0,DEMOSAIC_W*DEMOSAIC_H do (@out)[i] = ot[i] end
                          end, kernelSelectInput, kernelSelectOut)
   end
   -----------
 
   local XYTYPE = types.tuple{types.uint(16),types.uint(16)}
-  local DTYPE = types.tuple{XYTYPE,types.array2d(types.uint(8),3,3)}
+  local DTYPE = types.tuple{XYTYPE,types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)}
   local deminp = d.input(DTYPE)
   local xy = d.apply("xy",d.index(DTYPE,0),deminp)
   local st = d.apply("dat",d.index(DTYPE,1),deminp)
@@ -151,11 +210,11 @@ function demosaic(internalW,internalH)
   for i=1,3 do
     local kern = d.apply("k"..i,KSI(kerns[i],"kern"..i,phaseX,phaseY),xy)
 
-    local ConvWidth = 3
+    --local ConvWidth = 3
     local A = types.uint(8)
-    local packed = d.apply( "packedtup"..i, d.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), d.tuple("ptup"..i, {st,kern}) )
-    local conv = d.apply( "partialll"..i, d.map( C.multiply(A,A,types.uint(16)), ConvWidth, ConvWidth ), packed )
-    local conv = d.apply( "sum"..i, d.reduce( C.sum(types.uint(16),types.uint(16),types.uint(16)), ConvWidth, ConvWidth ), conv )
+    local packed = d.apply( "packedtup"..i, d.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), d.tuple("ptup"..i, {st,kern}) )
+    local conv = d.apply( "partialll"..i, d.map( C.multiply(A,A,types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), packed )
+    local conv = d.apply( "sum"..i, d.reduce( C.sum(types.uint(16),types.uint(16),types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), conv )
     local conv = d.apply( "touint8"..i, C.shiftAndCastSaturate( types.uint(16), A, 2 ), conv )
 
     out[i] = conv
@@ -166,8 +225,8 @@ function demosaic(internalW,internalH)
 
   ---------------
   local demtop = d.input(types.array2d(types.uint(8),T))
-  local st = d.apply( "st", d.stencilLinebuffer(types.uint(8),internalW,internalH,T,-2,0,-2,0), demtop)
-  local st = d.apply( "convstencils", d.unpackStencil( types.uint(8), 3, 3, T ) , st )
+  local st = d.apply( "st", d.stencilLinebuffer(types.uint(8),internalW,internalH,T,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
+  local st = d.apply( "convstencils", d.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, T ) , st )
   local demtopout = d.apply("dem",dem,st)
 
   return d.lambda("demtop",demtop,demtopout)

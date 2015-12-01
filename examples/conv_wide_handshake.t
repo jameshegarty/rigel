@@ -20,7 +20,7 @@ inputH = 64
 W = inputW
 H = inputH
 
-local convolve = C.convolveConstant( types.uint(8), ConvWidth, range(ConvArea), 8 )
+local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, range(ConvArea), 8 )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 inp = d.input( BASE_TYPE )

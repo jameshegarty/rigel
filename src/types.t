@@ -763,7 +763,7 @@ end
 
 -- not very accurate. This will let us compare to type(t) at least
 function TypeFunctions:toLuaType()
-  if self.kind=="int" or self.kind=="uint" then
+  if self.kind=="int" or self.kind=="uint" or self.kind=="float" then
     return "number"
   elseif self.kind=="array" or self.kind=="tuple" then
     return "table"

@@ -187,8 +187,12 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==ty:channels())
     return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
+  elseif ty:isArray() then
+    return "systolic.valueToVerilog_tuple_garbage_NYI"
   elseif ty:isOpaque() then
     return "0'b0"
+  elseif ty:isFloat() then
+    return "systolic.valueToVerilog_float_garbage" -- garbage
   else
     print("valueToVerilog",ty)
     assert(false)

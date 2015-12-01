@@ -166,20 +166,23 @@ function C.convolveTaps( A, ConvWidth, shift )
 end
 
 ------------
--- returns a function from A[ConvWidth,ConvWidth]->A
-function C.convolveConstant( A, ConvWidth, tab, shift, X )
+-- returns a function from A[ConvWidth,ConvHeight]->A
+function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
+  assert(type(ConvWidth)=="number")
+  assert(type(ConvHeight)=="number")
+  assert(type(tab)=="table")
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = d.input( types.array2d( A, ConvWidth, ConvWidth ) )
-  local r = d.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvWidth) )
+  local inp = d.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local r = d.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), d.tuple("ptup", {inp,r}) )
-  local conv = d.apply( "partial", d.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvWidth ), packed )
-  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
+  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), d.tuple("ptup", {inp,r}) )
+  local conv = d.apply( "partial", d.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvHeight ), packed )
+  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvHeight ), conv )
   local conv = d.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
 
-  local convolve = d.lambda( "convolveConstant", inp, conv )
+  local convolve = d.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
   return convolve
 end
 
@@ -273,7 +276,7 @@ function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
   local convstencils = d.apply( "convstencils", d.unpackStencil( A, stencilW, stencilH, T ), convLB )
   local convpipe = d.apply( "conv", d.map( f, T ), convstencils )
   
-  local convpipe = d.lambda( "convpipe", inp, convpipe )
+  local convpipe = d.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
   return convpipe
 end
 
@@ -348,8 +351,16 @@ function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
 
   table.insert(statements,1,out)
 
-  local hsfn = d.lambda("hsfn", hsfninp, d.statements(statements), fifos )
+  local hsfn = d.lambda("hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f), hsfninp, d.statements(statements), fifos )
   return hsfn
+end
+
+--------
+function C.stencilKernelPadcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
+  local function finternal(IW,IH)
+    return d.makeHandshake(C.stencilKernel(A,T,IW,IH,R+L+1,Top+B+1,f))
+  end
+  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal)
 end
 
 -------------
