@@ -20,7 +20,7 @@ local outputH = inputH
 
 function conv(internalW, internalH)
   print("CONV",internalW,internalH)
-  local convolve = C.convolveConstant( types.uint(8), ConvWidth, rep(1,ConvWidth*ConvWidth), 5 )
+  local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, rep(1,ConvWidth*ConvWidth), 5 )
   local convpipe = C.stencilKernel( types.uint(8), T, internalW, internalH, ConvWidth, ConvWidth, convolve )
   return d.makeHandshake(convpipe)
 end

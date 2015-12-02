@@ -39,6 +39,22 @@ __mul=function(l,r)
                     error("Attempt to modify systolic AST node")
                   end}
 
+local function boolbinop(op,l,r)
+  return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
+end
+
+function fixedASTFunctions:gt(r)
+  return boolbinop(">",self,r)
+end
+
+function fixedASTFunctions:ge(r)
+  return boolbinop(">=",self,r)
+end
+
+function fixedASTFunctions:__and(r)
+  return boolbinop("and",self,r)
+end
+
 function fixed.isAST(ast)
   return getmetatable(ast)==fixedASTMT
 end
@@ -144,6 +160,11 @@ function fixedASTFunctions:rshift(N)
   return fixed.new{kind="rshift", type=types.float(32),shift=N,inputs={self},loc=getloc()}
 end
 
+function fixedASTFunctions:lshift(N)
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  return fixed.new{kind="lshift", type=types.float(32),shift=N,inputs={self},loc=getloc()}
+end
+
 function fixedASTFunctions:cast(to)
   return self
 end
@@ -212,64 +233,19 @@ function fixedASTFunctions:cost() return 0 end
 
 function fixedASTFunctions:toSystolic()
   local inp
-  local res = self:visitEach(
+  self:visitEach(
     function( n, args )
-      local res
       if n.kind=="parameter" then
         inp = S.parameter(n.name, n.type)
-        res = inp
-      elseif n.kind=="binop" then
-        local l = S.cast(args[1], fixed.extract(n.type))
-        local r = S.cast(args[2], fixed.extract(n.type))
-        if n.op=="+" then res = l+r
-        elseif n.op=="-" then res = l-r
-        elseif n.op=="*" then res = l*r
-        else
-          assert(false)
-        end
-        --res = S.ast.new({kind="binop",op=n.op,inputs={args[1],args[2]},loc=n.loc,type=fixed.extract(n.type)})
-      elseif n.kind=="rshift" then
-        res = args[1]
-      elseif n.kind=="truncate" then
-        res = args[1]
-      elseif n.kind=="lift" then
-        res = S.cast(args[1],types.float(32))
-      elseif n.kind=="lower" then
-        res = S.cast(args[1],n.type)
-      elseif n.kind=="constant" then
-        res = S.constant( n.value, fixed.extract(n.type) )
-      elseif n.kind=="plainconstant" then
-        res = S.constant( n.value, n.type )
-      elseif n.kind=="normalize" or n.kind=="denormalize" or n.kind=="invert" then
-        res = args[1]
-      elseif n.kind=="hist" then
-        res = args[1] -- cpu only
-      elseif n.kind=="index" then
-        res = S.index( args[1], n.ix, n.iy)
-      elseif n.kind=="toSigned" then
-        res = args[1]
-      elseif n.kind=="abs" then
-        res = args[1]
-      elseif n.kind=="neg" then
-        res = S.neg(args[1])
-      elseif n.kind=="sign" then
-        res = S.ge(args[1],S.constant(0,fixed.extract(n.inputs[1].type)))
-      elseif n.kind=="tuple" then
-        res = S.tuple(args)
-      elseif n.kind=="array2d" then
-        res = S.cast(S.tuple(args),n.type)
-      elseif n.kind=="addSign" then
-        res = args[1]
-      elseif n.kind=="select" then
-        res = S.select(args[1],args[2],args[3])
-      else
-        print(n.kind)
-        assert(false)
       end
-
-      assert(systolic.isAST(res))
-      return res
     end)
+
+  local res
+  if self.type:isArray() then
+    res = S.constant(broadcast(0,self.type:channels()),self.type)
+  else
+    res = S.constant(0,self.type)
+  end
 
   return res, inp
 end
@@ -288,14 +264,22 @@ function fixedASTFunctions:toTerra()
         inp = symbol(&n.type:toTerraType(), n.name)
         res = `@inp
       elseif n.kind=="binop" then
-        local l = `[fixed.extract(n.type):toTerraType()]([args[1]])
-        local r = `[fixed.extract(n.type):toTerraType()]([args[2]])
-        if n.op=="+" then res = `l+r
-        elseif n.op=="-" then res = `l-r
-        elseif n.op=="*" then res = `l*r
+        if n.op==">" then
+          res = `[args[1]]>[args[2]]
+        elseif n.op==">=" then
+          res = `[args[1]]>=[args[2]]
+        elseif n.op=="and" then
+          res = `[args[1]] and [args[2]]
         else
-          print("OP",n.op)
-          assert(false)
+          local l = `[fixed.extract(n.type):toTerraType()]([args[1]])
+          local r = `[fixed.extract(n.type):toTerraType()]([args[2]])
+          if n.op=="+" then res = `l+r
+          elseif n.op=="-" then res = `l-r
+          elseif n.op=="*" then res = `l*r
+          else
+            print("OP",n.op)
+            assert(false)
+          end
         end
       elseif n.kind=="index" then
         if n.inputs[1].type:isArray() then
@@ -316,6 +300,8 @@ function fixedASTFunctions:toTerra()
         res = n.type:valueToTerra(n.value)
       elseif n.kind=="rshift" then
         res = `[args[1]]/cmath.pow(2,n.shift)
+      elseif n.kind=="lshift" then
+        res = `[args[1]]*cmath.pow(2,n.shift)
       elseif n.kind=="truncate" or n.kind=="hist" or n.kind=="normalize" or n.kind=="denormalize" or n.kind=="toSigned" then
         res = args[1]
       elseif n.kind=="abs" then
@@ -356,8 +342,8 @@ function fixedASTFunctions:toDarkroom(name,X)
   local terra tfn([terrainp], out:&out.type:toTerraType())
     @out = terraout
   end
-  --tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, out.type, 1, tfn, inp, out )
+  tfn:printpretty(true,false)
+  return darkroom.lift( name, inp.type, self.type, 1, tfn, inp, out )
 end
 
 return fixed

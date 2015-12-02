@@ -57,7 +57,7 @@ end
 
 local TConvWidth = 8
 P.G = P.gaussian(TConvWidth,3)
-local convolvefn = C.convolveConstant( types.uint(8), TConvWidth, P.G, 6 )
+local convolvefn = C.convolveConstant( types.uint(8), TConvWidth, TConvWidth, P.G, 6 )
 
 function P.pyramidIter(i,doDownsample,internalT,W,H,ConvWidth)
   assert(type(ConvWidth)=="number")
