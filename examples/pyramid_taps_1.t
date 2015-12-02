@@ -11,6 +11,9 @@ outputT = 8
 A = types.uint(8)
 
 local LARGE = string.find(arg[0],"large")
+LARGE = (LARGE~=nil)
+local NOFIFO = string.find(arg[0],"nofifo")
+NOFIFO = (NOFIFO~=nil)
 
 local ConvWidth = 8
 
@@ -24,16 +27,16 @@ end
 local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
 TARGET_DEPTH = tonumber(TARGET_DEPTH)
 
+local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
+local DATA_TYPE = types.array2d(A,8)
+local HST = types.tuple{DATA_TYPE,TAP_TYPE}
 
+local inp = d.input( d.Handshake(HST) )
+local tapinp =  d.apply("idx1",d.makeHandshake(d.index(HST,1)),inp)
+local out = d.apply("idx0",d.makeHandshake(d.index(HST,0)),inp)
 
---local convolvefn = C.convolveConstant( types.uint(8), ConvWidth, rep(1,ConvWidth*ConvWidth), 6 )
-
-local inp = d.input( d.Handshake(types.array2d(A,8)) )
-local out
-if internalT==8 then
-  out = inp
-else
-  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,internalT)), inp)
+if internalT<8 then
+  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,internalT)), out)
 end
 
 curT = internalT
@@ -51,18 +54,21 @@ local statements = {}
 
 for depth=1,TARGET_DEPTH do
   print("DODEPTH",depth)
-  local PI = P.pyramidIter(depth,depth>1,internalT,curW,curH,ConvWidth)
+  --local PI = P.pyramidIter(depth,depth>1,internalT,curW,curH,ConvWidth)
+  local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO )
   print("PI",PI.inputType,PI.outputType)
   print(PI.sdfInput[1][1],PI.sdfInput[1][2])
   print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
-  out = d.apply("p"..depth, PI, out)
+
+  local piinp = d.apply("CPI"..depth, darkroom.packTuple({types.array2d(A,internalT),TAP_TYPE}), d.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
+  out = d.apply("p"..depth, PI, piinp)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
   print("thisW",thisW,thisW/outputH)
   outputW = outputW + thisW/outputH
 
   if depth>1 then
-    curT = internalT/2 -- we do changeRate so that this is always true for this implementation
+    curT = internalT/4 -- we do changeRate so that this is always true for this implementation
     curW = curW/2
     curH = curH/2
   end
@@ -82,7 +88,10 @@ for depth=1,TARGET_DEPTH do
     print("curT",curT)
 
     out = d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
-    local out0 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,internalT)), d.selectStream("i0"..depth,out,0) )
+    local out0 = d.selectStream("i0"..depth,out,0)
+    if curT~=internalT then
+      out0 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,internalT)), out0 )
+    end
     out0 = P.FIFO( fifos, statements, TOP_TYPE, out0, nil, "internal"..depth, curW, curH, internalT )
 
     local out1 = d.apply("CRr"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), d.selectStream("i1"..depth,out,1) )
@@ -126,16 +135,21 @@ hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
 local scale = math.pow(2,TARGET_DEPTH-1)
 
 local infile = "frame_128.raw"
-local outfile = "pyramid_"..tostring(TARGET_DEPTH)
-local design = "Gaussian Pyramid Const 128"
+local outfile = "pyramid_taps_"..tostring(TARGET_DEPTH)
+local design = "Gaussian Pyramid 128"
 
 if LARGE then
   infile = "frame_384_384.raw"
-  outfile = "pyramid_large_"..tostring(TARGET_DEPTH)
-  design = "Gaussian Pyramid Const 384"
+  if NOFIFO then
+    outfile = "pyramid_large_nofifo_taps_"..tostring(TARGET_DEPTH)
+    design = "Gaussian Pyramid NOFIFO 384"
+  else
+    outfile = "pyramid_large_taps_"..tostring(TARGET_DEPTH)
+    design = "Gaussian Pyramid 384"
+  end
 end
 
-harness.axi( outfile, hsfn, infile, nil, nil, RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH, nil, 9999999 )
+harness.axi( outfile, hsfn, infile, TAP_TYPE, P.G, RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH, nil, 9999999 )
 
 io.output("out/"..outfile..".design.txt"); io.write(design); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(internalT); io.close()

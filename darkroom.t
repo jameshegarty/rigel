@@ -2375,7 +2375,7 @@ function darkroom.flattenStreams( A, rates, X )
 end
 
 -- takes A to A[T] by duplicating the input
-function darkroom.broadcast(A,T)
+darkroom.broadcast = memoize(function(A,T)
   darkroom.expectBasic(A)
   err( type(T)=="number", "T should be number")
   local OT = types.array2d(A,T)
@@ -2384,7 +2384,7 @@ function darkroom.broadcast(A,T)
                        terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
                          for i=0,T do (@out)[i] = @inp end
                          end, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
-end
+    end)
 
 -- Takes StatefulHandshake(A) to (StatefulHandshake(A))[N]
 -- HACK(?!): when we fan-out a handshake stream, we need to synchronize the downstream modules.
