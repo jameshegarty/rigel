@@ -166,7 +166,9 @@ function fixedASTFunctions:lshift(N)
 end
 
 function fixedASTFunctions:cast(to)
-  return self
+  assert( fixed.isFixedType(self.type)==false )
+  assert(types.isType(to))
+  return fixed.new{kind="cast",type=to, inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:index(ix,iy)
@@ -241,8 +243,10 @@ function fixedASTFunctions:toSystolic()
     end)
 
   local res
-  if self.type:isArray() then
+  if self.type:isArray() or self.type:isTuple() then
     res = S.constant(broadcast(0,self.type:channels()),self.type)
+  elseif self.type:isBool() then
+    res = S.constant(false,self.type)
   else
     res = S.constant(0,self.type)
   end
@@ -320,6 +324,8 @@ function fixedASTFunctions:toTerra()
         res = `terralib.select([args[1]]==0,[float](0),1.f/[args[1]])
       elseif n.kind=="select" then
         res = `terralib.select([args[1]],[args[2]],[args[3]])
+      elseif n.kind=="cast" then
+        res = `[n.type:toTerraType()]([args[1]])
       else
         print(n.kind)
         assert(false)

@@ -72,7 +72,11 @@ local function makeHarris(dxType, dyType)
 end
 
 
-local function makeNMS(ty)
+local function makeNMS(ty, boolOutput, X)
+  assert(types.isType(ty))
+  assert(type(boolOutput)=="boolean")
+  assert(X==nil)
+
   local THRESH = 0.001
 
   local inp = f.parameter("nmsinp", types.array2d(ty,3,3))
@@ -83,8 +87,10 @@ local function makeNMS(ty)
   local nms = N:__and(S)
   nms = nms:__and(E)
   nms = nms:__and(W)
-  nms = nms:__and((inp:index(1,1)):gt(f.constant(THRESH)))
-  local out = f.select(nms,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
+  local out = nms:__and((inp:index(1,1)):gt(f.constant(THRESH)))
+  if boolOutput==false then
+    out = f.select(out,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
+  end
   return out:toDarkroom("nms")
 end
 
@@ -108,7 +114,12 @@ end
 
 
 -- W,H are image W,H
-local function harris(W,H)
+local function harris(W,H,boolOutput,X)
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(type(boolOutput)=="boolean")
+  assert(X==nil)
+
   local T = 1
   local A = types.uint(8)
   local inp = d.input(d.Handshake(types.array2d(types.uint(8),T)))
@@ -129,7 +140,7 @@ local function harris(W,H)
   local harris = d.apply("harris", d.makeHandshake(harrisFn), dxdy)
   harris = d.apply("AO",d.makeHandshake(C.arrayop(harrisType,1,1)),harris)
 
-  local nmsFn = makeNMS(harrisType)
+  local nmsFn = makeNMS( harrisType, boolOutput )
   local nms = d.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), harris)
 
   return d.lambda("Harristop", inp, nms)
