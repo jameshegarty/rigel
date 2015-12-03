@@ -763,12 +763,14 @@ end
 
 -- not very accurate. This will let us compare to type(t) at least
 function TypeFunctions:toLuaType()
-  if self.kind=="int" or self.kind=="uint" or self.kind=="float" then
+  if self.kind=="int" or self.kind=="uint" or self.kind=="float" or self.kind=="bits" then
     return "number"
   elseif self.kind=="array" or self.kind=="tuple" then
     return "table"
   elseif self.kind=="bool" then
     return "boolean"
+  elseif self.kind=="opaque" then
+    return "number" -- wtf
   else
     print("toLuaType",self)
     assert(false)

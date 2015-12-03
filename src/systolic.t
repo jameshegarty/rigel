@@ -187,7 +187,7 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==ty:channels())
     return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
-  elseif ty:isArray() then
+  elseif ty:isTuple() then
     return "systolic.valueToVerilog_tuple_garbage_NYI"
   elseif ty:isOpaque() then
     return "0'b0"
@@ -439,12 +439,14 @@ function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
   ty = ty:makeConst()
 
-  if ty:isArray() then
+  if ty:isArray() or ty:isTuple() then
     err( type(v)=="table", "if type is an array, v must be a table")
     map( v,function(n) err(type(n)=="number", "array element must be a number") end )
     err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
   else
     err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
+    err( type(v)==ty:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(ty))
+
     if type(v)=="number" then
       err( v==math.floor(v), "systolic constant must be integer")
       err( ty:isInt() or v>=0, "systolic uint const must be positive")

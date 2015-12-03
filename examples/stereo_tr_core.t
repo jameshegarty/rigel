@@ -10,17 +10,17 @@ function displayOutput( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.uint(8),1)
   local inp = S.parameter( "inp", ITYPE )
+  local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
+  if threshold~=0 then
+    out = S.cast(S.tuple{S.select(S.gt(S.index(inp,1),S.constant(threshold,reduceType)),S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
+  end
+
   return d.lift("displayOutput",ITYPE, OTYPE, 0,
                 terra(a:&ITYPE:toTerraType(), out:&uint8[1])
-                  if a._1<threshold or threshold==0 then
-                    @out = array(a._0)
-                  else
-                    @out = array([uint8](0))
-                  end
-
---                  @out = array([uint8](a._1))
+                  @out = array(a._0)
+                  if threshold~=0 and a._1>threshold then @out = array([uint8](0)) end
                 end, inp, 
-                S.cast(S.tuple{S.index(inp,0)},OTYPE) 
+                out 
                 --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
 )
 end
@@ -85,7 +85,11 @@ function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, redu
   local TYPE = types.array2d(ATYPE,4)
   local STENCIL_TYPE = types.array2d(A,SADWidth,SADWidth)
   local hsfninp = d.input( d.Handshake(TYPE) )
+  local LRTYPE = types.array2d(A,2)
   local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(A,2),1,4,1)), hsfninp )
+
+  local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
+  local inp = d.apply("pad", d.liftHandshake(d.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
   local inp = d.apply("oi0", d.makeHandshake(d.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = d.apply("inp_broadcast", d.broadcastStream(types.array2d(A,2),2), inp)
 
@@ -99,7 +103,7 @@ function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, redu
   left = d.applyMethod("l1",fifos[1],"load")
 
   local left = d.apply("AO",d.makeHandshake(C.arrayop(types.uint(8),1)),left)
-  local left = d.apply("LB", C.stencilLinebufferPartialOffsetOverlap( types.uint(8), W, H, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
+  local left = d.apply("LB", C.stencilLinebufferPartialOffsetOverlap( types.uint(8), internalW, internalH, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
   local left = d.apply( "llb", d.makeHandshake(d.unpackStencil( A, SADWidth, SADWidth, perCycleSearch)), left) -- A[SADWidth,SADWidth][PCS]
 
   --------
@@ -112,7 +116,7 @@ function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, redu
   right = d.applyMethod("l12",fifos[#fifos],"load")
 
   local right = d.apply("AOr", d.makeHandshake(C.arrayop(types.uint(8),1)),right) -- uint8[1]
-  local right = d.apply( "rightLB", d.makeHandshake( d.stencilLinebuffer( A, W, H, 1, -SADWidth+1, 0, -SADWidth+1, 0 ) ), right)
+  local right = d.apply( "rightLB", d.makeHandshake( d.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 ) ), right)
 
   right = d.apply("rAO",d.makeHandshake(C.arrayop(STENCIL_TYPE,1)),right)
   right = d.apply( "rup", d.upsampleXSeq(STENCIL_TYPE,1,1/T), right)
@@ -136,9 +140,11 @@ function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, redu
 
   local res = d.apply("display",d.makeHandshake( displayOutput(types.uint(reducePrecision),errorThreshold) ), res)
 
+  res = d.apply("CRP", d.liftHandshake(d.liftDecimate(d.cropSeq(types.uint(8), internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
+
   local res = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), res )
 
-  res = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), W, H, 8, SADWidth+SearchWindow+OffsetX-2, 0, SADWidth-1, 0, 0 )), res ) -- cut off the junk (undefined region)
+  --res = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), W, H, 8, SADWidth+SearchWindow+OffsetX-2, 0, SADWidth-1, 0, 0 )), res ) -- cut off the junk (undefined region)
 
   table.insert(statements,1,res)
 
