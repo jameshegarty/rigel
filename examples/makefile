@@ -29,7 +29,7 @@ SIMSRCS := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_la
 SIMSRCS := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SIMSRCS))
 SIMSRCS := $(filter-out convpadcrop_tr_handshake_4_1_1080p.t convpadcrop_tr_handshake_4_2_1080p.t convpadcrop_tr_handshake_4_4_1080p.t convpadcrop_tr_handshake_4_8_1080p.t convpadcrop_tr_handshake_8_1_1080p.t convpadcrop_tr_handshake_8_2_1080p.t convpadcrop_tr_handshake_8_4_1080p.t convpadcrop_tr_handshake_8_8_1080p.t,$(SIMSRCS))
 #nyi
-SIMSRCS := $(filter-out harris.t filterseq.t,$(SIMSRCS))
+SIMSRCS := $(filter-out harris.t filterseq.t harris_filterseq.t,$(SIMSRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
