@@ -54,5 +54,5 @@ local OUT_TYPE = types.array2d(types.uint(8),8)
 
 local outfile = "stereo_tr_"..filename.."_"..T
 harness.axi( outfile, hsfn, infile, nil, nil,  ITYPE, 4, W, H, OUT_TYPE, 8, W, H )
-io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth); io.close()
+io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..filename); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()
