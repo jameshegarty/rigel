@@ -6,7 +6,7 @@ local harness = require "harness"
 local C = require "examplescommon"
 
 --T = 8 -- throughput
-function MAKE(T,ConvWidth)
+function MAKE(T,ConvWidth,size1080p)
   assert(T<=1)
   --ConvRadius = 1
   local ConvRadius = ConvWidth/2
@@ -16,6 +16,11 @@ function MAKE(T,ConvWidth)
   
   local inputW = 128
   local inputH = 64
+
+  if size1080p then
+    print("1080p")
+    inputW, inputH = 1920, 1080
+  end
   
   local PadRadius = upToNearest(T, ConvRadius)
   
@@ -47,8 +52,19 @@ function MAKE(T,ConvWidth)
   local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), out )
   local hsfn = d.lambda("hsfn", hsfninp, out)
   
+  local infile = "frame_128.raw"
   local outfile = "conv_tr_handshake_"..tostring(ConvWidth).."_"..(1/T)
-  harness.axi( outfile, hsfn, "frame_128.raw", nil, nil, RW_TYPE, 8,inputW, inputH, RW_TYPE, 8,outputW, outputH )
+
+  if size1080p then 
+    infile="1080p.raw" 
+    outfile = outfile.."_1080p"
+  end
+
+  harness.axi( outfile, hsfn, infile, nil, nil, RW_TYPE, 8,inputW, inputH, RW_TYPE, 8,outputW, outputH )
+
+  local sizestr = "128 "
+  if size1080p then sizestr = "1080p " end
+
   io.output("out/"..outfile..".design.txt"); io.write("Convolution "..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
 end
@@ -58,4 +74,4 @@ local convwidth = string.sub(arg[0],first,first)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
 print("ConvWidth",convwidth,"T",t)
 
-MAKE(1/tonumber(t),tonumber(convwidth))
+MAKE(1/tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"))

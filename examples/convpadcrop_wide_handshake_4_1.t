@@ -70,7 +70,7 @@ function MAKE(T,ConvWidth,size1080p)
   harness.axi( outfile, hsfn, infile, TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
 
   local sizestr = "128 "
-  if size1080p then sizestr = "" end
+  if size1080p then sizestr = "1080p " end
 
   io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()

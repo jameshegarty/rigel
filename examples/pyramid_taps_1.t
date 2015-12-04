@@ -39,7 +39,7 @@ if internalT<8 then
   out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,internalT)), out)
 end
 
-curT = internalT
+--curT = internalT
 curW = inputW
 curH = inputH
 local L = {}
@@ -55,7 +55,7 @@ local statements = {}
 for depth=1,TARGET_DEPTH do
   print("DODEPTH",depth)
   --local PI = P.pyramidIter(depth,depth>1,internalT,curW,curH,ConvWidth)
-  local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO )
+  local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO, true )
   print("PI",PI.inputType,PI.outputType)
   print(PI.sdfInput[1][1],PI.sdfInput[1][2])
   print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
@@ -68,33 +68,28 @@ for depth=1,TARGET_DEPTH do
   outputW = outputW + thisW/outputH
 
   if depth>1 then
-    curT = internalT/4 -- we do changeRate so that this is always true for this implementation
+    --curT = internalT/4 -- we do changeRate so that this is always true for this implementation
     curW = curW/2
     curH = curH/2
   end
 
-  local THIS_TYPE = types.array2d(types.uint(8),curT)
+  --local THIS_TYPE = types.array2d(types.uint(8),curT)
   local TOP_TYPE = types.array2d(A,internalT)
   local OUT_TYPE = types.array2d(A,8)
   if depth==TARGET_DEPTH then
 
     -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-    out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), out)
+    out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,internalT,8)), out)
 
     -- last level
     out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "final", curW, curH, 8 )
     L[depth] = out
   else
-    print("curT",curT)
-
-    out = d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
+    out = d.apply("out_broadcast"..depth, d.broadcastStream(TOP_TYPE,2), out)
     local out0 = d.selectStream("i0"..depth,out,0)
-    if curT~=internalT then
-      out0 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,internalT)), out0 )
-    end
     out0 = P.FIFO( fifos, statements, TOP_TYPE, out0, nil, "internal"..depth, curW, curH, internalT )
 
-    local out1 = d.apply("CRr"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), d.selectStream("i1"..depth,out,1) )
+    local out1 = d.apply("CRr"..depth,d.liftHandshake(d.changeRate(A,1,internalT,8)), d.selectStream("i1"..depth,out,1) )
     out1 = P.FIFO( fifos, statements, OUT_TYPE, out1, nil, "output"..depth, curW, curH, 8 )
 
     L[depth] = out1

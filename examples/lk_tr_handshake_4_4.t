@@ -75,7 +75,7 @@ function makeLK(T,window)
     local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
     harness.axi( outfile, LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
 
-    io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..window.."x"..window); io.close()
+    io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..window.."x"..window); io.close()
     io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()
   end
 end

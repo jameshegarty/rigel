@@ -100,9 +100,11 @@ end
 
 local convolvefntaps = C.convolveTaps( types.uint(8), TConvWidth, 6 )
 
-function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,X)
+-- DUMB_DOWNSAMPLE: instead of doing the convolution at internalT/4 throughput when downsampling, do it at internalT throughput.
+function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DOWNSAMPLE,X)
   assert(type(ConvWidth)=="number")
   assert(type(nofifo)=="boolean")
+  assert(type(DUMB_DOWNSAMPLE)=="boolean")
   assert(X==nil)
   
   local DATA_TYPE = types.array2d(A,internalT)
@@ -144,9 +146,13 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,X)
     out = darkroom.apply("downsampleSeq_X", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleXSeq( st_type, W, H, internalT, scaleX ))), out)
     if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,convT/2),out,nil,"downsample"..i,W,H,internalT) end
 
-    convT = internalT/4
-    assert(convT==math.floor(convT))
-    out = d.apply("CR2x",d.liftHandshake(d.changeRate(st_type,1,convT*2,convT)), out)
+    if DUMB_DOWNSAMPLE then
+      out = d.apply("CR2x",d.liftHandshake(d.changeRate(st_type,1,convT/2,convT)), out)
+    else
+      convT = internalT/4
+      assert(convT==math.floor(convT))
+      out = d.apply("CR2x",d.liftHandshake(d.changeRate(st_type,1,convT*2,convT)), out)
+    end
   end
 
   local st_tap_inp = d.apply( "broad", d.makeHandshake(d.broadcast(TAP_TYPE,convT)), tapinp )

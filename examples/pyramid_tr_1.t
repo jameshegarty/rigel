@@ -58,7 +58,7 @@ for depth=1,TARGET_DEPTH do
   local PI
 
   if curT>1 then
-    PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO)
+    PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false)
     local piinp = d.apply("CPI"..depth, darkroom.packTuple({types.array2d(A,curT),TAP_TYPE}), d.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
     out = d.apply("p"..depth, PI, piinp)
   else
