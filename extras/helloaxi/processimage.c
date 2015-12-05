@@ -181,6 +181,9 @@ int main(int argc, char *argv[]) {
   // Image data is located at addr 'copy_addr'
   void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
   
+  // this sleep is needed for the z100, but not the z20
+  sleep(2);
+
   volatile Conf * conf = (Conf*) gpioptr;
 
   conf->src = copy_addr;
@@ -191,7 +194,7 @@ int main(int argc, char *argv[]) {
   conf->cmd = 3;
 
   //usleep(10000);
-  sleep(1);
+  sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
   saveImage(argv[3],ptr+lenIn,lenOut);
   //saveImage(argv[3],ptr,lenRaw);
