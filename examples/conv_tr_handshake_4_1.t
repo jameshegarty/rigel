@@ -65,7 +65,7 @@ function MAKE(T,ConvWidth,size1080p)
   local sizestr = "128 "
   if size1080p then sizestr = "1080p " end
 
-  io.output("out/"..outfile..".design.txt"); io.write("Convolution "..ConvWidth.."x"..ConvWidth); io.close()
+  io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
 end
 
