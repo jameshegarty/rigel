@@ -1535,12 +1535,13 @@ terra Image:fromDarkroomFormat()
 end
 
 -- add n channels
+-- ** this can actually be used to delete channels too if n<0
 terra Image:addChannels(n:int)
   var size = self.width*self.height*(self.channels+n)*(self.bits/8)
   var temp : &uint8
   cstdlib.posix_memalign( [&&opaque](&temp), pageSize, size)
 
-  orionAssert(self.stride==self.width," no stride allowed")
+  orionAssert(self.stride==self.width," no stride allowed ")
   orionAssert(self.bits==8,"8 bit only")
 
   var inF = [&uint8](self.data)

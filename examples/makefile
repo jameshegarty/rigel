@@ -1,5 +1,5 @@
 SRCFILES = $(wildcard *.t)
-SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t,$(SRCFILES))
+SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t campipe_core.t,$(SRCFILES))
 
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))

@@ -4,6 +4,7 @@ local f = require "fixed"
 
 
 -- we only display the found match if energy < threshold, or threshold==0 (no thresholding)
+-- if threshold<0, then we only display if energy>-threshold
 function displayOutput( reduceType, threshold )
   assert(type(threshold)=="number")
 
@@ -12,13 +13,20 @@ function displayOutput( reduceType, threshold )
   local inp = S.parameter( "inp", ITYPE )
   local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
   if threshold~=0 then
-    out = S.cast(S.tuple{S.select(S.gt(S.index(inp,1),S.constant(threshold,reduceType)),S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
+    local cond
+    if threshold>0 then
+      cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
+    else
+      cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
+    end
+    out = S.cast(S.tuple{S.select(cond,S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
   end
 
   return d.lift("displayOutput",ITYPE, OTYPE, 0,
                 terra(a:&ITYPE:toTerraType(), out:&uint8[1])
                   @out = array(a._0)
-                  if threshold~=0 and a._1>threshold then @out = array([uint8](0)) end
+                  if threshold>0 and a._1>threshold then @out = array([uint8](0)) 
+                  elseif threshold<0 and a._1<-threshold then  @out = array([uint8](0)) end
                 end, inp, 
                 out 
                 --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
@@ -70,7 +78,10 @@ end
 
 -- errorThreshold: if the SAD energy is above this, display 0.
 -- if errorThreshold==0, do no thresholding
-function makeStereo( filename, T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold )
+function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold )
+  assert(type(OffsetX)=="number")
+  assert(type(SADWidth)=="number")
+
   -- input is in the format A[2]. [left,right]. We need to break this up into 2 separate streams,
   -- linebuffer them differently, then put them back together and run argmin on them.
   -- 'left' means that the objects we're searching for are to the left of things in channel 'right', IN IMAGE SPACE.
