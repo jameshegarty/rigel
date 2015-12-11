@@ -62,7 +62,7 @@ uint32_t read_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
     read_mmio(conf, MMIO_DEBUG(0),0);
     
     uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP(camid),0);
-    printf("RD CAM%d: Addr 0x%02x, data 0x%02x\n",camid, cam_data>>8,(cam_resp)&0x000000FF);
+    //printf("RD CAM%d: Addr 0x%02x, data 0x%02x\n",camid, cam_data>>8,(cam_resp)&0x000000FF);
     //Error checking
     // first 16:8 bits should be the same as cam_data;
     if ((cam_data & 0x0001FF00)!=(cam_resp & 0x0001FF00)) {
@@ -92,11 +92,11 @@ void write_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
     // Wait for response (CAM_RESP_CNT will increment
     uint32_t cnt = 0;
     do {
-        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),1);
+        cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),0);
     } while (cnt != cam_resp_cnt+1);
     read_mmio(conf, MMIO_DEBUG(0),0);
     uint32_t cam_resp = read_mmio(conf, MMIO_CAM_RESP(camid),0);
-    printf("WR cam%d: Addr 0x%02x, data 0x%02x\n",camid, (cam_data>>8)&0x000000FF,(cam_resp)&0x000000FF);
+    //printf("WR cam%d: Addr 0x%02x, data 0x%02x\n",camid, (cam_data>>8)&0x000000FF,(cam_resp)&0x000000FF);
     //Error checking
     // first 16 bits should be the same as cam_data;
     if ((cam_data & 0x0001FFFF)!=(cam_resp & 0x0001FFFF)) {
@@ -111,12 +111,18 @@ void write_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
     fflush(stdout);
 }
 void write_cam_safe(volatile Conf* conf, int camid, uint32_t cam_data) {
-    write_cam_reg(conf, camid,cam_data);
     uint32_t cam_a = 0x000000FF & (cam_data>>8);
     uint32_t cam_d = 0x000000FF & (cam_data);
+    write_cam_reg(conf, camid,cam_data);
     uint32_t rd = read_cam_reg(conf, camid,cam_a);
-    if(cam_d != rd) {
-        printf("ERROR:\nExpt: %08x\nRead:%08x\n",cam_data,rd);
+    int cnt = 0;
+    while (cam_d != rd && cnt < 5) {
+        write_cam_reg(conf, camid,cam_data);
+        rd = read_cam_reg(conf, camid,cam_a);
+        cnt++;
+    }
+    if (cam_d != rd) {
+        printf("ERROR:\nExpt: %08x\nRead:%08x, cnt=%d\n",cam_data,rd,cnt);
         exit(1);
     }
 }

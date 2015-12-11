@@ -136,7 +136,7 @@ elseif string.find(arg[0],"ov7660") then
   DEMOSAIC_W = 7
   DEMOSAIC_H = 3
 
-  inputFilename = "ov7660.raw"
+  inputFilename = "cam1_0.raw"
 --  inputFilename = "outrgb.raw"
   outputFilename = "campipe_ov7660"
   pedestal = 90

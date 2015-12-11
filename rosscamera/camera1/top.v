@@ -804,6 +804,7 @@ module top
         .dout(dramr2display_data[63:0])
     );
 
+    wire pvalid;
 
     display vga_display(
         .fclk(FCLK0),
@@ -819,7 +820,7 @@ module top
         .VGA_red(VGA_red_full[7:0]),
         .VGA_green(VGA_green_full[7:0]),
         .VGA_blue(VGA_blue_full[7:0]),
-    
+        .pvalid(pvalid),
         .sdata_burst_ready(dramr2display_burst_ready),
         .sdata_valid(dramr2display_valid),
         .sdata_ready(dramr2display_ready),
@@ -828,9 +829,9 @@ module top
         .debug(display_debug[7:0])
     );
     
-    assign VGA_red[2:0] = VGA_red_full[7:5];
-    assign VGA_green[2:0] =VGA_green_full[7:5];
-    assign VGA_blue[1:0] = VGA_blue_full[7:6];
+    assign VGA_red[2:0] = pvalid ? VGA_red_full[7:5] : 0;
+    assign VGA_green[2:0] = pvalid ? VGA_green_full[7:5] : 0;
+    assign VGA_blue[1:0] = pvalid ? VGA_blue_full[7:6] : 0;
 
 
     wire [7:0] test_r;
@@ -840,16 +841,16 @@ module top
     reg [31:0] test_cnt;
     `REG(FCLK0, test_cnt, 0, test_cnt+1'b1)
 
-    assign test_r[7:0] = {2'b0,test_cnt[28:23]};
-    assign test_g[7:0] = 8'hFF;//test_cnt[31:24];
-    assign test_b[7:0] = {2'b0,test_cnt[28:23]};
+    assign test_r[7:0] = 8'hFF;//{2'b0,test_cnt[28:23]};
+    assign test_g[7:0] = vga_out[7:0]; //8'hFF;//test_cnt[31:24];
+    assign test_b[7:0] = 8'hFF;//{2'b0,test_cnt[28:23]};
     
     wire [7:0] vga_out;
-    assign vga_out = VGA_HS_n ? 0 : test_g;
+    assign vga_out = pvalid ? 8'hFF : 0;
 
-    assign FVGA_RED = test_g;
-    assign FVGA_GREEN = test_g;
-    assign FVGA_BLUE = test_g;
+    assign FVGA_RED = pvalid ? VGA_red_full[7:0] : 0;
+    assign FVGA_GREEN = pvalid ? VGA_green_full[7:0] : 0;
+    assign FVGA_BLUE = pvalid ? VGA_blue_full[7:0] : 0;
     assign FVGA_HS_n = VGA_HS_n;
     assign FVGA_VS_n = VGA_VS_n;
 

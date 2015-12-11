@@ -14,6 +14,8 @@ module display(
     output reg [7:0] VGA_green,
     output reg [7:0] VGA_blue,
 
+    output reg pvalid,
+
     output [7:0] debug,
 
     output sdata_burst_ready,
@@ -141,6 +143,7 @@ module display(
     `REG(vgaclk, VGA_red[7:0], 8'hFF, VGA_red_nxt[7:0])
     `REG(vgaclk, VGA_green[7:0], 8'hFF, VGA_green_nxt[7:0])
     `REG(vgaclk, VGA_blue[7:0], 8'hFF, VGA_blue_nxt[7:0])
+    `REG(vgaclk, pvalid, 1'b0, vga_pixel_valid)
     
     wire [7:0] pattern_red;
     wire [7:0] pattern_green;
@@ -150,7 +153,7 @@ module display(
     assign pixel_ready = !vga_stopping && vga_running_nxt && vga_pixel_valid;
     assign VGA_red_nxt = pixel_ready ? pixel_data[7:0] : pattern_red[7:0];
     assign VGA_green_nxt = pixel_ready ? pixel_data[15:8] : pattern_green[7:0];
-    assign VGA_blue_nxt = pixel_ready ? pixel_data[23:0] : pattern_blue[7:0];
+    assign VGA_blue_nxt = pixel_ready ? pixel_data[23:16] : pattern_blue[7:0];
 
     assign pattern_red = (vga_col <=210) ? 8'hFF : 8'h0;
     assign pattern_green = ((vga_col >210) && (vga_col <= 420)) ? 8'hFF : 8'h0;

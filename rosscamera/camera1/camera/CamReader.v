@@ -48,6 +48,7 @@ module CamReader (
     reg         frameValid;
     reg         href_p1;
     reg         href_p2;
+    reg         href_p3;
     reg         vsync_p1;
     reg         vsync_p2;
     
@@ -64,8 +65,10 @@ module CamReader (
     `REG(pclk, frameValid, 0, (running && !frameValid && real_vsync) ? 1'b1 : frameValid)
 
     reg [7:0] din_p1;
+    reg [7:0] din_p2;
     `REG(pclk, din_p1[7:0], 8'hFF, din[7:0])
-    `REG(pclk, pixel[7:0], 8'hFF, din_p1[7:0])
+    `REG(pclk, din_p2[7:0], 8'hFF, din_p1[7:0])
+    `REG(pclk, pixel[7:0], 8'hFF, din_p2[7:0])
     localparam IDLE=0, HBLANK=1, HACT=2;
     reg [10:0] pix_cnt_n;
     reg [10:0] pix_cnt;
@@ -100,11 +103,12 @@ module CamReader (
 
 
     assign vsync_posedge = !real_vsync_p1 && real_vsync;
-    assign real_href = href && href_p1 && !vsync;
+    assign real_href = href && href_p1 && href_p2 && !href_p3 && !real_vsync;
     assign real_vsync = vsync && vsync_p1 && vsync_p2;
 
     `REG(pclk, href_p1, 1'b0, href)
     `REG(pclk, href_p2, 1'b0, href_p1)
+    `REG(pclk, href_p3, 1'b0, href_p2)
     `REG(pclk, vsync_p1, 1'b0, vsync)
     `REG(pclk, vsync_p2, 1'b0, vsync_p1)
     `REG(pclk, real_vsync_p1, 1'b0, real_vsync)
