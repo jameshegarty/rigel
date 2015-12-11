@@ -46,7 +46,7 @@ else
   assert(false)
 end
 
-local hsfn = makeStereo(1/tonumber(T),W,H,A,SearchWindow,SADWidth,OffsetX, reducePrecision, THRESH)
+local hsfn = makeStereo(1/tonumber(T),W,H,A,SearchWindow,SADWidth,OffsetX, reducePrecision, THRESH, false)
 
 local ATYPE = types.array2d(A,2)
 local ITYPE = types.array2d(ATYPE,4)

@@ -10,6 +10,7 @@ function displayOutput( reduceType, threshold )
 
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.uint(8),1)
+
   local inp = S.parameter( "inp", ITYPE )
   local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
   if threshold~=0 then
@@ -27,6 +28,51 @@ function displayOutput( reduceType, threshold )
                   @out = array(a._0)
                   if threshold>0 and a._1>threshold then @out = array([uint8](0)) 
                   elseif threshold<0 and a._1<-threshold then  @out = array([uint8](0)) end
+                end, inp, 
+                out 
+                --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
+)
+end
+
+function displayOutputColor( reduceType, threshold )
+  assert(type(threshold)=="number")
+
+  local ITYPE = types.tuple{types.uint(8),reduceType}
+  local OTYPE = types.array2d(types.array2d(types.uint(8),4),1)
+
+  local inp = S.parameter( "inp", ITYPE )
+  local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
+
+  local zeroS = S.constant(0,types.uint(8))
+
+  local colorOutputR = S.lshift(S.index(inp,0)-S.constant(60,types.uint(8)),S.constant(4,types.uint(8)))
+  local colorOutputG = S.constant(128,types.uint(8))
+  local colorOutputB = S.lshift(S.constant(16,types.uint(8))-(S.index(inp,0)-S.constant(60,types.uint(8))),S.constant(4,types.uint(8)))
+  local colorOutput = S.cast(S.tuple{colorOutputR,colorOutputG,colorOutputB,zeroS}, types.array2d(types.uint(8),4))
+  local colorOutput = S.cast(S.tuple{colorOutput},OTYPE)
+  
+  local zero = S.cast(S.tuple{zeroS,zeroS,zeroS,zeroS},types.array2d(types.uint(8),4))
+  local zero = S.cast(S.tuple{zero},OTYPE)
+
+  if threshold~=0 then
+    local cond
+    if threshold>0 then
+      cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
+    else
+      cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
+    end
+    out = S.select(cond,zero,colorOutput)
+  end
+
+  return d.lift("displayOutput",ITYPE, OTYPE, 0,
+                terra(a:&ITYPE:toTerraType(), out:&uint8[4][1])
+                  var r : uint8 = (a._0-60) << 4
+                  var g : uint8 = 128
+--                  g = a._1 / 16
+                  var b : uint8 = (16-(a._0-60)) << 4
+                  @out = array(array(r,g,b,[uint8](0)))
+                  if threshold>0 and a._1>threshold then @out = array(array([uint8](0),[uint8](0),[uint8](0),[uint8](0))) 
+                  elseif threshold<0 and a._1<-threshold then  @out = array(array([uint8](0),[uint8](0),[uint8](0),[uint8](0))) end
                 end, inp, 
                 out 
                 --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
@@ -78,9 +124,10 @@ end
 
 -- errorThreshold: if the SAD energy is above this, display 0.
 -- if errorThreshold==0, do no thresholding
-function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold )
+function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold, COLOR_OUTPUT )
   assert(type(OffsetX)=="number")
   assert(type(SADWidth)=="number")
+  assert(type(COLOR_OUTPUT)=="boolean")
 
   -- input is in the format A[2]. [left,right]. We need to break this up into 2 separate streams,
   -- linebuffer them differently, then put them back together and run argmin on them.
@@ -100,7 +147,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(A,2),1,4,1)), hsfninp )
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
-  local inp = d.apply("pad", d.liftHandshake(d.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
+  local inp = d.apply("pad", d.liftHandshake(d.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, {0,0})), inp)
   local inp = d.apply("oi0", d.makeHandshake(d.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = d.apply("inp_broadcast", d.broadcastStream(types.array2d(A,2),2), inp)
 
@@ -149,11 +196,21 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",res) )
   res = d.applyMethod("l13",fifos[#fifos],"load")
 
-  local res = d.apply("display",d.makeHandshake( displayOutput(types.uint(reducePrecision),errorThreshold) ), res)
 
-  res = d.apply("CRP", d.liftHandshake(d.liftDecimate(d.cropSeq(types.uint(8), internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
 
-  local res = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,1,8)), res )
+  local OUTPUT_TYPE = types.uint(8)
+  local OUTPUT_T = 8
+  if COLOR_OUTPUT then 
+    OUTPUT_TYPE = types.array2d(types.uint(8),4) 
+    OUTPUT_T = 2
+    res = d.apply("display",d.makeHandshake( displayOutputColor(types.uint(reducePrecision),errorThreshold,COLOR_OUTPUT) ), res)
+  else
+    res = d.apply("display",d.makeHandshake( displayOutput(types.uint(reducePrecision),errorThreshold,COLOR_OUTPUT) ), res)
+  end
+
+  res = d.apply("CRP", d.liftHandshake(d.liftDecimate(d.cropSeq(OUTPUT_TYPE, internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
+
+  local res = d.apply("incrate", d.liftHandshake(d.changeRate(OUTPUT_TYPE,1,1,OUTPUT_T)), res )
 
   --res = d.apply( "border", d.makeHandshake(darkroom.borderSeq( types.uint(8), W, H, 8, SADWidth+SearchWindow+OffsetX-2, 0, SADWidth-1, 0, 0 )), res ) -- cut off the junk (undefined region)
 
