@@ -2,6 +2,15 @@ local d = require "darkroom"
 local cstdlib = terralib.includec("stdlib.h")
 local C = {}
 
+C.identity = memoize(function(A)
+  local sinp = S.parameter( "inp", A )
+  local identity = d.lift( "identity_"..tostring(A), A, A, 0,
+                          terra( a : &A:toTerraType(), out : &A:toTerraType() )
+                            @out = @a
+                  end, sinp, sinp )
+  return identity
+                     end)
+
 C.cast = memoize(function(A,B)
                    assert(A:isTuple()==false)
 
@@ -310,57 +319,69 @@ end
 -- f should be a _lua_ function that takes two arguments, (internalW,internalH), and returns the 
 -- inner function based on this W,H. We have to do this for alignment reasons.
 -- f should return a handshake function
-function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
+-- timingFifo: include a fifo to improve timing. true by default
+function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
   print("padcrop","W",W,"H",H,"T",T,"L",L,"R",R,"B",B,"Top",Top)
   assert(X==nil)
+  assert(timingFifo==nil or type(timingFifo)=="boolean")
+  if timingFifo==nil then timingFifo=true end
 
   local RW_TYPE = types.array2d( A, T ) -- simulate axi bus
   local hsfninp = d.input( d.Handshake(RW_TYPE) )
-  --local out = hsfninp
-  --local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),8,T)), hsfninp )
+
   local internalL = upToNearest(T,L)
   local internalR = upToNearest(T,R)
 
   local fifos = {}
   local statements = {}
 
---  local internalL,internalR=L,R
   local internalW, internalH = W+internalL+internalR,H+B+Top
 
   local out = d.apply("pad", d.liftHandshake(d.padSeq(A, W, H, T, internalL, internalR, B, Top, borderValue)), hsfninp)
 
-  -- this FIFO is only for improving timing
-  table.insert( fifos, d.instantiateRegistered("f1",d.fifo(types.array2d(A,T),128)) )
-  table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",out) )
-  out = d.applyMethod("l13",fifos[#fifos],"load")
-  -----------------
+  if timingFifo then
+    -- this FIFO is only for improving timing
+    table.insert( fifos, d.instantiateRegistered("f1",d.fifo(types.array2d(A,T),128)) )
+    table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",out) )
+    out = d.applyMethod("l13",fifos[#fifos],"load")
+  end
 
+  -----------------
   local internalFn = f(internalW, internalH)
   local out = d.apply("HH",internalFn, out)
   local padL = internalL-L
   local padR = internalR-R
   local fnOutType = d.extractData(internalFn.outputType):arrayOver()
   local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(fnOutType, internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
-  --local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),T,8)), out )
 
-  -- this FIFO is only for improving timing
-  table.insert( fifos, d.instantiateRegistered("f2",d.fifo(types.array2d(fnOutType,T),128)) )
-  table.insert( statements, d.applyMethod("s2",fifos[#fifos],"store",out) )
-  out = d.applyMethod("l2",fifos[#fifos],"load")
+  if timingFifo then
+    -- this FIFO is only for improving timing
+    table.insert( fifos, d.instantiateRegistered("f2",d.fifo(types.array2d(fnOutType,T),128)) )
+    table.insert( statements, d.applyMethod("s2",fifos[#fifos],"store",out) )
+    out = d.applyMethod("l2",fifos[#fifos],"load")
+  end
   -----------------
 
   table.insert(statements,1,out)
 
-  local hsfn = d.lambda("hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f), hsfninp, d.statements(statements), fifos )
+  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f)
+
+  local hsfn
+  if timingFifo then
+    hsfn = d.lambda(name, hsfninp, d.statements(statements), fifos )
+  else
+    hsfn = d.lambda(name, hsfninp, out)
+  end
+
   return hsfn
 end
 
 --------
-function C.stencilKernelPadcrop(A,W,H,T,L,R,B,Top,borderValue,f,X)
+function C.stencilKernelPadcrop(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
   local function finternal(IW,IH)
     return d.makeHandshake(C.stencilKernel(A,T,IW,IH,R+L+1,Top+B+1,f))
   end
-  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal)
+  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal,timingFifo)
 end
 
 -------------
@@ -502,5 +523,14 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   --return darkroom.compose("stencilLinebufferPartialOffsetOverlap", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))),  )
                                                   end)
 
+-------------
+function C.fifo(fifos,statements,A,inp,size,name, csimOnly, X)
+  assert(type(name)=="string")
+  assert(X==nil)
+
+  table.insert( fifos, d.instantiateRegistered(name, d.fifo(A,size,nil,nil,nil,nil,csimOnly)) )
+  table.insert( statements, d.applyMethod("s"..tostring(#fifos),fifos[#fifos],"store",inp) )
+  return d.applyMethod("l"..tostring(#fifos),fifos[#fifos],"load")
+end
 -------------
 return C

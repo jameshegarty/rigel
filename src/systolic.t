@@ -442,7 +442,11 @@ function systolic.constant( v, ty )
   if ty:isArray() or ty:isTuple() then
     err( type(v)=="table", "if type is an array, v must be a table")
     map( v,function(n) err(type(n)=="number", "array element must be a number") end )
-    err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
+    if ty:isTuple() then
+      err( #v==#ty.list, "incorrect number of channels, is "..(#v).." but should be "..#ty.list )
+    else
+      err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
+    end
   else
     err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
     err( type(v)==ty:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(ty))
@@ -1836,7 +1840,7 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
   ty = ty:stripConst() -- output of register obviously can't be const
-  assert(type(hasCE)=="boolean")
+  err(type(hasCE)=="boolean", "hasCE must be bool")
   assert( initial==nil or ty:toLuaType()==type(initial))
   assert(hasValid==nil or type(hasValid)=="boolean")
   if hasValid==nil then hasValid=true end
@@ -2268,7 +2272,7 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   err( type(CE)=="boolean", "CE must be boolean")
 
   err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
-  err( isPowerOf2(inputBytes), "inputBytes is now power of 2")
+  err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
   local writeAddrs = sizeInBytes/inputBytes
   err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
 

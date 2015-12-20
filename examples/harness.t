@@ -46,7 +46,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   -- check that we end up with a multiple of the axi burst size.  If not, just fail.
   -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
-  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes not aligned to axi burst size")
+  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes ("..tostring(outputBytes)..") not aligned to axi burst size")
   err(inputBytes/128==math.floor(inputBytes/128), "outputBytes not aligned to axi burst size")
  
   local ITYPE = types.tuple{types.null(),fixedTapInputType}

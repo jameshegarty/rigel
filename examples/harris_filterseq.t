@@ -49,7 +49,7 @@ OTYPE = types.array2d(types.array2d(types.uint(8),2),T/2)
 
 local inpraw = d.input(d.Handshake(ITYPE))
 local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), inpraw )
-local harrisFn = harris(W,H,true)
+local harrisFn = harris.makeHarris(W,H,true)
 local out = d.apply("filterfn", harrisFn, inp )
 local out = d.apply("filt", d.liftHandshake(d.liftDecimate(filterfn)), out)
 local out = d.apply("AO",d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1,1)),out)

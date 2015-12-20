@@ -5,6 +5,7 @@ local M = {}
 function M.fifo( T, reqMaxSize, name, verbose )
   assert(terralib.types.istype(T))
   assert(type(reqMaxSize)=="number")
+  assert(reqMaxSize==math.floor(reqMaxSize))
   local maxSize = reqMaxSize + 1 -- if we alloc reqMaxSize, we can't distinguish between empty and full
   assert(type(name)=="string")
   if verbose==nil then verbose=false end

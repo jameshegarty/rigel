@@ -1003,6 +1003,7 @@ darkroom.waitOnInput = memoize(function(f)
   res.inputType = darkroom.V(f.inputType)
   res.outputType = f.outputType
 
+  err(f.delay == math.floor(f.delay), "waitOnInput, delay is fractional?")
   err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err( type(f.stateful)=="boolean", "Missing stateful annotation for fn "..f.kind)
@@ -1239,6 +1240,7 @@ darkroom.liftHandshake = memoize(function(f)
   res.stateful = f.stateful
 
   local delay = math.max(1, f.delay)
+  err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
   local struct LiftHandshake{ delaysr: simmodules.fifo( darkroom.lower(f.outputType):toTerraType(), delay, "liftHandshake"),
                               inner: f.terraModule, ready:bool, readyDownstream:bool}
@@ -1398,10 +1400,10 @@ function darkroom.filterSeq( A, W,H, rate, fifoSize )
     -- we're running out of possible outputs
 --    var remainingInputOptions = (self.remainingInputs >> logRate) + (fifoSize-self.currentFifoSize)
     --var remainingInputOptions = (self.remainingInputs) + (fifoSize-self.currentFifoSize)
-    var outaTime = (self.remainingInputs < self.remainingOutputs*rate)
+    var outaTime : bool = (self.remainingInputs < self.remainingOutputs*rate)
     valid(out) = valid(out) or outaTime
 
-    if DARKROOM_VERBOSE then cstdio.printf("FilterSeq data %d inputvalid %d outputvalid %d underflow %d fifoHasSpace %d outaTime %d currentFifoSize %d phase %d remainingOutputs %d\n",data(out),inp._1,valid(out),underflow,fifoHasSpace, outaTime, self.currentFifoSize, self.phase, self.remainingOutputs) end
+    if DARKROOM_VERBOSE then cstdio.printf("FilterSeq inputvalid %d outputvalid %d underflow %d fifoHasSpace %d outaTime %d currentFifoSize %d phase %d remainingOutputs %d\n", inp._1, valid(out), underflow, fifoHasSpace, terralib.select(outaTime,1,0), self.currentFifoSize, self.phase, self.remainingOutputs) end
     --cstdio.printf("remainingInputs %d remainingInputs>>logRate %d remainingOutputs %d\n", self.remainingInputs, self.remainingInputs >> logRate, self.remainingOutputs)
 --    cstdio.printf("rate %d\n",rate)
 
@@ -2470,10 +2472,11 @@ darkroom.broadcast = memoize(function(A,T)
 -- We do that here by modifying the valid bit combinationally!! This could potentially
 -- cause a combinationaly loop (validOut depends on readyDownstream) if another later unit does the opposite
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
-darkroom.broadcastStream = memoize(function(A,N)
+darkroom.broadcastStream = memoize(function(A,N,X)
   err( types.isType(A), "A must be type")
   darkroom.expectBasic(A)
   err( type(N)=="number", "N must be number")
+  assert(X==nil)
 
   local res = {kind="broadcastStream", A=A, N=N, inputType = darkroom.Handshake(A), outputType = types.array2d( darkroom.Handshake(A), N), stateful=false}
 
@@ -2784,7 +2787,7 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   res.systolicModule = S.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
 
 
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
+  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
   local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
@@ -2792,8 +2795,8 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   local pinp = S.parameter("process_input", darkroom.lower(res.inputType) )
   local pvalid = S.parameter("process_valid", types.bool() )
 
-  local C1 = S.ge( posX:get(), S.constant(L,types.uint(16)))
-  local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(16)))
+  local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
+  local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(32)))
   local C3 = S.ge( posY:get(), S.constant(B,types.uint(16)))
   local C4 = S.lt( posY:get(), S.constant(B+H,types.uint(16)))
   local xcheck = S.__and(C1,C2)
@@ -2803,7 +2806,7 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
 
   local pipelines={}
   --local stepPipe = S.__or( pinp_valid, S.__not(readybit) )
-  local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(16))  ):disablePipelining()
+  local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(32))  ):disablePipelining()
   pipelines[1] = posY:setBy( incY )
   pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 
@@ -2820,7 +2823,7 @@ darkroom.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   local CE = S.CE("CE")
   res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,ConstTrue}, "process_output", pipelines, pvalid, CE) )
 
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()), CE) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(32))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()), CE) )
 
   res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
 
@@ -2851,7 +2854,8 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   res.inputType = types.array2d(A,inputRate,H)
   res.outputType = darkroom.RV(types.array2d(A,outputRate,H))
   res.stateful = true
-  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
+--  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
+  res.delay = 0
 
   if inputRate>outputRate then -- 8 to 4
     res.sdfInput, res.sdfOutput = {{outputRate,inputRate}},{{1,1}}
@@ -2948,9 +2952,10 @@ darkroom.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   return darkroom.waitOnInput(darkroom.newFunction(res))
 end)
 
-darkroom.linebuffer = memoize(function( A, w, h, T, ymin )
+darkroom.linebuffer = memoize(function( A, w, h, T, ymin, X )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
+  assert(X==nil)
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
   err( w%T==0, "Linebuffer error, W%T~=0")
@@ -3364,7 +3369,8 @@ end
 
 -- nostall: unsafe -> ready always set to true
 -- W,H,T: used for debugging (calculating last cycle)
-darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
+-- csimOnly: hack for large fifos - don't actually allocate hardware
+darkroom.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   darkroom.expectBasic(A)
   err( type(size)=="number", "size must be number")
   err( size >0,"size<=0")
@@ -3372,7 +3378,9 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
   err(W==nil or type(W)=="number", "W should be nil or number")
   err(H==nil or type(H)=="number", "H should be nil or number")
   err(T==nil or type(T)=="number", "T should be nil or number")
-  
+  assert(csimOnly==nil or type(csimOnly)=="boolean")
+  assert(X==nil)
+
   local res = {kind="fifo", inputType=darkroom.Handshake(A), outputType=darkroom.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
 
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), ready:bool, readyDownstream:bool }
@@ -3408,7 +3416,12 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T )
   local bytes = (size*A:verilogBits())/8
   res.systolicModule = S.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
 
-  local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
+  local fifo
+  if csimOnly then
+    fifo = res.systolicModule:add( fpgamodules.fifonoop(A,size):instantiate("FIFO") )
+  else
+    fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
+  end
   --------------
   -- basic -> R
   local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
@@ -3549,8 +3562,10 @@ darkroom.reduce = memoize(function( f, W, H )
 end)
 
 
-darkroom.reduceSeq = memoize(function( f, T )
+darkroom.reduceSeq = memoize(function( f, T, X )
+                               err(type(T)=="number","T should be number")
   err(T<=1, "reduceSeq T>1")
+  assert(X==nil)
 
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
     err("Reduction function f must be of type {A,A}->A, "..loc)

@@ -755,6 +755,11 @@ function TypeFunctions:valueToTerra(value)
     assert(#value==self:channels())
     local tup = map( value, function(v) return self:arrayOver():valueToTerra(v) end )
     return `[self:toTerraType()](array(tup))
+  elseif self:isTuple() then
+    assert(type(value)=="table")
+    assert(#value==#self.list)
+    local tup = map( value, function(v,k) return self.list[k]:valueToTerra(v) end )
+    return `[self:toTerraType()]({tup})
   else
     print("TypeFunctions:valueToTerra",self)
     assert(false)
