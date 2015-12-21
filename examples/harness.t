@@ -106,9 +106,16 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
     local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
-    (terra() 
+    local cycles = (terra() 
        cstdio.printf("Start CPU Sim\n")
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
+       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); var cyc = m:process(nil,nil); m:stats(); cstdlib.free(m); return cyc end)()
+
+    if i==1 then
+      io.output("out/"..filename..".terraCycles.txt")
+      io.write(cycles)
+      io.close()
+    end
+    
     fixed.printHistograms()
 
     d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)

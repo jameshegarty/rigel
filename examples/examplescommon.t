@@ -384,6 +384,13 @@ function C.stencilKernelPadcrop(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
   return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal,timingFifo)
 end
 
+-- f should take (internalW,internalH) parameters
+function C.stencilKernelPadcropUnpure(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
+  local function finternal(IW,IH)
+    return d.makeHandshake(C.stencilKernel(A,T,IW,IH,R+L+1,Top+B+1,f(IW,IH)))
+  end
+  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal,timingFifo)
+end
 -------------
 local function invtable(bits)
   local out = {}

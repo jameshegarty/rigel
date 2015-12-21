@@ -4743,17 +4743,20 @@ function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCo
     var inpAddr = 0
     var outAddr = 0
     var downstreamReady = 0
+    var cycles : uint = 0
 
     while inpAddr<inputCount or outAddr<outputCount do
       valid(innerinp)=(inpAddr<inputCount)
       self.inner:calculateReady(downstreamReady==0)
-      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0) end
+      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
       self.inner:process(&innerinp,&o)
       if self.inner.ready then inpAddr = inpAddr + 1 end
       if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
       downstreamReady = downstreamReady+1
       if downstreamReady==readyRate then downstreamReady=0 end
+      cycles = cycles + 1
     end
+    return cycles
   end
   res.terraModule = SeqMap
 

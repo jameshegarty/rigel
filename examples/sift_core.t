@@ -270,9 +270,17 @@ local function siftKernel(dxdyType)
   local dxdy = d.apply("down2idx",d.makeHandshake(d.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descType = siftDescriptor(dxdyType)
   local desc = d.apply("desc",d.makeHandshake(descFn),dxdy)
-  local desc = d.apply("rseq",d.liftHandshake(d.liftDecimate(d.reduceSeq(bucketReduce(descType,8),1/16))),desc)
-  local desc = d.apply("up",d.liftHandshake(d.changeRate(descType,1,8,1)),desc)
+
+  local desc = d.apply("rseq",d.liftHandshake(d.liftDecimate(d.reduceSeq(bucketReduce(descType,8),1/16)),"BUCKET"),desc)
+
+  -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
+  -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
+  -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
+  local desc = C.fifo(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
+
+  local desc = d.apply("up",d.liftHandshake(d.changeRate(descType,1,8,1),"CR"),desc)
   local desc = d.apply("upidx",d.makeHandshake(d.index(types.array2d(descType,1),0,0)), desc)
+
   -- sum and normalize the descriptors
   local desc_broad = d.apply("desc_broad", d.broadcastStream(descType,2), desc)
 
@@ -304,6 +312,20 @@ local function siftKernel(dxdyType)
   print("SIFTSDF",fracToNumber(siftfn.sdfInput[1]),fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
+
+----------------
+function posSub(x,y)
+  local A = types.uint(16)
+  local ITYPE = types.tuple {A,A}
+  local sinp = S.parameter( "inp", ITYPE )
+  local ps = d.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
+                    terra( a : &ITYPE:toTerraType(), out:&ITYPE:toTerraType() )
+                      var xo = a._0-x
+                      var yo = a._1-y
+                      @out = {xo,yo}
+                    end, sinp, sinp)
+  return ps
+end
 ----------------
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
@@ -311,31 +333,38 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
   print("makeHarrisWithDXDY")
   assert(window==16)
 
-  local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
+  local function res(internalW, internalH)
+    print("MAKE HARRIS",internalW, internalH)
 
-  local inp = d.input(ITYPE)
+    local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
+    
+    local inp = d.input(ITYPE)
+    
+    local PS = d.posSeq(internalW,internalH,1)
+    local pos = d.apply("posseq", PS)
+    local pos = d.apply("pidx",d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
+    local pos = d.apply("PS", posSub(15,15), pos)
+    
+    local filterseqValue = d.tuple("fsv",{inp,pos})
+    
+    local filterseqCond = d.apply("idx",d.index(ITYPE,8,8),inp)
+    local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
+    local filterseqCond = d.apply("harris", harrisFn, filterseqCond)
+    local filterseqCond = d.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
+    -- now stencilify the harris
+    local filterseqCond = d.apply( "harris_st", d.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
+    local nmsFn = harris.makeNMS( harrisType, true )
+    local filterseqCond = d.apply("nms", nmsFn, filterseqCond)
+    
+    local fsinp = d.tuple("PTT",{filterseqValue,filterseqCond})
+    
+    local filterfn = d.lambda( "filterfn", inp, fsinp )
+    --  local filterfn = d.lambda( "filterfn", inp, filterseqCond )
+    
+    return filterfn
+  end
 
-  local PS = d.posSeq(W,H,1)
-  local pos = d.apply("posseq", PS)
-  local pos = d.apply("pidx",d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
-
-  local filterseqValue = d.tuple("fsv",{inp,pos})
-
-  local filterseqCond = d.apply("idx",d.index(ITYPE,8,8),inp)
-  local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  local filterseqCond = d.apply("harris", harrisFn, filterseqCond)
-  local filterseqCond = d.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
-  -- now stencilify the harris
-  local filterseqCond = d.apply( "harris_st", d.stencilLinebuffer(harrisType,W,H,1,-2,0,-2,0), filterseqCond)
-  local nmsFn = harris.makeNMS( harrisType, true )
-  local filterseqCond = d.apply("nms", nmsFn, filterseqCond)
-
-  local fsinp = d.tuple("PTT",{filterseqValue,filterseqCond})
-
-  local filterfn = d.lambda( "filterfn", inp, fsinp )
---  local filterfn = d.lambda( "filterfn", inp, filterseqCond )
-
-  return filterfn
+  return res
 end
 ----------------
 
@@ -422,7 +451,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 --  local out = d.apply("stidx",d.makeHandshake(d.index(types.array2d(DXDY_ST,1),0,0)),st)
   local harrisFn = makeHarrisWithDXDY(dxdyType, W,H, 16)
 --  local out = d.apply("filt", d.makeHandshake(harrisFn), out)
-  local out = d.apply("st",C.stencilKernelPadcrop(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
+  local out = d.apply("st",C.stencilKernelPadcropUnpure(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,16,16),types.tuple{types.uint(16),types.uint(16)}}
   local out = d.apply("stidx",d.makeHandshake(d.index(types.array2d(types.tuple{FILTER_TYPE,types.bool()},1),0,0)), out)
@@ -430,7 +459,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local filterFn = d.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
 
   local out = d.apply("FS",d.liftHandshake(d.liftDecimate(filterFn)),out)
-  local out = C.fifo( fifos, statements, FILTER_TYPE, out, 128, "fsfifo", true)
+  local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
 
   local siftFn, descType = siftKernel(dxdyType)
   local out = d.apply("sft", siftFn, out)
