@@ -201,7 +201,7 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
   local scaleX, scaleY = 2,2
 
   out = darkroom.apply("downsampleSeq_Y", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleYSeq( st_type, W, H, 1, scaleY ))), out)
-  if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,1),out,nil,"downsampleY"..i,W,H,1) end
+  if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,1),out,128,"downsampleY"..i,W,H,1) end
   out = darkroom.apply("downsampleSeq_X", d.liftHandshake(darkroom.liftDecimate(darkroom.downsampleXSeq( st_type, W, H, 1, scaleX ))), out)
 
   local convT = internalT/4 -- T after downsample
