@@ -6,7 +6,8 @@ local harness = require "harness"
 local C = require "examplescommon"
 
 --T = 8 -- throughput
-function MAKE(T,ConvWidth,size1080p)
+function MAKE(T,ConvWidth,size1080p,NOSTALL)
+  assert(type(NOSTALL)=="boolean")
   --ConvRadius = 1
   local ConvRadius = ConvWidth/2
   --local ConvWidth = ConvRadius*2
@@ -19,6 +20,9 @@ function MAKE(T,ConvWidth,size1080p)
     print("1080p")
     inputW, inputH = 1920, 1080
   end
+
+  local fifos = {}
+  local statements = {}
 
   local PadRadius = upToNearest(T, ConvRadius)
   
@@ -52,12 +56,32 @@ function MAKE(T,ConvWidth,size1080p)
   local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,T)), out )
   --local out = d.apply("FW",d.makeHandshake(d.fwriteSeq("KERNOUT.raw",types.array2d(types.uint(8),T))), out)
   local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
+
+--  if true then
+--    table.insert( fifos, d.instantiateRegistered("f_clk",d.fifo(types.array2d(types.uint(8),T),128,false)) )
+--    table.insert( statements, d.applyMethod( "s_clk", fifos[#fifos], "store", out ) )
+--    out = d.applyMethod("r_clk",fifos[#fifos],"load")
+--  end
   
   local convpipeinp = d.apply("CPI", darkroom.packTuple({BASE_TYPE,TAP_TYPE}), d.tuple("CONVPIPEINP",{out,hsfn_taps},false))
+
   local out = d.apply("HH",d.makeHandshake(kernel), convpipeinp)
+  
+  if NOSTALL then
+    table.insert( fifos, d.instantiateRegistered("f_nostall",d.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)) )
+    table.insert( statements, d.applyMethod( "s_nostall", fifos[#fifos], "store", out ) )
+    out = d.applyMethod("r_nostall",fifos[#fifos],"load")
+  end
+
   local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
   local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
-  local hsfn = d.lambda("hsfn", hsfninp_raw, out)
+
+  if #fifos>0 then
+    table.insert(statements,1,out)
+    out = d.statements(statements)
+  end
+
+  local hsfn = d.lambda("hsfn", hsfninp_raw, out, fifos)
   
   local infile = "frame_128.raw"
   local outfile = "convpadcrop_wide_handshake_"..ConvWidth.."_"..T
@@ -65,6 +89,10 @@ function MAKE(T,ConvWidth,size1080p)
   if size1080p then 
     infile="1080p.raw" 
     outfile = outfile.."_1080p"
+  end
+
+  if NOSTALL then
+    outfile = outfile.."_nostall"
   end
 
   harness.axi( outfile, hsfn, infile, TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
@@ -83,4 +111,4 @@ local convwidth = string.sub(arg[0],first,first)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
 print("ConvWidth",convwidth,"T",t)
 
-MAKE(tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"))
+MAKE(tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"),string.find(arg[0],"nostall")~=nil)
