@@ -46,7 +46,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   -- check that we end up with a multiple of the axi burst size.  If not, just fail.
   -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
-  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes ("..tostring(outputBytes)..") not aligned to axi burst size")
+  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes not aligned to axi burst size")
   err(inputBytes/128==math.floor(inputBytes/128), "outputBytes not aligned to axi burst size")
  
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
@@ -74,15 +74,32 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
   return d.lambda( "harness"..id, inpSymb, out )
 end
 
-local function harnessAxi( hsfn, inputCount, outputCount, underflowTest)
-  local inpSymb = d.input(hsfn.inputType )
+local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType)
+
 
   local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
   local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
 
+  local ITYPE = inputType
+  if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
+
+  local inpSymb = d.input( d.Handshake(ITYPE) )
+  local inpdata = inpSymb
+  if tapType~=nil then
+    inpdata = d.apply("inpdata", d.makeHandshake(d.index(ITYPE,0)), inpSymb)
+  end
+  local inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
+
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
-  local inp = d.apply("underflow_US", d.underflow( d.extractData(hsfn.inputType), inputBytes/8, EC, true ), inpSymb)
-  local out = d.apply("hsfna",hsfn,inp)
+  local inp = d.apply("underflow_US", d.underflow( d.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+
+  local hsfninp = inpSymb
+
+  if tapType~=nil then
+    hsfninp = d.apply("HFN",d.packTuple({inputType,tapType}), d.tuple("hsfninp",{inp,inptaps},false))
+  end
+
+  local out = d.apply("hsfna",hsfn,hsfninp)
   out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
   out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
   out = d.apply("cycleCounter", d.cycleCounter(d.extractData(hsfn.outputType), outputBytes/8 ), out)
@@ -106,16 +123,9 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
     local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
-    local cycles = (terra() 
+    (terra() 
        cstdio.printf("Start CPU Sim\n")
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); var cyc = m:process(nil,nil); m:stats(); cstdlib.free(m); return cyc end)()
-
-    if i==1 then
-      io.output("out/"..filename..".terraCycles.txt")
-      io.write(cycles)
-      io.close()
-    end
-    
+       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 
     d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
@@ -175,7 +185,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
-local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest)
+local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType)
 local cycleCountPixels = 128/8
 local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
