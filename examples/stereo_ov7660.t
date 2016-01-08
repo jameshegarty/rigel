@@ -7,7 +7,7 @@ local f = require "fixed"
 local makeStereo = require "stereo_tr_core"
 --local makeStereo = require "stereo_core"
 
-local OffsetX = 60
+local OffsetX = 175
 local SADWidth = 16
 
 local A = types.uint(8)
