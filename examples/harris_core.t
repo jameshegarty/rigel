@@ -4,6 +4,8 @@ local C = require "examplescommon"
 
 local G  = {14 , 62 , 104 , 62 , 14}
 
+harris = {}
+
 floatMult = memoize(function(Atype)
   local inp = f.parameter("fm",types.tuple{Atype,Atype})
   local A,B = inp:index(0), inp:index(1)
@@ -52,7 +54,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   return convolve, Shift[2]
 end
 
-local function makeHarris(dxType, dyType)
+function harris.makeHarrisKernel(dxType, dyType)
   local K = 0.00000001
 
   print("HARRISTYPE",dxType)
@@ -72,7 +74,7 @@ local function makeHarris(dxType, dyType)
 end
 
 
-local function makeNMS(ty, boolOutput, X)
+function harris.makeNMS(ty, boolOutput, X)
   assert(types.isType(ty))
   assert(type(boolOutput)=="boolean")
   assert(X==nil)
@@ -94,7 +96,7 @@ local function makeNMS(ty, boolOutput, X)
   return out:toDarkroom("nms")
 end
 
-local function makeDXDY(ty)
+function harris.makeDXDYKernel(ty)
   print("DXDYINP",ty)
   local inp = f.parameter("dx",types.array2d(ty,3,3))
 
@@ -112,12 +114,9 @@ local function makeDXDY(ty)
   return out:toDarkroom("DXDY"), dx.type
 end
 
-
--- W,H are image W,H
-local function harris(W,H,boolOutput,X)
+function harris.makeDXDY(W,H,X)
   assert(type(W)=="number")
   assert(type(H)=="number")
-  assert(type(boolOutput)=="boolean")
   assert(X==nil)
 
   local T = 1
@@ -130,18 +129,33 @@ local function harris(W,H,boolOutput,X)
   local blurYFn = convolveFloat(blurXType,1,5,G,8)
   local blurXY = d.apply("blurXY",C.stencilKernelPadcrop(blurXType,W,H,T,0,0,2,2,0,blurYFn),blurX)
 
-  local dxdyFn, dxdyType = makeDXDY(blurXType)
+  local dxdyFn, dxdyType = harris.makeDXDYKernel(blurXType)
   local dxdySt = C.stencilKernelPadcrop(blurXType,W,H,T,1,1,1,1,0,dxdyFn)
   local dxdy = d.apply("dxdy", dxdySt, blurXY )
 
+  return d.lambda("dxdytop", inp, dxdy), dxdyType
+end
+
+-- W,H are image W,H
+function harris.makeHarris(W,H,boolOutput,X)
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(type(boolOutput)=="boolean")
+  assert(X==nil)
+
+  local T = 1
+  local inp = d.input(d.Handshake(types.array2d(types.uint(8),T)))
+
+  local dxdyfn, dxdyType = harris.makeDXDY(W,H)
+  local dxdy = d.apply("dxdy",dxdyfn,inp)
   local dxdy = d.apply("dxidx",d.makeHandshake(d.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
 
-  local harrisFn, harrisType = makeHarris(dxdyType,dxdyType)
-  local harris = d.apply("harris", d.makeHandshake(harrisFn), dxdy)
-  harris = d.apply("AO",d.makeHandshake(C.arrayop(harrisType,1,1)),harris)
+  local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
+  local out = d.apply("harris", d.makeHandshake(harrisFn), dxdy)
+  out = d.apply("AO",d.makeHandshake(C.arrayop(harrisType,1,1)),out)
 
-  local nmsFn = makeNMS( harrisType, boolOutput )
-  local nms = d.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), harris)
+  local nmsFn = harris.makeNMS( harrisType, boolOutput )
+  local nms = d.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), out)
 
   return d.lambda("Harristop", inp, nms)
 end

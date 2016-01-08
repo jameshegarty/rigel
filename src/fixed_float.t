@@ -35,6 +35,9 @@ __sub=function(l,r)
 __mul=function(l,r) 
   return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
+__div=function(l,r) 
+  return fixed.new({kind="binop",op="/",inputs={l,r}, type=types.float(32), loc=getloc()})
+ end,
   __newindex = function(table, key, value)
                     error("Attempt to modify systolic AST node")
                   end}
@@ -52,6 +55,9 @@ function fixedASTFunctions:ge(r)
 end
 
 function fixedASTFunctions:__and(r)
+  err(self.type==types.bool(), "LHS should be bool")
+  err(r.type==types.bool(), "RHS should be bool")
+
   return boolbinop("and",self,r)
 end
 
@@ -68,7 +74,8 @@ function fixed.new(tab)
   return setmetatable(tab,fixedASTMT)
 end
 
-function fixed.parameter( name, ty )
+function fixed.parameter( name, ty, X )
+  assert(X==nil)
   err(types.isType(ty), "second arg must be type")
   return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
 end
@@ -207,13 +214,23 @@ function fixedASTFunctions:abs()
 end
 
 function fixedASTFunctions:neg()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type but is "..tostring(self.type)..": "..self.loc)
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:invert()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   return fixed.new{kind="invert", type=self.type, inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:sqrt()
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  return fixed.new{kind="sqrt", type=self.type, inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:__not()
+  assert(self.type==types.bool())
+  return fixed.new{kind="not", type=types.bool(), inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:isSigned()
@@ -243,8 +260,10 @@ function fixedASTFunctions:toSystolic()
     end)
 
   local res
-  if self.type:isArray() or self.type:isTuple() then
+  if self.type:isArray() then
     res = S.constant(broadcast(0,self.type:channels()),self.type)
+  elseif self.type:isTuple() then
+    res = S.constant(broadcast(0,#self.type.list),self.type)
   elseif self.type:isBool() then
     res = S.constant(false,self.type)
   else
@@ -280,6 +299,7 @@ function fixedASTFunctions:toTerra()
           if n.op=="+" then res = `l+r
           elseif n.op=="-" then res = `l-r
           elseif n.op=="*" then res = `l*r
+          elseif n.op=="/" then res = `l/r
           else
             print("OP",n.op)
             assert(false)
@@ -316,12 +336,16 @@ function fixedASTFunctions:toTerra()
         assert(false)
       elseif n.kind=="neg" then
         res = `-[args[1]]
+      elseif n.kind=="not" then
+        res = `not [args[1]]
       elseif n.kind=="tuple" then
         res = `{args}
       elseif n.kind=="array2d" then
         res = `arrayof([n.type:arrayOver():toTerraType()], args)
       elseif n.kind=="invert" then
         res = `terralib.select([args[1]]==0,[float](0),1.f/[args[1]])
+      elseif n.kind=="sqrt" then
+        res = `[float](cmath.sqrt([args[1]]))
       elseif n.kind=="select" then
         res = `terralib.select([args[1]],[args[2]],[args[3]])
       elseif n.kind=="cast" then
@@ -349,7 +373,7 @@ function fixedASTFunctions:toDarkroom(name,X)
     @out = terraout
   end
   tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, self.type, 1, tfn, inp, out )
+  return darkroom.lift( name, inp.type, self.type, 0, tfn, inp, out )
 end
 
 return fixed

@@ -46,7 +46,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   -- check that we end up with a multiple of the axi burst size.  If not, just fail.
   -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
-  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes not aligned to axi burst size")
+  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes ("..tostring(outputBytes)..") not aligned to axi burst size")
   err(inputBytes/128==math.floor(inputBytes/128), "outputBytes not aligned to axi burst size")
  
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
@@ -106,9 +106,16 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
     local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
-    (terra() 
+    local cycles = (terra() 
        cstdio.printf("Start CPU Sim\n")
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
+       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); var cyc = m:process(nil,nil); m:stats(); cstdlib.free(m); return cyc end)()
+
+    if i==1 then
+      io.output("out/"..filename..".terraCycles.txt")
+      io.write(cycles)
+      io.close()
+    end
+    
     fixed.printHistograms()
 
     d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
