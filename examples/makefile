@@ -28,6 +28,7 @@ SIMSRCS := $(filter-out campipe_512.t campipe_ov7660.t,$(SIMSRCS))
 SIMSRCS := $(filter-out pyramid_large_1.t pyramid_large_2.t pyramid_large_3.t pyramid_large_4.t pyramid_large_tr_1.t pyramid_large_tr_2.t pyramid_large_tr_3.t pyramid_large_tr_4.t pyramid_large_nofifo_tr_1.t pyramid_large_nofifo_tr_2.t pyramid_large_nofifo_tr_3.t pyramid_large_nofifo_tr_4.t,$(SIMSRCS))
 SIMSRCS := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_large_taps_3.t pyramid_large_taps_4.t pyramid_large_nofifo_taps_1.t pyramid_large_nofifo_taps_2.t pyramid_large_nofifo_taps_3.t pyramid_large_nofifo_taps_4.t,$(SIMSRCS))
 SIMSRCS := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SIMSRCS))
+SIMSRCS := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SIMSRCS))
 SIMSRCS := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SIMSRCS))
 #nyi
 SIMSRCS := $(filter-out harris.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(SIMSRCS))
@@ -59,6 +60,7 @@ AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(AXI100SRCS))
 AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
+AXI += $(patsubst %.t,out/%.hz.txt,$(AXISRCS))
 AXI += $(AXIBITS)
 
 AXI100 = $(patsubst %.t,out/%.axi100.correct.txt,$(AXI100SRCS))
@@ -105,6 +107,8 @@ out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t
 	- cp out/$*.axi.v out/build_$*
 	- cp out/$*.sim.v out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
+	mkdir -p out/build100_$*
+	- cp out/$*.axi.v out/build100_$*
 
 #	$(CD) xst -ifn ../../extras/helloaxi/system.xst
 
@@ -143,21 +147,22 @@ out/%.axi100.bit.bin: out/%.axi100.bit
 ZYNQ_WRITE_PATH=/var/volatile
 ZYNQ_ADDR=192.168.2.2
 
-out/%.axi.raw: out/%.axi.bit
+out/%.hz.txt: out/%.axi.bit
+	$(eval $@_HZl := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
+	echo $($@_HZl) > out/$*.hz.txt
+
+out/%.axi.raw: out/%.axi.bit out/%.hz.txt
 	$(eval $@_IMG := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputImage))
 	$(eval $@_SCALEN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleN))
 	$(eval $@_SCALED := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleD))
 	$(eval $@_BPP_IN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
 	$(eval $@_BPP_OUT := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
 ###### SET THE CLOCK	
-#	$(eval $@_HZ := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
-	$(eval $@_HZ := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
-	echo $($@_HZ) > out/$*.hz.txt
-#	- grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d" > out/$*.hz.txt
+	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 # (* second time around we can't write to fclk_export, so surpress error)
 	- sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
 ###### CLOCK STUFF END
 	sshpass -p 'root' scp ../extras/helloaxi/processimage out/$*.axi.bit $($@_IMG) root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.axi.bit > /dev/xdevcfg"
