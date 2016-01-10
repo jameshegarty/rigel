@@ -20,7 +20,7 @@ module pipeWrap(
 
 
     wire [64:0] pipe_out;
-    hsfn #(.INSTANCE_NAME("2cams")) hsfna(.CLK(clk), .ready_downstream(out_ready), .ready(in_ready), .reset(sync_reset), .process_input({in_valid,in_data}), .process_output(pipe_out));
+    hsfn #(.INSTANCE_NAME("stereo")) hsfna(.CLK(clk), .ready_downstream(out_ready), .ready(in_ready), .reset(sync_reset), .process_input({in_valid,in_data}), .process_output(pipe_out));
 
 
     assign out_valid = pipe_out[64];

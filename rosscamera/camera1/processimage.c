@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     //print_debug_regs(conf);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    int time = 20;
+    int time = 300;
     for (int i=time; i>0;i--) {
         if(i%20==2) {
             printf("HOLD STILL!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");

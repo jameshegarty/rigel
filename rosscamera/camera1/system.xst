@@ -35,7 +35,7 @@ run
 -resource_sharing YES
 -async_to_sync NO
 -shreg_min_size 2
--use_dsp48 No
+-use_dsp48 Auto
 -iobuf YES
 -max_fanout 100000
 -bufg 32
