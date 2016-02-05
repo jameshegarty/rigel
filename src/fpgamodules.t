@@ -1806,9 +1806,16 @@ endmodule]=]}
 
 end
 
+function script_path()
+  local str = debug.getinfo(2, "S").source:sub(2)
+  local l =  str:match("(.*/)")
+  return l:sub(0,#l-4)
+end
+
 function readAll(file)
-  print("LOAD FILE "..file)
-  local f = io.open(file, "rb")
+  local fn = script_path().."extras/"..file
+  print("LOAD FILE "..fn)
+  local f = io.open(fn, "rb")
   local content = f:read("*all")
   f:close()
   return content
@@ -1819,8 +1826,8 @@ local function loadVerilogFile(inpType,outType,filestr)
   assert(types.isType(inpType))
   assert(types.isType(outType))
 
-  local vstring = readAll("../extras/"..filestr..".v")
-  local delaystring = readAll("../extras/"..filestr..".delay")
+  local vstring = readAll(filestr..".v")
+  local delaystring = readAll(filestr..".delay")
 
   local fns = {}
   local inp = S.parameter("inp",inpType)
@@ -1849,6 +1856,5 @@ modules.intToFloat = loadVerilogFile(types.int(32),types.float(32),"int32_to_flo
 modules.floatToInt = loadVerilogFile(types.float(32),types.int(32),"float32_to_int")
 modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_float")
 modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
-
 
 return modules

@@ -3568,7 +3568,7 @@ darkroom.reduceSeq = memoize(function( f, T, X )
   assert(X==nil)
 
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
-    err("Reduction function f must be of type {A,A}->A, "..loc)
+    error("Reduction function f must be of type {A,A}->A, but is type "..tostring(f.inputType).."->"..tostring(f.outputType))
   end
 
   local res = {kind="reduceSeq", fn=f}
