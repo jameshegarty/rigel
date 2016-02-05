@@ -49,7 +49,12 @@ AXI100SRCS := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_han
 AXI100SRCS := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(AXI100SRCS))
 AXI100SRCS := $(filter-out filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
 
+# filter out stuff that's too big for the 7020
 AXISRCS = $(AXI100SRCS)
+AXISRCS := $(filter-out stereo_wide_handshake_nostall_full.t stereo_wide_handshake_nostall_medi.t stereo_wide_handshake_full.t,$(AXISRCS))
+AXISRCS := $(filter-out lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_6_4_axi.t,$(AXISRCS))
+AXISRCS := $(filter-out lk_wide_handshake_12_1_axi_nostall.t lk_wide_handshake_12_1_axi.t,$(AXISRCS))
+AXISRCS := $(filter-out pyramid_large_nofifo_taps_4.t pyramid_large_taps_3.t pyramid_taps_3.t pyramid_taps_4.t pyramid_large_taps_4.t,$(AXISRCS))
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
