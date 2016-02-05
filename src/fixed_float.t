@@ -335,7 +335,7 @@ function fixedASTFunctions:toSystolic()
       elseif n.kind=="invert" then
         local I = fpgamodules.floatInvert:instantiate("FLOAT_INV"..tostring(#instances))
         table.insert(instances,I)
-        res = I:process(args[1])
+        res = S.select(S.eq(args[1],S.constant(0,types.float(32))),S.constant(0,types.float(32)),I:process(args[1]))
       elseif n.kind=="tuple" then
         res = S.tuple(args)
       elseif n.kind=="constant" then

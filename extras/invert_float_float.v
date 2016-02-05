@@ -31,20 +31,43 @@
 //             
 ////////////////////////////////////////////////////////////////////////////////
 
-`timescale 1 ns/1 ps
+module invert_float_float (
+//  aclk, aclken, s_axis_a_tvalid, m_axis_result_tvalid, s_axis_a_tdata, m_axis_result_tdata
+                           CLK, ce, inp, out
+);
+//  input aclk;
+            parameter INSTANCE_NAME="INST";
 
-module neg_float (
-  aclk, aclken, s_axis_a_tvalid, m_axis_result_tvalid, s_axis_a_tdata, m_axis_result_tdata
-)/* synthesis syn_black_box syn_noprune=1 */;
-  input aclk;
-  input aclken;
-  input s_axis_a_tvalid;
-  output m_axis_result_tvalid;
-  input [31 : 0] s_axis_a_tdata;
-  output [31 : 0] m_axis_result_tdata;
+  input CLK;
+  input ce;
+  input [31 : 0] inp;
+  output [31 : 0] out;
+   
+//  input aclken;
+//  input s_axis_a_tvalid;
+  //output m_axis_result_tvalid;
+//  input [31 : 0] s_axis_a_tdata;
+//  output [31 : 0] m_axis_result_tdata;
+
+
+   wire           aclk;
+   assign aclk = CLK;
   
-  // synthesis translate_off
-  
+   wire           aclken;
+   assign aclken = ce;
+
+   wire           s_axis_a_tvalid;
+   assign s_axis_a_tvalid = 1'b1;
+
+   wire           m_axis_result_tvalid;
+
+   wire        [31:0]   s_axis_a_tdata;
+   assign  s_axis_a_tdata = inp;
+
+   wire        [31:0]   m_axis_result_tdata;
+   assign out = m_axis_result_tdata;
+
+   
   wire \blk00000001/sig000002cb ;
   wire \blk00000001/sig000002ca ;
   wire \blk00000001/sig000002c9 ;
@@ -5625,7 +5648,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -5864,7 +5887,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -6400,7 +6423,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -6639,7 +6662,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -7277,7 +7300,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -7516,7 +7539,7 @@ module neg_float (
     .PREG ( 1 ),
     .SEL_MASK ( "MASK" ),
     .SEL_PATTERN ( "PATTERN" ),
-    .USE_DPORT ( "TRUE" ),
+    .USE_DPORT ( 1 ),
     .USE_MULT ( "MULTIPLY" ),
     .USE_PATTERN_DETECT ( "NO_PATDET" ),
     .USE_SIMD ( "ONE48" ))
@@ -8072,7 +8095,7 @@ module neg_float (
     .P(\blk00000001/sig00000132 )
   );
   DSP48E1 #(
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .ADREG ( 0 ),
     .AREG ( 1 ),
     .ACASCREG ( 1 ),
@@ -8304,7 +8327,7 @@ module neg_float (
     .P(\blk00000001/blk0000003b/sig000002f4 )
   );
   DSP48E1 #(
-    .USE_DPORT ( "FALSE" ),
+    .USE_DPORT ( 0 ),
     .ADREG ( 0 ),
     .AREG ( 1 ),
     .ACASCREG ( 1 ),
@@ -8537,80 +8560,4 @@ module neg_float (
     .P(\blk00000001/blk0000003f/sig00000312 )
   );
 
-// synthesis translate_on
-
 endmodule
-
-// synthesis translate_off
-
-`ifndef GLBL
-`define GLBL
-
-`timescale  1 ps / 1 ps
-
-module glbl ();
-
-    parameter ROC_WIDTH = 100000;
-    parameter TOC_WIDTH = 0;
-
-//--------   STARTUP Globals --------------
-    wire GSR;
-    wire GTS;
-    wire GWE;
-    wire PRLD;
-    tri1 p_up_tmp;
-    tri (weak1, strong0) PLL_LOCKG = p_up_tmp;
-
-    wire PROGB_GLBL;
-    wire CCLKO_GLBL;
-
-    reg GSR_int;
-    reg GTS_int;
-    reg PRLD_int;
-
-//--------   JTAG Globals --------------
-    wire JTAG_TDO_GLBL;
-    wire JTAG_TCK_GLBL;
-    wire JTAG_TDI_GLBL;
-    wire JTAG_TMS_GLBL;
-    wire JTAG_TRST_GLBL;
-
-    reg JTAG_CAPTURE_GLBL;
-    reg JTAG_RESET_GLBL;
-    reg JTAG_SHIFT_GLBL;
-    reg JTAG_UPDATE_GLBL;
-    reg JTAG_RUNTEST_GLBL;
-
-    reg JTAG_SEL1_GLBL = 0;
-    reg JTAG_SEL2_GLBL = 0 ;
-    reg JTAG_SEL3_GLBL = 0;
-    reg JTAG_SEL4_GLBL = 0;
-
-    reg JTAG_USER_TDO1_GLBL = 1'bz;
-    reg JTAG_USER_TDO2_GLBL = 1'bz;
-    reg JTAG_USER_TDO3_GLBL = 1'bz;
-    reg JTAG_USER_TDO4_GLBL = 1'bz;
-
-    assign (weak1, weak0) GSR = GSR_int;
-    assign (weak1, weak0) GTS = GTS_int;
-    assign (weak1, weak0) PRLD = PRLD_int;
-
-    initial begin
-	GSR_int = 1'b1;
-	PRLD_int = 1'b1;
-	#(ROC_WIDTH)
-	GSR_int = 1'b0;
-	PRLD_int = 1'b0;
-    end
-
-    initial begin
-	GTS_int = 1'b1;
-	#(TOC_WIDTH)
-	GTS_int = 1'b0;
-    end
-
-endmodule
-
-`endif
-
-// synthesis translate_on
