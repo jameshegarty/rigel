@@ -111,7 +111,7 @@ local function typecheck_inner( ast, newNodeFn )
         return nil            
       end
     else
-      err( cond.type == types.bool(), "Error, condition of select must be scalar boolean. Use vectorSelect" )
+      err( cond.type:stripConst() == types.bool(), "Error, condition of select must be scalar boolean but is "..tostring(cond.type)..". Use vectorSelect" )
       err( a.type:isArray()==b.type:isArray(), "Error, if any results of select are arrays, all results must be arrays")
       err( a.type:isArray()==false or (a.type:arrayLength()==b.type:arrayLength()), "Error, array arguments to select must be the same length")
     end

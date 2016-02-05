@@ -29,7 +29,7 @@ local infile
 local THRESH = 0
 if filename=="tiny" then
   -- fast version for automated testing
-  W,H = 256,16
+  W,H = 128,16
   SearchWindow = 4
   infile = "stereo_tiny.raw"
 elseif filename=="medi" then

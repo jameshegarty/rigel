@@ -12,21 +12,20 @@ A = types.uint(8)
 
 local LARGE = string.find(arg[0],"large")
 
+local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
+TARGET_DEPTH = tonumber(TARGET_DEPTH)
+
 local ConvWidth = 8
 
-local inputW = 128
-local inputH = 64
+local inputW = 64
+local inputH = 32
+
+-- 64x32 is too small
+if TARGET_DEPTH==4 then inputW, inputH = 128,64 end
 
 if LARGE then
   inputW, inputH = 384, 384
 end
-
-local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
-TARGET_DEPTH = tonumber(TARGET_DEPTH)
-
-
-
---local convolvefn = C.convolveConstant( types.uint(8), ConvWidth, rep(1,ConvWidth*ConvWidth), 6 )
 
 local inp = d.input( d.Handshake(types.array2d(A,8)) )
 local out
@@ -125,9 +124,11 @@ hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
 
 local scale = math.pow(2,TARGET_DEPTH-1)
 
-local infile = "frame_128.raw"
+local infile = "frame_64.raw"
 local outfile = "pyramid_"..tostring(TARGET_DEPTH)
-local design = "Gaussian Pyramid Const 128"
+local design = "Gaussian Pyramid Const 64"
+
+if TARGET_DEPTH==4 then infile, design = "frame_128.raw","Gaussian Pyramid 128" end
 
 if LARGE then
   infile = "frame_384_384.raw"

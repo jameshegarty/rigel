@@ -31,7 +31,7 @@ SIMSRCS := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_
 SIMSRCS := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SIMSRCS))
 SIMSRCS := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SIMSRCS))
 #nyi
-SIMSRCS := $(filter-out harris.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(SIMSRCS))
+SIMSRCS := $(filter-out harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(SIMSRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
@@ -47,7 +47,7 @@ SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS))
 AXI100SRCS := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(AXI100SRCS))
 AXI100SRCS := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(AXI100SRCS))
-AXI100SRCS := $(filter-out harris.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
+AXI100SRCS := $(filter-out filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
 
 AXISRCS = $(AXI100SRCS)
 

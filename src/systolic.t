@@ -191,8 +191,15 @@ function systolic.valueToVerilog( value, ty )
     return "systolic.valueToVerilog_tuple_garbage_NYI"
   elseif ty:isOpaque() then
     return "0'b0"
+  elseif ty:stripConst()==types.float(32) then
+    local terra floatToBits(a:float) 
+      var o : &opaque = &a
+      return @([&uint32](o))
+    end
+    local v = floatToBits(value)
+    return "32'd"..tostring(v)
   elseif ty:isFloat() then
-    return "systolic.valueToVerilog_float_garbage" -- garbage
+    return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   else
     print("valueToVerilog",ty)
     assert(false)
@@ -423,7 +430,7 @@ function systolic.index( expr, idx, idy )
     assert(#v.type.list==1)
     return systolic.cast( v, v.type.list[1] )
   end
-  err(false, "Index only works on tuples and arrays")
+  err(false, "Index only works on tuples and arrays, not "..tostring(expr.type))
 end
 
 -- low,high are inclusive
@@ -452,8 +459,8 @@ function systolic.constant( v, ty )
     err( type(v)==ty:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(ty))
 
     if type(v)=="number" then
-      err( v==math.floor(v), "systolic constant must be integer")
-      err( ty:isInt() or v>=0, "systolic uint const must be positive")
+      err( ty:isFloat() or v==math.floor(v), "integer systolic constant must be integer")
+      err( ty:isFloat() or ty:isInt() or v>=0, "systolic uint const must be positive")
       if ty:isUint() or ty:isBits() then
         err( v<math.pow(2,ty:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(ty))
       end
@@ -778,6 +785,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
           -- Note: we have to do this on the original node, before we removed the pipeling information!
           local ID, delaysToAdd = orig.inputs[k]:internalDelay()
           local inpDelay = delaysAtInput[orig.inputs[k]] + (ID-delaysToAdd)
+
           n.inputs[k] = getDelayed( n.inputs[k], thisDelay - inpDelay, orig.inputs[k])
         end
       end

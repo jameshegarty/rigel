@@ -1814,23 +1814,41 @@ function readAll(file)
   return content
 end
 
-modules.multiply = memoize(function(lhsType,rhsType,outType)
-                             assert(types.isType(outType))
---  if inpType == types.int(20) and outType==types.int(40) then
-                             local str = "mul_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
-                             local vstring = readAll("../extras/"..str..".v")
 
-                             local delaystring = readAll("../extras/"..str..".delay")
-                             print("DELAY",delaystring)
-    local fns = {}
-    local inp = S.parameter("inp",types.tuple{lhsType,rhsType})
-    --table.insert(fns,)
-    fns.process = S.lambda("process",inp,S.constant(0,outType),"out",nil,nil,S.CE("ce"))
-    local m = systolic.module.new(str,fns,{},true,nil,nil,vstring,{process=tonumber(delaystring)})
-    return m
---  else
---    assert(false)
---  end
+local function loadVerilogFile(inpType,outType,filestr)
+  assert(types.isType(inpType))
+  assert(types.isType(outType))
+
+  local vstring = readAll("../extras/"..filestr..".v")
+  local delaystring = readAll("../extras/"..filestr..".delay")
+
+  local fns = {}
+  local inp = S.parameter("inp",inpType)
+
+  local outv = 0
+  if outType==types.bool() then outv=false end
+  fns.process = S.lambda("process",inp,S.cast(S.constant(outv,outType),outType),"out",nil,nil,S.CE("ce"))
+  print("MODULE ",filestr,"DELAY",tonumber(delaystring))
+  local m = systolic.module.new(filestr,fns,{},true,nil,nil,vstring,{process=tonumber(delaystring)})
+  return m
+end
+
+modules.binop = memoize(function(op,lhsType,rhsType,outType)
+assert(type(op)=="string")
+                             assert(types.isType(lhsType))
+                             assert(types.isType(rhsType))
+                             assert(types.isType(outType))
+
+                             local str = op.."_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
+                             return loadVerilogFile( types.tuple{lhsType,rhsType}, outType, str)
                            end)
+
+modules.multiply = function(lhsType,rhsType,outType) return modules.binop("mul",lhsType,rhsType,outType) end
+
+modules.intToFloat = loadVerilogFile(types.int(32),types.float(32),"int32_to_float")
+modules.floatToInt = loadVerilogFile(types.float(32),types.int(32),"float32_to_int")
+modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_float")
+modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
+
 
 return modules

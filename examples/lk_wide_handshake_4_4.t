@@ -10,6 +10,7 @@ local harness = require "harness"
 
 if string.find(arg[0],"float") then
   f = require "fixed_float"
+  f.DISABLE_SYNTH=true
 else
   f = require "fixed"
   if string.find(arg[0],"axi") then

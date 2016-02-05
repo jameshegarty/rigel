@@ -17,15 +17,18 @@ NOFIFO = (NOFIFO~=nil)
 
 local ConvWidth = 8
 
-local inputW = 128
-local inputH = 64
+local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
+TARGET_DEPTH = tonumber(TARGET_DEPTH)
+
+local inputW = 64
+local inputH = 32
+
+-- 64x32 is too small
+if TARGET_DEPTH==4 then inputW, inputH = 128,64 end
 
 if LARGE then
   inputW, inputH = 384, 384
 end
-
-local TARGET_DEPTH = string.sub(arg[0],string.find(arg[0],"%d+"))
-TARGET_DEPTH = tonumber(TARGET_DEPTH)
 
 local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
 local DATA_TYPE = types.array2d(A,8)
@@ -157,9 +160,10 @@ local scale = math.pow(2,TARGET_DEPTH-1)
 
 local IO_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 
-local infile = "frame_128.raw"
+local infile = "frame_64.raw"
 local outfile = "pyramid_tr_"..tostring(TARGET_DEPTH)
-local design = "Gaussian Pyramid TR 128"
+local design = "Gaussian Pyramid TR 64"
+if TARGET_DEPTH==4 then infile, design = "frame_128.raw","Gaussian Pyramid 128" end
 
 if LARGE then
   infile = "frame_384_384.raw"

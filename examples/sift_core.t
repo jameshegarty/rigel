@@ -9,6 +9,7 @@ local harness = require "harness"
 local harris = require "harris_core"
 local C = require "examplescommon"
 local f = require "fixed_float"
+f.DISABLE_SYNTH=true
 
 sift = {}
 

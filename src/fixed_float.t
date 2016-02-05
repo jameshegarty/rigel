@@ -1,9 +1,11 @@
 local IR = require("ir")
 local types = require("types")
 local cmath = terralib.includec("math.h")
+local fpgamodules = require("fpgamodules")
 
 local fixed = {}
 fixed.FLOAT = true 
+fixed.DISABLE_SYNTH = false
 
 local function getloc()
 --  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
@@ -48,6 +50,10 @@ end
 
 function fixedASTFunctions:gt(r)
   return boolbinop(">",self,r)
+end
+
+function fixedASTFunctions:lt(r)
+  return boolbinop("<",self,r)
 end
 
 function fixedASTFunctions:ge(r)
@@ -251,26 +257,139 @@ end
 function fixedASTFunctions:cost() return 0 end
 
 function fixedASTFunctions:toSystolic()
+  local instances = {}
   local inp
-  self:visitEach(
-    function( n, args )
-      if n.kind=="parameter" then
-        inp = S.parameter(n.name, n.type)
-      end
-    end)
 
   local res
-  if self.type:isArray() then
-    res = S.constant(broadcast(0,self.type:channels()),self.type)
-  elseif self.type:isTuple() then
-    res = S.constant(broadcast(0,#self.type.list),self.type)
-  elseif self.type:isBool() then
-    res = S.constant(false,self.type)
+
+  if fixed.DISABLE_SYNTH==false then
+  res = self:visitEach(
+    function( n, args )
+      local res
+      if n.kind=="parameter" then
+        inp = S.parameter(n.name, n.type)
+        res = inp
+      elseif n.kind=="lift" then
+        if n.inputs[1].type==types.int(32) or (n.inputs[1].type:isUint() and n.inputs[1].type.precision<32) then
+
+          local inparg = args[1]
+          if n.inputs[1].type:isUint() then
+            inparg = S.cast(inparg,types.int(32))
+          end
+
+          local I = fpgamodules.intToFloat:instantiate("INTTOFLOAT"..tostring(#instances))
+          table.insert(instances,I)
+          res = I:process(inparg)
+        else
+          print("LIFT"..tostring(n.inputs[1].type))
+          assert(false)
+        end
+      elseif n.kind=="rshift" then
+        if n.type:isUint() then
+          res = S.rshift(arg[1],n.shift)
+        elseif n.type:isFloat() then
+          local I = fpgamodules.multiply(types.float(32),types.float(32),types.float(32)):instantiate("MUL_FLOAT"..tostring(#instances))
+          table.insert(instances,I)
+          res = I:process(S.tuple{args[1],S.constant(1/math.pow(2,n.shift),types.float(32))})
+        else
+          print("TY",n.type)
+          assert(false)
+        end
+      elseif n.kind=="binop" then
+        if n.inputs[1].type==types.float(32) and n.inputs[2].type==types.float(32) and (n.type==types.float(32)  or n.type==types.bool()) then
+
+          local opremap={["*"]="mul",["+"]="add",["-"]="sub",[">"]="gt",["<"]="lt",["<="]="lte",[">="]="gte"}
+
+          if opremap[n.op]~=nil then
+            local I = fpgamodules.binop(opremap[n.op],types.float(32),types.float(32),n.type):instantiate(opremap[n.op].."_FLOAT"..tostring(#instances))
+            table.insert(instances,I)
+            res = I:process(S.tuple{args[1],args[2]})
+          else
+            print("<MOP",n.op)
+            assert(false)
+          end
+        elseif n.inputs[1].type==types.bool() and n.inputs[2].type==types.bool() then
+          if n.op=="and" then
+            return S.__and(args[1],args[2])
+          else
+            assert(false)
+          end
+        else
+          print("OP",n.op)
+          assert(false)
+        end
+      elseif n.kind=="index" then
+        res = S.index( args[1], n.ix, n.iy)
+      elseif n.kind=="sqrt" then
+        local I = fpgamodules.floatSqrt:instantiate("FLOAT_SQRT"..tostring(#instances))
+        table.insert(instances,I)
+        res = I:process(args[1])
+      elseif n.kind=="not" then
+        res = S.__not(args[1])
+      elseif n.kind=="neg" then
+        local I = fpgamodules.binop("sub",types.float(32),types.float(32),n.type):instantiate("neg_FLOAT"..tostring(#instances))
+        table.insert(instances,I)
+        res = I:process(S.tuple{S.constant(0,types.float(32)),args[1]})
+      elseif n.kind=="invert" then
+        local I = fpgamodules.floatInvert:instantiate("FLOAT_INV"..tostring(#instances))
+        table.insert(instances,I)
+        res = I:process(args[1])
+      elseif n.kind=="tuple" then
+        res = S.tuple(args)
+      elseif n.kind=="constant" then
+        res = S.constant( n.value, fixed.extract(n.type) )
+      elseif n.kind=="plainconstant" then
+        res = S.constant( n.value, n.type )
+      elseif n.kind=="select" then
+        res = S.select(args[1],args[2],args[3])
+      elseif n.kind=="lower" then
+        if n.type==types.int(32) or (n.type:isUint() and n.type.precision<32) then
+          local I = fpgamodules.floatToInt:instantiate("FLOATTOINT"..tostring(#instances))
+          table.insert(instances,I)
+          res = I:process(args[1])
+
+          if n.type:isUint() and n.type.precision<32 then
+            res = S.cast(res,n.type)
+          end
+        else
+          assert(false)
+        end
+      elseif n.kind=="array2d" then
+        local inp = {}
+        for k,v in pairs(args) do inp[k] = v end
+        res = S.cast(S.tuple(inp),n.type)
+      elseif n.kind=="cast" then
+        res = S.cast(args[1],n.type)
+      else
+        err(false,"missing? "..n.kind)
+      end
+
+      return res
+    end)
   else
-    res = S.constant(0,self.type)
+    self:visitEach(
+      function( n, args )
+        local res
+        if n.kind=="parameter" then
+          inp = S.parameter(n.name, n.type)
+          res = inp
+        end
+      end)
   end
 
-  return res, inp
+  if res==nil then
+    if self.type:isArray() then
+      res = S.constant(broadcast(0,self.type:channels()),self.type)
+    elseif self.type:isTuple() then
+      res = S.constant(broadcast(0,#self.type.list),self.type)
+    elseif self.type:isBool() then
+      res = S.constant(false,self.type)
+    else
+      res = S.constant(0,self.type)
+    end
+  end
+
+  return res, inp, instances
 end
 
 local hists = {}
@@ -289,6 +408,8 @@ function fixedASTFunctions:toTerra()
       elseif n.kind=="binop" then
         if n.op==">" then
           res = `[args[1]]>[args[2]]
+        elseif n.op=="<" then
+          res = `[args[1]]<[args[2]]
         elseif n.op==">=" then
           res = `[args[1]]>=[args[2]]
         elseif n.op=="and" then
@@ -366,14 +487,14 @@ function fixedASTFunctions:toDarkroom(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp = self:toSystolic()
+  local out, inp, instances = self:toSystolic()
   local terraout, terrainp = self:toTerra()
 
   local terra tfn([terrainp], out:&out.type:toTerraType())
     @out = terraout
   end
-  tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, self.type, 0, tfn, inp, out )
+  --tfn:printpretty(true,false)
+  return darkroom.lift( name, inp.type, self.type, 0, tfn, inp, out, instances )
 end
 
 return fixed
