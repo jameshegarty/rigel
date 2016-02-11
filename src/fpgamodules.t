@@ -327,55 +327,39 @@ modules.fifo = memoize(function(ty,items,verbose)
 
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
-function modules.fifonoop(ty,items)
+modules.fifonoop = memoize(function(ty)
   assert(types.isType(ty))
-  assert(type(items)=="number")
 
-  local addrBits = (math.log(items)/math.log(2))+1 -- the +1 is so that we can disambiguate wraparoudn
-  local fifo = systolic.moduleConstructor("fifonoop_"..sanitize(tostring(ty))..tostring(items))
-  local reg = fifo:add(systolic.module.reg(ty,true):instantiate("data"))
-  local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
-  local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("readAddr"))
+  local fifo = systolic.moduleConstructor("fifonoop_"..sanitize(tostring(ty))):onlyWire(true)
+
+  local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
+  local internalReady = systolic.parameter("load_ready_downstream",types.bool())
 
   -- pushBack
-  local pushCE = S.CE("CE_push")
-  local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
-  pushBack:setCE(pushCE)
-  pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
+  local pushBack = fifo:addFunction( systolic.lambda("store",internalData,nil,"store_input",{} ) )
+  local pushBack_ready = fifo:addFunction( systolic.lambda("store_ready",S.parameter("SRNIL",types.bool()),internalReady,"store_ready",{} ) )
 
   -- popFront
-  local popCE = S.CE("CE_pop")
-  local popFront = fifo:addFunction( S.lambdaConstructor("popFront") )
-  popFront:setCE(popCE)
-  popFront:setOutput( reg:get(), "popFront" )
+  local popFront = fifo:addFunction( S.lambda("load",S.parameter("pfnil",types.tuple{types.null(),types.bool()}),internalData,"load_output") )
+  local popFront_ready = fifo:addFunction( S.lambda("load_ready",internalReady,nil,"load_ready") )
 
   -- size
-  local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
-  local fsize = modules.modSub(writeAddr:get(),readAddr:get(), items ):disablePipelining()
-  sizeFn:setOutput( fsize, "size" )
+--  local sizeFn = fifo:addFunction( S.lambda("size",S.parameter("sznil",types.null()),S.constant(0,types.uint(16)),"size",{}) )
 
   -- ready
-  local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
-  local ready = S.lt( fsize, S.constant(items,types.uint(addrBits)) ):disablePipelining()
-  readyFn:setOutput( ready, "ready" )
+--  local readyFn = fifo:addFunction( S.lambda("ready",S.parameter("rnil",types.null()),internalReady,"readyv") )
 
   -- has data
-  local hasDataFn = fifo:addFunction( S.lambdaConstructor("hasData") )
-  local hasData = S.__not( S.eq( writeAddr:get(), readAddr:get()) ):disablePipelining()
-  hasDataFn:setOutput( hasData, "hasData" )
+--  local hasDataFn = fifo:addFunction( S.lambda("hasData",S.parameter("hdnil",types.null()),internalValid,"hasData") )
 
   -- pushBackReset
-  local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("pushBackReset" ) )
-  pushBackReset:setCE(pushCE)
-  pushBackReset:addPipeline( writeAddr:set(systolic.constant(0,types.uint(addrBits))))
+  local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("store_reset" ) )
 
   -- popFrontReset
-  local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("popFrontReset" ) )
-  popFrontReset:setCE(popCE)
-  popFrontReset:addPipeline( readAddr:set(systolic.constant(0,types.uint(addrBits))))
+  local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("load_reset" ) )
 
   return fifo
-end
+                           end)
 --modules.fifo = memoize(modules.fifonoop)
 
 -- tab should be a key of systolic values. Key is a systolic value that chooses between them.

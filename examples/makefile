@@ -1,5 +1,5 @@
 SRCFILES = $(wildcard *.t)
-SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t campipe_core.t,$(SRCFILES))
+SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t,$(SRCFILES))
 
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
@@ -31,7 +31,7 @@ SIMSRCS := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_
 SIMSRCS := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SIMSRCS))
 SIMSRCS := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SIMSRCS))
 #nyi
-SIMSRCS := $(filter-out harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(SIMSRCS))
+SIMSRCS := $(filter-out harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t,$(SIMSRCS))
 
 SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
 SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
@@ -249,6 +249,11 @@ out/%.axi.correct.txt : out/%.axi.bmp
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	test ! -s out/$*.axi.diff && touch out/build_$*/$*.axi.correct.txt
+
+# hack: this file is different in HW due to floating point differences, so override the check
+out/sift_desc_hw.axi100.correct.txt : out/sift_desc_hw.axi100.bmp
+	diff out/sift_desc_hw.axi100.bmp gold/sift_desc_hw.axi100.bmp > out/sift_desc_hw.axi100.diff
+	test ! -s out/sift_desc_hw.axi100.diff && touch $@
 
 out/%.axi100.correct.txt : out/%.axi100.bmp
 	diff out/$*.axi100.bmp gold/$*.bmp > out/$*.axi100.diff

@@ -1290,7 +1290,7 @@ darkroom.liftHandshake = memoize(function(f)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 darkroom.map = memoize(function( f, W, H )
   assert( darkroom.isFunction(f) )
-  assert(type(W)=="number")
+  err(type(W)=="number", "width must be number")
   assert(type(H)=="number" or H==nil)
   if H==nil then H=1 end
 
@@ -3414,42 +3414,43 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   res.terraModule = Fifo
 
   local bytes = (size*A:verilogBits())/8
-  res.systolicModule = S.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
 
   local fifo
   if csimOnly then
-    fifo = res.systolicModule:add( fpgamodules.fifonoop(A,size):instantiate("FIFO") )
+    res.systolicModule = fpgamodules.fifonoop(A)
   else
-    fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
-  end
-  --------------
-  -- basic -> R
-  local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
-  local storeCE = S.CE("store_CE")
-  store:setCE(storeCE)
-  store:addPipeline( fifo:pushBack( store:getInput() ) )
-  --store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
-  local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
-  if nostall then
-    storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
-  else
-    storeReady:setOutput( fifo:ready(), "store_ready" )
-  end
-  local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
-  storeReset:setCE(storeCE)
-  storeReset:addPipeline(fifo:pushBackReset())
-  --------------
-  -- basic -> V
-  local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
-  local loadCE = S.CE("load_CE")
-  load:setCE(loadCE)
-  load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
-  local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
-  loadReset:setCE(loadCE)
-  loadReset:addPipeline(fifo:popFrontReset())
-  --------------
-  -- debug
-  if W~=nil then
+    res.systolicModule = S.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
+
+    local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
+
+    --------------
+    -- basic -> R
+    local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
+    local storeCE = S.CE("store_CE")
+    store:setCE(storeCE)
+    store:addPipeline( fifo:pushBack( store:getInput() ) )
+    --store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
+    local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
+    if nostall then
+      storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
+    else
+      storeReady:setOutput( fifo:ready(), "store_ready" )
+    end
+    local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
+    storeReset:setCE(storeCE)
+    storeReset:addPipeline(fifo:pushBackReset())
+    --------------
+    -- basic -> V
+    local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
+    local loadCE = S.CE("load_CE")
+    load:setCE(loadCE)
+    load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
+    local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
+    loadReset:setCE(loadCE)
+    loadReset:addPipeline(fifo:popFrontReset())
+    --------------
+    -- debug
+    if W~=nil then
     local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):instantiate("outputCount") )
     load:addPipeline(outputCount:setBy(fifo:hasData()))
     loadReset:addPipeline(outputCount:set(S.constant(0,types.uint(32))))
@@ -3460,12 +3461,13 @@ darkroom.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
     local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
     load:addPipeline(printInst:process(maxSize:get(), lastCycle))
     loadReset:addPipeline(maxSize:set(S.constant(0,types.uint(16))))
+    end
+    --------------
+    
+    res.systolicModule = liftDecimateSystolic(res.systolicModule,{"load"},{"store"})
+    res.systolicModule = runIffReadySystolic( res.systolicModule,{"store"},{"load"})
+    res.systolicModule = liftHandshakeSystolic( res.systolicModule,{"load","store"},{})
   end
-  --------------
-
-  res.systolicModule = liftDecimateSystolic(res.systolicModule,{"load"},{"store"})
-  res.systolicModule = runIffReadySystolic( res.systolicModule,{"store"},{"load"})
-  res.systolicModule = liftHandshakeSystolic( res.systolicModule,{"load","store"},{})
 
   return darkroom.newFunction(res)
                         end)
@@ -4422,7 +4424,7 @@ end
 darkroom.constSeq = memoize(function( value, A, w, h, T, X )
   assert(type(value)=="table")
   assert(type(value[1])=="number")
-  assert(#value==w*h)
+  err(#value==w*h, "table has wrong number of values")
   assert(X==nil)
 
 --  assert(type(value[1][1])=="number")
@@ -4496,7 +4498,7 @@ function darkroom.tuple( name, t, packStreams )
   if packStreams==nil then packStreams=true end
 
   local r = {kind="tuple", name=name, loc=getloc(), inputs={}, packStreams = packStreams}
-  map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
+  map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 

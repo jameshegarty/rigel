@@ -2717,6 +2717,13 @@ function systolicModuleConstructor:complete()
   end
 end
 
+function systolicModuleConstructor:setDelay( fnname, delay )
+  assert(type(fnname)=="string")
+  assert(type(delay)=="number")
+  self.options.verilogDelay = self.options.verilogDelay or {}
+  self.options.verilogDelay[fnname]=delay
+end
+
 function systolicModuleConstructor:getDelay( fnname )
   self:complete()
   return self.module:getDelay( fnname )

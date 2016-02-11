@@ -46,8 +46,8 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   -- check that we end up with a multiple of the axi burst size.  If not, just fail.
   -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
-  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes not aligned to axi burst size")
-  err(inputBytes/128==math.floor(inputBytes/128), "outputBytes not aligned to axi burst size")
+  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes ("..tostring(outputBytes)..") not aligned to axi burst size")
+  err(inputBytes/128==math.floor(inputBytes/128), "inputBytes not aligned to axi burst size")
  
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
   local inpSymb = d.input( d.Handshake(ITYPE) )
@@ -74,7 +74,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
   return d.lambda( "harness"..id, inpSymb, out )
 end
 
-local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType)
+local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
 
 
   local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
@@ -91,6 +91,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   local inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
 
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
+  if type(earlyOverride)=="number" then EC=earlyOverride end
   local inp = d.apply("underflow_US", d.underflow( d.extractData(inputType), inputBytes/8, EC, true ), inpdata)
 
   local hsfninp = inpSymb
@@ -178,6 +179,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
   err(d.isFunction(hsfn), "second argument to harness.axi must be function")
+  assert(earlyOverride==nil or type(earlyOverride)=="number")
 
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
@@ -185,7 +187,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
-local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType)
+local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
 local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")

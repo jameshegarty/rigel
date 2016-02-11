@@ -272,10 +272,12 @@ function fixedASTFunctions:toSystolic()
         inp = S.parameter(n.name, n.type)
         res = inp
       elseif n.kind=="lift" then
-        if n.inputs[1].type==types.int(32) or (n.inputs[1].type:isUint() and n.inputs[1].type.precision<32) then
+        if (n.inputs[1].type:isInt() and n.inputs[1].type.precision<=32) or (n.inputs[1].type:isUint() and n.inputs[1].type.precision<32) then
 
           local inparg = args[1]
           if n.inputs[1].type:isUint() then
+            inparg = S.cast(inparg,types.int(32))
+          elseif n.inputs[1].type:isInt() and n.inputs[1].type.precision<32 then
             inparg = S.cast(inparg,types.int(32))
           end
 
@@ -345,12 +347,14 @@ function fixedASTFunctions:toSystolic()
       elseif n.kind=="select" then
         res = S.select(args[1],args[2],args[3])
       elseif n.kind=="lower" then
-        if n.type==types.int(32) or (n.type:isUint() and n.type.precision<32) then
+        if (n.type:isUint() and n.type.precision<32) or (n.type:isInt() and n.type.precision<=32) then
           local I = fpgamodules.floatToInt:instantiate("FLOATTOINT"..tostring(#instances))
           table.insert(instances,I)
           res = I:process(args[1])
 
           if n.type:isUint() and n.type.precision<32 then
+            res = S.cast(res,n.type)
+          elseif n.type:isInt() and n.type.precision<32 then
             res = S.cast(res,n.type)
           end
         else
