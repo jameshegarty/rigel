@@ -84,20 +84,26 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
 
   local inpSymb = d.input( d.Handshake(ITYPE) )
-  local inpdata = inpSymb
-  if tapType~=nil then
+  local inpdata
+
+  if tapType==nil then
+    inpdata = inpSymb
+  else
     inpdata = d.apply("inpdata", d.makeHandshake(d.index(ITYPE,0)), inpSymb)
   end
+
   local inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
 
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   if type(earlyOverride)=="number" then EC=earlyOverride end
-  local inp = d.apply("underflow_US", d.underflow( d.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+  local inpdata = d.apply("underflow_US", d.underflow( d.extractData(inputType), inputBytes/8, EC, true ), inpdata)
 
-  local hsfninp = inpSymb
+  local hsfninp
 
-  if tapType~=nil then
-    hsfninp = d.apply("HFN",d.packTuple({inputType,tapType}), d.tuple("hsfninp",{inp,inptaps},false))
+  if tapType==nil then
+    hsfninp = inpdata
+  else
+    hsfninp = d.apply("HFN",d.packTuple({inputType,tapType}), d.tuple("hsfninp",{inpdata,inptaps},false))
   end
 
   local out = d.apply("hsfna",hsfn,hsfninp)
