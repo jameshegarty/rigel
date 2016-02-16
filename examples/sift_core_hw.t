@@ -518,10 +518,12 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
 
   local out = d.apply("dxdy",dxdyFn,inp)
+
+  out = d.apply("pad", d.liftHandshake(d.padSeq(DXDY_PAIR, W, H, 1, 7, 8, 7, 8, {0,0})), out)
+
   out = d.apply("dxdyix",d.makeHandshake(d.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
 
   local dxdyBroad = d.apply("dxdy_broad", d.broadcastStream(DXDY_PAIR,2), out)
-
 
   -------------------------------
   -- right branch: make the harris bool
@@ -559,12 +561,15 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
+  local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
   -- merge left/right
   local out = d.apply("merge",d.packTuple{FILTER_TYPE,types.bool()},d.tuple("MPT",{left,right},false))
 
-  --local out = d.apply("stidx",d.makeHandshake(d.index(types.array2d(types.tuple{FILTER_TYPE,types.bool()},1),0,0)), out)
-
+  local out = d.apply("cropao", d.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
+  local out = d.apply("crp", d.liftHandshake(d.liftDecimate(d.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)
+  local out = d.apply("crpidx", d.makeHandshake(d.index(types.array2d(FILTER_PAIR,1,1),0,0)), out)
+  
   local filterFn = d.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
 
   local out = d.apply("FS",d.liftHandshake(d.liftDecimate(filterFn)),out)
