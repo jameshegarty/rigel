@@ -1374,6 +1374,7 @@ function darkroom.filterSeq( A, W,H, rate, fifoSize )
   local logRate = math.log(rate)/math.log(2)
 
   local res = { kind="filterSeq", A=A }
+  -- this has type basic->V (decimate)
   res.inputType = types.tuple{A,types.bool()}
   res.outputType = darkroom.V(A)
   res.delay = 0
@@ -1384,9 +1385,9 @@ function darkroom.filterSeq( A, W,H, rate, fifoSize )
   local struct FilterSeq { phase:int; cyclesSinceOutput:int; currentFifoSize: int; remainingInputs : int; remainingOutputs : int }
   terra FilterSeq:reset() self.phase=0; self.cyclesSinceOutput=0; self.currentFifoSize=0; self.remainingInputs=W*H; self.remainingOutputs=W*H/rate; end
   terra FilterSeq:stats(name:&int8) end
+--[=[
   terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&darkroom.lower(res.outputType):toTerraType() )
     data(out) = inp._0
-    
     valid(out) = inp._1
 
     -- if it has been RATE cycles since we had an output, force us to have an output
@@ -1424,17 +1425,113 @@ function darkroom.filterSeq( A, W,H, rate, fifoSize )
     self.phase = self.phase + 1
     if self.phase==rate then self.phase = 0 end
   end
+  ]=]
+
+  terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&darkroom.lower(res.outputType):toTerraType() )
+
+    var validIn = inp._1
+
+    var underflow = (self.currentFifoSize==0 and self.cyclesSinceOutput==rate)
+    var fifoHasSpace = (self.currentFifoSize<fifoSize)
+    var outaTime : bool = (self.remainingInputs < self.remainingOutputs*rate)
+    var validOut : bool = (((validIn or underflow) and fifoHasSpace) or outaTime)
+
+    var currentFifoSize = terralib.select(validOut and self.phase<rate-1, self.currentFifoSize+1, terralib.select(validOut==false and self.phase==rate-1 and self.currentFifoSize>0,self.currentFifoSize-1,self.currentFifoSize))
+    var cyclesSinceOutput = terralib.select(validOut,0,self.cyclesSinceOutput+1)
+    var remainingOutputs = terralib.select( validOut, self.remainingOutputs-1, self.remainingOutputs )
+    
+
+    -- now set
+    self.remainingOutputs = remainingOutputs
+    self.cyclesSinceOutput = cyclesSinceOutput
+    self.currentFifoSize = currentFifoSize
+    valid(out) = validOut
+    data(out) = inp._0
+    self.remainingInputs = self.remainingInputs - 1
+    self.phase = self.phase + 1
+    if self.phase==rate then self.phase = 0 end    
+  end
   
   res.terraModule = FilterSeq
 
-  res.systolicModule = S.moduleConstructor("filterSeq")
-  local inp = S.parameter("process_input", res.inputType )
+  local vstring = [[
+module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(darkroom.lower(res.outputType):verilogBits()-1)..[[:0] out);
+parameter INSTANCE_NAME="INST";
 
-  local resetPipelines = {}
-  local CE = S.CE("process_CE")
-  res.systolicModule:addFunction( S.lambda("process", inp, S.tuple{S.index( inp, 0 ),S.constant(true,types.bool())}, "process_output", nil, nil, CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+  reg [15:0] phase;
+  reg [15:0] cyclesSinceOutput;
+  reg [15:0] currentFifoSize;
+  reg [15:0] remainingInputs;
+  reg [15:0] remainingOutputs;
 
+  wire []]..tostring(res.inputType:verilogBits()-2)..[[:0] inpData;
+  assign inpData = inp[]]..tostring(res.inputType:verilogBits()-2)..[[:0];
+
+  wire filterCond;
+  assign filterCond = inp[]]..tostring(res.inputType:verilogBits()-1)..[[];
+
+  wire underflow;
+  assign underflow = (currentFifoSize==0 && cyclesSinceOutput==]]..tostring(rate)..[[);
+
+  wire fifoHasSpace;
+  assign fifoHasSpace = currentFifoSize<]]..tostring(fifoSize)..[[;
+
+  wire outaType;
+  assign outaTime = remainingInputs < (remainingOutputs*]]..tostring(rate)..[[);
+
+  wire validOut;
+  assign validOut = (((filterCond || underflow) && fifoHasSpace) || outaTime);
+
+  assign out = {validOut,inpData};
+
+  always @ (posedge CLK) begin
+    if (reset) begin
+      phase <= 0;
+      cyclesSinceOutput <= 0;
+      currentFifoSize <= 0;
+      remainingInputs <= ]]..tostring(W*H)..[[;
+      remainingOutputs <= ]]..tostring(W*H/rate)..[[;
+    end else if (ce && process_valid) begin
+      currentFifoSize <= (validOut && (phase<]]..tostring(rate-1)..[[))?(currentFifoSize+1):(   (validOut==1'b0 && phase==]]..tostring(rate-1)..[[ && currentFifoSize>0)? (currentFifoSize-1) : (currentFifoSize) );
+      cyclesSinceOutput <= (validOut)?0:cyclesSinceOutput+1;
+      remainingOutputs <= validOut?( (remainingOutputs==0)?]]..tostring(W*H/rate)..[[:(remainingOutputs-1) ):remainingOutputs;
+      remainingInputs <= (remainingInputs==0)?]]..tostring(W*H)..[[:(remainingInputs-1);
+      phase <= (phase==]]..tostring(rate)..[[)?0:(phase+1);
+    end
+  end
+
+  always @(posedge CLK) begin
+    $display("FILTER reset:%d process_valid:%d filterCond:%d validOut:%d phase:%d cyclesSinceOutput:%d currentFifoSize:%d remainingInputs:%d remainingOutputs:%d", reset, process_valid, filterCond, validOut, phase, cyclesSinceOutput, currentFifoSize, remainingInputs, remainingOutputs);
+  end
+endmodule
+]]
+
+  local fns = {}
+  local inp = S.parameter("inp",res.inputType)
+
+  local datat = darkroom.extractData(res.outputType)
+  local datav = datat:fakeValue()
+
+  fns.process = S.lambda("process",inp,S.cast(S.tuple{S.constant(datav,datat),S.constant(true,types.bool())}, darkroom.lower(res.outputType)), "out",nil,S.parameter("process_valid",types.bool()),S.CE("ce"))
+  fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
+
+  local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
+
+
+  res.systolicModule = S.moduleConstructor("FilterSeqImplWrap")
+
+  -- hack: get broken systolic library to actually wire valid
+  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+
+  local inner = res.systolicModule:add(FilterSeqImpl:instantiate("filterSeqImplInner"))
+
+  local sinp = S.parameter("process_input", res.inputType )
+  local CE = S.CE("CE")
+  local v = S.parameter("process_valid",types.bool())
+  res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp,v), "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
+  local resetValid = S.parameter("reset",types.bool())
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16))),inner:reset(nil,resetValid)},resetValid,CE) )
+  
   return darkroom.newFunction(res)
 end
 

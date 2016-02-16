@@ -847,4 +847,47 @@ function types.reduce(op,typeTable)
   return typeTable[1]
 end
 
+function TypeFunctions:fakeValue()
+  if self:isInt() or self:isUint() or self:isFloat() then
+    return 0
+  elseif self:isArray() then
+    local t = {}
+    for i=1,self:channels() do table.insert(t,self:arrayOver():fakeValue()) end
+    return t
+  elseif self:isTuple() then
+    local t = {}
+    for k,v in ipairs(self.list) do
+      table.insert(t,v:fakeValue())
+    end
+    return t
+  else
+    err(false, "could not create fake value for "..tostring(self))
+  end
+end
+
+-- check that v is a lua value convertable to this type
+function TypeFunctions:checkLuaValue(v)
+  if self:isArray() then
+    err( type(v)=="table", "if type is an array, v must be a table")
+    err( #v==self:channels(), "incorrect number of channels, is "..(#v).." but should be "..self:channels() )
+    map( v, function(n) self:arrayOver():checkLuaValue(n) end )
+  elseif self:isTuple() then
+    err( type(v)=="table", "if type is a tuple, v must be a table")
+    err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
+    map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
+  else
+    err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number but is "..tostring(type(v)).." for type "..tostring(self))
+    err( type(v)==self:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(self))
+
+    if type(v)=="number" then
+      err( self:isFloat() or v==math.floor(v), "integer systolic constant must be integer")
+      err( self:isFloat() or self:isInt() or v>=0, "systolic uint const must be positive")
+      if self:isUint() or self:isBits() then
+        err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
+      end
+    end
+  end
+
+end
+
 return types

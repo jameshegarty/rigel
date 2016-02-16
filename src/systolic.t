@@ -57,6 +57,10 @@ function checkReserved(k)
     print("Error, variable name ",k," is a reserved keyword in verilog")
     assert(false)
   end
+
+  if tonumber(k:sub(1,1))~=nil then
+    err(false, "verilog variables cant start with numbers ("..k..")")
+  end
 end
 
 local binopToVerilog={["+"]="+",["*"]="*",["<<"]="<<<",[">>"]=">>>",["pow"]="**",["=="]="==",["and"]="&",["-"]="-",["<"]="<",[">"]=">",["<="]="<=",[">="]=">="}
@@ -445,28 +449,7 @@ end
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
   ty = ty:makeConst()
-
-  if ty:isArray() or ty:isTuple() then
-    err( type(v)=="table", "if type is an array, v must be a table")
-    map( v,function(n) err(type(n)=="number", "array element must be a number") end )
-    if ty:isTuple() then
-      err( #v==#ty.list, "incorrect number of channels, is "..(#v).." but should be "..#ty.list )
-    else
-      err( #v==ty:channels(), "incorrect number of channels, is "..(#v).." but should be "..ty:channels() )
-    end
-  else
-    err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number")
-    err( type(v)==ty:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(ty))
-
-    if type(v)=="number" then
-      err( ty:isFloat() or v==math.floor(v), "integer systolic constant must be integer")
-      err( ty:isFloat() or ty:isInt() or v>=0, "systolic uint const must be positive")
-      if ty:isUint() or ty:isBits() then
-        err( v<math.pow(2,ty:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(ty))
-      end
-    end
-  end
-
+  ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=v, type = ty, loc=getloc(), inputs={} })
 end
 
@@ -1189,7 +1172,12 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="bitSlice" then
         -- verilog doesn't have expressions - we can only bitslice on a wire. So coerce input into a wire.
         local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for bitslice" )
-        finalResult = inp.."["..n.high..":"..n.low.."]"
+
+        if n.high==0 and n.low==0 and n.inputs[1].type:verilogBits()==1 then
+          finalResult = inp
+        else
+          finalResult = inp.."["..n.high..":"..n.low.."]"
+        end
       elseif n.kind=="slice" then
         if n.inputs[1].type:isArray() then
           local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
@@ -1198,7 +1186,15 @@ function systolicASTFunctions:toVerilog( module )
 
           local res = {}
           for y=n.idyHigh,n.idyLow,-1 do
-            table.insert( res, inp.."["..((y*W+n.idxHigh+1)*sz-1)..":"..((y*W+n.idxLow)*sz).."]" )
+            local highbit = ((y*W+n.idxHigh+1)*sz-1)
+            local lowbit = ((y*W+n.idxLow)*sz)
+            if highbit==0 and lowbit==0 and n.inputs[1].type:verilogBits()==1 then
+              table.insert( res, inp )
+            elseif highbit==lowbit then
+              table.insert( res, inp.."["..lowbit.."]" )
+            else
+              table.insert( res, inp.."["..highbit..":"..lowbit.."]" )
+            end
           end
 
           finalResult = "({"..table.concat(res,",").."})"
