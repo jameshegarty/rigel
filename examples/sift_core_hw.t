@@ -437,7 +437,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
 end
 ----------------
 
-local function addPos(dxdyType,W,H)
+local function addPos(dxdyType,W,H,subX,subY)
   assert(types.isType(dxdyType))
   assert(type(W)=="number")
   assert(type(H)=="number")
@@ -449,6 +449,10 @@ local function addPos(dxdyType,W,H)
   local pos = d.apply("posseq", PS)
   local pos = d.apply("pidx", d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0), pos )
   
+  if subX~=nil then
+    pos = d.apply("possub",posSub(subX,subY), pos)
+  end
+
   local out = d.tuple("FO",{inp,pos})
   return d.lambda("addPosAtInput",inp,out)
 end
@@ -525,6 +529,9 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   local dxdyBroad = d.apply("dxdy_broad", d.broadcastStream(DXDY_PAIR,2), out)
 
+  local internalW = W+15
+  local internalH = H+15
+
   -------------------------------
   -- right branch: make the harris bool
   local right = d.selectStream("d1",dxdyBroad,1)
@@ -535,7 +542,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local right = d.apply("AO",d.makeHandshake(C.arrayop(harrisType,1,1)), right)
 
   -- now stencilify the harris
-  local right = d.apply( "harris_st", d.makeHandshake(d.stencilLinebuffer(harrisType,W,H,1,-2,0,-2,0)), right)
+  local right = d.apply( "harris_st", d.makeHandshake(d.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
   local nmsFn = harris.makeNMS( harrisType, true )
   local right = d.apply("nms", d.makeHandshake(nmsFn), right)
 
@@ -555,8 +562,8 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   left = C.fifo( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
 
   local left = d.apply("stlbinp", d.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
-  local left = d.apply( "stlb", d.makeHandshake(d.stencilLinebuffer(DXDY_PAIR,W,H,1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
-  left = d.apply("stpos", d.makeHandshake(addPos(dxdyType,W,H)), left)
+  local left = d.apply( "stlb", d.makeHandshake(d.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
+  left = d.apply("stpos", d.makeHandshake(addPos(dxdyType,internalW,internalH,15+15,15+15)), left)
   -------------------------------
 
 

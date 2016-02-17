@@ -79,8 +79,8 @@ int main(int argc, char *argv[]) {
 	unsigned gpio_addr = 0x70000000;
 	unsigned copy_addr = atoi(argv[1]);
 
-  if(argc!=6){
-    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel\n");
+  if(argc!=7){
+    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel outputW outH\n");
   }
 
   // dirty tricks: we want to support both upsamples and downsamples.
@@ -94,6 +94,9 @@ int main(int argc, char *argv[]) {
 
   unsigned int inputBytesPerPixel = atoi(argv[6]);
   unsigned int outputBytesPerPixel = atoi(argv[7]);
+
+  unsigned int outputW = atoi(argv[8]);
+  unsigned int outputH = atoi(argv[9]);
 
   //unsigned int downsample = downsampleX*downsampleY;
   //unsigned int downsampleShift = mylog2(downsample);
@@ -133,21 +136,22 @@ int main(int argc, char *argv[]) {
   FILE* imfile = openImage(argv[2], &lenInRaw);
   printf("file LEN %d\n",lenInRaw);
   
-  unsigned ln = (lenInRaw*scaleN*outputBytesPerPixel);
-  unsigned ld = (scaleD*inputBytesPerPixel);
-  assert(ln%ld==0);
-  unsigned lenOutRaw = ln/ld;
+  //unsigned ln = (lenInRaw*scaleN*outputBytesPerPixel);
+  //unsigned ld = (scaleD*inputBytesPerPixel);
+  //assert(ln%ld==0);
+  //unsigned lenOutRaw = ln/ld;
 
   unsigned int lenIn = lenInRaw;
-  unsigned int lenOut = lenOutRaw;
+  unsigned int lenOut = outputW*outputH*outputBytesPerPixel;
 
   if (lenIn%(8*16)!=0){
     lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
   }
 
-  if (lenOut%(8*16)!=0){
-    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
-  }
+  //if (lenOut%(8*16)!=0){
+  //  lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+  //}
+ 
 
   // extra axi burst of metadata
   lenOut = lenOut + 128;

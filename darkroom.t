@@ -1458,11 +1458,11 @@ function darkroom.filterSeq( A, W,H, rate, fifoSize )
 module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(darkroom.lower(res.outputType):verilogBits()-1)..[[:0] out);
 parameter INSTANCE_NAME="INST";
 
-  reg [15:0] phase;
-  reg [15:0] cyclesSinceOutput;
-  reg [15:0] currentFifoSize;
-  reg [15:0] remainingInputs;
-  reg [15:0] remainingOutputs;
+  reg [31:0] phase;
+  reg [31:0] cyclesSinceOutput;
+  reg [31:0] currentFifoSize;
+  reg [31:0] remainingInputs;
+  reg [31:0] remainingOutputs;
 
   wire []]..tostring(res.inputType:verilogBits()-2)..[[:0] inpData;
   assign inpData = inp[]]..tostring(res.inputType:verilogBits()-2)..[[:0];
@@ -1476,7 +1476,7 @@ parameter INSTANCE_NAME="INST";
   wire fifoHasSpace;
   assign fifoHasSpace = currentFifoSize<]]..tostring(fifoSize)..[[;
 
-  wire outaType;
+  wire outaTime;
   assign outaTime = remainingInputs < (remainingOutputs*]]..tostring(rate)..[[);
 
   wire validOut;
@@ -1501,7 +1501,7 @@ parameter INSTANCE_NAME="INST";
   end
 
   always @(posedge CLK) begin
-    $display("FILTER reset:%d process_valid:%d filterCond:%d validOut:%d phase:%d cyclesSinceOutput:%d currentFifoSize:%d remainingInputs:%d remainingOutputs:%d", reset, process_valid, filterCond, validOut, phase, cyclesSinceOutput, currentFifoSize, remainingInputs, remainingOutputs);
+    $display("FILTER reset:%d process_valid:%d filterCond:%d validOut:%d phase:%d cyclesSinceOutput:%d currentFifoSize:%d remainingInputs:%d remainingOutputs:%d underflow:%d fifoHasSpace:%d outaTime:%d", reset, process_valid, filterCond, validOut, phase, cyclesSinceOutput, currentFifoSize, remainingInputs, remainingOutputs, underflow, fifoHasSpace, outaTime);
   end
 endmodule
 ]]

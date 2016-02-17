@@ -40,7 +40,7 @@ local pos = d.apply("cst", touint8pair, pos)
 --local fsinp = d.apply("PT",d.packTuple{types.uint(8),types.bool()},d.tuple("PTT",{pos,filter},false))
 local fsinp = d.tuple("PTT",{pos,inp})
 local out = d.apply("FS",d.filterSeq(types.array2d(types.uint(8),2),W,H,FILTER_RATE,FILTER_FIFO),fsinp)
-local filterfn = d.lambda( "filterfn", inpraw, out )
+local filterfn = d.lambda( "filterfnmodule", inpraw, out )
 
 ----------------
 
@@ -50,7 +50,7 @@ OTYPE = types.array2d(types.array2d(types.uint(8),2),T/2)
 local inpraw = d.input(d.Handshake(ITYPE))
 local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), inpraw )
 local harrisFn = harris.makeHarris(W,H,true)
-local out = d.apply("filterfn", harrisFn, inp )
+local out = d.apply("harrisfilterinst", harrisFn, inp )
 local out = d.apply("filt", d.liftHandshake(d.liftDecimate(filterfn)), out)
 local out = d.apply("AO",d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1,1)),out)
 local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,1,4)), out )

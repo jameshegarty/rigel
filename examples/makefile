@@ -80,9 +80,15 @@ STATS100 = $(patsubst %.t,out/%.stats100.txt,$(AXI100SRCS))
 RES = $(TERRA)
 RES += $(SIM)
 RES += $(AXI)
+RES += $(AXIBITS)
+RES += $(AXI100)
+RES += $(AXIBITS100)
 
 CD = cd out;
 all: $(RES)
+
+# keep make from deleting these intermediates
+.SECONDARY:
 
 dups: $(DUPS)
 
@@ -188,11 +194,13 @@ out/%.axi100.raw: out/%.axi100.bit.bin
 	$(eval $@_SCALED := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleD))
 	$(eval $@_BPP_IN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
 	$(eval $@_BPP_OUT := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputHeight))
 	printf "cd /tmp\n put ../extras/helloaxi/processimage\n put out/$*.axi100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin > /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT)"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
 	terra ../extras/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt

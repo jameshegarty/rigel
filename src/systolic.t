@@ -192,7 +192,9 @@ function systolic.valueToVerilog( value, ty )
     assert(#value==ty:channels())
     return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
   elseif ty:isTuple() then
-    return "systolic.valueToVerilog_tuple_garbage_NYI"
+    assert(type(value)=="table")
+    assert(#value==#ty.list)
+    return "{"..table.concat( reverse( map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
   elseif ty:isOpaque() then
     return "0'b0"
   elseif ty:stripConst()==types.float(32) then
