@@ -79,8 +79,9 @@ int main(int argc, char *argv[]) {
 	unsigned gpio_addr = 0x70000000;
 	unsigned copy_addr = atoi(argv[1]);
 
-  if(argc!=7){
+  if(argc!=10){
     printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel outputW outH\n");
+    exit(1);
   }
 
   // dirty tricks: we want to support both upsamples and downsamples.
@@ -173,6 +174,10 @@ int main(int argc, char *argv[]) {
 
   printf("mapping %08x\n",copy_addr);
   void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
+  if(ptr==(void *) -1){
+    printf("Error mmaping\n");
+    exit(1);
+  }
 
   loadImage( imfile, ptr, lenInRaw );
   //memset(ptr+len,0,len);
@@ -184,6 +189,10 @@ int main(int argc, char *argv[]) {
   // This mmaps the control region (the MMIO for the control registers).
   // Image data is located at addr 'copy_addr'
   void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
+  if(gpioptr==(void *) -1){
+    printf("Error mmaping gpio\n");
+    exit(1);
+  }
   
   // this sleep is needed for the z100, but not the z20
   sleep(2);

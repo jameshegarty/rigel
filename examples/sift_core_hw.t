@@ -387,12 +387,23 @@ function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
   local sinp = S.parameter( "inp", ITYPE )
-  local ps = d.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
+
+  local xinp = S.index(sinp,0)
+  local yinp = S.index(sinp,1)
+
+--  local xo = S.select(S.lt(xinp,S.constant(x,A)),S.constant(0,A),xinp-S.constant(x,A))
+--  local yo = S.select(S.lt(yinp,S.constant(y,A)),S.constant(0,A),yinp-S.constant(y,A))
+  local xo = xinp-S.constant(x,A)
+  local yo = yinp-S.constant(y,A)
+
+  local out = S.tuple{xo,yo}
+
+  local ps = d.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
                     terra( a : &ITYPE:toTerraType(), out:&ITYPE:toTerraType() )
                       var xo = a._0-x
                       var yo = a._1-y
                       @out = {xo,yo}
-                    end, sinp, sinp)
+                    end, sinp, out)
   return ps
 end
 ----------------
@@ -450,6 +461,8 @@ local function addPos(dxdyType,W,H,subX,subY)
   local pos = d.apply("pidx", d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0), pos )
   
   if subX~=nil then
+    assert(type(subX)=="number")
+    assert(type(subY)=="number")
     pos = d.apply("possub",posSub(subX,subY), pos)
   end
 
@@ -563,7 +576,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   local left = d.apply("stlbinp", d.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
   local left = d.apply( "stlb", d.makeHandshake(d.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
-  left = d.apply("stpos", d.makeHandshake(addPos(dxdyType,internalW,internalH,15+15,15+15)), left)
+  left = d.apply("stpos", d.makeHandshake(addPos(dxdyType,internalW,internalH,15,15)), left)
   -------------------------------
 
 

@@ -168,6 +168,8 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt
 	$(eval $@_SCALED := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleD))
 	$(eval $@_BPP_IN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
 	$(eval $@_BPP_OUT := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputHeight))
 ###### SET THE CLOCK	
 	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 # (* second time around we can't write to fclk_export, so surpress error)
@@ -177,7 +179,7 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt
 ###### CLOCK STUFF END
 	sshpass -p 'root' scp ../extras/helloaxi/processimage out/$*.axi.bit $($@_IMG) root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.axi.bit > /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT)"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
 	terra ../extras/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
