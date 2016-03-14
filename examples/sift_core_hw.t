@@ -593,7 +593,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local filterFn = d.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
 
   local out = d.apply("FS",d.liftHandshake(d.liftDecimate(filterFn)),out)
-  local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
+  local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", false)
 
   local siftFn, descType = siftKernel(dxdyType)
   local out = d.apply("sft", siftFn, out)

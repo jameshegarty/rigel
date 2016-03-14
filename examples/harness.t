@@ -85,14 +85,16 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
 
   local inpSymb = d.input( d.Handshake(ITYPE) )
   local inpdata
+  local inptaps
 
   if tapType==nil then
     inpdata = inpSymb
   else
     inpdata = d.apply("inpdata", d.makeHandshake(d.index(ITYPE,0)), inpSymb)
+    inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
   end
 
-  local inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
+  
 
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   if type(earlyOverride)=="number" then EC=earlyOverride end

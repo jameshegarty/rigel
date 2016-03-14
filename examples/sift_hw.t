@@ -21,7 +21,7 @@ function doit(full)
 
   local T = 8
 
-  local FILTER_FIFO = 128
+  local FILTER_FIFO = 512
   local FILTER_RATE = 128
 
   local ITYPE = types.array2d(types.uint(8),T)

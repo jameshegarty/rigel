@@ -29,7 +29,7 @@ local infile = "ov7660_pair_far.raw"
 local THRESH = -134*16
 --THRESH=0
 
-local hsfn = makeStereo( 1/tonumber(T), W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, THRESH, true)
+local hsfn = makeStereo( 1/tonumber(T), W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, THRESH, true, false)
 --local hsfn = makeStereo(W,H,OffsetX,SearchWindow,SADWidth,false, THRESH)
 
 local ATYPE = types.array2d(A,2)

@@ -870,22 +870,29 @@ function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
     err( #v==self:channels(), "incorrect number of channels, is "..(#v).." but should be "..self:channels() )
-    map( v, function(n) self:arrayOver():checkLuaValue(n) end )
+    for i=1,#v do
+      self:arrayOver():checkLuaValue(v[i])
+    end
   elseif self:isTuple() then
     err( type(v)=="table", "if type is a tuple, v must be a table")
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
+  elseif self:isFloat() then
+    err( type(v)=="number", "float must be number")
+  elseif self:isInt() then
+    err( type(v)=="number", "int must be number")
+    err( v==math.floor(v), "integer systolic constant must be integer")
+  elseif self:isUint() or self:isBits() then
+    err( type(v)=="number", "uint/bits must be number")
+    err( v>=0, "systolic uint/bits const must be positive")
+    err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
+  elseif self:isBool() then
+    err( type(v)=="boolean", "bool must be lua bool")
+  elseif self:isOpaque() then
+    err( v==0, "opaque must be 0 but is "..tostring(v))
   else
-    err( type(v)=="number" or type(v)=="boolean", "systolic constant must be bool or number but is "..tostring(type(v)).." for type "..tostring(self))
-    err( type(v)==self:toLuaType(), "systolic constant value ("..tostring(v)..") doesn't match type "..tostring(self))
-
-    if type(v)=="number" then
-      err( self:isFloat() or v==math.floor(v), "integer systolic constant must be integer")
-      err( self:isFloat() or self:isInt() or v>=0, "systolic uint const must be positive")
-      if self:isUint() or self:isBits() then
-        err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
-      end
-    end
+    print("NYI - ",self)
+    assert(false)
   end
 
 end

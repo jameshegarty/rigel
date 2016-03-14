@@ -83,12 +83,13 @@ end
 -- argmin expects type Stateful(A[2][SADWidth,SADWidth][perCycleSearch])->StatefulV
 -- which corresponds to [leftEye,rightEye]. rightEye should be the same window 'perCycleSearch' times. leftEye has the windows we're searching for the match in.
 -- returns: Handshake{index,SADvalu@index} (valid every T cycles)
-function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType)
+function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
   assert(types.isType(A))
   assert(type(T)=="number")
   assert(T<=1)
   assert(type(SearchWindow)=="number")
   f.expectFixed(reduceType)
+  assert(type(RGBA)=="boolean")
 
   local perCycleSearch = (SearchWindow*T)
 
@@ -108,11 +109,15 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType)
   local LOWER_SUM = LOWER_SUM_INP:lower()
   -------
 
-  local sadout = d.apply("sadvalues", d.map(C.SADFixed( A, reduceType, SADWidth ),perCycleSearch), inp ) -- uint16[perCycleSearch]
+  local sadout
+  if RGBA then
+    sadout = d.apply("sadvalues", d.map(C.SADFixed4( A, reduceType, SADWidth ),perCycleSearch), inp ) -- uint16[perCycleSearch]
+  else
+    sadout = d.apply("sadvalues", d.map(C.SADFixed( A, reduceType, SADWidth ),perCycleSearch), inp ) -- uint16[perCycleSearch]
+  end
+
   sadout = d.apply("LOWER_SUM", d.map(LOWER_SUM:toDarkroom("LowerSum"),perCycleSearch), sadout)
   local packed = d.apply("SOS", d.SoAtoAoS( perCycleSearch, 1, {types.uint(8), LOWER_SUM.type} ), d.tuple("stup",{indices, sadout}) )
-
-
 
   local AM = C.argmin(types.uint(8),LOWER_SUM.type)
   local AM_async = C.argmin(types.uint(8),LOWER_SUM.type,true)
@@ -124,10 +129,11 @@ end
 
 -- errorThreshold: if the SAD energy is above this, display 0.
 -- if errorThreshold==0, do no thresholding
-function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold, COLOR_OUTPUT )
+function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecision, errorThreshold, COLOR_OUTPUT, RGBA )
   assert(type(OffsetX)=="number")
   assert(type(SADWidth)=="number")
   assert(type(COLOR_OUTPUT)=="boolean")
+  assert(type(RGBA)=="boolean")
 
   -- input is in the format A[2]. [left,right]. We need to break this up into 2 separate streams,
   -- linebuffer them differently, then put them back together and run argmin on them.
@@ -140,14 +146,19 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   local statements = {}
 
   local ATYPE = types.array2d(A,2)
-  local TYPE = types.array2d(ATYPE,4)
+  local TYPE = types.array2d(ATYPE,sel(RGBA,1,4))
   local STENCIL_TYPE = types.array2d(A,SADWidth,SADWidth)
   local hsfninp = d.input( d.Handshake(TYPE) )
   local LRTYPE = types.array2d(A,2)
-  local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(A,2),1,4,1)), hsfninp )
+  local inp
+  if RGBA then
+    inp = hsfninp
+  else
+    inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(A,2),1,4,1)), hsfninp )
+  end
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
-  local inp = d.apply("pad", d.liftHandshake(d.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, {0,0})), inp)
+  local inp = d.apply("pad", d.liftHandshake(d.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
   local inp = d.apply("oi0", d.makeHandshake(d.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = d.apply("inp_broadcast", d.broadcastStream(types.array2d(A,2),2), inp)
 
@@ -160,8 +171,8 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   table.insert( statements, d.applyMethod("s1",fifos[1],"store",left) )
   left = d.applyMethod("l1",fifos[1],"load")
 
-  local left = d.apply("AO",d.makeHandshake(C.arrayop(types.uint(8),1)),left)
-  local left = d.apply("LB", C.stencilLinebufferPartialOffsetOverlap( types.uint(8), internalW, internalH, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
+  local left = d.apply("AO",d.makeHandshake(C.arrayop(A,1)),left)
+  local left = d.apply("LB", C.stencilLinebufferPartialOffsetOverlap( A, internalW, internalH, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
   local left = d.apply( "llb", d.makeHandshake(d.unpackStencil( A, SADWidth, SADWidth, perCycleSearch)), left) -- A[SADWidth,SADWidth][PCS]
 
   --------
@@ -173,7 +184,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   table.insert( statements, d.applyMethod("s2",fifos[#fifos],"store",right) )
   right = d.applyMethod("l12",fifos[#fifos],"load")
 
-  local right = d.apply("AOr", d.makeHandshake(C.arrayop(types.uint(8),1)),right) -- uint8[1]
+  local right = d.apply("AOr", d.makeHandshake(C.arrayop(A,1)),right) -- uint8[1]
   local right = d.apply( "rightLB", d.makeHandshake( d.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 ) ), right)
 
   right = d.apply("rAO",d.makeHandshake(C.arrayop(STENCIL_TYPE,1)),right)
@@ -188,7 +199,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   local packStencils = d.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
   local merged = d.apply("mer", d.makeHandshake( d.map(packStencils, perCycleSearch) ), merged ) -- A[2][SADWidth, SADWidth][perCycleSearch]
   
-  local res = d.apply("AM",d.liftHandshake(d.liftDecimate(argmin(A,T,SearchWindow,SADWidth,OffsetX,f.type(false,reducePrecision,0)))),merged)
+  local res = d.apply("AM",d.liftHandshake(d.liftDecimate(argmin(A,T,SearchWindow,SADWidth,OffsetX,f.type(false,reducePrecision,0),RGBA))),merged)
 
   -- this FIFO is only for improving timing
   local argminType = types.tuple{types.uint(8),types.uint(reducePrecision)}

@@ -452,7 +452,7 @@ function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
   ty = ty:makeConst()
   ty:checkLuaValue(v)
-  return typecheck({ kind="constant", value=v, type = ty, loc=getloc(), inputs={} })
+  return typecheck({ kind="constant", value=deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
 
 function systolic.tap( ty )
@@ -1151,7 +1151,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
-            return "{"..table.concat( reverse(map(range(ty:channels()), function(c) return cconst(n.type:baseType(), val[c])  end)),", " ).."}"
+            return "{"..table.concat( reverse(map(range(ty:channels()), function(c) return cconst(ty:arrayOver(), val[c])  end)),", " ).."}"
           else
             return systolic.valueToVerilog(val, ty)
           end
@@ -2274,11 +2274,14 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
   err( type(inputBytes)=="number", "inputBytes must be a number")
   err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
-  err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
+
+  -- non power of 2 sizes are actually ok: the number of addressable items just needs to be power of 2
+  --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
 
   err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
-  err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
+  
+  --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
   local writeAddrs = sizeInBytes/inputBytes
   err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
 
@@ -2294,7 +2297,7 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
   local minbw = inputBytes
   if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
   local maxbw = inputBytes
-  if outputBytes~=nil then maxbw = math.min(inputBytes, outputBytes) end
+  if outputBytes~=nil then maxbw = math.max(inputBytes, outputBytes) end
   local addressable = sizeInBytes/minbw
 
   err(addressable<=2048,"Error, bramSDP arguments have more addressable items than are supported by 1 bram (size:"..tostring(sizeInBytes)..", inputBytes:"..tostring(inputBytes)..")")
@@ -2305,6 +2308,7 @@ systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes,
 
   local count = math.max(bwlimit, sizelimit, 1)
 
+  err( count==math.floor(count), "non integer number of BRAMS needed?")
   assert(count <= inputBytes) -- must read at least 1 byte per ram
 
 --  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
