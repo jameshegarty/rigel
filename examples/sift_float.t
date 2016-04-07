@@ -1,10 +1,4 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
 local types = require("types")
-local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local sift = require "sift_core"
 

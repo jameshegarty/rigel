@@ -1,11 +1,7 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
 local C = require("examplescommon")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local fixed = require "fixed"
 
@@ -35,18 +31,18 @@ b = b:abs():denormalize():truncate(8):lower()
 local bfn = b:toDarkroom("b")
 ------------
 ITYPE = types.uint(8)
-inp = d.input( ITYPE )
-local aout = d.apply( "a", afn, inp )
-local inv = d.apply("inv", lutinv, aout)
-out = d.apply( "b", bfn, d.tuple("binp",{inp,inv}) )
-fn = d.lambda( "fixed_wide", inp, out )
+inp = R.input( ITYPE )
+local aout = R.apply( "a", afn, inp )
+local inv = R.apply("inv", lutinv, aout)
+out = R.apply( "b", bfn, R.tuple("binp",{inp,inv}) )
+fn = RM.lambda( "fixed_wide", inp, out )
 ------------
-hsfninp = d.input(d.Handshake(types.array2d(ITYPE,T)))
-local out = d.apply("reducerate", d.liftHandshake(d.changeRate(ITYPE,1,T,1)), hsfninp )
-local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.uint(8),1),0)), out)
-local out = d.apply("inner", d.makeHandshake(fn), out )
-local out = d.apply("A0", d.makeHandshake(C.arrayop(ITYPE,1,1)), out)
-local out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,1,8)), out )
-local hsfn = d.lambda("hsfn",hsfninp,out)
+hsfninp = R.input(R.Handshake(types.array2d(ITYPE,T)))
+local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,1)), hsfninp )
+local out = R.apply("idx", RM.makeHandshake(RM.index(types.array2d(types.uint(8),1),0)), out)
+local out = R.apply("inner", RM.makeHandshake(fn), out )
+local out = R.apply("A0", RM.makeHandshake(C.arrayop(ITYPE,1,1)), out)
+local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,8)), out )
+local hsfn = RM.lambda("hsfn",hsfninp,out)
 
 harness.axi( "fixed_inv_wide_handshake", hsfn, "frame_128.raw", nil, nil, types.array2d(ITYPE,T), T,W,H, types.array2d(ITYPE,T),T,W,H)

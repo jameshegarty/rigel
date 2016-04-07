@@ -1,10 +1,7 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local harris = require "harris_core"
 local C = require "examplescommon"
@@ -158,17 +155,17 @@ local function siftDescriptor(dxdyType)
   G = tileGaussian(G,16,4)
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
-  local inp = d.input(ITYPE)
-  local gweight = d.apply("gweight",d.constSeq(G,dxdyType,16*16,1,1/256))
-  local gweight = d.apply("gwidx",d.index(types.array2d(dxdyType,1),0,0),gweight)
-  local dx = d.apply("i0", d.index(ITYPE,0), inp)
-  local dy = d.apply("i1", d.index(ITYPE,1), inp)
-  local maginp = d.tuple("maginp",{dx,dy,gweight})
+  local inp = R.input(ITYPE)
+  local gweight = R.apply("gweight",RM.constSeq(G,dxdyType,16*16,1,1/256))
+  local gweight = R.apply("gwidx",RM.index(types.array2d(dxdyType,1),0,0),gweight)
+  local dx = R.apply("i0", RM.index(ITYPE,0), inp)
+  local dy = R.apply("i1", RM.index(ITYPE,1), inp)
+  local maginp = R.tuple("maginp",{dx,dy,gweight})
   local magFn, magType = siftMag(dxdyType)
-  local mag = d.apply("mag",magFn,maginp)
-  local bucketInp = d.tuple("bktinp",{dx,dy,mag})
-  local out = d.apply( "out", siftBucket(dxdyType,magType), bucketInp)
-  return d.lambda("siftDescriptor",inp,out), magType
+  local mag = R.apply("mag",magFn,maginp)
+  local bucketInp = R.tuple("bktinp",{dx,dy,mag})
+  local out = R.apply( "out", siftBucket(dxdyType,magType), bucketInp)
+  return RM.lambda("siftDescriptor",inp,out), magType
 end
 ----------------
 -- input: {descType[N],descType[N]}
@@ -179,10 +176,10 @@ local function bucketReduce(descType,N,X)
   assert(X==nil)
 
   local descArray = types.array2d(descType,N)
-  local inp = d.input(types.tuple{descArray,descArray})
-  local out = d.apply("SOA",d.SoAtoAoS(N,1,{descType,descType}),inp)
-  local out = d.apply("MP",d.map(fixedSum(descType),N),out)
-  return d.lambda("bucketReduce",inp,out)
+  local inp = R.input(types.tuple{descArray,descArray})
+  local out = R.apply("SOA",RM.SoAtoAoS(N,1,{descType,descType}),inp)
+  local out = R.apply("MP",RM.map(fixedSum(descType),N),out)
+  return RM.lambda("bucketReduce",inp,out)
 end
 ----------------
 -- input: A[W,H]
@@ -195,13 +192,13 @@ local function tile(W,H,T,A)
   assert(H%T==0)
 
   local ITYPE = types.array2d(A,W,H)
-  local inp = d.input(ITYPE)
+  local inp = R.input(ITYPE)
 
   local tab = {}
   for y=0,H-1 do
     tab[y] = {}
     for x=0,W-1 do
-      tab[y][x] = d.apply("idx_"..y.."_"..x, d.index( ITYPE, x, y ), inp)
+      tab[y][x] = R.apply("idx_"..y.."_"..x, RM.index( ITYPE, x, y ), inp)
     end
   end
 
@@ -214,13 +211,13 @@ local function tile(W,H,T,A)
           table.insert(out, tab[ty*T+y][tx*T+x])
         end
       end
-      table.insert(outarr, d.array2d("AR_"..ty.."_"..tx,out,T*T) )
+      table.insert(outarr, R.array2d("AR_"..ty.."_"..tx,out,T*T) )
     end
   end
 
-  local fin = d.array2d("fin",outarr,(W/T)*(H/T))
+  local fin = R.array2d("fin",outarr,(W/T)*(H/T))
 
-  return d.lambda("tile", inp, fin )
+  return RM.lambda("tile", inp, fin )
 end
 ----------------
 -- input: {descType[128],uint16,uint16}
@@ -250,65 +247,65 @@ local function siftKernel(dxdyType)
   local fifos = {}
   local statements = {}
 
-  local inp = d.input(d.Handshake(ITYPE))
-  local inp_broad = d.apply("inp_broad", d.broadcastStream(ITYPE,2), inp)
+  local inp = R.input(R.Handshake(ITYPE))
+  local inp_broad = R.apply("inp_broad", RM.broadcastStream(ITYPE,2), inp)
 
-  local inp_pos = C.fifo( fifos, statements, ITYPE, d.selectStream("i0",inp_broad,0), 1, "p0", true)
-  local pos = d.apply("p",d.makeHandshake(d.index(ITYPE,1)), inp_pos)
+  local inp_pos = C.fifo( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
+  local pos = R.apply("p",RM.makeHandshake(RM.index(ITYPE,1)), inp_pos)
   local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "posfifo")
 --  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
-  local posX = d.apply("px",d.makeHandshake(d.index(PTYPE,0)),pos)
+  local posX = R.apply("px",RM.makeHandshake(RM.index(PTYPE,0)),pos)
   local posX = C.fifo( fifos, statements, posType, posX, 1024, "pxfifo" )
-  local posY = d.apply("py",d.makeHandshake(d.index(PTYPE,1)),pos)
+  local posY = R.apply("py",RM.makeHandshake(RM.index(PTYPE,1)),pos)
   local posY = C.fifo( fifos, statements, posType, posY, 1024, "pyfifo" )
 
-  local inp_dxdy = C.fifo( fifos, statements, ITYPE, d.selectStream("i1",inp_broad,1), 1, "p1", true)
-  local dxdy = d.apply("dxdy",d.makeHandshake(d.index(ITYPE,0,0)), inp_dxdy)
-  local dxdyTile = d.apply("TLE",d.makeHandshake(tile(16,16,4,dxdyPair)),dxdy)
-  local dxdy = d.apply( "down1", d.liftHandshake(d.changeRate(types.array2d(dxdyPair,16),1,16,1)), dxdyTile )
-  local dxdy = d.apply("down1idx",d.makeHandshake(d.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
-  local dxdy = d.apply("down2", d.liftHandshake(d.changeRate(dxdyPair,1,16,1)), dxdy )
-  local dxdy = d.apply("down2idx",d.makeHandshake(d.index(types.array2d(dxdyPair,1),0,0)), dxdy)
+  local inp_dxdy = C.fifo( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true)
+  local dxdy = R.apply("dxdy",RM.makeHandshake(RM.index(ITYPE,0,0)), inp_dxdy)
+  local dxdyTile = R.apply("TLE",RM.makeHandshake(tile(16,16,4,dxdyPair)),dxdy)
+  local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,16,1)), dxdyTile )
+  local dxdy = R.apply("down1idx",RM.makeHandshake(RM.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
+  local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
+  local dxdy = R.apply("down2idx",RM.makeHandshake(RM.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descType = siftDescriptor(dxdyType)
-  local desc = d.apply("desc",d.makeHandshake(descFn),dxdy)
+  local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
-  local desc = d.apply("rseq",d.liftHandshake(d.liftDecimate(d.reduceSeq(bucketReduce(descType,8),1/16)),"BUCKET"),desc)
+  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),1/16)),"BUCKET"),desc)
 
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
   -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
   local desc = C.fifo(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
 
-  local desc = d.apply("up",d.liftHandshake(d.changeRate(descType,1,8,1),"CR"),desc)
-  local desc = d.apply("upidx",d.makeHandshake(d.index(types.array2d(descType,1),0,0)), desc)
+  local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1),"CR"),desc)
+  local desc = R.apply("upidx",RM.makeHandshake(RM.index(types.array2d(descType,1),0,0)), desc)
 
   -- sum and normalize the descriptors
-  local desc_broad = d.apply("desc_broad", d.broadcastStream(descType,2), desc)
+  local desc_broad = R.apply("desc_broad", RM.broadcastStream(descType,2), desc)
 
-  local desc0 = d.selectStream("d0",desc_broad,0)
+  local desc0 = R.selectStream("d0",desc_broad,0)
   local desc0 = C.fifo( fifos, statements, descType, desc0, 256, "d0")
 
-  local desc1 = d.selectStream("d1",desc_broad,1)
+  local desc1 = R.selectStream("d1",desc_broad,1)
   local desc1 = C.fifo( fifos, statements, descType, desc1, 256, "d1")
 
-  local desc_sum = d.apply("sum",d.liftHandshake(d.liftDecimate(d.reduceSeq(fixedSumPow2(descType),1/128))),desc1)
-  local desc_sum = d.apply("sumsqrt",d.makeHandshake(fixedSqrt(descType)), desc_sum)
-  local desc_sum = d.apply("DAO",d.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
-  local desc_sum = d.apply("sumup",d.upsampleXSeq( descType, 1, 128), desc_sum)
-  local desc_sum = d.apply("Didx",d.makeHandshake(d.index(types.array2d(descType,1),0,0)), desc_sum)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType),1/128))),desc1)
+  local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
+  local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
+  local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, 128), desc_sum)
+  local desc_sum = R.apply("Didx",RM.makeHandshake(RM.index(types.array2d(descType,1),0,0)), desc_sum)
 
-  local desc = d.apply("pt",d.packTuple{descType,descType},d.tuple("PTT",{desc0,desc_sum},false))
-  local desc = d.apply("ptt",d.makeHandshake(fixedDiv(descType)),desc)
-  local desc = d.apply("DdAO",d.makeHandshake(C.arrayop(descType,1,1)), desc)
+  local desc = R.apply("pt",RM.packTuple{descType,descType},R.tuple("PTT",{desc0,desc_sum},false))
+  local desc = R.apply("ptt",RM.makeHandshake(fixedDiv(descType)),desc)
+  local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
-  local desc = d.apply("repack",d.liftHandshake(d.changeRate(descType,1,1,128)),desc)
+  local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,128)),desc)
   -- we now have an array of type descType[128]. Add the pos.
-  local desc_pack = d.apply("dp", d.packTuple{types.array2d(descType,128),posType,posType},d.tuple("DPT",{desc,posX,posY},false))
-  local desc = d.apply("addpos",d.makeHandshake(addDescriptorPos(descType)), desc_pack)
+  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,128),posType,posType},R.tuple("DPT",{desc,posX,posY},false))
+  local desc = R.apply("addpos",RM.makeHandshake(addDescriptorPos(descType)), desc_pack)
 
   table.insert(statements,1,desc)
 
-  local siftfn = d.lambda("siftd",inp,d.statements(statements),fifos)
+  local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
   print("SIFTSDF",fracToNumber(siftfn.sdfInput[1]),fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
@@ -319,7 +316,7 @@ function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
   local sinp = S.parameter( "inp", ITYPE )
-  local ps = d.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
+  local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
                     terra( a : &ITYPE:toTerraType(), out:&ITYPE:toTerraType() )
                       var xo = a._0-x
                       var yo = a._1-y
@@ -339,28 +336,27 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
 
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
     
-    local inp = d.input(ITYPE)
+    local inp = R.input(ITYPE)
     
-    local PS = d.posSeq(internalW,internalH,1)
-    local pos = d.apply("posseq", PS)
-    local pos = d.apply("pidx",d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
-    local pos = d.apply("PS", posSub(15,15), pos)
+    local PS = RM.posSeq(internalW,internalH,1)
+    local pos = R.apply("posseq", PS)
+    local pos = R.apply("pidx",RM.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
+    local pos = R.apply("PS", posSub(15,15), pos)
     
-    local filterseqValue = d.tuple("fsv",{inp,pos})
+    local filterseqValue = R.tuple("fsv",{inp,pos})
     
-    local filterseqCond = d.apply("idx",d.index(ITYPE,8,8),inp)
+    local filterseqCond = R.apply("idx",RM.index(ITYPE,8,8),inp)
     local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-    local filterseqCond = d.apply("harris", harrisFn, filterseqCond)
-    local filterseqCond = d.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
+    local filterseqCond = R.apply("harris", harrisFn, filterseqCond)
+    local filterseqCond = R.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
     -- now stencilify the harris
-    local filterseqCond = d.apply( "harris_st", d.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
+    local filterseqCond = R.apply( "harris_st", RM.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
     local nmsFn = harris.makeNMS( harrisType, true )
-    local filterseqCond = d.apply("nms", nmsFn, filterseqCond)
+    local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
     
-    local fsinp = d.tuple("PTT",{filterseqValue,filterseqCond})
+    local fsinp = R.tuple("PTT",{filterseqValue,filterseqCond})
     
-    local filterfn = d.lambda( "filterfn", inp, fsinp )
-    --  local filterfn = d.lambda( "filterfn", inp, filterseqCond )
+    local filterfn = RM.lambda( "filterfn", inp, fsinp )
     
     return filterfn
   end
@@ -375,16 +371,16 @@ local function descInner(dxdyType,W,H)
   assert(type(H)=="number")
 
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
-  local inp = d.input(types.array2d(DXDY_PAIR,1))
+  local inp = R.input(types.array2d(DXDY_PAIR,1))
 
-  local out = d.apply("ST",d.stencilLinebuffer(DXDY_PAIR,W,H,1,-15,0,-15,0), inp)
+  local out = R.apply("ST",RM.stencilLinebuffer(DXDY_PAIR,W,H,1,-15,0,-15,0), inp)
 
-  local PS = d.posSeq(W,H,1)
-  local pos = d.apply("posseq", PS)
-  local pos = d.apply("pidx",d.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
+  local PS = RM.posSeq(W,H,1)
+  local pos = R.apply("posseq", PS)
+  local pos = R.apply("pidx",RM.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
   
-  local out = d.tuple("FO",{out,pos})
-  return d.lambda("descinner",inp,out)
+  local out = R.tuple("FO",{out,pos})
+  return RM.lambda("descinner",inp,out)
 end
 
 function sift.siftDesc(W,H,inputT,X)
@@ -395,35 +391,27 @@ function sift.siftDesc(W,H,inputT,X)
 
   local ITYPE = types.array2d(types.uint(8),inputT)
   
-  local inpraw = d.input(d.Handshake(ITYPE))
-  local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inpraw = R.input(R.Handshake(ITYPE))
+  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
-  local out = d.apply("dxdy",dxdyFn,inp)
+  local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local DXDY_ST = types.array2d(DXDY_PAIR,16,16)
   --- now stencilify dxdy
---  local T = 1
-  
 
   local DI = descInner(dxdyType,W,H)
-  local out = d.apply("desc_inner",d.makeHandshake(DI),out)
-  local out = d.apply("AO", d.makeHandshake(C.arrayop(DI.outputType,1,1)), out)
-  local out = d.apply("CRP", d.liftHandshake(d.liftDecimate(d.cropSeq( DI.outputType, W, H, 1, 15, 0, 15, 0))), out)
-  local out = d.apply("I0", d.makeHandshake(d.index(types.array2d(DI.outputType,1),0,0)), out)
+  local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
+  local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType,1,1)), out)
+  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType, W, H, 1, 15, 0, 15, 0))), out)
+  local out = R.apply("I0", RM.makeHandshake(RM.index(types.array2d(DI.outputType,1),0,0)), out)
 
   local siftFn, descType = siftKernel(dxdyType)
-  local out = d.apply("sft", siftFn, out)
+  local out = R.apply("sft", siftFn, out)
 
---  local out = d.apply("AO", d.makeHandshake(C.arrayop(types.array2d(descType,130),1,1)), out)
+  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )
 
---  local out = d.apply("I0", d.makeHandshake(d.index(types.array2d(types.array2d(descType,130),1),0,0)), out)
-  --local out = d.apply("AO",d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1,1)),out)
-  local out = d.apply("incrate", d.liftHandshake(d.changeRate(descType,1,130,2)), out )
-
---  table.insert( statements, 1, out )
---  local fn = d.lambda( "harris", inpraw, d.statements(statements), fifos )
-  local fn = d.lambda( "harris", inpraw, out)
+  local fn = RM.lambda( "harris", inpraw, out)
   return fn, descType
 end
 
@@ -436,40 +424,36 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   local ITYPE = types.array2d(types.uint(8),T)
   
-  local inpraw = d.input(d.Handshake(ITYPE))
-  local inp = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inpraw = R.input(R.Handshake(ITYPE))
+  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
-  local out = d.apply("dxdy",dxdyFn,inp)
+  local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local DXDY_ST = types.array2d(DXDY_PAIR,16,16)
   --- now stencilify dxdy
   local T = 1
   
---  local ID = C.identity(DXDY_ST)
---  local st = d.apply("st",C.stencilKernelPadcrop(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},ID,false),out)
-  
---  local out = d.apply("stidx",d.makeHandshake(d.index(types.array2d(DXDY_ST,1),0,0)),st)
   local harrisFn = makeHarrisWithDXDY(dxdyType, W,H, 16)
---  local out = d.apply("filt", d.makeHandshake(harrisFn), out)
-  local out = d.apply("st",C.stencilKernelPadcropUnpure(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
+
+  local out = R.apply("st",C.stencilKernelPadcropUnpure(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,16,16),types.tuple{types.uint(16),types.uint(16)}}
-  local out = d.apply("stidx",d.makeHandshake(d.index(types.array2d(types.tuple{FILTER_TYPE,types.bool()},1),0,0)), out)
+  local out = R.apply("stidx",RM.makeHandshake(RM.index(types.array2d(types.tuple{FILTER_TYPE,types.bool()},1),0,0)), out)
 
-  local filterFn = d.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
+  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
 
-  local out = d.apply("FS",d.liftHandshake(d.liftDecimate(filterFn)),out)
+  local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
 
   local siftFn, descType = siftKernel(dxdyType)
-  local out = d.apply("sft", siftFn, out)
-  --local out = d.apply("AO",d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1,1)),out)
-  local out = d.apply("incrate", d.liftHandshake(d.changeRate(descType,1,130,2)), out )
+  local out = R.apply("sft", siftFn, out)
+
+  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )
 
   table.insert( statements, 1, out )
-  local fn = d.lambda( "harris", inpraw, d.statements(statements), fifos )
---  local fn = d.lambda( "harris", inpraw, out)
+  local fn = RM.lambda( "harris", inpraw, R.statements(statements), fifos )
+
   return fn, descType
 end
 

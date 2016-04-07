@@ -1,10 +1,6 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 
 W = 640
@@ -21,7 +17,7 @@ local sout = S.select(S.lt(S.index(S.index(inp,0),0),S.constant(320,types.uint(1
 sout = S.tuple{sout,sout,sout,S.constant(0,types.uint(8))}
 sout = S.cast(sout,OTYPE)
 
-splitfn = d.lift( "split", SPLIT_TYPE, OTYPE , 10, 
+splitfn = RM.lift( "split", SPLIT_TYPE, OTYPE , 10, 
                   terra( a : &SPLIT_TYPE:toTerraType(), out : &OTYPE:toTerraType()  ) 
                   if a._0._0<320 then
                     (@out)[0] = (a._1)[0]
@@ -36,9 +32,9 @@ splitfn = d.lift( "split", SPLIT_TYPE, OTYPE , 10,
                   end
                 end, inp, sout )
 
-cr = d.liftHandshake(d.changeRate(ITYPE,1,4,2))
-sfn = d.makeHandshake(d.liftXYSeqPointwise(splitfn,W,H,2))
+cr = RM.liftHandshake(RM.changeRate(ITYPE,1,4,2))
+sfn = RM.makeHandshake(RM.liftXYSeqPointwise(splitfn,W,H,2))
 
-hsfn = d.compose("hsfn",sfn,cr)
+hsfn = RM.compose("hsfn",sfn,cr)
 
 harness.axi( "2xov7660", hsfn, "2xov7660.raw", nil, nil, types.array2d(ITYPE,4), T,W,H, types.array2d(OTYPE,2),2,W,H)

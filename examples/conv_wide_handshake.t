@@ -1,4 +1,5 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local Image = require "image"
 local types = require("types")
 local S = require("systolic")
@@ -23,15 +24,15 @@ H = inputH
 local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, range(ConvArea), 8 )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
-inp = d.input( BASE_TYPE )
+inp = R.input( BASE_TYPE )
 
-convLB = d.apply( "convLB", d.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
-convstencils = d.apply( "convstencils", d.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )
-convpipe = d.apply( "conv",  d.map( convolve, T ), convstencils )
-convpipe = d.apply( "border", darkroom.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
+convLB = R.apply( "convLB", RM.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
+convstencils = R.apply( "convstencils", RM.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )
+convpipe = R.apply( "conv",  RM.map( convolve, T ), convstencils )
+convpipe = R.apply( "border", RM.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
-convpipe = d.lambda( "convpipe", inp, convpipe )
+convpipe = RM.lambda( "convpipe", inp, convpipe )
 -------------
-hsfn = d.makeHandshake(convpipe)
+hsfn = RM.makeHandshake(convpipe)
 
 harness.axi( "conv_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE,T,inputW, inputH, BASE_TYPE,T, inputW, inputH )

@@ -1,4 +1,5 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local Image = require "image"
 local types = require("types")
 local S = require("systolic")
@@ -48,40 +49,40 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local BASE_TYPE = types.array2d( types.uint(8), T )
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
   local HST = types.tuple{RW_TYPE,TAP_TYPE}
-  local hsfninp_raw = d.input( d.Handshake(HST) )
-  local hsfninp = d.apply( "idx0", d.makeHandshake(d.index(HST,0)), hsfninp_raw )
-  local hsfn_taps = d.apply( "idx1", d.makeHandshake(d.index(HST,1)), hsfninp_raw )
+  local hsfninp_raw = R.input( R.Handshake(HST) )
+  local hsfninp = R.apply( "idx0", RM.makeHandshake(RM.index(HST,0)), hsfninp_raw )
+  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(RM.index(HST,1)), hsfninp_raw )
   local out = hsfninp
   
-  local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.uint(8),1,8,T)), out )
-  --local out = d.apply("FW",d.makeHandshake(d.fwriteSeq("KERNOUT.raw",types.array2d(types.uint(8),T))), out)
-  local out = d.apply("pad", d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
+  local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,T)), out )
+
+  local out = R.apply("pad", RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, T, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 
 --  if true then
---    table.insert( fifos, d.instantiateRegistered("f_clk",d.fifo(types.array2d(types.uint(8),T),128,false)) )
---    table.insert( statements, d.applyMethod( "s_clk", fifos[#fifos], "store", out ) )
---    out = d.applyMethod("r_clk",fifos[#fifos],"load")
+--    table.insert( fifos, R.instantiateRegistered("f_clk",RM.fifo(types.array2d(types.uint(8),T),128,false)) )
+--    table.insert( statements, R.applyMethod( "s_clk", fifos[#fifos], "store", out ) )
+--    out = R.applyMethod("r_clk",fifos[#fifos],"load")
 --  end
   
-  local convpipeinp = d.apply("CPI", darkroom.packTuple({BASE_TYPE,TAP_TYPE}), d.tuple("CONVPIPEINP",{out,hsfn_taps},false))
+  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.tuple("CONVPIPEINP",{out,hsfn_taps},false))
 
-  local out = d.apply("HH",d.makeHandshake(kernel), convpipeinp)
+  local out = R.apply("HH",RM.makeHandshake(kernel), convpipeinp)
   
   if NOSTALL then
-    table.insert( fifos, d.instantiateRegistered("f_nostall",d.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)) )
-    table.insert( statements, d.applyMethod( "s_nostall", fifos[#fifos], "store", out ) )
-    out = d.applyMethod("r_nostall",fifos[#fifos],"load")
+    table.insert( fifos, R.instantiateRegistered("f_nostall",RM.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)) )
+    table.insert( statements, R.applyMethod( "s_nostall", fifos[#fifos], "store", out ) )
+    out = R.applyMethod("r_nostall",fifos[#fifos],"load")
   end
 
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
-  local out = d.apply("incrate", d.liftHandshake(d.changeRate(types.uint(8),1,T,8)), out )
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
+  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,T,8)), out )
 
   if #fifos>0 then
     table.insert(statements,1,out)
-    out = d.statements(statements)
+    out = R.statements(statements)
   end
 
-  local hsfn = d.lambda("hsfn", hsfninp_raw, out, fifos)
+  local hsfn = RM.lambda("hsfn", hsfninp_raw, out, fifos)
   
   local infile = "frame_128.raw"
   local outfile = "convpadcrop_wide_handshake_"..ConvWidth.."_"..T

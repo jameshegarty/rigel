@@ -1,7 +1,7 @@
 require("common")
 local IR = require("ir")
 
-types = {}
+local types = {}
 
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
@@ -110,76 +110,6 @@ function types.tuple( list )
   assert(types.isType(res))
   assert(#res.list==#list)
   return res
-end
-
-function types.fromTerraType(ty, linenumber, offset, filename)
-  if types.isType(ty) then return ty end
-
-  assert(terralib.types.istype(ty))
-
-  if ty==int32 then
-    return types.int(32)
-  elseif ty==int16 then
-    return types.int(16)
-  elseif ty==uint8 then
-    return types.uint(8)
-  elseif ty==uint32 then
-    return types.uint(32)
-  elseif ty==int8 then
-    return types.int(8)
-  elseif ty==uint16 then
-    return types.uint(16)
-  elseif ty==float then
-    return types.float(32)
-  elseif ty==double then
-    return types.float(64)
-  elseif ty==bool then
-    return types.bool()
-  elseif ty:isarray() then
-    if ty.N <=0 then
-      darkroom.error("Array can not have size 0",linenumber,offset,filename)
-    end
-    return types.array(types.fromTerraType(ty.type),ty.N)
-  end
-
-  print("error, unsupported terra type",ty)
-  assert(false)
-end
-
--- given a lua variable, figure out the correct type and
--- least precision that can represent it
-function types.valueToType(v)
-
-  if v==nil then return nil end
-  
-  if type(v)=="boolean" then
-    return types.bool()
-  elseif type(v)=="number" then
-    local vi, vf = math.modf(v) -- returns the integral bit, then the fractional bit
-    
-    -- you might be tempted to take things from 0...255 to a uint8 etc, but this is bad!
-    -- then if the user write -(5+4) they get a positive number b/c it's a uint8!
-    -- similarly, if you take -128...127 to a int8, you also get problems. Then, you
-    -- try to meet this int8 with a uint8, and get a int16! (bc this is the only sensible thing)
-    -- when really what you wanted is a uint8.
-    -- much better to just make the default int32 and have users cast it to what they want
-    
-    if vf~=0 then
-      return types.float(32)
-    else
-      return types.int(32)
-    end
-  elseif type(v)=="table" then
-    if keycount(v)~=#v then return nil end
-    local tys = {}
-    for k,vv in ipairs(v) do
-      tys[k] = types.valueToType(vv)
-      if tys[k]==nil then return nil end
-    end
-    return types.array(types.reduce("",tys),#v)
-  end
-  
-  return nil -- fail
 end
 
 local boolops = {["or"]=1,["and"]=1,["=="]=1,["xor"]=1} -- bool -> bool -> bool
@@ -373,45 +303,6 @@ function types.meet( a, b, op, loc)
   return nil
 end
 
--- convert a string describing a type like 'int8' to its actual type
-function types.stringToType(s)
-  if s=="rgb8" then
-    local res = types.array(types.uint(8),3)
-    assert(types.isType(res))
-    return res
-  elseif s=="rgbw8" then
-    return types.array(types.uint(8),4)
-  elseif s:sub(1,4) == "uint" then
-    if s=="uint" then
-      darkroom.error("'uint' is not a valid type, you must specify a precision")
-      return nil
-    end
-    if tonumber(s:sub(5))==nil then return nil end
-    return types.uint(tonumber(s:sub(5)))
-  elseif s:sub(1,3) == "int" then
-    if s=="int" then
-      darkroom.error("'int' is not a valid type, you must specify a precision")
-      return nil
-    end
-    if tonumber(s:sub(4))==nil then return nil end
-    return types.int(tonumber(s:sub(4)))
-  elseif s:sub(1,5) == "float" then
-    if s=="float" then
-      darkroom.error("'float' is not a valid type, you must specify a precision")
-      return nil
-    end
-    if tonumber(s:sub(6))==nil then return nil end
-    return types.float(tonumber(s:sub(6)))
-  elseif s=="bool" then
-    return types.bool()
-  else
-
-  end
- 
-  --print("Error, unknown type "..s)
-  return nil
-end
-
 -- check if type 'from' can be converted to 'to' (explicitly)
 function types.checkExplicitCast(from, to, ast)
   assert(from~=nil)
@@ -509,55 +400,11 @@ function types.checkExplicitCast(from, to, ast)
   return false
 end
 
--- compare this to meet - this is where we can't change the type of 'to',
--- so we just have to see if 'from' can be converted to 'to'
-function types.checkImplicitCast(from, to, ast)
-  assert(types.isType(from))
-  assert(types.isType(to))
-  assert(darkroom.IR.isIR(ast))
-
-  if from==to then
-    return true -- obviously
-  elseif from.kind=="uint" and to.kind=="uint" then
-    if to.precision >= from.precision then
-      return true
-    end
-  elseif from.kind=="uint" and to.kind=="int" then
-    if to.precision > from.precision then
-      return true
-    end
-  elseif from.kind=="int" and to.kind=="int" then
-    if to.precision >= from.precision then
-      return true
-    end
-  elseif from.kind=="uint" and to.kind=="float" then
-    if to.precision >= from.precision then
-      return true
-    end
-  elseif from.kind=="int" and to.kind=="float" then
-    if to.precision >= from.precision then
-      return true
-    end
-  elseif from.kind=="float" and to.kind=="float" then
-    if to.precision >= from.precision then
-      return true
-    end
-  end
-
-  return false
-end
-
 ---------------------------------------------------------------------
 -- 'externally exposed' functions
 
 function types.isType(ty)
   return getmetatable(ty)==TypeMT
-end
-
--- convert this uint type to an int type with same precision
-function types.uintToInt(ty)
-  assert(types.isUint(ty))
-  return types.int(ty.precision)
 end
 
 -- is the type const?
@@ -656,34 +503,35 @@ function TypeFunctions:stripConst()
   end
 end
 
-function TypeFunctions:toC()
-  if self.kind=="float" and self.precision==32 then
-    return "float"
-  elseif self.kind=="uint" and self.precision==8 then
-    return "unsigned char"
-  elseif self.kind=="int" and self.precision==32 then
-    return "int"
-  elseif self:isArray() then
-    return self:baseType():toC().."["..self:channels().."]"
-  else
-    print(self)
-    assert(false)
-  end
-end
 
 function TypeFunctions:isArray()  return self.kind=="array" end
-function TypeFunctions:isTuple()  return self.kind=="tuple" end
 
 function TypeFunctions:arrayOver()
   assert(self.kind=="array")
   return self.over
 end
 
+function TypeFunctions:baseType()
+  if self.kind~="array" then return self end
+  assert(type(self.over)~="array")
+  return self.over
+end
+
+
 -- returns 0 if not an array
 function TypeFunctions:arrayLength()
   if self.kind~="array" then return 0 end
   return self.size
 end
+
+function TypeFunctions:channels()
+  if self.kind~="array" then return 1 end
+  local chan = 1
+  for k,v in ipairs(self.size) do chan = chan*v end
+  return chan
+end
+
+function TypeFunctions:isTuple()  return self.kind=="tuple" end
 
 function TypeFunctions:tupleList()
   if self.kind~="tuple" then return {self} end
@@ -766,22 +614,6 @@ function TypeFunctions:valueToTerra(value)
   end
 end
 
--- not very accurate. This will let us compare to type(t) at least
-function TypeFunctions:toLuaType()
-  if self.kind=="int" or self.kind=="uint" or self.kind=="float" or self.kind=="bits" then
-    return "number"
-  elseif self.kind=="array" or self.kind=="tuple" then
-    return "table"
-  elseif self.kind=="bool" then
-    return "boolean"
-  elseif self.kind=="opaque" then
-    return "number" -- wtf
-  else
-    print("toLuaType",self)
-    assert(false)
-  end
-end
-
 function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
@@ -823,30 +655,6 @@ function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"
 end
 
-function TypeFunctions:channels()
-  if self.kind~="array" then return 1 end
-  local chan = 1
-  for k,v in ipairs(self.size) do chan = chan*v end
-  return chan
-end
-
-function TypeFunctions:baseType()
-  if self.kind~="array" then return self end
-  assert(type(self.over)~="array")
-  return self.over
-end
-
--- this calculates the precision of the result of a reduction tree.
--- op is the reduction op
--- typeTable is a list of the types we're reducing over
-function types.reduce(op,typeTable)
-  assert(type(typeTable)=="table")
-  assert(#typeTable>=1)
-  for k,v in pairs(typeTable) do assert(types.isType(v)) end
-
-  return typeTable[1]
-end
-
 function TypeFunctions:fakeValue()
   if self:isInt() or self:isUint() or self:isFloat() then
     return 0
@@ -869,6 +677,7 @@ end
 function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
+    err( #v==keycount(v), "lua table is not an array (unstructured keys)")
     err( #v==self:channels(), "incorrect number of channels, is "..(#v).." but should be "..self:channels() )
     for i=1,#v do
       self:arrayOver():checkLuaValue(v[i])

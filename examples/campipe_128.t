@@ -1,10 +1,6 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local f = require "fixed"
 local modules = require "fpgamodules"
@@ -123,30 +119,23 @@ local rgbType = types.array2d(types.uint(8),4)
 local OTYPE = types.array2d(rgbType,2)
 
 function makeCampipe(internalW,internalH)
-  local inp = d.input(ITYPE)
-  local bl = d.apply("bl",d.map(CC.blackLevel(pedestal),T),inp)
-  local dem = d.apply("dem",CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B),bl)
-  local ccm = d.apply("ccm",d.map(CC.makeCCM(ccmtab),T),dem)
-  local gam = d.apply("gam",d.map(d.map(d.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),T),ccm)
-  local out = d.apply("addchan",d.map(CC.addchan(),T),gam)
-  --local dem = d.apply("fake",d.map(C.arrayop(types.uint(8),4),T),bl)
-  local campipe = d.lambda("campipe",inp,out)
-  
---  local hsfninp = d.input(d.Handshake(ITYPE))
---  local hsfnout = d.apply("O1",d.makeHandshake(campipe),hsfninp)
---  local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
---  local hsfn = d.lambda("hsfn",hsfninp,hsfnout)
+  local inp = R.input(ITYPE)
+  local bl = R.apply("bl",RM.map(CC.blackLevel(pedestal),T),inp)
+  local dem = R.apply("dem",CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B),bl)
+  local ccm = R.apply("ccm",RM.map(CC.makeCCM(ccmtab),T),dem)
+  local gam = R.apply("gam",RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),T),ccm)
+  local out = R.apply("addchan",RM.map(CC.addchan(),T),gam)
 
-  return d.makeHandshake(campipe)
+  local campipe = RM.lambda("campipe",inp,out)
+
+  return RM.makeHandshake(campipe)
 end
 
 local campipe = C.padcrop(types.uint(8),W,H,T,1,1,1,1,0,makeCampipe)
---print("HSFN",hsfn.outputType)
---hsfn = d.compose("hsfn",hsfn,d.liftHandshake(d.changeRate(rgbType,1,T,2)))
 
-local hsfninp = d.input(d.Handshake(ITYPE))
-local hsfnout = d.apply("O1",campipe,hsfninp)
-local hsfnout = d.apply("incrate", d.liftHandshake(d.changeRate(rgbType,1,T,2)), hsfnout )
-local hsfn = d.lambda("hsfnfin",hsfninp,hsfnout)
+local hsfninp = R.input(R.Handshake(ITYPE))
+local hsfnout = R.apply("O1",campipe,hsfninp)
+local hsfnout = R.apply("incrate", RM.liftHandshake(RM.changeRate(rgbType,1,T,2)), hsfnout )
+local hsfn = RM.lambda("hsfnfin",hsfninp,hsfnout)
 
 harness.axi( outputFilename, hsfn, inputFilename, nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)

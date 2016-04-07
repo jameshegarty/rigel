@@ -1,10 +1,6 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 
 W = 128
@@ -16,7 +12,7 @@ T = 8
 function MAKE(scaleX)
   local ITYPE = types.array2d( types.uint(8), T ) -- always 8 for AXI
 
-  local hsfn =  d.upsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) 
+  local hsfn =  RM.upsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) 
 
   harness.axi( "upsample_wide_handshake_"..scaleX, hsfn, "frame_128.raw", nil, nil, ITYPE,T,W,H, ITYPE,T,W*scaleX,H*scaleX)
 end

@@ -1,11 +1,5 @@
-d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
 local types = require("types")
-local S = require("systolic")
-C = require "examplescommon"
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
+local C = require "examplescommon"
 local harness = require "harness"
 
 if string.find(arg[0],"float") then

@@ -1,4 +1,3 @@
-local d = require "darkroom"
 local C = require "examplescommon"
 local harness = require "harness"
 local makeStereo = require "stereo_core"

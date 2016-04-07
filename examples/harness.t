@@ -1,4 +1,5 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
 local cstdlib = terralib.includec("stdlib.h")
 local fixed = require("fixed")
@@ -50,28 +51,28 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
   err(inputBytes/128==math.floor(inputBytes/128), "inputBytes not aligned to axi burst size")
  
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
-  local inpSymb = d.input( d.Handshake(ITYPE) )
+  local inpSymb = R.input( R.Handshake(ITYPE) )
   -- we give this a less strict timing requirement b/c this counts absolute cycles
   -- on our quarter throughput test, this means this will appear to take 4x as long as it should
-  local inp = d.apply("underflow_US", d.underflow(ITYPE, inputBytes/8, EC*4, true, ECTooSoon), inpSymb)
-  local inpdata = d.apply("inpdata", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
-  local inptaps = d.apply("inptaps", d.makeHandshake(d.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
-  local out = d.apply("fread",d.makeHandshake(d.freadSeq(infile,inputType)),inpdata)
+  local inp = R.apply("underflow_US", RM.underflow(ITYPE, inputBytes/8, EC*4, true, ECTooSoon), inpSymb)
+  local inpdata = R.apply("inpdata", RM.makeHandshake(RM.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
+  local inptaps = R.apply("inptaps", RM.makeHandshake(RM.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
+  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(infile,inputType)),inpdata)
   local hsfninp = out
 
   if tapInputType~=nil then
-    hsfninp = d.apply("HFN",d.packTuple({inputType,tapInputType}), d.tuple("hsfninp",{out,inptaps},false))
+    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapInputType}), R.tuple("hsfninp",{out,inptaps},false))
   end
 
-  local out = d.apply("HARNESS_inner", hsfn, hsfninp )
-  out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(outputType, outputCount))), out)
-  out = d.apply("underflow", d.underflow(outputType, (outputBytes/8), EC, false, ECTooSoon), out)
+  local out = R.apply("HARNESS_inner", hsfn, hsfninp )
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(outputType, outputCount))), out)
+  out = R.apply("underflow", RM.underflow(outputType, (outputBytes/8), EC, false, ECTooSoon), out)
   if disableCycleCounter==nil or disableCycleCounter==false then 
-    out = d.apply("cycleCounter", d.cycleCounter(d.extractData(hsfn.outputType), outputBytes/(8*frames) ), out)
+    out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/(8*frames) ), out)
   end
 
-  local out = d.apply("fwrite", d.makeHandshake(d.fwriteSeq(outfile,outputType)), out )
-  return d.lambda( "harness"..id, inpSymb, out )
+  local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outfile,outputType)), out )
+  return RM.lambda( "harness"..id, inpSymb, out )
 end
 
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
@@ -83,36 +84,36 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   local ITYPE = inputType
   if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
 
-  local inpSymb = d.input( d.Handshake(ITYPE) )
+  local inpSymb = R.input( R.Handshake(ITYPE) )
   local inpdata
   local inptaps
 
   if tapType==nil then
     inpdata = inpSymb
   else
-    inpdata = d.apply("inpdata", d.makeHandshake(d.index(ITYPE,0)), inpSymb)
-    inptaps = d.apply("inptaps", d.makeHandshake(d.index(ITYPE,1)), inpSymb)
+    inpdata = R.apply("inpdata", RM.makeHandshake(RM.index(ITYPE,0)), inpSymb)
+    inptaps = R.apply("inptaps", RM.makeHandshake(RM.index(ITYPE,1)), inpSymb)
   end
 
   
 
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   if type(earlyOverride)=="number" then EC=earlyOverride end
-  local inpdata = d.apply("underflow_US", d.underflow( d.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+  local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
 
   local hsfninp
 
   if tapType==nil then
     hsfninp = inpdata
   else
-    hsfninp = d.apply("HFN",d.packTuple({inputType,tapType}), d.tuple("hsfninp",{inpdata,inptaps},false))
+    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.tuple("hsfninp",{inpdata,inptaps},false))
   end
 
-  local out = d.apply("hsfna",hsfn,hsfninp)
-  out = d.apply("overflow", d.liftHandshake(d.liftDecimate(d.overflow(d.extractData(hsfn.outputType), outputCount))), out)
-  out = d.apply("underflow", d.underflow(d.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
-  out = d.apply("cycleCounter", d.cycleCounter(d.extractData(hsfn.outputType), outputBytes/8 ), out)
-  return d.lambda( "harnessaxi", inpSymb, out )
+  local out = R.apply("hsfna",hsfn,hsfninp)
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
+  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
+  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/8 ), out)
+  return RM.lambda( "harnessaxi", inpSymb, out )
 end
 
 local H = {}
@@ -129,7 +130,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
+    local f = R.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
@@ -137,7 +138,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 
-    d.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
+    R.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
   end
 
 end
@@ -167,7 +168,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = d.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
+    local f = R.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
@@ -181,12 +182,12 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(X==nil)
   assert( types.isType(inputType) )
   assert( tapType==nil or types.isType(tapType) )
-  assert( tapType==nil or type(tapValue)==tapType:toLuaType() )
+  if tapType~=nil then tapType:checkLuaValue(tapValue) end
   assert( types.isType(outputType) )
   assert(type(inputW)=="number")
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
-  err(d.isFunction(hsfn), "second argument to harness.axi must be function")
+  err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   assert(earlyOverride==nil or type(earlyOverride)=="number")
 
   local inputCount = (inputW*inputH)/inputT
@@ -197,7 +198,7 @@ H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW,
   local inputCount = (inputW*inputH)/inputT
 local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
-local fnaxi = d.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
+local fnaxi = R.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

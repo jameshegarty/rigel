@@ -1,5 +1,4 @@
-local d = require "darkroom"
-local Image = require "image"
+local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
@@ -19,13 +18,13 @@ function conv(internalW, internalH)
   print("CONV",internalW,internalH)
   local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, rep(1,ConvWidth*ConvWidth), 6 )
   local convpipe = C.stencilKernel( types.uint(8), T, internalW, internalH, ConvWidth, ConvWidth, convolve )
-  return d.makeHandshake(convpipe)
+  return RM.makeHandshake(convpipe)
 end
 
 hsfn = C.padcrop( types.uint(8), inputW, inputH, T, 4, 3, 4, 3, 0, conv )
 local scale = 2
-local downsample = d.liftHandshake( d.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale) )
-hsfn = darkroom.compose( "rhsfn", downsample, hsfn )
+local downsample = RM.liftHandshake( RM.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale) )
+hsfn = RM.compose( "rhsfn", downsample, hsfn )
 -------------
 
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus

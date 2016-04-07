@@ -1,11 +1,5 @@
-d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
 local types = require("types")
-local S = require("systolic")
-C = require "examplescommon"
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
+local C = require "examplescommon"
 local harness = require "harness"
 
 if string.find(arg[0],"float") then
@@ -34,15 +28,7 @@ function makeLK(T,window)
     W,H = 1920,1080
   end
   
---T = 8
-
--- lk_full is 584x388, 2 channel
-
---local window = 4
-
---local T = 4
   local RW_TYPE = types.array2d(types.array2d(types.uint(8),2),4)
-
 
   require "lk_core"
 

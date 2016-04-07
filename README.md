@@ -1,5 +1,57 @@
-Types
+Types : types.t
 =====
+
+Rigel's type system supports arbitrary precision ints, uints, floats, bitfields, bools, 2d arrays, and tuples. types.t provides the type class that is used throughout darkroom.
+
+Type can be marked as constant, indicating that their value will not change while the pipeline is executing. This allows the compiler to perform additional optimizations. Rigel's constants are roughly equivilant to 'uniforms' in shader programming, or 'taps' in image processing.
+
+    types = require "types"
+
+    -- base type constructors
+    types.bool( constant:bool )
+    types.uint( precision:uint, constant:bool )
+    types.int( precision:uint, constant:bool )
+    types.bits( precision:uint, constant:bool ) -- bitfield
+    types.float( precision:uint, constant:bool )
+
+    types.array2d( arrayover:Type, width:uint, height:uint )
+    types.tuple( typelist:Type[] )
+    
+types.t also provides a number of helper functions for manipulating and introspecting on types.
+
+    types.isType(x) -- is table a Type?
+
+    type:const() -- is type constant?
+    ty = type:makeConst() -- returns constant version of type
+    ty = type:stripConst() -- returns non-constant version of type
+    
+    type:isArray()
+    type:arrayOver() -- if type is array, return type that array is over. Otherwise error out.
+    type:baseType()  -- if type is array, return type that array is over. Otherwise return type.
+    sz = type:arrayLength() -- return array dimensions as lua type {width,height}
+    type:channels() -- returns width*height
+
+    type:isTuple()
+    type:tupleList() -- return lua table of Types in tuple
+    
+    type:isBool()
+    type:isInt()
+    type:isUint()
+    type:isBits()
+    type:isFloat()
+    type:isNumber() -- float, int, or uint
+
+    ty = type:toTerraType( asPointer:bool, [vectorWidth:uint] ) -- lower Rigel type to Terra type
+    type:valueToTerra( value:lua ) -- convert lua value into terra value, coerced into format of this type
+
+    -- this checks that a lua value can be coerced into a Rigel type. 
+    -- Lua numbers can convert to float, uint, or int (as long as they don't overflow).
+    -- Lua tables can convert into tuples or arrays, as long as sizes and types match.
+    type:checkLuaValue(value:lua)
+    type:fakeValue() -- returns a arbitrary lua value that will successfully convert to 'type'
+
+    type:sizeof() -- bytes when type is used in Terra
+    type:verilogBits() -- bits when type is used in Verilog
 
 State = opaque
 Stateful(A) = {A,State} -- 1 state context

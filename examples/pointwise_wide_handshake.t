@@ -1,4 +1,5 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local Im = require "image"
 local ffi = require("ffi")
 local types = require("types")
@@ -19,19 +20,19 @@ if f1080p~=nil then
 end
 
 inp = S.parameter("inp",types.uint(8))
-plus100 = d.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
+plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 
 ------------
-inp = d.input( types.uint(8) )
-a = d.apply("a", plus100, inp)
-b = d.apply("b", plus100, a)
-p200 = d.lambda( "p200", inp, b )
+inp = R.input( types.uint(8) )
+a = R.apply("a", plus100, inp)
+b = R.apply("b", plus100, a)
+p200 = RM.lambda( "p200", inp, b )
 ------------
 ITYPE = types.array2d( types.uint(8), T )
-inp = d.input( ITYPE )
-out = d.apply( "plus100", d.map( p200, T ), inp )
-fn = d.lambda( "pointwise_wide", inp, out )
+inp = R.input( ITYPE )
+out = R.apply( "plus100", RM.map( p200, T ), inp )
+fn = RM.lambda( "pointwise_wide", inp, out )
 ------------
-hsfn = d.makeHandshake(fn)
+hsfn = RM.makeHandshake(fn)
 
 harness.axi( "pointwise_wide_handshake"..sel(f1080p~=nil,"_1080p",""), hsfn, sel(f1080p~=nil,"1080p.raw","frame_128.raw"), nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)

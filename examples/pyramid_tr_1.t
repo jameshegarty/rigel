@@ -1,7 +1,6 @@
-local d = require "darkroom"
-local Image = require "image"
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
@@ -34,14 +33,14 @@ local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst(
 local DATA_TYPE = types.array2d(A,8)
 local HST = types.tuple{DATA_TYPE,TAP_TYPE}
 
-local inp = d.input( d.Handshake(HST) )
---local out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,T)), inp)
-local out = d.apply("idx0",d.makeHandshake(d.index(HST,0)),inp)
+local inp = R.input( R.Handshake(HST) )
+
+local out = R.apply("idx0", RM.makeHandshake( RM.index(HST,0)),inp)
 if T<8 then
-  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,T)), out)
+  out = R.apply("CRtop", RM.liftHandshake( RM.changeRate(A,1,8,T)), out)
 end
 
-local tapinp =  d.apply("idx1",d.makeHandshake(d.index(HST,1)),inp)
+local tapinp =  R.apply("idx1", RM.makeHandshake( RM.index(HST,1)),inp)
 
 curT = T
 --vecT = T
@@ -62,11 +61,11 @@ for depth=1,TARGET_DEPTH do
 
   if curT>1 then
     PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false)
-    local piinp = d.apply("CPI"..depth, darkroom.packTuple({types.array2d(A,curT),TAP_TYPE}), d.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
-    out = d.apply("p"..depth, PI, piinp)
+    local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
+    out = R.apply("p"..depth, PI, piinp)
   else
     PI = P.pyramidIterTR(depth,curT,curW,curH,ConvWidth,NOFIFO)
-    out = d.apply("p"..depth, PI, out)
+    out = R.apply("p"..depth, PI, out)
   end
 
   print("PI",PI.inputType,PI.outputType)
@@ -90,7 +89,7 @@ for depth=1,TARGET_DEPTH do
   if depth==TARGET_DEPTH then
     if curT<outputT then
       -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-      out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,math.max(curT,1),8)), out)
+      out = R.apply("CR"..depth, RM.liftHandshake( RM.changeRate(A,1,math.max(curT,1),8)), out)
     end
 
     -- last level
@@ -100,13 +99,13 @@ for depth=1,TARGET_DEPTH do
 
   else
     print("curT",curT)
-    out= d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
-    out0 = P.FIFO(fifos,statements,THIS_TYPE,d.selectStream("i0"..depth,out,0),nil,"internal"..depth,curW,curH,math.max(curT,1))
+    out= R.apply("out_broadcast"..depth, RM.broadcastStream(THIS_TYPE,2), out)
+    out0 = P.FIFO(fifos,statements,THIS_TYPE,R.selectStream("i0"..depth,out,0),nil,"internal"..depth,curW,curH,math.max(curT,1))
 
     if curT<8 then
-      out1 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,math.max(curT,1),8)), d.selectStream("i1"..depth,out,1))
+      out1 = R.apply("CR"..depth, RM.liftHandshake( RM.changeRate(A,1,math.max(curT,1),8)), R.selectStream("i1"..depth,out,1))
     else
-      out1 = d.selectStream("i1"..depth,out,1)
+      out1 = R.selectStream("i1"..depth,out,1)
     end
 
     -- due to the downsample in Y, we actually have to halve the vector size by another 2x
@@ -133,28 +132,22 @@ end
 print("outputW",outputW,"outputH",outputH)
 
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
-SDF = d.sdfNormalize(SDF)
+SDF = R.sdfNormalize(SDF)
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 print("TARGET_DEPTH",TARGET_DEPTH)
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 if TARGET_DEPTH>1 then
-  SER = darkroom.serialize( RW_TYPE, SDF, d.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
-  out = darkroom.apply("toHandshakeArray", d.toHandshakeArray( RW_TYPE, SDF), d.array2d( "sa", L, TARGET_DEPTH, 1, false))
-  out = darkroom.apply("ser", SER, out )
---local out = darkroom.apply("demux", darkroom.demux(RW_TYPE, d.sdfNormalize(SDF)), out )
-  out = d.apply("flatten", d.flattenStreams(RW_TYPE, SDF), out )
+  SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
+  out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.array2d( "sa", L, TARGET_DEPTH, 1, false))
+  out = R.apply("ser", SER, out )
+
+  out = R.apply("flatten", RM.flattenStreams(RW_TYPE, SDF), out )
 end
-
---out = d.apply("CRbot",d.liftHandshake(d.changeRate(A,1,T,8)), out)
-
---if T~=8 then
---  out = d.apply("CRend",d.liftHandshake(d.changeRate(A,1,T,8)), out)
---end
 
 table.insert(statements,1,out)
 
-hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
+hsfn = RM.lambda("pyramid", inp, R.statements(statements), fifos )
 
 local scale = math.pow(2,TARGET_DEPTH-1)
 

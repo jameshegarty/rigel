@@ -1,7 +1,6 @@
-local d = require "darkroom"
-local Image = require "image"
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
@@ -27,12 +26,12 @@ if LARGE then
   inputW, inputH = 384, 384
 end
 
-local inp = d.input( d.Handshake(types.array2d(A,8)) )
+local inp = R.input( R.Handshake(types.array2d(A,8)) )
 local out
 if internalT==8 then
   out = inp
 else
-  out = d.apply("CRtop",d.liftHandshake(d.changeRate(A,1,8,internalT)), inp)
+  out = R.apply("CRtop",RM.liftHandshake(RM.changeRate(A,1,8,internalT)), inp)
 end
 
 curT = internalT
@@ -54,7 +53,7 @@ for depth=1,TARGET_DEPTH do
   print("PI",PI.inputType,PI.outputType)
   print(PI.sdfInput[1][1],PI.sdfInput[1][2])
   print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
-  out = d.apply("p"..depth, PI, out)
+  out = R.apply("p"..depth, PI, out)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
   print("thisW",thisW,thisW/outputH)
@@ -72,7 +71,7 @@ for depth=1,TARGET_DEPTH do
   if depth==TARGET_DEPTH then
 
     -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-    out = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), out)
+    out = R.apply("CR"..depth,RM.liftHandshake(RM.changeRate(A,1,curT,8)), out)
 
     -- last level
     out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "final", curW, curH, 8 )
@@ -80,11 +79,11 @@ for depth=1,TARGET_DEPTH do
   else
     print("curT",curT)
 
-    out = d.apply("out_broadcast"..depth, d.broadcastStream(THIS_TYPE,2), out)
-    local out0 = d.apply("CR"..depth,d.liftHandshake(d.changeRate(A,1,curT,internalT)), d.selectStream("i0"..depth,out,0) )
+    out = R.apply("out_broadcast"..depth, RM.broadcastStream(THIS_TYPE,2), out)
+    local out0 = R.apply("CR"..depth,RM.liftHandshake(RM.changeRate(A,1,curT,internalT)), R.selectStream("i0"..depth,out,0) )
     out0 = P.FIFO( fifos, statements, TOP_TYPE, out0, nil, "internal"..depth, curW, curH, internalT )
 
-    local out1 = d.apply("CRr"..depth,d.liftHandshake(d.changeRate(A,1,curT,8)), d.selectStream("i1"..depth,out,1) )
+    local out1 = R.apply("CRr"..depth,RM.liftHandshake(RM.changeRate(A,1,curT,8)), R.selectStream("i1"..depth,out,1) )
     out1 = P.FIFO( fifos, statements, OUT_TYPE, out1, nil, "output"..depth, curW, curH, 8 )
 
     L[depth] = out1
@@ -100,27 +99,27 @@ end
 print("outputW",outputW,"outputH",outputH)
 
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
-SDF = d.sdfNormalize(SDF)
+SDF = R.sdfNormalize(SDF)
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 
 print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
-  SER = darkroom.serialize( RW_TYPE, SDF, d.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
-  out = darkroom.apply("toHandshakeArray", d.toHandshakeArray( RW_TYPE, SDF), d.array2d( "sa", L, TARGET_DEPTH, 1, false))
-  out = darkroom.apply("ser", SER, out )
---local out = darkroom.apply("demux", darkroom.demux(RW_TYPE, d.sdfNormalize(SDF)), out )
-  out = d.apply("flatten", d.flattenStreams(RW_TYPE, SDF), out )
+  SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
+  out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.array2d( "sa", L, TARGET_DEPTH, 1, false))
+  out = R.apply("ser", SER, out )
+
+  out = R.apply("flatten", RM.flattenStreams(RW_TYPE, SDF), out )
 end
 
 if outputT~=8 then
-  out = d.apply("CRend",d.liftHandshake(d.changeRate(A,1,outputT,8)), out)
+  out = R.apply("CRend",RM.liftHandshake(RM.changeRate(A,1,outputT,8)), out)
 end
 
 table.insert(statements,1,out)
 
-hsfn = darkroom.lambda("pyramid", inp, d.statements(statements), fifos )
+hsfn = RM.lambda("pyramid", inp, R.statements(statements), fifos )
 
 local scale = math.pow(2,TARGET_DEPTH-1)
 

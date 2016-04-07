@@ -1847,7 +1847,7 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, X )
   err(types.isType(ty),"type must be a type")
   ty = ty:stripConst() -- output of register obviously can't be const
   err(type(hasCE)=="boolean", "hasCE must be bool")
-  assert( initial==nil or ty:toLuaType()==type(initial))
+  if initial~=nil then ty:checkLuaValue(initial) end
   assert(hasValid==nil or type(hasValid)=="boolean")
   if hasValid==nil then hasValid=true end
 
@@ -1867,7 +1867,7 @@ end
 systolic.module.regConstructor = moduleConstructor{
 new=function(ty) return {type=ty,hasCE=false} end,
 complete=function(self) return systolic.module.reg( self.type, self.hasCE, self.init) end,
-configFns={setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; return self end,
+configFns={setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end,
 CE=function(self,I) self.hasCE=I; return self end}
 }
 
@@ -1877,7 +1877,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
   assert( CE==nil or type(CE)=="boolean" )
-  assert( init==nil or type(init)==ty:toLuaType() )
+  if init~=nil then ty:checkLuaValue(init) end
   assert(X==nil)
 
   local R = systolic.module.reg( ty, CE, init ):instantiate("R"):setArbitrate("valid"):setCoherent(false)
@@ -1921,7 +1921,7 @@ new=function( ty, setby )
 end,
 complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
 configFns={CE=function(self,v) self.CE=v; return self end, 
-setInit=function(self,I) assert(type(I)==self.type:toLuaType()); self.init=I; return self end}
+setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end}
 }
 
 -------------------

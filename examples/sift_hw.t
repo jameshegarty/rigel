@@ -1,10 +1,7 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 
 GRAD_INT = true
@@ -40,10 +37,10 @@ function doit(full)
 
     ------------
     -- pad out to axi burst size
-    local inp = d.input(d.Handshake(ITYPE))
-    local out = d.apply("SFT",siftFn,inp)
-    local out = d.apply("PS",d.liftHandshake(d.padSeq(siftType,outputCount,1,2,0,padAmount,0,0,0)),out)
-    hsfn = d.lambda("sdf",inp,out)
+    local inp = R.input(R.Handshake(ITYPE))
+    local out = R.apply("SFT",siftFn,inp)
+    local out = R.apply("PS",RM.liftHandshake(RM.padSeq(siftType,outputCount,1,2,0,padAmount,0,0,0)),out)
+    hsfn = RM.lambda("sdf",inp,out)
     ---------
 
     outputCount = outputCount+padAmount

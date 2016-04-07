@@ -1,8 +1,12 @@
+local R = require "rigel"
+local RM = require "modules"
+local C = require "examplescommon"
+
 local function FIFO(fifos,statements,A,inp)
   local id = #fifos
-  table.insert( fifos, d.instantiateRegistered("fifo"..tostring(id),d.fifo(A,128)) )
-  table.insert( statements, d.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
-  return d.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+  table.insert( fifos, R.instantiateRegistered("fifo"..tostring(id),RM.fifo(A,128)) )
+  table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
+  return R.applyMethod("l"..tostring(id),fifos[#fifos],"load")
 end
 
 function toUint8Sign(ty)
@@ -35,7 +39,7 @@ function invert2x2( AType, bits )
   assert(type(bits)=="table")
 
   f.expectFixed(AType)
-  local inp = d.input( types.array2d(AType,4) )
+  local inp = R.input( types.array2d(AType,4) )
   local out, output_type
   local cost = 0
 
@@ -44,7 +48,7 @@ function invert2x2( AType, bits )
     local fdenom = (finp:index(0)*finp:index(3))-(finp:index(1)*finp:index(2))
     local fdet = fdenom:invert()
     local fout = f.array2d({fdet*finp:index(3), (fdet:neg())*(finp:index(1)), (fdet:neg())*(finp:index(2)), fdet*finp:index(0)},4)
-    out = d.apply("out", fout:toDarkroom("fout"), inp)
+    out = R.apply("out", fout:toDarkroom("fout"), inp)
     output_type = types.float(32)
   else
     --------
@@ -60,9 +64,9 @@ function invert2x2( AType, bits )
     fdenom = fdenom:toDarkroom("denom")
     --------
     
-    local denom = d.apply("denom", fdenom, inp)
+    local denom = R.apply("denom", fdenom, inp)
     local fdetfn, fdet_type = C.lutinvert(fdenom_type)
-    local det = d.apply("det", fdetfn, denom)
+    local det = R.apply("det", fdetfn, denom)
     
     ---------
     local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type} )
@@ -81,11 +85,11 @@ function invert2x2( AType, bits )
     local fout = f.array2d(OT,4)
     cost = cost + fout:cost()
     ---------
-    out = d.apply("out", fout:toDarkroom("fout"), d.tuple("ftupp",{inp,det}))
+    out = R.apply("out", fout:toDarkroom("fout"), R.tuple("ftupp",{inp,det}))
   end
 
   print("invert2x2 output type:", output_type)
-  return d.lambda("invert2x2", inp, out ), output_type, cost
+  return RM.lambda("invert2x2", inp, out ), output_type, cost
 end
 
 function dx(bits)
@@ -146,11 +150,9 @@ function makeA( T, dType, window, bits )
 
   local stt = types.array2d(dType, window*T, window)
   local inpt = types.tuple{ stt, stt }
-  local inp = d.input( d.Handshake(inpt) )
-  local Fdx = d.apply("fdx", d.makeHandshake(d.index(inpt,0)), inp)
-  local Fdy = d.apply("fdy", d.makeHandshake(d.index(inpt,1)), inp)
-  --local Fdx = d.selectStream("fdx",inp,0)
-  --local Fdy = d.selectStream("fdy",inp,1)
+  local inp = R.input( R.Handshake(inpt) )
+  local Fdx = R.apply("fdx", RM.makeHandshake(RM.index(inpt,0)), inp)
+  local Fdy = R.apply("fdy", RM.makeHandshake(RM.index(inpt,1)), inp)
 
   local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
   bits.Apartial[3] = partial[3]
@@ -161,28 +163,28 @@ function makeA( T, dType, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local inp0 = d.apply("inp0", d.SoAtoAoSHandshake(window*T,window,{dType,dType}), d.tuple("o0",{Fdx,Fdx},false) )
-  local out0 = d.apply("out0", d.makeHandshake(d.map(partialfn, window*T, window)), inp0 )
-  local out0 = d.apply("out0red", d.makeHandshake(d.reduce(rsumfn, window*T, window)), out0 )
-  local out0 = d.apply("out0redseq", d.liftHandshake(d.liftDecimate(d.reduceSeq( rsumAsyncfn, T ))), out0 )
+  local inp0 = R.apply("inp0", RM.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o0",{Fdx,Fdx},false) )
+  local out0 = R.apply("out0", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp0 )
+  local out0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out0 )
+  local out0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out0 )
 
-  local inp1 = d.apply("inp1", d.SoAtoAoSHandshake(window*T,window,{dType,dType}), d.tuple("o1",{Fdx,Fdy},false) )
-  local out1 = d.apply("out1", d.makeHandshake(d.map(partialfn, window*T, window)), inp1 )
-  local out1 = d.apply("out1red", d.makeHandshake(d.reduce(rsumfn, window*T, window)), out1 )
-  local out1 = d.apply("out1redseq", d.liftHandshake(d.liftDecimate(d.reduceSeq( rsumAsyncfn, T ))), out1 )
+  local inp1 = R.apply("inp1", RM.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o1",{Fdx,Fdy},false) )
+  local out1 = R.apply("out1", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp1 )
+  local out1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out1 )
+  local out1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out1 )
 
   local out2 = out1
 
-  local inp3 = d.apply("inp3", d.SoAtoAoSHandshake(window*T,window,{dType,dType}), d.tuple("o3",{Fdy,Fdy},false) )
-  local out3 = d.apply("out3", d.makeHandshake(d.map(partialfn, window*T, window)), inp3 )
-  local out3 = d.apply("out3red", d.makeHandshake(d.reduce(rsumfn, window*T, window)), out3 )
-  local out3 = d.apply("out3redseq", d.liftHandshake(d.liftDecimate(d.reduceSeq( rsumAsyncfn, T ))), out3 )
+  local inp3 = R.apply("inp3", RM.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o3",{Fdy,Fdy},false) )
+  local out3 = R.apply("out3", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp3 )
+  local out3 = R.apply("out3red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out3 )
+  local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )
 
-  local out = d.tuple("out", {out0,out1,out2,out3},false )
-  out = d.apply("PT",d.packTuple({partial_type,partial_type,partial_type,partial_type}),out)
-  out = d.apply("PTC",d.makeHandshake(C.tupleToArray(partial_type,4)),out)
+  local out = R.tuple("out", {out0,out1,out2,out3},false )
+  out = R.apply("PT",RM.packTuple({partial_type,partial_type,partial_type,partial_type}),out)
+  out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,4)),out)
 
-  return d.lambda("A", inp, out ), partial_type
+  return RM.lambda("A", inp, out ), partial_type
 end
 
 function minus(ty)
@@ -209,25 +211,25 @@ function makeB( T, dtype, window, bits )
   local FTYPE = types.array2d(types.uint(8),window*T,window)
   local DTYPE = types.array2d(dtype,window*T,window)
   local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
-  local finp = d.input( d.Handshake(ITYPE) )
-  local finp_brd = d.apply("finp_broadcast", d.broadcastStream(ITYPE,4), finp)
+  local finp = R.input( R.Handshake(ITYPE) )
+  local finp_brd = R.apply("finp_broadcast", RM.broadcastStream(ITYPE,4), finp)
   
-  local frame0 = d.apply("frame0", d.makeHandshake(d.index(ITYPE,0)), d.selectStream("i0",finp_brd,0))
+  local frame0 = R.apply("frame0", RM.makeHandshake(RM.index(ITYPE,0)), R.selectStream("i0",finp_brd,0))
   local frame0 = FIFO( fifos, statements, FTYPE, frame0)
-  local frame1 = d.apply("frame1", d.makeHandshake(d.index(ITYPE,1)), d.selectStream("i1",finp_brd,1))
+  local frame1 = R.apply("frame1", RM.makeHandshake(RM.index(ITYPE,1)), R.selectStream("i1",finp_brd,1))
   local frame1 = FIFO( fifos, statements, FTYPE, frame1)
-  local Fdx = d.apply("fdx", d.makeHandshake(d.index(ITYPE,2)), d.selectStream("i2",finp_brd,2))
+  local Fdx = R.apply("fdx", RM.makeHandshake(RM.index(ITYPE,2)), R.selectStream("i2",finp_brd,2))
   local Fdx = FIFO( fifos, statements, DTYPE, Fdx)
-  local Fdy = d.apply("fdy", d.makeHandshake(d.index(ITYPE,3)), d.selectStream("i3",finp_brd,3))
+  local Fdy = R.apply("fdy", RM.makeHandshake(RM.index(ITYPE,3)), R.selectStream("i3",finp_brd,3))
   local Fdy = FIFO( fifos, statements, DTYPE, Fdy)
 
   ---------
-  local gmf = d.tuple("mfgmf",{frame1,frame0},false)
-  gmf = d.apply("SA",d.SoAtoAoSHandshake(window*T, window, {types.uint(8),types.uint(8)}), gmf)
+  local gmf = R.tuple("mfgmf",{frame1,frame0},false)
+  gmf = R.apply("SA",RM.SoAtoAoSHandshake(window*T, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type, gmf_cost = minus(types.uint(8))
   print("GMF type", gmf_type)
   cost = cost + gmf_cost*window*window
-  gmf = d.apply("SSM",d.makeHandshake(d.map(m,window*T,window)), gmf)
+  gmf = R.apply("SSM",RM.makeHandshake(RM.map(m,window*T,window)), gmf)
   gmf = FIFO( fifos, statements, types.array2d(gmf_type,window*T,window), gmf)
   ---------
 
@@ -240,26 +242,26 @@ function makeB( T, dtype, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local out_0 = d.tuple("o0tup",{Fdx, gmf},false)
-  local out_0 = d.apply("o0P", d.SoAtoAoSHandshake(window*T,window,{dtype, gmf_type}), out_0)
-  local out_0 = d.apply("o0", d.makeHandshake(d.map(partialfn, window*T, window)), out_0)
-  local out_0 = d.apply("out0red", d.makeHandshake(d.reduce(rsumfn, window*T, window)), out_0 )
-  local out_0 = d.apply("out0redseq", d.liftHandshake(d.liftDecimate(d.reduceSeq(rsumAsyncfn, T))), out_0 )
+  local out_0 = R.tuple("o0tup",{Fdx, gmf},false)
+  local out_0 = R.apply("o0P", RM.SoAtoAoSHandshake(window*T,window,{dtype, gmf_type}), out_0)
+  local out_0 = R.apply("o0", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_0)
+  local out_0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_0 )
+  local out_0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_0 )
 
-  local out_1 = d.tuple("o1tup",{Fdy, gmf},false)
-  local out_1 = d.apply("o1P", d.SoAtoAoSHandshake(window*T,window,{dtype,gmf_type}), out_1)
-  local out_1 = d.apply("o1", d.makeHandshake(d.map(partialfn, window*T, window)), out_1)
-  local out_1 = d.apply("out1red", d.makeHandshake(d.reduce(rsumfn, window*T, window)), out_1 )
-  local out_1 = d.apply("out1redseq", d.liftHandshake(d.liftDecimate(d.reduceSeq(rsumAsyncfn, T))), out_1 )
+  local out_1 = R.tuple("o1tup",{Fdy, gmf},false)
+  local out_1 = R.apply("o1P", RM.SoAtoAoSHandshake(window*T,window,{dtype,gmf_type}), out_1)
+  local out_1 = R.apply("o1", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_1)
+  local out_1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_1 )
+  local out_1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_1 )
 
-  local out = d.tuple("arrrrry0t",{out_0,out_1},false)
-  out = d.apply("PT",d.packTuple({partial_type,partial_type}),out)
-  out = d.apply("PTC",d.makeHandshake(C.tupleToArray(partial_type,2)),out)
+  local out = R.tuple("arrrrry0t",{out_0,out_1},false)
+  out = R.apply("PT",RM.packTuple({partial_type,partial_type}),out)
+  out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,2)),out)
 
   table.insert(statements,1,out)
 
   print("B output type", partial_type)
-  return d.lambda("b", finp, d.statements(statements),fifos), partial_type, cost
+  return RM.lambda("b", finp, R.statements(statements),fifos), partial_type, cost
 end
 
 function solve( AinvType, btype, bits )
@@ -313,88 +315,83 @@ function makeLK( internalT, internalW, internalH, window, bits )
   local cost = 9
 
   local INPTYPE = types.array2d(types.uint(8),2)
-  local inp = d.input(d.Handshake(INPTYPE))
-  local frame0 = d.apply("f0", d.makeHandshake(d.index(INPTYPE, 0 )), inp)
-  local frame1 = d.apply("f1", d.makeHandshake(d.index(INPTYPE, 1 )), inp)
+  local inp = R.input(R.Handshake(INPTYPE))
+  local frame0 = R.apply("f0", RM.makeHandshake(RM.index(INPTYPE, 0 )), inp)
+  local frame1 = R.apply("f1", RM.makeHandshake(RM.index(INPTYPE, 1 )), inp)
 
 
-  local frame0_arr = d.apply("f0_arr", d.makeHandshake(C.arrayop(types.uint(8),1)), frame0)
-  local frame0_arr_brd = d.apply("f0_arr_broadcast", d.broadcastStream(types.array2d(types.uint(8),1),2), frame0_arr)
+  local frame0_arr = R.apply("f0_arr", RM.makeHandshake(C.arrayop(types.uint(8),1)), frame0)
+  local frame0_arr_brd = R.apply("f0_arr_broadcast", RM.broadcastStream(types.array2d(types.uint(8),1),2), frame0_arr)
 --  local frame0_arr_brd = frame0_arr
-  local frame1_arr = d.apply("f1_arr", d.makeHandshake(C.arrayop(types.uint(8),1)), frame1)
+  local frame1_arr = R.apply("f1_arr", RM.makeHandshake(C.arrayop(types.uint(8),1)), frame1)
 
   local st_sl_type = types.array2d( types.uint(8), window*internalT, window+1 )
 
-  local lb0 = FIFO(fifos,statements,types.array2d(types.uint(8),1),d.selectStream("f0a",frame0_arr_brd,0))
-  local lb0 = d.apply("lb0", C.stencilLinebufferPartialOffsetOverlap( types.uint(8), internalW, internalH, internalT, -window, 0, -window, 0, 1, 0 ), lb0)
-  local lb0 = d.apply("lb0_slc", d.makeHandshake(d.slice( st_sl_type, 0, window*internalT-1, 0, window-1)), lb0)
+  local lb0 = FIFO(fifos,statements,types.array2d(types.uint(8),1),R.selectStream("f0a",frame0_arr_brd,0))
+  local lb0 = R.apply("lb0", C.stencilLinebufferPartialOffsetOverlap( types.uint(8), internalW, internalH, internalT, -window, 0, -window, 0, 1, 0 ), lb0)
+  local lb0 = R.apply("lb0_slc", RM.makeHandshake(RM.slice( st_sl_type, 0, window*internalT-1, 0, window-1)), lb0)
 
   local lb1 = FIFO(fifos,statements,types.array2d(types.uint(8),1),frame1_arr)
-  local lb1 = d.apply("lb1", C.stencilLinebufferPartialOffsetOverlap(types.uint(8), internalW, internalH, internalT, -window, 0, -window, 0, 1, 0 ), lb1)
-  local lb1 = d.apply("lb1_slc", d.makeHandshake(d.slice( st_sl_type, 0, window*internalT-1, 0, window-1)), lb1)
+  local lb1 = R.apply("lb1", C.stencilLinebufferPartialOffsetOverlap(types.uint(8), internalW, internalH, internalT, -window, 0, -window, 0, 1, 0 ), lb1)
+  local lb1 = R.apply("lb1_slc", RM.makeHandshake(RM.slice( st_sl_type, 0, window*internalT-1, 0, window-1)), lb1)
 
-  local lb0_fd = FIFO(fifos,statements,types.array2d(types.uint(8),1),d.selectStream("f0a1",frame0_arr_brd,1))
-  local lb0_fd = d.apply("lb0_fd", d.makeHandshake(d.stencilLinebuffer(types.uint(8), internalW, internalH, 1, -2, 0, -2, 0 )), lb0_fd)
-  local lb0_fd_brd = d.apply("lb0_fd_brd", d.broadcastStream(types.array2d(types.uint(8),3,3),2), lb0_fd)
-  local lb0_fd_0 = FIFO(fifos,statements,types.array2d(types.uint(8),3,3),d.selectStream("ln0",lb0_fd_brd,0))
-  local lb0_fd_1 = FIFO(fifos,statements,types.array2d(types.uint(8),3,3),d.selectStream("ln1",lb0_fd_brd,1))
+  local lb0_fd = FIFO(fifos,statements,types.array2d(types.uint(8),1),R.selectStream("f0a1",frame0_arr_brd,1))
+  local lb0_fd = R.apply("lb0_fd", RM.makeHandshake(RM.stencilLinebuffer(types.uint(8), internalW, internalH, 1, -2, 0, -2, 0 )), lb0_fd)
+  local lb0_fd_brd = R.apply("lb0_fd_brd", RM.broadcastStream(types.array2d(types.uint(8),3,3),2), lb0_fd)
+  local lb0_fd_0 = FIFO(fifos,statements,types.array2d(types.uint(8),3,3),R.selectStream("ln0",lb0_fd_brd,0))
+  local lb0_fd_1 = FIFO(fifos,statements,types.array2d(types.uint(8),3,3),R.selectStream("ln1",lb0_fd_brd,1))
 
   local st_type = types.array2d( types.uint(8), 3, 3 )
 
-  local fdx = d.apply("slx", d.makeHandshake(d.slice( st_type, 0, 2, 1, 1)), lb0_fd_0)
+  local fdx = R.apply("slx", RM.makeHandshake(RM.slice( st_type, 0, 2, 1, 1)), lb0_fd_0)
   local dx, dType, dxcost = dx(bits)
-  local fdx = d.apply("fdx", d.makeHandshake(dx), fdx)
-  local fdx_arr = d.apply("fdx_arr", d.makeHandshake(C.arrayop(dType,1)), fdx)
-  local fdx_stencil = d.apply("fdx_stencil", d.stencilLinebufferPartial(dType, internalW, internalH, internalT, -window+1, 0, -window+1, 0 ), fdx_arr)
+  local fdx = R.apply("fdx", RM.makeHandshake(dx), fdx)
+  local fdx_arr = R.apply("fdx_arr", RM.makeHandshake(C.arrayop(dType,1)), fdx)
+  local fdx_stencil = R.apply("fdx_stencil", RM.stencilLinebufferPartial(dType, internalW, internalH, internalT, -window+1, 0, -window+1, 0 ), fdx_arr)
   local stDType = types.array2d(dType,window*internalT,window)
-  local fdx_stencil = d.apply("fdxbrd", d.broadcastStream(stDType,2), fdx_stencil)
-  local fdx_stencil_0 = FIFO(fifos,statements,stDType,d.selectStream("fdxs0",fdx_stencil,0))
-  local fdx_stencil_1 = FIFO(fifos,statements,stDType,d.selectStream("fdxs1",fdx_stencil,1))
+  local fdx_stencil = R.apply("fdxbrd", RM.broadcastStream(stDType,2), fdx_stencil)
+  local fdx_stencil_0 = FIFO(fifos,statements,stDType,R.selectStream("fdxs0",fdx_stencil,0))
+  local fdx_stencil_1 = FIFO(fifos,statements,stDType,R.selectStream("fdxs1",fdx_stencil,1))
 
-  local fdy = d.apply("sly", d.makeHandshake(d.slice( st_type, 1, 1, 0, 2)), lb0_fd_1)
-  local fdy = d.apply("fdy", d.makeHandshake(dy(bits)), fdy )
-  local fdy_arr = d.apply("fdy_arr", d.makeHandshake(C.arrayop(dType,1)), fdy)
-  local fdy_stencil = d.apply("fdy_stencil", d.stencilLinebufferPartial(dType, internalW, internalH, internalT, -window+1, 0, -window+1, 0 ), fdy_arr)
-  local fdy_stencil = d.apply("fdybrd", d.broadcastStream(stDType,2), fdy_stencil)
-  local fdy_stencil_0 = FIFO(fifos,statements,stDType,d.selectStream("fdys0",fdy_stencil,0))
-  local fdy_stencil_1 = FIFO(fifos,statements,stDType,d.selectStream("fdys1",fdy_stencil,1))
+  local fdy = R.apply("sly", RM.makeHandshake(RM.slice( st_type, 1, 1, 0, 2)), lb0_fd_1)
+  local fdy = R.apply("fdy", RM.makeHandshake(dy(bits)), fdy )
+  local fdy_arr = R.apply("fdy_arr", RM.makeHandshake(C.arrayop(dType,1)), fdy)
+  local fdy_stencil = R.apply("fdy_stencil", RM.stencilLinebufferPartial(dType, internalW, internalH, internalT, -window+1, 0, -window+1, 0 ), fdy_arr)
+  local fdy_stencil = R.apply("fdybrd", RM.broadcastStream(stDType,2), fdy_stencil)
+  local fdy_stencil_0 = FIFO(fifos,statements,stDType,R.selectStream("fdys0",fdy_stencil,0))
+  local fdy_stencil_1 = FIFO(fifos,statements,stDType,R.selectStream("fdys1",fdy_stencil,1))
 
   cost = cost + dxcost*2
 
   local Af, AType, Acost = makeA( internalT, dType, window, bits )
 
-  local A = d.apply("APT",d.packTuple{stDType,stDType},d.tuple("ainp",{fdx_stencil_0,fdy_stencil_0},false))
-  local A = d.apply("A", Af, A)
+  local A = R.apply("APT",RM.packTuple{stDType,stDType},R.tuple("ainp",{fdx_stencil_0,fdy_stencil_0},false))
+  local A = R.apply("A", Af, A)
 
   local fAinv, AInvType = invert2x2( AType, bits )
-  local Ainv = d.apply("Ainv", d.makeHandshake(fAinv), A)
+  local Ainv = R.apply("Ainv", RM.makeHandshake(fAinv), A)
   local Ainv = FIFO(fifos,statements,types.array2d(AInvType,4),Ainv)
 
   local fB, BType, Bcost = makeB( internalT, dType, window, bits )
---  local f0_slice = d.apply("f0slice", d.slice(st_type, 0, window-1, 0, window-1), lb0)
---  local f1_slice = d.apply("f1slice", d.slice(st_type, 0, window-1, 0, window-1), lb1)
+
   local smst = types.array2d(types.uint(8),window*internalT,window)
-  local b = d.apply("bpt", d.packTuple{smst,smst,stDType,stDType}, d.tuple("btup",{lb0,lb1,fdx_stencil_1,fdy_stencil_1},false) )
-  local b = d.apply("b",fB, b)
+  local b = R.apply("bpt", RM.packTuple{smst,smst,stDType,stDType}, R.tuple("btup",{lb0,lb1,fdx_stencil_1,fdy_stencil_1},false) )
+  local b = R.apply("b",fB, b)
   local b = FIFO(fifos,statements,types.array2d(BType,2),b)
 
---  local A0 = d.apply("A0", d.index(fB.outputType,1),b)
---  local fdx_dbg = d.apply("fdx_dbg", toUint8Sign(BType), A0)
   print("ATYPE,BTYPE",AInvType,BType)
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
-  local vectorField = d.apply("VF", d.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, d.tuple("solveinp",{Ainv,b},false) )
-  local vectorField = d.apply("solve", d.makeHandshake(fSolve), vectorField)
+  local vectorField = R.apply("VF", RM.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, R.tuple("solveinp",{Ainv,b},false) )
+  local vectorField = R.apply("solve", RM.makeHandshake(fSolve), vectorField)
   cost = cost + SolveCost
 
---  local vectorField = d.apply("OT", d.makeHandshake(d.slice(types.array2d(AInvType,4),0,1,0,0)), Ainv)
-
   local displayfn, displaycost = display(SolveType)
-  local out = d.apply("display", d.makeHandshake(displayfn), vectorField)
+  local out = R.apply("display", RM.makeHandshake(displayfn), vectorField)
   cost = cost + displaycost
 
   table.insert(statements,1,out)
 --out=fdx_dbg
-  return d.lambda("LK",inp,d.statements(statements),fifos), cost
+  return RM.lambda("LK",inp,R.statements(statements),fifos), cost
 end
 
 function LKTop(internalT,W,H,window,bits)
@@ -408,15 +405,15 @@ function LKTop(internalT,W,H,window,bits)
   local T = 4
   
   local RW_TYPE = types.array2d( ITYPE, T ) -- simulate axi bus
-  local hsfninp = d.input( d.Handshake(RW_TYPE) )
-  local out = d.apply("reducerate", d.liftHandshake(d.changeRate(types.array2d(types.uint(8),2),1,4,1)), hsfninp )
-  local out = d.apply("pad", d.liftHandshake(d.padSeq(ITYPE, W, H, 1, PadRadius, PadRadius, PadRadius+1, PadRadius, {0,0})), out)
-  local out = d.apply("idx", d.makeHandshake(d.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
+  local hsfninp = R.input( R.Handshake(RW_TYPE) )
+  local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,4,1)), hsfninp )
+  local out = R.apply("pad", RM.liftHandshake(RM.padSeq(ITYPE, W, H, 1, PadRadius, PadRadius, PadRadius+1, PadRadius, {0,0})), out)
+  local out = R.apply("idx", RM.makeHandshake(RM.index(types.array2d(types.array2d(types.uint(8),2),1),0)), out)
   local lkfn, lkcost = makeLK( internalT, internalW, internalH, window, bits )
-  out = d.apply("LK", lkfn, out )
-  local out = d.apply("pack", d.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0))), out)
-  local out = d.apply("incrate", d.liftHandshake(d.changeRate(ITYPE,1,1,4)), out )
-  local hsfn = d.lambda("hsfn", hsfninp, out)
+  out = R.apply("LK", lkfn, out )
+  local out = R.apply("pack", RM.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0))), out)
+  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,4)), out )
+  local hsfn = RM.lambda("hsfn", hsfninp, out)
   return hsfn, lkcost
 end

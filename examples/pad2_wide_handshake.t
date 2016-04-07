@@ -1,4 +1,4 @@
-local d = require "darkroom"
+local RM = require "modules"
 local Image = require "image"
 local types = require("types")
 local S = require("systolic")
@@ -21,8 +21,8 @@ HH = H+2
 
 BASE_TYPE = types.array2d( types.uint(8), T )
 
-hsfn = d.compose("HSFN",
-                 d.liftHandshake(d.padSeq(types.uint(8), W, H, T, (WW-W), 0, (HH-H), 0, 128)),
-                 d.liftHandshake(d.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)) )
+hsfn = RM.compose("HSFN",
+                 RM.liftHandshake(RM.padSeq(types.uint(8), W, H, T, (WW-W), 0, (HH-H), 0, 128)),
+                 RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)) )
 
 harness.axi( "pad2_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE, T, inputW, inputH, BASE_TYPE, T, WW, HH)

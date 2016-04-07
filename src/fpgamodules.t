@@ -1,4 +1,6 @@
 systolic = require("systolic")
+types = require("types")
+
 S=systolic
 --statemachine = require("statemachine")
 local modules = {}
@@ -374,7 +376,7 @@ end
 
 modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   assert(X==nil)
-  err( resetValue==nil or type(resetValue) == ty:toLuaType(), "resetValue has incorrect type")
+  if resetValue~=nil then ty:checkLuaValue(resetValue) end
   err( type(CE)=="boolean", "CE option must be bool")
 
   local M = systolic.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE).."_TY"..ty:verilogBits() )

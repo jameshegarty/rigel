@@ -1,10 +1,6 @@
-local d = require "darkroom"
-local Im = require "image"
-local ffi = require("ffi")
+local R = require "rigel"
+local RM = require "modules"
 local types = require("types")
-local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local fixed = require "fixed"
 
@@ -21,12 +17,12 @@ local binp = fixed.parameter("ainp",fixed.type(false,8,9))
 local b = (binp*fixed.constant(64,false,8,0)):hist("b"):normalize(8):rshift(12):denormalize():truncate(8):hist("b_atend"):lower():toDarkroom("b")
 ------------
 ITYPE = types.array2d( types.uint(8), T )
-inp = d.input( ITYPE )
-out = d.apply( "a", d.map( a, T ), inp )
-out = d.apply( "b", d.map( b, T ), out )
-fn = d.lambda( "fixed_wide", inp, out )
+inp = R.input( ITYPE )
+out = R.apply( "a", RM.map( a, T ), inp )
+out = R.apply( "b", RM.map( b, T ), out )
+fn = RM.lambda( "fixed_wide", inp, out )
 ------------
-hsfn = d.makeHandshake(fn)
+hsfn = RM.makeHandshake(fn)
 
 harness.axi( "fixed_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
 

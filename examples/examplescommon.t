@@ -1,10 +1,11 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local cstdlib = terralib.includec("stdlib.h")
 local C = {}
 
 C.identity = memoize(function(A)
   local sinp = S.parameter( "inp", A )
-  local identity = d.lift( "identity_"..tostring(A), A, A, 0,
+  local identity = RM.lift( "identity_"..tostring(A), A, A, 0,
                           terra( a : &A:toTerraType(), out : &A:toTerraType() )
                             @out = @a
                   end, sinp, sinp )
@@ -15,7 +16,7 @@ C.cast = memoize(function(A,B)
                    assert(A:isTuple()==false)
 
   local sinp = S.parameter( "inp", A )
-  local docast = d.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0,
+  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0,
                           terra( a : &A:toTerraType(), out : &B:toTerraType() )
                             @out = [B:toTerraType()](@a)
                   end, sinp, S.cast(sinp,B) )
@@ -27,7 +28,7 @@ C.tupleToArray = memoize(function(A,N)
                            local B = types.array2d(A,N)
 
   local sinp = S.parameter( "inp", atup )
-  local docast = d.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
+  local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
                           terra( a : &atup:toTerraType(), out : &B:toTerraType() )
                             escape
                             for i=0,N-1 do
@@ -39,8 +40,8 @@ return docast
                          end)
 -- A -> A[W,H]
 C.arrayop = memoize(function(A,W,H)
-  local inp = d.input(A)
-  return d.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,d.array2d("ao",{inp},W,H))
+  local inp = R.input(A)
+  return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.array2d("ao",{inp},W,H))
 end)
 
 ------------
@@ -48,7 +49,7 @@ end)
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
   local sinp = S.parameter( "inp", types.tuple {A,B} )
-  local partial = d.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
+  local partial = RM.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)*[outputType:toTerraType()](a._1)
                   end, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
@@ -64,7 +65,7 @@ C.sum = memoize(function(A,B,outputType,async)
   local delay = 1
   local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
   if async then delay=0; sout = sout:disablePipelining() end
-  local partial = d.lift( "sum_async"..tostring(async), types.tuple {A,B}, outputType, delay,
+  local partial = RM.lift( "sum_async"..tostring(async), types.tuple {A,B}, outputType, delay,
                           terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
                   end, sinp, sout )
@@ -92,7 +93,7 @@ function C.argmin(idxType,vType, async)
     delay = 0
   end
 
-  local partial = d.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay,
+  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay,
                           terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
                             if a._0._1 <= a._1._1 then
                               @out = a._0
@@ -130,7 +131,7 @@ function C.absoluteDifference(A,outputType,X)
   local out = S.cast(subabs, internalType_uint)
   local out = S.cast(out, outputType)
 
-  local partial = d.lift( "absoluteDifference", TY, outputType, 1,
+  local partial = RM.lift( "absoluteDifference", TY, outputType, 1,
                           terra( a : &(A:toTerraType())[2], out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](cstdlib.abs([internalType_terra]((@a)[0])-[internalType_terra]((@a)[1])) )
                           end, sinp, out )
@@ -142,14 +143,14 @@ end
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
   local touint8inp = S.parameter("inp", from)
-  local touint8 = d.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
+  local touint8 = RM.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
   return touint8
                          end)
 
 C.shiftAndCastSaturate = memoize(function(from, to, shift)
   local touint8inp = S.parameter("inp", from)
   local OT = S.rshift(touint8inp,S.constant(shift,from))
-  local touint8 = d.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
+  local touint8 = RM.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
   return touint8
                          end)
 
@@ -163,14 +164,14 @@ function C.convolveTaps( A, ConvWidth, shift )
   local TAP_TYPE_CONST = TAP_TYPE:makeConst()
 
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
-  local inp = d.input( INP_TYPE )
+  local inp = R.input( INP_TYPE )
 
-  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
-  local conv = d.apply( "partial", d.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed )
-  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
-  local conv = d.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
+  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
+  local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed )
+  local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
+  local conv = R.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
 
-  local convolve = d.lambda( "convolveTaps", inp, conv )
+  local convolve = RM.lambda( "convolveTaps", inp, conv )
   return convolve
 end
 
@@ -183,15 +184,15 @@ function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = d.input( types.array2d( A, ConvWidth, ConvHeight ) )
-  local r = d.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
+  local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), d.tuple("ptup", {inp,r}) )
-  local conv = d.apply( "partial", d.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvHeight ), packed )
-  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvHeight ), conv )
-  local conv = d.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
+  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvHeight ), packed )
+  local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvHeight ), conv )
+  local conv = R.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
 
-  local convolve = d.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
+  local convolve = RM.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
   return convolve
 end
 
@@ -204,22 +205,22 @@ function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = d.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
-  local r = d.apply( "convKernel", d.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
+  local inp = R.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
+  local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
 
-  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), d.tuple("ptup", {inp,r}) )
-  local conv = d.apply( "partial", d.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
-  local conv = d.apply( "sum", d.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
+  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
+  local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
 
-  local convseq = d.lambda( "convseq_T"..tostring(1/T), inp, conv )
+  local convseq = RM.lambda( "convseq_T"..tostring(1/T), inp, conv )
 ------------------
-  inp = d.input( darkroom.V(types.array2d( A, ConvWidth*T, ConvHeight )) )
-  conv = d.apply( "convseqapply", d.liftDecimate(d.liftBasic(convseq)), inp)
-  conv = d.apply( "sumseq", d.RPassthrough(d.liftDecimate(d.reduceSeq( C.sum(types.uint(32),types.uint(32),types.uint(32),true), T ))), conv )
-  conv = d.apply( "touint8", d.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
-  conv = d.apply( "arrayop", d.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
-  --conv = d.apply("FW",d.RVPassthrough(d.fwriteSeq("REDUCEOUT.raw",types.array2d(types.uint(8),1))), conv)
-  local convolve = d.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
+  inp = R.input( R.V(types.array2d( A, ConvWidth*T, ConvHeight )) )
+  conv = R.apply( "convseqapply", RM.liftDecimate(RM.liftBasic(convseq)), inp)
+  conv = R.apply( "sumseq", RM.RPassthrough(RM.liftDecimate(RM.reduceSeq( C.sum(types.uint(32),types.uint(32),types.uint(32),true), T ))), conv )
+  conv = R.apply( "touint8", RM.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
+  conv = R.apply( "arrayop", RM.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
+
+  local convolve = RM.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
 
   return convolve
 end
@@ -230,12 +231,12 @@ end
 function C.SAD( A, reduceType, Width, X )
   assert(X==nil)
 
-  local inp = d.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
 
-  local conv = d.apply( "partial", d.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
-  local conv = d.apply( "sum", d.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
+  local conv = R.apply( "partial", RM.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
+  local conv = R.apply( "sum", RM.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
 
-  local convolve = d.lambda( "SAD", inp, conv )
+  local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
 end
 
@@ -247,7 +248,7 @@ function C.SADFixed( A, reduceType, Width, X )
   assert(fixed.extractSigned(reduceType)==false)
   assert(fixed.extractExp(reduceType)==0)
 
-  local inp = d.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
 
   -------
   local ABS_inp = fixed.parameter("abs_inp", types.array2d(A,2))
@@ -259,17 +260,12 @@ function C.SADFixed( A, reduceType, Width, X )
   local SUM = (SUM_l+SUM_r)
 
   SUM = SUM:truncate(fixed.extractPrecision(reduceType))
-
---  SUM = SUM:normalize(fixed.extractPrecision(reduceType))
---  SUM = SUM:truncate(fixed.extractPrecision(reduceType))
---  SUM = SUM:lower(true):lift(0)
-
   ------
 
-  local conv = d.apply( "partial", d.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
-  local conv = d.apply( "sum", d.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
+  local conv = R.apply( "partial", RM.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
+  local conv = R.apply( "sum", RM.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
 
-  local convolve = d.lambda( "SAD", inp, conv )
+  local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
 end
 
@@ -281,7 +277,7 @@ function C.SADFixed4( A, reduceType, Width, X )
   assert(fixed.extractSigned(reduceType)==false)
   assert(fixed.extractExp(reduceType)==0)
 
-  local inp = d.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
 
   -------
   local ABS_inp = fixed.parameter("abs_inp", types.array2d(A,2))
@@ -301,16 +297,12 @@ function C.SADFixed4( A, reduceType, Width, X )
 
   SUM = SUM:truncate(fixed.extractPrecision(reduceType))
 
---  SUM = SUM:normalize(fixed.extractPrecision(reduceType))
---  SUM = SUM:truncate(fixed.extractPrecision(reduceType))
---  SUM = SUM:lower(true):lift(0)
-
   ------
 
-  local conv = d.apply( "partial", d.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
-  local conv = d.apply( "sum", d.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
+  local conv = R.apply( "partial", RM.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
+  local conv = R.apply( "sum", RM.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
 
-  local convolve = d.lambda( "SAD", inp, conv )
+  local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
 end
 
@@ -319,14 +311,13 @@ end
 -- returns a function from A[T]->B[T]
 function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
   local BASE_TYPE = types.array2d( A, T )
-  local inp = d.input( BASE_TYPE )
+  local inp = R.input( BASE_TYPE )
   
-  --I = d.apply("crop", d.cropSeq(types.uint(8),W,H,T,ConvWidth,0,ConvWidth,0,0), inp)
-  local convLB = d.apply( "convLB", d.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = d.apply( "convstencils", d.unpackStencil( A, stencilW, stencilH, T ), convLB )
-  local convpipe = d.apply( "conv", d.map( f, T ), convstencils )
+  local convLB = R.apply( "convLB", RM.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
+  local convstencils = R.apply( "convstencils", RM.unpackStencil( A, stencilW, stencilH, T ), convLB )
+  local convpipe = R.apply( "conv", RM.map( f, T ), convstencils )
   
-  local convpipe = d.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
+  local convpipe = RM.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
   return convpipe
 end
 
@@ -339,21 +330,21 @@ function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH,
 
   local BASE_TYPE = types.array2d( A, T )
   local ITYPE = types.tuple{BASE_TYPE, tapType}
-  local rawinp = d.input( ITYPE )
+  local rawinp = R.input( ITYPE )
   
-  local inp = d.apply("idx0",d.index(ITYPE,0),rawinp)
-  local taps = d.apply("idx1",d.index(ITYPE,1),rawinp)
+  local inp = R.apply("idx0",RM.index(ITYPE,0),rawinp)
+  local taps = R.apply("idx1",RM.index(ITYPE,1),rawinp)
   
-  local convLB = d.apply( "convLB", d.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = d.apply( "convstencils", d.unpackStencil( A, stencilW, stencilH, T ) , convLB )
+  local convLB = R.apply( "convLB", RM.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
+  local convstencils = R.apply( "convstencils", RM.unpackStencil( A, stencilW, stencilH, T ) , convLB )
   
-  local st_tap_inp = d.apply( "broad", d.broadcast(tapType,T), taps )
-  st_tap_inp = d.tuple("sttapinp",{convstencils,st_tap_inp})
+  local st_tap_inp = R.apply( "broad", RM.broadcast(tapType,T), taps )
+  st_tap_inp = R.tuple("sttapinp",{convstencils,st_tap_inp})
   local ST_TYPE = types.array2d( A, stencilW, stencilH )
-  st_tap_inp = d.apply("ST",d.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
-  local convpipe = d.apply( "conv", d.map( f, T ), st_tap_inp )
+  st_tap_inp = R.apply("ST",RM.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
+  local convpipe = R.apply( "conv", RM.map( f, T ), st_tap_inp )
   
-  local convpipe = d.lambda( "convpipe", rawinp, convpipe )
+  local convpipe = RM.lambda( "convpipe", rawinp, convpipe )
   return convpipe
 end
 -------------
@@ -361,76 +352,76 @@ end
 -- inner function based on this W,H. We have to do this for alignment reasons.
 -- f should return a handshake function
 -- timingFifo: include a fifo to improve timing. true by default
-function C.padcrop(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
-  print("padcrop","W",W,"H",H,"T",T,"L",L,"R",R,"B",B,"Top",Top)
+function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
+  print("padcrop","W",W,"H",H,"T",T,"L",L,"R",Right,"B",B,"Top",Top)
   assert(X==nil)
   assert(timingFifo==nil or type(timingFifo)=="boolean")
   if timingFifo==nil then timingFifo=true end
 
   local RW_TYPE = types.array2d( A, T ) -- simulate axi bus
-  local hsfninp = d.input( d.Handshake(RW_TYPE) )
+  local hsfninp = R.input( R.Handshake(RW_TYPE) )
 
   local internalL = upToNearest(T,L)
-  local internalR = upToNearest(T,R)
+  local internalR = upToNearest(T,Right)
 
   local fifos = {}
   local statements = {}
 
   local internalW, internalH = W+internalL+internalR,H+B+Top
 
-  local out = d.apply("pad", d.liftHandshake(d.padSeq(A, W, H, T, internalL, internalR, B, Top, borderValue)), hsfninp)
+  local out = R.apply("pad", RM.liftHandshake(RM.padSeq(A, W, H, T, internalL, internalR, B, Top, borderValue)), hsfninp)
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, d.instantiateRegistered("f1",d.fifo(types.array2d(A,T),128)) )
-    table.insert( statements, d.applyMethod("s3",fifos[#fifos],"store",out) )
-    out = d.applyMethod("l13",fifos[#fifos],"load")
+    table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(types.array2d(A,T),128)) )
+    table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",out) )
+    out = R.applyMethod("l13",fifos[#fifos],"load")
   end
 
   -----------------
   local internalFn = f(internalW, internalH)
-  local out = d.apply("HH",internalFn, out)
+  local out = R.apply("HH",internalFn, out)
   local padL = internalL-L
-  local padR = internalR-R
-  local fnOutType = d.extractData(internalFn.outputType):arrayOver()
-  local out = d.apply("crop",d.liftHandshake(d.liftDecimate(d.cropHelperSeq(fnOutType, internalW, internalH, T, padL+R+L, padR, B+Top, 0))), out)
+  local padR = internalR-Right
+  local fnOutType = R.extractData(internalFn.outputType):arrayOver()
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0))), out)
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, d.instantiateRegistered("f2",d.fifo(types.array2d(fnOutType,T),128)) )
-    table.insert( statements, d.applyMethod("s2",fifos[#fifos],"store",out) )
-    out = d.applyMethod("l2",fifos[#fifos],"load")
+    table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(types.array2d(fnOutType,T),128)) )
+    table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",out) )
+    out = R.applyMethod("l2",fifos[#fifos],"load")
   end
   -----------------
 
   table.insert(statements,1,out)
 
-  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f)
+  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f)
 
   local hsfn
   if timingFifo then
-    hsfn = d.lambda(name, hsfninp, d.statements(statements), fifos )
+    hsfn = RM.lambda(name, hsfninp, R.statements(statements), fifos )
   else
-    hsfn = d.lambda(name, hsfninp, out)
+    hsfn = RM.lambda(name, hsfninp, out)
   end
 
   return hsfn
 end
 
 --------
-function C.stencilKernelPadcrop(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
+function C.stencilKernelPadcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   local function finternal(IW,IH)
-    return d.makeHandshake(C.stencilKernel(A,T,IW,IH,R+L+1,Top+B+1,f))
+    return RM.makeHandshake(C.stencilKernel(A,T,IW,IH,Right+L+1,Top+B+1,f))
   end
-  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal,timingFifo)
+  return C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,finternal,timingFifo)
 end
 
 -- f should take (internalW,internalH) parameters
-function C.stencilKernelPadcropUnpure(A,W,H,T,L,R,B,Top,borderValue,f,timingFifo,X)
+function C.stencilKernelPadcropUnpure(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   local function finternal(IW,IH)
-    return d.makeHandshake(C.stencilKernel(A,T,IW,IH,R+L+1,Top+B+1,f(IW,IH)))
+    return RM.makeHandshake(C.stencilKernel(A,T,IW,IH,Right+L+1,Top+B+1,f(IW,IH)))
   end
-  return C.padcrop(A,W,H,T,L,R,B,Top,borderValue,finternal,timingFifo)
+  return C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,finternal,timingFifo)
 end
 -------------
 local function invtable(bits)
@@ -461,11 +452,11 @@ end
 
 function stripMSB(totalbits)
   local ITYPE = types.uint(totalbits)
-  local inp = d.input(ITYPE)
+  local inp = R.input(ITYPE)
   local sinp = S.parameter("sinp",types.uint(totalbits))
 --  local sout = S.bitSlice(sinp,0,7)
   local sout = S.cast(sinp,types.uint(totalbits-1))
-  return darkroom.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,
+  return RM.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,
                        terra(inp:&uint16, out:&uint8)
 --                         @out = @inp
                          var ot : uint8 = @inp
@@ -529,18 +520,18 @@ function C.lutinvert(ty)
   local bfn = b:toDarkroom("lutinvert_b")
   ---------------
 
-  local inp = d.input( ty )
-  local aout = d.apply( "a", afn, inp )
-  local aout_float = d.apply("aout_float", d.index(afn.outputType,0), aout)
-  local aout_exp = d.apply("aout_exp", d.index(afn.outputType,1), aout)
+  local inp = R.input( ty )
+  local aout = R.apply( "a", afn, inp )
+  local aout_float = R.apply("aout_float", RM.index(afn.outputType,0), aout)
+  local aout_exp = R.apply("aout_exp", RM.index(afn.outputType,1), aout)
   local aout_sign
-  if signed then aout_sign = d.apply("aout_sign", d.index(afn.outputType,2), aout) end
+  if signed then aout_sign = R.apply("aout_sign", RM.index(afn.outputType,2), aout) end
 
-  local aout_float_lsbs = d.apply("aout_float_lsbs", stripMSB(9), aout_float)
+  local aout_float_lsbs = R.apply("aout_float_lsbs", stripMSB(9), aout_float)
 
-  local inv = d.apply("inv", d.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
-  local out = d.apply( "b", bfn, d.tuple("binp",{inv,aout_exp,aout_sign}) )
-  local fn = d.lambda( "lutinvert", inp, out )
+  local inv = R.apply("inv", RM.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
+  local out = R.apply( "b", bfn, R.tuple("binp",{inv,aout_exp,aout_sign}) )
+  local fn = RM.lambda( "lutinvert", inp, out )
 
   return fn, fn.outputType
 end
@@ -558,17 +549,15 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   local stride = ssr_region*T
   assert(stride==math.floor(stride))
 
-  local LB = darkroom.makeHandshake(darkroom.linebuffer( A, w, h, 1, ymin ))
-  local SSR = darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin, stride, true )))
+  local LB = RM.makeHandshake(RM.linebuffer( A, w, h, 1, ymin ))
+  local SSR = RM.liftHandshake(RM.waitOnInput(RM.SSRPartial( A, T, xmin, ymin, stride, true )))
 
-  local inp = d.input( LB.inputType )
-  local out = d.apply("LB", LB, inp)
-  out = d.apply("SSR", SSR, out)
-  out = d.apply("slice", d.makeHandshake(d.slice(types.array2d(A,ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
+  local inp = R.input( LB.inputType )
+  local out = R.apply("LB", LB, inp)
+  out = R.apply("SSR", SSR, out)
+  out = R.apply("slice", RM.makeHandshake(RM.slice(types.array2d(A,ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
 
-  return d.lambda("stencilLinebufferPartialOverlap",inp,out)
-  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  --return darkroom.compose("stencilLinebufferPartialOffsetOverlap", darkroom.liftHandshake(darkroom.waitOnInput(darkroom.SSRPartial( A, T, xmin, ymin ))),  )
+  return RM.lambda("stencilLinebufferPartialOverlap",inp,out)
                                                   end)
 
 -------------
@@ -576,9 +565,12 @@ function C.fifo(fifos,statements,A,inp,size,name, csimOnly, X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  table.insert( fifos, d.instantiateRegistered(name, d.fifo(A,size,nil,nil,nil,nil,csimOnly)) )
-  table.insert( statements, d.applyMethod("s"..tostring(#fifos),fifos[#fifos],"store",inp) )
-  return d.applyMethod("l"..tostring(#fifos),fifos[#fifos],"load")
+  table.insert( fifos, R.instantiateRegistered(name, RM.fifo(A,size,nil,nil,nil,nil,csimOnly)) )
+  table.insert( statements, R.applyMethod("s"..tostring(#fifos),fifos[#fifos],"store",inp) )
+  return R.applyMethod("l"..tostring(#fifos),fifos[#fifos],"load")
 end
 -------------
+
+
+
 return C

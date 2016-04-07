@@ -1,4 +1,5 @@
-local d = require "darkroom"
+local R = require "rigel"
+local RM = require "modules"
 local f = require "fixed_float"
 local C = require "examplescommon"
 
@@ -39,18 +40,18 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = d.input( types.array2d( A, ConvWidth, ConvHeight ) )
-  local r = d.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
+  local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = d.apply( "packedtup", d.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), d.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
   local FM = floatMult(A)
-  local conv = d.apply( "partial", d.map( FM[1], ConvWidth, ConvHeight ), packed )
+  local conv = R.apply( "partial", RM.map( FM[1], ConvWidth, ConvHeight ), packed )
   local SM = floatSum(FM[2])
-  local conv = d.apply( "sum", d.reduce( SM[1], ConvWidth, ConvHeight ), conv )
+  local conv = R.apply( "sum", RM.reduce( SM[1], ConvWidth, ConvHeight ), conv )
   local Shift = floatShift(SM[2],shift)
-  local conv = d.apply( "touint8", Shift[1], conv )
+  local conv = R.apply( "touint8", Shift[1], conv )
 
-  local convolve = d.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
+  local convolve = RM.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
   return convolve, Shift[2]
 end
 
@@ -121,19 +122,19 @@ function harris.makeDXDY(W,H,X)
 
   local T = 1
   local A = types.uint(8)
-  local inp = d.input(d.Handshake(types.array2d(types.uint(8),T)))
+  local inp = R.input(R.Handshake(types.array2d(types.uint(8),T)))
 
   local blurXFn, blurXType = convolveFloat(types.uint(8),5,1,G,8)
-  local blurX = d.apply("blurX",C.stencilKernelPadcrop(A,W,H,T,2,2,0,0,0,blurXFn),inp)
+  local blurX = R.apply("blurX",C.stencilKernelPadcrop(A,W,H,T,2,2,0,0,0,blurXFn),inp)
 
   local blurYFn = convolveFloat(blurXType,1,5,G,8)
-  local blurXY = d.apply("blurXY",C.stencilKernelPadcrop(blurXType,W,H,T,0,0,2,2,0,blurYFn),blurX)
+  local blurXY = R.apply("blurXY",C.stencilKernelPadcrop(blurXType,W,H,T,0,0,2,2,0,blurYFn),blurX)
 
   local dxdyFn, dxdyType = harris.makeDXDYKernel(blurXType)
   local dxdySt = C.stencilKernelPadcrop(blurXType,W,H,T,1,1,1,1,0,dxdyFn)
-  local dxdy = d.apply("dxdy", dxdySt, blurXY )
+  local dxdy = R.apply("dxdy", dxdySt, blurXY )
 
-  return d.lambda("dxdytop", inp, dxdy), dxdyType
+  return RM.lambda("dxdytop", inp, dxdy), dxdyType
 end
 
 -- W,H are image W,H
@@ -144,20 +145,20 @@ function harris.makeHarris(W,H,boolOutput,X)
   assert(X==nil)
 
   local T = 1
-  local inp = d.input(d.Handshake(types.array2d(types.uint(8),T)))
+  local inp = R.input(R.Handshake(types.array2d(types.uint(8),T)))
 
   local dxdyfn, dxdyType = harris.makeDXDY(W,H)
-  local dxdy = d.apply("dxdy",dxdyfn,inp)
-  local dxdy = d.apply("dxidx",d.makeHandshake(d.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
+  local dxdy = R.apply("dxdy",dxdyfn,inp)
+  local dxdy = R.apply("dxidx",RM.makeHandshake(RM.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
 
   local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  local out = d.apply("harris", d.makeHandshake(harrisFn), dxdy)
-  out = d.apply("AO",d.makeHandshake(C.arrayop(harrisType,1,1)),out)
+  local out = R.apply("harris", RM.makeHandshake(harrisFn), dxdy)
+  out = R.apply("AO",RM.makeHandshake(C.arrayop(harrisType,1,1)),out)
 
   local nmsFn = harris.makeNMS( harrisType, boolOutput )
-  local nms = d.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), out)
+  local nms = R.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), out)
 
-  return d.lambda("Harristop", inp, nms)
+  return RM.lambda("Harristop", inp, nms)
 end
 
 return harris

@@ -1,3 +1,4 @@
+local modules = require "modules"
 local IR = require("ir")
 local types = require("types")
 local cmath = terralib.includec("math.h")
@@ -500,7 +501,7 @@ function fixedASTFunctions:toDarkroom(name,X)
     @out = terraout
   end
   --tfn:printpretty(true,false)
-  return darkroom.lift( name, inp.type, self.type, 0, tfn, inp, out, instances )
+  return modules.lift( name, inp.type, self.type, 0, tfn, inp, out, instances )
 end
 
 return fixed
