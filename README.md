@@ -97,7 +97,7 @@ Each module may include additional fields to describe the particular configuatio
 Core Modules
 ------------
 
-**lift**
+### lift ###
     modules.lift( newModuleName:String, inputType:Type, outputType:Type, delay:Number, terraFunction:terraFunction, systolicInput:SystolicAST, systolicOutput:SystolicAST, [systolicInstances:Table], [sdfOutput:SDFRate])
 
 *lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. *delay* must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
