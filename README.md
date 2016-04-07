@@ -1,3 +1,6 @@
+Installation
+=====
+
 Types : types.t
 =====
 
@@ -73,8 +76,33 @@ lambda
 
 When defining a function that has as input a tuple of StatefulHandshake, you have to declare the SDF rate of each StatefulHandshake explicitly. In the case of a single StatefulHandshake, you can just set the rate to 1, and calculate the resulting rate based on propegation. But for tuples, we can't solve for the rates without doing global constraint solving. Example, something that has input rates {1,1} may result in a valid output rate, but won't mean the same thing as declaring the input rate to be {1,1/2}, when we go to compose it with other functions.
 
-functions
+Modules : src/modules.t
 =========
+
+All valid Rigel modules contain at least these fields:
+
+    { kind:String, -- unique name for module
+      inputType:Type,
+      outputType:Type,
+      sdfInput:SDFRate,
+      sdfOutput:SDFRate,
+      delay:Number, -- pipeline delay (synchronous modules only)
+      stateful:Bool, -- Is module referentially transparent?
+      terraModule:Terra,
+      systolicModule:SystolicModule
+    }
+
+Each module may include additional fields to describe the particular configuation of that module. Those additions are documented below.
+
+Core Modules
+------------
+
+**lift**
+    modules.lift( newModuleName:String, inputType:Type, outputType:Type, delay:Number, terraFunction:terraFunction, systolicInput:SystolicAST, systolicOutput:SystolicAST, [systolicInstances:Table], [sdfOutput:SDFRate])
+
+*lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. *delay* must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
+    
+    fields: {..., kind="lift_"..newModuleName}
 
 split
 -----
