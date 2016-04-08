@@ -26,10 +26,10 @@ local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, range(
 BASE_TYPE = types.array2d( types.uint(8), T )
 inp = R.input( BASE_TYPE )
 
-convLB = R.apply( "convLB", RM.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
-convstencils = R.apply( "convstencils", RM.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )
+convLB = R.apply( "convLB", C.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
+convstencils = R.apply( "convstencils", C.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )
 convpipe = R.apply( "conv",  RM.map( convolve, T ), convstencils )
-convpipe = R.apply( "border", RM.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
+convpipe = R.apply( "border", C.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
 convpipe = RM.lambda( "convpipe", inp, convpipe )
 -------------

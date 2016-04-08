@@ -50,8 +50,8 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
   local HST = types.tuple{RW_TYPE,TAP_TYPE}
   local hsfninp_raw = R.input( R.Handshake(HST) )
-  local hsfninp = R.apply( "idx0", RM.makeHandshake(RM.index(HST,0)), hsfninp_raw )
-  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(RM.index(HST,1)), hsfninp_raw )
+  local hsfninp = R.apply( "idx0", RM.makeHandshake(C.index(HST,0)), hsfninp_raw )
+  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), hsfninp_raw )
   local out = hsfninp
   
   local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,T)), out )
@@ -74,7 +74,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
     out = R.applyMethod("r_nostall",fifos[#fifos],"load")
   end
 
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,T,8)), out )
 
   if #fifos>0 then

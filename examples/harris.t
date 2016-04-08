@@ -32,7 +32,7 @@ local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1
 
 local dxdyfn, dxdyType = harris.makeDXDY(W,H)
 local dxdy = R.apply("dxdy",dxdyfn,inp)
-local dxdy = R.apply("dxidx",RM.makeHandshake(RM.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
+local dxdy = R.apply("dxidx",RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
 
 local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
 local out = R.apply("harris", RM.makeHandshake(harrisFn), dxdy)

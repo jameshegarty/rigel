@@ -79,6 +79,8 @@ When defining a function that has as input a tuple of StatefulHandshake, you hav
 Modules : src/modules.t
 =========
 
+*modules.t* contains Rigel's core set of modules. This is intended to be the smallest and simplest set of core functionality that an architecture needs to support to implement Rigel's programming model. Some additional useful modules built out of these core modules are implemented in Rigel's standard library, *examplescommon.t*. A few of these modules from *examplescommon.t* are described here for completeness, and are marked with a (*).
+
 All valid Rigel modules contain at least these fields:
 
     { kind:String, -- unique name for module
@@ -98,240 +100,139 @@ Core Modules
 ------------
 
 ### lift ###
-    modules.lift( newModuleName:String, inputType:Type, outputType:Type, delay:Number, terraFunction:terraFunction, systolicInput:SystolicAST, systolicOutput:SystolicAST, [systolicInstances:Table], [sdfOutput:SDFRate])
-
-*lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. *delay* must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
-    
+    modules.lift( newModuleName:String, inputType:Type, outputType:Type, delay:Number, terraFunction:terraFunction, systolicInput:SystolicAST, systolicOutput:SystolicAST)
     fields: {..., kind="lift_"..newModuleName}
 
-split
------
-split :: {A[n*m],n} -> (A[m])[n]
-splits an array of size n*m into n arrays of size m
+*lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. *delay* must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
 
-higher-order functions
-======================
+### lambda ###
 
-map
----
-map :: (A -> B, int w, int h) -> (A[w,h] -> B[w,h])
-map :: (Tmux(A) -> Tmux(B)) -> (Tmux(A[w,h]) -> Tmux(B[w,h]))
+### linebuffer ###
 
-stencil
+### SSR ###
+
+### SSRPartial ###
+
+Array Manipulation
+------------------
+
+### stencil ###
+
+### unpackStencil ###
+
+### SoAtoAoS* ###
+    type: {Array2d(a,W,H),Array2d(b,W,H),...} -> Array2d({a,b,c},W,H)
+    examplescommon.SoAtoAos( width:uint, height:uint, typelist:Type[], [asArray:bool] )
+
+*SoAtoAos* converts a tuple of arrays of the same size into an array of tuples (i.e. struct of arrays to arrays of structs transform).
+
+### posSeq ###
+
+### border ###
+
+### borderSeq ###
+
+### cropSeq ###
+
+### padSeq ###
+
+Multi-Rate Modules
+------------------
+
+### changeRate ###
+
+### filterSeq ###
+
+### downsampleXSeq ###
+
+### downsampleYSeq ###
+
+### upsampleXSeq ###
+
+### upsampleYSeq ###
+
+
+Higher-Order Modules
+--------------------
+
+### map ###
+
+### reduce ###
+
+### reduceSeq ###
+
+Interfaces
+----------
+
+### liftBasic ###
+    given f:A->B, has type A->V(B)
+    modules.liftBasic( f:Module )
+    fields: {..., kind="liftBasic", fn=f}
+
+*liftBasic* takes a basic module, and lifts it to have a valid bit (i.e. supports decimation).
+
+### liftDecimate ###
+    given f:A->V(B), has type V(A)->RV(B)
+    modules.liftDecimate( f:Module )
+    fields: {..., kind="liftDecimate", fn=f}
+
+### liftHandshake ###
+    given f:V(A)->RV(B), has type Handshake(A)->Handshake(B)
+    modules.liftHandshake( f:Module )
+    fields: {..., kind="liftHandshake", fn=f}
+
+
+### makeHandshake ###
+    given f:A->B, has type Handshake(A)->Handshake(B)
+    modules,makeHandshake( f:Module )
+    fields: {..., kind="makeHandshake"}
+
+### RPassthrough ###
+
+### waitOnInput ###
+
+Streams
 -------
-stencil :: {int l, int r, int t, int b} -> (A[w,h] -> A[r-l+1,t-b+1][w,h])
 
-reduce
-------
-reduce :: ({A,A}->A) -> (A[w,h] -> A)
+### packTuple ###
+    type: {Handshake(a), Handshake(b),...} -> Handshake({a,b,...})
+    modules.packTuple( typelist:Type[] )
+    fields: {..., kind="packTuple"}
 
-reduce takes in a binary, associative operator f that reduces two values into one. 
+*packTuple* takes multiple Handshake streams and synchronizes them into a single stream (i.e. to implement fan-in).
 
-(reduce f) a === (reduce f) ( (map (reduce f)) (split a n) ) given a : A[n*m]
+### serialize ###
+    modules.interleveSchedule
+    modules.pyramidSchedule
 
-down
+### toHandshakeArray ###
+
+### demux ###
+
+### flattenStreams ###
+
+### broadcastStream ###
+
+### fifo ###
+
+Misc
 ----
-down :: {int x, int y} -> ( A[w,h] -> A[w/x,h/y] )
 
-(stencil {l,r,t,b}) down {x,y} === (down {x,y}) ((down {x,y}) stencil {l*x,r*x,t*y,b*y})
-(down {x,y}) (map f) === map ( (down {x,y}) f )
+### reduceThroughput ###
 
-up
-----
-up :: {int x, int y} -> ( A[w,h] -> A[w*x,h*y] )
+### lut ###
 
-lift
-----
-lift :: {terraFn, inputType, outputType} -> (inputType -> outputType)  
+### constSeq ###
 
-scanl
------
+### overflow ###
 
-filter
-------
-filter {f,cond} : {A[w,h], bool[w,h]} -> Sparse(A)
+### underflow ###
 
-gather
-------
+### cycleCounter ###
 
-broadcast
----------
+### freadSeq ###
 
-packPyramid
------------
-
-unpackPyramid
--------------
-
-concrete functions
-==================
-
-makeStateful
-------------
-makeStateful :: (A->B) => ( Stateful(A) -> Stateful(B) )
-
-State passthrough.
-
-
-The difference between handshakes of retimed (pure or stateful) modules and real handshake interfaces is that for retimed modules, the whole pipeline stalls at once if any units stall. For real retimed modules connected together, some of them call stall while others continue to work.
-
-makeHandshake
--------------
-makeHandshake :: (Stateful(A)->Stateful(B)) => ( StatefulHandshake(A) -> StatefulHandshake(B) )
-
-Take a retimed module that has no valids and wrap it in a RV interface.
-
-
-liftHandshake
------------------
-liftHandshake :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
-
-This means wrap the retimed module in a RV interface. The input bool is input_valid_in_this_cycle. If this bool is false, then the input will be garbage and should be ignored. The two output bools are valid_this_cycle, and ready_next_cycle. Ready is initially set to false (in the cycle before f runs at all). Ready must have pipeline delay 0.
-
-liftHandshakeAmplify
------------------
-liftHandshakeAmplify :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
-
-Ready must have pipeline delay 0. Example: stencil linebuffer partial. This has to run even when there is no valid data (due to ready=false). So it takes an explicit bool for valid data in the input.
-
-liftHandshakeDecimate
------------------
-liftHandshakeDecimate :: (f : Stateful(A) -> StatefulV(B)) => (StatefulHandshake(A)->StatefulHandshake(B))
-
-This is like lift handshake, but ready=true always. This works well for modules that decimate data only. Example: sequential reduce.
-
-liftStateful :: (f : Stateful(A) -> Stateful(B)) => (Stateful(A)->StatefulV(B))
-valid=true always.
-
-liftDecimate
-------------
-liftDecimate :: (f : Stateful(A) -> StatefulV(B)) => (StatefulV(A)->StatefulRV(B))
-R=true always. f only runs if input is valid.
-
-
-RPassthrough :: (f : StatefulV(A) -> StatefulRV(B)) => (StatefulRV(A) -> StatefulRV(B))
-              R's are anded
-
-RVPassthrough :: (f : Stateful(A) -> Stateful(B)) => (StatefulRV(A) -> StatefulRV(B))
-=== RPassthrough(liftDecimate(liftStateful(f)))
-
-stateCompose
-------------
-stateCompose :: { {A,State1}->{B,State1}, {B,State2}->{C,state2} } -> ( {A,{State1,State2}} -> {C,{State1,State2}} )
-
-scanlSeq
---------
-scanSeq :: { (Stateful(A)->Stateful(Tmux(B,T))), A[n], InitialState} -> B[n*T]
-scanSeq {f, scanSeq {g, a, InitialG}, InitialF } === scanSeq { stateCompose {f,g}, a, {InitialF, InitialG} }
-
-look at sequence, forM
-
-inputC
-------
-
-downSeq
--------
-downSeq :: {T,w,h,x,y} -> ( Stateful(A[T],DownState) -> Stateful( Tmux(A[T], 1/(x*y)),DownState) )
-s.t. (down {x,y}) a === concat (scanlSeq {downSeq {R,w,h,x,y},a,InitialState}) given a : A[w,h]
-s.t. down {x,y} === downSeq {w*h,w,h,x,y} given a : A[w,h] (purely wiring)
-
-downModule :: {A,T,w,h,downX,downY} => ( Stateful(A[T]) -> Stateful(Sparse(A,T) )
-
-implementation:
-downSeq = liftPureHandshake(stateCompose {sparseFifo, downModule })
-
-reduceSeq
----------
-reduceSeq :: {f,T} -> ( Stateful(A,ReduceState) -> Stateful(Tmux(A,T),ReduceState) )
-s.t. (reduce f) a === scanlSeq {reduceSeq {f,T}, (split a T), InitialState} given a : A[n*m]
-
-T=1/n means that this produces 1 output for every n inputs, reduced using reduction function.
-
-unpackStencil
--------------
-unpackStencil :: {w,h,N} -> ( A[w+N-1,h] -> A[w,h][N] )
-
-Neighboring stencils overlap. This takes N stencils that have been compressed into 1 array back into N arrays. Purely wiring.
-
-linebuffer
-----------
-linebuffer :: {T,w,h,l,r,t,b} -> ( {A[T],State} -> {A[r-l+T,t-b+1],State} ) given T>=1
-s.t. (stencil {l,r,t,b}) a === concat (unpackStencil (scanlSeq {linebuffer {T,w,h,l,r,t,b},split a T,Initial})) given a : A[w,h]
-
-cat2dXSeq
---------
-cat2dXSeq :: T : int => ( Stateful(A[w,h]) -> Stateful(Tmux(A[w/T,h],T) ) 
-s.t. a = scanlSeq {cat2dXSeq T, splitX a 1/T, Initial}
-
-linebufferPartial
-----------
-linebufferPartial :: {T : int, w : int,h,l,r,t,b} -> ( {A,State} -> Tmux(Stateful(A[(r-l+1)*T,(t-b+1)*T]),1/T) )
-
-This is like a linebuffer, but instead of producing N stencils per pixels, it produces a substencil of size N per pixel.
-(linebuffer {1,w,h,l,r,t,b}) a === scanSeq {(cat2dXSeq T).(linebufferPartial {T,w,h,l,r,t,b}), , Initial} given a : A[1]
-
-SSR
----
-
-SSRPartial
-----------
-SSRPartial :: {A, t, xmin, ymin} => ( 
-
-constSeq
---------
-constSeq :: {A[w,h],T} -> ( Stateful(nil) -> Stateful(A[w*T,h]) )
-s.t. a === scanSeq { constSeq {A,T}, broadcast nil 1/T, Initial }
-
-sparseFifo
-------------
-sparseFifo :: {A, int n, int w, int h} => (Stateful(Sparse(A,w,h)) -> StatefulHandshake(A[w,h]))
-
-Take a sparse array and densify it.
-
-linebufferTmux
---------------
-linebufferTmux :: {T,N,[w],[h],[l],[r],[t],[b]} -> ( {StatefulHandshake(A[T]),StatefulHandshake(A[T]),...} -> {StatefulHandshake(A[r-l+T,t-b+1],N),} )
-
-linebufferTmux takes N state contexts (with different stencil sizes etc) and multiplexes them onto one piece of hardware
-
-tmux
-----
-tmux :: {f, N, internalRouting} => ( Stateful({A,A,...}) -> Stateful({Tmux(B,T_1,Tmux(B,T_2)...}) ) given f : A->B, not stateful
-
-f is the function to time multiplex.
-N is the number of inputs
-internalRouting is a table of size N. if entry _i_ is 'x', this is an extern input. If _i_ is a table, this is driven by an output of the tmux - the table should have format {j,passthroughFn}. j is the output port to drive this with, passthroughFn is a stateful function that will be applied to this input.
-
-tmux :: {f, inputlist} -> ( {StatefulHandshakeRegistered(A), StatefulHandshakeRegistered(A),...} -> {StatefulHandshakeRegistered(B), StatefulHandshakeRegistered(B), ... } ) given pure f : A->B 
-
-inputlist is a table of SDF rates, one for each input/output of the tmux.
-
-To solve SDF for the tmux, at least one of its inputs must have a determined SDF rate (eg be driven by a lambda parameter). Until this rate hits the tmux, the tmux's rate is set to undetermined. This will require multiple iterations to convergence.
-
-It's possible to connect a tmux output to its inputs, creating an infinite loop. You can construct a graph like this in SDF, but it's malformed. We can detect this case in the SDF solver. If we have an iteration where the # of nodes with undetermined rates doesn't change relative to the last iteration, it's stalled, and we can error out.
-
-freadSeq
---------
-freadSeq :: {filename, type} => nil -> Stateful(type)
-Read from the file at 'filename' in chunks of type:sizeof()
-
-freadHandshake
---------
-freadHandshake :: {filename, type, T} => nil -> Stateful(type)
-Read from the file at 'filename' in chunks of type:sizeof(). If T<1 then this throttles the input rate to the pipe.
-
-fwriteSeq
----------
-fwriteSeq :: {filename, type} => type -> type
-This is a passthrough, so that you can put it in the middle of a pipe
-
-seqMap
-------
-seqMap :: {f,W,H,T} => A[W,H] -> B[W,H] given f:Stateful(A[T])->Stateful(B[T])
-
-seqMapHandshake
----------------
-
+### fwriteSeq ###
 
 IR
 ==

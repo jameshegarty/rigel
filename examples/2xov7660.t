@@ -1,4 +1,5 @@
 local RM = require "modules"
+local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
@@ -35,6 +36,6 @@ splitfn = RM.lift( "split", SPLIT_TYPE, OTYPE , 10,
 cr = RM.liftHandshake(RM.changeRate(ITYPE,1,4,2))
 sfn = RM.makeHandshake(RM.liftXYSeqPointwise(splitfn,W,H,2))
 
-hsfn = RM.compose("hsfn",sfn,cr)
+hsfn = C.compose("hsfn",sfn,cr)
 
 harness.axi( "2xov7660", hsfn, "2xov7660.raw", nil, nil, types.array2d(ITYPE,4), T,W,H, types.array2d(OTYPE,2),2,W,H)

@@ -64,8 +64,8 @@ function CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSA
   local XYTYPE = types.tuple{types.uint(16),types.uint(16)}
   local DTYPE = types.tuple{XYTYPE,types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)}
   local deminp = R.input(DTYPE)
-  local xy = R.apply("xy",RM.index(DTYPE,0),deminp)
-  local st = R.apply("dat",RM.index(DTYPE,1),deminp)
+  local xy = R.apply("xy",C.index(DTYPE,0),deminp)
+  local st = R.apply("dat",C.index(DTYPE,1),deminp)
 
   local out = {}
   for i=1,3 do
@@ -73,7 +73,7 @@ function CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSA
 
     --local ConvWidth = 3
     local A = types.uint(8)
-    local packed = R.apply( "packedtup"..i, RM.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.tuple("ptup"..i, {st,kern}) )
+    local packed = R.apply( "packedtup"..i, C.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.tuple("ptup"..i, {st,kern}) )
     local conv = R.apply( "partialll"..i, RM.map( C.multiply(A,A,types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), packed )
     local conv = R.apply( "sum"..i, RM.reduce( C.sum(types.uint(16),types.uint(16),types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), conv )
     local conv = R.apply( "touint8"..i, C.shiftAndCastSaturate( types.uint(16), A, 2 ), conv )
@@ -86,8 +86,8 @@ function CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSA
 
   ---------------
   local demtop = R.input(types.array2d(types.uint(8),T))
-  local st = R.apply( "st", RM.stencilLinebuffer(types.uint(8),internalW,internalH,T,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
-  local st = R.apply( "convstencils", RM.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, T ) , st )
+  local st = R.apply( "st", C.stencilLinebuffer(types.uint(8),internalW,internalH,T,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
+  local st = R.apply( "convstencils", C.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, T ) , st )
   local demtopout = R.apply("dem",dem,st)
 
   return RM.lambda("demtop",demtop,demtopout)

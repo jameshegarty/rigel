@@ -43,7 +43,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
   local FM = floatMult(A)
   local conv = R.apply( "partial", RM.map( FM[1], ConvWidth, ConvHeight ), packed )
   local SM = floatSum(FM[2])
@@ -149,7 +149,7 @@ function harris.makeHarris(W,H,boolOutput,X)
 
   local dxdyfn, dxdyType = harris.makeDXDY(W,H)
   local dxdy = R.apply("dxdy",dxdyfn,inp)
-  local dxdy = R.apply("dxidx",RM.makeHandshake(RM.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
+  local dxdy = R.apply("dxidx",RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
 
   local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
   local out = R.apply("harris", RM.makeHandshake(harrisFn), dxdy)

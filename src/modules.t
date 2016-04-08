@@ -11,6 +11,8 @@ local ready = rigel.ready
 
 local modules = {}
 
+
+-- *this should really be in examplescommon.t
 -- f(g())
 function modules.compose(name,f,g)
   assert(type(name)=="string")
@@ -21,6 +23,8 @@ function modules.compose(name,f,g)
   return modules.lambda(name,inp,rigel.apply(name.."_f",f,gvalue))
 end
 
+
+-- *this should really be in examplescommon.t
 -- This converts SoA to AoS
 -- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
 -- if asArray==true then converts {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d(a[N],W,H). This requires a,b,c be the same...
@@ -211,38 +215,6 @@ function modules.packTuple( typelist, X )
   return rigel.newFunction(res)
 end
 
--- takes {Handshake(a[W,H]), Handshake(b[W,H]),...} to Handshake( {a,b}[W,H] )
--- typelist should be a table of pure types
-modules.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
-  assert(X==nil)
-  local f = modules.SoAtoAoS(W,H,typelist)
-  f = modules.makeHandshake(f)
-  
-  return modules.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, modules.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
-                                     end)
-
--- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
-function modules.border(A,W,H,L,R,B,T,value)
-  map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
-  local res = {kind="border",L=L,R=R,T=T,B=B,value=value}
-  res.inputType = types.array2d(A,W,H)
-  res.outputType = res.inputType
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.delay = 0
-  local struct Border {}
-  terra Border:reset() end
-  terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for y=0,H do for x=0,W do 
-        if x<L or y<B or x>=W-R or y>=H-T then
-          (@out)[y*W+x] = [value]
-        else
-          (@out)[y*W+x] = (@inp)[y*W+x]
-        end
-    end end
-  end
-  res.terraModule = Border
-  return rigel.newFunction(res)
-end
 
 modules.liftBasic = memoize(function(f)
   err(rigel.isFunction(f),"liftBasic argument should be darkroom function")
@@ -571,11 +543,6 @@ modules.RPassthrough = memoize(function(f)
   return rigel.newFunction(res)
                                 end)
 
--- takes basic->basic to RV->RV
-function modules.RVPassthrough(f)
-  return modules.RPassthrough(modules.liftDecimate(modules.liftBasic(f)))
-end
-
 local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
   local res = S.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
   local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
@@ -705,9 +672,6 @@ modules.liftHandshake = memoize(function(f)
   return rigel.newFunction(res)
                                  end)
 
--- arrays: A[W][H]. Row major
--- array index A[y] yields type A[W]. A[y][x] yields type A
-
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
@@ -751,36 +715,6 @@ modules.map = memoize(function( f, W, H )
 
   return rigel.newFunction(res)
 end)
-
--- if scaleX,Y > 1 then this is upsample
--- if scaleX,Y < 1 then this is downsample
-function modules.scale( A, w, h, scaleX, scaleY )
-  assert(types.isType(A))
-  assert(type(w)=="number")
-  assert(type(h)=="number")
-  assert(type(scaleX)=="number")
-  assert(type(scaleY)=="number")
-
-  local res = { kind="scale", scaleX=scaleX, scaleY=scaleY}
-  res.inputType = types.array2d( A, w, h )
-  res.outputType = types.array2d( A, w*scaleX, h*scaleY )
-  res.delay = 0
-  local struct ScaleModule {}
-  terra ScaleModule:reset() end
-  terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for y=0,[h*scaleY] do 
-      for x=0,[w*scaleX] do
-        var idx = [int](cmath.floor([float](x)/[float](scaleX)))
-        var idy = [int](cmath.floor([float](y)/[float](scaleY)))
---        cstdio.printf("SCALE outx %d outy %d, inx %d iny %d\n",x,y,idx,idy)
-        (@out)[y*[w*scaleX]+x] = (@inp)[idy*w+idx]
-      end
-    end
-  end
-  res.terraModule = ScaleModule
-
-  return rigel.newFunction(res)
-end
 
 -- type {A,bool}->A
 -- rate: this will have a valid output every 1/rate cycles
@@ -957,30 +891,6 @@ endmodule
   return rigel.newFunction(res)
 end
 
-function modules.densify( A, T )
-  assert(T>=1);
-  local res = {kind="densify", T=T }
-  res.inputType = rigel.Stateful(rigel.Sparse(A,T))
-  res.outputType = rigel.StatefulV(types.array2d(A,T))
-  res.delay = 0
-  local struct Densify { fifo : simmodules.fifo( A:toTerraType(), T*2, "densifyfifo") }
-  terra Densify:reset() self.fifo:reset() end
-  terra Densify:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    for i=0,T do 
-      if valid((@inp)[i]) then self.fifo:pushBack(&data((@inp)[i])) end
-    end
-
-    if self.fifo:size()>=T then
-      valid(out)=true
-      for i=0,T do (data(out))[i] = @(self.fifo:popFront()) end
-    else
-      valid(out) = false
-    end
-  end
-  res.terraModule = Densify
-  return rigel.newFunction(res)
-end
-
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
 -- basic -> V
@@ -1066,28 +976,10 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
   return modules.liftXYSeq( f, W, H, T )
                                   end)
 
--- V -> RV
-function modules.downsampleSeq( A, W, H, T, scaleX, scaleY )
-  local inp = rigel.input( rigel.V(types.array2d(A,T)) )
-  local out = inp
-  if scaleY>1 then
-    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W, H, T, scaleY )), out)
-  end
-  if scaleX>1 then
-    out = rigel.apply("downsampleSeq_X", modules.RPassthrough(modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))), out)
-    local downsampleT = math.max(T/scaleX,1)
-    if downsampleT<T then
-      -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(types.uint(8),1,downsampleT,T)), out )
-    elseif downsampleT>T then assert(false) end
-  end
-  return modules.lambda("downsampleSeq", inp, out)
-end
-
 -- This is actually a pure function
 -- takes A[T] to A[T*scale]
 -- like this: [A[0],A[0],A[1],A[1],A[2],A[2],...]
-function modules.broadcastWide( A, T, scale )
+local function broadcastWide( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
   local sinp = S.parameter("inp",types.array2d(A,T))
   local out = {}
@@ -1160,7 +1052,7 @@ function modules.upsampleXSeq( A, T, scale, X )
 
     return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
   else
-    return modules.compose("upsampleXSeq_"..T, modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(modules.broadcastWide(A,T,scale)))
+    return modules.compose("upsampleXSeq_"..T, modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
   end
 end
 
@@ -1223,160 +1115,6 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
 
   return modules.waitOnInput( rigel.newFunction(res) )
-end
-
--- this is always Handshake
-function modules.upsampleSeq( A, W, H, T, scaleX, scaleY )
-  assert(scaleX>=1)
-  assert(scaleY>=1)
-
-  local inner
-  if scaleY>1 and scaleX==1 then
-    inner = modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY ))
-  elseif scaleX>1 and scaleY==1 then
-    inner = modules.upsampleXSeq( A, T, scaleX )
-  else
-    local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = modules.compose("upsampleSeq", f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )))
-  end
-
-    return inner
-end
-
-function modules.packPyramid( A, w, h, levels, human )
-  assert(types.isType(A))
-  assert(type(w)=="number")
-  assert(type(h)=="number")
-  assert(type(levels)=="number")
-  assert(type(human)=="boolean")
-
-  local totalW = 0
-  local typelist = {}
-  if human then
-    for i=1,levels do 
-      totalW = totalW + w/math.pow(2,i-1) 
-      table.insert( typelist, types.array2d(A, w/math.pow(2,i-1), h/math.pow(2,i-1)))
-    end
-  else
-    assert(false)
-  end
-
-  local res = { kind="packPyramid", levels=levels}
-  res.inputType = types.tuple(typelist)
-  res.outputType = types.array2d( A, totalW, h)
-  res.delay = 0
-  local struct PackPyramidModule {}
-  terra PackPyramidModule:reset() end
-  local stats = {}
-  local insymb = symbol(&res.inputType:toTerraType(),"inp")
-  local outsymb = symbol(&res.outputType:toTerraType(),"out")
-  local X = 0
-  for l=1,levels do
-    local thisW = w/math.pow(2,l-1)
-    table.insert(stats, quote for y=0,[h/math.pow(2,l-1)] do for x=0,thisW do
-                       (@outsymb)[y*totalW+x+X] = ((@insymb).["_"..(l-1)])[y*thisW+x]
-                                                             end end end)
-    X = X + thisW
-  end
-  terra PackPyramidModule:process( [insymb], [outsymb] ) cstring.memset(outsymb,0,[res.outputType:sizeof()]); stats end
-  res.terraModule = PackPyramidModule
-
-  return rigel.newFunction(res)
-end
-
-function modules.packPyramidSeq( A, W,H,T, levels, human )
-  assert(types.isType(A))
-  assert(type(W)=="number")
-  assert(type(H)=="number")
-  assert(type(T)=="number")
-  assert(type(levels)=="number")
-  assert(type(human)=="boolean")
-
-  local typelist = {}
-
-  for i=1,levels do 
-    table.insert( typelist, rigel.Handshake(types.array2d(A, T)))
-  end
-
-  local res = { kind="packPyramid", levels=levels}
-  res.inputType = types.tuple(typelist)
-  res.outputType = rigel.Handshake(types.array2d( A, T ))
-  res.delay = 0
-  local struct PackPyramidSeq { fifos : (simmodules.fifo( types.array2d(A,T):toTerraType(), DEFAULT_FIFO_SIZE, "packPyramidfifo"))[levels]; 
-                                sm:int[2];
-                                activeCycles:int;
-                                idleCycles:int}
-
---  for i=1,levels do 
---    table.insert(PackPyramidSeq.entries, {field="fifo"..i, type = simmodules.fifo( types.array2d(A,T), DEFAULT_FIFO_SIZE, "packPyramidfifo"..i)})
---  end
-  
-  assert(W%(T*math.pow(2,levels-1))==0)
-  local SM = coroutine.wrap(function()
-                              while true do
-                              for y=0,H-1 do for i=0,levels-1 do
-                                  for x=0,(W/math.pow(2,i))-1,T do coroutine.yield(ffi.new("int[2]",{i,sel(y>H/math.pow(2,i),1,0)})) end
-                                             end end end end)
-
-  if human==false then
-    SM = coroutine.wrap(function()
-                              while true do
-                                for l=0,levels-1 do
-                                  for y=0,math.pow(2,levels-1-l)-1 do 
-                                    for x=0,(W/math.pow(2,l))-1,T do coroutine.yield(ffi.new("int[2]",{l,0})) end
-                                  end 
-                                end end end)
-  end
-
-  SM = terralib.cast({}->&int, SM)
-
-  terra PackPyramidSeq:reset() for i=0,levels do self.fifos[i]:reset() end; self.sm=@([&int32[2]](SM())); self.activeCycles=0; self.idleCycles=0; end
-  terra PackPyramidSeq:stats(name:&int8) 
-    cstdio.printf("PackPyramidSeq %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles))
-    for i=0,levels do cstdio.printf("PackPyramidSeq %s fifo %d max: %d\n",name,i,self.fifos[i]:maxSizeSeen()) end
-  end
-
-  local stats = {}
-  local mself = symbol(&PackPyramidSeq,"self")
-  local insymb = symbol(&rigel.lower(res.inputType):toTerraType(),"inp")
-  local outsymb = symbol(&rigel.lower(res.outputType):toTerraType(),"out")
-  
-  for i=0,levels-1 do
-    table.insert(stats, quote if valid(insymb.["_"..i]) then mself.fifos[i]:pushBack(&data(insymb.["_"..i])) end end)
-  end
-
-  terra PackPyramidSeq.methods.process( [mself], [insymb], [outsymb] ) 
-    escape
-      for i=0,levels-1 do
-        emit quote if valid(insymb.["_"..i]) then cstdio.printf("PackPyramid Validin %d\n",i) end end
-      end
-    end
-
-    stats;
-    cstdio.printf("PP %d %d\n",mself.sm[0],mself.sm[1])
-    if mself.sm[1]==1 then -- zero fill
-      mself.activeCycles = mself.activeCycles + 1
-      valid(outsymb) = true
-      for i=0,T do data(outsymb)[i] = 0 end
-      mself.sm = @([&int32[2]](SM()))
-    elseif mself.fifos[mself.sm[0]]:size()>=T then
-      -- we have enough data to proceed
-      cstdio.printf("PackPyramidValidOut\n")
-      mself.activeCycles = mself.activeCycles + 1
-      valid(outsymb) = true
-      data(outsymb) = @(mself.fifos[mself.sm[0]]:popFront())
-      mself.sm = @([&int32[2]](SM()))
-    else
-      cstdio.printf("PackPyramidInvalid waiting on %d\n",mself.sm[0])
-      mself.idleCycles = mself.idleCycles + 1
-      valid(outsymb) = false
-    end
-  end
-
-  res.terraModule = PackPyramidSeq
-
-  return rigel.newFunction(res)
-  
 end
 
 -- Stateful{uint8,uint8,uint8...} -> Stateful(uint8)
@@ -1835,18 +1573,6 @@ function modules.flattenStreams( A, rates, X )
   return rigel.newFunction(res)
 end
 
--- takes A to A[T] by duplicating the input
-modules.broadcast = memoize(function(A,T)
-  rigel.expectBasic(A)
-  err( type(T)=="number", "T should be number")
-  local OT = types.array2d(A,T)
-  local sinp = S.parameter("inp",A)
-  return modules.lift("Broadcast_"..T,A,OT,0,
-                       terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
-                         for i=0,T do (@out)[i] = @inp end
-                         end, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
-    end)
-
 -- Takes StatefulHandshake(A) to (StatefulHandshake(A))[N]
 -- HACK(?!): when we fan-out a handshake stream, we need to synchronize the downstream modules.
 -- (IE if one is ready but the other isn't, we need to stall both).
@@ -1917,41 +1643,6 @@ modules.broadcastStream = memoize(function(A,N,X)
 
   return rigel.newFunction(res)
                                    end)
-
--- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
--- min, max ranges are inclusive
-function modules.stencil( A, w, h, xmin, xmax, ymin, ymax )
-  assert( type(xmin)=="number" )
-  assert( type(xmax)=="number" )
-  assert( xmax>=xmin )
-  assert( type(ymin)=="number" )
-  assert( type(ymax)=="number" )
-  assert( ymax>=ymin )
-
-  rigel.expectBasic(A)
-  if A:isArray() then error("Input to extract stencils must not be array") end
-
-  local res = {kind="extractStencils", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
-  res.delay=0
-  res.inputType = types.array2d(A,w,h)
-  res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-
-  local struct Stencil {}
-  terra Stencil:reset() end
-  terra Stencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for i=0,[w*h] do
-      for y = ymin, ymax+1 do
-        for x = xmin, xmax+1 do
-          ((@out)[i])[(y-ymin)*(xmax-xmin+1)+(x-xmin)] = (@inp)[i+x+y*w]
-        end
-      end
-    end
-  end
-  res.terraModule = Stencil
-
-  return rigel.newFunction(res)
-end
 
 -- output type: {uint16,uint16}[T]
 modules.posSeq = memoize(function( W, H, T )
@@ -2037,27 +1728,6 @@ function modules.liftXYSeqPointwise( f, W, H, T )
   return modules.liftXYSeq(ff,W,H,T)
 end
 
--- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
-function modules.borderSeq( A, W, H, T, L, R, B, Top, Value )
-  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
-
-  local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
-  local inp = S.parameter( "process_input", inpType )
-  local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
-  local horizontal = S.__or(S.lt(inpx,S.constant(L,types.uint(16))),S.ge(inpx,S.constant(W-R,types.uint(16))))
-  local vert = S.__or(S.lt(inpy,S.constant(B,types.uint(16))),S.ge(inpy,S.constant(H-Top,types.uint(16))))
-  local outside = S.__or(horizontal,vert)
-  local out = S.select(outside,S.constant(Value,A), S.index(inp,1) )
-
-  local f = modules.lift( "BorderSeq", inpType, A, 0, 
-                           terra( inp :&inpType:toTerraType(), out : &A:toTerraType() )
-                             var x,y, inpvalue = inp._0._0, inp._0._1, inp._1
-                                  if x<L or y<B or x>=W-R or y>=H-Top then @out = [Value]
-                                  else @out = inpvalue end
-                                end, inp, out )
-  return modules.liftXYSeqPointwise( f, W, H, T )
-end
-
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
@@ -2092,22 +1762,6 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
 
   return modules.liftXYSeq( f, W, H, T  )
                            end)
-
--- This is the same as CropSeq, but lets you have L,R not be T-aligned
--- All it does is throws in a shift register to alter the horizontal phase
-modules.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
-  err(X==nil, "cropHelperSeq, too many arguments")
-  if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
-
-  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
-
-  local RResidual = R%T
-  local inp = rigel.input( types.array2d( A, T ) )
-  local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
-  out = rigel.apply( "slice", modules.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
-  out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
-  return modules.lambda( "cropHelperSeq_W"..W.."_H"..H.."_L"..L.."_R"..R, inp, out )
-                                 end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
@@ -2540,77 +2194,6 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
 
   return rigel.newFunction(res)
 end)
-
-modules.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  assert(types.isType(A))
-  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T>=1); assert(w>0); assert(h>0);
-  err(xmin<=xmax,"xmin>xmax")
-  err(ymin<=ymax,"ymin>ymax")
-  assert(xmax==0)
-  assert(ymax==0)
-
-  return modules.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ) )
-end)
-
-modules.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T<=1); assert(w>0); assert(h>0);
-  assert(xmin<xmax)
-  assert(ymin<ymax)
-  assert(xmax==0)
-  assert(ymax==0)
-
-  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return modules.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )) )
-                                            end)
-
--- purely wiring
-modules.unpackStencil = memoize(function( A, stencilW, stencilH, T )
-  assert(types.isType(A))
-  assert(type(stencilW)=="number")
-  assert(stencilW>0)
-  assert(type(stencilH)=="number")
-  assert(stencilH>0)
-  assert(type(T)=="number")
-  assert(T>=1)
-
-  local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
-  res.inputType = types.array2d( A, stencilW+T-1, stencilH)
-  res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
-  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
-  res.stateful = false
-  res.delay=0
-  local struct UnpackStencil {}
-  terra UnpackStencil:reset() end
-  terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for i=0,[T] do
-      for y=0,[stencilH] do
-        for x=0,[stencilW] do
-          (@out)[i][y*stencilW+x] = (@inp)[y*(stencilW+T-1)+x+i]
-        end
-      end
-    end
-  end
-  res.terraModule = UnpackStencil
-
-  res.systolicModule = S.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
-  local sinp = S.parameter("inp", res.inputType)
-  local out = {}
-  for i=1,T do
-    out[i] = {}
-    for y=0,stencilH-1 do
-      for x=0,stencilW-1 do
-        out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
-      end
-    end
-  end
-
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
-
-  return rigel.newFunction(res)
-                                 end)
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
 modules.makeHandshake = memoize(function( f, tmuxRates )
@@ -3812,68 +3395,6 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
 
   return rigel.newFunction( res )
 end)
-
--- if index==true, then we return a value, not an array
-modules.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
-  err( types.isType(inputType),"slice first argument must be type" )
-  err(type(idxLow)=="number", "slice idxLow must be number")
-  err(type(idxHigh)=="number", "slice idxHigh must be number")
-  err(index==nil or type(index)=="boolean", "index must be bool")
-  assert(X==nil)
-
-  if inputType:isTuple() then
-    assert( idxLow < #inputType.list )
-    assert( idxHigh < #inputType.list )
-    assert( idxLow == idxHigh ) -- NYI
-    assert( index )
-    local OT = inputType.list[idxLow+1]
-    local systolicInput = S.parameter("inp", inputType)
-    local systolicOutput = S.index( systolicInput, idxLow )
-    local tfn = terra( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
-    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
-  elseif inputType:isArray() then
-    local W = (inputType:arrayLength())[1]
-    local H = (inputType:arrayLength())[2]
-    assert(idxLow<W)
-    err(idxHigh<W, "idxHigh>=W")
-    assert(type(idyLow)=="number")
-    assert(type(idyHigh)=="number")
-    assert(idyLow<H)
-    err(idyHigh<H, "idyHigh>=H")
-    assert(idxLow<=idxHigh)
-    assert(idyLow<=idyHigh)
-    local OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
-    local systolicInput = S.parameter("inp",inputType)
-
-    local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
-    systolicOutput = S.cast( systolicOutput, OT )
-    local tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) 
-      for iy = idyLow,idyHigh+1 do
-        for ix = idxLow, idxHigh+1 do
-          (@out)[(iy-idyLow)*(idxHigh-idxLow+1)+(ix-idxLow)] = (@inp)[ix+iy*W] 
-        end
-      end
-    end
-
-    if index then
-      OT = inputType:arrayOver()
-      systolicOutput = S.index( systolicInput, idxLow, idyLow )
-      tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
-    end
-
-    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
-  else
-    assert(false)
-  end
-                         end)
-
-function modules.index( inputType, idx, idy, X )
-  err( types.isType(inputType), "first input to index must be a type" )
-  err( type(idx)=="number", "index idx must be number")
-  assert(X==nil)
-  if idy==nil then idy=0 end
-  return modules.slice( inputType, idx, idx, idy, idy, true )
-end
 
 modules.freadSeq = memoize(function( filename, ty )
   err( type(filename)=="string", "filename must be a string")

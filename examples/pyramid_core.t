@@ -75,10 +75,10 @@ function P.pyramidIter(i,doDownsample,internalT,W,H,ConvWidth)
   print("PS",PS.sdfInput[1][1],PS.sdfInput[1][2],PS.sdfOutput[1][1],PS.sdfOutput[1][2])
   local out = R.apply("pad", RM.liftHandshake(PS), inp)
 
-  local out = R.apply( "convLB", RM.makeHandshake(RM.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
-  local out = R.apply( "convstencils", RM.makeHandshake(RM.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
+  local out = R.apply( "convLB", RM.makeHandshake(C.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
+  local out = R.apply( "convstencils", RM.makeHandshake(C.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
-  local CHS = RM.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
+  local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
   print("CHS",CHS.sdfInput[1][1],CHS.sdfInput[1][2],CHS.sdfOutput[1][1],CHS.sdfOutput[1][2])
   local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
 
@@ -114,8 +114,8 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   local fifos = {}
   local statements = {}
 
-  local out = R.apply("idx0",RM.makeHandshake(RM.index(INP_TYPE,0)),inp)
-  local tapinp = R.apply("idx1",RM.makeHandshake(RM.index(INP_TYPE,1)),inp)
+  local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inp)
+  local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inp)
 
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end
@@ -128,10 +128,10 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   print("PS",PS.sdfInput[1][1],PS.sdfInput[1][2],PS.sdfOutput[1][1],PS.sdfOutput[1][2])
   local out = R.apply("pad", RM.liftHandshake(PS), out)
 
-  local out = R.apply( "convLB", RM.makeHandshake(RM.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
-  local out = R.apply( "convstencils", RM.makeHandshake(RM.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
+  local out = R.apply( "convLB", RM.makeHandshake(C.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
+  local out = R.apply( "convstencils", RM.makeHandshake(C.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
-  local CHS = RM.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
+  local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
   print("CHS",CHS.sdfInput[1][1],CHS.sdfInput[1][2],CHS.sdfOutput[1][1],CHS.sdfOutput[1][2])
   local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
 
@@ -153,9 +153,9 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
     end
   end
 
-  local st_tap_inp = R.apply( "broad", RM.makeHandshake(RM.broadcast(TAP_TYPE,convT)), tapinp )
+  local st_tap_inp = R.apply( "broad", RM.makeHandshake(C.broadcast(TAP_TYPE,convT)), tapinp )
   st_tap_inp = R.tuple("sttapinp",{out,st_tap_inp},false)
-  st_tap_inp = R.apply("ST",RM.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
+  st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
   out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), st_tap_inp)
 
   if #statements>0 then
@@ -189,10 +189,10 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
 
   local out = R.apply("pad", RM.liftHandshake(PS), inp)
 
-  local out = R.apply( "convLB", RM.makeHandshake(RM.stencilLinebuffer( A, internalW, internalH, 1, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
-  local out = R.apply( "convstencils", RM.makeHandshake(RM.unpackStencil( A, ConvWidth, ConvWidth, 1 )), out )
+  local out = R.apply( "convLB", RM.makeHandshake(C.stencilLinebuffer( A, internalW, internalH, 1, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
+  local out = R.apply( "convstencils", RM.makeHandshake(C.unpackStencil( A, ConvWidth, ConvWidth, 1 )), out )
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
-  local CHS = RM.cropHelperSeq(st_type,internalW,internalH,1,8,0,8,0)
+  local CHS = C.cropHelperSeq(st_type,internalW,internalH,1,8,0,8,0)
 
   local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
 
@@ -206,12 +206,12 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
 
   print("convT",convT)
   if true then
-    out = R.apply("IDX", RM.makeHandshake(RM.index(types.array2d(st_type,1),0,0)), out)
+    out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CST", RM.makeHandshake( C.cast(st_type,types.array2d(A,ConvWidth*ConvWidth)) ), out)
     out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), 1, ConvWidth*ConvWidth, ConvWidth*ConvWidth*convT )), out )
     out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth*ConvWidth,1,convT,P.G,6)), out)
   else
-    out = R.apply("IDX", RM.makeHandshake(RM.index(types.array2d(st_type,1),0,0)), out)
+    out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), ConvWidth, ConvWidth, convT )), out )
     out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth,ConvWidth,convT,P.G,6)), out)
 

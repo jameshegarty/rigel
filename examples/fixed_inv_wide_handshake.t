@@ -39,7 +39,7 @@ fn = RM.lambda( "fixed_wide", inp, out )
 ------------
 hsfninp = R.input(R.Handshake(types.array2d(ITYPE,T)))
 local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,1)), hsfninp )
-local out = R.apply("idx", RM.makeHandshake(RM.index(types.array2d(types.uint(8),1),0)), out)
+local out = R.apply("idx", RM.makeHandshake(C.index(types.array2d(types.uint(8),1),0)), out)
 local out = R.apply("inner", RM.makeHandshake(fn), out )
 local out = R.apply("A0", RM.makeHandshake(C.arrayop(ITYPE,1,1)), out)
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,8)), out )

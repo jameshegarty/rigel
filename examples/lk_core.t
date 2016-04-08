@@ -139,8 +139,8 @@ function makeA( dType, window, bits )
   local stt = types.array2d(dType, window, window)
   local inpt = types.tuple{ stt, stt }
   local inp = R.input( inpt )
-  local Fdx = R.apply("fdx", RM.index(inpt,0), inp)
-  local Fdy = R.apply("fdy", RM.index(inpt,1), inp)
+  local Fdx = R.apply("fdx", C.index(inpt,0), inp)
+  local Fdy = R.apply("fdy", C.index(inpt,1), inp)
 
   local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
   bits.Apartial[3] = partial[3]
@@ -152,17 +152,17 @@ function makeA( dType, window, bits )
   cost = cost + rsum[2]*3*window*window
   local rsumfn = rsum[1]
 
-  local inp0 = R.apply("inp0", RM.SoAtoAoS(window,window,{dType,dType}), R.tuple("o0",{Fdx,Fdx}) )
+  local inp0 = R.apply("inp0", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o0",{Fdx,Fdx}) )
   local out0 = R.apply("out0", RM.map(partialfn, window, window), inp0 )
   local out0 = R.apply("out0red", RM.reduce(rsumfn, window, window), out0 )
 
-  local inp1 = R.apply("inp1", RM.SoAtoAoS(window,window,{dType,dType}), R.tuple("o1",{Fdx,Fdy}) )
+  local inp1 = R.apply("inp1", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o1",{Fdx,Fdy}) )
   local out1 = R.apply("out1", RM.map(partialfn, window, window), inp1 )
   local out1 = R.apply("out1red", RM.reduce(rsumfn, window, window), out1 )
 
   local out2 = out1
 
-  local inp3 = R.apply("inp3", RM.SoAtoAoS(window,window,{dType,dType}), R.tuple("o3",{Fdy,Fdy}) )
+  local inp3 = R.apply("inp3", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o3",{Fdy,Fdy}) )
   local out3 = R.apply("out3", RM.map(partialfn, window, window), inp3 )
   local out3 = R.apply("out3red", RM.reduce(rsumfn, window, window), out3 )
 
@@ -191,14 +191,14 @@ function makeB( dtype, window, bits )
   local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
   local finp = R.input( ITYPE )
   
-  local frame0 = R.apply("frame0", RM.index(ITYPE,0), finp)
-  local frame1 = R.apply("frame1", RM.index(ITYPE,1), finp)
-  local Fdx = R.apply("fdx", RM.index(ITYPE,2), finp)
-  local Fdy = R.apply("fdy", RM.index(ITYPE,3), finp)
+  local frame0 = R.apply("frame0", C.index(ITYPE,0), finp)
+  local frame1 = R.apply("frame1", C.index(ITYPE,1), finp)
+  local Fdx = R.apply("fdx", C.index(ITYPE,2), finp)
+  local Fdy = R.apply("fdy", C.index(ITYPE,3), finp)
 
   ---------
   local gmf = R.tuple("mfgmf",{frame1,frame0})
-  gmf = R.apply("SA",RM.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
+  gmf = R.apply("SA",C.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type, gmf_cost = minus(types.uint(8))
   print("GMF type", gmf_type)
   cost = cost + gmf_cost*window*window
@@ -216,12 +216,12 @@ function makeB( dtype, window, bits )
   cost = cost + rsum[2]*2*window*window
 
   local out_0 = R.tuple("o0tup",{Fdx, gmf})
-  local out_0 = R.apply("o0P", RM.SoAtoAoS(window,window,{dtype, gmf_type}), out_0)
+  local out_0 = R.apply("o0P", C.SoAtoAoS(window,window,{dtype, gmf_type}), out_0)
   local out_0 = R.apply("o0", RM.map(partialfn, window, window), out_0)
   local out_0 = R.apply("out0red", RM.reduce(rsumfn, window, window), out_0 )
 
   local out_1 = R.tuple("o1tup",{Fdy, gmf})
-  local out_1 = R.apply("o1P", RM.SoAtoAoS(window,window,{dtype,gmf_type}), out_1)
+  local out_1 = R.apply("o1P", C.SoAtoAoS(window,window,{dtype,gmf_type}), out_1)
   local out_1 = R.apply("o1", RM.map(partialfn, window, window), out_1)
   local out_1 = R.apply("out1red", RM.reduce(rsumfn, window, window), out_1 )
 
@@ -280,49 +280,49 @@ function makeLK( T, internalW, internalH, window, bits )
 
   local INPTYPE = types.array2d(types.uint(8),2)
   local inp = R.input(types.array2d(INPTYPE,T))
-  local frame0 = R.apply("f0", RM.map(RM.index(INPTYPE, 0 ),T), inp)
-  local frame1 = R.apply("f1", RM.map(RM.index(INPTYPE, 1 ),T), inp)
+  local frame0 = R.apply("f0", RM.map(C.index(INPTYPE, 0 ),T), inp)
+  local frame1 = R.apply("f1", RM.map(C.index(INPTYPE, 1 ),T), inp)
 
   local st_type = types.array2d( types.uint(8), window+1, window+1 )
 
-  local lb0 = R.apply("lb0", RM.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame0)
-  local lb0 = R.apply( "lb0_st", RM.unpackStencil( types.uint(8), window+1, window+1, T ) , lb0 )
-  local lb1 = R.apply("lb1", RM.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame1)
-  local lb1 = R.apply( "lb1_st", RM.unpackStencil( types.uint(8), window+1, window+1, T ) , lb1 )
+  local lb0 = R.apply("lb0", C.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame0)
+  local lb0 = R.apply( "lb0_st", C.unpackStencil( types.uint(8), window+1, window+1, T ) , lb0 )
+  local lb1 = R.apply("lb1", C.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame1)
+  local lb1 = R.apply( "lb1_st", C.unpackStencil( types.uint(8), window+1, window+1, T ) , lb1 )
 
-  local fdx = R.apply("slx", RM.map(RM.slice( st_type, window-2, window, window-1, window-1),T), lb0)
+  local fdx = R.apply("slx", RM.map(C.slice( st_type, window-2, window, window-1, window-1),T), lb0)
   local dx, dType, dxcost = dx(bits)
   local fdx = R.apply("fdx", RM.map(dx,T), fdx)
 
-  local fdx_stencil = R.apply("fdx_stencil", RM.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdx)
-  local fdx_stencil = R.apply( "fdx_stencil_st", RM.unpackStencil( dType, window, window, T ) , fdx_stencil )
+  local fdx_stencil = R.apply("fdx_stencil", C.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdx)
+  local fdx_stencil = R.apply( "fdx_stencil_st", C.unpackStencil( dType, window, window, T ) , fdx_stencil )
 
-  local fdy = R.apply("sly", RM.map(RM.slice( st_type, window-1, window-1, window-2, window),T), lb0)
+  local fdy = R.apply("sly", RM.map(C.slice( st_type, window-1, window-1, window-2, window),T), lb0)
   local fdy = R.apply("fdy", RM.map(dy(bits),T), fdy )
 
-  local fdy_stencil = R.apply("fdy_stencil", RM.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdy)
-  local fdy_stencil = R.apply( "fdy_stencil_st", RM.unpackStencil( dType, window, window, T ) , fdy_stencil )
+  local fdy_stencil = R.apply("fdy_stencil", C.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdy)
+  local fdy_stencil = R.apply( "fdy_stencil_st", C.unpackStencil( dType, window, window, T ) , fdy_stencil )
 
   cost = cost + dxcost*2
 
   local dst_type = types.array2d(dType,window,window)
   local Af, AType, Acost = makeA( dType, window, bits )
-  local Ainp = R.apply("Ainp", RM.SoAtoAoS(T,1,{dst_type,dst_type},false),R.tuple("ainp",{fdx_stencil,fdy_stencil}) )
+  local Ainp = R.apply("Ainp", C.SoAtoAoS(T,1,{dst_type,dst_type},false),R.tuple("ainp",{fdx_stencil,fdy_stencil}) )
   local A = R.apply("A", RM.map(Af,T), Ainp)
   local fAinv, AInvType = invert2x2( AType, bits )
   local Ainv = R.apply("Ainv", RM.map(fAinv,T), A)
   cost = cost + Acost
 
   local fB, BType, Bcost = makeB( dType, window, bits )
-  local f0_slice = R.apply("f0slice", RM.map(RM.slice(st_type, 0, window-1, 0, window-1),T), lb0)
-  local f1_slice = R.apply("f1slice", RM.map(RM.slice(st_type, 0, window-1, 0, window-1),T), lb1)
+  local f0_slice = R.apply("f0slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb0)
+  local f1_slice = R.apply("f1slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb1)
   local sm_type = types.array2d(types.uint(8),window,window)
-  local binp = R.apply("binp", RM.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
+  local binp = R.apply("binp", C.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
   local b = R.apply("b", RM.map(fB,T), binp)
   cost = cost + Bcost
 
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
-  local sinp = R.apply("sinp", RM.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.tuple("solveinp",{Ainv,b}))
+  local sinp = R.apply("sinp", C.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.tuple("solveinp",{Ainv,b}))
   local vectorField = R.apply("solve", RM.map(fSolve,T), sinp)
   cost = cost + SolveCost
   
@@ -376,7 +376,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
     out = R.applyMethod("r_timing",fifos[#fifos],"load")
   end
 
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)
   if T~=4 then
     out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,4)), out )
   end

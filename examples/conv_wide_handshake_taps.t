@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require("harness")
@@ -35,7 +36,7 @@ reduceSumInt32 = RM.lift( "reduceSumInt32", types.tuple { types.int(32), types.i
 local STTYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
 local ITYPE = types.tuple{STTYPE,STTYPE:makeConst()}
 inp = R.input( ITYPE )
-packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8):makeConst()}), inp )
+packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8):makeConst()}), inp )
 conv = R.apply( "partial", RM.map( partial, ConvWidth, ConvWidth ), packed )
 conv = R.apply( "sum", RM.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = R.apply( "touint8", touint8, conv )
@@ -46,16 +47,16 @@ BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = types.tuple{BASE_TYPE,STTYPE:makeConst()}
 inp = R.input( ITYPE )
 
-local inpdata = R.apply( "i0", RM.index(ITYPE,0), inp)
-local inptaps = R.apply("idx1",RM.index(ITYPE,1), inp)
-local st_tap_inp = R.apply( "broad", RM.broadcast(STTYPE:makeConst(),T), inptaps )
+local inpdata = R.apply( "i0", C.index(ITYPE,0), inp)
+local inptaps = R.apply("idx1",C.index(ITYPE,1), inp)
+local st_tap_inp = R.apply( "broad", C.broadcast(STTYPE:makeConst(),T), inptaps )
 
-convLB = R.apply( "convLB", RM.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inpdata)
-convstencils = R.apply( "convstencils",  RM.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T  ), convLB )
+convLB = R.apply( "convLB", C.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inpdata)
+convstencils = R.apply( "convstencils",  C.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T  ), convLB )
 
-st_tap_inp = R.apply("ST",RM.SoAtoAoS(T,1,{STTYPE,STTYPE:makeConst()}), R.tuple("Sttap", {convstencils,st_tap_inp}))
+st_tap_inp = R.apply("ST",C.SoAtoAoS(T,1,{STTYPE,STTYPE:makeConst()}), R.tuple("Sttap", {convstencils,st_tap_inp}))
 convpipe = R.apply( "conv",  RM.map( convolve, T ), st_tap_inp )
-convpipe = R.apply( "border", RM.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
+convpipe = R.apply( "border", C.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 
 convpipe = RM.lambda( "convpipe", inp, convpipe )
 -------------

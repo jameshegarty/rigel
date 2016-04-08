@@ -1,5 +1,5 @@
 local RM = require "modules"
-local Image = require "image"
+local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
@@ -21,7 +21,7 @@ HH = H+2
 
 BASE_TYPE = types.array2d( types.uint(8), T )
 
-hsfn = RM.compose("HSFN",
+hsfn = C.compose("HSFN",
                  RM.liftHandshake(RM.padSeq(types.uint(8), W, H, T, (WW-W), 0, (HH-H), 0, 128)),
                  RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 0)) )
 

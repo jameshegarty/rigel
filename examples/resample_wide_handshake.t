@@ -23,8 +23,8 @@ end
 
 hsfn = C.padcrop( types.uint(8), inputW, inputH, T, 4, 3, 4, 3, 0, conv )
 local scale = 2
-local downsample = RM.liftHandshake( RM.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale) )
-hsfn = RM.compose( "rhsfn", downsample, hsfn )
+local downsample = RM.liftHandshake( C.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale) )
+hsfn = C.compose( "rhsfn", downsample, hsfn )
 -------------
 
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus

@@ -1,5 +1,7 @@
 local R = require "rigel"
+local rigel = R
 local RM = require "modules"
+local modules = RM
 local cstdlib = terralib.includec("stdlib.h")
 local C = {}
 
@@ -166,7 +168,7 @@ function C.convolveTaps( A, ConvWidth, shift )
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
   local inp = R.input( INP_TYPE )
 
-  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
@@ -187,7 +189,7 @@ function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvHeight ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvHeight ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
@@ -208,7 +210,7 @@ function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
   local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
 
-  local packed = R.apply( "packedtup", RM.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
 
@@ -217,8 +219,8 @@ function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
   inp = R.input( R.V(types.array2d( A, ConvWidth*T, ConvHeight )) )
   conv = R.apply( "convseqapply", RM.liftDecimate(RM.liftBasic(convseq)), inp)
   conv = R.apply( "sumseq", RM.RPassthrough(RM.liftDecimate(RM.reduceSeq( C.sum(types.uint(32),types.uint(32),types.uint(32),true), T ))), conv )
-  conv = R.apply( "touint8", RM.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
-  conv = R.apply( "arrayop", RM.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
+  conv = R.apply( "touint8", C.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
+  conv = R.apply( "arrayop", C.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
 
   local convolve = RM.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
 
@@ -313,8 +315,8 @@ function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
   local BASE_TYPE = types.array2d( A, T )
   local inp = R.input( BASE_TYPE )
   
-  local convLB = R.apply( "convLB", RM.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = R.apply( "convstencils", RM.unpackStencil( A, stencilW, stencilH, T ), convLB )
+  local convLB = R.apply( "convLB", C.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
+  local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ), convLB )
   local convpipe = R.apply( "conv", RM.map( f, T ), convstencils )
   
   local convpipe = RM.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
@@ -332,16 +334,16 @@ function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH,
   local ITYPE = types.tuple{BASE_TYPE, tapType}
   local rawinp = R.input( ITYPE )
   
-  local inp = R.apply("idx0",RM.index(ITYPE,0),rawinp)
-  local taps = R.apply("idx1",RM.index(ITYPE,1),rawinp)
+  local inp = R.apply("idx0",C.index(ITYPE,0),rawinp)
+  local taps = R.apply("idx1",C.index(ITYPE,1),rawinp)
   
-  local convLB = R.apply( "convLB", RM.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
-  local convstencils = R.apply( "convstencils", RM.unpackStencil( A, stencilW, stencilH, T ) , convLB )
+  local convLB = R.apply( "convLB", C.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
+  local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ) , convLB )
   
-  local st_tap_inp = R.apply( "broad", RM.broadcast(tapType,T), taps )
+  local st_tap_inp = R.apply( "broad", C.broadcast(tapType,T), taps )
   st_tap_inp = R.tuple("sttapinp",{convstencils,st_tap_inp})
   local ST_TYPE = types.array2d( A, stencilW, stencilH )
-  st_tap_inp = R.apply("ST",RM.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
+  st_tap_inp = R.apply("ST",C.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
   local convpipe = R.apply( "conv", RM.map( f, T ), st_tap_inp )
   
   local convpipe = RM.lambda( "convpipe", rawinp, convpipe )
@@ -384,7 +386,7 @@ function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   local padL = internalL-L
   local padR = internalR-Right
   local fnOutType = R.extractData(internalFn.outputType):arrayOver()
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(RM.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0))), out)
+  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0))), out)
 
   if timingFifo then
     -- this FIFO is only for improving timing
@@ -522,10 +524,10 @@ function C.lutinvert(ty)
 
   local inp = R.input( ty )
   local aout = R.apply( "a", afn, inp )
-  local aout_float = R.apply("aout_float", RM.index(afn.outputType,0), aout)
-  local aout_exp = R.apply("aout_exp", RM.index(afn.outputType,1), aout)
+  local aout_float = R.apply("aout_float", C.index(afn.outputType,0), aout)
+  local aout_exp = R.apply("aout_exp", C.index(afn.outputType,1), aout)
   local aout_sign
-  if signed then aout_sign = R.apply("aout_sign", RM.index(afn.outputType,2), aout) end
+  if signed then aout_sign = R.apply("aout_sign", C.index(afn.outputType,2), aout) end
 
   local aout_float_lsbs = R.apply("aout_float_lsbs", stripMSB(9), aout_float)
 
@@ -555,7 +557,7 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   local inp = R.input( LB.inputType )
   local out = R.apply("LB", LB, inp)
   out = R.apply("SSR", SSR, out)
-  out = R.apply("slice", RM.makeHandshake(RM.slice(types.array2d(A,ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
+  out = R.apply("slice", RM.makeHandshake(C.slice(types.array2d(A,ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
 
   return RM.lambda("stencilLinebufferPartialOverlap",inp,out)
                                                   end)
@@ -571,6 +573,338 @@ function C.fifo(fifos,statements,A,inp,size,name, csimOnly, X)
 end
 -------------
 
+-- HACK: this should really be in this file, but it needs to be in the other file to satisfy dependencies in old code
+C.compose = RM.compose
+C.SoAtoAoS = RM.SoAtoAoS
+
+-- takes {Handshake(a[W,H]), Handshake(b[W,H]),...} to Handshake( {a,b}[W,H] )
+-- typelist should be a table of pure types
+C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
+  assert(X==nil)
+  local f = modules.SoAtoAoS(W,H,typelist)
+  f = modules.makeHandshake(f)
+  
+  return C.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, modules.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
+                                     end)
+
+-- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
+function C.border(A,W,H,L,R,B,T,value)
+  map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
+  local res = {kind="border",L=L,R=R,T=T,B=B,value=value}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = res.inputType
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.delay = 0
+  local struct Border {}
+  terra Border:reset() end
+  terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for y=0,H do for x=0,W do 
+        if x<L or y<B or x>=W-R or y>=H-T then
+          (@out)[y*W+x] = [value]
+        else
+          (@out)[y*W+x] = (@inp)[y*W+x]
+        end
+    end end
+  end
+  res.terraModule = Border
+  return rigel.newFunction(res)
+end
+
+
+-- takes basic->basic to RV->RV
+function C.RVPassthrough(f)
+  return modules.RPassthrough(modules.liftDecimate(modules.liftBasic(f)))
+end
+
+-- if scaleX,Y > 1 then this is upsample
+-- if scaleX,Y < 1 then this is downsample
+function C.scale( A, w, h, scaleX, scaleY )
+  assert(types.isType(A))
+  assert(type(w)=="number")
+  assert(type(h)=="number")
+  assert(type(scaleX)=="number")
+  assert(type(scaleY)=="number")
+
+  local res = { kind="scale", scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, w, h )
+  res.outputType = types.array2d( A, w*scaleX, h*scaleY )
+  res.delay = 0
+  local struct ScaleModule {}
+  terra ScaleModule:reset() end
+  terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for y=0,[h*scaleY] do 
+      for x=0,[w*scaleX] do
+        var idx = [int](cmath.floor([float](x)/[float](scaleX)))
+        var idy = [int](cmath.floor([float](y)/[float](scaleY)))
+--        cstdio.printf("SCALE outx %d outy %d, inx %d iny %d\n",x,y,idx,idy)
+        (@out)[y*[w*scaleX]+x] = (@inp)[idy*w+idx]
+      end
+    end
+  end
+  res.terraModule = ScaleModule
+
+  return rigel.newFunction(res)
+end
+
+
+-- V -> RV
+function C.downsampleSeq( A, W, H, T, scaleX, scaleY )
+  local inp = rigel.input( rigel.V(types.array2d(A,T)) )
+  local out = inp
+  if scaleY>1 then
+    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W, H, T, scaleY )), out)
+  end
+  if scaleX>1 then
+    out = rigel.apply("downsampleSeq_X", modules.RPassthrough(modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))), out)
+    local downsampleT = math.max(T/scaleX,1)
+    if downsampleT<T then
+      -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
+      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(types.uint(8),1,downsampleT,T)), out )
+    elseif downsampleT>T then assert(false) end
+  end
+  return modules.lambda("downsampleSeq", inp, out)
+end
+
+
+
+-- this is always Handshake
+function C.upsampleSeq( A, W, H, T, scaleX, scaleY )
+  assert(scaleX>=1)
+  assert(scaleY>=1)
+
+  local inner
+  if scaleY>1 and scaleX==1 then
+    inner = modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY ))
+  elseif scaleX>1 and scaleY==1 then
+    inner = modules.upsampleXSeq( A, T, scaleX )
+  else
+    local f = modules.upsampleXSeq( A, T, scaleX )
+    inner = C.compose("upsampleSeq", f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )))
+  end
+
+    return inner
+end
+
+
+-- takes A to A[T] by duplicating the input
+C.broadcast = memoize(function(A,T)
+  rigel.expectBasic(A)
+  err( type(T)=="number", "T should be number")
+  local OT = types.array2d(A,T)
+  local sinp = S.parameter("inp",A)
+  return modules.lift("Broadcast_"..T,A,OT,0,
+                       terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
+                         for i=0,T do (@out)[i] = @inp end
+                         end, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
+    end)
+
+-- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
+-- min, max ranges are inclusive
+function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
+  assert( type(xmin)=="number" )
+  assert( type(xmax)=="number" )
+  assert( xmax>=xmin )
+  assert( type(ymin)=="number" )
+  assert( type(ymax)=="number" )
+  assert( ymax>=ymin )
+
+  rigel.expectBasic(A)
+  if A:isArray() then error("Input to extract stencils must not be array") end
+
+  local res = {kind="extractStencils", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
+  res.delay=0
+  res.inputType = types.array2d(A,w,h)
+  res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+
+  local struct Stencil {}
+  terra Stencil:reset() end
+  terra Stencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for i=0,[w*h] do
+      for y = ymin, ymax+1 do
+        for x = xmin, xmax+1 do
+          ((@out)[i])[(y-ymin)*(xmax-xmin+1)+(x-xmin)] = (@inp)[i+x+y*w]
+        end
+      end
+    end
+  end
+  res.terraModule = Stencil
+
+  return rigel.newFunction(res)
+end
+
+-- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
+function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
+  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+
+  local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
+  local inp = S.parameter( "process_input", inpType )
+  local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
+  local horizontal = S.__or(S.lt(inpx,S.constant(L,types.uint(16))),S.ge(inpx,S.constant(W-R,types.uint(16))))
+  local vert = S.__or(S.lt(inpy,S.constant(B,types.uint(16))),S.ge(inpy,S.constant(H-Top,types.uint(16))))
+  local outside = S.__or(horizontal,vert)
+  local out = S.select(outside,S.constant(Value,A), S.index(inp,1) )
+
+  local f = modules.lift( "BorderSeq", inpType, A, 0, 
+                           terra( inp :&inpType:toTerraType(), out : &A:toTerraType() )
+                             var x,y, inpvalue = inp._0._0, inp._0._1, inp._1
+                                  if x<L or y<B or x>=W-R or y>=H-Top then @out = [Value]
+                                  else @out = inpvalue end
+                                end, inp, out )
+  return modules.liftXYSeqPointwise( f, W, H, T )
+end
+
+-- This is the same as CropSeq, but lets you have L,R not be T-aligned
+-- All it does is throws in a shift register to alter the horizontal phase
+C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
+  err(X==nil, "cropHelperSeq, too many arguments")
+  if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
+
+  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
+
+  local RResidual = R%T
+  local inp = rigel.input( types.array2d( A, T ) )
+  local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
+  out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
+  out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
+  return modules.lambda( "cropHelperSeq_W"..W.."_H"..H.."_L"..L.."_R"..R, inp, out )
+                                 end)
+
+
+C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
+  assert(types.isType(A))
+  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  assert(T>=1); assert(w>0); assert(h>0);
+  err(xmin<=xmax,"xmin>xmax")
+  err(ymin<=ymax,"ymin>ymax")
+  assert(xmax==0)
+  assert(ymax==0)
+
+  return C.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ) )
+end)
+
+C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
+  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  assert(T<=1); assert(w>0); assert(h>0);
+  assert(xmin<xmax)
+  assert(ymin<ymax)
+  assert(xmax==0)
+  assert(ymax==0)
+
+  -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
+  return C.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )) )
+                                            end)
+
+
+-- purely wiring
+C.unpackStencil = memoize(function( A, stencilW, stencilH, T )
+  assert(types.isType(A))
+  assert(type(stencilW)=="number")
+  assert(stencilW>0)
+  assert(type(stencilH)=="number")
+  assert(stencilH>0)
+  assert(type(T)=="number")
+  assert(T>=1)
+
+  local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
+  res.inputType = types.array2d( A, stencilW+T-1, stencilH)
+  res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.stateful = false
+  res.delay=0
+  local struct UnpackStencil {}
+  terra UnpackStencil:reset() end
+  terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    for i=0,[T] do
+      for y=0,[stencilH] do
+        for x=0,[stencilW] do
+          (@out)[i][y*stencilW+x] = (@inp)[y*(stencilW+T-1)+x+i]
+        end
+      end
+    end
+  end
+  res.terraModule = UnpackStencil
+
+  res.systolicModule = S.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  local sinp = S.parameter("inp", res.inputType)
+  local out = {}
+  for i=1,T do
+    out[i] = {}
+    for y=0,stencilH-1 do
+      for x=0,stencilW-1 do
+        out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+      end
+    end
+  end
+
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
+  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+
+  return rigel.newFunction(res)
+                                 end)
+
+
+-- if index==true, then we return a value, not an array
+C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
+  err( types.isType(inputType),"slice first argument must be type" )
+  err(type(idxLow)=="number", "slice idxLow must be number")
+  err(type(idxHigh)=="number", "slice idxHigh must be number")
+  err(index==nil or type(index)=="boolean", "index must be bool")
+  assert(X==nil)
+
+  if inputType:isTuple() then
+    assert( idxLow < #inputType.list )
+    assert( idxHigh < #inputType.list )
+    assert( idxLow == idxHigh ) -- NYI
+    assert( index )
+    local OT = inputType.list[idxLow+1]
+    local systolicInput = S.parameter("inp", inputType)
+    local systolicOutput = S.index( systolicInput, idxLow )
+    local tfn = terra( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
+    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
+  elseif inputType:isArray() then
+    local W = (inputType:arrayLength())[1]
+    local H = (inputType:arrayLength())[2]
+    assert(idxLow<W)
+    err(idxHigh<W, "idxHigh>=W")
+    assert(type(idyLow)=="number")
+    assert(type(idyHigh)=="number")
+    assert(idyLow<H)
+    err(idyHigh<H, "idyHigh>=H")
+    assert(idxLow<=idxHigh)
+    assert(idyLow<=idyHigh)
+    local OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
+    local systolicInput = S.parameter("inp",inputType)
+
+    local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
+    systolicOutput = S.cast( systolicOutput, OT )
+    local tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) 
+      for iy = idyLow,idyHigh+1 do
+        for ix = idxLow, idxHigh+1 do
+          (@out)[(iy-idyLow)*(idxHigh-idxLow+1)+(ix-idxLow)] = (@inp)[ix+iy*W] 
+        end
+      end
+    end
+
+    if index then
+      OT = inputType:arrayOver()
+      systolicOutput = S.index( systolicInput, idxLow, idyLow )
+      tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
+    end
+
+    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
+  else
+    assert(false)
+  end
+                         end)
+
+function C.index( inputType, idx, idy, X )
+  err( types.isType(inputType), "first input to index must be a type" )
+  err( type(idx)=="number", "index idx must be number")
+  assert(X==nil)
+  if idy==nil then idy=0 end
+  return C.slice( inputType, idx, idx, idy, idy, true )
+end
 
 
 return C

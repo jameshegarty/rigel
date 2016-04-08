@@ -15,12 +15,12 @@ local HS = out:toDarkroom("highselect")
 
 ----------------
 local inpraw = R.input(types.array2d(types.uint(8),1))
-local inp = R.apply("ir0", RM.index(types.array2d(types.uint(8),1),0,0), inpraw)
+local inp = R.apply("ir0", C.index(types.array2d(types.uint(8),1),0,0), inpraw)
 
 local PS = RM.posSeq(W,H,1)
 local pos = R.apply("posseq", PS)
-local pos = R.apply("idx0", RM.index(PS.outputType,0,0), pos )
-local pos = R.apply("idx1", RM.index(PS.outputType:arrayOver(),0,0), pos )
+local pos = R.apply("idx0", C.index(PS.outputType,0,0), pos )
+local pos = R.apply("idx1", C.index(PS.outputType:arrayOver(),0,0), pos )
 local pos = R.apply("CST", C.cast(types.uint(16),types.uint(8)), pos)
 
 local filter = R.apply("HS",HS, inp)

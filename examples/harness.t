@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local C = require "examplescommon"
 local types = require("types")
 local cstdlib = terralib.includec("stdlib.h")
 local fixed = require("fixed")
@@ -55,8 +56,8 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
   -- we give this a less strict timing requirement b/c this counts absolute cycles
   -- on our quarter throughput test, this means this will appear to take 4x as long as it should
   local inp = R.apply("underflow_US", RM.underflow(ITYPE, inputBytes/8, EC*4, true, ECTooSoon), inpSymb)
-  local inpdata = R.apply("inpdata", RM.makeHandshake(RM.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
-  local inptaps = R.apply("inptaps", RM.makeHandshake(RM.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
+  local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
+  local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
   local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(infile,inputType)),inpdata)
   local hsfninp = out
 
@@ -91,8 +92,8 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   if tapType==nil then
     inpdata = inpSymb
   else
-    inpdata = R.apply("inpdata", RM.makeHandshake(RM.index(ITYPE,0)), inpSymb)
-    inptaps = R.apply("inptaps", RM.makeHandshake(RM.index(ITYPE,1)), inpSymb)
+    inpdata = R.apply("inpdata", RM.makeHandshake(C.index(ITYPE,0)), inpSymb)
+    inptaps = R.apply("inptaps", RM.makeHandshake(C.index(ITYPE,1)), inpSymb)
   end
 
   

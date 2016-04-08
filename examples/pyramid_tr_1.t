@@ -35,12 +35,12 @@ local HST = types.tuple{DATA_TYPE,TAP_TYPE}
 
 local inp = R.input( R.Handshake(HST) )
 
-local out = R.apply("idx0", RM.makeHandshake( RM.index(HST,0)),inp)
+local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp)
 if T<8 then
   out = R.apply("CRtop", RM.liftHandshake( RM.changeRate(A,1,8,T)), out)
 end
 
-local tapinp =  R.apply("idx1", RM.makeHandshake( RM.index(HST,1)),inp)
+local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp)
 
 curT = T
 --vecT = T

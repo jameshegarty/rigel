@@ -46,7 +46,7 @@ local function argmin( SearchWindow, SADWidth, OffsetX, X)
   local indices = R.constant( "convKernel", idx, types.array2d( types.uint(8), SearchWindow ) ) -- uint8[SearchWindow]
 
   local sadout = R.apply("sadvalues", RM.map( C.SAD( A, types.uint(16), SADWidth ), SearchWindow), inp ) -- uint16[SearchWindow]
-  local packed = R.apply("SOS", RM.SoAtoAoS( SearchWindow, 1, {types.uint(8), types.uint(16)} ), R.tuple("stup",{indices, sadout}) )
+  local packed = R.apply("SOS", C.SoAtoAoS( SearchWindow, 1, {types.uint(8), types.uint(16)} ), R.tuple("stup",{indices, sadout}) )
   local AM = C.argmin(types.uint(8),types.uint(16))
   local out = R.apply("argmin", RM.reduce(AM,SearchWindow,1),packed)
 
@@ -74,11 +74,11 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
   local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
-  local inp = R.apply("oi0", RM.makeHandshake(RM.index(types.array2d(LRTYPE,1),0)), inp) -- A[2]
+  local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(LRTYPE,1),0)), inp) -- A[2]
   local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(LRTYPE,2), inp)
 
   -------------
-  local left = R.apply("left", RM.makeHandshake(RM.index(types.array2d(A,2),0)), R.selectStream("i0",inp_broadcast,0) )
+  local left = R.apply("left", RM.makeHandshake(C.index(types.array2d(A,2),0)), R.selectStream("i0",inp_broadcast,0) )
   
   -- theoretically, the left and right branch may have the same delay, so may not need a fifo.
   -- but, fifo one of the branches to be safe.
@@ -87,24 +87,24 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   left = R.applyMethod("l1",fifos[1],"load")
 
   local left = R.apply("AO",RM.makeHandshake(C.arrayop(types.uint(8),1)),left)
-  local left = R.apply( "LB", RM.makeHandshake(RM.stencilLinebuffer( types.uint(8), internalW, internalH, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
-  local left = R.apply( "lslice", RM.makeHandshake(RM.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1)), left)
-  left = R.apply( "llb", RM.makeHandshake( RM.unpackStencil( A, SADWidth, SADWidth, SearchWindow)  ), left) -- A[SADWidth,SADWidth][SearchWindow]
+  local left = R.apply( "LB", RM.makeHandshake(C.stencilLinebuffer( types.uint(8), internalW, internalH, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
+  local left = R.apply( "lslice", RM.makeHandshake(C.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1)), left)
+  left = R.apply( "llb", RM.makeHandshake( C.unpackStencil( A, SADWidth, SADWidth, SearchWindow)  ), left) -- A[SADWidth,SADWidth][SearchWindow]
 
   --------
-  local right = R.apply("right", RM.makeHandshake( RM.index(types.array2d(A,2),1)), R.selectStream("i1",inp_broadcast,1) )
+  local right = R.apply("right", RM.makeHandshake( C.index(types.array2d(A,2),1)), R.selectStream("i1",inp_broadcast,1) )
 
   table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(A,128)) )
   table.insert( statements, R.applyMethod( "s2", fifos[2], "store", right ) )
   right = R.applyMethod("r1",fifos[#fifos],"load")
 
   local right = R.apply("AOr", RM.makeHandshake( C.arrayop(types.uint(8),1)),right) -- uint8[1]
-  local right = R.apply( "rightLB", RM.makeHandshake( RM.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 )), right)
-  right = R.apply("rb", RM.makeHandshake(  RM.broadcast( STENCIL_TYPE, SearchWindow )  ), right ) -- A[SADWidth,SADWidth][SearchWindow]
+  local right = R.apply( "rightLB", RM.makeHandshake( C.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 )), right)
+  right = R.apply("rb", RM.makeHandshake(  C.broadcast( STENCIL_TYPE, SearchWindow )  ), right ) -- A[SADWidth,SADWidth][SearchWindow]
   -------
 
-  local merged = R.apply("merge", RM.SoAtoAoSHandshake( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
-  local packStencils = RM.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
+  local merged = R.apply("merge", C.SoAtoAoSHandshake( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
+  local packStencils = C.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
   local merged = R.apply("mer", RM.makeHandshake(RM.map(packStencils, SearchWindow)  ), merged ) -- A[2][SADWidth, SADWidth][SearchWindow]
   
   local res = R.apply("AM",RM.makeHandshake(argmin(SearchWindow,SADWidth,OffsetX)),merged) -- {uint8,uint16}

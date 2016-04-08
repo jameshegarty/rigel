@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local C = require "examplescommon"
 local types = require("types")
 local harness = require "harness"
 
@@ -12,7 +13,7 @@ T = 8
 function MAKE(scaleX)
   local ITYPE = types.array2d( types.uint(8), T ) -- always 8 for AXI
 
-  local hsfn =  RM.upsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) 
+  local hsfn =  C.upsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) 
 
   harness.axi( "upsample_wide_handshake_"..scaleX, hsfn, "frame_128.raw", nil, nil, ITYPE,T,W,H, ITYPE,T,W*scaleX,H*scaleX)
 end
