@@ -4,6 +4,7 @@ local types = require("types")
 local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
+local SDFRate = require "sdfrate"
 
 internalT = 4 -- internal throughput
 outputT = 8
@@ -108,7 +109,7 @@ end
 print("outputW",outputW,"outputH",outputH)
 
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
-SDF = R.sdfNormalize(SDF)
+SDF = SDFRate.normalize(SDF)
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus

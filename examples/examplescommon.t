@@ -701,6 +701,7 @@ C.broadcast = memoize(function(A,T)
 -- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
 -- min, max ranges are inclusive
 function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
+
   assert( type(xmin)=="number" )
   assert( type(xmax)=="number" )
   assert( xmax>=xmin )
@@ -711,7 +712,7 @@ function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
   rigel.expectBasic(A)
   if A:isArray() then error("Input to extract stencils must not be array") end
 
-  local res = {kind="extractStencils", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
+  local res = {kind="stencil", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
   res.delay=0
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
@@ -797,7 +798,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
 
 
 -- purely wiring
-C.unpackStencil = memoize(function( A, stencilW, stencilH, T )
+C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
   assert(stencilW>0)
@@ -805,6 +806,8 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T )
   assert(stencilH>0)
   assert(type(T)=="number")
   assert(T>=1)
+  err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
+  assert(X==nil)
 
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
   res.inputType = types.array2d( A, stencilW+T-1, stencilH)

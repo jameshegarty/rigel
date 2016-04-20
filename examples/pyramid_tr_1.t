@@ -4,6 +4,7 @@ local types = require("types")
 local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
+local SDFRate = require "sdfrate"
 
 T = 4 -- throughput
 outputT = 8
@@ -132,7 +133,7 @@ end
 print("outputW",outputW,"outputH",outputH)
 
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
-SDF = R.sdfNormalize(SDF)
+SDF = SDFRate.normalize(SDF)
 for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 print("TARGET_DEPTH",TARGET_DEPTH)

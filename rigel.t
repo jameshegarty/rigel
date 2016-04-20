@@ -5,6 +5,7 @@ local fpgamodules = require("fpgamodules")
 local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 local S = require("systolic")
+local SDFRate = require "sdfrate"
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
@@ -129,45 +130,6 @@ function darkroom.extractValid(a)
   return types.bool()
 end
 
--- t should be format {{number,number},{number,number},...}
-function darkroom.isSDFRate(t)
-  if type(t)~="table" then return false end
-  if keycount(t)~=#t then return false end
-  for _,v in pairs(t) do
-    if v=="x" then
-      -- ok
-    else
-      if type(v)~="table" then return false end
-      if (type(v[1])~="number" or type(v[2])~="number") then return false end
-    end
-  end
-  return true
-end
-
--- tab should be a table of systolic ASTs, all type array2d. Heights should match
-function concat2dArrays(tab)
-  assert(type(tab)=="table")
-  assert(#tab>0)
-  assert( systolic.isAST(tab[1]))
-  local H, ty = (tab[1].type:arrayLength())[2], tab[1].type:arrayOver()
-  local totalW = 0
-  local res = {}
-
-  for y=0,H-1 do
-    for _,v in ipairs(tab) do
-      assert( systolic.isAST(v) )
-      assert( v.type:isArray() )
-      assert( H==(v.type:arrayLength())[2] )
-      assert( ty==v.type:arrayOver() )
-      local w = (v.type:arrayLength())[1]
-      if y==0 then totalW = totalW + w end
-      table.insert(res, S.slice( v, 0, w-1, y, y ) )
-    end
-  end
-
-  return S.cast( S.tuple(res), types.array2d(ty,totalW,H) )
-end
-
 function darkroom.print(TY,inp)
   local stats = {}
   local TY = darkroom.extract(TY)
@@ -204,7 +166,7 @@ darkroomFunctionMT={__index=darkroomFunctionFunctions}
 -- I is the format: {{A_sdfrate,B_sdfrate},{A_converged,B_converged}}
 function darkroomFunctionFunctions:sdfTransfer( I, loc )
   assert(type(I)=="table")
-  assert( darkroom.isSDFRate(I[1]) )
+  assert( SDFRate.isSDFRate(I[1]) )
   assert(type(I[2][1])=="boolean")
   assert( type(loc)=="string" )
 
@@ -212,8 +174,8 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   -- (1) inputs are converged, but ratio is inconsistant. Return unconverged
   -- (2) ratio is consistant, but some inputs are unconverged. Return unconverged.
 
-  err( darkroom.isSDFRate(self.sdfInput), "Missing SDF rate for fn "..self.kind)
-  err( darkroom.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.kind)
+  err( SDFRate.isSDFRate(self.sdfInput), "Missing SDF rate for fn "..self.kind)
+  err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.kind)
 
   -- if we're going from N->N, we don't know how stuff maps so we can't do it automatically
   err( #self.sdfInput==1 or #self.sdfOutput==1, "sdf rate with no default behavior "..loc )
@@ -233,7 +195,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
       thisR[1],thisR[2] = simplify(thisR[1],thisR[2])
       if R==nil then R=thisR end
       consistantRatio = consistantRatio and (R[1]==thisR[1] and R[2]==thisR[2])
-      --    if consistantRatio==false then  print("RATIO",R[1],R[2],thisR[1],thisR[2])   end
+
       assert(type(Iconverged[i])=="boolean")
       allConverged = allConverged and Iconverged[i]
     end
@@ -248,7 +210,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   end
 
   assert(#res==#resConverged)
-  assert( darkroom.isSDFRate(res) )
+  assert( SDFRate.isSDFRate(res) )
   map( resConverged, function(n) assert(type(n)=="boolean") end )
 
   return { res, resConverged }
@@ -260,10 +222,10 @@ function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDep
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
 
-  assert(darkroom.isSDFRate(tab.sdfInput))
-  assert(darkroom.isSDFRate(tab.sdfOutput))
-  assert(tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1)
-  assert(tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1)
+  assert( SDFRate.isSDFRate(tab.sdfInput) )
+  assert( SDFRate.isSDFRate(tab.sdfOutput) )
+  assert( tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1 )
+  assert( tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1 )
 
   return setmetatable( tab, darkroomFunctionMT )
 end
@@ -291,7 +253,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
       if n.kind=="input" or n.kind=="constant" then
         local rate = {{1,1}}
         if n.kind=="input" and n.sdfRate~=nil then 
-          err(darkroom.isSDFRate(n.sdfRate),"sdf rate not an sdf rate? "..n.kind..n.loc)
+          err( SDFRate.isSDFRate(n.sdfRate),"sdf rate not an sdf rate? "..n.kind..n.loc)
           rate=n.sdfRate; 
         end
         res = {rate,broadcast(true,#rate)}
@@ -307,7 +269,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         elseif n.fnname=="store" then
           registeredInputRates[n.inst] = args[1]
           -- rate doesn't matter
-          assert(darkroom.isSDFRate(args[1][1]))
+          assert( SDFRate.isSDFRate(args[1][1]))
           assert(type(args[1][2][1])=="boolean")
           res = {args[1][1],args[1][2]}
         else
@@ -315,7 +277,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         end
       elseif n.kind=="apply" then
         if #n.inputs==0 then
-          assert(darkroom.isSDFRate(n.fn.sdfOutput))
+          assert( SDFRate.isSDFRate(n.fn.sdfOutput))
           res = {n.fn.sdfOutput,broadcast(true,#n.fn.sdfOutput)}
         elseif #n.inputs==1 then
           res =  n.fn:sdfTransfer(args[1], "APPLY "..n.name.." "..n.loc)
@@ -368,7 +330,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         assert(false)
       end
 
-      assert( darkroom.isSDFRate(res[1]) )
+      assert( SDFRate.isSDFRate(res[1]) )
       map( res[2], function(n) assert(type(n)=="boolean") end )
 
       __sdfTotalCache[n] = res[1]
@@ -410,12 +372,10 @@ function darkroomIRFunctions:calcSdfRate(root)
   if self.kind=="apply" then
     assert(#self.inputs<=1)
     local total = self:sdfTotal(root)
-    local res = fracMultiply({total[1][1],total[1][2]},{self.fn.sdfOutput[1][2],self.fn.sdfOutput[1][1]})
+    local res = SDFRate.fracMultiply({total[1][1],total[1][2]},{self.fn.sdfOutput[1][2],self.fn.sdfOutput[1][1]})
     if DARKROOM_VERBOSE then print("SDF RATE",self.name,res[1],res[2],"sdfINP",self.fn.sdfInput[1][1],self.fn.sdfInput[1][2],"SDFOUT",self.fn.sdfOutput[1][1],self.fn.sdfOutput[1][2]) end
     return res
   else
-    --print("sdfUtilization",self.kind)
-    --assert(false)
     return nil
   end
 end
@@ -434,27 +394,18 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
     self:visitEach(
       function( n, args )
         local r = n:calcSdfRate(self)
-        assert(isFrac(r) or r==nil)
+        assert( SDFRate.isFrac(r) or r==nil )
         
         local res 
---        for _,v in pairs(args) do
---          if v~=nil then
+
         if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest and r~=nil and fracToNumber(r)>=fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest==false and r~=nil and fracToNumber(r)<=fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+        elseif highest==false and r~=nil and SDFRate.fracToNumber(r)<=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
         end
---              res = v
---            end
---          end
---        end
---        if res==nil and r~=nil then res = {r,n.loc} end -- no inputs
 
---        assert(res==nil or isFrac(res[1]))
---        assert(res==nil or type(res[2])=="string")
---        return res
       end)
 
     if __sdfExtremeRateCache[self][highest]==nil then
@@ -596,113 +547,10 @@ end
 function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
-
-
-
-
--- normalizes a table of SDF rates so that they sum to 1
-function darkroom.sdfNormalize( tab )
-  assert( darkroom.isSDFRate(tab) )
-
-  local sum = {tab[1][1],tab[1][2]}
-  for i=2,#tab do
-    local b = tab[i]
-    -- (a/b)+(c/d) == (a*d/b*d) + (c*b/b*d)
-    sum[1] = sum[1]*b[2] + b[1]*sum[2]
-    sum[2] = sum[2]*b[2]
-  end
-  
-  local res = {}
-  for i=1,#tab do
-    local nn,dd = tab[i][1]*sum[2], tab[i][2]*sum[1]
-    local n,d = simplify(nn,dd)
-    res[i] = {n,d}
-  end
-  
-  return res
-end
-
-function isFrac(a)
-  return type(a)=="table" and type(a[1])=="number" and type(a[2])=="number"
-end
-
-function fracToNumber(a)
-  assert(isFrac(a))
-  return a[1]/a[2]
-end
-
-function fracInvert(a)
-  assert(isFrac(a))
-  return {a[2],a[1]}
-end
-
--- format {n,d}
-local function fracSum(a,b)
-  local denom = a[2]*b[2]
-  local num = a[1]*b[2]+b[1]*a[2]
-  local n,d=simplify(num,denom)
-  return {n,d}
-end
-
-function fracMultiply(a,b)
-  local n,d = simplify(a[1]*b[1],a[2]*b[2])
-  return {n,d}
-end
-
-function sdfSum(tab)
-  assert( darkroom.isSDFRate(tab) )
-  
-  local sum = {0,1}
-  for k,v in pairs(tab) do 
-    if v~="x" then sum = fracSum(sum,v) end
-  end
-
-  return sum
-end
-
-function sdfMultiply(tab,n,d)
-  assert(type(n)=="number")
-  assert(type(d)=="number")
-
-  local res = {}
-  for k,v in pairs(tab) do
-    if v=="x" then
-      table.insert(res,v)
-    else
-      table.insert(res, fracMultiply(v,{n,d}))
-    end
-  end
-  return res
-end
-
-local function mergeStores( module, N )
-  local res = S.moduleConstructor("MergeStores_"..module.name):onlyWire(true)
-  local inner = res:add( module:instantiate("inner") )
-
-  local srcFn = module:lookupFunction("store_1")
-  local inputType = types.array2d(srcFn:getInput().type, N)
-  local inp = S.parameter( "store_input", inputType )
-  local sout = S.tuple( map(range(N), function(i) return inner["store_"..i](inner, S.index( inp,i-1) ) end ) )
-
-  res:addFunction( S.lambda("store", inp, sout, "store_output" ) )
-
-  res:addFunction( S.lambda("store_reset", S.parameter("store_reset_input",types.null()), nil, "store_reset_output", map( range(N), function(i) return inner["store_"..i.."_reset"](inner) end ) ) )
-
-  local readyinp = S.parameter( "store_ready_downstream", types.bool() )
-  local readyout = S.tuple( map(range(N), function(i) return inner["store_"..i.."_ready"](inner, readyinp) end ) )
-  res:addFunction( S.lambda("store_ready", readyinp, readyout, "store_ready_output" ) )
-
-  passthroughSystolic( res, module, inner, {"load"}, true )
-  return res
-end
-
-
-
-
 -- function argument
 function darkroom.input( type, sdfRate )
   err( types.isType( type ), "darkroom.input: first argument should be type" )
-  assert( sdfRate==nil or darkroom.isSDFRate(sdfRate))
+  assert( sdfRate==nil or SDFRate.isSDFRate(sdfRate))
   if sdfRate==nil then sdfRate={{1,1}} end
   return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
@@ -713,7 +561,6 @@ function callOnEntries( T, fnname )
   for k,v in pairs( T.entries ) do if v.type:isstruct() then table.insert( ssStats, quote TS.[v.field]:[fnname]() end) end end
   T.methods[fnname] = terra([TS]) [ssStats] end
 end
-
 
 function darkroom.instantiateRegistered( name, fn )
   err( type(name)=="string", "name must be string")
@@ -739,8 +586,6 @@ function darkroom.applyMethod( name, inst, fnname, input )
 
   return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )
 end
-
-
 
 function darkroom.constant( name, value, ty )
   assert( type(name) == "string" )
@@ -789,241 +634,5 @@ function darkroom.statements( t )
 end
 
 
-function darkroom.seqMap( f, W, H, T )
-  err( darkroom.isFunction(f), "fn must be a function")
-  err( type(W)=="number", "W must be a number")
-  err( type(H)=="number", "H must be a number")
-  err( type(T)=="number", "T must be a number")
-  darkroom.expectBasic(f.inputType)
-  darkroom.expectBasic(f.outputType)
-  local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
-  local struct SeqMap { inner: f.terraModule}
-  terra SeqMap:reset() self.inner:reset() end
-  terra SeqMap:stats() self.inner:stats("TOP") end
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var o : darkroom.lower(f.outputType):toTerraType()
-    for i=0,W*H do self.inner:process(nil,&o) end
-  end
-  res.terraModule = SeqMap
-
-  res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
-reg CLK = 0;
-integer i = 0;
-reg RST = 1;
-reg valid = 0;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.CE(1'b1),.process_valid(valid),.reset(RST));
-   initial begin
-      // clock in reset bit
-      while(i<100) begin
-        CLK = 0; #10; CLK = 1; #10;
-        i = i + 1;
-      end
-
-      RST = 0;
-      valid = 1;
-
-      i=0;
-      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
-         CLK = 0; #10; CLK = 1; #10;
-         i = i + 1;
-      end
-      $finish();
-   end
-endmodule
-]]})
-
-  return darkroom.newFunction(res)
-end
-
-local function readAll(file)
-    local f = io.open(file, "rb")
-    local content = f:read("*all")
-    f:close()
-    return content
-end
-
-function darkroom.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, X )
-  err( darkroom.isFunction(f), "fn must be a function")
-  err( types.isType(inputType), "inputType must be a type")
-  err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
-  if tapInputType~=nil then tapInputType:checkLuaValue(tapValue) end
-  err( type(inputCount)=="number", "inputCount must be a number")
-  err( type(outputCount)=="number", "outputCount must be a number")
-  err( type(axi)=="boolean", "axi should be a bool")
-  assert(X==nil)
-
-  darkroom.expectHandshake(f.inputType)
-  darkroom.expectHandshake(f.outputType)
-
-  local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
-  err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
-
-  local res = {kind="seqMapHandshake", inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
-  res.sdfInput = f.sdfInput
-  res.sdfOutput = f.sdfOutput
-  local struct SeqMap { inner: f.terraModule}
-  terra SeqMap:reset() self.inner:reset() end
-  terra SeqMap:stats() self.inner:stats("TOP") end
-
-  local innerinp = symbol(darkroom.lower(f.inputType):toTerraType(), "innerinp")
-  local assntaps = quote end
-  if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
-
-  if readyRate==nil then readyRate=1 end
-
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var [innerinp]
-    [assntaps]
-
-    var o : darkroom.lower(f.outputType):toTerraType()
-    var inpAddr = 0
-    var outAddr = 0
-    var downstreamReady = 0
-    var cycles : uint = 0
-
-    while inpAddr<inputCount or outAddr<outputCount do
-      valid(innerinp)=(inpAddr<inputCount)
-      self.inner:calculateReady(downstreamReady==0)
-      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
-      self.inner:process(&innerinp,&o)
-      if self.inner.ready then inpAddr = inpAddr + 1 end
-      if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
-      downstreamReady = downstreamReady+1
-      if downstreamReady==readyRate then downstreamReady=0 end
-      cycles = cycles + 1
-    end
-    return cycles
-  end
-  res.terraModule = SeqMap
-
-  local verilogStr
-
-  if axi then
-    local baseTypeI = inputType
-    local baseTypeO = darkroom.extractData(f.outputType)
-    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
-    err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
-
-    local axiv = readAll("../extras/helloaxi/axi.v")
-    axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
-    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
-    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
-
-    -- input/output tokens are one axi bus transaction => they are 8 bytes
-    local inputBytes = upToNearest(128,inputCount*8)
-    local outputBytes = upToNearest(128,outputCount*8)
-    axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
-    -- extra 128 is for the extra AXI burst that contains metadata
-    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
-
-    -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
-    --local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
-    --print("MAX UTILIZATION",maxUtilization,LL)
-
-    --local minUtilization, MLL = f.output:sdfExtremeUtilization(false)
-    --print("MIN UTILIZATION",minUtilization,MLL)
-    
-    -- this is the worst utilization of a unit, accounting for the fact that all units must have utilization < 1
-    --local totalMinUtilization = minUtilization/maxUtilization
-    --print("TOTAL MIN UTILIZATION",totalMinUtilization)
-    local maxUtilization = 1
-
-    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
-    if tapInputType~=nil then
-      local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
-      local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
-
---      axiv = string.gsub(axiv,"___PIPELINE_TAPS",S.declareReg( tapInputType, "taps").."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
-      axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
-    else
-      axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
-    end
-
-    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
-  else
-    local rrlog2 = math.log(readyRate)/math.log(2)
-
-    local readybit = "1'b1"
-    if rrlog2>0 then readybit = "ready_downstream==1" end
-
-    local tapreg, tapRST = "",""
-    if tapInputType~=nil then 
-      tapreg = S.declareReg( tapInputType, "taps").."\n" 
-      tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
-    end
-
-    verilogStr = [[module sim();
-reg CLK = 0;
-integer i = 0;
-reg RST = 1;
-wire valid;
-reg []]..rrlog2..[[:0] ready_downstream = 1;
-reg [15:0] doneCnt = 0;
-wire ready;
-reg [31:0] totalClocks = 0;
-]]..tapreg..[[
-]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
-
-]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
-   initial begin
-      // clock in reset bit
-      while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
-
-      RST = 0;
-      //valid = 1;
-      totalClocks = 0;
-      while(1) begin CLK = 0; #10; CLK = 1; #10; end
-   end
-
-  reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
-  reg [31:0] validCnt = 0;
-
-  assign valid = (RST==0 && validInCnt < ]]..inputCount..[[);
-
-  always @(posedge CLK) begin
-    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
-    // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
-    // keep simulating for N cycles to make sure we don't send any more
-]]..tapRST..[[
-    if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end // I think we have this _NOT_ finish so that it outputs an invalid file
-    if(validCnt>= ]]..outputCount..[[ && doneCnt==1024 ) begin $finish(); end
-    if(validCnt>= ]]..outputCount..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
-    if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
-    
-    // ignore the output when we're in reset mode - output is probably bogus
-    if(]]..readybit..[[ && process_output[]]..(darkroom.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
-    ready_downstream <= ready_downstream + 1;
-    totalClocks <= totalClocks + 1;
-  end
-endmodule
-]]
-  end
-
-  res.systolicModule = S.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
-  res.systolicModule:add(f.systolicModule:instantiate("inst"))
-
-  return darkroom.newFunction(res)
-end
-
-function darkroom.writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, X)
-  assert(type(inputImage)=="string")
-  assert(type(inputBytesPerPixel)=="number")
-  assert(type(inputWidth)=="number")
-  assert(type(inputHeight)=="number")
-  assert(type(outputBytesPerPixel)=="number")
-  assert(type(outputWidth)=="number")
-  assert(type(outputHeight)=="number")
-  assert(X==nil)
-
-  local scaleX = {outputWidth,inputWidth}
-  local scaleY = {outputHeight,inputHeight}
-  local scale = fracMultiply(scaleX,scaleY)
-
-  io.output(filename)
-    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
-  io.close()
-end
 
 return darkroom

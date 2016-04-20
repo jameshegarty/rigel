@@ -5,6 +5,7 @@ local S = require("systolic")
 local harris = require "harris_core"
 local C = require "examplescommon"
 local f = require "fixed_float"
+local SDFRate = require "sdfrate"
 --f.DISABLE_SYNTH=true
 
 
@@ -374,7 +375,7 @@ local function siftKernel(dxdyType)
 
   local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  print("SIFTSDF",fracToNumber(siftfn.sdfInput[1]),fracToNumber(siftfn.sdfOutput[1]))
+  print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
 

@@ -4,6 +4,26 @@ local C = require "examplescommon"
 local types = require("types")
 local cstdlib = terralib.includec("stdlib.h")
 local fixed = require("fixed")
+local SDFRate = require "sdfrate"
+
+local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, X)
+  assert(type(inputImage)=="string")
+  assert(type(inputBytesPerPixel)=="number")
+  assert(type(inputWidth)=="number")
+  assert(type(inputHeight)=="number")
+  assert(type(outputBytesPerPixel)=="number")
+  assert(type(outputWidth)=="number")
+  assert(type(outputHeight)=="number")
+  assert(X==nil)
+
+  local scaleX = {outputWidth,inputWidth}
+  local scaleY = {outputHeight,inputHeight}
+  local scale = SDFRate.fracMultiply(scaleX,scaleY)
+
+  io.output(filename)
+    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
+  io.close()
+end
 
 local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPercent)
   assert(type(outputCount)=="number")
@@ -131,7 +151,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = R.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
+    local f = RM.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
@@ -139,7 +159,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 
-    R.writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
+    writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
   end
 
 end
@@ -169,7 +189,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = R.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
+    local f = RM.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
     io.output("out/"..filename..ext..".sim.v")
     io.write(f:toVerilog())
     io.close()
@@ -199,7 +219,7 @@ H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW,
   local inputCount = (inputW*inputH)/inputT
 local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
-local fnaxi = R.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
+local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
 io.write(fnaxi:toVerilog())
 io.close()

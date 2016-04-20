@@ -4,12 +4,38 @@ local cstring = terralib.includec("string.h")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
 local fpgamodules = require("fpgamodules")
+local SDFRate = require "sdfrate"
 
 local data = rigel.data
 local valid = rigel.valid
 local ready = rigel.ready
 
 local modules = {}
+
+
+-- tab should be a table of systolic ASTs, all type array2d. Heights should match
+local function concat2dArrays(tab)
+  assert(type(tab)=="table")
+  assert(#tab>0)
+  assert( systolic.isAST(tab[1]))
+  local H, ty = (tab[1].type:arrayLength())[2], tab[1].type:arrayOver()
+  local totalW = 0
+  local res = {}
+
+  for y=0,H-1 do
+    for _,v in ipairs(tab) do
+      assert( systolic.isAST(v) )
+      assert( v.type:isArray() )
+      assert( H==(v.type:arrayLength())[2] )
+      assert( ty==v.type:arrayOver() )
+      local w = (v.type:arrayLength())[1]
+      if y==0 then totalW = totalW + w end
+      table.insert(res, S.slice( v, 0, w-1, y, y ) )
+    end
+  end
+
+  return S.cast( S.tuple(res), types.array2d(ty,totalW,H) )
+end
 
 
 -- *this should really be in examplescommon.t
@@ -474,7 +500,7 @@ modules.liftDecimate = memoize(function(f)
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
 
-  err( rigel.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
+  err( SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
 
   res.delay = f.delay
@@ -623,7 +649,7 @@ modules.liftHandshake = memoize(function(f)
   res.inputType = rigel.Handshake(rigel.extractData(f.inputType))
   res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
 
-  err( rigel.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
+  err( SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful
@@ -1005,7 +1031,7 @@ function modules.upsampleXSeq( A, T, scale, X )
 
   if T==1 then
     -- special case the EZ case of taking one value and writing it out N times
-    local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}, stateful=true}
+    local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}, stateful=true, A=A, T=T, scale=scale}
 
     local ITYPE = types.array2d(A,T)
     res.inputType = ITYPE
@@ -1062,7 +1088,7 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   err( isPowerOf2(scale), "scale must be power of 2")
   err( isPowerOf2(W), "W must be power of 2")
 
-  local res = {kind="upsampleYSeq", sdfInput={{1,scale}}, sdfOutput={{1,1}}}
+  local res = {kind="upsampleYSeq", sdfInput={{1,scale}}, sdfOutput={{1,1}}, A=A, T=T, width=W, height=H, scale=scale}
   local ITYPE = types.array2d(A,T)
   res.inputType = ITYPE
   res.outputType = rigel.RV(types.array2d(A,T))
@@ -1157,7 +1183,7 @@ function modules.pyramidSchedule( depth, wtop, T )
   err(type(depth)=="number", "depth must be number")
   err(type(wtop)=="number", "wtop must be number")
   err(type(T)=="number", "T must be number")
-  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
+  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
   local struct PyramidSchedule { depth: uint8; w:uint }
   terra PyramidSchedule:reset() self.depth=0; self.w=0 end
   terra PyramidSchedule:process( out : &uint8 )
@@ -1234,7 +1260,7 @@ function modules.toHandshakeArray( A, inputRates )
   err( types.isType(A), "A must be type" )
   rigel.expectBasic(A)
   err( type(inputRates)=="table", "inputRates must be table")
-  assert(rigel.isSDFRate(inputRates))
+  assert( SDFRate.isSDFRate(inputRates))
 
   local res = {kind="toHandshakeArray", A=A, inputRates = inputRates}
   res.inputType = types.array2d( rigel.Handshake(A), #inputRates )
@@ -1321,7 +1347,7 @@ end
 function modules.serialize( A, inputRates, Schedule, X )
   err( types.isType(A), "A must be type" )
   err( type(inputRates)=="table", "inputRates must be table")
-  assert( rigel.isSDFRate(inputRates) )
+  assert( SDFRate.isSDFRate(inputRates) )
   err( rigel.isFunction(Schedule), "schedule must be darkroom function")
   err( rigel.lower(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
   rigel.expectBasic(A)
@@ -1415,7 +1441,7 @@ end
 function modules.demux( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
-  assert( rigel.isSDFRate(rates) )
+  assert( SDFRate.isSDFRate(rates) )
   rigel.expectBasic(A)
   assert(X==nil)
 
@@ -1518,7 +1544,7 @@ end
 function modules.flattenStreams( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
-  assert( rigel.isSDFRate(rates) )
+  assert( SDFRate.isSDFRate(rates) )
   rigel.expectBasic(A)
   assert(X==nil)
 
@@ -1776,7 +1802,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( R==0 or (R>=T and R%T==0), "padSeq, R<T or R%T~=0")
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
 
-  local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value}
+  local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
   res.inputType = types.array2d(A,T)
   res.outputType = rigel.RV(types.array2d(A,T))
   res.stateful = true
@@ -1872,7 +1898,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   local inputCount = maxRate/inputRate
   local outputCount = maxRate/outputRate
 
-  local res = {kind="changeRate", type=A, inputRate=inputRate, outputRate=outputRate}
+  local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
   res.inputType = types.array2d(A,inputRate,H)
   res.outputType = rigel.RV(types.array2d(A,outputRate,H))
   res.stateful = true
@@ -2205,7 +2231,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates )
     rigel.expectBasic(f.outputType)
     res.inputType = rigel.HandshakeTmuxed( f.inputType, #tmuxRates )
     res.outputType = rigel.HandshakeTmuxed (f.outputType, #tmuxRates )
-    assert( rigel.isSDFRate(tmuxRates) )
+    assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = tmuxRates, tmuxRates
 
     function res:sdfTransfer( I, loc ) 
@@ -2810,38 +2836,38 @@ modules.cycleCounter = memoize(function( A, count )
 -- and (2) no node should have SDF rate > 1
 local function lambdaSDFNormalize(input,output)
   local sdfMaxRate = output:sdfExtremeRate(true)
-  err(fracToNumber(sdfMaxRate)>=1, "sdf max rate is <1?")
+  err( SDFRate.fracToNumber(sdfMaxRate)>=1, "sdf max rate is <1?")
 
   if input.sdfRate~=nil then
-    err(rigel.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
-    --local sdfInputSum = sdfSum(input.sdfRate)
+    err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
+
     for k,v in pairs(input.sdfRate) do
       err(v=="x" or v[1]/v[2]<=1, "error, lambda declared with input BW > 1")
     end
   end
 
   local outputBW = output:sdfTotal(output)
-  local outputBW = sdfSum(outputBW)
+  local outputBW = SDFRate.sum(outputBW)
 
   -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
   -- we already checked that the input is <1, so that won't limit us.
   local scaleFactor
 
-  if fracToNumber(sdfMaxRate) > fracToNumber(outputBW) then
-    scaleFactor = fracInvert(sdfMaxRate)
+  if SDFRate.fracToNumber(sdfMaxRate) > SDFRate.fracToNumber(outputBW) then
+    scaleFactor = SDFRate.fracInvert(sdfMaxRate)
   else
-    scaleFactor = fracInvert(outputBW)
+    scaleFactor = SDFRate.fracInvert(outputBW)
   end
 
-  if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate",fracToNumber(sdfMaxRate),"outputBW", fracToNumber(outputBW), "scaleFactor",fracToNumber(scaleFactor)) end
+  if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
 
   local newInput
   local newOutput = output:process(
     function(n,orig)
       if n.kind=="input" then
         assert(n.id==input.id)
-        n.sdfRate = sdfMultiply(n.sdfRate,scaleFactor[1],scaleFactor[2])
-        assert(rigel.isSDFRate(n.sdfRate))
+        n.sdfRate = SDFRate.multiply(n.sdfRate,scaleFactor[1],scaleFactor[2])
+        assert( SDFRate.isSDFRate(n.sdfRate))
         newInput = rigel.newIR(n)
         return newInput
       end
@@ -3153,12 +3179,12 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 
   res.terraModule = docompile(res)
 
-  assert(rigel.isSDFRate(input.sdfRate))
+  assert( SDFRate.isSDFRate(input.sdfRate) )
   res.sdfInput = input.sdfRate
   res.sdfOutput = output:sdfTotal(output)
 
-  local isum = sdfSum(res.sdfInput)
-  local osum = sdfSum(res.sdfOutput)
+  local isum = SDFRate.sum(res.sdfInput)
+  local osum = SDFRate.sum(res.sdfOutput)
 
   if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
 
@@ -3307,7 +3333,7 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
   assert( types.isType(outputType ) )
   assert( type(delay)=="number" )
   err( systolic.isAST(systolicOutput), "missing systolic output")
-  err(sdfOutput==nil or rigel.isSDFRate(sdfOutput),"SDF output must be SDF")
+  err(sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"SDF output must be SDF")
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
@@ -3459,5 +3485,222 @@ function modules.fwriteSeq( filename, ty )
   return rigel.newFunction(res)
 end
 
+function modules.seqMap( f, W, H, T )
+  err( darkroom.isFunction(f), "fn must be a function")
+  err( type(W)=="number", "W must be a number")
+  err( type(H)=="number", "H must be a number")
+  err( type(T)=="number", "T must be a number")
+  darkroom.expectBasic(f.inputType)
+  darkroom.expectBasic(f.outputType)
+  local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
+  local struct SeqMap { inner: f.terraModule}
+  terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:stats() self.inner:stats("TOP") end
+  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+    var o : darkroom.lower(f.outputType):toTerraType()
+    for i=0,W*H do self.inner:process(nil,&o) end
+  end
+  res.terraModule = SeqMap
+
+  res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
+reg CLK = 0;
+integer i = 0;
+reg RST = 1;
+reg valid = 0;
+]]..f.systolicModule.name..[[ inst(.CLK(CLK),.CE(1'b1),.process_valid(valid),.reset(RST));
+   initial begin
+      // clock in reset bit
+      while(i<100) begin
+        CLK = 0; #10; CLK = 1; #10;
+        i = i + 1;
+      end
+
+      RST = 0;
+      valid = 1;
+
+      i=0;
+      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
+         CLK = 0; #10; CLK = 1; #10;
+         i = i + 1;
+      end
+      $finish();
+   end
+endmodule
+]]})
+
+  return darkroom.newFunction(res)
+end
+
+local function readAll(file)
+    local f = io.open(file, "rb")
+    local content = f:read("*all")
+    f:close()
+    return content
+end
+
+function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, X )
+  err( darkroom.isFunction(f), "fn must be a function")
+  err( types.isType(inputType), "inputType must be a type")
+  err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
+  if tapInputType~=nil then tapInputType:checkLuaValue(tapValue) end
+  err( type(inputCount)=="number", "inputCount must be a number")
+  err( type(outputCount)=="number", "outputCount must be a number")
+  err( type(axi)=="boolean", "axi should be a bool")
+  assert(X==nil)
+
+  darkroom.expectHandshake(f.inputType)
+  darkroom.expectHandshake(f.outputType)
+
+  local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
+  err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
+
+  local res = {kind="seqMapHandshake", tapInputType=tapInputType, tapValue=tapValue, inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
+  res.sdfInput = f.sdfInput
+  res.sdfOutput = f.sdfOutput
+  local struct SeqMap { inner: f.terraModule}
+  terra SeqMap:reset() self.inner:reset() end
+  terra SeqMap:stats() self.inner:stats("TOP") end
+
+  local innerinp = symbol(darkroom.lower(f.inputType):toTerraType(), "innerinp")
+  local assntaps = quote end
+  if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
+
+  if readyRate==nil then readyRate=1 end
+
+  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+    var [innerinp]
+    [assntaps]
+
+    var o : darkroom.lower(f.outputType):toTerraType()
+    var inpAddr = 0
+    var outAddr = 0
+    var downstreamReady = 0
+    var cycles : uint = 0
+
+    while inpAddr<inputCount or outAddr<outputCount do
+      valid(innerinp)=(inpAddr<inputCount)
+      self.inner:calculateReady(downstreamReady==0)
+      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
+      self.inner:process(&innerinp,&o)
+      if self.inner.ready then inpAddr = inpAddr + 1 end
+      if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
+      downstreamReady = downstreamReady+1
+      if downstreamReady==readyRate then downstreamReady=0 end
+      cycles = cycles + 1
+    end
+    return cycles
+  end
+  res.terraModule = SeqMap
+
+  local verilogStr
+
+  if axi then
+    local baseTypeI = inputType
+    local baseTypeO = darkroom.extractData(f.outputType)
+    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
+    err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
+
+    local axiv = readAll("../extras/helloaxi/axi.v")
+    axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
+    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
+    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
+
+    -- input/output tokens are one axi bus transaction => they are 8 bytes
+    local inputBytes = upToNearest(128,inputCount*8)
+    local outputBytes = upToNearest(128,outputCount*8)
+    axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
+    -- extra 128 is for the extra AXI burst that contains metadata
+    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
+
+    -- Our architecture can't have units with a utilization>1, so the 'maxUtilization' here will limit the throughput of the pipeline
+    --local maxUtilization,LL = f.output:sdfExtremeUtilization(true)
+    --print("MAX UTILIZATION",maxUtilization,LL)
+
+    --local minUtilization, MLL = f.output:sdfExtremeUtilization(false)
+    --print("MIN UTILIZATION",minUtilization,MLL)
+    
+    -- this is the worst utilization of a unit, accounting for the fact that all units must have utilization < 1
+    --local totalMinUtilization = minUtilization/maxUtilization
+    --print("TOTAL MIN UTILIZATION",totalMinUtilization)
+    local maxUtilization = 1
+
+    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
+    if tapInputType~=nil then
+      local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
+      local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
+
+--      axiv = string.gsub(axiv,"___PIPELINE_TAPS",S.declareReg( tapInputType, "taps").."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+      axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
+    else
+      axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
+    end
+
+    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
+  else
+    local rrlog2 = math.log(readyRate)/math.log(2)
+
+    local readybit = "1'b1"
+    if rrlog2>0 then readybit = "ready_downstream==1" end
+
+    local tapreg, tapRST = "",""
+    if tapInputType~=nil then 
+      tapreg = S.declareReg( tapInputType, "taps").."\n" 
+      tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
+    end
+
+    verilogStr = [[module sim();
+reg CLK = 0;
+integer i = 0;
+reg RST = 1;
+wire valid;
+reg []]..rrlog2..[[:0] ready_downstream = 1;
+reg [15:0] doneCnt = 0;
+wire ready;
+reg [31:0] totalClocks = 0;
+]]..tapreg..[[
+]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
+
+]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
+   initial begin
+      // clock in reset bit
+      while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
+
+      RST = 0;
+      //valid = 1;
+      totalClocks = 0;
+      while(1) begin CLK = 0; #10; CLK = 1; #10; end
+   end
+
+  reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
+  reg [31:0] validCnt = 0;
+
+  assign valid = (RST==0 && validInCnt < ]]..inputCount..[[);
+
+  always @(posedge CLK) begin
+    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
+    // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
+    // keep simulating for N cycles to make sure we don't send any more
+]]..tapRST..[[
+    if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end // I think we have this _NOT_ finish so that it outputs an invalid file
+    if(validCnt>= ]]..outputCount..[[ && doneCnt==1024 ) begin $finish(); end
+    if(validCnt>= ]]..outputCount..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
+    if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
+    
+    // ignore the output when we're in reset mode - output is probably bogus
+    if(]]..readybit..[[ && process_output[]]..(darkroom.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
+    ready_downstream <= ready_downstream + 1;
+    totalClocks <= totalClocks + 1;
+  end
+endmodule
+]]
+  end
+
+  res.systolicModule = S.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
+  res.systolicModule:add(f.systolicModule:instantiate("inst"))
+
+  return darkroom.newFunction(res)
+end
 
 return modules
