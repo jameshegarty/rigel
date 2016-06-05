@@ -5,7 +5,13 @@ Overview
 ========
 
 [Rigel](#rigel-rigelt)
-  [Interface Types](#rigel-interface-types)
+
+  [Rigel Interface Types](#rigel-interface-types)
+
+  [Rigel Operators](#rigel-operators)
+
+[Rigel Modules](#modules-srcmodulest)
+
 [Systolic](#systolic-systolict)
 
 Rigel (rigel.t)
@@ -124,7 +130,7 @@ types.t also provides a number of helper functions for manipulating and introspe
     type:verilogBits() -- bits when type is used in Verilog
 
 
-Modules : src/modules.t
+Modules (src/modules.t)
 =========
 
 *modules.t* contains Rigel's core set of modules. This is intended to be the smallest and simplest set of core functionality that an architecture needs to support to implement Rigel's programming model. Some additional useful modules built out of these core modules are implemented in Rigel's standard library, *examplescommon.t*. A few of these modules from *examplescommon.t* are described here for completeness, and are marked with a (*).
