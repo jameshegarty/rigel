@@ -4,18 +4,22 @@ Install & Run
 Overview
 ========
 
+![Rigel System Overview](http://stanford.edu/~jhegarty/rigel_readme_system.png)
+
 * [Base Types](#base-types-typest)
 * [Rigel](#rigel-rigelt)
   * [Rigel Operators](#rigel-operators)
   * [Rigel Interface Types](#rigel-interface-types)
 * [Rigel Modules](#modules-srcmodulest)
-  * [Core Modules](#core-modules)
-  * [Array Manipulation](#array-manipulation)
-  * [Multi-Rate Modules](#multi-rate-modules)
-  * [Higher-Order Modules](#higher-order-modules) map
-  * [Streams](#streams)
-  * [Misc](#misc)
+  * [Core Modules](#core-modules) lift, lambda, stencil, linebuffer
+  * [Array Manipulation](#array-manipulation) SoAtoAoS, pad, crop, border
+  * [Multi-Rate Modules](#multi-rate-modules) downsample, upsample, filter
+  * [Higher-Order Modules](#higher-order-modules) map, reduce
+  * [Interfaces](#interfaces) liftBasic, liftDecimate, liftHandshake
+  * [Streams](#streams) broadcastStream, fifo
+  * [Misc](#misc) lut, fread, fwrite
 * [Systolic](#systolic-systolict)
+* [Fixed](#fixed-fixedt)
 
 Base Types (types.t)
 ====================
@@ -469,5 +473,5 @@ Systolic (systolic.t)
 =====================
 
 
-Fixed : fixed.t
+Fixed (fixed.t)
 ===============
