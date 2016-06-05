@@ -4,11 +4,11 @@ Install & Run
 Overview
 ========
 
-[Foo](#foo)
-[Systolic](#systolic)
-[Systoliclol](#systolic-systolict)
+[Rigel](#rigel-rigelt)
+  [Interface Types](#rigel-interface-types)
+[Systolic](#systolic-systolict)
 
-Rigel : rigel.t
+Rigel (rigel.t)
 ===============
 
 Rigel Interface Types
