@@ -6,10 +6,7 @@ Overview
 
 [Foo](#foo)
 [Systolic](#systolic)
-[systolic](#systolic)
-[Systolic](#systolic:systolic.t)
-[Systolic](#systolic)
-[Systoliclol](#systoliclol-systolict)
+[Systoliclol](#systolic-systolict)
 
 Rigel : rigel.t
 ===============
@@ -458,19 +455,9 @@ Misc
 
 ### fwriteSeq ###
 
-Systolic : systolic.t
+Systolic (systolic.t)
 =====================
-# Foo
 
-# Systolic:systolic.t
-
-# Systolic
-
-Systoliclol (systolic.t)
-===========
-
-Systoliclol : systolic.t
-===========
 
 Fixed : fixed.t
 ===============
