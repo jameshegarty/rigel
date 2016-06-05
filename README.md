@@ -1,5 +1,9 @@
-Installation
-=====
+Install & Run
+=============
+
+Overview
+========
+
 
 Rigel : rigel.t
 ===============
@@ -163,16 +167,16 @@ Core Modules
     examplescommon.stencil( A:Type, width:Uint, height:Uint, xmin:Int, xmax:Int, ymin:Int, ymax:Int )
     fields: {..., kind="stencil", type=A, w=width, h=height, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
 
-    *stencil* takes an array of size *width*x*height* and turns it into an array of stencils. Similar to *linebuffer*, for pixels outside the array the value is undefined (this occurs on borders of the array). Borders with defined values can be implemented using a pad and crop, or with the *unpackStencil* module, which does not read outside the array.
+*stencil* takes an array of size *width*x*height* and turns it into an array of stencils. Similar to *linebuffer*, for pixels outside the array the value is undefined (this occurs on borders of the array). Borders with defined values can be implemented using a pad and crop, or with the *unpackStencil* module, which does not read outside the array.
 
 ### linebuffer ###
     type: A[T]->A[T,-ymin+1]
     modules.linebuffer( A:Type, width:Uint, height:Uint, T:Uint, ymin:Int <= 0 )
     fields: {..., kind="linebuffer", type=A, w=width, h=height, T=T, ymin=ymin }
 
-    *linebuffer* takes a stream of pixels of type *A* running at throughput *T* and converts it into a stream of columns of past lines, with size set by *ymin*. This stream of columns can then be converted into a stream of stencils using the *SSR* module.
+*linebuffer* takes a stream of pixels of type *A* running at throughput *T* and converts it into a stream of columns of past lines, with size set by *ymin*. This stream of columns can then be converted into a stream of stencils using the *SSR* module.
 
-    As explained in Darkroom 2014, when processing the array in scanline order (low indices to high indices), the linebuffer can only provide pixels at indices *ymin<=0*, because these are the only values that have been seen. 
+As explained in Darkroom 2014, when processing the array in scanline order (low indices to high indices), the linebuffer can only provide pixels at indices *ymin<=0*, because these are the only values that have been seen. 
 
 ### SSR ###
     type: A[T,-ymin+1]->A[T-xmin,-ymin+1]
