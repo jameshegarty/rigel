@@ -4,6 +4,7 @@ Install & Run
 Overview
 ========
 
+[Foo](#foo)
 
 Rigel : rigel.t
 ===============
@@ -183,22 +184,22 @@ As explained in Darkroom 2014, when processing the array in scanline order (low 
     modules.SSR( A:Type, T:Uint, xmin:Int <= 0, ymin:Int <= 0 )
     fields: {..., kind="SSR", type=A, T=T, xmin=xmin, ymin=ymin }
 
-    *SSR* implements a stencil shift register. The stencil shift register converts a stream of columns of lines into a stream of stencils. If *T*>1, this returns multiple stencils per firing coalesced into one large stencil, because the sub-stencil share values. This can be broken into multiple stencils using *unpackStencil*.
+*SSR* implements a stencil shift register. The stencil shift register converts a stream of columns of lines into a stream of stencils. If *T*>1, this returns multiple stencils per firing coalesced into one large stencil, because the sub-stencil share values. This can be broken into multiple stencils using *unpackStencil*.
 
 ### stencilLinebuffer* ###
     type: A[T]->A[T-xmin,-ymin+1]
     examplescommon.stencilLinebuffer( A:Type, width:Uint, height:Uint, T:Uint, xmin:Int <= 0, xmax:Int = 0, ymin:Int <= 0, ymax: Int = 0)
 
-    *stencilLinebuffer* is a fusion of a *linebuffer* and a *SSR* for convenience.
+*stencilLinebuffer* is a fusion of a *linebuffer* and a *SSR* for convenience.
 
-    Currently xmax/ymax must always be 0, which means that the stencil always reads values from the past that are available (as explained in Darkroom 2014). TODO: for extra programmer convenience, implement the scheduling algorithm from Darkroom 2014 to allow the user to write pipelines that read values with xmax/ymax>0.
+Currently xmax/ymax must always be 0, which means that the stencil always reads values from the past that are available (as explained in Darkroom 2014). TODO: for extra programmer convenience, implement the scheduling algorithm from Darkroom 2014 to allow the user to write pipelines that read values with xmax/ymax>0.
 
 ### SSRPartial ###
     type: if fullOutput==false (the defualt) then A[1,-ymin+1]->A[(-xmin+1)*T,-ymin+1], else A[1,-ymin+1]->A[-xmin+1,-ymin+1]
     modules.SSRPartial( A:Type, T:Number <= 1, xmin:Int <= 0, ymin:Int <= 0, [stride:Uint], [fullOutput:Bool] )
     fields: {..., kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin, stride=stride, fullOutput=fullOutput }
 
-    *SSRPartial* is a special-case fusion of *SSR* and *changeRate*, which reduces the hardware cost by 50% by merging the shift registers for both modules into a single shift register with more complicated control logic.
+*SSRPartial* is a special-case fusion of *SSR* and *changeRate*, which reduces the hardware cost by 50% by merging the shift registers for both modules into a single shift register with more complicated control logic.
 
 ### stencilLinebufferPartial* ###
     type: Handshake(A[T])->Handshake(A[1(-xmin+1)*T,-ymin+1])
@@ -213,9 +214,9 @@ Array Manipulation
     type: A[stencilWidth+width-1, stencilHeight+height-1] -> A[stencilWidth, stencilHeight][width,height]
     examplescommon.unpackStencil( A:Type, stencilWidth:Uint, stencilHeight:Uint, width:Uint, [height:Uint] )
 
-    *unpackStencil* takes an array of type *A* and converts it into an array of stencils. Each stencil is composed of values with insides X=[-stencilWidth+1,0] and Y={-stencilHeight+1,0]. Unlike *stencil*, this module never reads outside of the array, so all stencils are made entirely of valid values.
+*unpackStencil* takes an array of type *A* and converts it into an array of stencils. Each stencil is composed of values with insides X=[-stencilWidth+1,0] and Y={-stencilHeight+1,0]. Unlike *stencil*, this module never reads outside of the array, so all stencils are made entirely of valid values.
 
-    TODO: make the arguments this takes more compatible with *stencil*.
+TODO: make the arguments this takes more compatible with *stencil*.
 
 ### SoAtoAoS* ###
     type: {Array2d(a,W,H),Array2d(b,W,H),...} -> Array2d({a,b,c},W,H)
@@ -228,7 +229,7 @@ Array Manipulation
     modules.posSeq( width:Uint, height:Uint, T:Uint )
     fields = {..., kind="posSeq", W=width, H=height, T=T }
 
-    *posSeq* is a state machine that provides a {x,y} image coordinate tuple at throughput *T*. 
+*posSeq* is a state machine that provides a {x,y} image coordinate tuple at throughput *T*. 
 
 ### border ###
 
@@ -239,14 +240,14 @@ Array Manipulation
     modules.cropSeq( A:Type, width:Uint, height:Uint, T:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint )
     fields: NYI
 
-    *cropSeq* takes an image of size *width* x *height* and removes *left* pixels from the left, *right* pixels from the right etc. This yields a smaller image of size (*width-left-right*x*height-top-bottom*). *cropSeq* is sequentialized to perform this operation on images of type *A* at throughput *T*.
+*cropSeq* takes an image of size *width* x *height* and removes *left* pixels from the left, *right* pixels from the right etc. This yields a smaller image of size (*width-left-right*x*height-top-bottom*). *cropSeq* is sequentialized to perform this operation on images of type *A* at throughput *T*.
 
 ### padSeq ###
     type: V(A[T])->RV(A[T])
     modules.padSeq( A:Type, width:Uint, height:Uint, T:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint, value:A )
     fields: {..., kind="padSeq", type=A, T=T, width=width, height=height, L=left, R=right, B=bottom, Top=top, value=value }
 
-    *padSeq* takes an image of size *width* x *height* and adds *left* pixels to the left, *right* pixels to the right, etc., with value *value*. This yields a larger image of size (*width+left+right*x*height+top+bottom*). *padSeq* is sequentialized to perform this operation on images of type *A* at throughput *T*.
+*padSeq* takes an image of size *width* x *height* and adds *left* pixels to the left, *right* pixels to the right, etc., with value *value*. This yields a larger image of size (*width+left+right*x*height+top+bottom*). *padSeq* is sequentialized to perform this operation on images of type *A* at throughput *T*.
 
 Multi-Rate Modules
 ------------------
@@ -256,23 +257,23 @@ Multi-Rate Modules
     modules.changeRate( A:Type, H:Uint, inputRate:Uint, outputRate:Uint )
     fields: {..., kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate }
 
-    *changeRate* implements either the *vectorize* or *devectorize* operator. *vectorize* takes smaller vectors and concatenates them (inputRate<outputRate). *devectorize* takes larger vectors and writes them out over multiple firings (inputRate>outputRate).
+*changeRate* implements either the *vectorize* or *devectorize* operator. *vectorize* takes smaller vectors and concatenates them (inputRate<outputRate). *devectorize* takes larger vectors and writes them out over multiple firings (inputRate>outputRate).
 
-    Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This can limit the amount of rate change if the array has many more rows than columns. However, the array can always be casted to a 1D array prior to *changeRate*, which will expose the maximum rate factors.
+Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This can limit the amount of rate change if the array has many more rows than columns. However, the array can always be casted to a 1D array prior to *changeRate*, which will expose the maximum rate factors.
 
 ### filterSeq ###
     type: {A,Bool} -> V(A)
     modules.filterSeq( A:Type, width:Number, height:Number, rate:Number, fifoSize:Number )
     fields: { ..., kind="filterSeq", A=A }
 
-    *filterSeq* takes two inputs: a stream of data of type A, and a stream of bools which indicate whether the data should pass through (true) or be filtered out (false). *filterSeq's* SDF rate is set as *1/rate*. *filterSeq* may override the stream of bools on some cycles in order to keep the stream valid within the SDF model, assuming the *filterSeq* is followed by a fifo with *fifoSize* entries. In particular, *filterSeq* will override the filter if the fifo will under/overflow or if the total number of output tokens does not equal width*height/rate by the end.
+*filterSeq* takes two inputs: a stream of data of type A, and a stream of bools which indicate whether the data should pass through (true) or be filtered out (false). *filterSeq's* SDF rate is set as *1/rate*. *filterSeq* may override the stream of bools on some cycles in order to keep the stream valid within the SDF model, assuming the *filterSeq* is followed by a fifo with *fifoSize* entries. In particular, *filterSeq* will override the filter if the fifo will under/overflow or if the total number of output tokens does not equal width*height/rate by the end.
 
 ### downsampleXSeq ###
     type: A[T]->V(A[T/scale]). If scale>T, this is A[T]->V(A[1]).
     modules.downsampleYSeq( A: Type, width:Uint, height:Uint, T:Uint, scale:Uint )
     fields: NYI
 
-    *downsampleXSeq* performs a downsample in X (i.e. keeps only *1/scale* columns, starting with column X=0). *downsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
+*downsampleXSeq* performs a downsample in X (i.e. keeps only *1/scale* columns, starting with column X=0). *downsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
 
 
 ### downsampleYSeq ###
@@ -280,33 +281,33 @@ Multi-Rate Modules
     modules.downsampleYSeq( A: Type, width:Uint, height:Uint, T:Uint, scale:Uint )
     fields: NYI
 
-    *downsampleYSeq* performs a downsample in Y (i.e. keeps only *1/scale* lines, starting with line Y=0). *downsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
+*downsampleYSeq* performs a downsample in Y (i.e. keeps only *1/scale* lines, starting with line Y=0). *downsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
 
 ### downsampleSeq* ###
     type: V(A[T])->RV(A[T])
     examplescommon.downsampleSeq( A: Type, width:Uint, height:Uint, T:Uint, scaleX:Uint, scaleY:Uint )
 
-    *downsampleSeq* is a convenience function to instantiate downsampleXSeq and/or downsampleYSeq modules to perform a combined scale in X and Y. *scaleX* and *scaleY* must be >= 1.
+*downsampleSeq* is a convenience function to instantiate downsampleXSeq and/or downsampleYSeq modules to perform a combined scale in X and Y. *scaleX* and *scaleY* must be >= 1.
 
 ### upsampleXSeq ###
     type: Handshake(A[T])->Handshake(A[T])
     modules.upsampleXSeq( A:Type, T:Uint, scale:Uint )
     fields: { ..., kind="upsampleXSeq", A=A, T=T, scale=scale }
 
-    *upsampleXSeq* performs an upsample in X (i.e. duplicates each column *scale* times, starting with column X=0). *upsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be upsampled.
+*upsampleXSeq* performs an upsample in X (i.e. duplicates each column *scale* times, starting with column X=0). *upsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be upsampled.
 
 ### upsampleYSeq ###
     type: V(A[T])->RV(A[T])
     modules.upsampleYSeq( A:Type, width:Uint, height:Uint, scale:Uint )
     fields: {..., kind="upsampleYSeq", A=A, T=T, width=width, height=height, scale=scale }
 
-    *upsampleYSeq* performs an upsample in Y (i.e. duplicates each line *scale* times, starting with line Y=0). *upsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be upsampled.
+*upsampleYSeq* performs an upsample in Y (i.e. duplicates each line *scale* times, starting with line Y=0). *upsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be upsampled.
 
 ### upsampleSeq* ###
     type: Handshake(A[T]) -> Handshake(A[T])
     examplescommon.upsampleSeq( A:Type, width:Uint, height:Uint, T:Uint, scaleX:Uint, scaleY:Uint )
 
-    *upsampleSeq* is a convenience function to instantiate upsampleXSeq and/or upsampleYSeq modules to perform a combined upscale in X and Y.
+*upsampleSeq* is a convenience function to instantiate upsampleXSeq and/or upsampleYSeq modules to perform a combined upscale in X and Y.
 
 Higher-Order Modules
 --------------------
@@ -316,7 +317,7 @@ Higher-Order Modules
     modules.map( f:Modules, width:Number, height:Number )
     fields: {..., kind="map", fn=f, W=width, H=height }
 
-    *map* lifts a scalar function to work on arrays.
+*map* lifts a scalar function to work on arrays.
 
 ### reduce ###
 
@@ -337,14 +338,14 @@ Interfaces
     modules.liftDecimate( f:Module )
     fields: {..., kind="liftDecimate", fn=f}
 
-    *liftDecimate* lifts modules that support decimation only (i.e. A->V(B)) to the synchronous interface type that supports both data decimation and increase (V(A)->RV(B)).
+*liftDecimate* lifts modules that support decimation only (i.e. A->V(B)) to the synchronous interface type that supports both data decimation and increase (V(A)->RV(B)).
 
 ### liftHandshake ###
     given f:V(A)->RV(B), has type Handshake(A)->Handshake(B)
     modules.liftHandshake( f:Module )
     fields: {..., kind="liftHandshake", fn=f}
 
-    *liftHandshake* converts the most general synchronous interface type *V(A)->RV(B)* to a handshake interface. Modules with handshake interfaces support upstream stalls, whereas synchronous interfaces do not.
+*liftHandshake* converts the most general synchronous interface type *V(A)->RV(B)* to a handshake interface. Modules with handshake interfaces support upstream stalls, whereas synchronous interfaces do not.
 
 ### makeHandshake ###
     given f:A->B, has type Handshake(A)->Handshake(B)
@@ -356,17 +357,17 @@ Interfaces
     modules.RPassthrough( f:Module )
     fields: {..., kind="RPassthrough", fn=f}
 
-    *RPassthrough* allows for composition of *V(A)->RV(B)* interfaces. Note that synchronous pipelines do not support upstream stalls! This should only be used in pipelines where that can not occur.
+*RPassthrough* allows for composition of *V(A)->RV(B)* interfaces. Note that synchronous pipelines do not support upstream stalls! This should only be used in pipelines where that can not occur.
 
 ### waitOnInput ###
     given f:A->RV(B) has type V(A)->RV(B)
     modules.waitOnInput( f:Module )
 
-    *waitOnInput* is typically for internal compiler use only. Modules with *A->RV(B)* type have ambiguous behavior, because they do not define how the module will behave with invalid input. This higher-order modules provides one possible semantic:
+*waitOnInput* is typically for internal compiler use only. Modules with *A->RV(B)* type have ambiguous behavior, because they do not define how the module will behave with invalid input. This higher-order modules provides one possible semantic:
 
-    if f is ready, f with execute iff input valid is true (i.e. it waits on input). if f is not ready, inner will always run (input data is undefined).
+if f is ready, f with execute iff input valid is true (i.e. it waits on input). if f is not ready, inner will always run (input data is undefined).
 
-    This is useful for implementing modules that upsample data. If they are ready to read the input, the module will only ever see valid data. If they are not ready (i.e. are generating data themselves), input data is irrelevant.
+This is useful for implementing modules that upsample data. If they are ready to read the input, the module will only ever see valid data. If they are not ready (i.e. are generating data themselves), input data is irrelevant.
 
 Streams
 -------
@@ -383,31 +384,31 @@ Streams
     modules.serialize( A:Type, inputRates:SDFRate[N], schedule:Module )
     fields: {..., kind="serialize", A=A, inputRates=inputRates, schedule=schedule }
 
-    *serialize* is a higher-order module that takes multiple Handshake streams and serializes them into a single stream based on a user-specified ordering module.
+*serialize* is a higher-order module that takes multiple Handshake streams and serializes them into a single stream based on a user-specified ordering module.
 
-    Ordering modules have type *null -> uint8*. Each firining they return the ID of the stream to run. Ordering modules are stateful (or they wouldn't be useful).
+Ordering modules have type *null -> uint8*. Each firining they return the ID of the stream to run. Ordering modules are stateful (or they wouldn't be useful).
 
-    **modules.interleveSchedule( N:Uint, period:Uint)**
+**modules.interleveSchedule( N:Uint, period:Uint)**
     fields: {..., kind="interleveSchedule", N=N, period=period }
 
-    *interleveSchedule* imply interleves *N* stream with a fixed repeating pattern. This schedule returns *2^period* items of stream 0, then stream 1, etc. Like this:
+*interleveSchedule* imply interleves *N* stream with a fixed repeating pattern. This schedule returns *2^period* items of stream 0, then stream 1, etc. Like this:
 
     period=1: ABABABAB
     period=2: AABBAABB
     period=3: AAAABBBB
 
-    **modules.pyramidSchedule( depth:Uint, wtop:Uint, T:Uint )**
+**modules.pyramidSchedule( depth:Uint, wtop:Uint, T:Uint )**
     fields: {..., kind="pyramidSchedule", depth=depth, wtop=wtop, T=T }
 
-    *pyramidSchedule* takes *depth* streams with pyramid rates (i.e. 1, 1/4, 1/16, 1/64) and serializes them into a "human readable" image pyramid. *wtop* is the width of the largest (finest) pyramid level. *T* is the number of pixels being processed in parallel (i.e. the module will expect *wtop/T* tokens per line for the first pyramid level).
+*pyramidSchedule* takes *depth* streams with pyramid rates (i.e. 1, 1/4, 1/16, 1/64) and serializes them into a "human readable" image pyramid. *wtop* is the width of the largest (finest) pyramid level. *T* is the number of pixels being processed in parallel (i.e. the module will expect *wtop/T* tokens per line for the first pyramid level).
 
-    This module is a compromise between human readability and FIFO size. Likely, there is a schedule that further reduces FIFO size but results in an image that is less understandable. Likewise, it would be nice to make this more human readable, but this would likely use too much FIFO size.
+This module is a compromise between human readability and FIFO size. Likely, there is a schedule that further reduces FIFO size but results in an image that is less understandable. Likewise, it would be nice to make this more human readable, but this would likely use too much FIFO size.
 
     with depth=3, wtop=4, T=1 the pattern is:
     AAAAAAAAAAAABBBBC
     i.e. 4 lines of A, 2 lines of B, 1 line of C
 
-    TODO: in the future, we would like to extend *serialize* to support ordering modules that make a dynamic decision on which stream to run. These modules would have type *{bool,bool,...}->uint8* (bools indicating valid data on each stream) or *{uint8,uint8,...}->uint8* (numbers indicating fifo sizes on each stream). This would allow for dynamically-scheduled time-multiplexed hardware modules.
+TODO: in the future, we would like to extend *serialize* to support ordering modules that make a dynamic decision on which stream to run. These modules would have type *{bool,bool,...}->uint8* (bools indicating valid data on each stream) or *{uint8,uint8,...}->uint8* (numbers indicating fifo sizes on each stream). This would allow for dynamically-scheduled time-multiplexed hardware modules.
 
 ### toHandshakeArray ###
     type: Handshake(A)[N] -> HandshakeArray(A,N)
@@ -436,7 +437,7 @@ Misc
     modules.reduceThroughput( A:Type, factor:Number)
     {..., kind="reduceThroughput", factor=factor}
 
-    *reduceThroughput* is a debugging module. It arficially reduces the SDF throughput of the output stream by 1/factor.
+*reduceThroughput* is a debugging module. It artificially reduces the SDF throughput of the output stream by 1/factor.
 
 ### lut ###
 
@@ -452,3 +453,10 @@ Misc
 
 ### fwriteSeq ###
 
+Systolic : systolic.t
+=====================
+# Foo
+
+
+Fixed : fixed.t
+===============
