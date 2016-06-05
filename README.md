@@ -9,7 +9,7 @@ Overview
 [systolic](#systolic)
 [Systolic](#systolic:systolic.t)
 [Systolic](#systolic)
-[Systoliclol](#systoliclol)
+[Systoliclol](#systoliclol-systolict)
 
 Rigel : rigel.t
 ===============
@@ -467,6 +467,9 @@ Systolic : systolic.t
 # Systolic
 
 Systoliclol (systolic.t)
+===========
+
+Systoliclol : systolic.t
 ===========
 
 Fixed : fixed.t
