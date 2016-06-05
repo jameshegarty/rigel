@@ -7,7 +7,7 @@ Overview
 [Foo](#foo)
 [Systolic](#Systolic)
 [systolic](#Systolic)
-[Systolic](#Systolic : systolic.t)
+[Systolic](#Systolic:systolic.t)
 
 Rigel : rigel.t
 ===============
@@ -460,6 +460,7 @@ Systolic : systolic.t
 =====================
 # Foo
 
+# Systolic:systolic.t
 
 Fixed : fixed.t
 ===============
