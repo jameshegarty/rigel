@@ -4,15 +4,11 @@ Install & Run
 Overview
 ========
 
-[Rigel](#rigel-rigelt)
-
-  [Rigel Interface Types](#rigel-interface-types)
-
-  [Rigel Operators](#rigel-operators)
-
-[Rigel Modules](#modules-srcmodulest)
-
-[Systolic](#systolic-systolict)
+* [Rigel](#rigel-rigelt)
+  * [Rigel Interface Types](#rigel-interface-types)
+  * [Rigel Operators](#rigel-operators)
+* [Rigel Modules](#modules-srcmodulest)
+* [Systolic](#systolic-systolict)
 
 Rigel (rigel.t)
 ===============
