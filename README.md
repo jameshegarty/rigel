@@ -4,14 +4,40 @@ Install & Run
 Overview
 ========
 
+* [Base Types](#base-types-typest)
 * [Rigel](#rigel-rigelt)
-  * [Rigel Interface Types](#rigel-interface-types)
   * [Rigel Operators](#rigel-operators)
+  * [Rigel Interface Types](#rigel-interface-types)
 * [Rigel Modules](#modules-srcmodulest)
+  * [Core Modules](#core-modules)
+  * [Array Manipulation](#array-manipulation)
+  * [Multi-Rate Modules](#multi-rate-modules)
+  * [Higher-Order Modules](#higher-order-modules) map
+  * [Streams](#streams)
+  * [Misc](#misc)
 * [Systolic](#systolic-systolict)
 
 Rigel (rigel.t)
 ===============
+
+Rigel operators
+---------------
+
+### rigel.input( type:Type, [sdfRate:SDFRate] ) ###
+
+### rigel.apply( name:String, module:RigelModule, input:RigelValue ) ###
+
+### rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelValue ) ###
+
+### rigel.constant( name:String, value:LuaValue, type:Type ) ###
+
+### rigel.tuple( name:String, inputList:RigelValue[], [packStreams:Bool] ) ###
+
+### rigel.array2d( name:String, inputList:RigelValue[width*height], width:Uint, height:Uint, [packStreams:Bool] ) ###
+
+### rigel.selectStream( name:String, input:RigelValue, i:Uint ) ###
+
+### rigel.statements( values:RigelValue[] ) ###
 
 Rigel Interface Types
 ---------------------
@@ -44,24 +70,6 @@ Rigel also has provisional support for the ability to pack multiple streams onto
 
     Regular *Handshake* modules can be lifted to work over *HandshakedTmuxed*, but this should only be done if the module isn't stateful - there is no way to automatically duplicate the module state so that it stays coherent for each stream!
 
-Rigel operators
----------------
-
-### rigel.input( type:Type, [sdfRate:SDFRate] ) ###
-
-### rigel.apply( name:String, module:RigelModule, input:RigelValue ) ###
-
-### rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelValue ) ###
-
-### rigel.constant( name:String, value:LuaValue, type:Type ) ###
-
-### rigel.tuple( name:String, inputList:RigelValue[], [packStreams:Bool] ) ###
-
-### rigel.array2d( name:String, inputList:RigelValue[width*height], width:Uint, height:Uint, [packStreams:Bool] ) ###
-
-### rigel.selectStream( name:String, input:RigelValue, i:Uint ) ###
-
-### rigel.statements( values:RigelValue[] ) ###
 
 RigelModule
 -----------
