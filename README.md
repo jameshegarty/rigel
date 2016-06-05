@@ -1,5 +1,66 @@
+Getting Started with Rigel
+==========================
+
+_James Hegarty <jhegarty@stanford.edu>_
+
+Rigel is a language for describing image processing hardware embedded in Lua. Rigel can compile to Verilog hardware designs for Xilinx FPGAs, and also can compile to fast x86 test code using Terra.
+
 Install & Run
-=============
+-------------
+
+Installing Rigel is not required. However your system needs to have Terra installed, and paths set correctly so that Terra can find all the Rigel sources. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-03-25) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly.
+
+Next, add the Rigel language definition to your lua path environment variable, and the Terra binary location to your PATH. This can be accomplished by add this to .profile or .bashrc:
+
+    export RIGEL=[path to rigel git directory root]
+    export TERRADIR=[path to terra root]
+    export TERRA_PATH="$TERRA_PATH;./?.t;$RIGEL/?.t;$RIGEL/src/?.t;$RIGEL/extras/?.t;$TERRADIR/tests/lib/?.t;$RIGEL/examples/?.t"
+    export PATH=${TERRADIR}/bin:${PATH}
+
+Rigel and Terra are tested to work on Linux and Mac OS X. Other platforms are unlikely to work.
+
+Now that you have added the correct paths, you should be able to run the example pipelines using Rigel's x86 simulator:
+
+    cd [rigel root]/examples
+    make terra
+
+This runs 100s of test pipelines, so it may be slow. The output of each test is located at `examples/out/[testname].bmp`. If make completes without errors, this means that all tests were successful.
+
+FPGA Setup
+----------
+
+`make terra` will write out verilog files for each test (located at `examples/out/[testname].axi.v`). You can compile and run these verilog files on your board using your own flow. However, we also provide a simplified Xilinx FPGA flow that we recommend (implemented in `examples/makefile`). Our flow supports both generating a Xilinx bitstream (.bit) and also loading and running the pipeline on the board automatically (over ethernet).
+
+Rigel's FPGA flow was tested with [Xilinx ISE 14.5](http://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/design-tools/v2012_4---14_5.html). This is the only version of ISE that works with the Zynq 7100. Later versions of ISE should work fine as well, if you are building for the Zynq 7020. If ISE is installed, our makefile should be able to build bitstreams for the Zynq 7020 and 7100.
+
+Rigel's FPGA flow optionally also supports loading the generated bitstream onto an FPGA board and running an image through the pipeline for testing. The board must be accessible via SSH over ethernet. We tested with [Xilinx Linux](http://www.wiki.xilinx.com/Zynq+Releases). This is the version of linux that comes by default on the Zedboards, etc. Our flow may be compatible with other Linux releases. We require that `/dev/xdevcfg` exists, which allows us to reprogram the FPGA fabric from within linux by cat'ing the bitstream to this device.
+
+By default, the makefile is set up for two board configurations:
+
+    Zynq 7020 (zedboard, Trenz Electric TE0720)
+    address: 192.168.2.2
+    username: root
+    password: root
+    fpga local write path: /var/volatile
+
+    Zynq 7100 (Avnet)
+    address: 192.168.1.10
+    username: root
+    password: root
+    fpga local write path: /tmp
+
+Addresses, etc can be modified in `examples/makefile`.
+
+Our makefile supports the following options:
+
+**make terra** 
+**make sim**
+**make axibits**
+**make axi**
+**make axibits100**
+**make axi100**
+**make** build and run all simulations and bitstreams on both boards
+**make clean** delete all built files from `out/`
 
 Overview
 ========
