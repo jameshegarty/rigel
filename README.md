@@ -53,14 +53,14 @@ Addresses, etc can be modified in `examples/makefile`.
 
 Our makefile supports the following options:
 
-**make terra** 
-**make sim**
-**make axibits**
-**make axi**
-**make axibits100**
-**make axi100**
-**make** build and run all simulations and bitstreams on both boards
-**make clean** delete all built files from `out/`
+* **make terra** 
+* **make sim**
+* **make axibits**
+* **make axi**
+* **make axibits100**
+* **make axi100**
+* **make** build and run all simulations and bitstreams on both boards
+* **make clean** delete all built files from `out/`
 
 Overview
 ========
