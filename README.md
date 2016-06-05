@@ -53,14 +53,14 @@ Addresses, etc can be modified in `examples/makefile`.
 
 Our makefile supports the following options:
 
-* **make terra** 
-* **make sim**
-* **make axibits**
-* **make axi**
-* **make axibits100**
-* **make axi100**
-* **make** build and run all simulations and bitstreams on both boards
-* **make clean** delete all built files from `out/`
+* **make terra:** Run compiler and x86 simulator. Sim outputs at `examples/out/[testname].bmp` and verilog outputs at `examples/out/[testname].axi.v`
+* **make sim:** Run Verilog simulator. Outputs at `examples/out/[testname].sim.bmp`
+* **make axibits:** Build 7020 bitstreams. Outputs at `examples/out/[testname].axi.bi`t
+* **make axi:** Run 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
+* **make axibits100:** Build 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
+* **make axi100:** Run 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`
+* **make:** build and run all simulations and bitstreams on both boards
+* **make clean:** delete all built files from `examples/out/`
 
 Overview
 ========
