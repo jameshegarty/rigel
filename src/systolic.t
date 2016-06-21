@@ -249,7 +249,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
   err( inputParameter.kind=="parameter", "input must be a parameter" )
-  err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string is output is given")
+  err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given")
   err( CE==nil or (systolicAST.isSystolicAST(CE) and CE.kind=="parameter" and CE.type==types.bool(true)), "CE must be nil or CE parameter")
   assert(X==nil)
 
@@ -453,10 +453,6 @@ function systolic.constant( v, ty )
   ty = ty:makeConst()
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=deepcopy(v), type = ty, loc=getloc(), inputs={} })
-end
-
-function systolic.tap( ty )
-  return typecheck({ kind="tap", type = ty, loc=getloc(), inputs={} })
 end
 
 function systolic.tuple( tab )

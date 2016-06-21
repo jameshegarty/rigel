@@ -533,6 +533,85 @@ Misc
 Systolic (systolic.t)
 =====================
 
+SystolicAST
+-----------
 
+SystolicAST:setName( name : String )
+
+systolic.parameter( name : String, type : Type )
+systolic.constant( value, type : Type )
+systolic.null()
+
+SystolicAST Operators
+------------------
+
+`systolic.cast( expr : SystolicAST, type : Type )` Cast `expr` to Type `type`.
+`systolic.slice( expr : SystolicAST, idxLow : Uint, idxHigh : Uint, idyLow : Uint, idyHigh : Uint )`
+if `expr` is of type Array2D, return a new array of smaller size. The new array will include X coordinates in range [idxLow,idxHigh] and Y in range [idyLow, idyHigh]. Coordinates are inclusive and must be in rate of `expr` array size.
+
+`systolic.index( expr : SystolicAST, idx : Uint, idy : Uint )`
+if `expr` is of type Array2D, select one element of the array (at coordinate `[idx,idy]`) and return its value (as a scalar).
+
+`systolic.bitSlice( expr : SystolicAST, low : Uint, high : Uint )`
+Perform a bitwise slice on `expr`. `expr` can be any type. This performs the same operation as writing `expr[high:low]` in Verilog. Returns bit type.
+
+`systolic.tuple( list : SystolicAst[] )`
+Takes a list `list` of SystolicAST values and returns them packed together as a tuple type.
+Note: this is used in combination with `cast` to perform many type conversions. e.g. concatenating multiple values into an Array2D is accomplished by turning them into a tuple, and then casting to Array2D.
+
+`systolic.select( cond : SystolicAST, a : SystolicAST, b : SystolicAST )`
+Perform the ternary select operation like in C, `cond?a:b`.
+
+Binary operators:
+
+`+ (operator)` lhs+rhs
+`- (operator)` lhs-rhs
+`* (operator)` lhs*rhs
+`systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
+systolic.eq( lhs : SystolicAST, rhs : SystolicAST )
+systolic.lt( lhs : SystolicAST, rhs : SystolicAST )
+systolic.ge( lhs : SystolicAST, rhs : SystolicAST )
+systolic.gt( lhs : SystolicAST, rhs : SystolicAST )
+systolic.__or( lhs : SystolicAST, rhs : SystolicAST )
+systolic.__and( lhs : SystolicAST, rhs : SystolicAST )
+systolic.__not( lhs : SystolicAST, rhs : SystolicAST )
+systolic.xor( lhs : SystolicAST, rhs : SystolicAST )
+systolic.abs( lhs : SystolicAST, rhs : SystolicAST )
+systolic.rshift( lhs : SystolicAST, rhs : SystolicAST )
+systolic.lshift( lhs : SystolicAST, rhs : SystolicAST )
+systolic.neg( lhs : SystolicAST, rhs : SystolicAST )
+systolic.isX( lhs : SystolicAST, rhs : SystolicAST )
+
+Unary Operators:
+SystolicAST( delay : Uint )
+
+SystolicFunction
+-----------
+
+systolic.lambda( name : String, inputParameter : SystolicAST, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicFunction
+
+Define a Systolic Function (i.e. dataflow that drives a port).
+name: Name of the function (port)
+inputParameter: formal parameter for the function. Must be a SystolicAST returned by `systolic.parameter()` or `systolic.null()`
+output: output of the function (optional)
+outputName: name of the output port (when lowered to Verilog)
+pipelines: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
+valid: SystolicAST Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
+CE: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
+
+SystolicInstance
+------------
+
+SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST
+Return a SystolicAST representing the value of applying any function (`anyFnName`) of an instantiated module on `input`.
+
+SystolicModule
+------------
+systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [parameters : ], [verilog : String], [verilogDelay : Uint] )
+
+SystolicModule:toVerilog() : String
+Return the definition of this Systolic Module as Verilog.
+
+SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance
 Fixed (fixed.t)
 ===============
