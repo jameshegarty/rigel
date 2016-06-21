@@ -562,13 +562,13 @@ Note: this is used in combination with `cast` to perform many type conversions. 
 `systolic.select( cond : SystolicAST, a : SystolicAST, b : SystolicAST )`
 Perform the ternary select operation like in C, `cond?a:b`.
 
-Binary operators:
+### Binary operators: ###
 
-`+ (operator)` lhs+rhs
-`- (operator)` lhs-rhs
-`* (operator)` lhs*rhs
-`systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
-systolic.eq( lhs : SystolicAST, rhs : SystolicAST )
+* `+ (operator)` lhs+rhs
+* `- (operator)` lhs-rhs
+* `* (operator)` lhs*rhs
+* `systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
+* `systolic.eq( lhs : SystolicAST, rhs : SystolicAST )` lhs == rhs
 systolic.lt( lhs : SystolicAST, rhs : SystolicAST )
 systolic.ge( lhs : SystolicAST, rhs : SystolicAST )
 systolic.gt( lhs : SystolicAST, rhs : SystolicAST )
@@ -588,30 +588,31 @@ SystolicAST( delay : Uint )
 SystolicFunction
 -----------
 
-systolic.lambda( name : String, inputParameter : SystolicAST, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicFunction
+`systolic.lambda( name : String, inputParameter : SystolicAST, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicFunction`
 
 Define a Systolic Function (i.e. dataflow that drives a port).
-name: Name of the function (port)
-inputParameter: formal parameter for the function. Must be a SystolicAST returned by `systolic.parameter()` or `systolic.null()`
-output: output of the function (optional)
-outputName: name of the output port (when lowered to Verilog)
-pipelines: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
-valid: SystolicAST Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
-CE: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
+* name: Name of the function (port)
+* inputParameter: formal parameter for the function. Must be a SystolicAST returned by `systolic.parameter()` or `systolic.null()`
+* output: output of the function (optional)
+* outputName: name of the output port (when lowered to Verilog)
+* pipelines: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
+* valid: SystolicAST Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
+* CE: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
 
 SystolicInstance
 ------------
 
-SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST
+`SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST`
 Return a SystolicAST representing the value of applying any function (`anyFnName`) of an instantiated module on `input`.
 
 SystolicModule
 ------------
-systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [parameters : ], [verilog : String], [verilogDelay : Uint] )
+`systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [parameters : ], [verilog : String], [verilogDelay : Uint] )`
 
-SystolicModule:toVerilog() : String
+`SystolicModule:toVerilog() : String`
 Return the definition of this Systolic Module as Verilog.
 
-SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance
+`SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance`
+
 Fixed (fixed.t)
 ===============
