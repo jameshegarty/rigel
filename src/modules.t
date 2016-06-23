@@ -1,5 +1,9 @@
 local simmodules = require("simmodules")
 local rigel = require "rigel"
+local types = require "types"
+local S = require "systolic"
+local systolic = S
+local Ssugar = require "systolicsugar"
 local cstring = terralib.includec("string.h")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
@@ -92,7 +96,7 @@ function modules.SoAtoAoS( W, H, typelist, asArray )
   end
   res.terraModule = PackTupleArrays
 
-  res.systolicModule = S.moduleConstructor("packTupleArrays_"..(tostring(typelist):gsub('%W','_')))
+  res.systolicModule = Ssugar.moduleConstructor("packTupleArrays_"..(tostring(typelist):gsub('%W','_')))
   local sinp = S.parameter("process_input", res.inputType )
   local arrList = {}
   for y=0,H-1 do
@@ -185,7 +189,7 @@ function modules.packTuple( typelist, X )
 
   res.terraModule = PackTuple
 
-  res.systolicModule = S.moduleConstructor("packTuple_"..tostring(typelist))
+  res.systolicModule = Ssugar.moduleConstructor("packTuple_"..tostring(typelist))
   local CE
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,nil,CE) )
@@ -259,7 +263,7 @@ modules.liftBasic = memoize(function(f)
     valid(out) = true
   end
   res.terraModule = LiftBasic
-  res.systolicModule = S.moduleConstructor("LiftBasic_"..f.systolicModule.name)
+  res.systolicModule = Ssugar.moduleConstructor("LiftBasic_"..f.systolicModule.name)
   local inner = res.systolicModule:add( f.systolicModule:instantiate("LiftBasic_inner") )
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
   local CE = S.CE("CE")
@@ -293,7 +297,7 @@ end
 -- This takes a basic->R to V->RV
 -- Compare to waitOnInput below: runIffReady is used when we want to take control of the ready bit purely for performance reasons, but don't want to amplify or decimate data.
 local function runIffReadySystolic( systolicModule, fns, passthroughFns )
-  local res = S.moduleConstructor("RunIffReady_"..systolicModule.name)
+  local res = Ssugar.moduleConstructor("RunIffReady_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("RunIffReady") )
 
   for _,fnname in pairs(fns) do
@@ -327,7 +331,7 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
 end
 
 local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
-  local res = S.moduleConstructor("WaitOnInput_"..systolicModule.name)
+  local res = Ssugar.moduleConstructor("WaitOnInput_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("WaitOnInput_inner") )
 
   for _,fnname in pairs(fns) do
@@ -392,9 +396,9 @@ function modules.reduceThroughput(A,factor)
     self.ready = (self.phase==0) 
   end
   res.terraModule = ReduceThroughput
-  res.systolicModule = S.moduleConstructor("ReduceThroughput_"..factor)
+  res.systolicModule = Ssugar.moduleConstructor("ReduceThroughput_"..factor)
 
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
 
   local reading = S.eq( phase:get(), S.constant(0,types.uint(16)) ):disablePipelining()
 
@@ -453,7 +457,7 @@ modules.waitOnInput = memoize(function(f)
                                end)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
-  local res = S.moduleConstructor("LiftDecimate_"..systolicModule.name)
+  local res = Ssugar.moduleConstructor("LiftDecimate_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("LiftDecimate") )
 
   for _,fnname in pairs(liftFns) do
@@ -551,7 +555,7 @@ modules.RPassthrough = memoize(function(f)
   res.terraModule = RPassthrough
 
   err( f.systolicModule~=nil, "RPassthrough null module "..f.kind)
-  res.systolicModule = S.moduleConstructor("RPassthrough_"..f.systolicModule.name)
+  res.systolicModule = Ssugar.moduleConstructor("RPassthrough_"..f.systolicModule.name)
   local inner = res.systolicModule:add( f.systolicModule:instantiate("RPassthrough_inner") )
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
 
@@ -570,7 +574,7 @@ modules.RPassthrough = memoize(function(f)
                                 end)
 
 local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
-  local res = S.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
+  local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
   local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
 
   systolicModule:complete()
@@ -585,7 +589,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutputCount %d"):instantiate(prefix.."printInst") ) end
 
     local outputCount
-    if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount"):setCoherent(false) ) end
+    if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount"):setCoherent(false) ) end
 
 
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
@@ -720,7 +724,7 @@ modules.map = memoize(function( f, W, H )
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   res.terraModule = MapModule
-  res.systolicModule = S.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
+  res.systolicModule = Ssugar.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
   local inp = S.parameter("process_input", res.inputType )
   local out = {}
   local resetPipelines={}
@@ -900,10 +904,10 @@ endmodule
   local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
 
 
-  res.systolicModule = S.moduleConstructor("FilterSeqImplWrap")
+  res.systolicModule = Ssugar.moduleConstructor("FilterSeqImplWrap")
 
   -- hack: get broken systolic library to actually wire valid
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
 
   local inner = res.systolicModule:add(FilterSeqImpl:instantiate("filterSeqImplInner"))
 
@@ -1058,10 +1062,10 @@ function modules.upsampleXSeq( A, T, scale, X )
     res.terraModule = UpsampleXSeq
 
     -----------------
-    res.systolicModule = S.moduleConstructor("UpsampleXSeq")
+    res.systolicModule = Ssugar.moduleConstructor("UpsampleXSeq")
     local sinp = S.parameter( "inp", ITYPE )
 
-    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):instantiate("phase") )
+    local sPhase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):instantiate("phase") )
     local reg = res.systolicModule:add( S.module.reg( ITYPE,true ):instantiate("buffer") )
 
     local reading = S.eq(sPhase:get(),S.constant(0,types.uint(8))):disablePipelining()
@@ -1116,11 +1120,11 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   res.terraModule = UpsampleYSeq
 
   -----------------
-  res.systolicModule = S.moduleConstructor("UpsampleYSeq")
+  res.systolicModule = Ssugar.moduleConstructor("UpsampleYSeq")
   local sinp = S.parameter( "inp", ITYPE )
 
   -- we currently don't have a way to make a posx counter and phase counter coherent relative to each other. So just use 1 counter for both. This restricts us to only do power of two however!
-  local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),(W/T)*scale-1) ):CE(true):instantiate("xpos") )
+  local sPhase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),(W/T)*scale-1) ):CE(true):instantiate("xpos") )
 
   local addrbits = math.log(W/T)/math.log(2)
   assert(addrbits==math.floor(addrbits))
@@ -1130,7 +1134,7 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   local phasebits = (math.log(scale)/math.log(2))
   local phase = S.cast(S.bitSlice( sPhase:get(), addrbits, addrbits+phasebits-1 ), types.uint(phasebits))
 
-  local sBuffer = res.systolicModule:add( S.module.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits()/8, ITYPE:verilogBits()/8,nil,true ):instantiate("buffer"):setCoherent(true) )
+  local sBuffer = res.systolicModule:add( fpgamodules.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits()/8, ITYPE:verilogBits()/8,nil,true ):instantiate("buffer"):setCoherent(true) )
   local reading = S.eq( phase, S.constant(0,types.uint(phasebits)) ):disablePipelining()
 
   local pipelines = {sBuffer:writeAndReturnOriginal(S.tuple{xpos,S.cast(sinp,types.bits(ITYPE:verilogBits()))}, reading), sPhase:setBy( S.constant(1, types.uint(16)) )}
@@ -1160,12 +1164,12 @@ function modules.interleveSchedule( N, period )
   end
   res.terraModule = InterleveSchedule
 
-  res.systolicModule = S.moduleConstructor("InterleveSchedule_"..N.."_"..period)
+  res.systolicModule = Ssugar.moduleConstructor("InterleveSchedule_"..N.."_"..period)
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
 
   local inp = S.parameter("process_input", rigel.lower(res.inputType) )
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
+  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
   local log2N = math.log(N)/math.log(2)
 
   local CE = S.CE("CE")
@@ -1229,15 +1233,15 @@ function modules.pyramidSchedule( depth, wtop, T )
 
   local log2N = math.ceil(math.log(depth)/math.log(2))
 
-  res.systolicModule = S.moduleConstructor("PyramidSchedule_"..depth.."_"..wtop)
+  res.systolicModule = Ssugar.moduleConstructor("PyramidSchedule_"..depth.."_"..wtop)
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(8), types.uint(16),types.uint(log2N)}, "pyramid schedule addr %d wcnt %d out %d", true):instantiate("printInst") ) end
 
   local tokensPerAddr = (wtop*minTargetW)/T
 
   local inp = S.parameter("process_input", rigel.lower(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), patternTotal-1, 1 ) ):setInit(0):CE(true):instantiate("patternAddr") )
-  local wcnt = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), tokensPerAddr-1, 1 ) ):setInit(0):CE(true):instantiate("wcnt") )
+  local addr = res.systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), patternTotal-1, 1 ) ):setInit(0):CE(true):instantiate("patternAddr") )
+  local wcnt = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), tokensPerAddr-1, 1 ) ):setInit(0):CE(true):instantiate("wcnt") )
   local patternRam = res.systolicModule:add(fpgamodules.ram128(types.uint(log2N), pattern):instantiate("patternRam"))
 
 
@@ -1303,7 +1307,7 @@ function modules.toHandshakeArray( A, inputRates )
   
   res.terraModule = ToHandshakeArray
 
-  res.systolicModule = S.moduleConstructor("ToHandshakeArray_"..#inputRates):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor("ToHandshakeArray_"..#inputRates):onlyWire(true)
   local printStr = "IV ["..table.concat(broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d/"..(#inputRates-1)
   local printInst
     if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple(concat(broadcast(types.bool(),#inputRates+1),{types.uint(8)})), printStr):instantiate("printInst") ) end
@@ -1402,7 +1406,7 @@ function modules.serialize( A, inputRates, Schedule, X )
 
   res.terraModule = Serialize
 
-  res.systolicModule = S.moduleConstructor("Serialize_"..#inputRates):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor("Serialize_"..#inputRates):onlyWire(true)
   local scheduler = res.systolicModule:add( Schedule.systolicModule:instantiate("Scheduler") )
   local printInst
   if DARKROOM_VERBOSE then printInst= res.systolicModule:add( S.module.print( types.tuple{types.uint(8),types.bool(),types.uint(8),types.bool()}, "Serialize OV %d/"..(#inputRates-1).." readyDownstream %d ready %d/"..(#inputRates-1).." stepSchedule %d"):instantiate("printInst") ) end
@@ -1503,7 +1507,7 @@ function modules.demux( A, rates, X )
 
   res.terraModule = Demux
 
-  res.systolicModule = S.moduleConstructor("Demux_"..#rates):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor("Demux_"..#rates):onlyWire(true)
 
   local printInst
   if DARKROOM_VERBOSE then printInst= res.systolicModule:add( S.module.print( types.tuple(concat({types.uint(8)},broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) end
@@ -1579,7 +1583,7 @@ function modules.flattenStreams( A, rates, X )
 
   res.terraModule = FlattenStreams
 
-  res.systolicModule = S.moduleConstructor("FlattenStreams_"..#rates):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor("FlattenStreams_"..#rates):onlyWire(true)
 
   local resetValid = S.parameter("reset_valid", types.bool() )
 
@@ -1638,7 +1642,7 @@ modules.broadcastStream = memoize(function(A,N,X)
   end
   res.terraModule = BroadcastStream
 
-  res.systolicModule = S.moduleConstructor("BroadcastStream_"..tostring(A):gsub('%W','_').."_"..N):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor("BroadcastStream_"..tostring(A):gsub('%W','_').."_"..N):onlyWire(true)
 
 
   local printStr = "IV %d readyDownstream ["..table.concat(broadcast("%d",N),",").."] ready %d"
@@ -1690,9 +1694,9 @@ modules.posSeq = memoize(function( W, H, T )
   end
   res.terraModule = PosSeq
 
-  res.systolicModule = S.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T)
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):CE(true):instantiate("posX_posSeq") )
-  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):CE(true):instantiate("posY_posSeq") )
+  res.systolicModule = Ssugar.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T)
+  local posX = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):CE(true):instantiate("posX_posSeq") )
+  local posY = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):CE(true):instantiate("posY_posSeq") )
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16)}, "x %d y %d", true):instantiate("printInst") ) end
 
@@ -1832,11 +1836,11 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
   res.terraModule = PadSeq
 
-  res.systolicModule = S.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
+  res.systolicModule = Ssugar.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
 
 
-  local posX = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
-  local posY = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
+  local posX = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
+  local posY = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
 
@@ -1914,7 +1918,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
   terra ChangeRate:stats(name:&int8) end
-  res.systolicModule = S.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
+  res.systolicModule = Ssugar.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
   local svalid = S.parameter("process_valid", types.bool() )
   local rvalid = S.parameter("reset", types.bool() )
   local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
@@ -1977,7 +1981,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     end
     terra ChangeRate:calculateReady()  self.ready = true end
 
-    local sPhase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):instantiate("phase_changerateup") )
+    local sPhase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):instantiate("phase_changerateup") )
     local printInst
     if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", true ):instantiate("printInst") ) end
     local ConstTrue = S.constant(true,types.bool())
@@ -2035,7 +2039,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   end
   res.terraModule = Linebuffer
 
-  res.systolicModule = S.moduleConstructor("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
+  res.systolicModule = Ssugar.moduleConstructor("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
   local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
 
@@ -2046,7 +2050,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
   local sizeInBytes = nearestPowerOf2((w/T)*bytes)
   --local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
-  local bramMod = S.module.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
+  local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
   local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
 
   for y=0,-ymin do
@@ -2098,7 +2102,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin )
   end
   res.terraModule = SSR
 
-  res.systolicModule = S.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T.."_A"..tostring(A))
+  res.systolicModule = Ssugar.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T.."_A"..tostring(A))
   local sinp = S.parameter("inp", rigel.lower(res.inputType))
   local pipelines = {}
   local SR = {}
@@ -2188,7 +2192,7 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
   terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
   res.terraModule = SSRPartial
 
-  res.systolicModule = S.moduleConstructor("SSRPartial_"..tostring(A):gsub('%W','_').."_T"..tostring(T))
+  res.systolicModule = Ssugar.moduleConstructor("SSRPartial_"..tostring(A):gsub('%W','_').."_T"..tostring(T))
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
   local P = 1/T
 
@@ -2290,10 +2294,10 @@ modules.makeHandshake = memoize(function( f, tmuxRates )
   res.terraModule = MakeHandshake
 
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
-  res.systolicModule = S.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
   local outputCount
-  if DARKROOM_VERBOSE then outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
+  if DARKROOM_VERBOSE then outputCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),rigel.extractValid(res.inputType),rigel.lower(f.outputType), rigel.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"):instantiate("printInst") ) end
@@ -2397,43 +2401,43 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   if csimOnly then
     res.systolicModule = fpgamodules.fifonoop(A)
   else
-    res.systolicModule = S.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
+    res.systolicModule = Ssugar.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
 
     local fifo = res.systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
 
     --------------
     -- basic -> R
-    local store = res.systolicModule:addFunction( S.lambdaConstructor( "store", A, "store_input" ) )
+    local store = res.systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A, "store_input" ) )
     local storeCE = S.CE("store_CE")
     store:setCE(storeCE)
     store:addPipeline( fifo:pushBack( store:getInput() ) )
     --store:setOutput(S.tuple{S.null(),S.constant(true,types.bool(true))}, "store_output")
-    local storeReady = res.systolicModule:addFunction( S.lambdaConstructor( "store_ready" ) )
+    local storeReady = res.systolicModule:addFunction( Ssugar.lambdaConstructor( "store_ready" ) )
     if nostall then
       storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
     else
       storeReady:setOutput( fifo:ready(), "store_ready" )
     end
-    local storeReset = res.systolicModule:addFunction( S.lambdaConstructor( "store_reset" ) )
+    local storeReset = res.systolicModule:addFunction( Ssugar.lambdaConstructor( "store_reset" ) )
     storeReset:setCE(storeCE)
     storeReset:addPipeline(fifo:pushBackReset())
     --------------
     -- basic -> V
-    local load = res.systolicModule:addFunction( S.lambdaConstructor( "load", types.null(), "process_input" ) )
+    local load = res.systolicModule:addFunction( Ssugar.lambdaConstructor( "load", types.null(), "process_input" ) )
     local loadCE = S.CE("load_CE")
     load:setCE(loadCE)
     load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
-    local loadReset = res.systolicModule:addFunction( S.lambdaConstructor( "load_reset" ) )
+    local loadReset = res.systolicModule:addFunction( Ssugar.lambdaConstructor( "load_reset" ) )
     loadReset:setCE(loadCE)
     loadReset:addPipeline(fifo:popFrontReset())
     --------------
     -- debug
     if W~=nil then
-    local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):instantiate("outputCount") )
+    local outputCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):instantiate("outputCount") )
     load:addPipeline(outputCount:setBy(fifo:hasData()))
     loadReset:addPipeline(outputCount:set(S.constant(0,types.uint(32))))
 
-    local maxSize = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):CE(true):setInit(0):instantiate("maxSize") ) 
+    local maxSize = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):CE(true):setInit(0):instantiate("maxSize") ) 
     local printInst = res.systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
     load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
     local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
@@ -2470,8 +2474,8 @@ function modules.lut( inputType, outputType, values )
   end
   res.terraModule = LUTModule
 
-  res.systolicModule = S.moduleConstructor("LUT")
-  local lut = res.systolicModule:add( systolic.module.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
+  res.systolicModule = Ssugar.moduleConstructor("LUT")
+  local lut = res.systolicModule:add( fpgamodules.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
   local sinp = S.parameter("process_input", res.inputType )
 
@@ -2525,7 +2529,7 @@ modules.reduce = memoize(function( f, W, H )
   end
   res.terraModule = ReduceModule
 
-  res.systolicModule = S.moduleConstructor("reduce_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
+  res.systolicModule = Ssugar.moduleConstructor("reduce_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
   local resetPipelines = {}
   local sinp = S.parameter("process_input", res.inputType )
   local t = map( range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
@@ -2589,13 +2593,13 @@ modules.reduceSeq = memoize(function( f, T, X )
   local del = f.systolicModule:getDelay("process")
   err( del == 0, "ReduceSeq function must have delay==0 but instead has delay of "..del )
 
-  res.systolicModule = S.moduleConstructor("ReduceSeq_"..f.systolicModule.name.."_T"..tostring(1/T))
+  res.systolicModule = Ssugar.moduleConstructor("ReduceSeq_"..f.systolicModule.name.."_T"..tostring(1/T))
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),f.outputType,f.outputType}, "ReduceSeq "..f.systolicModule.name.." phase %d input %d output %d", true):instantiate("printInst") ) end
   local sinp = S.parameter("process_input", f.outputType )
   local svalid = S.parameter("process_valid", types.bool() )
   --local phaseValue, phaseValid, phasePipelines, phaseResetPipelines = fpgamodules.addPhaser( res.systolicModule, 1/T, svalid )
-  local phase = res.systolicModule:add( S.module.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):instantiate("phase") )
+  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):instantiate("phase") )
   
   local pipelines = {}
   table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
@@ -2606,7 +2610,7 @@ modules.reduceSeq = memoize(function( f, T, X )
     -- hack: Our reduce fn always adds two numbers. If we only have 1 number, it won't work! just return the input.
     out = sinp
   else
-    local sResult = res.systolicModule:add( S.module.regByConstructor( f.outputType, f.systolicModule ):CE(true):instantiate("result") )
+    local sResult = res.systolicModule:add( Ssugar.regByConstructor( f.outputType, f.systolicModule ):CE(true):instantiate("result") )
     table.insert( pipelines, sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() ) )
     out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
   end
@@ -2641,8 +2645,8 @@ modules.overflow = memoize(function( A, count )
     self.cnt = self.cnt+1
   end
   res.terraModule = Overflow
-  res.systolicModule = S.moduleConstructor("Overflow_"..count)
-  local cnt = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
+  res.systolicModule = Ssugar.moduleConstructor("Overflow_"..count)
+  local cnt = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
 
   local sinp = S.parameter("process_input", A )
   local CE = S.CE("CE")
@@ -2678,15 +2682,15 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   terra Underflow:stats(name:&int8) end
   res.terraModule = Underflow
 
-  res.systolicModule = S.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
 
-  local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+  local outputCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("outputCount"):setCoherent(false) )
 
   -- NOTE THAT WE Are counting cycles where downstream_ready == true
-  local cycleCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("cycleCount"):setCoherent(false) )
+  local cycleCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("cycleCount"):setCoherent(false) )
 
   local rst = S.parameter("reset",types.bool())
 
@@ -2773,13 +2777,13 @@ modules.cycleCounter = memoize(function( A, count )
   terra CycleCounter:stats(name:&int8) end
   res.terraModule = CycleCounter
 
-  res.systolicModule = S.moduleConstructor( "CycleCounter_A"..tostring(A).."_count"..count ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+  res.systolicModule = Ssugar.moduleConstructor( "CycleCounter_A"..tostring(A).."_count"..count ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool(),types.bool()}, "cycleCounter outputCount %d cycleCount %d outValid %d metadataMode %d"):instantiate("printInst") ) end
 
-  local outputCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):instantiate("outputCount"):setCoherent(false) )
-  local cycleCount = res.systolicModule:add( S.module.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):instantiate("cycleCount"):setCoherent(false) )
+  local outputCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+  local cycleCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):instantiate("cycleCount"):setCoherent(false) )
 
   local rst = S.parameter("reset",types.bool())
 
@@ -3205,14 +3209,14 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   end
 
   local function makeSystolic( fn )
-    local module = S.moduleConstructor( fn.name ):onlyWire(rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType))
+    local module = Ssugar.moduleConstructor( fn.name ):onlyWire(rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType))
 
     if rigel.isHandshake(fn.outputType) then
       module:parameters{INPUT_COUNT=0, OUTPUT_COUNT=0}
     end
 
-    local process = module:addFunction( systolic.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
-    local reset = module:addFunction( systolic.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
+    local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
+    local reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
     if rigel.isHandshake(fn.inputType)==false and rigel.isHandshake(fn.outputType)==false then 
       local CE = S.CE("CE")
@@ -3233,7 +3237,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 
     err( out[1].type:constSubtypeOf(rigel.lower(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
 
-    assert(systolic.isFunctionConstructor(process))
+    assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
 
     -- for the non-handshake (purely systolic) modules, the ready bit doesn't flow from outputs to inputs,
@@ -3345,7 +3349,7 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
 
   err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
-  local systolicModule = S.moduleConstructor(name)
+  local systolicModule = Ssugar.moduleConstructor(name)
 
   if systolicInstances~=nil then
     for k,v in pairs(systolicInstances) do systolicModule:add(v) end
@@ -3398,7 +3402,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
     if self.phase == [1/T] then self.phase = 0 end
   end
   res.terraModule = ConstSeqState
-  res.systolicModule = S.moduleConstructor("constSeq_"..tostring(value):gsub('%W','_').."_T"..tostring(1/T))
+  res.systolicModule = Ssugar.moduleConstructor("constSeq_"..tostring(value):gsub('%W','_').."_T"..tostring(1/T))
   local sconsts = map(range(1/T), function() return {} end)
   for C=0, (1/T)-1 do
     for y=0, h-1 do
@@ -3440,7 +3444,7 @@ modules.freadSeq = memoize(function( filename, ty )
     darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
   end
   res.terraModule = FreadSeq
-  res.systolicModule = S.moduleConstructor("freadSeq_"..filename:gsub('%W','_'))
+  res.systolicModule = Ssugar.moduleConstructor("freadSeq_"..filename:gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
   local nilinp = S.parameter("process_nilinp", types.null() )
@@ -3467,7 +3471,7 @@ function modules.fwriteSeq( filename, ty )
     @out = @inp
   end
   res.terraModule = FwriteSeq
-  res.systolicModule = S.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_'))
+  res.systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
@@ -3697,7 +3701,7 @@ endmodule
 ]]
   end
 
-  res.systolicModule = S.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
+  res.systolicModule = Ssugar.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
   res.systolicModule:add(f.systolicModule:instantiate("inst"))
 
   return darkroom.newFunction(res)

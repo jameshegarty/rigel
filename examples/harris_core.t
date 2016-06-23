@@ -1,6 +1,7 @@
 local R = require "rigel"
 local RM = require "modules"
 local f = require "fixed_float"
+local types = require "types"
 local C = require "examplescommon"
 
 local G  = {14 , 62 , 104 , 62 , 14}

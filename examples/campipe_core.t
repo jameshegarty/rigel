@@ -1,6 +1,8 @@
 local f = require "fixed"
 local R = require "rigel"
+local types = require "types"
 local RM = require "modules"
+local S = require "systolic"
 local modules = require "fpgamodules"
 local C = require "examplescommon"
 local CC = {}

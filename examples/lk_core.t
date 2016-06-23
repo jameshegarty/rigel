@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local types = require "types"
 local C = require "examplescommon"
 
 function toUint8Sign(ty)

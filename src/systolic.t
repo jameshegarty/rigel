@@ -959,7 +959,7 @@ local function addArbitration( callsite )
       err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
       local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.inputParameter.type,types.bool()}, loc=getloc(), inputs={input,valid} }
       tca = systolicAST.new(tca)
-      local I, V = S.index(tca,0), S.index(tca,1)
+      local I, V = systolic.index(tca,0), systolic.index(tca,1)
       local CS = createCallsite( fn, fnname, instance, I, V, CE)
       table.insert(instance.arbitration[fnname], {tca,CS})
       return CS
@@ -1460,30 +1460,6 @@ end
 systolic.module = {}
 local __usedModuleNames = {}
 
--- generates a class that provides a nice interface for setting optional parameters
-local function moduleConstructor(tab)
-  local constFunctions=tab.configFns
-  function constFunctions:complete()
-    if self.isComplete==false then
-      self.module = tab.complete(self)
-      assert( systolic.isModule(self.module) )
-      self.isComplete = true
-    end
-  end
-  function constFunctions:instantiate(...)
-    self:complete()
-    return self.module:instantiate(...)
-  end
-
-  local constMT = {__index=constFunctions}
-  return function(...)
-    local t = tab.new(...)
-    t.isComplete=false
-    return setmetatable(t,constMT)
-  end
-end
-
-
 userModuleFunctions={}
 setmetatable(userModuleFunctions,{__index=systolicModuleFunctions})
 userModuleMT={__index=userModuleFunctions}
@@ -1860,13 +1836,6 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, X )
   return setmetatable(t,regModuleMT)
 end
 
-systolic.module.regConstructor = moduleConstructor{
-new=function(ty) return {type=ty,hasCE=false} end,
-complete=function(self) return systolic.module.reg( self.type, self.hasCE, self.init) end,
-configFns={setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end,
-CE=function(self,I) self.hasCE=I; return self end}
-}
-
 -------------------
 systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   assert( types.isType(ty) )
@@ -1906,19 +1875,6 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   assert(systolic.isModule(M))
   return M
 end)
-
-
-systolic.module.regByConstructor = moduleConstructor{
-new=function( ty, setby )
-  assert( types.isType(ty) )
-  assert( systolic.isModule(setby) )
-  assert( setby:getDelay( "process" ) == 0 )
-  return {type=ty, setby=setby}
-end,
-complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
-configFns={CE=function(self,v) self.CE=v; return self end, 
-setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end}
-}
 
 -------------------
 ram128ModuleFunctions={}
@@ -2225,6 +2181,7 @@ end
 -- if outputBits==nil, we don't make a read port (only a write port)
 function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBits, CE, init, X )
   assert(X==nil)
+  err( type(writeAndReturnOriginal)=="boolean", "writeAndReturnOriginal must be bool")
   err( type(inputBits)=="number", "inputBits must be a number")
   err( outputBits==nil or type(outputBits)=="number", "outputBits must be a number")
   err( type(CE)=="boolean", "CE must be bool" )
@@ -2240,11 +2197,11 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
-    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=S.CE("CE_write")}
+    t.functions.writeAndReturnOriginal = {name="writeAndReturnOriginal", inputParameter={name="SET_AND_RETURN_ORIG",type=types.tuple{types.uint(addrbits),types.bits(inputBits)}},outputName="SET_AND_RETURN_ORIG_OUTPUT", output={type=types.bits(inputBits)}, CE=systolic.CE("CE_write")}
     t.functions.writeAndReturnOriginal.isPure = function() return false end
 
     if outputBits~=nil then
-      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)},CE=S.CE("CE_read")}
+      t.functions.read = {name="read", inputParameter={name="READ",type=types.uint(addrbits)},outputName="READ_OUTPUT", output={type=types.bits(outputBits)},CE=systolic.CE("CE_read")}
       t.functions.read.isPure = function() return true end
     end
   else
@@ -2254,129 +2211,6 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
 
   return setmetatable( t, bram2KSDPModuleMT )
 end
-
-----------------
--- supports any size/bandwidth by instantiating multiple BRAMs
--- if outputBits==nil, we don't make a read function (only a write function)
---
--- The bram supports reading/writing at different bandwidths. So we specify total size to allocate (sizeInBytes),
--- and the read/write BW.
---
--- notice that we don't allow non-byte input/output BW, non-power of two sizes here. The reason is that we expose the # of address bits correctly,
--- so these need to be actual realistic values (address count must be power of 2 to make sense). Potentially, we could make a wrapper for this that
--- allows for non-power-of-2 addressing, and has more flexibility in these values.
-systolic.module.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, X)
-  assert(X==nil)
-  err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
-  err( type(inputBytes)=="number", "inputBytes must be a number")
-  err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
-
-  -- non power of 2 sizes are actually ok: the number of addressable items just needs to be power of 2
-  --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
-  err( type(CE)=="boolean", "CE must be boolean")
-
-  err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
-  
-  --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
-  local writeAddrs = sizeInBytes/inputBytes
-  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
-
-  if outputBytes~=nil then
-    err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))
-    local readAddrs = sizeInBytes/outputBytes
-    err( isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
-  end
-  
-  -- the idea here is that we want to pack the data into the smallest # of brams possible.
-  -- we are limited by (a) the number of addressable items, and (b) the bw of each bram.
-  -- if we have more than 2048 addressable items, we can't pack into brams (would need additional multiplexers)
-  local minbw = inputBytes
-  if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
-  local maxbw = inputBytes
-  if outputBytes~=nil then maxbw = math.max(inputBytes, outputBytes) end
-  local addressable = sizeInBytes/minbw
-
-  err(addressable<=2048,"Error, bramSDP arguments have more addressable items than are supported by 1 bram (size:"..tostring(sizeInBytes)..", inputBytes:"..tostring(inputBytes)..")")
-
-  -- find the # brams if we're bw limited, or size limited
-  local bwlimit = maxbw/4
-  local sizelimit = (addressable*maxbw)/2048
-
-  local count = math.max(bwlimit, sizelimit, 1)
-
-  err( count==math.floor(count), "non integer number of BRAMS needed?")
-  assert(count <= inputBytes) -- must read at least 1 byte per ram
-
---  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
-  local eachInputBytes = math.max(inputBytes/count,1)
-  local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
-
-  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
-  assert(eachInputBytes>=1 and eachInputBytes<=4)
-  assert(eachInputBytes<=inputBytes)
-  assert(eachInputBytes*count==inputBytes)
-
-  local eachOutputBytes, outputAddrBits
-  if outputBytes~=nil then
-    assert(count <= outputBytes) -- must read at least 1 byte per ram
-    eachOutputBytes = math.max(outputBytes/count,1)
---    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
---    eachOutputBytes = math.max(eachOutputBytes,1)
-    print("eachOutputBytes",eachOutputBytes)
-    assert(eachOutputBytes>=1 and eachOutputBytes<=4)
-    assert(eachOutputBytes<=outputBytes)
-    assert(eachOutputBytes*count==outputBytes)
-    outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2)
-  end
-
-  if sizeInBytes < count*2048 then
-    print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
-  end
-
-  if init~=nil then
-    err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
-    while #init < 2048 do
-      table.insert(init,0)
-    end
-  end
-
-  if writeAndReturnOriginal then
-    local mod = systolic.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init) )
-    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
-    local sinpRead
-    if outputBytes~=nil then sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits)) end
-    local inpAddr = systolic.index(sinp,0)
-    local inpData = systolic.index(sinp,1)
-
-    local out, outRead = {}, {}
-    for ram=0,count-1 do
-      local eachOutputBits
-      if outputBytes~=nil then eachOutputBits = eachOutputBytes*8 end
-
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachInputBytes*8, eachOutputBits, CE, init ):instantiate("bram_"..ram) )
-      local inp = systolic.bitSlice( inpData, ram*eachInputBytes*8, (ram+1)*eachInputBytes*8-1 )
-
-      local internalInputAddrBits = math.log(2048/eachInputBytes)/math.log(2)
-      table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(internalInputAddrBits)),inp} ) )
-
-      if outputBytes~=nil then 
-        local internalOutputAddrBits = math.log(2048/eachOutputBytes)/math.log(2)
-        table.insert( outRead, m:read( systolic.cast(sinpRead,types.uint(internalOutputAddrBits)) ) ) 
-      end
-    end
-
-    local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
-
-    if outputBytes~=nil then 
-      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, sel(CE,S.CE("read_CE"),nil) ) ) 
-    end
-
-    return mod
-  else
-    assert(false)
-  end
-                                  end)
 
 --------------------
 fileModuleFunctions={}
@@ -2577,171 +2411,5 @@ function systolic.module.assert( str, CE, exit, X )
   res.functions.process.isPure = function() return false end
   return setmetatable(res, assertModuleMT)
 end
-
---------------------------------------------------------------------
--- Syntax sugar for incrementally defining a function
---------------------------------------------------------------------
-
-systolicFunctionConstructor = {}
-systolicFunctionConstructorMT={__index=systolicFunctionConstructor}
-
-function systolic.isFunctionConstructor(t) return getmetatable(t)==systolicFunctionConstructorMT end
-
-function systolic.lambdaConstructor( name, inputType, inputName, validName )
-  err( type(name)=="string", "name must be string")
-  err( inputType==nil or types.isType(inputType), "inputType must be type")
-  err( inputType==nil or type(inputName)=="string", "input name must be string")
-
-  local t = {name=name, isComplete=false, pipelines={} }
-  if inputType~=nil then t.inputParameter=systolic.parameter(inputName, inputType) 
-  else t.inputParameter=systolic.parameter(name.."_NULL_INPUT",types.null()) end
-
-  if type(validName)=="string" then t.validParameter = systolic.parameter(validName, types.bool()) end
-  return setmetatable(t, systolicFunctionConstructorMT)
-end
-
-function systolicFunctionConstructor:getInput() return self.inputParameter end
-function systolicFunctionConstructor:getValid() 
-  --err(self.validParameter~=nil, "validName was not passed at creation time"); 
-  return self.validParameter 
-end
-function systolicFunctionConstructor:getCE() 
-  --err(self.CEparameter~=nil, "CE not given"); 
-  return self.CEparameter 
-end
-function systolicFunctionConstructor:setOutput( o, oname ) 
-  err( self.isComplete==false, "function is already complete"); 
-  assert(systolic.isAST(o)); 
-  err(type(oname)=="string", "output must be given a name")
-  self.output = o;
-  self.outputName = oname
-end
-function systolicFunctionConstructor:getOutputName() return self.outputName end
-function systolicFunctionConstructor:getOutput() return self.output end
-
-function systolicFunctionConstructor:setCE( ce ) 
-  err( self.isComplete==false, "function is already complete"); 
-  assert( systolic.isAST(ce) and ce.kind=="parameter" and ce.type==types.bool(true) )
-  self.CEparameter = ce 
-end
-
-function systolicFunctionConstructor:addPipeline( p ) 
-  err( self.isComplete==false, "function is already complete"); 
-  assert(systolic.isAST(p)); 
-  table.insert( self.pipelines, p )
-end
-
-function systolicFunctionConstructor:complete()
-  if self.isComplete==false then
-    self.fn = systolic.lambda( self.name, self.inputParameter, self.output, self.outputName, self.pipelines, self.validParameter, self.CEparameter )
-    self.isComplete=true
-  end
-  return self.fn
-end
-
-function systolicFunctionConstructor:isPure() self:complete(); return self.fn:isPure() end
-
---------------------------------------------------------------------
--- Syntax sugar for incrementally defining a module
---------------------------------------------------------------------
-
-systolicModuleConstructor = {}
-systolicModuleConstructorMT={__index=systolicModuleConstructor}
-
-function systolic.isModuleConstructor(I) return getmetatable(I)==systolicModuleConstructorMT end
-
-function systolic.moduleConstructor( name, X )
-  assert(type(name)=="string")
-  assert(X==nil)
-  checkReserved(name)
-
-  -- we need to put the options in their own table, b/c otherwise nil options will go to the __index metamethod
-  local t = { name=name, functions={}, instances={}, isComplete=false, usedInstanceNames={}, instanceMap={}, options={} }
-
-  return setmetatable( t, systolicModuleConstructorMT )
-end
-
-function systolicModuleConstructor:add( inst )
-  err( systolic.isInstance(inst), "must be an instance" )
-
-  checkReserved(inst.name)
-  if self.usedInstanceNames[inst.name]~=nil then
-    print("Error, instance name "..inst.name.." already in use")
-    assert(false)
-  end
-
-  self.instanceMap[inst] = 1
-  self.usedInstanceNames[inst.name] = inst
-
-  table.insert(self.instances,inst)
-  return inst
-end
-
-function systolicModuleConstructor:lookupInstance( instName )
-  assert( type(instName)=="string")
-  err( systolic.isInstance(self.usedInstanceNames[instName]), "Could not find instance named '"..instName.."' on module")
-  return self.usedInstanceNames[instName]
-end
-
-function systolicModuleConstructor:lookupFunction( funcName )
-  --err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
-  --if self.functions[funcName]==nil then print("Warning: Could not find function named '"..funcName.."' on module "..self.name) end
-  return self.functions[funcName]
-end
-
-function systolicModuleConstructor:addFunction( fn )
-  err( self.isComplete==false, "module is already complete")
-  err( systolic.isFunction(fn) or systolic.isFunctionConstructor(fn), "input must be a systolic function")
-
-  if self.usedInstanceNames[fn.name]~=nil then
-    print("Error, function name "..fn.name.." already in use")
-    assert(false)
-  end
-
-  self.functions[fn.name]=fn
-  fn.module = self
-  return fn
-end
-
-function systolicModuleConstructor:onlyWire(v) err( self.isComplete==false, "module is already complete"); self.options.onlyWire=v; return self end
-function systolicModuleConstructor:verilog(v) err( self.isComplete==false, "module is already complete"); self.options.verilog=v; return self end
-function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "module is already complete"); self.options.parameters=p; return self end
-
-function systolicModuleConstructor:complete()
-  if self.isComplete==false then
-    local fns = map(self.functions, function(f) if systolic.isFunctionConstructor(f) then return f:complete() else return f end end)
-    self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
-    self.isComplete = true
-  end
-end
-
-function systolicModuleConstructor:setDelay( fnname, delay )
-  assert(type(fnname)=="string")
-  assert(type(delay)=="number")
-  self.options.verilogDelay = self.options.verilogDelay or {}
-  self.options.verilogDelay[fnname]=delay
-end
-
-function systolicModuleConstructor:getDelay( fnname )
-  self:complete()
-  return self.module:getDelay( fnname )
-end
-
-function systolicModuleConstructor:toVerilog()
-  self:complete()
-  return self.module:toVerilog()
-end
-
-
-function systolicModuleConstructor:getDependencies()
-  self:complete()
-  return self.module:getDependencies()
-end
-
-function systolicModuleConstructor:instantiate( name, options )
-  self:complete()
-  return self.module:instantiate( name, options )
-end
-
 
 return systolic

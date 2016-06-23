@@ -1,6 +1,9 @@
 local R = require "rigel"
 local rigel = R
 local RM = require "modules"
+local types = require "types"
+local S = require "systolic"
+local Ssugar = require "systolicsugar"
 local modules = RM
 local cstdlib = terralib.includec("stdlib.h")
 local C = {}
@@ -828,7 +831,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   end
   res.terraModule = UnpackStencil
 
-  res.systolicModule = S.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.systolicModule = Ssugar.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
   local sinp = S.parameter("inp", res.inputType)
   local out = {}
   for i=1,T do

@@ -1,7 +1,7 @@
 local C = require "examplescommon"
 local harness = require "harness"
 local f = require "fixed"
-
+local types = require "types"
 
 local makeStereo = require "stereo_tr_core"
 --local makeStereo = require "stereo_core"

@@ -1,4 +1,5 @@
 local R = require "rigel"
+local types = require "types"
 local RM = require "modules"
 local C = require "examplescommon"
 

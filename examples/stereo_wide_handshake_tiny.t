@@ -1,5 +1,6 @@
 local C = require "examplescommon"
 local harness = require "harness"
+local types = require "types"
 local makeStereo = require "stereo_core"
 
 --local SADRadius = 4

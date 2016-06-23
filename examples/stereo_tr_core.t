@@ -2,6 +2,8 @@ local R = require "rigel"
 local RM = require "modules"
 local C = require "examplescommon"
 local f = require "fixed"
+local types = require "types"
+local S = require "systolic"
 
 
 -- we only display the found match if energy < threshold, or threshold==0 (no thresholding)

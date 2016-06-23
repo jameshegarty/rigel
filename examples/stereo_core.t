@@ -1,5 +1,7 @@
 local R = require "rigel"
 local RM = require "modules"
+local types = require "types"
+local S = require "systolic"
 local C = require "examplescommon"
 
 -- This function is used to select and format the output we want to display to the user

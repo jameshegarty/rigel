@@ -1,3 +1,5 @@
+local types = require "types"
+
 -- NOTE: does typechecking in place! ast must be a table that's going to be thrown away!
 local function typecheck_inner( ast, newNodeFn )
   assert(type(newNodeFn)=="function")

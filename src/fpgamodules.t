@@ -1,7 +1,8 @@
-systolic = require("systolic")
-types = require("types")
+local systolic = require("systolic")
+local Ssugar = require("systolicsugar")
+local types = require("types")
 
-S=systolic
+local S=systolic
 --statemachine = require("statemachine")
 local modules = {}
 
@@ -206,7 +207,7 @@ end
 -- make an array of ram128s to service a certain bandwidth
 modules.ram128 = function(ty, init)
   assert(types.isType(ty))
-  local ram128 = systolic.moduleConstructor("ram128_"..sanitize(tostring(ty)) )
+  local ram128 = Ssugar.moduleConstructor("ram128_"..sanitize(tostring(ty)) )
   local bits = ty:verilogBits()
   
   assert(type(init)=="table")
@@ -220,7 +221,7 @@ modules.ram128 = function(ty, init)
 
   local rams = map( range( bits ), function(v) return ram128:add(systolic.module.ram128(false,true,slicedInit[v]):instantiate("ram"..v)) end )
 
-  local read = ram128:addFunction( systolic.lambdaConstructor("read",types.uint(8),"read_input") )
+  local read = ram128:addFunction( Ssugar.lambdaConstructor("read",types.uint(8),"read_input") )
 --  pushBackReset:setCE(pushCE)
 
   local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( read:getInput(), types.uint(7)) ) end)
@@ -234,7 +235,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   assert(type(items)=="number")
   assert(type(verbose)=="boolean")
 
-  local fifo = systolic.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
+  local fifo = Ssugar.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.log(items)/math.log(2))+1 -- the +1 is so that we can disambiguate wraparoudn
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
@@ -248,11 +249,11 @@ modules.fifo = memoize(function(ty,items,verbose)
     rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
     print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
-    ram = fifo:add(systolic.module.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
+    ram = fifo:add(modules.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
   end
 
   -- size
-  local sizeFn = fifo:addFunction( S.lambdaConstructor("size") )
+  local sizeFn = fifo:addFunction( Ssugar.lambdaConstructor("size") )
   local fsize = modules.modSub(writeAddr:get(),readAddr:get(), items ):disablePipelining()
   sizeFn:setOutput( fsize, "size" )
 
@@ -264,13 +265,13 @@ modules.fifo = memoize(function(ty,items,verbose)
   -- To account for this, pretend the FIFO size is READY_PIPELINE entries smaller. Then, when we run over the end, it won't cause errors.
   local readyReg = fifo:add( S.module.reg(types.bool(),false,nil,false):instantiate("readyReg") )
   local READY_PIPELINE = 1
-  local readyFn = fifo:addFunction( S.lambdaConstructor("ready") )
+  local readyFn = fifo:addFunction( Ssugar.lambdaConstructor("ready") )
   local ready = S.lt( fsize, S.constant(items-2-READY_PIPELINE,types.uint(addrBits)) ):disablePipelining()
   readyFn:addPipeline( readyReg:set(ready) )
   readyFn:setOutput( readyReg:get(), "ready" )
 
   -- has data
-  local hasDataFn = fifo:addFunction( S.lambdaConstructor("hasData") )
+  local hasDataFn = fifo:addFunction( Ssugar.lambdaConstructor("hasData") )
   local hasData = S.__not( S.eq( writeAddr:get(), readAddr:get()) ):disablePipelining()
 --  local hasData = S.gt(fsize,S.constant(16,types.uint(addrBits))):disablePipelining()
 --  local hasData = S.gt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(1,types.uint(8)) ):disablePipelining()
@@ -279,7 +280,7 @@ modules.fifo = memoize(function(ty,items,verbose)
 
   -- pushBack
   local pushCE = S.CE("CE_push")
-  local pushBack = fifo:addFunction( systolic.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
+  local pushBack = fifo:addFunction( Ssugar.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
   pushBack:setCE(pushCE)
   local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true ):instantiate("pushBackAssert") )
   local hasSpace = S.lt( fsize, S.constant(items-2,types.uint(addrBits)) ):disablePipelining() -- note that this is different than ready
@@ -295,13 +296,13 @@ modules.fifo = memoize(function(ty,items,verbose)
   end
 
   -- pushBackReset
-  local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("pushBackReset" ) )
+  local pushBackReset = fifo:addFunction( Ssugar.lambdaConstructor("pushBackReset" ) )
   pushBackReset:setCE(pushCE)
   pushBackReset:addPipeline( writeAddr:set(systolic.constant(0,types.uint(addrBits))))
 
   -- popFront
   local popCE = S.CE("CE_pop")
-  local popFront = fifo:addFunction( S.lambdaConstructor("popFront") )
+  local popFront = fifo:addFunction( Ssugar.lambdaConstructor("popFront") )
   popFront:setCE(popCE)
   local popFrontAssert = fifo:add( systolic.module.assert( "attempting to pop from an empty fifo", true ):instantiate("popFrontAssert") )
   popFront:addPipeline( popFrontAssert:process( hasData ) )
@@ -320,7 +321,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   end
 
   -- popFrontReset
-  local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("popFrontReset" ) )
+  local popFrontReset = fifo:addFunction( Ssugar.lambdaConstructor("popFrontReset" ) )
   popFrontReset:setCE(popCE)
   popFrontReset:addPipeline( readAddr:set(systolic.constant(0,types.uint(addrBits))))
 
@@ -333,7 +334,7 @@ modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbos
 modules.fifonoop = memoize(function(ty)
   assert(types.isType(ty))
 
-  local fifo = systolic.moduleConstructor("fifonoop_"..sanitize(tostring(ty))):onlyWire(true)
+  local fifo = Ssugar.moduleConstructor("fifonoop_"..sanitize(tostring(ty))):onlyWire(true)
 
   local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
   local internalReady = systolic.parameter("load_ready_downstream",types.bool())
@@ -356,10 +357,10 @@ modules.fifonoop = memoize(function(ty)
 --  local hasDataFn = fifo:addFunction( S.lambda("hasData",S.parameter("hdnil",types.null()),internalValid,"hasData") )
 
   -- pushBackReset
-  local pushBackReset = fifo:addFunction( systolic.lambdaConstructor("store_reset" ) )
+  local pushBackReset = fifo:addFunction( Ssugar.lambdaConstructor("store_reset" ) )
 
   -- popFrontReset
-  local popFrontReset = fifo:addFunction( systolic.lambdaConstructor("load_reset" ) )
+  local popFrontReset = fifo:addFunction( Ssugar.lambdaConstructor("load_reset" ) )
 
   return fifo
                            end)
@@ -379,7 +380,7 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   if resetValue~=nil then ty:checkLuaValue(resetValue) end
   err( type(CE)=="boolean", "CE option must be bool")
 
-  local M = systolic.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE).."_TY"..ty:verilogBits() )
+  local M = Ssugar.moduleConstructor( "ShiftRegister_"..size.."_CE"..tostring(CE).."_TY"..ty:verilogBits() )
   local pipelines = {}
   local resetPipelines = {}
   local out
@@ -521,17 +522,17 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
 
   if allconst and period*stride==#exprs then
     -- period*stride==#exprs => we will get back to initial condition after 'period' cycles
-    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
+    local regs = map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
 
     pipelines = map( regs, function(r,i) return r:set( regs[((i-1+stride)%#exprs)+1]:get() )  end )
     out = map( regs, function(r) return r:get() end )
   else
-    local phase = module:add( S.module.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):instantiate("phase") )
+    local phase = module:add( Ssugar.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):instantiate("phase") )
 
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
-    local regs = map(exprs, function(e,i) return module:add( S.module.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
+    local regs = map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
 
     exprs = optimizeShifter( exprs, regs, stride, period )
 
@@ -642,6 +643,130 @@ function fixedBram(conf)
     table.insert(res,");\n\n")
   return res
 end
+
+----------------
+-- supports any size/bandwidth by instantiating multiple BRAMs
+-- if outputBits==nil, we don't make a read function (only a write function)
+--
+-- The bram supports reading/writing at different bandwidths. So we specify total size to allocate (sizeInBytes),
+-- and the read/write BW.
+--
+-- notice that we don't allow non-byte input/output BW, non-power of two sizes here. The reason is that we expose the # of address bits correctly,
+-- so these need to be actual realistic values (address count must be power of 2 to make sense). Potentially, we could make a wrapper for this that
+-- allows for non-power-of-2 addressing, and has more flexibility in these values.
+modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, X)
+  assert(X==nil)
+  err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
+  err( type(inputBytes)=="number", "inputBytes must be a number")
+  err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
+
+  -- non power of 2 sizes are actually ok: the number of addressable items just needs to be power of 2
+  --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
+  err( type(CE)=="boolean", "CE must be boolean")
+
+  err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
+  
+  --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
+  local writeAddrs = sizeInBytes/inputBytes
+  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
+
+  if outputBytes~=nil then
+    err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))
+    local readAddrs = sizeInBytes/outputBytes
+    err( isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
+  end
+  
+  -- the idea here is that we want to pack the data into the smallest # of brams possible.
+  -- we are limited by (a) the number of addressable items, and (b) the bw of each bram.
+  -- if we have more than 2048 addressable items, we can't pack into brams (would need additional multiplexers)
+  local minbw = inputBytes
+  if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
+  local maxbw = inputBytes
+  if outputBytes~=nil then maxbw = math.max(inputBytes, outputBytes) end
+  local addressable = sizeInBytes/minbw
+
+  err(addressable<=2048,"Error, bramSDP arguments have more addressable items than are supported by 1 bram (size:"..tostring(sizeInBytes)..", inputBytes:"..tostring(inputBytes)..")")
+
+  -- find the # brams if we're bw limited, or size limited
+  local bwlimit = maxbw/4
+  local sizelimit = (addressable*maxbw)/2048
+
+  local count = math.max(bwlimit, sizelimit, 1)
+
+  err( count==math.floor(count), "non integer number of BRAMS needed?")
+  assert(count <= inputBytes) -- must read at least 1 byte per ram
+
+--  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
+  local eachInputBytes = math.max(inputBytes/count,1)
+  local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
+
+  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
+  assert(eachInputBytes>=1 and eachInputBytes<=4)
+  assert(eachInputBytes<=inputBytes)
+  assert(eachInputBytes*count==inputBytes)
+
+  local eachOutputBytes, outputAddrBits
+  if outputBytes~=nil then
+    assert(count <= outputBytes) -- must read at least 1 byte per ram
+    eachOutputBytes = math.max(outputBytes/count,1)
+--    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
+--    eachOutputBytes = math.max(eachOutputBytes,1)
+    print("eachOutputBytes",eachOutputBytes)
+    assert(eachOutputBytes>=1 and eachOutputBytes<=4)
+    assert(eachOutputBytes<=outputBytes)
+    assert(eachOutputBytes*count==outputBytes)
+    outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2)
+  end
+
+  if sizeInBytes < count*2048 then
+    print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
+  end
+
+  if init~=nil then
+    err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
+    while #init < 2048 do
+      table.insert(init,0)
+    end
+  end
+
+  if writeAndReturnOriginal then
+    local mod = Ssugar.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init) )
+    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
+    local sinpRead
+    if outputBytes~=nil then sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits)) end
+    local inpAddr = systolic.index(sinp,0)
+    local inpData = systolic.index(sinp,1)
+
+    local out, outRead = {}, {}
+    for ram=0,count-1 do
+      local eachOutputBits
+      if outputBytes~=nil then eachOutputBits = eachOutputBytes*8 end
+
+      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachInputBytes*8, eachOutputBits, CE, init ):instantiate("bram_"..ram) )
+      local inp = systolic.bitSlice( inpData, ram*eachInputBytes*8, (ram+1)*eachInputBytes*8-1 )
+
+      local internalInputAddrBits = math.log(2048/eachInputBytes)/math.log(2)
+      table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(internalInputAddrBits)),inp} ) )
+
+      if outputBytes~=nil then 
+        local internalOutputAddrBits = math.log(2048/eachOutputBytes)/math.log(2)
+        table.insert( outRead, m:read( systolic.cast(sinpRead,types.uint(internalOutputAddrBits)) ) ) 
+      end
+    end
+
+    local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
+
+    if outputBytes~=nil then 
+      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, sel(CE,S.CE("read_CE"),nil) ) ) 
+    end
+
+    return mod
+  else
+    assert(false)
+  end
+                                  end)
+
 
 function modules.buffer(moduleName, sizeBytes, inputBytes, outputBytes)
   assert(type(inputBytes)=="number")

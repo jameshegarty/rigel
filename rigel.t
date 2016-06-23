@@ -5,6 +5,7 @@ local fpgamodules = require("fpgamodules")
 local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 local S = require("systolic")
+local Ssugar = require("systolicsugar")
 local SDFRate = require "sdfrate"
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
@@ -470,7 +471,7 @@ function darkroomIRFunctions:typecheck()
 end
 
 function darkroomIRFunctions:codegenSystolic( module )
-  assert(systolic.isModuleConstructor(module))
+  assert(Ssugar.isModuleConstructor(module))
   return self:visitEach(
     function(n, inputs)
       if n.kind=="input" then

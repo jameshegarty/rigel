@@ -533,19 +533,32 @@ Misc
 Systolic (systolic.t)
 =====================
 
-SystolicAST
+The `Systolic` library is used to construct pipelined datapaths and lower them to Verilog. In this system, users define `SystolicModule`'s, which correspond to modules in Verilog. SystolicModules can be instantiated (returning a `SystolicInstance`), and SystolicModules can contain instances of other modules. Instances indicate that a copy of the hardware necessary to implement that module should be created.
+
+SystolicModules contain one or more `SystolicDataflow`'s, which represent operations to be performed by the module. Each SystolicDataflow can have one input and/or one output (which correspond to input/output ports on modules in Verilog). The output is typically driven by the input, but can also be driven by an internal module instance, such as a register. The user specifies the operations to be performed by the dataflow by creating a DAG of `SystolicIR` nodes. `SystolicIR` is a specification of the primitive operations that can be performed by the hardware.
+
+The `SystolicIR` and SystolicDataflows are restricted so that they can always be pipelined to an arbitrary depth by the compiler. The pipelineing is performed automatically prior to lowering to Verilog. SystolicDataflows can each have an associated valid bit (to implement pipeline bubbles) and clock enable `CE` (to stall the pipeline). These two signals are wired automatically by the compiler.
+
+SystolicIR
 -----------
 
-SystolicAST:setName( name : String )
+    systolic.parameter( name : String, type : Type )
+Return a formal parameter of type `type` and name `name` (used when lowering to Verilog).
 
-systolic.parameter( name : String, type : Type )
-systolic.constant( value, type : Type )
-systolic.null()
+    systolic.constant( value : Lua, type : Type )
+Return a value with value `value` and type `type`. `value` must be convertible to type.
 
-SystolicAST Operators
+    systolic.null()
+Return a value of type null.
+
+    SystolicIR:setName( name : String )
+Set the intermediate variable name to `name` (when lowered to Verilog).
+
+SystolicIR Operators
 ------------------
 
 `systolic.cast( expr : SystolicAST, type : Type )` Cast `expr` to Type `type`.
+
 `systolic.slice( expr : SystolicAST, idxLow : Uint, idxHigh : Uint, idyLow : Uint, idyHigh : Uint )`
 if `expr` is of type Array2D, return a new array of smaller size. The new array will include X coordinates in range [idxLow,idxHigh] and Y in range [idyLow, idyHigh]. Coordinates are inclusive and must be in rate of `expr` array size.
 
@@ -567,52 +580,118 @@ Perform the ternary select operation like in C, `cond?a:b`.
 * `+ (operator)` lhs+rhs
 * `- (operator)` lhs-rhs
 * `* (operator)` lhs*rhs
-* `systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
 * `systolic.eq( lhs : SystolicAST, rhs : SystolicAST )` lhs == rhs
-systolic.lt( lhs : SystolicAST, rhs : SystolicAST )
-systolic.ge( lhs : SystolicAST, rhs : SystolicAST )
-systolic.gt( lhs : SystolicAST, rhs : SystolicAST )
-systolic.__or( lhs : SystolicAST, rhs : SystolicAST )
-systolic.__and( lhs : SystolicAST, rhs : SystolicAST )
-systolic.__not( lhs : SystolicAST, rhs : SystolicAST )
-systolic.xor( lhs : SystolicAST, rhs : SystolicAST )
-systolic.abs( lhs : SystolicAST, rhs : SystolicAST )
-systolic.rshift( lhs : SystolicAST, rhs : SystolicAST )
-systolic.lshift( lhs : SystolicAST, rhs : SystolicAST )
-systolic.neg( lhs : SystolicAST, rhs : SystolicAST )
-systolic.isX( lhs : SystolicAST, rhs : SystolicAST )
+* `systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
+* `systolic.lt( lhs : SystolicAST, rhs : SystolicAST )` lhs < rhs
+* `systolic.ge( lhs : SystolicAST, rhs : SystolicAST )` lhs >= rhs
+* `systolic.gt( lhs : SystolicAST, rhs : SystolicAST )` lhs > rhs
+* `systolic.__or( lhs : SystolicAST, rhs : SystolicAST )` lhs or rhs (boolean)
+* `systolic.__and( lhs : SystolicAST, rhs : SystolicAST )` lhs and rhs (boolean)
+* `systolic.xor( lhs : SystolicAST, rhs : SystolicAST )` lhs xor rhs (boolean)
+* `systolic.rshift( lhs : SystolicAST, rhs : SystolicAST )` lhs >> rhs (arithmatic shift)
+* `systolic.lshift( lhs : SystolicAST, rhs : SystolicAST )` lhs << rhs (arithmatic shift)
 
-Unary Operators:
-SystolicAST( delay : Uint )
+### Unary Operators: ###
+* `SystolicIR( delay : Uint )` (Lua Call Operator). Apply Delay of `delay` cycles.
+* `systolic.__not( input : SystolicAST )` boolean or bitwise not
+* `systolic.neg( input : SystolicAST )` -input
+* `systolic.abs( input : SystolicAST )` |input|
+* `systolic.isX( input : SystolicAST )` is input Verilog value X?
 
-SystolicFunction
+
+SystolicDataflow
 -----------
 
-`systolic.lambda( name : String, inputParameter : SystolicAST, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicFunction`
+    systolic.lambda( name : String, inputParameter : SystolicIR, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicDataflow
 
 Define a Systolic Function (i.e. dataflow that drives a port).
-* name: Name of the function (port)
-* inputParameter: formal parameter for the function. Must be a SystolicAST returned by `systolic.parameter()` or `systolic.null()`
-* output: output of the function (optional)
-* outputName: name of the output port (when lowered to Verilog)
-* pipelines: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
-* valid: SystolicAST Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
-* CE: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
+* `name`: Name of the function (port). Used when calling the function.
+* `inputParameter`: formal parameter for the function. Must be a SystolicIR returned by `systolic.parameter()` or `systolic.null()`
+* `output`: output of the function (optional)
+* `outputName`: name of the output port (when lowered to Verilog)
+* `pipelines`: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
+* `valid`: SystolicIR Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
+* `CE`: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
 
 SystolicInstance
 ------------
 
-`SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST`
+    SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST
 Return a SystolicAST representing the value of applying any function (`anyFnName`) of an instantiated module on `input`.
 
 SystolicModule
 ------------
-`systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [parameters : ], [verilog : String], [verilogDelay : Uint] )`
 
 `SystolicModule:toVerilog() : String`
 Return the definition of this Systolic Module as Verilog.
 
 `SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance`
+
+Systolic contains a number of built-in primitive modules:
+
+### User Defined Module ###
+    systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [verilogParameters : ], [verilog : String], [verilogDelays : Uint[String]] ) : SystolicModule
+
+Define a new Systolic module.
+* `name`: Name of the new module (used when lowering to Verilog)
+* `functions`: list of all functions to pack into this module.
+* `instances`: list of all module instances to be contained in this module.
+* `onlyWire`: If true, do not apply pipelining. Module is lowered directly to Verilog. This then serves simply as a higher-level interface to generating Verilog. (optional)
+* `coherentDefault`: (optional)
+* `verilogParameters`: (optional)
+* `verilog`: provide a string of Verilog to stand in for this module (i.e. don't generate Verilog, just return this string). (optional)
+* `verilogDelays`: If a Verilog string is provided, this allows you to pass pipelining delays for each port on the module. This is a map from function name to delay. (optional)
+
+### Register ###
+    systolic.module.reg( type : Type, hasCE : Bool, [initial : LuaValue], [hasValid : Bool] ) : SystolicModule
+
+Create a register (D flip flop) of type `type`. `hasCE` and `hasValid` indicate whether the flip flop should be generated with a CE and Valid bit. `hasValid` is true by default. `initial` is an initial value for the register.
+
+The returned register module `R` has two dataflows on it:
+* `R:set( input : type ) : nil`
+* `R:get() : type`
+
+### RegBy ###
+    systolic.module.regBy( type : Type, setBy : SystolicModule, [hasCE : Bool], [init : LuaValue] )
+
+RegBy is a generalization of an accumulator. RegBy is a register that atomically performs an operation whenever is it In. The `setBy` argument is the module defining the operation to perform.  the case of an accumulator, setBy would perform an addition. More precisely, `setBy` must be a module with one `:process(input:{type,type})` dataflow on it. The first tuple index is the previous register value, and the second tuple index is the new user input. `process` must have a pipeline delay of 0.
+
+As in the case of the register module, `hasCE` indicates whethere the module should have a CE, and `init` is an optional initial value.
+
+The returned regby module `R` has three dataflows on it:
+* `R:set( input : type ) : nil` Reset the value to `input`
+* `R:setBy( input : type ) : nil` Set and Perform the setBy operation
+* `R:get() : type`
+
+### ram128 ###
+    systolic.module.ram128( [hasWrite:Bool], [hasRead : Bool], [init:LuaValue] ) : SystolicModule
+
+ram128 creates a Xilinx 128 bit ram, which occupies one slice. `hasWrite` and `hasRead` indicate whether a read/write dataflow should be generated.
+
+The returned ram128 module `R` has two dataflows on it:
+* `R:read( addr : Uint7) : Bits(1)` read bit at address `addr`
+* `R:write( {addr : Uint7, Bits(1)} ) : Bits(1)` write bit at address `addr`
+
+### bram2KSDP ###
+    systolic.module.bram2KSDP( writeAndReturnOriginal : Bool, inputBits : Number, [outputBits: Number], CE : Bool, [init : LuaValue] ) : SystolicModule
+
+bram2KSDP instantiates a Xilinx BRAM module. Xilinx BRAMs support a number of different configurations (sizes and bandwidths), but they all see to be built out of this module, so I believe this is the fundamental hardware primitive.
+
+The returned bram2KSDP module `R` has two dataflows on it:
+* `R:read( addr : Uint7) : Bits(1)` read bit at address `addr`
+* `R:write( {addr : Uint7, Bits(1)} ) : Bits(1)` write bit at address `addr`
+
+### FileModule (simulator only) ###
+
+### PrintModule (simulator only) ###
+
+### AssertModule (simulator only) ###
+
+SystolicSugar (systolicsugar.t)
+===============
+
+FPGA Modules (fpgamodules.t)
+===============
 
 Fixed (fixed.t)
 ===============

@@ -1,6 +1,7 @@
 local RM = require "modules"
 local IR = require("ir")
 local types = require("types")
+local S = require("systolic")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
 local fpgamodules = require("fpgamodules")
