@@ -1,7 +1,6 @@
 local IR = require("ir")
 local types = require("types")
 local simmodules = require("simmodules")
-local fpgamodules = require("fpgamodules")
 local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 local S = require("systolic")

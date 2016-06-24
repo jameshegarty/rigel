@@ -80,7 +80,7 @@ Overview
   * [Streams](#streams) broadcastStream, fifo
   * [Misc](#misc) lut, fread, fwrite
 * [Systolic](#systolic-systolict)
-* [Fixed](#fixed-fixedt)
+* [Misc](#misc)
 
 Base Types (types.t)
 ====================
@@ -681,17 +681,48 @@ The returned bram2KSDP module `R` has two dataflows on it:
 * `R:read( addr : Uint7) : Bits(1)` read bit at address `addr`
 * `R:write( {addr : Uint7, Bits(1)} ) : Bits(1)` write bit at address `addr`
 
-### FileModule (simulator only) ###
+### FileModule (Verilog simulator only) ###
+    systolic.module.file( filename : String, type :Type, CE : bool )
 
-### PrintModule (simulator only) ###
+The file module allows you to read a file on disk in the Verilog simulator (only). `type` is the type of data to read each cycle.
 
-### AssertModule (simulator only) ###
+The returned file module `F` has three dataflows on it:
+* `F:read() : type` read one value
+* `F:write( input : type ) : nil` write one value
+* `F:reset() : nil` return to the start of the file
 
-SystolicSugar (systolicsugar.t)
+### PrintModule (Verilog simulator only) ###
+    systolic.module.print( type : Type, string : String, [CE : Bool], [showIfInvalid : bool] )
+
+The print module allows you to print a string to the console in the Verilog simulator. The module can also take an arbitrary type as input each cycle, which can be printed using the normal Verilog string formatting operators (i.e. `%d` etc). If `type` is a tuple, the tuple will be unpacked, so that you can print multiple values. If `showIfInvalid` is true, this module prints the string always (even when the dataflow is not running).
+
+The returned file module `P` has three dataflows on it:
+* `P:process( input : type )` print then string with `input`
+
+### AssertModule (Verilog simulator only) ###
+    systolic.module.assert( error : String, CE : bool, [exit : Bool] )
+
+The assert module allows you to fire an assert in the Verilog simulator. String `error` is printed on assert failure. If `exit` is true, the simulation will finish (default true).
+
+The returned assert module `A` has three dataflows on it:
+* `A:process( flag : Bool )` check the assert condition on `flag`
+
+Misc
 ===============
 
-FPGA Modules (fpgamodules.t)
-===============
+### src/systolicsugar.t ###
+Convenience classes for incrementally constructing Systolic modules and dataflows.
 
-Fixed (fixed.t)
-===============
+### src/fpgamodules.t ###
+A number of useful Systolic module constructors.
+
+* arbitrary-width ram built of slices
+* arbitrary-width ram built of BRAMs
+* FIFO
+* Shift register constructor
+
+### src/fixed.t ###
+Experimental. A fixed-point math library built on top of Systolic (which only supports plain ints). Internally keeps track of the correct fixed point location, which saves you from having to implement this with shifts and track the point yourself. Also has the ability to automatically lower the math to a Terra implementation, with the same (arbitrary) precision as the hardware.
+
+### src/fixed_float.t ###
+Experimental. A floating point implementation of `fixed.t`. Used to generate ground-truth implementations. Simply load `fixed_float.t` instead of `fixed.t` and your implementation should still work, but now has 'infinite' precision (from the floats).
