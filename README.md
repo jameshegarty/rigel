@@ -80,12 +80,12 @@ Overview
   * [Streams](#streams) broadcastStream, fifo
   * [Misc](#misc) lut, fread, fwrite
 * [Systolic](#systolic-systolict)
-* [Misc](#misc)
+* [Misc Other Files](#misc)
 
 Base Types (types.t)
 ====================
 
-Rigel's type system supports arbitrary precision ints, uints, floats, bitfields, bools, 2d arrays, and tuples. types.t provides the type class that is used throughout darkroom.
+Rigel's type system supports arbitrary precision ints, uints, floats, bitfields, bools, 2d arrays, and tuples. types.t provides the types that are used throughout darkroom.
 
 Type can be marked as constant, indicating that their value will not change while the pipeline is executing. This allows the compiler to perform additional optimizations. Rigel's constants are roughly equivilant to 'uniforms' in shader programming, or 'taps' in image processing.
 
@@ -140,37 +140,80 @@ types.t also provides a number of helper functions for manipulating and introspe
 Rigel (rigel.t)
 ===============
 
-Rigel operators
+Users construct image processing pipelines in Rigel by creating a Directed Acyclic Graph (DAG) of Rigel operations, which manipulate Rigel values. Most Rigel opreations involve applying a *Rigel Module* to a Rigel value. Rigel contains a large suite of built-in modules for performaning typical image processing operations.
+
+Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types.
+
+`rigel.t` contains core functionality for manipulating Rigel DAGs, and the core classes for Rigel interface types and modules. `modules.t` (shown later) contains all the built-in Rigel modules that can be applied.
+
+RigelIR Values
 ---------------
 
-### rigel.input( type:Type, [sdfRate:SDFRate] ) ###
+The following functions are used for defining leaf values.
 
-### rigel.apply( name:String, module:RigelModule, input:RigelValue ) ###
+### rigel.input( type:Type, [sdfRate:SDFRate] ) : RigelIR ###
 
-### rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelValue ) ###
+`rigel.input` is used to declare an input to a pipeline of a given type `types`, and optionally with a SDF rate `sdfRate`.
 
-### rigel.constant( name:String, value:LuaValue, type:Type ) ###
+### rigel.constant( name:String, value:LuaValue, type:Type ) : RigelIR ###
 
-### rigel.tuple( name:String, inputList:RigelValue[], [packStreams:Bool] ) ###
+`rigel.constant` is used to create a constant value (set at compile time and never changed).
 
-### rigel.array2d( name:String, inputList:RigelValue[width*height], width:Uint, height:Uint, [packStreams:Bool] ) ###
+RigelIR Operators
+---------------
 
-### rigel.selectStream( name:String, input:RigelValue, i:Uint ) ###
+### rigel.apply( name:String, module:RigelModule, input:RigelIR ) : RigelIR ###
 
-### rigel.statements( values:RigelValue[] ) ###
+Apply the Rigel Module `module` to `input`. `name` is used to identify this application when the graph is lowered to Verilog.
+
+### rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelIR ) : RigelIR ###
+
+Apply the function named `functionName` on module instance `instance` to `input`. `name` is used to identify this application when the graph is lowered to Verilog.
+
+Typically, this only comes up with FIFOs. FIFO modules have both a `load` and `store` 'function', which must be applied separately.
+
+### rigel.tuple( name:String, inputList:RigelIR[], [packStreams:Bool] ) : RigelIR ###
+
+Composed a tuple of the ordered list of values in lua array `inputList`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
+
+### rigel.array2d( name:String, inputList:RigelIR[width*height], width:Uint, height:Uint, [packStreams:Bool] ) : RigelIR ###
+
+Composed an array of the ordered list of values in lua array `inputList`. `inputList` must be a 1d array in row major order - 2D dimensions are specified by `width` and `height`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
+
+### rigel.selectStream( name:String, input:RigelIR, i:Uint ) : RigelIR ###
+
+Given an array or tuple of Handshake values, this returns the stream at index `i` (0 indexed).
+
+TODO: turn this into a module.
+
+### rigel.statements( values:RigelIR[] ) : RigelIR ###
+
+Rigel graphs can only have one input and output, however `statements` allows you to multiple pipelines into one, reducing this restriction. Typically, this is only necessary in graphs with FIFOs. Only the first value is passed as the actual output of the graph (lua index 1).
 
 Rigel Interface Types
 ---------------------
 
+Each module's interface type  specifies low-level information about the underlying hardware implementation interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types.
+
 It is useful to think of these as abstract types that enforce rules of composition, not as literal descriptions of the signals of the resulting hardware. The Rigel compiler runs a small amount of code to correctly wire each interface type to its neighbors when it lowers to RTL. TODO: in the future it may be possible to make the low-level RTL layer powerful enough to type all of these interfaces and compose them directly.
 
-By convention in this document we will use the constants *A*, *B*, etc to refer to an arbitrary type. In this section they will refer to base types (see types.t below).
+By convention in this document we will use the constants *A*, *B*, etc to refer to an arbitrary type. In this section they will refer to base types (see [types.t](#base-types-typest)).
 
 ### A->rigel.V(B) ###
 
+Synchronous Module that performs decimation. This corresponds to a statically-timed hardware module with a valid bit on the output only.
+
 ### rigel.V(A)->rigel.RV(B) ###
 
+Synchronous Module that performs both decimation and expansion. This corresponds to a statically-timed hardware module with a valid bit on both inputs/output, and a ready bit.
+
+Note that while it is possible to construct a statically-timed pipeline out of multiple modules with ready bits, this is not valid! And this case is not checked by the compiler! A statically-timed pipeline can only have one module with a ready bit, because upstream stalls are not supported by static pipelines. To compose multiple modules with ready bits, the modules must first be lifed to Handshake types (below).
+
 ### rigel.Handshake(A)->rigel.Handshake(B) ###
+
+Handshake (full Ready-Valid on both input/output) interface. Supports composition of modules that perform both decimation and expansion.
+
+## Aggregates ##
 
 Rigel also has the ability to make aggregates (arrays and tuples) of Handshakes. Since every Rigel module only has a single input and output, this allows us to implement modules that work on multiple streams. These types _can not_ be nested (no Handshakes of Handshakes). Handshake(A) only works over base types.
 
@@ -180,24 +223,79 @@ Rigel also has the ability to make aggregates (arrays and tuples) of Handshakes.
 ### {Handshake(A),Handshake(B),...} ###
     Similar to the array of Handshakes above, but allows for different types.
 
-Rigel also has provisional support for the ability to pack multiple streams onto one shared bus. This allows for supporting time-multiplexed hardware (hardware that operates on different streams in different cycles), or serializing multiple streams into one stream.
+## Multiplexed Busses ##
+
+Rigel also has provisional support for the ability to pack multiple streams onto one shared bus. Compared to the aggregates above (which have N streams on N data lines), this has N streams on 1 data line. This allows for supporting time-multiplexed hardware (hardware that operates on different streams in different cycles), or serializing multiple streams into one stream.
 
 ### rigel.HandshakeArray(A,N) ###
-    Unlike an array of *Handshakes* (above), a *HandshakeArray* can only have 1 of the *N* streams active per cycle. HandshakeArray's ready bit identifies the stream that should be written on the data bus in the current cycle.
+
+Unlike an array of *Handshakes* (above), a *HandshakeArray* can only have 1 of the *N* streams active per cycle. HandshakeArray's ready bit identifies the stream that should be written on the data bus in the current cycle.
 
 ### rigel.HandshakeTmuxed(A,N) ###
     *HandshakeTmuxed* behaves like a regular *Handshake* but allows multiple different data streams to flow over one interface. HandshakeTmuxed's valid bit identifies the ID of the stream that is active. 
 
-    Regular *Handshake* modules can be lifted to work over *HandshakedTmuxed*, but this should only be done if the module isn't stateful - there is no way to automatically duplicate the module state so that it stays coherent for each stream!
+Regular *Handshake* modules can be lifted to work over *HandshakedTmuxed*, but this should only be done if the module isn't stateful - there is no way to automatically duplicate the module state so that it stays coherent for each stream!
 
 
 RigelModule
 -----------
 
-### module:compile() ###
+### module:toTerra() ###
+
+Lower the Rigel module to a simulator module in Terra.
+
+Each module is lowered to a Terra class with the following format:
+
+    local Struct Module {}
+
+    -- reset the module. Must call this before start of a frame
+    -- must be provided, but doesn't necessarily have to do anything
+    terra Module:reset() end
+
+    -- fire the module (perform 1 cycle of operation)
+    terra Module:process( inputValue : &module.inputType, output : &module.outputType )
+
+    -- calculate ready bit in backwards pass (see below)
+    -- only appears if module has ready bit
+    terra Module:calculateReady( readyDownstream : bool )
+
+    -- write out useful simulator statistics about this module
+    -- function is passed the name of the instance - to identify itself in output
+    -- stats must be provided, but doesn't necessarily have to do anything
+    terra Module:stats( moduleInstanceName : &int8 ) end
+
+Rigel types are lowered to Terra like this:
+
+Base types (the types in `types.t`) are lowered to Terra directly - the type systems are compatible (ints become ints, arrays become arrays etc).
+
+    -- the bools are the valid bit
+    Handshake(A): tuple(A,bool)
+    V(A): tuple(A,bool)
+    RV(A): tuple(A,bool)
+
+Notice that ready bit inputs do not appear in the lowered types. Ready bits are handled separately. Ready bit data flows the opposite direction of input data. Input data flows from the front of the pipeline, but ready bit data flows from downstream. For this reason we special-case ready bits and calculate them in a separate backwards pass. Each simulation cycle, you must call `calculateReady` on all ready-valid modules in backwards order first, before calling `process` on all the modules. Each module must store the result of the ready bit calculation internally, so that it can remember the value of the ready bit when `process` fires.
+
+### module:toSystolic() ###
+
+Lowers the Rigel module to a Systolic module.
+
+The Rigel module is lowered to a module with the following format:
+
+    SystolicModule Module:
+
+    -- this dataflow resets stateful modules.
+    -- Note that this reset on a high value, which is unconventional
+    Dataflow Module:reset( doReset : bool ) : nil
+
+    -- Perform the module calculation
+    Dataflow Module:process( inputValue : module.inputType ) : module.outputType
+
+    -- Perform the ready bit calculation
+    Dataflow Module:ready( readyDownstream : bool ) : bool
 
 ### module:toVerilog() ###
 
+Convenience function - simply calls `toSystolic()` and then calls `toVerilog()` on the resulting systolic module.
 
 Modules (src/modules.t)
 =========
@@ -222,23 +320,42 @@ Each module may include additional fields to describe the particular configuatio
 Core Modules
 ------------
 
+### lambda ###
+    type: input.type -> output.type
+    modules.lambda( newModuleName : String, input : RigelIR, output : RigelIR, [instances : RigelInstance[]] )
+    fields: {..., kind="lambda", name=newModuleName, input=input, output=output, instances=instances }
+
+Define a new Rigel module based on a user-constructed pipeline. `input` must be a RigelIR node returned from `rigel.input`. `output` is a RigelIR of the intented output. `instances` is a list of any module instances returned from `rigel.instantiateRegistered` that you want to include (typically only used for FIFOs).
+
 ### lift ###
     modules.lift( newModuleName:String, inputType:Type, outputType:Type, delay:Number, terraFunction:terraFunction, systolicInput:SystolicValue, systolicOutput:SystolicValue)
     fields: {..., kind="lift_"..newModuleName}
 
-*lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. *delay* must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
-
-### lambda ###
+*lift* takes a function from the lower-level languages (Terra and Systolic) and lifts them into a Rigel module. `delay` must correspond to the pipeline delay from *systolicInput* to *systolicOutput*.
 
 ### seqMap ###
     type: null->null
     modules.seqMap( module:RigelModule, width:uint, height:Uint, T:Uint )
     fields: {..., kind="seqMap", W=width, H=height, T=T }
 
+`seqMap` executes a module multiple times sequentially over image data stored in memory. This is used to generate the top level module that actually executes the pipeline in the simulator or in hardware from DRAM. 
+
+`seqMap` always reads/write data of the width expected by `module`. This module will then read `(W*H)/T` items of that size before halting. TODO: change this to match the `inputCount` interface of `seqMapHandshake`.
+
+`seqMap` expects the module that it is mapping to have a basic input and output type - Handshake interfaces should use `seqMapHandshake` below.
+
 ### seqMapHandshake ###
     type: null->null
-    modules.seqMapHandshake( module:RigelModule, tapInputType:Type, tapValue=tapValue, inputCount:Uint, outputCount:Uint, axi:Bool, [readyRate:Uint] )
+    modules.seqMapHandshake( module:RigelModule, [tapInputType:Type], [tapValue=tapValue], inputCount:Uint, outputCount:Uint, axi:Bool, [readyRate:Uint] )
     fields: {..., kind="seqMapHandshake", inputCount=inputCount, outputCount=outputCount }
+
+`seqMapHandshake` executes a module multiple times sequentially over image data stored in memory. This is used to generate the top level module that actually executes the pipeline. 
+
+`tapInputType` is an optional 'tap' value to send into the pipeline. Taps are runtime-configurable constants that can only be modified between frames. The Verilog we generate is designed to make sure the tap values are _not_ common subexpression eliminated by the compiler. `tapValue` gives an initial value for the tap input. Taps are passed into the pipeline in the high bits. If taps are included, the pipeline must include this as part of its type, and the tap input should be marked as a constant type.
+
+if `axi` is true, generate hardware for reading from DRAM on the Zynq platform. If `axi` is false, generate a test harness for the Verilog simulator.
+
+This module will read `inputCount` items of size `module.inputType` and write `outputCount` items of size `module.outputType`.
 
 ### stencil* ###
     type: A[width,height] -> A[xmax-xmin+1,ymax-ymin+1][width,height]
@@ -282,7 +399,11 @@ Currently xmax/ymax must always be 0, which means that the stencil always reads 
     type: Handshake(A[T])->Handshake(A[1(-xmin+1)*T,-ymin+1])
     examplescommon.stencilLinebufferPartial( A:Type, width:Uint, height:Uint, T:Number <= 1, xmin:Int <= 0, xmax:Int = 0, ymin:Int <= 0, ymax: Int = 0 )
 
+Convenience module that combines a linebuffer and SSRPartial.
+
 ### stencilLinebufferPartialOffsetOverlap* ###
+    type: Handshake(A[T]) -> Handshake()
+    examplescommon.stencilLinebufferPartialOffsetOverlap( A: Type, width:Uint, height:Uint, T:Number<=1, xmin:Int<=0, xmax: Int=0, ymin:Int<=0, ymax:Int=0, offset : Number, overlap : number )
 
 Array Manipulation
 ------------------
@@ -308,7 +429,9 @@ TODO: make the arguments this takes more compatible with *stencil*.
 
 *posSeq* is a state machine that provides a {x,y} image coordinate tuple at throughput *T*. 
 
-### border ###
+### border* ###
+    type: A[width,height] -> A[width,height]
+    examplescommon.border( A:Type, width:Uint, height:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint, value:LuaValue )
 
 ### borderSeq ###
 
@@ -539,7 +662,7 @@ SystolicModules contain one or more `SystolicDataflow`'s, which represent operat
 
 The `SystolicIR` and SystolicDataflows are restricted so that they can always be pipelined to an arbitrary depth by the compiler. The pipelineing is performed automatically prior to lowering to Verilog. SystolicDataflows can each have an associated valid bit (to implement pipeline bubbles) and clock enable `CE` (to stall the pipeline). These two signals are wired automatically by the compiler.
 
-SystolicIR
+SystolicIR Values
 -----------
 
     systolic.parameter( name : String, type : Type )
@@ -623,9 +746,11 @@ SystolicModule
 ------------
 
 `SystolicModule:toVerilog() : String`
-Return the definition of this Systolic Module as Verilog.
+Return the definition of this Systolic Module as a string of Verilog. Lowering to Verilog is relatively straightforward. The systolic module gets turned into a Verilog module. All dataflow inputs and outputs appear as input and output ports on the Verilog module. Port names are set by the dataflow input/output parameter names (which are explicitly passed by the user when the dataflow is constructed). All types get packed into bitfields with the same layout as the type in Terra.
 
 `SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance`
+
+Generate a `SystolicInstance` instance of this module.
 
 Systolic contains a number of built-in primitive modules:
 
