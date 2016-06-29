@@ -2665,13 +2665,14 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   assert(type(cycles)=="number")
   err(cycles==math.floor(cycles),"cycles must be an integer")
   assert(type(upstream)=="boolean")
+  err( tooSoonCycles==nil or type(tooSoonCycles)=="number", "tooSoonCycles must be nil or number" )
 
   assert(count<2^32-1)
   err(cycles<2^32-1,"cycles >32 bit:"..tostring(cycles))
 
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
-  local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
+  local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
 
   local struct Underflow {ready:bool; readyDownstream:bool;cycles:uint32; outputCount:uint32}
   terra Underflow:reset() self.cycles=0; self.outputCount=0 end

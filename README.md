@@ -433,7 +433,13 @@ TODO: make the arguments this takes more compatible with *stencil*.
     type: A[width,height] -> A[width,height]
     examplescommon.border( A:Type, width:Uint, height:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint, value:LuaValue )
 
+Take in an array, and apply a border to the edges, keeping the array size the same. Used for implementing boundary conditions for stencil reads. Currently the only supported border condition is setting it to a constant value `value`. `left` pixels on the left of the image are replaced with the constant, along with `right` pixels on the right etc.
+
 ### borderSeq ###
+    type: A[T]->A[T]
+    examplescommon.borderSeq( A:Type, width:Uint, height:Uint, T:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint, value:LuaValue )
+
+Sequentialized version of `border` that operates on `T` pixels at a time, instead of the whole array at a time.
 
 ### cropSeq ###
     type: A[T]->V(A[T])
@@ -474,7 +480,6 @@ Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This
     fields: NYI
 
 *downsampleXSeq* performs a downsample in X (i.e. keeps only *1/scale* columns, starting with column X=0). *downsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
-
 
 ### downsampleYSeq ###
     type: A[T]->V(A[T])
@@ -552,6 +557,8 @@ Interfaces
     modules.makeHandshake( f:Module )
     fields: {..., kind="makeHandshake"}
 
+Convenience module that directly converts a module with a basic interface to a Handshake interface.
+
 ### RPassthrough ###
     given f:V(A)->RV(B) has type RV(A)->RV(B)
     modules.RPassthrough( f:Module )
@@ -578,6 +585,35 @@ Streams
     fields: {..., kind="packTuple"}
 
 *packTuple* takes multiple Handshake streams and synchronizes them into a single stream (i.e. to implement fan-in).
+
+### broadcastStream ###
+    type: Handshake(A) -> Handshake(A)[N]
+    modules.broadcastStream( A:Type, N:Uint )
+    fields: {..., kind="broadcastStream", A=A, N=N }
+
+`broadcastStream` takes a single Handshake stream, and splits it into multiple streams to implement fan-out. This is essentially the opposite of `packTuple`. The reason this module is necessary is that when there are multiple downstream streams, the upstream ready bit must be an AND of all the downstream ready bits. It must stall if ANY of the downstream streams are stalled. This module implements the AND.
+
+Note: Currently the compiler does not check that you have correctly inserted this module! Handshake streams can be wired multiple times, which will compile, but won't behave correctly. TODO: Add a compiler pass to check for this (or rearchitect it so that fan-out is not allowed without an explicit module).
+
+### fifo ###
+    store type: Handshake(A) -> nil
+    load type: nil -> Handshake(A)
+    modules.fifo( A : Type, size : Uint>0, [nostall : bool], [W : Uint], [H : Uint], [T : Uint] )
+
+The fifo module implements a first-in first-out queue. FIFOs are used to hide latency variation in modules, match pipeline delays, or support back edges (cycles). FIFOs are different than other modules because they have two separate 'ports' on it, a load and a store, which are decoupled. This allows us to support cycles in our language that only has DAGs.
+
+Because FIFOs have multiple ports, they must be instantiated differently than other modules:
+
+    fifoinst = rigel.instantiateRegistered( "myfifo", modules.fifo( ... ) )
+    fifoloadval = rigel.applyMethod( "myload", fifoinst, "load" ) -- apply 'load' method on fifo
+
+    -- fifoinst must also be passed to rigel.lambda in the instances list
+
+`size` is the size of the FIFO (# of entries). Native FIFO hardware on the Zynq platform supports either 128, 512, 1024, or 2048 entries, so it is probably a good idea to choose one of those sizes. 128 entries will be implemented in slices, >128 is implemented with BRAMs. 
+
+`nostall` disables the upstream stall signal as a performance optimization. If you FPGA clock period is limited by the length of the stall lines (which is pretty common), this will remove the stall lines, which can significantly improve the clock. This is only valid if you know that the FIFO is sufficiently sized to never need to stall.
+
+`W`, `H`, `T` are used to calculate the number of input items the FIFO expects to see total. Then the Verilog simulator uses this to print out usage statistics at the end of the frame (specifically, max fifo size seen). This debug information is optional. TODO: could probably simplify this.
 
 ### serialize ###
     type: HandshakeArray(A,N)->HandshakeTmuxed(A,N)
@@ -613,21 +649,23 @@ TODO: in the future, we would like to extend *serialize* to support ordering mod
 ### toHandshakeArray ###
     type: Handshake(A)[N] -> HandshakeArray(A,N)
     modules.toHandshakeArray( A:Type, inputRates:SDFRate[N] )
+    fields: {..., kind="toHandshakeArray", A=A, inputRates=inputRates }
 
-    
+`toHandshakeArray` converts N streams onto a shared bus (N streams transported over 1 data line). Only one stream can be active each cycle, and this is chosen by the downstream ready id. `inputRates` is a list of SDF rates for each input stream. 
+
 ### demux ###
     type: HandshakeTmuxed(A,N)->Handshake(A)[N]
     modules.demux( A:Type, rates:SDFRate[N] )
     fields: {..., kind="demux", A=A, rates=rates }
 
+A `HandshakeTmuxed` interface has multiple streams transported over one shared bus. `demux` takes the N streams and demultiplexes them into N individual busses. `rates` gives the expected SDF rates of the N busses. The rates must sum to one (the bus must be fully utilized but no more).
+
 ### flattenStreams ###
+    type: HandshakeTmuxed(A,N) -> Handshake(A)
+    modules.flattenStreams( A : Type, rates : SDFRate[N] )
+    fields: {..., kind="flattenStreams", A=A, rates=rates }
 
-### broadcastStream ###
-    type: Handshake(A) -> Handshake(A)[N]
-    modules.broadcastStream( A:Type, N:Uint )
-    fields: {..., kind="broadcastStream", A=A, N=N }
-
-### fifo ###
+A `HandshakeTmuxed` interface has multiple streams transported over one shared bus. `flattenStreams` flattens these N streams into one single stream, mixing values on the different streams together. Ordering of values is not guaranteed - they simply occur in the order that things happen on the Tmuxed bus. `rates` gives the expected SDF rate of the stream, which must sum to 1.
 
 Misc
 ----
@@ -640,18 +678,58 @@ Misc
 *reduceThroughput* is a debugging module. It artificially reduces the SDF throughput of the output stream by 1/factor.
 
 ### lut ###
+    type: inputType -> outputType
+    modules.lut( inputType : Type, outputType : Type, values : LuaValue[] )
+    fields: {..., kind="lut", inputType=inputType, outputType=outputType, values = values }
+
+`lut` creates a lookup table. `values` must be an array of size 2^(inputType:bits()), and each of its values must be convertible to `outputType`. When lowered to hardware, these lookup tables typically end up being instantiated at BRAMs, so trying to fit the input/output data type to match the size of the BRAMs is typically a good idea.
 
 ### constSeq ###
+    type: nil -> A[W*T,H]
+    modules.constSeq( value : LuaValue, A : Type, W : Uint, H : Uint, T : Number )
+    T*W must be an integer <=W and >0.
+    fields: {..., kind="constSeq", A=A, w=W, h=H, T=T, value=value}
+    
+`constSeq` is a combination of a constant and a shift register. `constSeq` returns sub-arrays of a 2d array constant (with value `value`). The sub-arrays returned are column subsets of width `W*T` and height `H` from low indicies to high. This matches the behavior of stencilLinebufferPartial - so it can be used to feed stencil computations with filter coefficients.
 
 ### overflow ###
+    type: A -> V(A)
+    modules.overflow( A : Type, count : Uint )
+    fields: {..., kind="overflow", count = count }
+    
+`overflow` is used to set up the DRAM test harness. If the AXI bus recieves more data items than it was expecting, it crashes the board. `overflow` caps the number of data items at `count` to make sure this doesn't happen, even if the user's code has a bug.
 
 ### underflow ###
+    type: Handshake(A) -> Handshake(A)
+    modules.underflow( A : Type, count : Uint, cycles : Uint, upstream : Bool, [tooSoonCycles : Bool] )
+    fields: {..., kind="underflow", A=A, count = count }
+    
+`underflow` is used to set up the DRAM test harness. If the AXI bus recieves fewer data items than it was expecting, it crashes the board. Underflow can occur for two reasons:
+
+*Underflow on the output:* The pipeline didn't write enough values (not enough valid bits were true). For this case, set `upstream=false`, and it will monitor the writes. It will expect to see at least `count` items in `cycles` cycles. If this doesn't occur, it will write DEADBEEFs to the bus until `count` items have occured. `tooSoonCycles` will optionally also raise an assert in the Verilog simulator if the pipeline exits too soon (which is probably also an error of some sort).
+
+*Underflow on the input:* The pipeline didn't read enough values (not enough ready bits were true). For this case, set `upstream=true`, and it will monitor the reads.
 
 ### cycleCounter ###
+    type: Handshake(A) -> Handshake(A)
+    modules.cycleCounter( A : Type, count : Uint )
+    fields: {..., kind="cycleCounter", A=A, count=count }
+
+Debug module. `cycleCounter` counts the number of cycles until `count` items have been written on the bus, and then writes out this number of cycles in one full AXI burst (128 bytes).  Cycle count is written out as 32 bit unsigned ints (repeated 32 times). This modules is used to measure the number of execution cycles used by the pipeline.
 
 ### freadSeq ###
+    type: nil -> type
+    modules.freadSeq( filename : String, type : Type )
+    fields: {..., kind="freadSeq", filename=filename, type = type }
+
+Debug module. Reads a file on disk in the Verilog and Terra simulator. Acts as a data source. This is a NOOP in hardware. The module will continue to read data until the file runs out of data.
 
 ### fwriteSeq ###
+    type: type -> type
+    modules.fwriteSeq( filename : String, type : Type )
+    fields: {..., kind="fwriteSeq", filename=filename, type = type }
+
+Debug module. Writes a file to disk in the Verilog and Terra simulator. Data is passed through this module unmodified, so this can be used to record data in the middle of the pipeline. This is a NOOP in hardware. The module will continue to write data whenever data is passed to it.
 
 Systolic (systolic.t)
 =====================
@@ -835,6 +913,19 @@ The returned assert module `A` has three dataflows on it:
 Misc
 ===============
 
+### src/sdfrate.t ###
+Provides helper functions for dealing with SDFRates.
+
+The `SDFRate` refered to in this document has no formal constructor. It simply refers to a lua table in the following format:
+
+    {{n,d}} -- a single SDF stream with rate n/d. n and d must be unsigned integers.
+    {{1,2}} -- e.g. SDF rate 1/2
+
+    {{n1,d1},{n2,d2}} -- two SDF streams with rate n1/d1, n2/d2 (for modules with multiple stream inputs...)
+    {{1,3},{2,3}} -- e.g. SDF rate 1/3,2/3
+
+SDF Rates are stored in this rational format because technically doubles aren't sufficient to store all rationals, which caused problems for us in the past.
+
 ### src/systolicsugar.t ###
 Convenience classes for incrementally constructing Systolic modules and dataflows.
 
@@ -851,3 +942,13 @@ Experimental. A fixed-point math library built on top of Systolic (which only su
 
 ### src/fixed_float.t ###
 Experimental. A floating point implementation of `fixed.t`. Used to generate ground-truth implementations. Simply load `fixed_float.t` instead of `fixed.t` and your implementation should still work, but now has 'infinite' precision (from the floats).
+
+### examples/examplescommon.t ###
+
+A library of helper Rigel modules that are used for multiple examples.
+
+### examples/harness.t ###
+
+Code for generating the test harness for Terra (`harness.terraOnly`), Verilog simulator + Terra (`harness.sim`) and AXI+Terra+Sim (`harness.axi`).
+
+TODO: These functions are a giant mess of arguments and spaghetti - refactor this to be cleaner.
