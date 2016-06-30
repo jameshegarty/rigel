@@ -65,7 +65,13 @@ Our makefile supports the following options:
 Overview
 ========
 
-![Rigel System Overview](http://stanford.edu/~jhegarty/rigel_readme_system.png)
+Users implement applications in a image processing pipeline description language that we call [Rigel](#rigel-rigelt). Rigel pipelines are then lowered to a low-level RTL-like hardware description language of our own design called [Systolic](#systolic-systolict). Users of Rigel sometimes need to interact with Systolic directly to extend Rigel's core functionality.
+
+This readme documents the core functionality and APIs of both Rigel and Systolic. We intend this document to cover both how to use the system, and also to document the code so that users can modify and extend the system.
+
+We first cover the [Base Types](#base-types-typest) that are common to both Rigel and Systolic. Then we cover the core APIs needed to construct pipelines in [Rigel](#rigel-rigelt). Then we cover the large suite of [Rigel Modules](#modules-srcmodulest) that accomplish image processing tasks. Finally, we provide information about how to construct hardware modules in [Systolic](#systolic-systolict).
+
+![Rigel System Overview](http://stanford.edu/~jhegarty/rigel_readme_system2.png)
 
 * [Base Types](#base-types-typest)
 * [Rigel](#rigel-rigelt)
@@ -85,9 +91,9 @@ Overview
 Base Types (types.t)
 ====================
 
-Rigel's type system supports arbitrary precision ints, uints, floats, bitfields, bools, 2d arrays, and tuples. types.t provides the types that are used throughout darkroom.
+Rigel and Systolic's type system supports arbitrary precision ints, uints, floats, bitfields, bools, 2d arrays, and tuples. types.t provides the types that are used throughout both Rigel and Systolic.
 
-Type can be marked as constant, indicating that their value will not change while the pipeline is executing. This allows the compiler to perform additional optimizations. Rigel's constants are roughly equivilant to 'uniforms' in shader programming, or 'taps' in image processing.
+Types can be marked as constant, indicating that their value will not change while the pipeline is executing. This allows the compiler to perform additional optimizations. Rigel's constants are roughly equivilant to 'uniforms' in shader programming, or 'taps' in image processing.
 
     types = require "types"
 
@@ -140,7 +146,7 @@ types.t also provides a number of helper functions for manipulating and introspe
 Rigel (rigel.t)
 ===============
 
-Users construct image processing pipelines in Rigel by creating a Directed Acyclic Graph (DAG) of Rigel operations, which manipulate Rigel values. Most Rigel opreations involve applying a *Rigel Module* to a Rigel value. Rigel contains a large suite of built-in modules for performaning typical image processing operations.
+Users construct image processing pipelines in Rigel by creating a Directed Acyclic Graph (DAG) of Rigel operations, which manipulate Rigel values. Most Rigel opreations involve applying a *Rigel Module* to a Rigel value. Rigel contains a large suite of built-in modules for performaning typical image processing operations, which will be covered later in the document.
 
 Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types.
 
@@ -149,7 +155,7 @@ Each Rigel module has an *interface type*, which specifies low-level information
 RigelIR Values
 ---------------
 
-The following functions are used for defining leaf values.
+The following functions are used for defining leaf values of Rigel DAGs.
 
 ### rigel.input( type:Type, [sdfRate:SDFRate] ) : RigelIR ###
 
@@ -161,6 +167,8 @@ The following functions are used for defining leaf values.
 
 RigelIR Operators
 ---------------
+
+The following functions construct RigelIR nodes that perform various operations on Rigel values.
 
 ### rigel.apply( name:String, module:RigelModule, input:RigelIR ) : RigelIR ###
 
@@ -174,11 +182,11 @@ Typically, this only comes up with FIFOs. FIFO modules have both a `load` and `s
 
 ### rigel.tuple( name:String, inputList:RigelIR[], [packStreams:Bool] ) : RigelIR ###
 
-Composed a tuple of the ordered list of values in lua array `inputList`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
+Compose a tuple of the ordered list of values in lua array `inputList`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
 
 ### rigel.array2d( name:String, inputList:RigelIR[width*height], width:Uint, height:Uint, [packStreams:Bool] ) : RigelIR ###
 
-Composed an array of the ordered list of values in lua array `inputList`. `inputList` must be a 1d array in row major order - 2D dimensions are specified by `width` and `height`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
+Compose an array of the ordered list of values in lua array `inputList`. `inputList` must be passed as a 2D array flattened into a 1D lua array in row major order. 2D dimensions for this data are then specified by `width` and `height`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
 
 ### rigel.selectStream( name:String, input:RigelIR, i:Uint ) : RigelIR ###
 
@@ -188,7 +196,7 @@ TODO: turn this into a module.
 
 ### rigel.statements( values:RigelIR[] ) : RigelIR ###
 
-Rigel graphs can only have one input and output, however `statements` allows you to multiple pipelines into one, reducing this restriction. Typically, this is only necessary in graphs with FIFOs. Only the first value is passed as the actual output of the graph (lua index 1).
+Rigel graphs can only have one input and output, however `statements` allows you to pack multiple pipelines into one, reducing this restriction. Typically, this is only necessary in graphs with FIFOs. Only the first value is passed as the actual output of the graph (lua index 1).
 
 Rigel Interface Types
 ---------------------
@@ -197,19 +205,19 @@ Each module's interface type  specifies low-level information about the underlyi
 
 It is useful to think of these as abstract types that enforce rules of composition, not as literal descriptions of the signals of the resulting hardware. The Rigel compiler runs a small amount of code to correctly wire each interface type to its neighbors when it lowers to RTL. TODO: in the future it may be possible to make the low-level RTL layer powerful enough to type all of these interfaces and compose them directly.
 
-By convention in this document we will use the constants *A*, *B*, etc to refer to an arbitrary type. In this section they will refer to base types (see [types.t](#base-types-typest)).
+By convention this document will use capital letters at the start of the alphabet like *A*, *B*, etc to refer to an arbitrary type. In this section they will refer to base types only (see [types.t](#base-types-typest)).
 
-### A->rigel.V(B) ###
+### A->V(B) ###
 
-Synchronous Module that performs decimation. This corresponds to a statically-timed hardware module with a valid bit on the output only.
+Synchronous Module that performs decimation. This corresponds to a statically-timed hardware module with a valid bit on the output only. *V* stands for valid.
 
-### rigel.V(A)->rigel.RV(B) ###
+### V(A)->RV(B) ###
 
-Synchronous Module that performs both decimation and expansion. This corresponds to a statically-timed hardware module with a valid bit on both inputs/output, and a ready bit.
+Synchronous Module that performs both decimation and expansion. This corresponds to a statically-timed hardware module with a valid bit on both inputs/output, and a ready bit. *RV* stands for ready-valid.
 
-Note that while it is possible to construct a statically-timed pipeline out of multiple modules with ready bits, this is not valid! And this case is not checked by the compiler! A statically-timed pipeline can only have one module with a ready bit, because upstream stalls are not supported by static pipelines. To compose multiple modules with ready bits, the modules must first be lifed to Handshake types (below).
+Note that while it is possible to construct a statically-timed pipeline out of multiple modules with ready bits, this will not work! And this case is not checked by the compiler! A statically-timed pipeline can only have one module with a ready bit, because upstream stalls are not supported by static pipelines. To compose multiple modules with ready bits, the modules must first be lifed to Handshake types (below).
 
-### rigel.Handshake(A)->rigel.Handshake(B) ###
+### Handshake(A)->Handshake(B) ###
 
 Handshake (full Ready-Valid on both input/output) interface. Supports composition of modules that perform both decimation and expansion.
 
@@ -218,27 +226,32 @@ Handshake (full Ready-Valid on both input/output) interface. Supports compositio
 Rigel also has the ability to make aggregates (arrays and tuples) of Handshakes. Since every Rigel module only has a single input and output, this allows us to implement modules that work on multiple streams. These types _can not_ be nested (no Handshakes of Handshakes). Handshake(A) only works over base types.
 
 ### Handshake(A)[N] ###
-    Array of Handshakes.
+
+Array of Handshakes - multiple handshake streams treated as one input.
 
 ### {Handshake(A),Handshake(B),...} ###
-    Similar to the array of Handshakes above, but allows for different types.
+
+Similar to the array of Handshakes above, but allows for different types.
 
 ## Multiplexed Busses ##
 
-Rigel also has provisional support for the ability to pack multiple streams onto one shared bus. Compared to the aggregates above (which have N streams on N data lines), this has N streams on 1 data line. This allows for supporting time-multiplexed hardware (hardware that operates on different streams in different cycles), or serializing multiple streams into one stream.
+Rigel also has provisional support for the ability to pack multiple streams onto one shared bus. Compared to the aggregates above (which have N streams on N data lines), multiplexed busses have N streams on 1 data line. This allows for supporting time-multiplexed hardware (hardware that operates on different streams in different cycles), or serializing multiple streams into one stream.
 
-### rigel.HandshakeArray(A,N) ###
+### HandshakeArray(A,N) ###
 
-Unlike an array of *Handshakes* (above), a *HandshakeArray* can only have 1 of the *N* streams active per cycle. HandshakeArray's ready bit identifies the stream that should be written on the data bus in the current cycle.
+Unlike an array of *Handshakes* (above), a *HandshakeArray* can only have 1 of the *N* streams active per cycle. HandshakeArray's downstream ready bit identifies the stream that should be written on the data bus in the current cycle.
 
-### rigel.HandshakeTmuxed(A,N) ###
-    *HandshakeTmuxed* behaves like a regular *Handshake* but allows multiple different data streams to flow over one interface. HandshakeTmuxed's valid bit identifies the ID of the stream that is active. 
+### HandshakeTmuxed(A,N) ###
+
+*HandshakeTmuxed* behaves like a regular *Handshake* but allows multiple different data streams to flow over one interface. HandshakeTmuxed's valid bit identifies the ID of the stream that is active. 
 
 Regular *Handshake* modules can be lifted to work over *HandshakedTmuxed*, but this should only be done if the module isn't stateful - there is no way to automatically duplicate the module state so that it stays coherent for each stream!
 
 
 RigelModule
 -----------
+
+Next we will cover Rigel Modules: both the list of built-in modules, and how to construct new modules out of RigelIRs. This section covers functionality that is common to all modules.
 
 ### module:toTerra() ###
 
@@ -249,10 +262,11 @@ Each module is lowered to a Terra class with the following format:
     local Struct Module {}
 
     -- reset the module. Must call this before start of a frame
-    -- must be provided, but doesn't necessarily have to do anything
+    -- reset function always exists, but doesn't necessarily do anything
     terra Module:reset() end
 
     -- fire the module (perform 1 cycle of operation)
+    -- note that the caller must allocate space for the input and output
     terra Module:process( inputValue : &module.inputType, output : &module.outputType )
 
     -- calculate ready bit in backwards pass (see below)
@@ -273,7 +287,7 @@ Base types (the types in `types.t`) are lowered to Terra directly - the type sys
     V(A): tuple(A,bool)
     RV(A): tuple(A,bool)
 
-Notice that ready bit inputs do not appear in the lowered types. Ready bits are handled separately. Ready bit data flows the opposite direction of input data. Input data flows from the front of the pipeline, but ready bit data flows from downstream. For this reason we special-case ready bits and calculate them in a separate backwards pass. Each simulation cycle, you must call `calculateReady` on all ready-valid modules in backwards order first, before calling `process` on all the modules. Each module must store the result of the ready bit calculation internally, so that it can remember the value of the ready bit when `process` fires.
+Notice that ready bit inputs do not appear in the lowered types. Ready bits are handled separately. Ready bit data flows the opposite direction of input data. Input data flows from the front of the pipeline, but ready bit data flows from downstream. For this reason we special-case ready bits and calculate them in a separate backwards pass. Each simulation cycle, the simulator will call `calculateReady` on all ready-valid modules in backwards order first, before calling `process` on all the modules. Each module stores the result of the ready bit calculation internally, so that it can remember the value of the ready bit when `process` fires.
 
 ### module:toSystolic() ###
 
@@ -369,7 +383,7 @@ This module will read `inputCount` items of size `module.inputType` and write `o
     modules.linebuffer( A:Type, width:Uint, height:Uint, T:Uint, ymin:Int <= 0 )
     fields: {..., kind="linebuffer", type=A, w=width, h=height, T=T, ymin=ymin }
 
-*linebuffer* takes a stream of pixels of type *A* running at throughput *T* and converts it into a stream of columns of past lines, with size set by *ymin*. This stream of columns can then be converted into a stream of stencils using the *SSR* module.
+*linebuffer* takes a stream of pixels of type *A* running at throughput *T* and converts it into a stream of columns of past lines, with size set by *ymin*. Essentially, this module returns a 1D column stencil. This stream of columns can then be converted into a stream of 2D stencils using the *SSR* module.
 
 As explained in Darkroom 2014, when processing the array in scanline order (low indices to high indices), the linebuffer can only provide pixels at indices *ymin<=0*, because these are the only values that have been seen. 
 
@@ -378,15 +392,15 @@ As explained in Darkroom 2014, when processing the array in scanline order (low 
     modules.SSR( A:Type, T:Uint, xmin:Int <= 0, ymin:Int <= 0 )
     fields: {..., kind="SSR", type=A, T=T, xmin=xmin, ymin=ymin }
 
-*SSR* implements a stencil shift register. The stencil shift register converts a stream of columns of lines into a stream of stencils. If *T*>1, this returns multiple stencils per firing coalesced into one large stencil, because the sub-stencil share values. This can be broken into multiple stencils using *unpackStencil*.
+*SSR* implements a stencil shift register. The stencil shift register converts a stream of columns of lines (1D stencil) into a stream of 2D stencils. The resulting stencil size is `(-xmin+1)x(-ymin+1)`. If *T*>1, this module returns multiple stencils per firing coalesced into one large stencil, because neighboring stencils share values. This can then be broken into multiple stencils using *unpackStencil*.
 
 ### stencilLinebuffer* ###
     type: A[T]->A[T-xmin,-ymin+1]
     examplescommon.stencilLinebuffer( A:Type, width:Uint, height:Uint, T:Uint, xmin:Int <= 0, xmax:Int = 0, ymin:Int <= 0, ymax: Int = 0)
 
-*stencilLinebuffer* is a fusion of a *linebuffer* and a *SSR* for convenience.
+*stencilLinebuffer* is a fusion of a *linebuffer* and a *SSR* for convenience. It takes in a stream of pixels (running a `T` pixels per cycle), and turns it into a stream of stencils of size `(-xmin+1)x(-ymin+1)`.
 
-Currently xmax/ymax must always be 0, which means that the stencil always reads values from the past that are available (as explained in Darkroom 2014). TODO: for extra programmer convenience, implement the scheduling algorithm from Darkroom 2014 to allow the user to write pipelines that read values with xmax/ymax>0.
+Currently `xmax` and `ymax` must always be 0, and `xmin` and `ymin` must be <=0, which means that the stencil always reads valid values from the past (as explained in Darkroom 2014). TODO: for extra programmer convenience, implement the scheduling algorithm from Darkroom 2014 to allow the user to write pipelines that read values with coordinates >0.
 
 ### SSRPartial ###
     type: if fullOutput==false (the defualt) then A[1,-ymin+1]->A[(-xmin+1)*T,-ymin+1], else A[1,-ymin+1]->A[-xmin+1,-ymin+1]
@@ -405,6 +419,8 @@ Convenience module that combines a linebuffer and SSRPartial.
     type: Handshake(A[T]) -> Handshake()
     examplescommon.stencilLinebufferPartialOffsetOverlap( A: Type, width:Uint, height:Uint, T:Number<=1, xmin:Int<=0, xmax: Int=0, ymin:Int<=0, ymax:Int=0, offset : Number, overlap : number )
 
+This is a special case variant of *stencilLinebufferPartial* that generates partial stencils with overlaps. This allows you to implement stencils of stencils efficiently in hardware.
+
 Array Manipulation
 ------------------
 
@@ -412,7 +428,7 @@ Array Manipulation
     type: A[stencilWidth+width-1, stencilHeight+height-1] -> A[stencilWidth, stencilHeight][width,height]
     examplescommon.unpackStencil( A:Type, stencilWidth:Uint, stencilHeight:Uint, width:Uint, [height:Uint] )
 
-*unpackStencil* takes an array of type *A* and converts it into an array of stencils. Each stencil is composed of values with insides X=[-stencilWidth+1,0] and Y={-stencilHeight+1,0]. Unlike *stencil*, this module never reads outside of the array, so all stencils are made entirely of valid values.
+*unpackStencil* takes an array of type *A* and converts it into an array of stencils. Each stencil is composed of values with coordinates in the range X=[-stencilWidth+1,0] and Y={-stencilHeight+1,0]. Unlike *stencil*, this module never reads outside of the array, so all stencils are made entirely of valid values. As a result the output array is smaller than the input array.
 
 TODO: make the arguments this takes more compatible with *stencil*.
 
@@ -433,7 +449,7 @@ TODO: make the arguments this takes more compatible with *stencil*.
     type: A[width,height] -> A[width,height]
     examplescommon.border( A:Type, width:Uint, height:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint, value:LuaValue )
 
-Take in an array, and apply a border to the edges, keeping the array size the same. Used for implementing boundary conditions for stencil reads. Currently the only supported border condition is setting it to a constant value `value`. `left` pixels on the left of the image are replaced with the constant, along with `right` pixels on the right etc.
+*border* take in an array, and applies a border to the edges, keeping the array size the same. *border* is useful for implementing boundary conditions for stencil reads. Currently the only supported border condition is setting it to a constant value `value`. `left` number of pixels on the left of the image are replaced with the constant value, along with `right` number of pixels on the right etc.
 
 ### borderSeq ###
     type: A[T]->A[T]
@@ -441,12 +457,24 @@ Take in an array, and apply a border to the edges, keeping the array size the sa
 
 Sequentialized version of `border` that operates on `T` pixels at a time, instead of the whole array at a time.
 
+### crop* ###
+    type: A[width,height] -> A[width-left-right,height-top-bottom]
+    examplescommon.crop( A : Type, width : Uint, height : Uint, left : Uint, right : Uint, bottom : Uint, top : Uint )
+
+*cropSeq* takes an image of size *width* x *height* and removes *left* pixels from the left, *right* pixels from the right etc. This yields a smaller image of size (*width-left-right* x *height-top-bottom*). 
+
 ### cropSeq ###
     type: A[T]->V(A[T])
     modules.cropSeq( A:Type, width:Uint, height:Uint, T:Uint, left:Uint, right:Uint, bottom:Uint, top:Uint )
     fields: NYI
 
 *cropSeq* takes an image of size *width* x *height* and removes *left* pixels from the left, *right* pixels from the right etc. This yields a smaller image of size (*width-left-right*x*height-top-bottom*). *cropSeq* is sequentialized to perform this operation on images of type *A* at throughput *T*.
+
+### pad* ###
+    type: A[width,height] -> A[width+left+right,height+top+bottom]
+    examplescommon.pad( A : Type, width : Uint, height : Uint, left : Uint, right : Uint, bottom : Uint, top : Uint, value : LuaValue )
+
+*pad* is the opposite of *crop*. *pad* takes an image of size *width* x *height* and adds *left* pixels to the left, *right* pixels to the right, etc., with value *value*. 
 
 ### padSeq ###
     type: V(A[T])->RV(A[T])
@@ -463,9 +491,9 @@ Multi-Rate Modules
     modules.changeRate( A:Type, H:Uint, inputRate:Uint, outputRate:Uint )
     fields: {..., kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate }
 
-*changeRate* implements either the *vectorize* or *devectorize* operator. *vectorize* takes smaller vectors and concatenates them (inputRate<outputRate). *devectorize* takes larger vectors and writes them out over multiple firings (inputRate>outputRate).
+*changeRate* implements either the *vectorize* or *devectorize* operator. *vectorize* takes smaller vectors and concatenates them (`inputRate<outputRate`). *devectorize* takes larger vectors and writes them out over multiple firings (`inputRate>outputRate`).
 
-Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This can limit the amount of rate change if the array has many more rows than columns. However, the array can always be casted to a 1D array prior to *changeRate*, which will expose the maximum rate factors.
+Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This can limit the amount of rate change if the array has many more rows than columns. However, the array can always be casted to a 1D array prior to *changeRate*, which will expose the maximum number of rate factors.
 
 ### filterSeq ###
     type: {A,Bool} -> V(A)
