@@ -883,47 +883,54 @@ TODO: most of these 'operators' should really just be turned into modules.
 SystolicDataflow
 -----------
 
+SystolicDataflows are similar to ports in Verilog - they are an externally-visible interface of functionality that can be wired to.
+
     systolic.lambda( name : String, inputParameter : SystolicIR, [output : SystolicAST], [outputName : String], [pipelines : SystolicAST[]], [valid : SystolicAST], [CE : SystolicAST] ) : SystolicDataflow
 
-Define a Systolic Function (i.e. dataflow that drives a port).
-* `name`: Name of the function (port). Used when calling the function.
-* `inputParameter`: formal parameter for the function. Must be a SystolicIR returned by `systolic.parameter()` or `systolic.null()`
-* `output`: output of the function (optional)
+Define a Systolic Dataflow (i.e. a SystolicIR pipeline that drives an external port)
+* `name`: Name of the dataflow. Used when wiring inputs the dataflow.
+* `inputParameter`: formal parameter for the dataflow. Must be a SystolicIR returned by `systolic.parameter()` or `systolic.null()`
+* `output`: output of the dataflow (optional)
 * `outputName`: name of the output port (when lowered to Verilog)
-* `pipelines`: List of other pipelines that execute when this function executes. These pipelines do not return a value (typically the store values internally to registers, etc)
-* `valid`: SystolicIR Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need explicit access to the valid bit for some reason.
+* `pipelines`: List of other pipelines that execute when this dataflow executes. These pipelines do not return a value (typically they store values internally to registers, etc)
+* `valid`: SystolicIR Parameter (of type bool) to drive the valid bit. Optional - if not given, a valid bit is automatically created. This is only necessary if you need to explicitly access the valid bit for some reason.
 * `CE`: SystolicAST Parameter (of type bool) to drive the clock enable. Optional - if not given, function has no clock enable.
 
 SystolicInstance
 ------------
 
-    SystolicInstance:anyFnName( input : SystolicAST ) : SystolicAST
-Return a SystolicAST representing the value of applying any function (`anyFnName`) of an instantiated module on `input`.
+`SystolicInstance`s represent a concrete instantiation of a `SystolicModule`. You can then wire SystolicIR values as inputs to the dataflows on the instance.
+
+    SystolicInstance:anyDataflowName( input : SystolicIR ) : SystolicIR
+Return a SystolicIR node representing the value of applying any dataflow (`anyDataflowName`) of an instantiated module on the SystolicIR value `input`.
 
 SystolicModule
 ------------
 
+All SystolicModules share some common functionality:
+
 `SystolicModule:toVerilog() : String`
+
 Return the definition of this Systolic Module as a string of Verilog. Lowering to Verilog is relatively straightforward. The systolic module gets turned into a Verilog module. All dataflow inputs and outputs appear as input and output ports on the Verilog module. Port names are set by the dataflow input/output parameter names (which are explicitly passed by the user when the dataflow is constructed). All types get packed into bitfields with the same layout as the type in Terra.
 
 `SystolicModule:instantiate( name : String, [coherent : bool], [arbitrate : bool] ) : SystolicInstance`
 
-Generate a `SystolicInstance` instance of this module.
+Generate a `SystolicInstance` instance of this module. `name` is a string id for this instance.
 
 Systolic contains a number of built-in primitive modules:
 
 ### User Defined Module ###
-    systolic.module.new( name : String, functions : SystolicFunction[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [verilogParameters : ], [verilog : String], [verilogDelays : Uint[String]] ) : SystolicModule
+    systolic.module.new( name : String, dataflows : SystolicDataflow[], instances : SystolicInstance[], [onlyWire : bool], [coherentDefault : bool], [verilogParameters : ], [verilog : String], [verilogDelays : Uint[String]] ) : SystolicModule
 
 Define a new Systolic module.
 * `name`: Name of the new module (used when lowering to Verilog)
-* `functions`: list of all functions to pack into this module.
+* `dataflows`: list of all dataflows to pack into this module.
 * `instances`: list of all module instances to be contained in this module.
-* `onlyWire`: If true, do not apply pipelining. Module is lowered directly to Verilog. This then serves simply as a higher-level interface to generating Verilog. (optional)
+* `onlyWire`: If true, do not apply pipelining. Module is lowered directly to Verilog. Systolic then serves simply as a higher-level interface to generating Verilog. (optional)
 * `coherentDefault`: (optional)
 * `verilogParameters`: (optional)
-* `verilog`: provide a string of Verilog to stand in for this module (i.e. don't generate Verilog, just return this string). (optional)
-* `verilogDelays`: If a Verilog string is provided, this allows you to pass pipelining delays for each port on the module. This is a map from function name to delay. (optional)
+* `verilog`: provide a string of Verilog to stand in for this module (i.e. don't use Systolic to generate Verilog, just return this string). (optional)
+* `verilogDelays`: If a Verilog string is provided, this allows you to pass pipelining delays for each dataflow on the module. This is a map from dataflow names to delay. (optional)
 
 ### Register ###
     systolic.module.reg( type : Type, hasCE : Bool, [initial : LuaValue], [hasValid : Bool] ) : SystolicModule
@@ -937,9 +944,11 @@ The returned register module `R` has two dataflows on it:
 ### RegBy ###
     systolic.module.regBy( type : Type, setBy : SystolicModule, [hasCE : Bool], [init : LuaValue] )
 
-RegBy is a generalization of an accumulator. RegBy is a register that atomically performs an operation whenever is it In. The `setBy` argument is the module defining the operation to perform.  the case of an accumulator, setBy would perform an addition. More precisely, `setBy` must be a module with one `:process(input:{type,type})` dataflow on it. The first tuple index is the previous register value, and the second tuple index is the new user input. `process` must have a pipeline delay of 0.
+RegBy is a generalization of an accumulator. RegBy is a register that atomically performs a user-defined operation whenever is it executed. The `setBy` argument is the SystolicModule defining the operation to perform. In the case of an accumulator, setBy would perform an addition. 
 
-As in the case of the register module, `hasCE` indicates whethere the module should have a CE, and `init` is an optional initial value.
+More precisely, `setBy` must be a module with one `:process(input:{type,type})` dataflow on it. The first tuple index is the previous register value, and the second tuple index is the new user input. `process` must have a pipeline delay of 0 and return a value of type `type`.
+
+As in the case of the register module, `hasCE` indicates whethere the module should have a CE, and `init` is an optional initial value for the register.
 
 The returned regby module `R` has three dataflows on it:
 * `R:set( input : type ) : nil` Reset the value to `input`
@@ -958,7 +967,7 @@ The returned ram128 module `R` has two dataflows on it:
 ### bram2KSDP ###
     systolic.module.bram2KSDP( writeAndReturnOriginal : Bool, inputBits : Number, [outputBits: Number], CE : Bool, [init : LuaValue] ) : SystolicModule
 
-bram2KSDP instantiates a Xilinx BRAM module. Xilinx BRAMs support a number of different configurations (sizes and bandwidths), but they all see to be built out of this module, so I believe this is the fundamental hardware primitive.
+bram2KSDP instantiates a Xilinx BRAM module. Xilinx BRAM macros support a number of different configurations (sizes and bandwidths), but they all see to be built out of this module, so I believe this is the fundamental hardware primitive.
 
 The returned bram2KSDP module `R` has two dataflows on it:
 * `R:read( addr : Uint7) : Bits(1)` read bit at address `addr`
@@ -967,7 +976,7 @@ The returned bram2KSDP module `R` has two dataflows on it:
 ### FileModule (Verilog simulator only) ###
     systolic.module.file( filename : String, type :Type, CE : bool )
 
-The file module allows you to read a file on disk in the Verilog simulator (only). `type` is the type of data to read each cycle.
+The file module allows you to read or write a file on disk in the Verilog simulator (only). `type` is the type of data to read each cycle.
 
 The returned file module `F` has three dataflows on it:
 * `F:read() : type` read one value
@@ -977,9 +986,9 @@ The returned file module `F` has three dataflows on it:
 ### PrintModule (Verilog simulator only) ###
     systolic.module.print( type : Type, string : String, [CE : Bool], [showIfInvalid : bool] )
 
-The print module allows you to print a string to the console in the Verilog simulator. The module can also take an arbitrary type as input each cycle, which can be printed using the normal Verilog string formatting operators (i.e. `%d` etc). If `type` is a tuple, the tuple will be unpacked, so that you can print multiple values. If `showIfInvalid` is true, this module prints the string always (even when the dataflow is not running).
+The print module allows you to print a string to the console in the Verilog simulator. The module can also take an arbitrary type as input each cycle, which can be printed using the normal Verilog string formatting operators (i.e. `%d` etc). If `type` is a tuple, the tuple will be unpacked, so that you can print multiple values (i.e. `%d %d`). If `showIfInvalid` is true, this module prints the string always (even in cycles when the dataflow is not running).
 
-The returned file module `P` has three dataflows on it:
+The returned file module `P` has one dataflow on it:
 * `P:process( input : type )` print then string with `input`
 
 ### AssertModule (Verilog simulator only) ###
@@ -987,7 +996,7 @@ The returned file module `P` has three dataflows on it:
 
 The assert module allows you to fire an assert in the Verilog simulator. String `error` is printed on assert failure. If `exit` is true, the simulation will finish (default true).
 
-The returned assert module `A` has three dataflows on it:
+The returned assert module `A` has one dataflow on it:
 * `A:process( flag : Bool )` check the assert condition on `flag`
 
 Misc
@@ -1004,7 +1013,7 @@ The `SDFRate` refered to in this document has no formal constructor. It simply r
     {{n1,d1},{n2,d2}} -- two SDF streams with rate n1/d1, n2/d2 (for modules with multiple stream inputs...)
     {{1,3},{2,3}} -- e.g. SDF rate 1/3,2/3
 
-SDF Rates are stored in this rational format because technically doubles aren't sufficient to store all rationals, which caused problems for us in the past.
+SDF Rates are stored in this rational format because technically doubles aren't sufficient to store all rationals exactly, which has caused problems for us in the past.
 
 ### src/systolicsugar.t ###
 Convenience classes for incrementally constructing Systolic modules and dataflows.
