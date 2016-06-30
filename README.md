@@ -10,7 +10,7 @@ Install & Run
 
 Installing Rigel is not required. However your system needs to have Terra installed, and paths set correctly so that Terra can find all the Rigel sources. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-03-25) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly.
 
-Next, add the Rigel language definition to your lua path environment variable, and the Terra binary location to your PATH. This can be accomplished by add this to .profile or .bashrc:
+Next, add the Rigel language definition to your lua path environment variable, and the Terra binary location to your PATH. This can be accomplished by adding the following to .profile or .bashrc:
 
     export RIGEL=[path to rigel git directory root]
     export TERRADIR=[path to terra root]
@@ -53,12 +53,12 @@ Addresses, etc can be modified in `examples/makefile`.
 
 Our makefile supports the following options:
 
-* **make terra:** Run compiler and x86 simulator. Sim outputs at `examples/out/[testname].bmp` and verilog outputs at `examples/out/[testname].axi.v`
-* **make sim:** Run Verilog simulator. Outputs at `examples/out/[testname].sim.bmp`
-* **make axibits:** Build 7020 bitstreams. Outputs at `examples/out/[testname].axi.bi`t
-* **make axi:** Run 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
-* **make axibits100:** Build 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
-* **make axi100:** Run 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`
+* **make terra:** Run compiler and x86 simulator on all tests. Sim outputs at `examples/out/[testname].bmp` and verilog outputs at `examples/out/[testname].axi.v`
+* **make sim:** Run Verilog simulator on all tests. Outputs at `examples/out/[testname].sim.bmp`
+* **make axibits:** Builds all 7020 bitstreams. Outputs at `examples/out/[testname].axi.bi`t
+* **make axi:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
+* **make axibits100:** Builds all 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
+* **make axi100:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`
 * **make:** build and run all simulations and bitstreams on both boards
 * **make clean:** delete all built files from `examples/out/`
 
