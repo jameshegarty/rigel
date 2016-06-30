@@ -148,20 +148,35 @@ Rigel (rigel.t)
 
 Users construct image processing pipelines in Rigel by creating a Directed Acyclic Graph (DAG) of Rigel operations, which manipulate Rigel values. Most Rigel opreations involve applying a *Rigel Module* to a Rigel value. Rigel contains a large suite of built-in modules for performaning typical image processing operations, which will be covered later in the document.
 
-Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types. For now, just applying type conversion modules ([Interface Modules](#interfaces)) until the types match should work correctly.
+Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types. For now, simply applying type conversion modules ([Interface Modules](#interfaces)) until the types match should work correctly.
 
 `rigel.t` contains core functionality for manipulating Rigel DAGs, and the core classes for Rigel interface types and modules. `modules.t` (shown later) contains all the built-in Rigel modules that can be applied.
+
+RigelIR
+-------
+
+The table representation for all RigelIR nodes will have at least the following fields:
+
+    {
+      type : Type, -- output type of node
+      inputs : RigelIR[], -- inputs to node, as lua list
+      sdfRate : SDFRate,
+      name : String, -- a string that identifies this node when lowering to Verilog
+      loc : String -- file location where node was constructed
+    }
 
 RigelIR Values
 ---------------
 
 The following functions are used for defining leaf values of Rigel DAGs.
 
-### rigel.input( type:Type, [sdfRate:SDFRate] ) : RigelIR ###
+    rigel.input( type:Type, [sdfRate:SDFRate] ) : RigelIR
+    fields: {..., kind="input" }
 
 `rigel.input` is used to declare an input to a pipeline of a given type `types`, and optionally with a SDF rate `sdfRate`.
 
-### rigel.constant( name:String, value:LuaValue, type:Type ) : RigelIR ###
+    rigel.constant( name:String, value:LuaValue, type:Type ) : RigelIR
+    fields: {..., kind="constant", value = value }
 
 `rigel.constant` is used to create a constant value (set at compile time and never changed).
 
@@ -170,31 +185,41 @@ RigelIR Operators
 
 The following functions construct RigelIR nodes that perform various operations on Rigel values.
 
-### rigel.apply( name:String, module:RigelModule, input:RigelIR ) : RigelIR ###
+    rigel.apply( name:String, module:RigelModule, input:RigelIR ) : RigelIR
+    fields: {..., kind="apply", fn=module }
 
 Apply the Rigel Module `module` to `input`. `name` is used to identify this application when the graph is lowered to Verilog.
 
-### rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelIR ) : RigelIR ###
+    rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelIR ) : RigelIR
+    fields: {..., kind="applyMethod", inst=instance, fnname=functionName }
 
 Apply the function named `functionName` on module instance `instance` to `input`. `name` is used to identify this application when the graph is lowered to Verilog.
 
 Typically, this only comes up with FIFOs. FIFO modules have both a `load` and `store` 'function', which must be applied separately.
 
-### rigel.tuple( name:String, inputList:RigelIR[], [packStreams:Bool] ) : RigelIR ###
+TODO: really, the IR representation for this and *apply* should be the same.
 
-Compose a tuple of the ordered list of values in lua array `inputList`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
+    rigel.tuple( name:String, inputList:RigelIR[], [packStreams:Bool] ) : RigelIR
+    fields: {..., kind="tuple", packStreams=packStreams }
 
-### rigel.array2d( name:String, inputList:RigelIR[width*height], width:Uint, height:Uint, [packStreams:Bool] ) : RigelIR ###
+Compose a tuple of the ordered list of values in lua array `inputList`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). 
+
+TODO: remove `packStreams` (legacy option). It seems like this only needs to be a real operator when we are operating on streams? Packing regular tuples could just be a module
+
+    rigel.array2d( name:String, inputList:RigelIR[width*height], width:Uint, height:Uint, [packStreams:Bool] ) : RigelIR
+    fields: {..., kind="array2d", W=width, H=height, packStreams=packStreams }
 
 Compose an array of the ordered list of values in lua array `inputList`. `inputList` must be passed as a 2D array flattened into a 1D lua array in row major order. 2D dimensions for this data are then specified by `width` and `height`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
 
-### rigel.selectStream( name:String, input:RigelIR, i:Uint ) : RigelIR ###
+    rigel.selectStream( name:String, input:RigelIR, i:Uint ) : RigelIR
+    fields: {..., kind="selectStream", i=i }
 
 Given an array or tuple of Handshake values, this returns the stream at index `i` (0 indexed).
 
 TODO: turn this into a module.
 
-### rigel.statements( values:RigelIR[] ) : RigelIR ###
+    rigel.statements( values:RigelIR[] ) : RigelIR
+    fields: {..., kind="statements" }
 
 Rigel graphs can only have one input and output, however `statements` allows you to pack multiple pipelines into one, reducing this restriction. Typically, this is only necessary in graphs with FIFOs. Only the first value is passed as the actual output of the graph (lua index 1).
 
