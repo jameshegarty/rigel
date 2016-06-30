@@ -170,11 +170,13 @@ RigelIR Values
 
 The following functions are used for defining leaf values of Rigel DAGs.
 
+### input ###
     rigel.input( type:Type, [sdfRate:SDFRate] ) : RigelIR
     fields: {..., kind="input" }
 
 `rigel.input` is used to declare an input to a pipeline of a given type `types`, and optionally with a SDF rate `sdfRate`.
 
+### constant ###
     rigel.constant( name:String, value:LuaValue, type:Type ) : RigelIR
     fields: {..., kind="constant", value = value }
 
@@ -185,11 +187,13 @@ RigelIR Operators
 
 The following functions construct RigelIR nodes that perform various operations on Rigel values.
 
+### apply ###
     rigel.apply( name:String, module:RigelModule, input:RigelIR ) : RigelIR
     fields: {..., kind="apply", fn=module }
 
 Apply the Rigel Module `module` to `input`. `name` is used to identify this application when the graph is lowered to Verilog.
 
+### applyMethod ###
     rigel.applyMethod( name:String, instance: RigelInstance, functionName:String, input:RigelIR ) : RigelIR
     fields: {..., kind="applyMethod", inst=instance, fnname=functionName }
 
@@ -199,6 +203,7 @@ Typically, this only comes up with FIFOs. FIFO modules have both a `load` and `s
 
 TODO: really, the IR representation for this and *apply* should be the same.
 
+### tuple ###
     rigel.tuple( name:String, inputList:RigelIR[], [packStreams:Bool] ) : RigelIR
     fields: {..., kind="tuple", packStreams=packStreams }
 
@@ -206,11 +211,13 @@ Compose a tuple of the ordered list of values in lua array `inputList`. `name` i
 
 TODO: remove `packStreams` (legacy option). It seems like this only needs to be a real operator when we are operating on streams? Packing regular tuples could just be a module
 
+### array2d ###
     rigel.array2d( name:String, inputList:RigelIR[width*height], width:Uint, height:Uint, [packStreams:Bool] ) : RigelIR
     fields: {..., kind="array2d", W=width, H=height, packStreams=packStreams }
 
 Compose an array of the ordered list of values in lua array `inputList`. `inputList` must be passed as a 2D array flattened into a 1D lua array in row major order. 2D dimensions for this data are then specified by `width` and `height`. `name` is used to identify this concatenation when lowering to Verilog. When dealing with concatenating Handshake streams, `packStreams` indicates whether we should treat the output as one Handshake stream, instead of multiple streams (default true - one stream). TODO: remove `packStreams` (legacy option).
 
+### selectStream ###
     rigel.selectStream( name:String, input:RigelIR, i:Uint ) : RigelIR
     fields: {..., kind="selectStream", i=i }
 
@@ -218,6 +225,7 @@ Given an array or tuple of Handshake values, this returns the stream at index `i
 
 TODO: turn this into a module.
 
+### statements ###
     rigel.statements( values:RigelIR[] ) : RigelIR
     fields: {..., kind="statements" }
 
@@ -830,16 +838,19 @@ Set the intermediate variable name to `name` (when lowered to Verilog).
 SystolicIR Values
 -----------
 
+### parameter ###
     systolic.parameter( name : String, type : Type )
     fields: {..., kind="parameter", name=name }
 
 Return a formal parameter of type `type` and name `name` (used when lowering to Verilog).
 
+### constant ###
     systolic.constant( value : Lua, type : Type )
     fields: {..., kind="constant", value=value }
 
 Return a value with value `value` and type `type`. `value` must be convertible to type.
 
+### null ###
     systolic.null()
     fields: {..., kind="null"}
 
@@ -849,32 +860,38 @@ TODO: shouldn't this just be a constant?
 SystolicIR Operators
 ------------------
 
+### cast ###
     systolic.cast( expr : SystolicAST, type : Type )
     fields: {..., kind="cast" }
 
 Cast `expr` to Type `type`.
 
+### slice ###
     systolic.slice( expr : SystolicAST, idxLow : Uint, idxHigh : Uint, idyLow : Uint, idyHigh : Uint )
     fields: {..., kind="slice", idxLow=idxLow, idxHigh=idxHigh, idyLow=idyLow, idyHigh=idyHigh }
 
 if `expr` is of type Array2D, return a new array of smaller size. The new array will include X coordinates in range [idxLow,idxHigh] and Y in range [idyLow, idyHigh]. Coordinates are inclusive and must be in rate of `expr` array size.
 
+### index ###
     systolic.index( expr : SystolicAST, idx : Uint, idy : Uint )
     fields: none - helper function
 
 if `expr` is of type Array2D, select one element of the array (at coordinate `[idx,idy]`) and return its value (as a scalar).
 
+### bitSlice ###
     systolic.bitSlice( expr : SystolicAST, low : Uint, high : Uint )
     fields: {..., kind="bitSlice", low=low, high=high }
 
 Perform a bitwise slice on `expr`. `expr` can be any type. This performs the same operation as writing `expr[high:low]` in Verilog. Returns bit type.
 
+### tuple ###
     systolic.tuple( list : SystolicAst[] )
     fields: {..., kind="tuple" }
 
 Takes a list `list` of SystolicAST values and returns them packed together as a tuple type.
 Note: this is used in combination with `cast` to perform many type conversions. e.g. concatenating multiple values into an Array2D is accomplished by turning them into a tuple, and then casting to Array2D.
 
+### select ###
     systolic.select( cond : SystolicAST, a : SystolicAST, b : SystolicAST )
     fields: {..., kind="select" }
 
