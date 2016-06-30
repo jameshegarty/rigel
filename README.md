@@ -148,7 +148,7 @@ Rigel (rigel.t)
 
 Users construct image processing pipelines in Rigel by creating a Directed Acyclic Graph (DAG) of Rigel operations, which manipulate Rigel values. Most Rigel opreations involve applying a *Rigel Module* to a Rigel value. Rigel contains a large suite of built-in modules for performaning typical image processing operations, which will be covered later in the document.
 
-Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types.
+Each Rigel module has an *interface type*, which specifies low-level information about the underlying hardware interface of the module. This is typically used to indicate whether the module support a synchronous interface, handshake interface, or bus interface. Modules can only be applied if interface types match. The current implementation does not perform automatic type conversions on interface types. For now, just applying type conversion modules ([Interface Modules](#interfaces)) until the types match should work correctly.
 
 `rigel.t` contains core functionality for manipulating Rigel DAGs, and the core classes for Rigel interface types and modules. `modules.t` (shown later) contains all the built-in Rigel modules that can be applied.
 
@@ -500,21 +500,25 @@ Note that by default *changeRate* de/vectorizes 2D arrays column at a time. This
     modules.filterSeq( A:Type, width:Number, height:Number, rate:Number, fifoSize:Number )
     fields: { ..., kind="filterSeq", A=A }
 
-*filterSeq* takes two inputs: a stream of data of type A, and a stream of bools which indicate whether the data should pass through (true) or be filtered out (false). *filterSeq's* SDF rate is set as *1/rate*. *filterSeq* may override the stream of bools on some cycles in order to keep the stream valid within the SDF model, assuming the *filterSeq* is followed by a fifo with *fifoSize* entries. In particular, *filterSeq* will override the filter if the fifo will under/overflow or if the total number of output tokens does not equal width*height/rate by the end.
+*filterSeq* takes two inputs: a stream of data of type A, and a stream of bools which indicate whether the data should pass through (true) or be filtered out (false). *filterSeq's* SDF rate is set as *1/rate*. 
+
+*filterSeq* may override the stream of bools on some cycles in order to keep the stream's behavior valid within the SDF model, assuming the *filterSeq* is followed by a fifo with *fifoSize* entries. In particular, *filterSeq* will override the filter if the fifo will under/overflow or if the total number of output tokens does not equal `width*height/rate` by the end of frame execution.
+
+TODO: refactor this module into a few sub modules (ie an unprotected filter, underflow module, and average rate module). Add a module to support stream compaction, so that *filterSeq* can support throughputs > 1.
 
 ### downsampleXSeq ###
     type: A[T]->V(A[T/scale]). If scale>T, this is A[T]->V(A[1]).
     modules.downsampleYSeq( A: Type, width:Uint, height:Uint, T:Uint, scale:Uint )
     fields: NYI
 
-*downsampleXSeq* performs a downsample in X (i.e. keeps only *1/scale* columns, starting with column X=0). *downsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
+*downsampleXSeq* performs a downsample in X (i.e. keeps only *1/scale* columns, where X%scale==0). *downsampleXSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
 
 ### downsampleYSeq ###
     type: A[T]->V(A[T])
     modules.downsampleYSeq( A: Type, width:Uint, height:Uint, T:Uint, scale:Uint )
     fields: NYI
 
-*downsampleYSeq* performs a downsample in Y (i.e. keeps only *1/scale* lines, starting with line Y=0). *downsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
+*downsampleYSeq* performs a downsample in Y (i.e. keeps only *1/scale* lines, where Y%scale==0). *downsampleYSeq* is sequentialized to work on scanline streams of vectors of type *A* with size *T*. *width* and *height* indicate the total size of the image to be downsampled.
 
 ### downsampleSeq* ###
     type: V(A[T])->RV(A[T])
@@ -547,14 +551,24 @@ Higher-Order Modules
 
 ### map ###
     given f:A->B has type A[w,h]->B[w,h]
-    modules.map( f:Modules, width:Number, height:Number )
+    modules.map( f : RigelModule, width:Number, height:Number )
     fields: {..., kind="map", fn=f, W=width, H=height }
 
 *map* lifts a scalar function to work on arrays.
 
 ### reduce ###
+    given f:{A,A}->A has type A[W,H]->A
+    modules.reduce( f : RigelModule, W : Uint, H : Uint )
+    fields: {..., kind="reduce", fn=f, W=W, H=H }
+
+*reduce* performs an efficient tree reduction. The user passes any module `f` that provides a binary operator to perform as the reduction operation, and `reduce` lifts it work on arrays (similar to *fold* in other languages).
 
 ### reduceSeq ###
+    given f:{A,A}->A has type A->V(A)
+    modules.reduceSeq( f : RigelModule, T : Uint>1 )
+    fields: {..., kind="reduce", fn=f, T=T }
+
+*reduceSeq* performs a sequential reduction (e.g. sort of like an accumulator module). The user passes any module `f` that provides a binary operator to, and this module lifts it to perform this binary operator sequentially of *T* items over *T* firings. Every *T* firings *reduceSeq* writes out the result and resets. *f* must have pipeline delay of 0.
 
 Interfaces
 ----------
@@ -598,11 +612,11 @@ Convenience module that directly converts a module with a basic interface to a H
     given f:A->RV(B) has type V(A)->RV(B)
     modules.waitOnInput( f:Module )
 
-*waitOnInput* is typically for internal compiler use only. Modules with *A->RV(B)* type have ambiguous behavior, because they do not define how the module will behave with invalid input. This higher-order modules provides one possible semantic:
+*waitOnInput* is typically for internal compiler use only. Modules with *A->RV(B)* type have ambiguous behavior, because they do not define how the module will behave with invalid input. This higher-order module provides one possible semantic:
 
-if f is ready, f with execute iff input valid is true (i.e. it waits on input). if f is not ready, inner will always run (input data is undefined).
+if *f* is ready, *f* with execute iff input valid is true (i.e. it waits on input). if *f* is not ready, inner will always run (input data is undefined).
 
-This is useful for implementing modules that upsample data. If they are ready to read the input, the module will only ever see valid data. If they are not ready (i.e. are generating data themselves), input data is irrelevant.
+This is useful for implementing modules that upsample data. If they are ready to read the input, the module will only ever see valid data. If they are not ready (i.e. are generating data themselves), input data is irrelevant so the module runs regardless.
 
 Streams
 -------
@@ -639,7 +653,7 @@ Because FIFOs have multiple ports, they must be instantiated differently than ot
 
 `size` is the size of the FIFO (# of entries). Native FIFO hardware on the Zynq platform supports either 128, 512, 1024, or 2048 entries, so it is probably a good idea to choose one of those sizes. 128 entries will be implemented in slices, >128 is implemented with BRAMs. 
 
-`nostall` disables the upstream stall signal as a performance optimization. If you FPGA clock period is limited by the length of the stall lines (which is pretty common), this will remove the stall lines, which can significantly improve the clock. This is only valid if you know that the FIFO is sufficiently sized to never need to stall.
+`nostall` disables the upstream stall signal as a performance optimization. If your FPGA clock period is limited by the length of the stall lines (which is pretty common), this will remove the stall lines, which can significantly improve the clock. This is only valid if you know that the FIFO is sufficiently sized to never need to stall. If `nostall=true` and the FIFO fills with data, the board will deadlock!
 
 `W`, `H`, `T` are used to calculate the number of input items the FIFO expects to see total. Then the Verilog simulator uses this to print out usage statistics at the end of the frame (specifically, max fifo size seen). This debug information is optional. TODO: could probably simplify this.
 
@@ -653,18 +667,20 @@ Because FIFOs have multiple ports, they must be instantiated differently than ot
 Ordering modules have type *null -> uint8*. Each firining they return the ID of the stream to run. Ordering modules are stateful (or they wouldn't be useful).
 
 **modules.interleveSchedule( N:Uint, period:Uint)**
+
     fields: {..., kind="interleveSchedule", N=N, period=period }
 
-*interleveSchedule* imply interleves *N* stream with a fixed repeating pattern. This schedule returns *2^period* items of stream 0, then stream 1, etc. Like this:
+*interleveSchedule* simply interleves *N* stream with a fixed repeating pattern. This schedule returns *2^period* items of stream 0, then stream 1, etc. Like this:
 
     period=1: ABABABAB
     period=2: AABBAABB
     period=3: AAAABBBB
 
 **modules.pyramidSchedule( depth:Uint, wtop:Uint, T:Uint )**
+
     fields: {..., kind="pyramidSchedule", depth=depth, wtop=wtop, T=T }
 
-*pyramidSchedule* takes *depth* streams with pyramid rates (i.e. 1, 1/4, 1/16, 1/64) and serializes them into a "human readable" image pyramid. *wtop* is the width of the largest (finest) pyramid level. *T* is the number of pixels being processed in parallel (i.e. the module will expect *wtop/T* tokens per line for the first pyramid level).
+*pyramidSchedule* takes *depth* streams with pyramid rates (i.e. 1, 1/4, 1/16, 1/64) and serializes them into a "human readable" image pyramid format. *wtop* is the width of the largest (finest resolution) pyramid level. *T* is the number of pixels being processed in parallel (i.e. the module will expect *wtop/T* tokens per line for the first pyramid level).
 
 This module is a compromise between human readability and FIFO size. Likely, there is a schedule that further reduces FIFO size but results in an image that is less understandable. Likewise, it would be nice to make this more human readable, but this would likely use too much FIFO size.
 
@@ -693,7 +709,7 @@ A `HandshakeTmuxed` interface has multiple streams transported over one shared b
     modules.flattenStreams( A : Type, rates : SDFRate[N] )
     fields: {..., kind="flattenStreams", A=A, rates=rates }
 
-A `HandshakeTmuxed` interface has multiple streams transported over one shared bus. `flattenStreams` flattens these N streams into one single stream, mixing values on the different streams together. Ordering of values is not guaranteed - they simply occur in the order that things happen on the Tmuxed bus. `rates` gives the expected SDF rate of the stream, which must sum to 1.
+A `HandshakeTmuxed` interface has multiple streams transported over one shared bus. `flattenStreams` flattens these N streams into one single stream, mixing values on the different streams together. Ordering of values is not guaranteed - they simply occur in the order that things happen on the Tmuxed bus. However, the *serialize* module can be used earlier in the pipeline to give the streams an ordering. `rates` gives the expected SDF rate of the stream, which must sum to 1.
 
 Misc
 ----
@@ -710,7 +726,7 @@ Misc
     modules.lut( inputType : Type, outputType : Type, values : LuaValue[] )
     fields: {..., kind="lut", inputType=inputType, outputType=outputType, values = values }
 
-`lut` creates a lookup table. `values` must be an array of size 2^(inputType:bits()), and each of its values must be convertible to `outputType`. When lowered to hardware, these lookup tables typically end up being instantiated at BRAMs, so trying to fit the input/output data type to match the size of the BRAMs is typically a good idea.
+`lut` creates a lookup table. `values` must be an array of size 2^(inputType:bits()), and each of its values must be convertible to `outputType`. When lowered to hardware, these lookup tables typically end up being instantiated as BRAMs, so trying to fit the input/output data type to match the size of the BRAMs is typically a good idea.
 
 ### constSeq ###
     type: nil -> A[W*T,H]
@@ -732,7 +748,7 @@ Misc
     modules.underflow( A : Type, count : Uint, cycles : Uint, upstream : Bool, [tooSoonCycles : Bool] )
     fields: {..., kind="underflow", A=A, count = count }
     
-`underflow` is used to set up the DRAM test harness. If the AXI bus recieves fewer data items than it was expecting, it crashes the board. Underflow can occur for two reasons:
+`underflow` is used to set up the DRAM test harness. If the AXI bus receives fewer data items than it was expecting, it crashes the board. Underflow can occur for two reasons:
 
 *Underflow on the output:* The pipeline didn't write enough values (not enough valid bits were true). For this case, set `upstream=false`, and it will monitor the writes. It will expect to see at least `count` items in `cycles` cycles. If this doesn't occur, it will write DEADBEEFs to the bus until `count` items have occured. `tooSoonCycles` will optionally also raise an assert in the Verilog simulator if the pipeline exits too soon (which is probably also an error of some sort).
 
@@ -768,47 +784,82 @@ SystolicModules contain one or more `SystolicDataflow`'s, which represent operat
 
 The `SystolicIR` and SystolicDataflows are restricted so that they can always be pipelined to an arbitrary depth by the compiler. The pipelineing is performed automatically prior to lowering to Verilog. SystolicDataflows can each have an associated valid bit (to implement pipeline bubbles) and clock enable `CE` (to stall the pipeline). These two signals are wired automatically by the compiler.
 
-SystolicIR Values
+SystolicIR
 -----------
 
-    systolic.parameter( name : String, type : Type )
-Return a formal parameter of type `type` and name `name` (used when lowering to Verilog).
+The table representation for each SystolicIR node has at least the following values:
 
-    systolic.constant( value : Lua, type : Type )
-Return a value with value `value` and type `type`. `value` must be convertible to type.
+    {
+      type:Type, -- output type of node
+      inputs:SystolicIR[] -- lua list of inputs
+      loc:String, -- source file location where node was created
+    }
 
-    systolic.null()
-Return a value of type null.
+These standard fields will not be repeated below.
+
+Each SystolicIR node has some common functionality:
 
     SystolicIR:setName( name : String )
 Set the intermediate variable name to `name` (when lowered to Verilog).
 
+SystolicIR Values
+-----------
+
+    systolic.parameter( name : String, type : Type )
+    fields: {..., kind="parameter", name=name }
+
+Return a formal parameter of type `type` and name `name` (used when lowering to Verilog).
+
+    systolic.constant( value : Lua, type : Type )
+    fields: {..., kind="constant", value=value }
+
+Return a value with value `value` and type `type`. `value` must be convertible to type.
+
+    systolic.null()
+    fields: {..., kind="null"}
+
+Return a value of type null.
+TODO: shouldn't this just be a constant?
+
 SystolicIR Operators
 ------------------
 
-`systolic.cast( expr : SystolicAST, type : Type )` Cast `expr` to Type `type`.
+    systolic.cast( expr : SystolicAST, type : Type )
+    fields: {..., kind="cast" }
 
-`systolic.slice( expr : SystolicAST, idxLow : Uint, idxHigh : Uint, idyLow : Uint, idyHigh : Uint )`
+Cast `expr` to Type `type`.
+
+    systolic.slice( expr : SystolicAST, idxLow : Uint, idxHigh : Uint, idyLow : Uint, idyHigh : Uint )
+    fields: {..., kind="slice", idxLow=idxLow, idxHigh=idxHigh, idyLow=idyLow, idyHigh=idyHigh }
+
 if `expr` is of type Array2D, return a new array of smaller size. The new array will include X coordinates in range [idxLow,idxHigh] and Y in range [idyLow, idyHigh]. Coordinates are inclusive and must be in rate of `expr` array size.
 
-`systolic.index( expr : SystolicAST, idx : Uint, idy : Uint )`
+    systolic.index( expr : SystolicAST, idx : Uint, idy : Uint )
+    fields: none - helper function
+
 if `expr` is of type Array2D, select one element of the array (at coordinate `[idx,idy]`) and return its value (as a scalar).
 
-`systolic.bitSlice( expr : SystolicAST, low : Uint, high : Uint )`
+    systolic.bitSlice( expr : SystolicAST, low : Uint, high : Uint )
+    fields: {..., kind="bitSlice", low=low, high=high }
+
 Perform a bitwise slice on `expr`. `expr` can be any type. This performs the same operation as writing `expr[high:low]` in Verilog. Returns bit type.
 
-`systolic.tuple( list : SystolicAst[] )`
+    systolic.tuple( list : SystolicAst[] )
+    fields: {..., kind="tuple" }
+
 Takes a list `list` of SystolicAST values and returns them packed together as a tuple type.
 Note: this is used in combination with `cast` to perform many type conversions. e.g. concatenating multiple values into an Array2D is accomplished by turning them into a tuple, and then casting to Array2D.
 
-`systolic.select( cond : SystolicAST, a : SystolicAST, b : SystolicAST )`
+    systolic.select( cond : SystolicAST, a : SystolicAST, b : SystolicAST )
+    fields: {..., kind="select" }
+
 Perform the ternary select operation like in C, `cond?a:b`.
 
 ### Binary operators: ###
 
-* `+ (operator)` lhs+rhs
-* `- (operator)` lhs-rhs
-* `* (operator)` lhs*rhs
+* `+ (lua operator)` lhs+rhs `{...,kind="binop", op="+"}`
+* `- (lua operator)` lhs-rhs
+* `* (lua operator)` lhs*rhs
 * `systolic.eq( lhs : SystolicAST, rhs : SystolicAST )` lhs == rhs
 * `systolic.le( lhs : SystolicAST, rhs : SystolicAST )` lhs <= rhs
 * `systolic.lt( lhs : SystolicAST, rhs : SystolicAST )` lhs < rhs
@@ -827,6 +878,7 @@ Perform the ternary select operation like in C, `cond?a:b`.
 * `systolic.abs( input : SystolicAST )` |input|
 * `systolic.isX( input : SystolicAST )` is input Verilog value X?
 
+TODO: most of these 'operators' should really just be turned into modules.
 
 SystolicDataflow
 -----------

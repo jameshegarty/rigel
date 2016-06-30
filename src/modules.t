@@ -2491,7 +2491,7 @@ modules.reduce = memoize(function( f, W, H )
   err(type(W)=="number", "reduce W must be number")
   err(type(H)=="number", "reduce H must be number")
 
-  local res = {kind="reduce", fn = f}
+  local res = {kind="reduce", fn = f, W=W, H=H}
   rigel.expectBasic(f.inputType)
   rigel.expectBasic(f.outputType)
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
@@ -2555,7 +2555,7 @@ modules.reduceSeq = memoize(function( f, T, X )
     error("Reduction function f must be of type {A,A}->A, but is type "..tostring(f.inputType).."->"..tostring(f.outputType))
   end
 
-  local res = {kind="reduceSeq", fn=f}
+  local res = {kind="reduceSeq", fn=f, T=T}
   rigel.expectBasic(f.outputType)
   res.inputType = f.outputType
   res.outputType = rigel.V(f.outputType)
