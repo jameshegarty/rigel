@@ -77,6 +77,11 @@ STATS = $(patsubst %.t,out/%.stats.txt,$(AXISRCS))
 
 STATS100 = $(patsubst %.t,out/%.stats100.txt,$(AXI100SRCS))
 
+CAMERASRCS = stereo_ov7660.t 2xov7660.t campipe_ov7660.t
+CAMERABITS = $(patsubst %.t,out/%.axi.v,$(CAMERASRCS))
+CAMERABITS += $(patsubst %.t,out/%.camera.bit,$(CAMERASRCS))
+
+
 RES = $(TERRA)
 RES += $(SIM)
 RES += $(AXI)
@@ -101,6 +106,8 @@ stats: $(STATS)
 stats100: $(STATS100)
 
 axi: $(AXI)
+
+camerabits: $(CAMERABITS)
 
 axi100: $(AXI100)
 
@@ -136,6 +143,25 @@ out/%.axi.bit: out/%.axi.v
 	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
 	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
 	cp out/build_$*/system.bit $@
+
+
+out/%.camera.bit: out/%.axi.v
+	mkdir -p out/buildcamera_$*
+	echo "verilog work \"../$*.axi.v\"" > out/buildcamera_$*/system.prj
+	echo "verilog work \"../../../camera/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
+	cp ../camera/vsrc/*.ngc out/buildcamera_$*/.
+	cd out/buildcamera_$*; xst -ifn ../../../camera/system.xst  | tee OUT_xst.log
+	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../camera/ps7_constraints.ucf -uc ../../../camera/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
+	cd out/buildcamera_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
+	cd out/buildcamera_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
+	cd out/buildcamera_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../extras/helloaxi/ps7_constraints.ucf -ucf ../../extras/helloaxi/system.ucf > OUT_trce.txt
+	cd out/buildcamera_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
+	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
+	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
+	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
+	cp out/buildcamera_$*/system.bit $@
+
+
 
 out/%.axi100.bit: out/%.axi.v
 	mkdir -p out/build100_$*

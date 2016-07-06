@@ -16,7 +16,7 @@ local reducePrecision = 16
 
 --local T = string.sub(arg[0],string.find(arg[0],"%d+")) -- throughput #
 --local filename = string.sub(arg[0],#arg[0]-6-#T,#arg[0]-3-#T)
-local T = 8
+local T = 16
 
 local W = 640
 local H = 480

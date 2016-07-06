@@ -1,5 +1,5 @@
 run
--ifn ../../system.prj
+-ifn system.prj
 -ofn system
 -ofmt NGC
 -p xc7z020-1-clg484

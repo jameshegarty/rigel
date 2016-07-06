@@ -438,7 +438,7 @@ endmodule
 
 `timescale 1ps/1ps
 
-module ict106_axilite_conv1 #
+module ict106_axilite_conv2 #
   (
    parameter integer C_AXI_ID_WIDTH              = 12,
    parameter integer C_AXI_ADDR_WIDTH            = 32,
