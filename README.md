@@ -14,7 +14,7 @@ Next, add the Rigel language definition to your lua path environment variable, a
 
     export RIGEL=[path to rigel git directory root]
     export TERRADIR=[path to terra root]
-    export TERRA_PATH="$TERRA_PATH;./?.t;$RIGEL/?.t;$RIGEL/src/?.t;$RIGEL/extras/?.t;$TERRADIR/tests/lib/?.t;$RIGEL/examples/?.t"
+    export TERRA_PATH="$TERRA_PATH;./?.t;$RIGEL/?.t;$RIGEL/src/?.t;$RIGEL/misc/?.t;$TERRADIR/tests/lib/?.t;$RIGEL/examples/?.t"
     export PATH=${TERRADIR}/bin:${PATH}
 
 Rigel and Terra are tested to work on Linux and Mac OS X. Other platforms are unlikely to work.

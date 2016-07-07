@@ -164,7 +164,7 @@ ZYNQ_ADDR=192.168.42.50
 ZYNQ_WRITE_PATH=/tmp
 ZYNQ_PASS=1234
 
-out/%.run.bit: out/%.camera.bit out/processimage
+out/%.camera.run: out/%.camera.bit out/processimage
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
 	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
