@@ -148,10 +148,10 @@ out/%.axi.bit: out/%.axi.v
 out/%.camera.bit: out/%.axi.v
 	mkdir -p out/buildcamera_$*
 	echo "verilog work \"../$*.axi.v\"" > out/buildcamera_$*/system.prj
-	echo "verilog work \"../../../camera/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
-	cp ../camera/vsrc/*.ngc out/buildcamera_$*/.
-	cd out/buildcamera_$*; xst -ifn ../../../camera/system.xst  | tee OUT_xst.log
-	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../camera/ps7_constraints.ucf -uc ../../../camera/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
+	echo "verilog work \"../../../platform/camera/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
+	cp ../platform/camera/vsrc/*.ngc out/buildcamera_$*/.
+	cd out/buildcamera_$*; xst -ifn ../../../platform/camera/system.xst  | tee OUT_xst.log
+	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../platform/camera/ps7_constraints.ucf -uc ../../../platform/camera/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
 	cd out/buildcamera_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
 	cd out/buildcamera_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
 	cd out/buildcamera_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../extras/helloaxi/ps7_constraints.ucf -ucf ../../extras/helloaxi/system.ucf > OUT_trce.txt
@@ -161,6 +161,28 @@ out/%.camera.bit: out/%.axi.v
 	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
 	cp out/buildcamera_$*/system.bit $@
 
+
+ZYNQ_ADDR=192.168.42.50
+ZYNQ_WRITE_PATH=/tmp
+ZYNQ_PASS=1234
+
+out/%.run.bit: out/%.camera.bit out/processimage
+	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
+###### CLOCK STUFF END
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
+###### CLOCK STUFF END
+	sshpass -p $(ZYNQ_PASS) scp ../../../platform/camera/csrc/processimage $*.camera.bit root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/.
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.camera.bit > /dev/xdevcfg"
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage" 
+	-sshpass -p $(ZYNQ_PASS) scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/*.raw .
+	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.bit"
+	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
+	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
+	
 
 
 out/%.axi100.bit: out/%.axi.v
