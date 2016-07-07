@@ -642,7 +642,7 @@ function script_path()
 end
 
 function readAll(file)
-  local fn = script_path().."extras/"..file
+  local fn = script_path().."misc/"..file
   print("LOAD FILE "..fn)
   local f = io.open(fn, "rb")
   local content = f:read("*all")

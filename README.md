@@ -59,8 +59,13 @@ Our makefile supports the following options:
 * **make axi:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
 * **make axibits100:** Builds all 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
 * **make axi100:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`
+* **make camerabits:** Build all bitstreams for the camera rig. Outputs at `examples/out/[testname].camera.bit`
+* **make [testname].camera.run:** Run bitstream on camera rig (over ethernet)
 * **make:** build and run all simulations and bitstreams on both boards
 * **make clean:** delete all built files from `examples/out/`
+
+Camera Test Rig
+---------------
 
 Overview
 ========

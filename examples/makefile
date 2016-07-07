@@ -164,7 +164,7 @@ ZYNQ_ADDR=192.168.42.50
 ZYNQ_WRITE_PATH=/tmp
 ZYNQ_PASS=1234
 
-out/%.camera.run: out/%.camera.bit out/processimage
+%.camera.run: out/%.camera.bit
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
 	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
@@ -209,13 +209,13 @@ out/%.hz.txt: out/%.axi.bit
 	echo $($@_HZl) > out/$*.hz.txt
 
 out/%.axi.raw: out/%.axi.bit out/%.hz.txt
-	$(eval $@_IMG := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputImage))
-	$(eval $@_SCALEN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleN))
-	$(eval $@_SCALED := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleD))
-	$(eval $@_BPP_IN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
-	$(eval $@_BPP_OUT := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
-	$(eval $@_OUTW := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputHeight))
+	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
+	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
+	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
+	$(eval $@_BPP_IN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
+	$(eval $@_BPP_OUT := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
 ###### SET THE CLOCK	
 	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 # (* second time around we can't write to fclk_export, so surpress error)
@@ -228,7 +228,7 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
-	terra ../extras/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+	terra ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
 	# keep copy for future reference
 	cp out/$*.axi.cycles.txt out/build_$*
 
@@ -237,13 +237,13 @@ ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
 
 out/%.axi100.raw: out/%.axi100.bit.bin
-	$(eval $@_IMG := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputImage))
-	$(eval $@_SCALEN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleN))
-	$(eval $@_SCALED := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua scaleD))
-	$(eval $@_BPP_IN := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
-	$(eval $@_BPP_OUT := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
-	$(eval $@_OUTW := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell terra ../extras/extractMetadata.t out/$*.metadata.lua outputHeight))
+	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
+	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
+	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
+	$(eval $@_BPP_IN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
+	$(eval $@_BPP_OUT := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
 	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.axi100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
@@ -251,7 +251,7 @@ out/%.axi100.raw: out/%.axi100.bit.bin
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
-	terra ../extras/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
+	terra ../misc/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
 	# keep copy for future reference
 	cp out/$*.axi100.cycles.txt out/build100_$*
 
@@ -264,37 +264,37 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	split -n 2 -d out/sim_$*/$*.sim.raw out/sim_$*/S
 	mv out/sim_$*/S00 out/$*.sim.raw
 	mv out/sim_$*/S01 out/$*.sim.1.raw
-	terra ../extras/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
+	terra ../misc/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.cycles.txt out/build_$*
 
 out/%.sim.bmp: out/%.sim.raw
-	terra ../extras/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+	terra ../misc/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.bmp out/build_$*
 
 out/%.sim.1.bmp: out/%.sim.raw
-	terra ../extras/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
+	terra ../misc/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw
-	terra ../extras/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
+	terra ../misc/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.axi.bmp out/build_$*
 
 out/%.axi100.bmp: out/%.axi100.raw
-	terra ../extras/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
+	terra ../misc/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build100_$*
 	cp out/$*.axi100.bmp out/build100_$*
 
 out/%.bmp: out/%.raw
-	terra ../extras/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
+	terra ../misc/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.bmp out/build_$*
@@ -352,7 +352,7 @@ out/%.raw.dup : %.raw
 	cat $*.raw >> $@
 
 out/%.stats.txt : out/%.axi.bmp
-	../extras/stats.sh out/build_$* out/$* $* axi $@
+	../misc/stats.sh out/build_$* out/$* $* axi $@
 
 out/%.stats100.txt : out/%.axi100.bmp
-	../extras/stats.sh out/build100_$* out/$* $* axi100 $@
+	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
