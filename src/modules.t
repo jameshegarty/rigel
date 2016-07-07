@@ -3605,7 +3605,7 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
     err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
     err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
 
-    local axiv = readAll("../extras/helloaxi/axi.v")
+    local axiv = readAll("../platform/axi/axi.v")
     axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
     axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
     axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
@@ -3642,7 +3642,7 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
       axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
     end
 
-    verilogStr = readAll("../extras/helloaxi/ict106_axilite_conv.v")..readAll("../extras/helloaxi/conf.v")..readAll("../extras/helloaxi/dramreader.v")..readAll("../extras/helloaxi/dramwriter.v")..axiv
+    verilogStr = readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
   else
     local rrlog2 = math.log(readyRate)/math.log(2)
 
