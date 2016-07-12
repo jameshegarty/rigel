@@ -160,27 +160,25 @@ out/%.camera.bit: out/%.axi.v
 	cp out/buildcamera_$*/system.bit $@
 
 
-ZYNQ_ADDR=192.168.42.50
-ZYNQ_WRITE_PATH=/tmp
-ZYNQ_PASS=1234
+CAMERA_ADDR=192.168.42.50
+CAMERA_WRITE_PATH=/tmp
+CAMERA_PASS=1234
 
 %.camera.run: out/%.camera.bit
-	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
+	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
 ###### CLOCK STUFF END
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
-###### CLOCK STUFF END
-	sshpass -p $(ZYNQ_PASS) scp ../../../platform/camera/csrc/processimage $*.camera.bit root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/.
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.camera.bit > /dev/xdevcfg"
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 30" 
-	-sshpass -p $(ZYNQ_PASS) scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/*.raw .
-	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.bit"
-	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-	
+	sshpass -p $(CAMERA_PASS) scp ../platform/camera/csrc/processimage out/$*.camera.bit root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/.
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat $(CAMERA_WRITE_PATH)/$*.camera.bit > /dev/xdevcfg"
+	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "$(CAMERA_WRITE_PATH)/processimage 30" 
+	-sshpass -p $(CAMERA_PASS) scp root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/*.raw .
+	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "rm $(CAMERA_WRITE_PATH)/processimage $(CAMERA_WRITE_PATH)/$($@_IMG) $(CAMERA_WRITE_PATH)/out.raw $(CAMERA_WRITE_PATH)/$*.camera.bit"
+	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
+	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
 
 
 out/%.axi100.bit: out/%.axi.v
