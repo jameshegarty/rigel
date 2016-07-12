@@ -175,7 +175,7 @@ ZYNQ_PASS=1234
 ###### CLOCK STUFF END
 	sshpass -p $(ZYNQ_PASS) scp ../../../platform/camera/csrc/processimage $*.camera.bit root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/.
 	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.camera.bit > /dev/xdevcfg"
-	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage" 
+	sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 30" 
 	-sshpass -p $(ZYNQ_PASS) scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/*.raw .
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.bit"
 	-sshpass -p $(ZYNQ_PASS) ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
