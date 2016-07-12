@@ -135,7 +135,9 @@ function makeCampipe(internalW,internalH)
   return RM.makeHandshake(campipe)
 end
 
-local campipe = C.padcrop(types.uint(8),W,H,T,1,1,1,1,0,makeCampipe)
+local STR_W = (DEMOSAIC_W-1)/2
+local STR_H = (DEMOSAIC_H-1)/2
+local campipe = C.padcrop(types.uint(8),W,H,T,STR_W,STR_W,STR_H,STR_H,0,makeCampipe)
 
 local hsfninp = R.input(R.Handshake(ITYPE))
 
