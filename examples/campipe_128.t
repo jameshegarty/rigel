@@ -71,6 +71,8 @@ DEMOSAIC_W = 3
 DEMOSAIC_H = 3
 
 
+local ITYPE = types.array2d(types.uint(8),T)
+
 if string.find(arg[0],"128") then
   W,H = 128,128
   inputFilename = "300d_w"..W.."_h"..H..".raw"
@@ -78,6 +80,9 @@ if string.find(arg[0],"128") then
 --  phaseX, phaseY = 1,0
 elseif string.find(arg[0],"ov7660") then
   W,H=640,480
+
+  T = 4
+  ITYPE = types.array2d(types.array2d(types.uint(8),2),T)
 
   -- for some reason the two greens of the ov7660 don't line up. just ignore one
   local g_tl = {0,2,0,
@@ -114,12 +119,11 @@ ccmtab={ {255/176,0,0},
 end
 
 ----------------
-local ITYPE = types.array2d(types.uint(8),T)
 local rgbType = types.array2d(types.uint(8),4)
 local OTYPE = types.array2d(rgbType,2)
 
 function makeCampipe(internalW,internalH)
-  local inp = R.input(ITYPE)
+  local inp = R.input(types.array2d(types.uint(8),T))
   local bl = R.apply("bl",RM.map(CC.blackLevel(pedestal),T),inp)
   local dem = R.apply("dem",CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B),bl)
   local ccm = R.apply("ccm",RM.map(CC.makeCCM(ccmtab),T),dem)
@@ -134,8 +138,16 @@ end
 local campipe = C.padcrop(types.uint(8),W,H,T,1,1,1,1,0,makeCampipe)
 
 local hsfninp = R.input(R.Handshake(ITYPE))
-local hsfnout = R.apply("O1",campipe,hsfninp)
+
+local hsfnout = hsfninp
+
+if string.find(arg[0],"ov7660") then
+  -- for the camera board setup, expect 2 cameras
+  hsfnout = R.apply("idx",RM.makeHandshake(RM.map(C.index(types.array2d(types.uint(8),2),0),4)), hsfnout)
+end
+
+local hsfnout = R.apply("O1",campipe,hsfnout)
 local hsfnout = R.apply("incrate", RM.liftHandshake(RM.changeRate(rgbType,1,T,2)), hsfnout )
-local hsfn = RM.lambda("hsfnfin",hsfninp,hsfnout)
+local hsfn = RM.lambda("hsfn",hsfninp,hsfnout)
 
 harness.axi( outputFilename, hsfn, inputFilename, nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)
