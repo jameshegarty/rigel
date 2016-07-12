@@ -60,6 +60,14 @@ void init_camera(volatile Conf* conf, int camid) {
 }
 
 int main(int argc, char *argv[]) {
+
+    if(argc!=2){
+        printf("Format: processimage seconds\n");
+        exit(1);
+    }
+
+    int time = atoi(argv[1]);
+
     unsigned gpio_addr = 0x70000000;
     uint32_t frame_size = 640*480;
     
@@ -146,7 +154,7 @@ int main(int argc, char *argv[]) {
     printf("START STREAM\n");
     fflush(stdout);
     write_mmio(conf, MMIO_CMD, CMD_START,1);
-    int time = 40;
+
     for (int i=time; i>0;i--) {
         if(i%20==2) {
             printf("HOLD STILL!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
