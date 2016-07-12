@@ -27,7 +27,7 @@ void check_cameras(volatile Conf* conf) {
 
 
 }
-void init_camera(volatile Conf* conf, int camid) {
+void init_camera(volatile Conf* conf, int camid, int gain) {
     write_cam_reg(conf, camid, CAM_DELAY); // delay
     write_cam_reg(conf, camid, CAM_RESET); // Reset
     write_cam_reg(conf, camid, CAM_DELAY); // delay
@@ -36,7 +36,7 @@ void init_camera(volatile Conf* conf, int camid) {
     write_cam_safe(conf, camid, 0x0E80);
     write_cam_safe(conf, camid, 0x138F);
     write_cam_safe(conf, camid, 0x1300);
-    write_cam_safe(conf, camid, 0x00A0);// Gain
+    write_cam_safe(conf, camid, 0x0000+gain);// Gain (addr 00)
     write_cam_safe(conf, camid, 0x01C0); // White Balance
     write_cam_safe(conf, camid, 0x02C0); // White Balance
     write_cam_safe(conf, camid, 0x0718); // Auto Exposure
@@ -61,12 +61,19 @@ void init_camera(volatile Conf* conf, int camid) {
 
 int main(int argc, char *argv[]) {
 
-    if(argc!=2){
-        printf("Format: processimage seconds\n");
+    if(argc!=3){
+        printf("Format: processimage seconds gain\n");
+        printf("gain:0-127\n");
         exit(1);
     }
 
     int time = atoi(argv[1]);
+    int gain = atoi(argv[2]);
+
+    if(gain < 0 || gain >127){
+      printf("gain:0-127\n");
+      exit(1);
+    }
 
     unsigned gpio_addr = 0x70000000;
     uint32_t frame_size = 640*480;
@@ -130,8 +137,8 @@ int main(int argc, char *argv[]) {
     volatile Conf * conf = (Conf*) gpioptr;
 
     // writes camera registers
-    init_camera(conf,0);
-    init_camera(conf,1);
+    init_camera(conf,0,gain);
+    init_camera(conf,1,gain);
     //check_cameras(conf);
     printf("Camera programmed!s\n");
     write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,1);
