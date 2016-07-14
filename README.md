@@ -65,6 +65,7 @@ Our makefile supports the following options:
 * **make clean:** delete all built files from `examples/out/`
 
 A verbose debug mode can be activated by setting the environment variable `v`, i.e.:
+
     v=1 make terra
 
 Camera Test Rig
