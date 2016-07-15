@@ -358,6 +358,13 @@ end
 -- f should return a handshake function
 -- timingFifo: include a fifo to improve timing. true by default
 function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
+  err( type(W)=="number", "W should be number")
+  err( type(H)=="number", "H should be number")
+  err( type(T)=="number", "T should be number")
+  err( type(L)=="number", "L should be number")
+  err( type(Right)=="number", "Right should be number")
+  err( type(B)=="number", "B should be number")
+  err( type(Top)=="number", "Top should be number")
   print("padcrop","W",W,"H",H,"T",T,"L",L,"R",Right,"B",B,"Top",Top)
   assert(X==nil)
   assert(timingFifo==nil or type(timingFifo)=="boolean")
@@ -771,7 +778,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
-  return modules.lambda( "cropHelperSeq_W"..W.."_H"..H.."_L"..L.."_R"..R, inp, out )
+  return modules.lambda( "cropHelperSeq_"..(tostring(A):gsub('%W','_')).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top, inp, out )
                                  end)
 
 
@@ -912,5 +919,35 @@ function C.index( inputType, idx, idy, X )
   return C.slice( inputType, idx, idx, idy, idy, true )
 end
 
+
+function C.gaussian(W,sigma)
+  local center = W/2
+  local tab = {}
+  local sum = 0
+  for y=0,W-1 do
+    for x=0,W-1 do
+      local a = 1/(sigma*math.sqrt(2*math.pi))
+      local dist = math.sqrt(math.pow(x-center,2)+math.pow(y-center,2))
+      local v = a*math.exp(-(dist*dist)/(2*sigma*sigma))
+      sum = sum + v
+      print(x,y,v)
+      table.insert(tab,v)
+    end
+  end
+
+  print("sum",sum)
+  local newsum = 0
+  for i=1,#tab do 
+    tab[i] = math.floor((tab[i]*64/sum)+0.4)
+    newsum = newsum + tab[i]
+  end
+
+  print("newsum",newsum)
+  tab[4*W+4] = tab[4*W+4] + (64-newsum)
+
+  for i=1,#tab do print(tab[i]) end
+
+  return tab
+end
 
 return C

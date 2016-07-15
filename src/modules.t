@@ -45,7 +45,7 @@ end
 -- *this should really be in examplescommon.t
 -- f(g())
 function modules.compose(name,f,g)
-  assert(type(name)=="string")
+  err(type(name)=="string", "first argument to compose must be name of function")
   assert(darkroom.isFunction(f))
   assert(darkroom.isFunction(g))
   local inp = rigel.input( g.inputType, g.sdfInput )
