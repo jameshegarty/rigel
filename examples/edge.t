@@ -18,7 +18,7 @@ ITYPE = types.array2d( types.uint(8), T )
 
 --------------
 -- blur kernel
-TConvWidth = 9
+TConvWidth = 3
 local gauss = C.gaussian(TConvWidth,3)
 local convolvefn = C.convolveConstant( types.uint(8), TConvWidth, TConvWidth, gauss, 6 )
 --------------
@@ -30,7 +30,7 @@ dx = dx:abs()
 local dy = inp:index(1,2):lift(0):toSigned()-inp:index(1,0):lift(0):toSigned()
 dy = dy:abs()
 local mag = (dx+dy):truncate(8):lower()
-local edge = mag:toDarkroom("edge")
+local edge = mag:toDarkroom("edgefn")
 --------------
 -- nms
 local ty = types.uint(8)
@@ -64,8 +64,8 @@ thfn = RM.makeHandshake(RM.map(thfn,T))
 
 --------------
 
-
-local blurfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,4,4,4,4,0,convolvefn,false)
+local BW = (TConvWidth-1)/2
+local blurfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,BW,BW,BW,BW,0,convolvefn,false)
 local edgefn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,edge,false)
 local nmsfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,nms,false)
 

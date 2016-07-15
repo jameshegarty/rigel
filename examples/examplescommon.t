@@ -921,7 +921,7 @@ end
 
 
 function C.gaussian(W,sigma)
-  local center = W/2
+  local center = math.floor(W/2)
   local tab = {}
   local sum = 0
   for y=0,W-1 do
@@ -943,7 +943,7 @@ function C.gaussian(W,sigma)
   end
 
   print("newsum",newsum)
-  tab[4*W+4] = tab[4*W+4] + (64-newsum)
+  tab[center*W+center] = tab[center*W+center] + (64-newsum)
 
   for i=1,#tab do print(tab[i]) end
 
