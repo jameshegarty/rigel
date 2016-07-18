@@ -12,9 +12,10 @@ local f = require "fixed"
 
 W = 640
 H = 480
-T = 8
+T = 2
 
-ITYPE = types.array2d( types.uint(8), T )
+ITYPE = types.array2d( types.uint(8), 8 )
+OTYPE = types.array2d( types.array2d(types.uint(8),4), 2 )
 
 --------------
 -- blur kernel
@@ -56,9 +57,21 @@ local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,terra(a:&uint8[9],out:&ui
 --------------
 local THRESH = 10
 local inp = S.parameter("inp",types.uint(8))
-local thout = S.select(S.gt(inp,S.constant(THRESH,types.uint(8))), S.constant(255,types.uint(8)), S.constant(0,types.uint(8)) )
-local thfn = RM.lift("thfn", ty,ty,10,terra(a:&uint8,out:&uint8)
-                      if @a > THRESH then @out=255 else @out = 0 end
+local c_one = S.constant({255,255,255,0},types.array2d(types.uint(8),4))
+local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
+local thout = S.select(S.gt(inp,S.constant(THRESH,types.uint(8))), c_one, c_zero )
+local thfn = RM.lift("thfn", ty,types.array2d(types.uint(8),4),10,terra(a:&uint8,out:&uint8[4])
+                      if @a > THRESH then 
+                        (@out)[0]=255 
+                        (@out)[1]=255 
+                        (@out)[2]=255 
+                        (@out)[3]=0
+                      else 
+                        (@out)[0] = 0 
+                        (@out)[1] = 0 
+                        (@out)[2] = 0 
+                        (@out)[3] = 0 
+                      end
                                     end, inp, thout)
 thfn = RM.makeHandshake(RM.map(thfn,T))
 
@@ -69,8 +82,9 @@ local blurfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,BW,BW,BW,BW,0,convol
 local edgefn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,edge,false)
 local nmsfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,nms,false)
 
-local inp = R.input(R.Handshake(types.array2d(types.uint(8),T)))
+local inp = R.input(R.Handshake(ITYPE))
 local out = inp
+local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,2)), out )
 local out = R.apply("bf",blurfn,out)
 --local out = R.apply("ds",C.downsampleSeq(types.uint(8),W,H,T,2,2),out)
 local out = R.apply("ef",edgefn,out)
@@ -83,4 +97,4 @@ local hsfn = RM.lambda("hsfn",inp,out)
 
 --hsfn = RM.makeHandshake(fn)
 
-harness.axi( "edge", hsfn, "ov7660_1chan.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness.axi( "edge", hsfn, "ov7660_1chan.raw", nil, nil, ITYPE, 8,W,H, OTYPE,2,W,H)
