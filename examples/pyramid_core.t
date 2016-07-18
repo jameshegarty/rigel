@@ -24,38 +24,8 @@ function P.FIFO(fifos,statements,A,inp,size, name,W,H,T)
   return inp
 end
 
-function P.gaussian(W,sigma)
-  local center = W/2
-  local tab = {}
-  local sum = 0
-  for y=0,W-1 do
-    for x=0,W-1 do
-      local a = 1/(sigma*math.sqrt(2*math.pi))
-      local dist = math.sqrt(math.pow(x-center,2)+math.pow(y-center,2))
-      local v = a*math.exp(-(dist*dist)/(2*sigma*sigma))
-      sum = sum + v
-      print(x,y,v)
-      table.insert(tab,v)
-    end
-  end
-
-  print("sum",sum)
-  local newsum = 0
-  for i=1,#tab do 
-    tab[i] = math.floor((tab[i]*64/sum)+0.4)
-    newsum = newsum + tab[i]
-  end
-
-  print("newsum",newsum)
-  tab[4*W+4] = tab[4*W+4] + (64-newsum)
-
-  for i=1,#tab do print(tab[i]) end
-
-  return tab
-end
-
 local TConvWidth = 8
-P.G = P.gaussian(TConvWidth,3)
+P.G = C.gaussian(TConvWidth,3)
 local convolvefn = C.convolveConstant( types.uint(8), TConvWidth, TConvWidth, P.G, 6 )
 
 function P.pyramidIter(i,doDownsample,internalT,W,H,ConvWidth)
