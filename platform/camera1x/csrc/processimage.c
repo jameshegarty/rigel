@@ -38,11 +38,12 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
     unsigned int addr;
     unsigned int value;
     
-    sprintf(helpStr,"%s%s",helpStr,"Entering Interactive mode!\nCommands:\n");
+    sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg read: r <camid> <addr>\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg write: w <camid> <addr> <value>\n");
     sprintf(helpStr,"%s%s",helpStr,"\tSave buffers: s\n");
     sprintf(helpStr,"%s%s",helpStr,"\tDebug: d\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tHelp: h\n");
     sprintf(helpStr,"%s%s",helpStr,"\tStop cmd: <Anything else>\n");
     printf("%s",helpStr);
     fflush(stdout);
@@ -86,7 +87,7 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
 
 void init_camera(volatile Conf* conf, int camid) {
     write_cam_reg(conf, camid, CAM_DELAY); // delay
-    printf("CAM1\n"); fflush(stdout);
+    printf("Initializing CAM%d\n",camid); fflush(stdout);
     write_cam_reg(conf, camid, CAM_RESET); // Reset
     write_cam_reg(conf, camid, CAM_DELAY); // delay
     write_cam_safe(conf, camid, 0x1205);
