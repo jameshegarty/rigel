@@ -39,14 +39,12 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
     unsigned int value;
     
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tCam reg read: r <camid> <addr>\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tCam reg write: w <camid> <addr> <value>\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tSave buffers: s\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tDebug: d\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tHelp: h\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tStop cmd: <Anything else>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tr <camid> <addr>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tw <camid> <addr> <value>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tSnapshot:\t\ts\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tHelp:\t\t\th\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tStop cmd:\t\t<Anything else>\n");
     printf("%s",helpStr);
-    fflush(stdout);
     while(1) {
         printf(">"); fflush(stdout);
         if(fgets(str,11,stdin)!=NULL) {
