@@ -41,9 +41,9 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tr <camid> <addr>\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tw <camid> <addr> <value>\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tSnapshot:\t\ts\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tHelp:\t\t\th\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tStop cmd:\t\t<Anything else>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tSnapshot:\ts\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tHelp:\t\th\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tStop cmd:\t<Anything else>\n");
     printf("%s",helpStr);
     while(1) {
         printf(">"); fflush(stdout);
