@@ -55,7 +55,8 @@ local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,terra(a:&uint8[9],out:&ui
                                     end, inp, nmsout)
 
 --------------
-local THRESH = 10
+--local THRESH = 10
+local THRESH = 7
 local inp = S.parameter("inp",types.uint(8))
 local c_one = S.constant({255,255,255,0},types.array2d(types.uint(8),4))
 local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
