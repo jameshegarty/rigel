@@ -221,7 +221,7 @@ int main(int argc, char *argv[]) {
     if(time==0) {
         commandIF(conf,tribuf0_ptr,tribuf1_ptr,tribuf2_ptr);
     }
-    write_mmio(conf, MMIO_CMD, CMD_STOP,1);
+    write_mmio(conf, MMIO_CMD, CMD_STOP,0);
     printf("STOPPING STREAM\n");
     fflush(stdout);
     sleep(1);
