@@ -86,7 +86,6 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
 
 void init_camera(volatile Conf* conf, int camid) {
     write_cam_reg(conf, camid, CAM_DELAY); // delay
-    printf("\nInitializing CAM%d\n",camid); fflush(stdout);
     write_cam_reg(conf, camid, CAM_RESET); // Reset
     write_cam_reg(conf, camid, CAM_DELAY); // delay
     write_cam_safe(conf, camid, 0x1205);
@@ -179,10 +178,13 @@ int main(int argc, char *argv[]) {
     volatile Conf * conf = (Conf*) gpioptr;
 
     // writes camera registers
+    printf("\n\n");
+    printf("Initializing CAM0\n"); fflush(stdout);
     init_camera(conf,0);
-    printf("Camera 0 programmed!s\n");
+    printf("Camera 0 programmed!s\n\n");
+    printf("Initializing CAM1\n"); fflush(stdout);
     init_camera(conf,1);
-    printf("Camera 1 programmed!s\n");
+    printf("Camera 1 programmed!s\n\n");
     write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,0);
     write_mmio(conf, MMIO_FRAME_BYTES(0), frame_size,0);
     write_mmio(conf, MMIO_TRIBUF_ADDR(1), tribuf1_addr,0);
@@ -192,7 +194,7 @@ int main(int argc, char *argv[]) {
     // Start stream
     printf("STARTING STREAM\n");
     fflush(stdout);
-    write_mmio(conf, MMIO_CMD, CMD_START,1);
+    write_mmio(conf, MMIO_CMD, CMD_START,0);
     for (int i=time; i>0;i--) {
         if(i%20==2) {
             printf("HOLD STILL!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
