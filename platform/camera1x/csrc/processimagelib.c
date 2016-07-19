@@ -86,7 +86,7 @@ void write_cam_reg(volatile Conf* conf, int camid, uint32_t cam_data) {
         exit(1);
     }
     cam_data |= 0x10000; //bit 16 is the write cmd
-    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),1);
+    uint32_t cam_resp_cnt = read_mmio(conf, MMIO_CAM_RESP_CNT(camid),0);
     write_mmio(conf,MMIO_CAM_CMD(camid), cam_data,0);
     // Wait for response (CAM_RESP_CNT will increment
     uint32_t cnt = 0;

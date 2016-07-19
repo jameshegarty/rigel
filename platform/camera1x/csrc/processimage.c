@@ -188,12 +188,12 @@ int main(int argc, char *argv[]) {
     printf("Camera 0 programmed!s\n");
     init_camera(conf,1);
     printf("Camera 1 programmed!s\n");
-    write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,1);
-    write_mmio(conf, MMIO_FRAME_BYTES(0), frame_size,1);
-    write_mmio(conf, MMIO_TRIBUF_ADDR(1), tribuf1_addr,1);
-    write_mmio(conf, MMIO_FRAME_BYTES(1), frame_size,1);
-    write_mmio(conf, MMIO_TRIBUF_ADDR(2), tribuf2_addr,1);
-    write_mmio(conf, MMIO_FRAME_BYTES(2), frame_size*4,1);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(0), tribuf0_addr,0);
+    write_mmio(conf, MMIO_FRAME_BYTES(0), frame_size,0);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(1), tribuf1_addr,0);
+    write_mmio(conf, MMIO_FRAME_BYTES(1), frame_size,0);
+    write_mmio(conf, MMIO_TRIBUF_ADDR(2), tribuf2_addr,0);
+    write_mmio(conf, MMIO_FRAME_BYTES(2), frame_size*4,0);
     // Start stream
     printf("STARTING STREAM\n");
     fflush(stdout);
