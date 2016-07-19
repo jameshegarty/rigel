@@ -1801,7 +1801,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   A:checkLuaValue(Value)
   err(T>=1, "padSeq, T<1")
 
-  err( W%T==0, "padSeq, W%T~=0")
+  err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
   err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
   err( R==0 or (R>=T and R%T==0), "padSeq, R<T or R%T~=0")
   err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
@@ -2010,7 +2010,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   assert(X==nil)
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
-  err( w%T==0, "Linebuffer error, W%T~=0")
+  err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(W).." T="..tostring(T))
 
   local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
   rigel.expectBasic(A)

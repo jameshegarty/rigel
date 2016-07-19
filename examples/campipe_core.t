@@ -22,7 +22,11 @@ function CC.blackLevel( pedestal )
   return out:truncate(8):lower():toDarkroom("blackLevel")
 end
 
-function CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B)
+function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B)
+  assert(type(internalW)=="number")
+  assert(type(internalH)=="number")
+  assert(type(internalT)=="number")
+
   assert(type(DEMOSAIC_W)=="number")
   assert(type(DEMOSAIC_H)=="number")
   assert(type(DEMOSAIC_R)=="table")
@@ -84,12 +88,12 @@ function CC.demosaic(internalW,internalH,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSA
   end
 
   local dem = RM.lambda("dem", deminp, R.array2d("ot",out,3))
-  dem = RM.liftXYSeqPointwise(dem,internalW,internalH,T)
+  dem = RM.liftXYSeqPointwise(dem,internalW,internalH,internalT)
 
   ---------------
-  local demtop = R.input(types.array2d(types.uint(8),T))
-  local st = R.apply( "st", C.stencilLinebuffer(types.uint(8),internalW,internalH,T,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
-  local st = R.apply( "convstencils", C.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, T ) , st )
+  local demtop = R.input(types.array2d(types.uint(8),internalT))
+  local st = R.apply( "st", C.stencilLinebuffer(types.uint(8),internalW,internalH,internalT,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
+  local st = R.apply( "convstencils", C.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, internalT ) , st )
   local demtopout = R.apply("dem",dem,st)
 
   return RM.lambda("demtop",demtop,demtopout)
