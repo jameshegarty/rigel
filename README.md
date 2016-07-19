@@ -5,6 +5,8 @@ _James Hegarty <jhegarty@stanford.edu>_
 
 Rigel is a language for describing image processing hardware embedded in Lua. Rigel can compile to Verilog hardware designs for Xilinx FPGAs, and also can compile to fast x86 test code using Terra.
 
+[See our SIGGRAPH 2016 Paper on the design of Rigel](http://graphics.stanford.edu/papers/rigel/)
+
 Install & Run
 -------------
 
