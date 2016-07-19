@@ -48,6 +48,7 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
     printf("%s",helpStr);
     fflush(stdout);
     while(1) {
+        printf(">"); fflush(stdout);
         if(fgets(str,11,stdin)!=NULL) {
             if(sscanf(str,"%c",&cmd) && cmd=='h') {
                 printf("%s",helpStr);
