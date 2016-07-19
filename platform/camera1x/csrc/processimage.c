@@ -70,13 +70,14 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
                 print_debug_regs(conf);
             }
             else {
-                printf("Bad CMD, stopping...\n");
+                printf("Exiting Interactive Mode!\n");
                 fflush(stdout);
                 break;
             }
             fflush(stdout);
         }
         else {
+            printf("Exiting Interactive Mode!\n");
             break;
         }
     }

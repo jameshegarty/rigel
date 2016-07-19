@@ -3,7 +3,7 @@ CFLAGS = -std=c99
 DEPS = processimagelib.h
 OBJ = processimage.o processimagelib.o
 
-all: processimage
+all: processimage clean
 
 %.o: %.c $(DEPS)
 	$(CC) $(CFLAGS) -c -o $@ $<
