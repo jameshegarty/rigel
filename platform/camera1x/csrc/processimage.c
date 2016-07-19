@@ -86,7 +86,7 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
 
 void init_camera(volatile Conf* conf, int camid) {
     write_cam_reg(conf, camid, CAM_DELAY); // delay
-    printf("Initializing CAM%d\n",camid); fflush(stdout);
+    printf("\nInitializing CAM%d\n",camid); fflush(stdout);
     write_cam_reg(conf, camid, CAM_RESET); // Reset
     write_cam_reg(conf, camid, CAM_DELAY); // delay
     write_cam_safe(conf, camid, 0x1205);
@@ -138,16 +138,12 @@ int main(int argc, char *argv[]) {
     
     unsigned page_size = sysconf(_SC_PAGESIZE);
     
-    
-    printf("GPIO access through /dev/mem. %d\n", page_size);
-
     int fd = open ("/dev/mem", O_RDWR);
     if (fd < 1) {
         perror(argv[0]);
         return -1;
     }
 
-    printf("mapping %08x\n",tribuf0_addr);
     void * tribuf0_ptr = mmap(NULL, tribuf0_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, tribuf0_addr);
     if (tribuf0_ptr == MAP_FAILED) {
         printf("FAILED mmap for tribuf0 %x\n",tribuf0_addr);
@@ -168,7 +164,6 @@ int main(int argc, char *argv[]) {
     //unsigned lenInRaw;
     //FILE* imfile = openImage("/tmp/frame_128.raw", &lenInRaw);
     //printf("file LEN %d\n",lenInRaw);
-    printf("framesize %d\n",frame_size);
     for(uint32_t i=0;i<frame_size*4*3; i++ ) {
         *(unsigned char*)(tribuf2_ptr+i)= i%256; 
     }
