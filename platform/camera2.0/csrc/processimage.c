@@ -206,6 +206,7 @@ int main(int argc, char *argv[]) {
     write_mmio(conf, MMIO_TRIBUF_ADDR(2), tribuf2_addr,0);
     write_mmio(conf, MMIO_FRAME_BYTES(2), frame_size*4,0);
     // Start stream
+    write_pipe_reg(conf,MMIO_PIPE(0),10);
     printf("STARTING STREAM\n");
     fflush(stdout);
     write_mmio(conf, MMIO_CMD, CMD_START,0);
