@@ -10,7 +10,7 @@ Rigel is a language for describing image processing hardware embedded in Lua. Ri
 Install & Run
 -------------
 
-Installing Rigel is not required. However your system needs to have Terra installed, and paths set correctly so that Terra can find all the Rigel sources. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-03-25) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly.
+Installing Rigel is not required. However your system needs to have Terra installed, and paths set correctly so that Terra can find all the Rigel sources. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-02-26) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly.
 
 Next, add the Rigel language definition to your lua path environment variable, and the Terra binary location to your PATH. This can be accomplished by adding the following to .profile or .bashrc:
 
