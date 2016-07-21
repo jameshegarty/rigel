@@ -27,17 +27,18 @@ void check_cameras(volatile Conf* conf) {
     }
 }
 
-void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tribuf2_ptr) {
-    char* raw_name0= "/tmp/cam0.raw";
-    char* raw_name1= "/tmp/cam1.raw";
-    char* pipe_name= "/tmp/pipe.raw";
-    char str[11];
+void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
+    char pipe_name[50];
+    char str[50];
     char helpStr[300];
+    char addrStr[10];
     char cmd;
-    unsigned int camid;
-    unsigned int addr;
-    unsigned int value;
-    
+    uint32_t camid;
+    uint32_t addr;
+    uint32_t value;
+    uint32_t snap_cnt = 0;
+
+
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tr <camid> <addr>\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tw <camid> <addr> <value>\n");
@@ -51,6 +52,12 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
             if(sscanf(str,"%c",&cmd) && cmd=='h') {
                 printf("%s",helpStr);
             }
+//            else if(sscanf(str,"%c %d %s %x",&cmd,&camid,&addrStr,&value)
+//                && cmd=='w' && (camid==0||camid==1) && (strcmp(addrStr,"BLUE_GAIN")==0)) {
+//                printf("HERE:%c %d %s %x\n",cmd,camid,addrStr,value);
+//                write_cam_safe(conf, camid, ((0x2<<8) | value));
+//                printf("WROTE 0x%.2x to addr 0x%.2x on CAM%d\n",value,addr,camid);
+//            }
             else if(sscanf(str,"%c %d %x %x",&cmd,&camid,&addr,&value)
                 && cmd=='w' && (camid==0||camid==1)) {
                 write_cam_safe(conf, camid, ((addr<<8) | value));
@@ -62,9 +69,10 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
                 printf("READ 0x%.2x from addr 0x%.2x on CAM%d\n",value,addr,camid);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='s') {
-                saveImage(raw_name0,tribuf0_ptr,frame_size);
-                saveImage(raw_name1,tribuf1_ptr,frame_size);
-                saveImage(pipe_name,tribuf2_ptr,frame_size*4);
+                //saveImage(raw_name0,tribuf0_ptr,frame_size);
+                //saveImage(raw_name1,tribuf1_ptr,frame_size);
+                sprintf(pipe_name,"/tmp/snapshot%d.raw",snap_cnt++);
+                saveImage(pipe_name,pipebuf_ptr,frame_size*4);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='d') {
                 print_debug_regs(conf);
@@ -215,7 +223,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
     if(time==0) {
-        commandIF(conf,tribuf0_ptr,tribuf1_ptr,tribuf2_ptr);
+        commandIF(conf,tribuf2_ptr);
     }
     write_mmio(conf, MMIO_CMD, CMD_STOP,0);
     printf("STOPPING STREAM\n");
