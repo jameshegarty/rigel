@@ -126,15 +126,14 @@ void init_camera(volatile Conf* conf, int camid) {
 
 int main(int argc, char *argv[]) {
 
-    if(argc!=1 && argc!=2){
-        printf("Format: processimage <seconds>\n");
+    if(argc!=4){
+        printf("Format: processimage <seconds> <gain> <thresh>\n");
         exit(1);
     }
 
-    int time = 0;
-    if(argc==2) {
-        time = atoi(argv[1]);
-    }
+    uint32_t time = atoi(argv[1]);
+    uint32_t gain = atoi(argv[2]);
+    uint32_t thresh = atoi(argv[3]);
 
     unsigned gpio_addr = MMIO_STARTADDR;
     
@@ -204,7 +203,8 @@ int main(int argc, char *argv[]) {
     write_mmio(conf, MMIO_TRIBUF_ADDR(2), tribuf2_addr,0);
     write_mmio(conf, MMIO_FRAME_BYTES(2), frame_size*4,0);
     // Start stream
-    write_pipe_reg(conf,0,10);
+    write_pipe_reg(conf,0,thresh);
+    write_cam_safe(conf,0,gain&0xFF);
     printf("STARTING STREAM\n");
     fflush(stdout);
     write_mmio(conf, MMIO_CMD, CMD_START,0);
