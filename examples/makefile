@@ -244,12 +244,6 @@ CAMERA_PASS=1234
 	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
 	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
 
-%.open: %.raw
-	terra ../misc/raw2bmp.t $*.raw $*.bmp out/campipe_ov7660.metadata.lua 0
-	open $*.bmp
-
-
-
 out/%.axi100.bit: out/%.axi.v
 	mkdir -p out/build100_$*
 	# run xst, then 'help -arch zynq -command run' to get list of options
@@ -365,7 +359,6 @@ out/%.bmp: out/%.raw
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.bmp out/build_$*
-	open out/$*.bmp
 
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
