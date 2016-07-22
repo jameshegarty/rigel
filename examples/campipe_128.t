@@ -1,11 +1,23 @@
 local R = require "rigel"
 local RM = require "modules"
+local CC = require "campipe_core"
+
+function makeCampipeTop()
+  -- inp -> |blacklevel| -> |Demosaic| -> |CCM| -> |Gamma| -> out
+  local input = rigelInput(grayscale_uint8)
+  local bl_out = connect{input=input, tomodule=BlackLevel}
+  local dem_out = connect{input=bl_out, tomodule=Demosaic}
+  local ccm_out = connect{input=dem_out, tomodule=CCM}
+  local gamma_out = connect{input=ccm_out, tomodule=Gamma}
+  return rigelPipeline{input=input, output=gamma_out}
+end
+
+
 local types = require("types")
 local harness = require "harness"
 local f = require "fixed"
 local modules = require "fpgamodules"
 local C = require "examplescommon"
-local CC = require "campipe_core"
 
 W = 512
 H = 512
@@ -129,21 +141,33 @@ end
 local rgbType = types.array2d(types.uint(8),4)
 local OTYPE = types.array2d(rgbType,2)
 
+BlackLevel={}
+Demosaic={}
+CCM={}
+Gamma={}
+
 function makeCampipe(internalW,internalH)
   print("makeCampipe",internalW,internalH)
   assert(type(internalH)=="number")
   local internalT = 2
 
-  local inp = R.input(types.array2d(types.uint(8),internalT))
-  local bl = R.apply("bl",RM.map(CC.blackLevel(pedestal),internalT),inp)
-  local dem = R.apply("dem",CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B),bl)
-  local ccm = R.apply("ccm",RM.map(CC.makeCCM(ccmtab),internalT),dem)
-  local gam = R.apply("gam",RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),internalT),ccm)
-  local out = R.apply("addchan",RM.map(CC.addchan(),internalT),gam)
+--  local inp = R.input(types.array2d(types.uint(8),internalT))
+--  local bl = R.apply("bl",RM.map(CC.blackLevel(pedestal),internalT),inp)
+  BlackLevel = RM.map(CC.blackLevel(pedestal),internalT)
+--  local dem = R.apply("dem",CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B),bl)
+  Demosaic = CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B)
+--  local ccm = R.apply("ccm",RM.map(CC.makeCCM(ccmtab),internalT),dem)
+  CCM = RM.map(CC.makeCCM(ccmtab),internalT)
+--  local gam = R.apply("gam",RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),internalT),ccm)
+  Gamma = RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),internalT)
+  --local out = R.apply("addchan",RM.map(CC.addchan(),internalT),gam)
 
-  local campipe = RM.lambda("campipe",inp,out)
+  --local campipe = RM.lambda("campipe",inp,out)
 
-  return RM.makeHandshake(campipe)
+  --return RM.makeHandshake(campipe)
+  local cp = makeCampipeTop()
+  return RM.makeHandshake(C.compose("ccomp",RM.map(CC.addchan(),internalT),cp))
+--  return RM.makeHandshake(cp)
 end
 
 local STR_W = (DEMOSAIC_W-1)/2

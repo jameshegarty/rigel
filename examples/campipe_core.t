@@ -165,4 +165,22 @@ function CC.shiftKernel(t,W,H,xs,ys)
   return out
 end
 
+local R = require "rigel"
+local RM = require "modules"
+
+rigelInput = R.input
+
+rigelPipeline = function(tab)
+  return RM.lambda("campipe", tab.input, tab.output)
+end
+
+local conc = 1
+function connect(tab)
+  conc = conc+1
+  return R.apply("autoconnect"..tostring(conc), tab.tomodule, tab.input)
+end
+
+local types=require("types")
+grayscale_uint8 = types.array2d(types.uint(8),2)
+
 return CC
