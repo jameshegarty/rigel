@@ -28,8 +28,8 @@ void check_cameras(volatile Conf* conf) {
 }
 
 void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
-    char* pipe_name= "/tmp/pipe.raw";
-    char str[11];
+    char pipe_name[50];
+    char str[50];
     char helpStr[300];
     char cmd;
     char cmd2;
@@ -39,11 +39,11 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
     
     // TODO fix pipe read/pipe write
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tr <camid> <addr>\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tw <camid> <addr> <value>\n");
-    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg read:\tpr <regNum> \n");
-    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg write:\tpw <regNum> <value> \n");
-    sprintf(helpStr,"%s%s",helpStr,"\tSnapshot:\ts\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg read:\tr <regNum> \n");
+    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg write:\tw <regNum> <value> \n");
+    sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tcr <camid> <addr>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tcw <camid> <addr> <value>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tSave to disk:\ts\n");
     sprintf(helpStr,"%s%s",helpStr,"\tHelp:\t\th\n");
     sprintf(helpStr,"%s%s",helpStr,"\tStop cmd:\t<Anything else>\n");
     printf("%s",helpStr);
@@ -53,23 +53,23 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
             if(sscanf(str,"%c",&cmd) && cmd=='h') {
                 printf("%s",helpStr);
             }
-            else if(sscanf(str,"%c %d %x %x",&cmd,&camid,&addr,&value)
-                && cmd=='w' && (camid==0||camid==1)) {
+            else if(sscanf(str,"%c%c %d %x %x",&cmd,&cmd2,&camid,&addr,&value)
+                && cmd=='c' && cmd2=='w' && (camid==0||camid==1)) {
                 write_cam_safe(conf, camid, ((addr<<8) | value));
                 printf("WROTE 0x%.2x to addr 0x%.2x on CAM%d\n",value,addr,camid);
             }
-            else if(sscanf(str,"%c %d %x",&cmd,&camid,&addr)
-                    && cmd=='r' && (camid<MMIO_CAM_NUM)) {
+            else if(sscanf(str,"%c%c %d %x",&cmd,&cmd2,&camid,&addr)
+                    && cmd=='c' && cmd2=='r' && (camid<MMIO_CAM_NUM)) {
                 value = read_cam_reg(conf,camid,addr);
                 printf("READ 0x%.2x from addr 0x%.2x on CAM%d\n",value,addr,camid);
             }
-            else if(sscanf(str,"%c%c %d %x",&cmd,&cmd2,&addr,&value)
-                && cmd=='p' && cmd2=='w' && (addr<MMIO_PIPE_SIZE)) {
+            else if(sscanf(str,"%c %d %x",&cmd,&addr,&value)
+                && cmd=='w' && (addr<MMIO_PIPE_SIZE)) {
                 write_pipe_reg(conf, addr, value);
                 printf("WROTE 0x%.2x to pipe reg 0x%.2x\n",value,addr);
             }
-            else if(sscanf(str,"%c%c %d",&cmd,&cmd2,&addr)
-                && cmd=='p' && cmd2=='r' && (addr<MMIO_PIPE_SIZE)) {
+            else if(sscanf(str,"%c %d",&cmd,&addr)
+                && cmd=='r' && (addr<MMIO_PIPE_SIZE)) {
                 value = read_pipe_reg(conf, addr);
                 printf("READ 0x%.2x from pipe reg 0x%.2x\n",value,addr);
             }
