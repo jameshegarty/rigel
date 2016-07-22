@@ -42,6 +42,8 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg read:\tr <camid> <addr>\n");
     sprintf(helpStr,"%s%s",helpStr,"\tCam reg write:\tw <camid> <addr> <value>\n");
+    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg read:\tpr <regNum> \n");
+    sprintf(helpStr,"%s%s",helpStr,"\tPipe reg write:\tpw <regNum> <value> \n");
     sprintf(helpStr,"%s%s",helpStr,"\tSnapshot:\ts\n");
     sprintf(helpStr,"%s%s",helpStr,"\tHelp:\t\th\n");
     sprintf(helpStr,"%s%s",helpStr,"\tStop cmd:\t<Anything else>\n");
@@ -52,12 +54,6 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
             if(sscanf(str,"%c",&cmd) && cmd=='h') {
                 printf("%s",helpStr);
             }
-//            else if(sscanf(str,"%c %d %s %x",&cmd,&camid,&addrStr,&value)
-//                && cmd=='w' && (camid==0||camid==1) && (strcmp(addrStr,"BLUE_GAIN")==0)) {
-//                printf("HERE:%c %d %s %x\n",cmd,camid,addrStr,value);
-//                write_cam_safe(conf, camid, ((0x2<<8) | value));
-//                printf("WROTE 0x%.2x to addr 0x%.2x on CAM%d\n",value,addr,camid);
-//            }
             else if(sscanf(str,"%c %d %x %x",&cmd,&camid,&addr,&value)
                 && cmd=='w' && (camid==0||camid==1)) {
                 write_cam_safe(conf, camid, ((addr<<8) | value));
@@ -69,8 +65,6 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
                 printf("READ 0x%.2x from addr 0x%.2x on CAM%d\n",value,addr,camid);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='s') {
-                //saveImage(raw_name0,tribuf0_ptr,frame_size);
-                //saveImage(raw_name1,tribuf1_ptr,frame_size);
                 sprintf(pipe_name,"/tmp/snapshot%d.raw",snap_cnt++);
                 saveImage(pipe_name,pipebuf_ptr,frame_size*4);
             }

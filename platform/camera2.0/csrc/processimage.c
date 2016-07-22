@@ -27,9 +27,7 @@ void check_cameras(volatile Conf* conf) {
     }
 }
 
-void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tribuf2_ptr) {
-    char* raw_name0= "/tmp/cam0.raw";
-    char* raw_name1= "/tmp/cam1.raw";
+void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
     char* pipe_name= "/tmp/pipe.raw";
     char str[11];
     char helpStr[300];
@@ -76,9 +74,7 @@ void commandIF(volatile Conf* conf,void* tribuf0_ptr,void* tribuf1_ptr,void* tri
                 printf("READ 0x%.2x from pipe reg 0x%.2x\n",value,addr);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='s') {
-                saveImage(raw_name0,tribuf0_ptr,frame_size);
-                saveImage(raw_name1,tribuf1_ptr,frame_size);
-                saveImage(pipe_name,tribuf2_ptr,frame_size*4);
+                saveImage(pipe_name,pipebuf_ptr,frame_size*4);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='d') {
                 print_debug_regs(conf);
@@ -230,7 +226,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
     if(time==0) {
-        commandIF(conf,tribuf0_ptr,tribuf1_ptr,tribuf2_ptr);
+        commandIF(conf,tribuf2_ptr);
     }
     write_mmio(conf, MMIO_CMD, CMD_STOP,0);
     printf("STOPPING STREAM\n");
