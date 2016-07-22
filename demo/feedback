@@ -1,0 +1,11 @@
+Flashfoward: Excite people to go to the talk more
+FPGA->FPGAs
+
+explain camera pipeline
+ASCI camera pipeline at the top of rigel code
+Camera tripod
+Give explciit compile times
+Show the Rigel generating verilog.
+Say (FPGA place and route is very slow)
+Explain the Camera box a bit clearer (7020, custom board built.)
+Connected over ethernet. 

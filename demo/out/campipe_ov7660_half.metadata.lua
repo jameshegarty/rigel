@@ -1,0 +1,1 @@
+return {inputWidth=640,inputHeight=480,outputWidth=640,outputHeight=480,scaleN=1,scaleD=1,inputBytesPerPixel=2,outputBytesPerPixel=4,inputImage='ov7660.raw'}
