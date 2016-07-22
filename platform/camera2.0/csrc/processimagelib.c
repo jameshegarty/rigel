@@ -174,7 +174,7 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
     if(outlen!=numbytes){
         printf("ERROR WRITING\n");
     }
-    printf("Saving image %s, at address %p, with numbytes %d, bytes written %d\n",filename,address, numbytes,outlen);
+    printf("Saving image %s\n",filename);
     fclose(outfile);
 }
 

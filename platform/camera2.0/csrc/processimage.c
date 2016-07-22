@@ -36,7 +36,8 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
     uint32_t camid;
     uint32_t addr;
     uint32_t value;
-    
+    uint32_t snap_cnt=0;
+
     // TODO fix pipe read/pipe write
     sprintf(helpStr,"%s","Entering Interactive mode!\nCommands:\n");
     sprintf(helpStr,"%s%s",helpStr,"\tPipe reg read:\tr <regNum> \n");
@@ -74,6 +75,7 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
                 printf("READ 0x%.2x from pipe reg 0x%.2x\n",value,addr);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='s') {
+                sprintf(pipe_name,"/tmp/snapshot%d.raw",snap_cnt++);
                 saveImage(pipe_name,pipebuf_ptr,frame_size*4);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='d') {
