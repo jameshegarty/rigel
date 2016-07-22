@@ -64,7 +64,7 @@ void commandIF(volatile Conf* conf,void* pipebuf_ptr) {
                 printf("READ 0x%.2x from addr 0x%.2x on CAM%d\n",value,addr,camid);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='s') {
-                sprintf(pipe_name,"/tmp/snapshot%d.raw",snap_cnt++);
+                sprintf(pipe_name,"/tmp/snap%d.raw",snap_cnt++);
                 saveImage(pipe_name,pipebuf_ptr,frame_size*4);
             }
             else if(sscanf(str,"%c",&cmd) && cmd=='d') {
