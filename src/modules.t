@@ -2010,7 +2010,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   assert(X==nil)
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
-  err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(W).." T="..tostring(T))
+  err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(w).." T="..tostring(T))
 
   local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
   rigel.expectBasic(A)
