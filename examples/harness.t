@@ -116,8 +116,6 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
     inptaps = R.apply("inptaps", RM.makeHandshake(C.index(ITYPE,1)), inpSymb)
   end
 
-  
-
   local EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   if type(earlyOverride)=="number" then EC=earlyOverride end
   local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
@@ -210,6 +208,9 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(inputFilename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   assert(earlyOverride==nil or type(earlyOverride)=="number")
+
+  err(inputType:verilogBits()==64, "input type must be 64 bits for AXI bus, but is "..tostring(inputType:verilogBits()))
+  err(outputType:verilogBits()==64, "output type must be 64 bits for AXI bus")
 
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT

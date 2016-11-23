@@ -588,8 +588,9 @@ function darkroom.applyMethod( name, inst, fnname, input )
 end
 
 function darkroom.constant( name, value, ty )
-  assert( type(name) == "string" )
-  assert( types.isType(ty) )
+  err( type(name) == "string", "constant name must be string" )
+  err( types.isType(ty), "constant type must be rigel type" )
+  ty:checkLuaValue(value)
 
   return darkroom.newIR( {kind="constant", name=name, value=value, type=ty, inputs = {}} )
 end
