@@ -47,6 +47,10 @@ function RS.modules.reduce(t)
   return RM.reduce( t.fn, t.size[1], t.size[2] )
 end
 
+function RS.modules.reduceSeq(t)
+  return RM.reduceSeq( t.fn, t.P )
+end
+
 function RS.modules.map(t)
   local X,Y
   if type(t.size)=="table" then X,Y = t.size[1],t.size[2] end
@@ -59,6 +63,10 @@ function RS.modules.sum(t)
   return C.sum(t.inType, t.inType, t.outType)
 end
 
+function RS.modules.sumAsync(t)
+  return C.sum( t.inType, t.inType, t.outType, true )
+end
+
 function RS.modules.mult(t)
   return C.multiply(t.inType, t.inType, t.outType)
 end
@@ -67,9 +75,32 @@ function RS.modules.shiftAndCast(t)
   return C.shiftAndCast(t.inType, t.outType, t.shift)
 end
 
+function RS.modules.constSeq(t)
+  local size = t.type:arrayLength()
+  return RM.constSeq(t.value, t.type:arrayOver(), size[1], size[2], t.P )
+end
+
 function RS.connect(t)
+
+  local inp = t.input
+
+  if t.input~=nil and t.input.kind=="apply" then
+    if R.isHandshake(t.input.fn.outputType) and R.isHandshake(t.toModule.inputType) then
+      local btype = R.extractData(t.input.fn.outputType)
+      local itype = R.extractData(t.toModule.inputType)
+      
+      if btype==types.array2d(itype,1) then
+        ccnt = ccnt + 1
+        inp = R.apply( "v"..tostring(ccnt), RS.RV(C.index(btype,0)), inp )
+      elseif types.array2d(btype,1)==itype then
+        ccnt = ccnt + 1
+        inp = R.apply( "v"..tostring(ccnt), RS.RV(C.arrayop(btype,1,1)), inp )
+      end
+    end
+  end
+
   ccnt = ccnt + 1
-  return R.apply( "v"..tostring(ccnt), t.toModule, t.input )
+  return R.apply( "v"..tostring(ccnt), t.toModule, inp )
 end
 
 function RS.constant(t)

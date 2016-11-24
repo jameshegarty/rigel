@@ -2547,7 +2547,7 @@ end)
 
 
 modules.reduceSeq = memoize(function( f, T, X )
-                               err(type(T)=="number","T should be number")
+  err(type(T)=="number","T should be number")
   err(T<=1, "reduceSeq T>1")
   assert(X==nil)
 

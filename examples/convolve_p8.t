@@ -7,7 +7,7 @@ padSize = { 1920+16, 1080+3 }
 function makeConvolve()
   local convolveInput = R.input( R.array2d(R.uint8,4,4) )
 
-  local filterCoeff = R.constant{ type=R.array(R.uint8,4,4), value = 
+  local filterCoeff = R.constant{ type=R.array2d(R.uint8,4,4), value = 
     { 4, 14, 14,  4,
       14, 32, 32, 14,
       14, 32, 32, 14,
