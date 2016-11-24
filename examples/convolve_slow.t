@@ -37,12 +37,15 @@ padded = R.connect{ input=input, toModule =
 stenciled = R.connect{ input=padded, toModule =
   R.RV(R.modules.linebuffer{ type=R.uint8, P=1, size=padSize, stencil={-3,0,-3,0} }) }
 
+-- split stencil into columns
 partialStencil = R.connect{ input=stenciled, toModule=
   R.RV(R.modules.changeRate{ type=R.uint8, H=4, inputW=4, outputW=4*P}) }
 
+-- perform partial convolution
 partialConvolved = R.connect{ input = partialStencil, toModule = 
   R.RV(makePartialConvolve()) }
 
+-- sum partial convolutions to calculate full convolution
 summedPartials = R.connect{ input=partialConvolved, toModule =
   R.RV(R.modules.reduceSeq{ fn = 
     R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, P=P}) }
