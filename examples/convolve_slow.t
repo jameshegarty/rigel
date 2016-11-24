@@ -43,11 +43,11 @@ partialStencil = R.connect{ input=stenciled, toModule=
 partialConvolved = R.connect{ input = partialStencil, toModule = 
   R.RV(makePartialConvolve()) }
 
-sum = R.connect{ input=partialConvolved, toModule =
+summedPartials = R.connect{ input=partialConvolved, toModule =
   R.RV(R.modules.reduceSeq{ fn = 
     R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, P=P}) }
 
-convolved = R.connect{ input = sum, toModule = 
+convolved = R.connect{ input = summedPartials, toModule = 
   R.RV(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }
 
 output = R.connect{ input = convolved, toModule = 
