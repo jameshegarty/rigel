@@ -45,7 +45,6 @@ convolved = R.connect{ input = stenciled, toModule =
 output = R.connect{ input = convolved, toModule = 
   R.RV(R.modules.cropSeq{ type = R.uint8, P=P, size=padSize, crop={9,7,3,0} }) }
 
-
 convolveFunction = R.pipeline{ input = input, output = output }
 ----------------
 

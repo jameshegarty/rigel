@@ -5,25 +5,25 @@ inSize = { 1920, 1080 }
 padSize = { 1920+16, 1080+3 }
 
 function makePartialConvolve()
-  local convolveInput = R.input( R.array2d(R.uint8,1,4) )
+  local convolveInput = R.input( R.array2d(R.uint8,4*P,4) )
 
   local filterCoeff = R.connect{ input=nil, toModule =
-    R.modules.constSeq{ type=R.array2d(R.uint8,4,4), P=(1/4), value = 
+    R.modules.constSeq{ type=R.array2d(R.uint8,4,4), P=P, value = 
       { 4, 14, 14,  4,
         14, 32, 32, 14,
         14, 32, 32, 14,
         4, 14, 14,  4} } }
                                    
   local merged = R.connect{ input = R.tuple{ convolveInput, filterCoeff }, 
-    toModule = R.modules.SoAtoAoS{ type={R.uint8,R.uint8}, size={1,4} } }
+    toModule = R.modules.SoAtoAoS{ type={R.uint8,R.uint8}, size={4*P,4} } }
   
   local partials = R.connect{ input = merged, toModule =
     R.modules.map{ fn = R.modules.mult{ inType = R.uint8, outType = R.uint32}, 
-                   size={1,4} } }
+                   size={4*P,4} } }
   
   local sum = R.connect{ input = partials, toModule =
     R.modules.reduce{ fn = R.modules.sum{ inType = R.uint32, outType = R.uint32 }, 
-                      size={1,4} } }
+                      size={4*P,4} } }
   
   return R.pipeline{ input = convolveInput, output = sum }
 end
