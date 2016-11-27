@@ -417,3 +417,11 @@ out/%.stats.txt : out/%.axi.bmp
 
 out/%.stats100.txt : out/%.axi100.bmp
 	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
+
+# special case SIFT - write out matches as a postprocess
+out/sift_hw_1080p.bmp: out/sift_hw_1080p.raw
+	# cut off the axi burst padding
+	head -c 8424000 out/sift_hw_1080p.raw > out/sift_hw_1080p.raw.tmp
+	terra ../misc/sift/match.t out/sift_hw_1080p.raw.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw_1080p.raw.match
+	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > out/sift_hw_1080p.metadata.tmp.lua
+	terra ../misc/raw2bmp.t out/sift_hw_1080p.raw.match out/sift_hw_1080p.bmp out/sift_hw_1080p.metadata.tmp.lua 0
