@@ -48,7 +48,7 @@ function doit(full)
     hsfn = siftFn
   end
 
-  harness.axi( "sift_hw"..sel(full,"_1080p",""), hsfn, sel(full,"boxanim0000.raw","box_256.raw"), nil, nil, ITYPE, 8, W, H, OTYPE, 2, outputCount,1)
+  harness.axi( "sift_hw"..sel(full,"_1080p",""), hsfn, sel(full,"boxanim0000.raw","boxanim_256.raw"), nil, nil, ITYPE, 8, W, H, OTYPE, 2, outputCount,1)
 
 end
 

@@ -425,3 +425,8 @@ out/sift_hw_1080p.bmp: out/sift_hw_1080p.raw
 	terra ../misc/sift/match.t out/sift_hw_1080p.raw.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw_1080p.raw.match
 	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > out/sift_hw_1080p.metadata.tmp.lua
 	terra ../misc/raw2bmp.t out/sift_hw_1080p.raw.match out/sift_hw_1080p.bmp out/sift_hw_1080p.metadata.tmp.lua 0
+
+out/sift_hw.bmp: out/sift_hw.raw
+	terra ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
+	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/sift_hw.metadata.tmp.lua
+	terra ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
