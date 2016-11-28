@@ -76,7 +76,7 @@ local fixedLift = memoize(function(A)
   return out:toDarkroom("fixedLift_"..tostring(A):gsub('%W','_'))
                    end)
 
-local lowerPair = memoize(function(FROM,TO,scale)
+sift.lowerPair = memoize(function(FROM,TO,scale)
   assert(types.isType(FROM))
   assert(types.isType(TO))
   local inp = f.parameter("IIlift",types.tuple{FROM,FROM})
@@ -292,7 +292,7 @@ end
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
-local function siftKernel(dxdyType)
+function sift.siftKernel(dxdyType)
   print("sift")
 
   local dxdyPair = types.tuple{dxdyType,dxdyType}
@@ -444,7 +444,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
 end
 ----------------
 
-local function addPos(dxdyType,W,H,subX,subY)
+function sift.addPos(dxdyType,W,H,subX,subY)
   assert(types.isType(dxdyType))
   assert(type(W)=="number")
   assert(type(H)=="number")
@@ -553,7 +553,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   if GRAD_INT then
     print("GRAD_INT=true")
-    left = R.apply("lower", RM.makeHandshake(lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
+    left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
   else
@@ -564,7 +564,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
   local left = R.apply( "stlb", RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
-  left = R.apply("stpos", RM.makeHandshake(addPos(dxdyType,internalW,internalH,15,15)), left)
+  left = R.apply("stpos", RM.makeHandshake(sift.addPos(dxdyType,internalW,internalH,15,15)), left)
   -------------------------------
 
 
@@ -583,7 +583,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", false)
 
-  local siftFn, descType = siftKernel(dxdyType)
+  local siftFn, descType = sift.siftKernel(dxdyType)
   local out = R.apply("sft", siftFn, out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
 
