@@ -35,7 +35,7 @@ function RS.modules.cropSeq(t)
 end
 
 function RS.modules.changeRate(t)
-  return RM.changeRate( t.type, t.H, t.inputW, t.outputW )
+  return RM.changeRate( t.type, t.H, t.inW, t.outW )
 end
 
 function RS.modules.upsampleSeq(t)
@@ -114,7 +114,7 @@ local sumPow2 = function(A,B,outputType)
                 end
 
 function RS.modules.sumPow2(t)
-  return sumPow2(t.inputType,t.inputType,t.outputType)
+  return sumPow2(t.inType,t.inType,t.outType)
 end
 
 function RS.modules.mult(t)
@@ -331,7 +331,7 @@ function RS.harness(t)
     local out
 
     if t.fn.inputType:verilogBits()~=64 then
-      out = RS.connect{input=inp, toModule=RS.RV(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inputW=inputP, outputW=inputP_orig })}
+      out = RS.connect{input=inp, toModule=RS.RV(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
     end
     
     out = RS.connect{input=out, toModule=fn}
@@ -341,7 +341,7 @@ function RS.harness(t)
     oover = RS.array( oover:arrayOver(), outputP )
     
     if t.fn.outputType:verilogBits()~=64 then
-      out = RS.connect{input=out, toModule=RS.RV(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inputW=outputP_orig, outputW=outputP})}
+      out = RS.connect{input=out, toModule=RS.RV(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
     end
 
     fn = RS.pipeline{input=inp,output=out}
