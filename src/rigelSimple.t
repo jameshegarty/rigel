@@ -11,6 +11,7 @@ local ccnt = 0
 RS.uint8 = types.uint(8)
 RS.int8 = types.int(8)
 RS.uint32 = types.uint(32)
+RS.int32 = types.int(32)
 RS.uint16 = types.uint(16)
 RS.float = types.float(32)
 --RS.uint8[1] = types.array2d(RS.uint8,1)
@@ -33,6 +34,10 @@ end
 
 function RS.modules.changeRate(t)
   return RM.changeRate( t.type, t.H, t.inputW, t.outputW )
+end
+
+function RS.modules.upsampleSeq(t)
+  return C.upsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.linebuffer(t)
@@ -92,9 +97,10 @@ function RS.connect(t)
 
   local inp = t.input
 
-  if t.input~=nil and t.input.kind=="apply" then
-    if R.isHandshake(t.input.fn.outputType) and R.isHandshake(t.toModule.inputType) then
-      local btype = R.extractData(t.input.fn.outputType)
+  if t.input~=nil then
+    local inputType = lookupType(t.input)
+    if R.isHandshake(inputType) and R.isHandshake(t.toModule.inputType) then
+      local btype = R.extractData(inputType)
       local itype = R.extractData(t.toModule.inputType)
       
       if btype==types.array2d(itype,1) then
@@ -128,7 +134,16 @@ function lookupType(t)
     return lookupType(t.inputs[1]):arrayOver()
   elseif t.kind=="applyMethod" then
     return t.inst.fn.outputType
+  elseif t.kind=="input" then
+    return t.type
+  elseif t.kind=="tuple" then
+    local ty = {}
+    for k,v in ipairs(t.inputs) do table.insert(ty,lookupType(v)) end
+    return types.tuple(ty)
+  elseif t.kind=="constant" then
+    return t.type
   else
+    print("lookuptype",t.kind)
     assert(false)
   end
 
@@ -147,19 +162,13 @@ function RS.fifo(t)
 end
 
 function RS.index(t)
-  if t.input.kind=="apply" or t.input.kind=="applyMethod" or t.input.kind=="selectStream" then
-    local ty=lookupType(t.input)
-
-    print("FANOUTTYPE",ty)
-    assert( R.isHandshake(ty))
-    ty = R.extractData(ty)
-    ccnt = ccnt + 1
-    return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
-  else
-    print(t.input.kind)
-    assert(false)
-  end
-
+  local ty=lookupType(t.input)
+  
+  print("FANOUTTYPE",ty)
+  assert( R.isHandshake(ty))
+  ty = R.extractData(ty)
+  ccnt = ccnt + 1
+  return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
 end
 
 
