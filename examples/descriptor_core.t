@@ -42,10 +42,10 @@ descriptor.histogramReduce = sift.bucketReduce(types.int(32), 8 )
 descriptor.descriptor = sift.siftDescriptor(types.int(8))
 
 function norm()
-  local inp = R.input( R.RV( R.tuple{ R.int32, R.float } ) )
+  local inp = R.input( R.RV( R.tuple{ R.array(R.int32,1), R.array(R.float,1) } ) )
 
-  local desc_sum = R.index{input=inp, key=1 }
-  local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=inp,key=0 } )
+  local desc_sum = R.index{input=R.index{input=inp, key=1 }, key=0}
+  local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp,key=0 },key=0} )
   
   local desc = rigel.apply("pt",RM.packTuple{R.float,R.float},rigel.tuple("PTT",{desc0,desc_sum},false))
   local desc = rigel.apply("ptt",RM.makeHandshake(sift.fixedDiv(R.float)),desc)
