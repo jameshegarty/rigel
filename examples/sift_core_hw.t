@@ -37,7 +37,7 @@ local fixedSumPow2 = memoize(function(A)
   return out:toDarkroom("fixedSumPow2")
                    end)
 
-local sumPow2 = function(A,B,outputType)
+sift.sumPow2 = function(A,B,outputType)
   local sinp = S.parameter( "inp", types.tuple {A,B} )
 
   local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
@@ -49,7 +49,7 @@ local sumPow2 = function(A,B,outputType)
   return partial
                 end
 
-local fixedDiv = memoize(function(A)
+sift.fixedDiv = memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = (inp:index(0))*(inp:index(1):invert())
@@ -58,7 +58,7 @@ local fixedDiv = memoize(function(A)
   return out:toDarkroom("fixedDiv")
                    end)
 
-local fixedSqrt = memoize(function(A)
+sift.fixedSqrt = memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",A)
   local out = inp:sqrt()
@@ -67,7 +67,7 @@ local fixedSqrt = memoize(function(A)
   return out:toDarkroom("fixedSqrt")
                    end)
 
-local fixedLift = memoize(function(A)
+sift.fixedLift = memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("IIlift",A)
   local out = inp:lift()
@@ -192,7 +192,7 @@ end
 ----------------
 -- input: {dx,dy}
 -- output: descType[BUCKETS], descType
-local function siftDescriptor(dxdyType)
+function sift.siftDescriptor(dxdyType)
   if GRAD_INT then
     assert(dxdyType==GRAD_TYPE)
   else
@@ -212,8 +212,8 @@ local function siftDescriptor(dxdyType)
   local dy = R.apply("i1", C.index(ITYPE,1), inp)
 
   if GRAD_INT then
-    dx = R.apply("ixl",fixedLift(dxdyType),dx)
-    dy = R.apply("iyl",fixedLift(dxdyType),dy)
+    dx = R.apply("ixl", sift.fixedLift(dxdyType),dx)
+    dy = R.apply("iyl", sift.fixedLift(dxdyType),dy)
   end
 
   local maginp = R.tuple("maginp",{dx,dy,gweight})
@@ -226,7 +226,7 @@ end
 ----------------
 -- input: {descType[N],descType[N]}
 -- output: descType[N]
-local function bucketReduce(descType,N,X)
+function sift.bucketReduce(descType,N,X)
   assert(types.isType(descType))
   assert(type(N)=="number")
   assert(X==nil)
@@ -240,7 +240,7 @@ end
 ----------------
 -- input: A[W,H]
 -- output: A[(W/T)*(H/T)][T*T]
-local function tile(W,H,T,A)
+function sift.tile(W,H,T,A)
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(T)=="number")
@@ -278,7 +278,7 @@ end
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
-local function addDescriptorPos(descType)
+function sift.addDescriptorPos(descType)
   local inp = f.parameter("descpos",types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)})
   local desc = inp:index(0)
   local px = inp:index(1):lift(0)
@@ -325,16 +325,16 @@ function sift.siftKernel(dxdyType)
 --    dxdyPair = types.tuple{GRAD_TYPE,GRAD_TYPE}
 --  end
 
-  local dxdyTile = R.apply("TLE",RM.makeHandshake(tile(TILES_X*4,TILES_Y*4,4,dxdyPair)),dxdy)
+  local dxdyTile = R.apply("TLE",RM.makeHandshake( sift.tile(TILES_X*4,TILES_Y*4,4,dxdyPair)),dxdy)
   local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,TILES_X*TILES_Y,1)), dxdyTile )
   local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
   local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
-  local descFn, descTypeRed = siftDescriptor(dxdyType)
+  local descFn, descTypeRed = sift.siftDescriptor(dxdyType)
   local descType = types.float(32)
   local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
-  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descTypeRed,8),1/16)),"BUCKET"),desc)
+  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.bucketReduce(descTypeRed,8),1/16)),"BUCKET"),desc)
 
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
@@ -353,23 +353,23 @@ function sift.siftKernel(dxdyType)
   local desc1 = R.selectStream("d1",desc_broad,1)
   local desc1 = C.fifo( fifos, statements, descTypeRed, desc1, 256, "d1")
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(sumPow2(RED_TYPE,RED_TYPE,RED_TYPE),1/(TILES_X*TILES_Y*8)))),desc1)
-  local desc_sum = R.apply("sumlift",RM.makeHandshake(fixedLift(RED_TYPE)), desc_sum)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.sumPow2(RED_TYPE,RED_TYPE,RED_TYPE),1/(TILES_X*TILES_Y*8)))),desc1)
+  local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc_sum)
 
-  local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
+  local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, TILES_X*TILES_Y*8), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
-  local desc0 = R.apply("d0lift",RM.makeHandshake(fixedLift(RED_TYPE)), desc0)
+  local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc0)
   local desc = R.apply("pt",RM.packTuple{descType,descType},R.tuple("PTT",{desc0,desc_sum},false))
-  local desc = R.apply("ptt",RM.makeHandshake(fixedDiv(descType)),desc)
+  local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
   -- we now have an array of type descType[128]. Add the pos.
   local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,TILES_X*TILES_Y*8),posType,posType},R.tuple("DPT",{desc,posX,posY},false))
-  local desc = R.apply("addpos",RM.makeHandshake(addDescriptorPos(descType)), desc_pack)
+  local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos(descType)), desc_pack)
 
   table.insert(statements,1,desc)
 

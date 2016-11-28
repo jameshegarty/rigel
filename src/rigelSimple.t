@@ -10,6 +10,7 @@ local ccnt = 0
 
 RS.uint8 = types.uint(8)
 RS.uint32 = types.uint(32)
+RS.float = types.float(32)
 --RS.uint8[1] = types.array2d(RS.uint8,1)
 --RS.uint8[25] = types.array2d(RS.uint8,25)
 RS.input = R.input
