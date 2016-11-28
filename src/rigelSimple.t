@@ -121,6 +121,48 @@ function RS.concat(t)
   return R.tuple( "v"..tostring(ccnt), t )
 end
 
+function lookupType(t)
+  if t.kind=="apply" then
+    return t.fn.outputType
+  elseif t.kind=="selectStream" then
+    return lookupType(t.inputs[1]):arrayOver()
+  elseif t.kind=="applyMethod" then
+    return t.inst.fn.outputType
+  else
+    assert(false)
+  end
+
+end
+
+function RS.fifo(t)
+  local ty = lookupType(t.input)
+  assert( R.isHandshake(ty))
+  ty = R.extractData(ty)
+
+  t.fifoList.fifos = t.fifoList.fifos or {}
+  t.fifoList.statements = t.fifoList.statements or {}
+
+  ccnt = ccnt + 1
+  return C.fifo( t.fifoList.fifos, t.fifoList.statements, ty, t.input, t.depth, "v"..tostring(ccnt), false )
+end
+
+function RS.index(t)
+  if t.input.kind=="apply" or t.input.kind=="applyMethod" or t.input.kind=="selectStream" then
+    local ty=lookupType(t.input)
+
+    print("FANOUTTYPE",ty)
+    assert( R.isHandshake(ty))
+    ty = R.extractData(ty)
+    ccnt = ccnt + 1
+    return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
+  else
+    print(t.input.kind)
+    assert(false)
+  end
+
+end
+
+
 function RS.fanOut(t)
   if t.input.kind=="apply" or t.input.kind=="applyMethod" then
     local ty
@@ -149,9 +191,43 @@ function RS.fanOut(t)
   
 end
 
+function RS.fanIn(t)
+  local typelist = {}
+  for _,v in ipairs(t) do
+    local ty
+    if v.kind=="apply" then
+      ty = v.fn.outputType
+    elseif v.kind=="applyMethod" then
+      ty = v.inst.fn.outputType
+    else
+      print("KND",v.kind)
+      assert(false)
+    end
+
+    assert( R.isHandshake(ty))
+    ty = R.extractData(ty)
+
+    table.insert(typelist,ty)
+  end
+  
+  ccnt = ccnt + 1
+  ccnt = ccnt + 1
+  return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.tuple("v"..tostring(ccnt),t,false) )
+end
+
 function RS.pipeline(t)
   ccnt = ccnt + 1
-  return RM.lambda("v"..tostring(ccnt), t.input, t.output )
+  local out = t.output
+  local fifoList
+
+  if t.fifoList~=nil then
+    local stats = {t.output}
+    for k,v in ipairs(t.fifoList.statements) do table.insert(stats,v) end
+    out = R.statements(stats)
+    fifoList = t.fifoList.fifos
+  end
+
+  return RM.lambda("v"..tostring(ccnt), t.input, out, fifoList )
 end
 
 function RS.RV(t) 
