@@ -9,7 +9,9 @@ local RS = {}
 local ccnt = 0
 
 RS.uint8 = types.uint(8)
+RS.int8 = types.int(8)
 RS.uint32 = types.uint(32)
+RS.uint16 = types.uint(16)
 RS.float = types.float(32)
 --RS.uint8[1] = types.array2d(RS.uint8,1)
 --RS.uint8[25] = types.array2d(RS.uint8,25)
@@ -17,6 +19,7 @@ RS.input = R.input
 
 function RS.array(t,x,y) return types.array2d(t,x,y) end
 RS.array2d = RS.array
+RS.tuple = types.tuple
 
 RS.modules = {}
 function RS.modules.padSeq(t)
@@ -81,6 +84,10 @@ function RS.modules.constSeq(t)
   return RM.constSeq(t.value, t.type:arrayOver(), size[1], size[2], t.P )
 end
 
+function RS.modules.filterSeq(t)
+  return RM.filterSeq( t.type, t.size[1], t.size[2], 1/t.rate, t.fifoSize )
+end
+
 function RS.connect(t)
 
   local inp = t.input
@@ -109,9 +116,37 @@ function RS.constant(t)
   return R.constant( "v"..tostring(ccnt), t.value, t.type )
 end
 
-function RS.tuple(t)
+function RS.concat(t)
   ccnt = ccnt + 1
   return R.tuple( "v"..tostring(ccnt), t )
+end
+
+function RS.fanOut(t)
+  if t.input.kind=="apply" or t.input.kind=="applyMethod" then
+    local ty
+    if t.input.kind=="apply" then
+      ty = t.input.fn.outputType
+    else
+      ty = t.input.inst.fn.outputType
+    end
+
+    print("FANOUTTYPE",ty)
+    assert( R.isHandshake(ty))
+    ty = R.extractData(ty)
+    ccnt = ccnt + 1
+    local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
+    
+    local res = {}
+    for i=1,t.branches do
+      ccnt = ccnt + 1
+      table.insert(res, R.selectStream("v"..tostring(ccnt), out, i-1) )
+    end
+    return unpack(res)
+  else
+    print(t.input.kind)
+    assert(false)
+  end
+  
 end
 
 function RS.pipeline(t)

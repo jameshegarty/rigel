@@ -14,7 +14,7 @@ function makePartialConvolve()
         14, 32, 32, 14,
         4, 14, 14,  4} } }
                                    
-  local merged = R.connect{ input = R.tuple{ convolveInput, filterCoeff }, 
+  local merged = R.connect{ input = R.concat{ convolveInput, filterCoeff }, 
     toModule = R.modules.SoAtoAoS{ type={R.uint8,R.uint8}, size={4*P,4} } }
   
   local partials = R.connect{ input = merged, toModule =
