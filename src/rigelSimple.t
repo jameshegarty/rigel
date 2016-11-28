@@ -3,6 +3,8 @@ local types = require("types")
 local RM = require "modules"
 local C = require "examplescommon"
 local harness = require "harness"
+local f = require "fixed_float"
+local S = require("systolic")
 
 local RS = {}
 
@@ -74,6 +76,45 @@ end
 
 function RS.modules.sumAsync(t)
   return C.sum( t.inType, t.inType, t.outType, true )
+end
+
+local fixedSqrt = memoize(function(A)
+  assert(types.isType(A))
+  local inp = f.parameter("II",A)
+  local out = inp:sqrt()
+--  out = out:disablePipelining()
+--  out = out:cast(A)
+  return out:toDarkroom("fixedSqrtRS")
+                   end)
+
+local fixedLift = memoize(function(A)
+  assert(types.isType(A))
+  local inp = f.parameter("IIlift",A)
+  local out = inp:lift()
+--  out = out:disablePipelining()
+--  out = out:cast(A)
+  return out:toDarkroom("fixedLiftRS_"..tostring(A):gsub('%W','_'))
+                   end)
+
+
+function RS.modules.sqrt(t)
+  return C.compose("RSSQRT",fixedSqrt(t.outputType),fixedLift(t.inputType))
+end
+
+local sumPow2 = function(A,B,outputType)
+  local sinp = S.parameter( "inp", types.tuple {A,B} )
+
+  local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
+  sout = sout:disablePipelining()
+  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0,
+                          terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
+                            @out = [outputType:toTerraType()](a._0)+([outputType:toTerraType()](a._1)*[outputType:toTerraType()](a._1))
+                  end, sinp, sout )
+  return partial
+                end
+
+function RS.modules.sumPow2(t)
+  return sumPow2(t.inputType,t.inputType,t.outputType)
 end
 
 function RS.modules.mult(t)
