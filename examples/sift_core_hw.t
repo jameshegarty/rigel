@@ -481,7 +481,7 @@ function sift.siftDesc(W,H,inputT,X)
 
   if GRAD_INT then
     out = R.apply("dxdy0", RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0)), out)
-    out = R.apply("dxdyint",RM.makeHandshake(lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)),out)
+    out = R.apply("dxdyint",RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)),out)
     out = R.apply("dxdyao", RM.makeHandshake( C.arrayop( types.tuple{GRAD_TYPE,GRAD_TYPE}, 1, 1 ) ), out)
     dxdyType = GRAD_TYPE
     
@@ -493,13 +493,13 @@ function sift.siftDesc(W,H,inputT,X)
   --- now stencilify dxdy
   local out = R.apply("ST",RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR,W,H,1,(-TILES_X*4)+1,0,(-TILES_Y*4)+1,0)), out)
 
-  local DI = addPos(dxdyType,W,H)
+  local DI = sift.addPos(dxdyType,W,H)
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType,1,1)), out)
   local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType, W, H, 1, TILES_X*4-1, 0, TILES_Y*4-1, 0))), out)
   local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType,1),0,0)), out)
 
-  local siftFn, descType = siftKernel(dxdyType)
+  local siftFn, descType = sift.siftKernel(dxdyType)
   local out = R.apply("sft", siftFn, out)
 
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
