@@ -29,13 +29,11 @@ branch0, branch1 = R.fanOut{ input = filterSeqOut, branches = 2 }
 
 -----------------------------------
 -- branch 0: hold pixel position of feature until we need it later
---local inp_pos = C.fifo( fifos, statements, FILTER_TYPE, branch0, 1, "p0", true) -- fifo size can also be 1 (tested in SW)
 branch0_pos = R.index{ input = branch0, key = 1 }
 branch0_pos = R.fifo{ input = branch0_pos, depth = 1024, fifoList = fifoList }
 
 -----------------------------------
 -- branch 1: calculate feature descriptor
---local inp_dxdy = C.fifo( fifos, statements, FILTER_TYPE, branch1, 1, "p1", true) -- fifo size can also be 1 (tested in SW)
 branch1 = R.index{ input = branch1, key = 0 }
 
 -- rearrange 16x16 stencil into 16 4x4 tiles
