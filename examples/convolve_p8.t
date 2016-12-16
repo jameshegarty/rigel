@@ -28,29 +28,29 @@ function makeConvolve()
   local output = R.connect{ input = sum, toModule = 
     R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 } }
 
-  return R.pipeline{ input = convolveInput, output = output }
+  return R.defineModule{ input = convolveInput, output = output }
 end
 
 ----------------
-input = R.input( R.RV( R.array( R.uint8, P) ) )
+input = R.input( R.HS( R.array( R.uint8, P) ) )
 
 -- apply boundary condition by padding stream
 padded = R.connect{ input=input, toModule = 
-  R.RV(R.modules.padSeq{ type = R.uint8, P=P, size=inSize, pad={8,8,2,1}, value=0 }) }
+  R.HS(R.modules.padSeq{ type = R.uint8, P=P, size=inSize, pad={8,8,2,1}, value=0 }) }
 
 -- use linebuffer to convert input stream into stencils
 stenciled = R.connect{ input=padded, toModule =
-  R.RV(R.modules.linebuffer{ type=R.uint8, P=P, size=padSize, stencil={-3,0,-3,0} }) }
+  R.HS(R.modules.linebuffer{ type=R.uint8, P=P, size=padSize, stencil={-3,0,-3,0} }) }
 
 -- perform convolution vectorized over P
 convolved = R.connect{ input = stenciled, toModule = 
-  R.RV( R.modules.map{ fn = makeConvolve(), size = P } ) }
+  R.HS( R.modules.map{ fn = makeConvolve(), size = P } ) }
 
 -- crop stream to remove boundary padding
 output = R.connect{ input = convolved, toModule = 
-  R.RV(R.modules.cropSeq{ type = R.uint8, P=P, size=padSize, crop={9,7,3,0} }) }
+  R.HS(R.modules.cropSeq{ type = R.uint8, P=P, size=padSize, crop={9,7,3,0} }) }
 
-convolveFunction = R.pipeline{ input = input, output = output }
+convolveFunction = R.defineModule{ input = input, output = output }
 ----------------
 
 R.harness{ fn = convolveFunction,

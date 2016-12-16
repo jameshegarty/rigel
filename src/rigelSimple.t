@@ -38,8 +38,24 @@ function RS.modules.changeRate(t)
   return RM.changeRate( t.type, t.H, t.inW, t.outW )
 end
 
+function RS.modules.vectorize(t)
+  local H = t.H
+  if H==nil then H=1 end
+  return RM.changeRate( t.type, H, 1, 1/t.rate )
+end
+
+function RS.modules.devectorize(t)
+  local H = t.H
+  if H==nil then H=1 end
+  return RM.changeRate( t.type, H, 1/t.rate, 1 )
+end
+
 function RS.modules.upsampleSeq(t)
   return C.upsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
+end
+
+function RS.modules.downsampleSeq(t)
+  return C.downsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.linebuffer(t)
@@ -77,6 +93,20 @@ end
 function RS.modules.sumAsync(t)
   return C.sum( t.inType, t.inType, t.outType, true )
 end
+
+
+function RS.modules.serialize(t)
+  return RM.serialize( t.type, t.inputRates, t.order )
+end
+
+function RS.modules.interleveOrder(t)
+  return RM.interleveSchedule( t.streamCount, t.period )
+end
+
+function RS.modules.pyramidOrder(t)
+  return RM.pyramidSchedule( t.depth, t.finestWidth, t.P)
+end
+
 
 local fixedSqrt = memoize(function(A)
   assert(types.isType(A))
@@ -146,10 +176,10 @@ function RS.connect(t)
       
       if btype==types.array2d(itype,1) then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.RV(C.index(btype,0)), inp )
+        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.index(btype,0)), inp )
       elseif types.array2d(btype,1)==itype then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.RV(C.arrayop(btype,1,1)), inp )
+        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
       end
     end
   end
@@ -265,7 +295,7 @@ function RS.fanIn(t)
   return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.tuple("v"..tostring(ccnt),t,false) )
 end
 
-function RS.pipeline(t)
+function RS.defineModule(t)
   ccnt = ccnt + 1
   local out = t.output
   local fifoList
@@ -280,7 +310,7 @@ function RS.pipeline(t)
   return RM.lambda("v"..tostring(ccnt), t.input, out, fifoList )
 end
 
-function RS.RV(t) 
+function RS.HS(t) 
   if types.isType(t) then
     return R.Handshake(t) 
   elseif R.isFunction(t) then
@@ -327,11 +357,11 @@ function RS.harness(t)
     inputP = (64/t.fn.inputType:verilogBits())*inputP
     iover = RS.array( iover:arrayOver(), inputP )
 
-    local inp = RS.input( RS.RV(iover) )
+    local inp = RS.input( RS.HS(iover) )
     local out
 
     if t.fn.inputType:verilogBits()~=64 then
-      out = RS.connect{input=inp, toModule=RS.RV(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
+      out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
     end
     
     out = RS.connect{input=out, toModule=fn}
@@ -341,10 +371,10 @@ function RS.harness(t)
     oover = RS.array( oover:arrayOver(), outputP )
     
     if t.fn.outputType:verilogBits()~=64 then
-      out = RS.connect{input=out, toModule=RS.RV(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
+      out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
     end
 
-    fn = RS.pipeline{input=inp,output=out}
+    fn = RS.defineModule{input=inp,output=out}
   end
 
   harness.axi( t.outputFile, fn, t.inputFile, nil, nil, iover, inputP, t.inputSize[1], t.inputSize[2], oover, outputP, t.outputSize[1], t.outputSize[2] )

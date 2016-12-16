@@ -25,39 +25,39 @@ function makePartialConvolve()
     R.modules.reduce{ fn = R.modules.sum{ inType = R.uint32, outType = R.uint32 }, 
                       size={4*P,4} } }
   
-  return R.pipeline{ input = convolveInput, output = sum }
+  return R.defineModule{ input = convolveInput, output = sum }
 end
 
 ----------------
-input = R.input( R.RV( R.array( R.uint8, 1) ) )
+input = R.input( R.HS( R.array( R.uint8, 1) ) )
 
 padded = R.connect{ input=input, toModule = 
-  R.RV(R.modules.padSeq{ type = R.uint8, P=1, size=inSize, pad={8,8,2,1}, value=0 }) }
+  R.HS(R.modules.padSeq{ type = R.uint8, P=1, size=inSize, pad={8,8,2,1}, value=0 }) }
 
 stenciled = R.connect{ input=padded, toModule =
-  R.RV(R.modules.linebuffer{ type=R.uint8, P=1, size=padSize, stencil={-3,0,-3,0} }) }
+  R.HS(R.modules.linebuffer{ type=R.uint8, P=1, size=padSize, stencil={-3,0,-3,0} }) }
 
 -- split stencil into columns
 partialStencil = R.connect{ input=stenciled, toModule=
-  R.RV(R.modules.changeRate{ type=R.uint8, H=4, inW=4, outW=4*P}) }
+  R.HS(R.modules.changeRate{ type=R.uint8, H=4, inW=4, outW=4*P}) }
 
 -- perform partial convolution
 partialConvolved = R.connect{ input = partialStencil, toModule = 
-  R.RV(makePartialConvolve()) }
+  R.HS(makePartialConvolve()) }
 
 -- sum partial convolutions to calculate full convolution
 summedPartials = R.connect{ input=partialConvolved, toModule =
-  R.RV(R.modules.reduceSeq{ fn = 
+  R.HS(R.modules.reduceSeq{ fn = 
     R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, P=P}) }
 
 convolved = R.connect{ input = summedPartials, toModule = 
-  R.RV(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }
+  R.HS(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }
 
 output = R.connect{ input = convolved, toModule = 
-  R.RV(R.modules.cropSeq{ type = R.uint8, P=1, size=padSize, crop={9,7,3,0} }) }
+  R.HS(R.modules.cropSeq{ type = R.uint8, P=1, size=padSize, crop={9,7,3,0} }) }
 
 
-convolveFunction = R.pipeline{ input = input, output = output }
+convolveFunction = R.defineModule{ input = input, output = output }
 ----------------
 
 R.harness{ fn = convolveFunction,

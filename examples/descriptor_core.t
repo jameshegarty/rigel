@@ -23,17 +23,17 @@ function descriptor.addPos()
   local pos = rigel.apply("p",C.index(PTYPE,1),inp)
   local posx = rigel.apply("px",C.index(POS_TYPE,0),pos)
   local posy = rigel.apply("py",C.index(POS_TYPE,1),pos)
-  local repack = R.pipeline{input=inp,output = R.concat{desc,posx,posy} }
+  local repack = R.defineModule{input=inp,output = R.concat{desc,posx,posy} }
 
 
 --------------------------
 
-  local inp = rigel.input( R.RV(PTYPE) )
+  local inp = rigel.input( R.HS(PTYPE) )
 
-  local desc_pack = R.connect{ input = inp, toModule = R.RV(repack) }
+  local desc_pack = R.connect{ input = inp, toModule = R.HS(repack) }
   local desc = rigel.apply("addpos",RM.makeHandshake(sift.addDescriptorPos(descType)), desc_pack)
 
-  return R.pipeline{ input = inp, output = desc }
+  return R.defineModule{ input = inp, output = desc }
 end
 
 descriptor.tile = sift.tile
@@ -42,14 +42,14 @@ descriptor.histogramReduce = sift.bucketReduce(types.int(32), 8 )
 descriptor.descriptor = sift.siftDescriptor(types.int(8))
 
 function norm()
-  local inp = R.input( R.RV( R.tuple{ R.array(R.int32,1), R.array(R.float,1) } ) )
+  local inp = R.input( R.HS( R.tuple{ R.array(R.int32,1), R.array(R.float,1) } ) )
 
   local desc_sum = R.index{input=R.index{input=inp, key=1 }, key=0}
   local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp,key=0 },key=0} )
   
   local desc = rigel.apply("pt",RM.packTuple{R.float,R.float},rigel.tuple("PTT",{desc0,desc_sum},false))
   local desc = rigel.apply("ptt",RM.makeHandshake(sift.fixedDiv(R.float)),desc)
-  return R.pipeline{input=inp,output=desc}
+  return R.defineModule{input=inp,output=desc}
 end
 
 descriptor.normalize = norm()
