@@ -39,7 +39,7 @@ stenciled = R.connect{ input=padded, toModule =
 
 -- split stencil into columns
 partialStencil = R.connect{ input=stenciled, toModule=
-  R.HS(R.modules.changeRate{ type=R.uint8, H=4, inW=4, outW=4*P}) }
+  R.HS(R.modules.devectorize{ type=R.uint8, H=4, rate=P}) }
 
 -- perform partial convolution
 partialConvolved = R.connect{ input = partialStencil, toModule = 

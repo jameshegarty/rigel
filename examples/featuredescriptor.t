@@ -41,12 +41,12 @@ branch1_tiles = R.connect{ input = branch1, toModule =
   R.HS( descriptor.tile(TILES_X*4,TILES_Y*4,4,DXDY_TYPE) ) }
 
 -- Devectorize tile array
-branch1_tile = R.connect{ input=branch1_tiles, toModule=R.HS( R.modules.changeRate{ 
-  type=R.array(DXDY_TYPE,16), H=1, inW=TILES_X*TILES_Y, outW=1}) }
+branch1_tile = R.connect{ input=branch1_tiles, toModule=R.HS( R.modules.devectorize{ 
+  type=R.array(DXDY_TYPE,16), rate=1/(TILES_X*TILES_Y)}) }
 
 -- Devectorize tile into pixels
 branch1_pixels = R.connect{ input = branch1_tile, toModule = 
-  R.HS( R.modules.changeRate{ type=DXDY_TYPE, H=1,inW=16, outW=1} ) }
+  R.HS( R.modules.devectorize{ type=DXDY_TYPE, rate=1/16} ) }
 
 -- Assign each pixel in tile to correct histogram bucket (int8->int32[8])
 branch1_desc = R.connect{ input=branch1_pixels, toModule=R.HS(descriptor.descriptor) }
@@ -59,7 +59,7 @@ branch1_hist = R.fifo{ input = branch1_hist, depth = 128, fifoList = fifoList }
 
 -- Devectorize 8 histogram buckets into individual values to sum them
 branch1_histbucket = R.connect{ input = branch1_hist, toModule = 
-  R.HS( R.modules.changeRate{ type=R.int32, H=1, inW=8, outW=1 } ) }
+  R.HS( R.modules.devectorize{ type=R.int32, rate=1/8 } ) }
 
 -----------------------------------
 -- fan out to sum and normalize the descriptors
@@ -91,7 +91,7 @@ branch3 = R.connect{input=R.fanIn{branch3,branch2_sum},toModule=descriptor.norma
 
 -- convert stream of histogram buckets back into 128 element normalize descriptor
 branch3_descnorm = R.connect{ input = branch3, toModule = 
-  R.HS( R.modules.changeRate{ type = R.float, H=1, inW=1, outW=TILES_X*TILES_Y*8}) }
+  R.HS( R.modules.vectorize{ type = R.float, rate=1/(TILES_X*TILES_Y*8)}) }
 
 -----------------------------------
 -- merge branch 2 and 3
