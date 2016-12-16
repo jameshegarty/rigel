@@ -49,7 +49,7 @@ branch1_pixels = R.connect{ input = branch1_tile, toModule =
   R.HS( R.modules.devectorize{ type=DXDY_TYPE, rate=1/16} ) }
 
 -- Assign each pixel in tile to correct histogram bucket (int8->int32[8])
-branch1_desc = R.connect{ input=branch1_pixels, toModule=R.HS(descriptor.descriptor) }
+branch1_desc = R.connect{ input=branch1_pixels, toModule=R.HS(descriptor.descriptor)}
 
 -- Reduce histogram buckets (int32[8]->int32[8])
 branch1_hist = R.connect{ input = branch1_desc, toModule = 
@@ -99,7 +99,7 @@ desc = R.connect{ input = R.fanIn{branch3_descnorm,branch0_pos}, toModule =
   descriptor.addPos() }
 
 -----------------------
-descriptorPipeline = R.defineModule{ input = inp, output = desc, fifoList = fifoList }
+descriptorPipeline = R.defineModule{ input=inp, output=desc, fifoList=fifoList }
 
 R.harness{ fn = descriptorPipeline, 
             inputFile = "boxanim_256.raw", inputSize = {W,H},
