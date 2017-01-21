@@ -154,10 +154,18 @@ terra match()
     end
   end
 
+  var last = 0
+
   for S=0,searchCnt do
     var T = bestMatch[S]
     var x = [int](f0_data[S*DESC_SIZE])
     var y = [int](f0_data[S*DESC_SIZE+1])
+
+    var LL = x+y*256
+    if LL<last then C.printf("ERROR\n") end
+    last = LL
+
+    C.printf("SPOINT %d %d %d %d\n",S,x,y,LL)
 
     var targetX = [int](f1_data[T*DESC_SIZE])
     var targetY = [int](f1_data[T*DESC_SIZE+1])

@@ -6,7 +6,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local fixed = require("fixed")
 local SDFRate = require "sdfrate"
 
-local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, X)
+local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, topModule, X)
   assert(type(inputImage)=="string")
   assert(type(inputBytesPerPixel)=="number")
   assert(type(inputWidth)=="number")
@@ -14,6 +14,7 @@ local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeig
   assert(type(outputBytesPerPixel)=="number")
   assert(type(outputWidth)=="number")
   assert(type(outputHeight)=="number")
+  assert(type(topModule)=="string")
   assert(X==nil)
 
   local scaleX = {outputWidth,inputWidth}
@@ -21,7 +22,7 @@ local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeig
   local scale = SDFRate.fracMultiply(scaleX,scaleY)
 
   io.output(filename)
-    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."'}")
+    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."',topModule='"..topModule.."'}")
   io.close()
 end
 
@@ -157,7 +158,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 
-    writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename)
+    writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename,hsfn.systolicModule.name)
   end
 
 end
@@ -214,6 +215,13 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
+
+
+------------------------
+-- verilator just uses the top module directly
+  io.output("out/"..filename..".verilator.v")
+  io.write(hsfn:toVerilog())
+  io.close()
 
 -- axi runs the sim as well
 H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)

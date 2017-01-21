@@ -17,6 +17,15 @@ TERRA += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
+VERILATORSRCS = $(filter-out underflow.t, $(SRCS))
+VERILATOR = $(patsubst %.t,out/%.verilator,$(VERILATORSRCS))
+VERILATOR = $(patsubst %.t,out/%.verilator.raw,$(VERILATORSRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.raw,$(VERILATORSRCS))
+VERILATOR += $(patsubst %.t,out/%.verilator.bmp,$(VERILATORSRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.bmp,$(VERILATORSRCS))
+VERILATOR += $(patsubst %.t,out/%.verilator.correct.txt,$(VERILATORSRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.correct.txt,$(VERILATORSRCS))
+
 # too slow
 SIMSRCS = $(SRCS)
 SIMSRCS := $(filter-out stereo_wide_handshake_medi.t stereo_wide_handshake_nostall_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t ,$(SIMSRCS))
@@ -83,6 +92,7 @@ CAMERABITS += $(patsubst %.t,out/%.camera.bit,$(CAMERASRCS))
 
 
 RES = $(TERRA)
+RES += $(VERILATOR)
 RES += $(SIM)
 RES += $(AXI)
 RES += $(AXIBITS)
@@ -98,6 +108,8 @@ all: $(RES)
 dups: $(DUPS)
 
 terra: $(TERRA)
+
+verilator: $(VERILATOR)
 
 sim: $(SIM)
 
@@ -118,7 +130,7 @@ axibits100: $(AXIBITS100)
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t 
+out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v out/%.verilator.v: %.t 
 	terra $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -127,6 +139,29 @@ out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v: %.t
 	- cp out/$*.cycles.txt out/build_$*
 	mkdir -p out/build100_$*
 	- cp out/$*.axi.v out/build100_$*
+
+#/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
+#	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
+out/%.verilator: out/%.verilator.v
+	verilator -cc -Mdir out/$*_verilator out/$*.verilator.v
+	terra ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
+	g++ -I/usr/share/verilator/include out/$*_verilator/V$*.cpp out/$*_verilator/V$*__Syms.cpp /usr/share/verilator/include/verilated.cpp out/$*.verilator.cpp -o $@
+
+out/%.verilator.raw: out/%.verilator
+	./out/$*.verilator
+
+out/%.verilator.bmp: out/%.verilator.raw
+	terra ../misc/raw2bmp.t out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*.verilator.bmp out/build_$*
+
+out/%.verilator.correct.txt : out/%.verilator.bmp
+	diff out/$*.verilator.bmp gold/$*.bmp > out/$*.verilator.diff
+	test ! -s out/$*.verilator.diff && touch $@
+	# keep copy for future reference
+#	mkdir -p out/build_$*
+#	test ! -s out/$*.verilator.diff && touch $@
 
 out/%.axi.bit: out/%.axi.v
 	mkdir -p out/build_$*
@@ -420,9 +455,10 @@ out/%.stats100.txt : out/%.axi100.bmp
 
 # special case SIFT - write out matches as a postprocess
 out/sift_hw_1080p.bmp: out/sift_hw_1080p.raw
+out/sift_hw_1080p.axi.bmp: out/sift_hw_1080p.axi.raw
 out/sift_hw_1080p_half.bmp: out/sift_hw_1080p_half.raw
 
-out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
+out/sift_hw_1080p.axi.bmp out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
 	# cut off the axi burst padding
 	head -c 8424000 $< > $@.tmp
 	terra ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
@@ -435,11 +471,13 @@ out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
 #	terra ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
 
 out/featuredescriptor.bmp: out/featuredescriptor.raw
+out/featuredescriptor.axi.bmp: out/featuredescriptor.axi.raw
 out/featuredescriptor_half.bmp: out/featuredescriptor_half.raw
 out/sift_hw.bmp: out/sift_hw.raw
+out/sift_hw.axi.bmp: out/sift_hw.axi.raw
 out/sift_hw_half.bmp: out/sift_hw_half.raw
 
-out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp:
+out/sift_hw.axi.bmp out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp out/featuredescriptor.axi.bmp:
 	terra ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
 	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/__feature.metadata.lua
 	terra ../misc/raw2bmp.t out/__feature.match $@ out/__feature.metadata.lua 0
