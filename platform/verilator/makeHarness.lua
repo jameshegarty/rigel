@@ -6,14 +6,14 @@ local outpackets = outbytes/8 -- axi bus
 
 print([=[#include <verilated.h>
 #include <iostream>
-#include "]=]..outmodule..[=[_verilator/V]=]..outmodule..[=[.h"
+#include "]=]..outmodule..[=[_verilator/V]=]..metadata.topModule..[=[.h"
 
 int main(int argc, char** argv) {
   //printf("START\n");
   Verilated::commandArgs(argc, argv); 
 
   //printf("alloc\n");
-  V]=]..outmodule..[=[* top = new V]=]..outmodule..[=[;
+  V]=]..metadata.topModule..[=[* top = new V]=]..metadata.topModule..[=[;
 
   //vluint64_t cycle = 0;
   bool CLK = false;
