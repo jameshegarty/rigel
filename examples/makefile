@@ -1,6 +1,8 @@
 SRCFILES = $(wildcard *.t)
 SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t descriptor_core.t,$(SRCFILES))
 
+VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
+
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
@@ -143,9 +145,9 @@ out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v out/%.verilato
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
 out/%.verilator: out/%.verilator.v
-	verilator -cc -Mdir out/$*_verilator out/$*.verilator.v
+	verilator -cc -Mdir out/$*_verilator out/$*.verilator.v ../platform/verilator/RAMB16_S36_S36.v
 	terra ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
-	g++ -I/usr/share/verilator/include out/$*_verilator/V$*.cpp out/$*_verilator/V$*__Syms.cpp /usr/share/verilator/include/verilated.cpp out/$*.verilator.cpp -o $@
+	g++ -I${VERPATH} out/$*_verilator/V$*.cpp out/$*_verilator/V$*__Syms.cpp ${VERPATH}verilated.cpp out/$*.verilator.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
 	./out/$*.verilator
