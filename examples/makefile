@@ -1,7 +1,10 @@
 SRCFILES = $(wildcard *.t)
 SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t descriptor_core.t,$(SRCFILES))
+SRCS += $(wildcard *.lua)
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
+
+LUA = luajit
 
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
@@ -11,6 +14,9 @@ DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 GOLDS = $(SRCS)
 
 TERRASRCS = $(filter-out underflow.t, $(SRCS))
+
+VERILOG = $(patsubst %.t,out/%.v,$(TERRASRCS))
+VERILOG += $(patsubst %.lua,out/%.v,$(TERRASRCS))
 
 TERRA = $(patsubst %.t,out/%.raw,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
@@ -109,6 +115,8 @@ all: $(RES)
 
 dups: $(DUPS)
 
+verilog: $(VERILOG)
+
 terra: $(TERRA)
 
 verilator: $(VERILATOR)
@@ -134,6 +142,12 @@ clean:
 
 out/%.v out/%.metadata.lua: %.t 
 	terra $<
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.v out/build_$*
+
+out/%.v out/%.metadata.lua: %.lua
+	$(LUA) $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
