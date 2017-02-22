@@ -14,6 +14,10 @@ DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 GOLDS = $(SRCS)
 
 TERRASRCS = $(filter-out underflow.t, $(SRCS))
+# TOO SLOW
+TERRASRCS := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(TERRASRCS))
+TERRASRCS := $(filter-out stereo_tr_rgba_full_32.t,$(TERRASRCS))
+TERRASRCS := $(filter-out stereo_ov7660.t,$(TERRASRCS))
 
 VERILOG = $(patsubst %.t,out/%.v,$(TERRASRCS))
 VERILOG += $(patsubst %.lua,out/%.v,$(TERRASRCS))

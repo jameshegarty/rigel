@@ -1763,35 +1763,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local res = {kind="fifo", inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
 
-  local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), ready:bool, readyDownstream:bool }
-  terra Fifo:reset() self.fifo:reset() end
-  terra Fifo:stats(name:&int8)  end
-  terra Fifo:store( inp : &rigel.lower(res.inputType):toTerraType())
-    if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.ready,valid(inp)) end
-    -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
-    -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
-    if valid(inp) and self.ready then 
-      if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE, valid input\n") end
-      self.fifo:pushBack(&data(inp)) 
-    end
-  end
-  terra Fifo:load( out : &rigel.lower(res.outputType):toTerraType())
-    if self.readyDownstream then
-      if self.fifo:hasData() then
-        if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, hasData. size=%d\n", size, self.fifo:size()) end
-        valid(out) = true
-        data(out) = @(self.fifo:popFront())
-      else
-        if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, no data. sizee=%d\n", size, self.fifo:size()) end
-        valid(out) = false
-      end
-    else
-      if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, not ready. FIFO size: %d\n", size, self.fifo:size()) end
-    end
-  end
-  terra Fifo:calculateStoreReady() self.ready = (self.fifo:full()==false) end
-  terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
-  res.terraModule = Fifo
+  if terralib~=nil then res.terraModule = MT.fifo(res,A, size, nostall, W, H, T, csimOnly) end
 
   local bytes = (size*A:verilogBits())/8
 
@@ -1865,12 +1837,7 @@ function modules.lut( inputType, outputType, values )
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 1
 
-  local struct LUTModule { lut : (outputType:toTerraType())[inputCount] }
-  terra LUTModule:reset() self.lut = arrayof([outputType:toTerraType()], values) end
-  terra LUTModule:process( inp:&inputType:toTerraType(), out:&outputType:toTerraType())
-    @out = self.lut[@inp]
-  end
-  res.terraModule = LUTModule
+  if terralib~=nil then res.terraModule = MT.lut(inputType, outputType, values, inputCount) end
 
   res.systolicModule = Ssugar.moduleConstructor("LUT")
   local lut = res.systolicModule:add( fpgamodules.bramSDP(true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
@@ -1902,30 +1869,8 @@ modules.reduce = memoize(function( f, W, H )
 
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
-  local struct ReduceModule { inner: f.terraModule }
-  terra ReduceModule:reset() self.inner:reset() end
 
-  -- the execution order needs to match the hardware
-  local inp = symbol( &res.inputType:toTerraType() )
-  local mself = symbol( &ReduceModule )
-  local t = map(range(0,W*H-1), function(i) return `(@inp)[i] end )
-
-  local foldout = foldt(t, function(a,b) return quote 
-    var tinp : f.inputType:toTerraType() = {a,b}
-    var tout : f.outputType:toTerraType()
-    mself.inner:process(&tinp,&tout)
-    in tout end end )
-
-  ReduceModule.methods.process = terra( [mself], [inp], out : &res.outputType:toTerraType() )
---      var res : res.outputType:toTerraType() = (@inp)[0]
---      for i=1,W*H do
---        var tinp : f.inputType:toTerraType() = {res, (@inp)[i]}
---        self.inner:process( &tinp, &res  )
---      end
---      @out = res
-    @out = foldout
-  end
-  res.terraModule = ReduceModule
+  if terralib~=nil then res.terraModule = MT.reduce(res,f,W,H) end
 
   res.systolicModule = Ssugar.moduleConstructor("reduce_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
   local resetPipelines = {}
@@ -1961,32 +1906,8 @@ modules.reduceSeq = memoize(function( f, T, X )
   res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
-  local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
-  terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
-  terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &rigel.lower(res.outputType):toTerraType())
-    if self.phase==0 and T==1 then -- T==1 mean this is a noop, passthrough
-      self.phase = 0
-      valid(out) = true
-      data(out) = @inp
-    elseif self.phase==0 then 
-      self.result = @inp
-      self.phase = self.phase + 1
-      valid(out) = false
-    else
-      var v = {self.result, @inp}
-      self.inner:process(&v,&self.result)
-      
-      if self.phase==[1/T]-1 then
-        self.phase = 0
-        valid(out) = true
-        data(out) = self.result
-      else
-        self.phase = self.phase + 1
-        valid(out) = false
-      end
-    end
-  end
-  res.terraModule = ReduceSeq
+
+  if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,T) end
 
   local del = f.systolicModule:getDelay("process")
   err( del == 0, "ReduceSeq function must have delay==0 but instead has delay of "..del )
@@ -2032,17 +1953,8 @@ modules.overflow = memoize(function( A, count )
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=A, outputType=rigel.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
-  local struct Overflow {cnt:int}
-  terra Overflow:reset() self.cnt=0 end
-  terra Overflow:process( inp : &A:toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
-    data(out) = @inp
-    if self.cnt>=count then
-      cstdio.printf("OUTPUT OVERFLOW %d\n",self.cnt)
-    end
-    valid(out) = (self.cnt<count)
-    self.cnt = self.cnt+1
-  end
-  res.terraModule = Overflow
+  if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
+
   res.systolicModule = Ssugar.moduleConstructor("Overflow_"..count)
   local cnt = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
 
@@ -2072,14 +1984,7 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
 
-  local struct Underflow {ready:bool; readyDownstream:bool;cycles:uint32; outputCount:uint32}
-  terra Underflow:reset() self.cycles=0; self.outputCount=0 end
-  terra Underflow:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
-    @out = @inp
-  end
-  terra Underflow:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
-  terra Underflow:stats(name:&int8) end
-  res.terraModule = Underflow
+  if terralib~=nil then res.terraModule = MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) end
 
   res.systolicModule = Ssugar.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
@@ -2167,14 +2072,7 @@ modules.cycleCounter = memoize(function( A, count )
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="cycleCounter", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{count,count+padCount}}, sdfOutput={{1,1}}, delay=0}
 
-  local struct CycleCounter {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32}
-  terra CycleCounter:reset() self.cycles=0; self.outputCount=0 end
-  terra CycleCounter:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
-    @out = @inp
-  end
-  terra CycleCounter:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
-  terra CycleCounter:stats(name:&int8) end
-  res.terraModule = CycleCounter
+  if terralib~=nil then res.terraModule = MT.cycleCounter(res,A,count) end
 
   res.systolicModule = Ssugar.moduleConstructor( "CycleCounter_A"..tostring(A).."_count"..count ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
@@ -2741,10 +2639,6 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
 
-  local struct LiftModule {}
-  terra LiftModule:reset() end
-  terra LiftModule:stats( name : &int8 )  end
-  terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
 
   err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
@@ -2758,7 +2652,10 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
   local nip = S.parameter("nip",types.null())
   --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
   systolicModule:complete()
-  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, terraModule=LiftModule, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
+  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
+
+  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction) end
+
   return rigel.newFunction( res )
 end
 
@@ -2783,24 +2680,9 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
 
   res.delay = 0
-  local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
-  local mself = symbol(&ConstSeqState,"mself")
-  local initstats = {}
---  map( value, function(m,i) table.insert( initstats, quote mself.data[[(i-1)]][] = m end ) end )
-  for C=0,(1/T)-1 do
-    for y=0,h-1 do
-      for x=0,W-1 do
-        table.insert( initstats, quote mself.data[C][y*W+x] = [value[x+y*w+C*W+1]] end )
-      end
-    end
-  end
-  terra ConstSeqState.methods.reset([mself]) mself.phase = 0; [initstats] end
-  terra ConstSeqState:process( out : &rigel.lower(res.outputType):toTerraType() )
-    @out = self.data[self.phase]
-    self.phase = self.phase + 1
-    if self.phase == [1/T] then self.phase = 0 end
-  end
-  res.terraModule = ConstSeqState
+
+  if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
+
   res.systolicModule = Ssugar.moduleConstructor("constSeq_"..tostring(value):gsub('%W','_').."_T"..tostring(1/T))
   local sconsts = map(range(1/T), function() return {} end)
   for C=0, (1/T)-1 do
@@ -2833,16 +2715,7 @@ modules.freadSeq = memoize(function( filename, ty )
   local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=types.null(), outputType=ty, stateful=true, delay=0}
   res.sdfInput={{1,1}}
   res.sdfOutput={{1,1}}
-  local struct FreadSeq { file : &cstdio.FILE }
-  terra FreadSeq:reset() 
-    self.file = cstdio.fopen(filename, "rb") 
-    darkroomAssert(self.file~=nil, ["file "..filename.." doesnt exist"])
-  end
-  terra FreadSeq:process(inp : &types.null():toTerraType(), out : &ty:toTerraType())
-    var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
-    darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
-  end
-  res.terraModule = FreadSeq
+  if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty) end
   res.systolicModule = Ssugar.moduleConstructor("freadSeq_"..filename:gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
@@ -2860,16 +2733,7 @@ function modules.fwriteSeq( filename, ty )
   rigel.expectBasic(ty)
   local filenameVerilog=filename
     local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
-  local struct FwriteSeq { file : &cstdio.FILE }
-  terra FwriteSeq:reset() 
-    self.file = cstdio.fopen(filename, "wb") 
-    darkroomAssert( self.file~=nil, ["Error opening "..filename.." for writing"] )
-  end
-  terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
-    cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
-    @out = @inp
-  end
-  res.terraModule = FwriteSeq
+  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
   res.systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
   local printInst
@@ -2896,14 +2760,7 @@ function modules.seqMap( f, W, H, T )
   darkroom.expectBasic(f.inputType)
   darkroom.expectBasic(f.outputType)
   local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
-  local struct SeqMap { inner: f.terraModule}
-  terra SeqMap:reset() self.inner:reset() end
-  terra SeqMap:stats() self.inner:stats("TOP") end
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var o : darkroom.lower(f.outputType):toTerraType()
-    for i=0,W*H do self.inner:process(nil,&o) end
-  end
-  res.terraModule = SeqMap
+  if terralib~=nil then res.terraModule = MT.seqMap(f, W, H, T) end
 
   res.systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
 reg CLK = 0;
@@ -2960,40 +2817,10 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
   local res = {kind="seqMapHandshake", tapInputType=tapInputType, tapValue=tapValue, inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
   res.sdfInput = f.sdfInput
   res.sdfOutput = f.sdfOutput
-  local struct SeqMap { inner: f.terraModule}
-  terra SeqMap:reset() self.inner:reset() end
-  terra SeqMap:stats() self.inner:stats("TOP") end
-
-  local innerinp = symbol(darkroom.lower(f.inputType):toTerraType(), "innerinp")
-  local assntaps = quote end
-  if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
 
   if readyRate==nil then readyRate=1 end
 
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
-    var [innerinp]
-    [assntaps]
-
-    var o : darkroom.lower(f.outputType):toTerraType()
-    var inpAddr = 0
-    var outAddr = 0
-    var downstreamReady = 0
-    var cycles : uint = 0
-
-    while inpAddr<inputCount or outAddr<outputCount do
-      valid(innerinp)=(inpAddr<inputCount)
-      self.inner:calculateReady(downstreamReady==0)
-      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
-      self.inner:process(&innerinp,&o)
-      if self.inner.ready then inpAddr = inpAddr + 1 end
-      if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
-      downstreamReady = downstreamReady+1
-      if downstreamReady==readyRate then downstreamReady=0 end
-      cycles = cycles + 1
-    end
-    return cycles
-  end
-  res.terraModule = SeqMap
+  if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate) end
 
   local verilogStr
 
