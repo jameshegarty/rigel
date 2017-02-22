@@ -96,7 +96,6 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
     outfile = outfile.."_nostall"
   end
 
-  --harness.axi( outfile, hsfn, infile, TAP_TYPE, range(ConvWidth*ConvWidth), RW_TYPE, 8, inputW, inputH, RW_TYPE, 8, outputW, outputH )
   harness{ outFile=outfile, fn=hsfn, inFile=infile, tapType=TAP_TYPE, tapValue=range(ConvWidth*ConvWidth), inSize={inputW,inputH}, outSize={outputW,outputH} }
 
   local sizestr = "128 "
@@ -104,8 +103,6 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
 
   io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
-
-  --harness.axi( "convpadcrop_wide_handshake_"..T, hsfn, RW_TYPE, inputW, inputH, types.array2d( types.uint(8), 4 ), outputW, outputH )
 end
 
 local first = string.find(arg[0],"%d+")

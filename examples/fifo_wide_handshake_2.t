@@ -24,5 +24,4 @@ local out = R.apply( "plus100", p100, pinp )
 hsfn = RM.lambda( "fifo_wide", inp, R.statements{ R.applyMethod("l2",regs[2],"load"), R.applyMethod("s1",regs[1],"store",inp), R.applyMethod("s2",regs[2], "store",out)}, regs )
 ------------
 
---harness.axi( "fifo_wide_handshake_2", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
 harness{ outFile="fifo_wide_handshake_2", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

@@ -126,24 +126,18 @@ end
 
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,2)), out )
 local out = R.apply("bf",blurfn,out)
---local out = R.apply("ds",C.downsampleSeq(types.uint(8),W,H,T,2,2),out)
 local out = R.apply("ef",edgefn,out)
---local out = R.apply("bff",blurfn,out)
---local out = R.apply("nf",nmsfn,out)
+
 if TAPS then
   out = R.apply("oack",C.SoAtoAoSHandshake(2,1,{types.uint(8),types.uint(32):makeConst()}),R.tuple("RT",{out,inptaps},false))
 end
-local out = R.apply("nf",thfn,out)
---local out = R.apply("us",C.upsampleSeq(types.uint(8),W/2,H/2,T,2,2),out)
-local hsfn = RM.lambda("hsfn",inp,out)
---local hsfn = C.compose("hsfn",blurfn,edgefn)
 
---hsfn = RM.makeHandshake(fn)
+local out = R.apply("nf",thfn,out)
+
+local hsfn = RM.lambda("hsfn",inp,out)
 
 if TAPS then
-  --harness.axi( "edge_taps", hsfn, "ov7660_1chan.raw", TTYPE, {10,0,0,0}, ITYPE, 8,W,H, OTYPE,2,W,H)
   harness{ outFile="edge_taps", fn=hsfn, inFile="ov7660_1chan.raw", tapType=TTYPE, tapValue={10,0,0,0}, inSize={W,H}, outSize={W,H} }
 else
-  --harness.axi( "edge", hsfn, "ov7660_1chan.raw", nil, nil, ITYPE, 8,W,H, OTYPE,2,W,H)
   harness{ outFile="edge", fn=hsfn, inFile="ov7660_1chan.raw", inSize={W,H}, outSize={W,H} }
 end

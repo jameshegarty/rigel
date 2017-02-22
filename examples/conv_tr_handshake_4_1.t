@@ -60,7 +60,6 @@ function MAKE(T,ConvWidth,size1080p)
     outfile = outfile.."_1080p"
   end
 
-  --harness.axi( outfile, hsfn, infile, nil, nil, RW_TYPE, 8,inputW, inputH, RW_TYPE, 8,outputW, outputH )
   harness{ outFile=outfile, fn=hsfn, inFile=infile, inSize={inputW,inputH}, outSize={outputW,outputH} }
 
   local sizestr = "128 "

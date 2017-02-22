@@ -189,5 +189,4 @@ local hsfnout = R.apply("O1",campipe,hsfnout)
 
 local hsfn = RM.lambda("hsfn",hsfninp,hsfnout)
 
---harness.axi( outputFilename, hsfn, inputFilename, nil, nil, ITYPE, T,W,H, OTYPE,2,W,H)
 harness{ outFile=outputFilename, fn=hsfn, inFile=inputFilename, inSize={W,H}, outSize={W,H} }

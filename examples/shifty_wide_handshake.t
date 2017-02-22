@@ -18,5 +18,4 @@ convpipe = R.apply( "border", C.borderSeq( types.uint(8), W, H, T, 0, 0, 4, 0, 0
 convpipe = RM.lambda( "convpipe", inp, convpipe )
 hsfn = RM.makeHandshake(convpipe)
 
---harness.axi("shifty_wide_handshake", hsfn, "frame_128.raw", nil, nil, RAWTYPE, T, W,H, RAWTYPE,T,W,H)
 harness{ outFile="shifty_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

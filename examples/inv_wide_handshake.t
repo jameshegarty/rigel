@@ -28,5 +28,4 @@ fn = RM.lambda( "pointwise_wide", inp, out )
 ------------
 hsfn = RM.makeHandshake(fn)
 
---harness.axi( "inv_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
 harness{ outFile="inv_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

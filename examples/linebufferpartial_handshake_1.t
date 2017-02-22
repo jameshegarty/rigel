@@ -33,8 +33,6 @@ function MAKE(T)
   out = R.apply( "border", RM.makeHandshake( C.borderSeq( types.uint(8), inputW/T, inputH, 1, (ConvWidth-1)/T, 0, ConvWidth-1, 0, 0 )), out ) -- cut off the junk (undefined region)
   local hsfn = RM.lambda("lbp", inp, out)
   
-
-  --harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, "frame_128.raw", nil, nil, BASE_TYPE, 1, inputW, inputH, BASE_TYPE, 1, inputW/T, inputH)
   harness{ outFile="linebufferpartial_handshake_"..(1/T), fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={inputW/T,inputH} }
 end
 

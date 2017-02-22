@@ -48,7 +48,6 @@ function doit(full)
     hsfn = siftFn
   end
 
-  --harness.axi( "sift_hw"..sel(full,"_1080p",""), hsfn, sel(full,"boxanim0000.raw","boxanim_256.raw"), nil, nil, ITYPE, 8, W, H, OTYPE, 2, outputCount,1)
   harness{ outFile="sift_hw"..sel(full,"_1080p",""), fn=hsfn, inFile=sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={outputCount,1} }
 
 end

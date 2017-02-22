@@ -19,7 +19,6 @@ function makeLK(T,window)
 
   local W = 64
   local H = 64
-  --T = 8
 
   if window==6 then
     W,H = 128,128
@@ -29,12 +28,8 @@ function makeLK(T,window)
 
   -- lk_full is 584x388, 2 channel
 
-  --local window = 4
-
---  local T = 4
   local externalT = 4
   local RW_TYPE = types.array2d(types.array2d(types.uint(8),2),externalT)
-
 
   require "lk_tr_core"
 
@@ -64,11 +59,10 @@ function makeLK(T,window)
   local internalT = 1/T
 
   if f.FLOAT then
-    --harness.terraOnly( "lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
     harness{ outFile="lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
   else
     local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
-    --harness.axi( outfile, LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+
     harness{ outFile=outfile, fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
 
     io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..window.."x"..window); io.close()

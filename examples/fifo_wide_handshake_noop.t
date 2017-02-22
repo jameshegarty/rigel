@@ -25,5 +25,4 @@ local out = R.apply( "plus100", p100, pinp )
 hsfn = RM.lambda( "fifo_wide", inp, R.statements{out, R.applyMethod("s1",regs[1],"store",inp)}, regs )
 ------------
 
---harness.axi( "fifo_wide_handshake_noop", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
 harness{ outFile="fifo_wide_handshake_noop", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

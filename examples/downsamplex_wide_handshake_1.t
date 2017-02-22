@@ -19,7 +19,6 @@ function MAKE(T)
   out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,downsampleT,8)), out )
   local hsfn = RM.lambda("hsfn", inp, out)
 
-  --harness.axi( "downsamplex_wide_handshake_"..T, hsfn, "frame_128.raw", nil, nil, ITYPE, 8,W,H, ITYPE,8,W/scaleX,H)
   harness{ outFile="downsamplex_wide_handshake_"..T, fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W/scaleX,H} }
 end
 

@@ -15,7 +15,6 @@ function MAKE(scaleX)
 
   local hsfn =  C.upsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) 
 
-  --harness.axi( "upsample_wide_handshake_"..scaleX, hsfn, "frame_128.raw", nil, nil, ITYPE,T,W,H, ITYPE,T,W*scaleX,H*scaleX)
   harness{ outFile = "upsample_wide_handshake_"..scaleX, fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W*scaleX,H*scaleX} }
 end
 
