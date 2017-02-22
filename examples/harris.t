@@ -40,4 +40,5 @@ out = R.apply("AO",RM.makeHandshake(C.arrayop(harrisType,1,1)),out)
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(OTYPE,1,1,OT)), out )
 fn = RM.lambda( "harris", inpraw, out )
 
-harness.axi( "harris", fn, "box_32_16.raw", nil, nil, ITYPE, T,W,H, types.array2d(OTYPE,OT),OT,W,H)
+--harness.axi( "harris", fn, "box_32_16.raw", nil, nil, ITYPE, T,W,H, types.array2d(OTYPE,OT),OT,W,H)
+harness{outFile="harris", fn=fn, inFile="box_32_16.raw", inSize={W,H}, outSize={W,H} }

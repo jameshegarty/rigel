@@ -22,4 +22,5 @@ fn = RM.lambda( "fixed_wide", inp, out )
 hsfn = RM.makeHandshake(fn)
 
 local OTYPE = types.array2d(types.float(32),T)
-harness.axi( "fixed_float_mult", hsfn, "trivial_64.raw", nil, nil, ITYPE, T,W,H, OTYPE,T,W,H)
+--harness.axi( "fixed_float_mult", hsfn, "trivial_64.raw", nil, nil, ITYPE, T,W,H, OTYPE,T,W,H)
+harness{ outFile="fixed_float_mult", fn=hsfn, inFile="trivial_64.raw", inSize={W,H}, outSize={W,H} }

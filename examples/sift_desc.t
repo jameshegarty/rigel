@@ -22,4 +22,5 @@ local out = R.apply("PS", RM.liftHandshake( RM.padSeq(siftType,130,1,2,0,126,0,0
 local hsfn = RM.lambda("sdf",inp,out)
 ---------
 
-harness.terraOnly( "sift_desc", hsfn, "desc.raw", nil, nil, ITYPE, 8, W, H, OTYPE, 2, 256,1)
+--harness.terraOnly( "sift_desc", hsfn, "desc.raw", nil, nil, ITYPE, 8, W, H, OTYPE, 2, 256,1)
+harness{ outFile="sift_desc", fn=hsfn, inFile="desc.raw", inSize={W,H}, outSize={256,1} }

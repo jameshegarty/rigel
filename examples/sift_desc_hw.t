@@ -28,4 +28,5 @@ local out = R.apply( "PS", RM.liftHandshake( RM.padSeq( siftType,130,1,2,0,126,0
 local hsfn = RM.lambda("sdf",inp,out)
 ---------
 
-harness.axi( "sift_desc_hw", hsfn, "desc.raw", nil, nil, ITYPE, 8, W, H, OTYPE, 2, 256,1,nil,2000)
+--harness.axi( "sift_desc_hw", hsfn, "desc.raw", nil, nil, ITYPE, 8, W, H, OTYPE, 2, 256,1,nil,2000)
+harness{ outFile="sift_desc_hw", fn=hsfn, inFile="desc.raw", inSize={W,H}, outSize={256,1}, earlyOverride=2000 }

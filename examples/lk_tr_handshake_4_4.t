@@ -64,10 +64,12 @@ function makeLK(T,window)
   local internalT = 1/T
 
   if f.FLOAT then
-    harness.terraOnly( "lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+    --harness.terraOnly( "lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+    harness{ outFile="lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
   else
     local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
-    harness.axi( outfile, LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+    --harness.axi( outfile, LKTop(internalT,W,H,window,bits), inputFilename, nil, nil, RW_TYPE, externalT,W,H, RW_TYPE,externalT,W,H)
+    harness{ outFile=outfile, fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
 
     io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..window.."x"..window); io.close()
     io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()

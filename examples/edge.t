@@ -84,7 +84,7 @@ local function makeThresh()
                                                                     end, inp, thout)
 
   if TAPS==false then
-    local THRESH=7
+    local THRESH=10
     local inp = R.input( types.uint(8) )
     local out = R.apply("rr", thfn, R.tuple("rof",{inp,R.constant("Rt",THRESH,types.uint(32):makeConst())}))
     thfn = RM.lambda("EWR",inp,out)
@@ -141,7 +141,9 @@ local hsfn = RM.lambda("hsfn",inp,out)
 --hsfn = RM.makeHandshake(fn)
 
 if TAPS then
-  harness.axi( "edge_taps", hsfn, "ov7660_1chan.raw", TTYPE, {10,0,0,0}, ITYPE, 8,W,H, OTYPE,2,W,H)
+  --harness.axi( "edge_taps", hsfn, "ov7660_1chan.raw", TTYPE, {10,0,0,0}, ITYPE, 8,W,H, OTYPE,2,W,H)
+  harness{ outFile="edge_taps", fn=hsfn, inFile="ov7660_1chan.raw", tapType=TTYPE, tapValue={10,0,0,0}, inSize={W,H}, outSize={W,H} }
 else
-  harness.axi( "edge", hsfn, "ov7660_1chan.raw", nil, nil, ITYPE, 8,W,H, OTYPE,2,W,H)
+  --harness.axi( "edge", hsfn, "ov7660_1chan.raw", nil, nil, ITYPE, 8,W,H, OTYPE,2,W,H)
+  harness{ outFile="edge", fn=hsfn, inFile="ov7660_1chan.raw", inSize={W,H}, outSize={W,H} }
 end

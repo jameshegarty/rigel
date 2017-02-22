@@ -138,7 +138,8 @@ end
 
 local H = {}
 
-function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, doHalfTest, X)
+function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, X)
+  print("UNDERFLOWTEST",underflowTest)
   if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
   local inputCount = (inputW*inputH)/inputT
@@ -150,7 +151,7 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = RM.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, nil, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, nil, nil, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
+    local f = RM.seqMapHandshake( harness( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
@@ -158,7 +159,6 @@ function H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 
-    writeMetadata("out/"..filename..ext..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename,hsfn.systolicModule.name)
   end
 
 end
@@ -175,7 +175,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
 
-  H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
+--  H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
 
   local frames = 2
   local simInputH = inputH*frames
@@ -196,8 +196,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   
 end
 
--- AXI must have T=8
-function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
+function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
 
   assert(X==nil)
   assert( types.isType(inputType) )
@@ -210,6 +209,31 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   assert(earlyOverride==nil or type(earlyOverride)=="number")
 
+  writeMetadata("out/"..filename..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename,hsfn.systolicModule.name)
+
+------------------------
+-- verilator just uses the top module directly
+  io.output("out/"..filename..".v")
+  io.write(hsfn:toVerilog())
+  io.close()
+
+end
+
+-- AXI must have T=8
+function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
+
+  assert(X==nil)
+  assert( types.isType(inputType) )
+  assert( tapType==nil or types.isType(tapType) )
+  if tapType~=nil then tapType:checkLuaValue(tapValue) end
+  assert( types.isType(outputType) )
+  assert(type(inputW)=="number")
+  assert(type(outputH)=="number")
+  assert(type(inputFilename)=="string")
+  assert(type(outputFilename)=="string")
+  err(R.isFunction(hsfn), "second argument to harness.axi must be function")
+  assert(earlyOverride==nil or type(earlyOverride)=="number")
+
   err(inputType:verilogBits()==64, "input type must be 64 bits for AXI bus, but is "..tostring(inputType:verilogBits()))
   err(outputType:verilogBits()==64, "output type must be 64 bits for AXI bus")
 
@@ -217,14 +241,9 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   local outputCount = (outputW*outputH)/outputT
 
 
-------------------------
--- verilator just uses the top module directly
-  io.output("out/"..filename..".verilator.v")
-  io.write(hsfn:toVerilog())
-  io.close()
 
 -- axi runs the sim as well
-H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
+--H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
 local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
@@ -235,4 +254,84 @@ io.close()
 --------
 end
 
-return H
+function harnessTop(t)
+  err(type(t.inFile)=="string", "expected input filename to be string")
+  err(type(t.outFile)=="string", "expected output filename to be string")
+
+  -- just assume we were given a handshake vector...
+  print("ITYPE",t.fn.inputType)
+  R.expectHandshake(t.fn.inputType)
+
+  local iover, inputP, oover, outputP, fn
+
+  if t.inType~=nil then
+    -- if user explicitly passes us the type, just trust them...
+    iover, inputP = t.inType, t.inP
+    oover, outputP = t.outType, t.outP
+    fn = t.fn
+  else
+    
+    iover = R.extractData(t.fn.inputType)
+    
+    if t.tapType~=nil then
+      -- taps have tap value packed into argument
+      assert(iover.list[2]==t.tapType)
+      iover = iover.list[1]
+    end
+    
+    err(iover:isArray(), "expected input to be array but is "..tostring(iover))
+    inputP = iover:channels()
+
+    print("OTYPE",t.fn.outputType)
+    R.expectHandshake(t.fn.outputType)
+    oover = R.extractData(t.fn.outputType)
+    assert(oover:isArray())
+    outputP = oover:channels()
+
+    fn = t.fn
+    
+    if iover:verilogBits()~=64 or oover:verilogBits()~=64 then
+      local inputP_orig = inputP
+      inputP = (64/t.fn.inputType:verilogBits())*inputP
+      iover = types.array2d( iover:arrayOver(), inputP )
+      
+      local inp = R.input( R.Handshake(iover) )
+      local out
+      
+      if t.fn.inputType:verilogBits()~=64 then
+        --out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
+        out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover:arrayOver(), 1, inputP, inputP_orig )), inp)
+      end
+      
+      out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
+      
+      local outputP_orig = outputP
+      outputP = (64/t.fn.outputType:verilogBits())*outputP
+      oover = types.array2d( oover:arrayOver(), outputP )
+      
+      if t.fn.outputType:verilogBits()~=64 then
+        --out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
+        out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover:arrayOver(),1,outputP_orig,outputP)),out)
+      end
+      
+      --fn = RS.defineModule{input=inp,output=out}
+      fn = RM.lambda("hsfn",inp,out)
+    end
+  end
+
+  if(arg[1]==nil or arg[1]=="verilog") then
+    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2] )
+  elseif(arg[1]=="axi") then
+    H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
+  elseif(arg[1]=="isim") then
+    H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
+  elseif(arg[1]=="terrasim") then
+    H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest )
+  else
+    print("unknown build target "..arg[1])
+    assert(false)
+  end
+
+end
+
+return harnessTop

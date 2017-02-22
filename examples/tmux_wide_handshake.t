@@ -35,4 +35,5 @@ hsfn = RM.lambda( "tmux_wide", A, R.statements{ R.selectStream("i1",out,1), R.ap
 -- (in the case of half throughput downstream - where it has time to process data while SDF thinks it would be stalled).
 -- This leads to a 2x perf improvement over expected
 EARLY_OVERRIDE = 1200
-harness.axi( "tmux_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H,nil,EARLY_OVERRIDE)
+--harness.axi( "tmux_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H,nil,EARLY_OVERRIDE)
+harness{outFile="tmux_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H}, earlyOverride=EARLY_OVERRIDE}

@@ -336,48 +336,6 @@ function RS.HS(t)
   end
 end
 
-function RS.harness(t)
-  -- just assume we were given a handshake vector...
-  print("ITYPE",t.fn.inputType)
-  R.expectHandshake(t.fn.inputType)
-  local iover = R.extractData(t.fn.inputType)
-  assert(iover:isArray())
-  local inputP = iover:channels()
-
-  print("OTYPE",t.fn.outputType)
-  R.expectHandshake(t.fn.outputType)
-  local oover = R.extractData(t.fn.outputType)
-  assert(oover:isArray())
-  local outputP = oover:channels()
-
-  local fn = t.fn
-
-  if t.fn.inputType:verilogBits()~=64 or t.fn.outputType:verilogBits()~=64 then
-    local inputP_orig = inputP
-    inputP = (64/t.fn.inputType:verilogBits())*inputP
-    iover = RS.array( iover:arrayOver(), inputP )
-
-    local inp = RS.input( RS.HS(iover) )
-    local out
-
-    if t.fn.inputType:verilogBits()~=64 then
-      out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
-    end
-    
-    out = RS.connect{input=out, toModule=fn}
-
-    local outputP_orig = outputP
-    outputP = (64/t.fn.outputType:verilogBits())*outputP
-    oover = RS.array( oover:arrayOver(), outputP )
-    
-    if t.fn.outputType:verilogBits()~=64 then
-      out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
-    end
-
-    fn = RS.defineModule{input=inp,output=out}
-  end
-
-  harness.axi( t.outputFile, fn, t.inputFile, nil, nil, iover, inputP, t.inputSize[1], t.inputSize[2], oover, outputP, t.outputSize[1], t.outputSize[2] )
-end
+function RS.harness(t) return harness(t) end
 
 return RS

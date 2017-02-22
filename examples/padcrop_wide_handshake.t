@@ -24,4 +24,5 @@ hsfn = C.compose("HSFN",
                  RM.liftHandshake(RM.liftDecimate(RM.cropSeq(types.uint(8), W, H, T, 0, (W-inputW), 0, (H-inputH), 0))),
                  RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, T, (W-inputW), 0, (H-inputH), 0, 128)) )
 
-harness.axi( "padcrop_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE, T,inputW, inputH, BASE_TYPE, T,inputW, inputH )
+--harness.axi( "padcrop_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE, T,inputW, inputH, BASE_TYPE, T,inputW, inputH )
+harness{ outFile="padcrop_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={inputW, inputH} }

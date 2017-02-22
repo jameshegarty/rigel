@@ -13,4 +13,5 @@ print("FACTOR",factor)
 ITYPE = types.array2d(types.uint(8),8)
 hsfn = RM.liftHandshake(RM.reduceThroughput(ITYPE,factor))
 
-harness.axi( "lowthroughput_"..factor, hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+--harness.axi( "lowthroughput_"..factor, hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness{ outFile="lowthroughput_"..factor, fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

@@ -35,4 +35,5 @@ convpipe = RM.lambda( "convpipe", inp, convpipe )
 -------------
 hsfn = RM.makeHandshake(convpipe)
 
-harness.axi( "conv_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE,T,inputW, inputH, BASE_TYPE,T, inputW, inputH )
+--harness.axi( "conv_wide_handshake", hsfn, "frame_128.raw", nil, nil, BASE_TYPE,T,inputW, inputH, BASE_TYPE,T, inputW, inputH )
+harness{ outFile="conv_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={inputW,inputH} }

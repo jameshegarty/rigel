@@ -63,4 +63,5 @@ convpipe = RM.lambda( "convpipe", inp, convpipe )
 hsfn = RM.makeHandshake(convpipe)
 
 local tapValue = range(ConvArea)
-harness.axi( "conv_wide_handshake_taps", hsfn, "frame_128.raw", STTYPE:makeConst(), tapValue, BASE_TYPE, T, inputW, inputH, BASE_TYPE, T, inputW, inputH )
+--harness.axi( "conv_wide_handshake_taps", hsfn, "frame_128.raw", STTYPE:makeConst(), tapValue, BASE_TYPE, T, inputW, inputH, BASE_TYPE, T, inputW, inputH )
+harness{ outFile="conv_wide_handshake_taps", fn=hsfn, inFile="frame_128.raw", tapType=STTYPE:makeConst(), tapValue=tapValue, inSize={inputW,inputH}, outSize={inputW,inputH} }

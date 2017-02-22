@@ -28,4 +28,5 @@ hsfn = C.compose( "rhsfn", downsample, hsfn )
 -------------
 
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus
-harness.axi( "resample_wide_handshake", hsfn, "frame_128.raw", nil, nil, RW_TYPE, T,inputW, inputH, RW_TYPE, T,outputW/scale, outputH/scale )
+--harness.axi( "resample_wide_handshake", hsfn, "frame_128.raw", nil, nil, RW_TYPE, T,inputW, inputH, RW_TYPE, T,outputW/scale, outputH/scale )
+harness{ outFile = "resample_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={outputW/scale, outputH/scale} }

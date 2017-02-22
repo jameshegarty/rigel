@@ -132,28 +132,44 @@ axibits100: $(AXIBITS100)
 clean:
 	rm -Rf out/*
 
-out/%.raw out/%_half.raw out/%.sim.v out/%_half.sim.v out/%.axi.v out/%.verilator.v: %.t 
+out/%.v out/%.metadata.lua: %.t 
 	terra $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	- cp out/$*.axi.v out/build_$*
-	- cp out/$*.sim.v out/build_$*
+	- cp out/$*.v out/build_$*
+
+out/%.raw out/%_half.raw: %.t
+	terra $< terrasim
+	# keep copy for future reference
+	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
+
+out/%.sim.v out/%_half.sim.v: %.t 
+	terra $< isim
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.sim.v out/build_$*
+
+out/%.axi.v: %.t 
+	terra $< axi
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.axi.v out/build_$*
 	mkdir -p out/build100_$*
 	- cp out/$*.axi.v out/build100_$*
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
-out/%.verilator: out/%.verilator.v
+out/%.verilator: out/%.v out/%.metadata.lua
 	$(eval $@_TOP := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua topModule))
-	verilator -cc -Mdir out/$*_verilator out/$*.verilator.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S9_S9.v --top-module $($@_TOP)
+	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S9_S9.v --top-module $($@_TOP)
 	terra ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
 	g++ -I${VERPATH} out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${VERPATH}verilated.cpp out/$*.verilator.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
 	./out/$*.verilator
 
-out/%.verilator.bmp: out/%.verilator.raw
+out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
 	terra ../misc/raw2bmp.t out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -368,13 +384,13 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	mkdir -p out/build_$*
 	cp out/$*.sim.cycles.txt out/build_$*
 
-out/%.sim.bmp: out/%.sim.raw
+out/%.sim.bmp: out/%.sim.raw out/%.metadata.lua
 	terra ../misc/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.bmp out/build_$*
 
-out/%.sim.1.bmp: out/%.sim.raw
+out/%.sim.1.bmp: out/%.sim.raw out/%.metadata.lua
 	terra ../misc/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -392,11 +408,17 @@ out/%.axi100.bmp: out/%.axi100.raw
 	mkdir -p out/build100_$*
 	cp out/$*.axi100.bmp out/build100_$*
 
-out/%.bmp: out/%.raw
+out/%.bmp: out/%.raw out/%.metadata.lua
 	terra ../misc/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.bmp out/build_$*
+
+out/%_half.bmp: out/%_half.raw out/%.metadata.lua
+	terra ../misc/raw2bmp.t out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	cp out/$*_half.bmp out/build_$*
 
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff

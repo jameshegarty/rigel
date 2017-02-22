@@ -171,7 +171,8 @@ if LARGE then
 end
 
 
-harness.axi( outfile, hsfn, infile, TAP_TYPE, P.G, IO_TYPE, 8, inputW, inputH, IO_TYPE, 8, outputW, outputH, nil, 9999999 )
+--harness.axi( outfile, hsfn, infile, TAP_TYPE, P.G, IO_TYPE, 8, inputW, inputH, IO_TYPE, 8, outputW, outputH, nil, 9999999 )
+harness{ outFile=outfile, fn=hsfn, inFile=infile, tapType=TAP_TYPE, tapValue=P.G, inSize={inputW,inputH}, outSize={outputW,outputH}, earlyOverride=9999999}
 
 io.output("out/"..outfile..".design.txt"); io.write(design); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()

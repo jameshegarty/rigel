@@ -102,6 +102,6 @@ desc = R.connect{ input = R.fanIn{branch3_descnorm,branch0_pos}, toModule =
 descriptorPipeline = R.defineModule{ input=inp, output=desc, fifoList=fifoList }
 
 R.harness{ fn = descriptorPipeline, 
-            inputFile = "boxanim_256.raw", inputSize = {W,H},
-            outputFile = "featuredescriptor", outputSize = {W*H*FILTER_RATE*130, 1} }
+            inFile = "boxanim_256.raw", inSize = {W,H},
+            outFile = "featuredescriptor", outSize = {W*H*FILTER_RATE*130, 1} }
             

@@ -36,4 +36,5 @@ local ITYPE = types.array2d(ATYPE,4)
 local OUT_TYPE = types.array2d(types.array2d(types.uint(8),4),2)
 
 local outfile = "stereo_ov7660"
-harness.axi( outfile, hsfn, infile, nil, nil,  ITYPE, 4, W, H, OUT_TYPE, 2, W, H )
+--harness.axi( outfile, hsfn, infile, nil, nil,  ITYPE, 4, W, H, OUT_TYPE, 2, W, H )
+harness{ outFile=outfile, fn=hsfn, inFile=infile, inSize={W,H}, outSize={W,H} }

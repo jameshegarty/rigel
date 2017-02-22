@@ -49,4 +49,5 @@ local out = R.apply("AO",RM.makeHandshake(C.arrayop(types.array2d(types.uint(8),
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,1,4)), out )
 fn = RM.lambda( "harris", inpraw, out )
 
-harness.axi( "harris_filterseq", fn, "box_256.raw", nil, nil, ITYPE, T,W,H, OTYPE,T/2,(W*H)/FILTER_RATE,1)
+--harness.axi( "harris_filterseq", fn, "box_256.raw", nil, nil, ITYPE, T,W,H, OTYPE,T/2,(W*H)/FILTER_RATE,1)
+harness{ outFile="harris_filterseq", fn=fn, inFile="box_256.raw", inSize={W,H}, outSize={(W*H)/FILTER_RATE,1} }

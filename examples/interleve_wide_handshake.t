@@ -39,4 +39,5 @@ out = R.apply("flatten", RM.flattenStreams(ITYPE,{{1,2},{1,2}}), out )
 
 hsfn = RM.lambda( "interleve_wide", A, R.statements{out, R.applyMethod("s1",fifos[1],"store",R.selectStream("A0",Abroadcast,0)), R.applyMethod("s2",fifos[2],"store",R.selectStream("A1",Abroadcast,1)) }, fifos )
 
-harness.axi( "interleve_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W*2,H)
+--harness.axi( "interleve_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W*2,H)
+harness{ outFile="interleve_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W*2,H} }

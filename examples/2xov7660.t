@@ -38,4 +38,5 @@ sfn = RM.makeHandshake(RM.liftXYSeqPointwise(splitfn,W,H,2))
 
 hsfn = C.compose("hsfn",sfn,cr)
 
-harness.axi( "2xov7660", hsfn, "2xov7660.raw", nil, nil, types.array2d(ITYPE,4), T,W,H, types.array2d(OTYPE,2),2,W,H)
+--harness.axi( "2xov7660", hsfn, "2xov7660.raw", nil, nil, types.array2d(ITYPE,4), T,W,H, types.array2d(OTYPE,2),2,W,H)
+harness{ outFile="2xov7660", fn=hsfn, inFile="2xov7660.raw", inSize={W,H}, outSize={W,H} }

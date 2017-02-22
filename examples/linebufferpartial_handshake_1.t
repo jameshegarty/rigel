@@ -34,7 +34,8 @@ function MAKE(T)
   local hsfn = RM.lambda("lbp", inp, out)
   
 
-  harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, "frame_128.raw", nil, nil, BASE_TYPE, 1, inputW, inputH, BASE_TYPE, 1, inputW/T, inputH)
+  --harness.sim( "linebufferpartial_handshake_"..(1/T), hsfn, "frame_128.raw", nil, nil, BASE_TYPE, 1, inputW, inputH, BASE_TYPE, 1, inputW/T, inputH)
+  harness{ outFile="linebufferpartial_handshake_"..(1/T), fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={inputW/T,inputH} }
 end
 
 local t = string.sub(arg[0],string.find(arg[0],"%d+"))

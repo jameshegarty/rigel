@@ -45,4 +45,5 @@ local out = R.apply("A0", RM.makeHandshake(C.arrayop(ITYPE,1,1)), out)
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,8)), out )
 local hsfn = RM.lambda("hsfn",hsfninp,out)
 
-harness.axi( "fixed_inv_wide_handshake", hsfn, "frame_128.raw", nil, nil, types.array2d(ITYPE,T), T,W,H, types.array2d(ITYPE,T),T,W,H)
+--harness.axi( "fixed_inv_wide_handshake", hsfn, "frame_128.raw", nil, nil, types.array2d(ITYPE,T), T,W,H, types.array2d(ITYPE,T),T,W,H)
+harness{ outFile="fixed_inv_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

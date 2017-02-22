@@ -27,4 +27,5 @@ local out = R.apply("rseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(reduce
 local out = R.apply("touint8", RM.makeHandshake(touint8), out)
 local hsfn = RM.lambda( "hsfn", inp, out )
 
-harness.sim( "reduceseq_handshake", hsfn, "frame_128.raw", nil, nil, types.uint(8), 1,inputW, inputH, types.uint(8), 1,inputW/DOWNSAMP, inputH)
+--harness.sim( "reduceseq_handshake", hsfn, "frame_128.raw", nil, nil, types.uint(8), 1,inputW, inputH, types.uint(8), 1,inputW/DOWNSAMP, inputH)
+harness{ outFile="reduceseq_handshake", fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, inType=types.uint(8), inP=1, outType=types.uint(8), outP=1, outSize={inputW/DOWNSAMP, inputH} }

@@ -35,4 +35,5 @@ fn = RM.lambda( "pointwise_wide", inp, out )
 ------------
 hsfn = RM.makeHandshake(fn)
 
-harness.axi( "pointwise_wide_handshake"..sel(f1080p~=nil,"_1080p",""), hsfn, sel(f1080p~=nil,"1080p.raw","frame_128.raw"), nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+--harness.axi( "pointwise_wide_handshake"..sel(f1080p~=nil,"_1080p",""), hsfn, sel(f1080p~=nil,"1080p.raw","frame_128.raw"), nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness{ outFile="pointwise_wide_handshake"..sel(f1080p~=nil,"_1080p",""), fn=hsfn, inFile=sel(f1080p~=nil,"1080p.raw","frame_128.raw"), inSize={W,H}, outSize={W,H} }

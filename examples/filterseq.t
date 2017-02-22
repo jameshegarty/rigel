@@ -42,4 +42,5 @@ local out = R.apply("AO",RM.makeHandshake(C.arrayop(types.uint(8),1,1)),out)
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,1,8)), out )
 fn = RM.lambda( "filterseq", inpraw, out )
 
-harness.axi( "filterseq", fn, "filterseq.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W/4,H)
+--harness.axi( "filterseq", fn, "filterseq.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W/4,H)
+harness{ outFile="filterseq", fn=fn, inFile="filterseq.raw", inSize={W,H}, outSize={W/4,H} }

@@ -24,6 +24,7 @@ fn = RM.lambda( "fixed_wide", inp, out )
 ------------
 hsfn = RM.makeHandshake(fn)
 
-harness.axi( "fixed_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+--harness.axi( "fixed_wide_handshake", hsfn, "frame_128.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W,H)
+harness{ outFile="fixed_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }
 
 fixed.printHistograms()

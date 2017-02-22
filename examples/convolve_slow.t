@@ -61,5 +61,5 @@ convolveFunction = R.defineModule{ input = input, output = output }
 ----------------
 
 R.harness{ fn = convolveFunction,
-           inputFile = "1080p.raw", inputSize = inSize,
-           outputFile = "convolve_slow", outputSize = inSize }
+           inFile = "1080p.raw", inSize = inSize,
+           outFile = "convolve_slow", outSize = inSize }

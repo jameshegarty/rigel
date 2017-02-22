@@ -29,4 +29,5 @@ hsfn = C.padcrop(types.uint(8),inputW,inputH,T,ConvRadius,ConvRadius,ConvRadius,
 -- b/c of padcrop FIFO in _half test.
 EARLY_OVERRIDE = 1200
 local RW_TYPE = types.array2d( types.uint(8), T ) -- simulate axi bus
-harness.sim( "convpadcrop_handshake", hsfn, "frame_128.raw", nil, nil,  RW_TYPE, T, inputW, inputH, RW_TYPE, T, outputW, outputH,nil,EARLY_OVERRIDE )
+--harness.sim( "convpadcrop_handshake", hsfn, "frame_128.raw", nil, nil,  RW_TYPE, T, inputW, inputH, RW_TYPE, T, outputW, outputH,nil,EARLY_OVERRIDE )
+harness{ outFile="convpadcrop_handshake", fn=hsfn, inFile="frame_128.raw", inSize={inputW,inputH}, outSize={outputW, outputH}, earlyOverride=EARLY_OVERRIDE }
