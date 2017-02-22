@@ -460,4 +460,332 @@ function MT.toHandshakeArray( res,A, inputRates )
   return ToHandshakeArray
 end
 
+function MT.serialize( res, A, inputRates, Schedule)
+  local struct Serialize { schedule: Schedule.terraModule; nextId : uint8, ready:uint8, readyDownstream:bool}
+  terra Serialize:reset() self.schedule:reset(); self.schedule:process(&self.nextId) end
+  terra Serialize:stats( name: &int8 ) end
+  terra Serialize:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    if self.readyDownstream then
+      if valid(inp) then
+        valid(out) = self.nextId
+        data(out) = data(inp)
+        -- step the schedule
+        if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE\n") end
+        self.schedule:process( &self.nextId)
+      else
+        if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: invalid input\n") end
+        valid(out) = [#inputRates]
+      end
+    else
+        if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: blocked downstream\n") end
+    end
+  end
+  terra Serialize:calculateReady( readyDownstream : bool) 
+    self.readyDownstream = readyDownstream
+    if readyDownstream==false then 
+      self.ready = [#inputRates] -- intentionally out of bounds
+    else 
+      self.ready = self.nextId 
+    end
+  end
+
+  return Serialize
+end
+
+function MT.demux( res,A, rates)
+  -- HACK: we don't have true bidirectional data transfer in the simulator, so fake it with a FIFO
+  local struct Demux { fifo: simmodules.fifo( rigel.lower(res.inputType):toTerraType(), 8, "makeHandshake"), ready:bool, readyDownstream:bool[#rates]}
+  terra Demux:reset() self.fifo:reset() end
+  terra Demux:stats( name: &int8 ) end
+  terra Demux:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    if self.ready then
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: push to internal fifo\n") end
+      self.fifo:pushBack(inp)
+    else
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: push to internal fifo fail, not ready\n") end
+    end
+
+    var ot = self.fifo:peekFront(0)
+    if valid(ot)>=[#rates] and self.fifo:hasData() then
+      for i=0,[#rates] do
+        valid((@out)[i]) = false
+      end
+      self.fifo:popFront()
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: invalid input\n") end
+    elseif valid(ot)<[#rates] and self.readyDownstream[valid(ot)] and self.fifo:hasData() then
+      self.fifo:popFront()
+      for i=0,[#rates] do
+        valid((@out)[i]) = (i==valid(ot))
+        data((@out)[i]) = data(ot)
+      end
+      if DARKROOM_VERBOSE then cstdio.printf("DMUX: valid input, readyDownstream\n") end
+    else
+      if DARKROOM_VERBOSE then 
+        cstdio.printf("DMUX: not ready downstream IV:%d fifo_full:%d fifo_size:%d\n",valid(ot),self.fifo:full(), self.fifo:size() ) 
+        for i=0,[#rates] do cstdio.printf("DMUX readyDownstream[%d] = %d\n",i,self.readyDownstream[i]) end
+      end
+    end
+  end
+  terra Demux:calculateReady( readyDownstream : bool[#rates])
+    self.readyDownstream = readyDownstream
+    self.ready = (self.fifo:full()==false)
+  end
+
+  return Demux
+end
+
+function MT.flattenStreams( res, A, rates)
+  local struct FlattenStreams { ready:bool, readyDownstream:bool}
+  terra FlattenStreams:reset()  end
+  terra FlattenStreams:stats( name: &int8 ) end
+  terra FlattenStreams:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    valid(out) = (valid(inp)<[#rates])
+    data(out) = data(inp)
+  end
+  terra FlattenStreams:calculateReady( readyDownstream : bool )
+    self.readyDownstream = readyDownstream
+    self.ready = readyDownstream
+  end
+
+  return FlattenStreams
+end
+
+function MT.broadcastStream(res,A,N)
+  local struct BroadcastStream {ready:bool, readyDownstream:bool[N]}
+  terra BroadcastStream:reset() end
+  terra BroadcastStream:stats( name: &int8) end
+  terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    for i=0,N do
+      if self.ready then -- all of readyDownstream are true
+        data((@out)[i]) = data(inp)
+        valid((@out)[i]) = valid(inp)
+      else
+        valid((@out)[i]) = false
+      end
+    end
+  end
+  terra BroadcastStream:calculateReady( readyDownstream : bool[N] )
+    self.ready = true
+    for i=0,N do
+      self.readyDownstream[i] = readyDownstream[i]
+      self.ready = self.ready and readyDownstream[i]
+    end
+  end
+
+  return BroadcastStream
+end
+
+function MT.posSeq(res,W,H,T)
+  local struct PosSeq { x:uint16, y:uint16 }
+  terra PosSeq:reset() self.x=0; self.y=0 end
+  terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
+    for i=0,T do 
+      (@out)[i] = {self.x,self.y}
+      self.x = self.x + 1
+      if self.x==W then self.x=0; self.y=self.y+1 end
+    end
+  end
+
+  return PosSeq
+end
+
+
+function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
+  local struct PadSeq {posX:int; posY:int, ready:bool}
+  terra PadSeq:reset() self.posX=0; self.posY=0; end
+  terra PadSeq:stats(name:&int8) end -- not particularly interesting
+  terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
+
+    valid(out) = true
+    if interior then
+      data(out) = @inp
+    else
+      data(out) = arrayof([A:toTerraType()],[rep(A:valueToTerra(Value),T)])
+    end
+    
+    self.posX = self.posX+T;
+    if self.posX==(W+L+R) then
+      self.posX=0;
+      self.posY = self.posY+1;
+    end
+--    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
+  end
+  terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
+
+  return PadSeq
+end
+
+function MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount )
+
+  local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
+
+  terra ChangeRate:stats(name:&int8) end
+
+  if inputRate>outputRate then
+    terra ChangeRate:reset() self.phase = 0; end
+    terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", self.phase) end
+      if self.phase==0 then
+        for y=0,H do
+          for i=0,inputRate do self.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
+        end
+      end
+
+      for y=0,H do
+        for i=0,outputRate do (data(out))[i+y*outputRate] = self.buffer[i+self.phase*outputRate+y*inputRate] end
+      end
+      valid(out) = true
+
+      self.phase = self.phase + 1
+      if  self.phase>=outputCount then self.phase=0 end
+
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out)) end
+    end
+    terra ChangeRate:calculateReady()  self.ready = (self.phase==0) end
+  else
+    terra ChangeRate:reset() self.phase = 0; end
+    terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,inputRate do self.buffer[i+self.phase*inputRate] = (@(inp))[i] end
+
+      if self.phase >= inputCount-1 then
+        valid(out) = true
+        data(out) = self.buffer
+      else
+        valid(out) = false
+      end
+
+      self.phase = self.phase + 1
+      if self.phase>=inputCount then
+        self.phase = 0
+      end
+
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.phase) end
+    end
+    terra ChangeRate:calculateReady()  self.ready = true end
+
+  end
+
+  return ChangeRate
+end
+
+function MT.linebuffer(res, A, w, h, T, ymin)
+  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
+  terra Linebuffer:reset() self.SR:reset() end
+  terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    -- pretend that this happens in one cycle (delays are added later)
+    for i=0,[T] do
+      self.SR:pushBack( &(@inp)[i] )
+    end
+
+    for y=[ymin],1 do
+      for x=[-T+1],1 do
+        var outIdx = (y-ymin)*T+(x+T-1)
+        var peekIdx = x+y*[w]
+        --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
+        (@out)[outIdx] = @(self.SR:peekBack(peekIdx))
+      end
+    end
+
+  end
+
+  return Linebuffer
+end
+
+function MT.SSR(res, A, T, xmin, ymin )
+  local struct SSR {SR:(A:toTerraType())[-xmin+T][-ymin+1]}
+  terra SSR:reset() end
+  terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
+    for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+T] end end
+    for y=0,-ymin+1 do for x=-xmin,-xmin+T do self.SR[y][x] = (@inp)[y*T+(x+xmin)] end end
+
+    -- write to output
+    for y=0,-ymin+1 do for x=0,-xmin+T do (@out)[y*(-xmin+T)+x] = self.SR[y][x] end end
+  end
+
+  return SSR
+end
+
+function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
+  local struct SSRPartial {phase:int; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int, ready:bool}
+  terra SSRPartial:reset() self.phase=0; self.activeCycles=0;self.idleCycles=0; end
+  terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
+  terra SSRPartial:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    var phaseAtStart = self.phase
+    --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
+    if self.ready then
+      --darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
+--      darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
+--      self.activeCycles = self.activeCycles + 1
+--      self.wroteLastColumn=false
+      -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
+      var SStride = 1
+      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
+      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
+      self.phase = terralib.select([T==1],0,1)
+    else
+      if self.phase<[1/T]-1 then 
+        self.phase = self.phase + 1 
+--        self.activeCycles = self.activeCycles + 1
+      else
+        self.phase = 0
+--        self.idleCycles = self.idleCycles + 1
+      end
+    end
+
+    var W : int = [(-xmin+1)*T]
+    var Wtotal = -xmin+1
+    if fullOutput then W = Wtotal end
+    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][fixedModulus(x+phaseAtStart*stride,Wtotal)] end end
+    valid(out)=true
+  end
+  terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
+
+  return SSRPartial
+end
+
+function MT.makeHandshake(res, f, tmuxRates )
+  local delay = math.max( 1, f.delay )
+  --assert(delay>0)
+  -- we don't need an input fifo here b/c ready is always true
+  local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake"),
+                              inner: f.terraModule,
+                            ready:bool, readyDownstream:bool}
+  terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
+  terra MakeHandshake:stats( name : &int8 )  end
+  
+  -- if inner function is const, consider input to always be valid
+  local innerconst = false
+  if tmuxRates==nil then innerconst = f.outputType:const() end
+
+  local validFalse = false
+  if tmuxRates~=nil then validFalse = #tmuxRates end
+
+  terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
+                               out : &rigel.lower(res.outputType):toTerraType())
+
+    if self.readyDownstream then
+      if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+      if self.delaysr:size()==delay then
+        var ot = self.delaysr:popFront()
+        valid(out) = valid(ot)
+--        data(out) = data(ot)
+        cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+      else
+        valid(out)=validFalse
+      end
+
+      var tout : rigel.lower(res.outputType):toTerraType()
+      valid(tout) = valid(inp)
+      if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
+      self.delaysr:pushBack(&tout)
+    end
+
+  end
+  terra MakeHandshake:calculateReady( readyDownstream: bool ) self.ready = readyDownstream; self.readyDownstream = readyDownstream end
+
+  return MakeHandshake
+end
+
 return MT
