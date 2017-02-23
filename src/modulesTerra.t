@@ -1038,4 +1038,261 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
   return SeqMap
 end
 
+function MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )
+return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
+                             var x,y = (inp._0)[0]._0, (inp._0)[0]._1
+                             data(out) = inp._1
+                             valid(out) = (x>=L and y>=B and x<W-R and y<H-Top)
+                             if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
+                           end
+
+end
+
+function MT.lambdaCompile(fn)
+    local inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" )
+    local outputSymbol = symbol( &rigel.lower(fn.output.type):toTerraType(), "lambdaoutput" )
+
+    local stats = {}
+    local resetStats = {}
+    local readyStats = {}
+    local statStats = {}
+
+    local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
+    Module.entries = terralib.newlist( {} )
+
+    local readyInput
+    if rigel.hasReady(fn.output.type) then 
+      readyInput = symbol(rigel.extractReady(fn.output.type):toTerraType(), "readyinput")
+      table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} )
+      table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
+    end
+
+    local mself = symbol( &Module, "module self" )
+
+    if fn.instances~=nil then for k,v in pairs(fn.instances) do 
+        err(v.fn.terraModule~=nil, "Missing terra module for "..v.fn.kind)
+        table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
+    end
+
+    local readyOutput
+    
+    -- build ready calculation
+    if rigel.isBasic(fn.output.type)==false then
+      fn.output:visitEachReverse(
+      function(n, inputs)
+        local inputList = {}
+        for parentNode,v in pairs(inputs) do
+          if parentNode.kind=="selectStream" then
+              assert(inputList[parentNode.i+1]==nil)
+              inputList[parentNode.i+1] = v[1]
+          elseif #parentNode.inputs==1 or (parentNode.kind=="tuple" and parentNode.packStreams==true) then
+            table.insert( inputList, v[1] )
+          elseif ((parentNode.kind=="array2d" or parentNode.kind=="tuple") and parentNode.packStreams==false) or parentNode.kind=="statements" then
+            local idx = v[2]-1
+            table.insert( inputList, `[v[1]][idx] )
+          else
+            -- is there some other way to cross the streams?
+            print("KIND",parentNode.kind, parentNode.packStreams)
+            assert(false)
+          end
+        end
+
+        if #inputList~=keycount(inputList) then
+          print("Strange downstream list ",n.name)
+          for k,v in pairs(inputList) do print("K",k,"V",v) end
+          assert(false)
+        end
+
+        -- ready bit for this node is AND of all consumers
+        local input = foldt( inputList, function(a,b) return `(a and b) end, readyInput )
+
+        local res
+        if n.kind=="input" then
+          assert(readyOutput==nil)
+          readyOutput = input
+        elseif n.kind=="apply" then
+--          print("systolic ready APPLY",n.fn.kind)
+          if rigel.isHandshake(n.fn.outputType) or  rigel.isRV(n.fn.inputType) or rigel.isHandshakeArray(n.fn.outputType) or rigel.isHandshakeTmuxed(n.fn.outputType) then
+            table.insert( readyStats, quote mself.[n.name]:calculateReady(input) end )
+            res = `mself.[n.name].ready
+          elseif n.fn.outputType:isArray() and rigel.isHandshake(n.fn.outputType:arrayOver()) then
+            table.insert( readyStats, quote mself.[n.name]:calculateReady(array(inputList)) end )
+            res = `mself.[n.name].ready
+          else
+            table.insert( readyStats, quote mself.[n.name]:calculateReady() end )
+            res = `mself.[n.name].ready
+          end
+        elseif n.kind=="applyMethod" then
+          if n.fnname=="load" then 
+            -- load has nothing upstream, so whatever
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateLoadReady(input) end ) 
+          elseif n.fnname=="store" then
+            -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateStoreReady() end ) 
+            res = `mself.[n.inst.name].ready
+          else
+            assert(false)
+          end
+        elseif n.kind=="tuple" or n.kind=="array2d" then
+          if n.packStreams then
+            res = input
+          else
+            assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
+            res = inputList[1]
+          end
+        elseif n.kind=="statements" then
+          local L = {readyInput}
+          for i=2,#n.inputs do 
+            table.insert( L, `true )
+          end
+          res = `array(L)
+        elseif n.kind=="constant" or n.kind=="extractState" then
+        elseif n.kind=="selectStream" then
+          res = input
+        else
+          print(n.kind)
+          assert(false)
+        end
+
+        return res
+      end, true)
+    end
+
+    if rigel.isRV(fn.inputType) then
+      assert(readyOutput~=nil)
+      terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
+    elseif rigel.isRV(fn.outputType) then
+      assert(readyOutput~=nil)
+      -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
+      terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
+    elseif rigel.isHandshake(fn.outputType) then
+      terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = [readyOutput] end
+    end
+
+    local out = fn.output:visitEach(
+      function(n, inputs)
+
+        --if true then table.insert( stats, quote cstdio.printf([n.name.."\n"]) end ) end
+
+        local out
+
+        if n==fn.output then
+          out = outputSymbol
+        elseif n.kind=="applyRegStore" then
+        elseif n.kind~="input" then
+          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
+          out = `&mself.["simstateoutput_"..n.name]
+        end
+
+        if n.kind=="input" then
+
+          if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
+          return inputSymbol
+        elseif n.kind=="apply" then
+          --print("APPLY",n.fn.kind, n.inputs[1].type, n.type)
+          --print("APP",n.name, n.fn.terraModule, "inputtype",n.fn.inputType,"outputtype",n.fn.outputType)
+          table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
+          table.insert( resetStats, quote mself.[n.name]:reset() end )
+          table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
+
+          if n.fn.inputType==types.null() then
+            table.insert( stats, quote mself.[n.name]:process( out ) end )
+          else
+            table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+          end
+
+          if DARKROOM_VERBOSE then
+            if n.type:isArray() and rigel.isHandshake(n.type:arrayOver()) then
+            elseif #n.inputs>0 and rigel.isHandshake(n.inputs[1].type) then
+              table.insert( Module.entries, {field=n.name.."CNT", type=int} )
+              table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+
+              table.insert( Module.entries, {field=n.name.."ICNT", type=int} )
+              table.insert( resetStats, quote mself.[n.name.."ICNT"]=0 end )
+
+              local readyDownstream = `mself.[n.name].readyDownstream
+              local readyThis = `mself.[n.name].ready
+
+              table.insert( stats, quote 
+                cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d ready %d readydownstream %d\n",n.name, valid([inputs[1]]), valid(out), mself.[n.name.."CNT"],mself.[n.name.."ICNT"] , readyThis, readyDownstream);
+
+                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
+                if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end
+              end )
+            elseif  rigel.isHandshake(n.type) then
+              -- input is not stateful handshake (some type of aggregate)... so we know less stuff
+              table.insert( Module.entries, {field=n.name.."CNT", type=int} )
+              table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+
+              local readyDownstream = `mself.[n.name].readyDownstream
+
+              table.insert( stats, quote 
+                cstdio.printf("APPLY %s inpvalid ? outvalid %d cnt %d icnt ? ready ? readydownstream %d\n",n.name, valid(out), mself.[n.name.."CNT"], readyDownstream);
+                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
+              end)
+            end
+          end
+
+          return out
+        elseif n.kind=="applyMethod" then
+          if n.fnname=="load" then
+            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+            table.insert( stats, quote mself.[n.inst.name]:load( out ) end)
+
+            if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
+
+            return out
+          elseif n.fnname=="store" then
+            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+            if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
+            table.insert(stats, quote  mself.[n.inst.name]:store( [inputs[1]] ) end )
+            return `nil
+          else
+            assert(false)
+          end
+        elseif n.kind=="constant" then
+          if n.type:isArray() then
+            map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
+          elseif n.type:isInt() or n.type:isUint() then
+            table.insert( stats, quote (@out) = n.value end)
+          else
+            assert(false)
+          end
+
+          return out
+        elseif n.kind=="tuple" then
+          map(inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
+              table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
+          return out
+        elseif n.kind=="array2d" then
+          local ty = rigel.lower(n.type):arrayOver()
+          map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
+--table.insert(stats, quote cstdio.printf("VAL %d %d\n",(@out)[0]._1,out[1]._1) end)
+          return out
+        elseif n.kind=="extractState" then
+          return `nil
+        elseif n.kind=="catState" then
+          table.insert( stats, quote @out = @[inputs[1]] end)
+          return out
+        elseif n.kind=="statements" then
+          table.insert( stats, quote @out = @[inputs[1]] end)
+          return inputs[1]
+        elseif n.kind=="selectStream" then
+          return `&((@[inputs[1]])[n.i])
+        else
+          print(n.kind)
+          assert(false)
+        end
+      end)
+
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
+    terra Module.methods.reset( [mself] ) [resetStats] end
+    terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
+
+    --if DARKROOM_VERBOSE then Module.methods.process:printpretty(true,false) end
+    --if Module.methods.calculateReady~=nil then Module.methods.calculateReady:printpretty(true,false) end
+
+    return Module
+end
+
 return MT
