@@ -1,12 +1,11 @@
-local simmodules = require("simmodules")
 local rigel = require "rigel"
 local types = require "types"
 local S = require "systolic"
 local systolic = S
 local Ssugar = require "systolicsugar"
-local cstring = terralib.includec("string.h")
-local cmath = terralib.includec("math.h")
-local cstdlib = terralib.includec("stdlib.h")
+--local cstring = terralib.includec("string.h")
+--local cmath = terralib.includec("math.h")
+--local cstdlib = terralib.includec("stdlib.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 

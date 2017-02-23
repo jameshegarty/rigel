@@ -1,7 +1,7 @@
 local IR = require("ir")
 local types = require("types")
-local simmodules = require("simmodules")
-local cstdio = terralib.includec("stdio.h")
+--local simmodules = require("simmodules")
+--local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 local S = require("systolic")
 local Ssugar = require("systolicsugar")
@@ -36,15 +36,6 @@ function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.i
 function darkroom.HandshakeTmuxed(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeTmuxed"..N)}) end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
-struct EmptyState {}
-terra EmptyState:init() end
-
-darkroom.data = macro(function(i) return `i._0 end)
-local data = darkroom.data
-darkroom.valid = macro(function(i) return `i._1 end)
-local valid = darkroom.valid
-darkroom.ready = macro(function(i) return `i._2 end)
-local ready = darkroom.ready
 
 
 function darkroom.isHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray" end
@@ -130,6 +121,7 @@ function darkroom.extractValid(a)
   return types.bool()
 end
 
+--[=[
 function darkroom.print(TY,inp)
   local stats = {}
   local TY = darkroom.extract(TY)
@@ -158,6 +150,7 @@ function darkroom.print(TY,inp)
   end
   return quote stats; end
 end
+   --]=]
 
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
@@ -555,12 +548,14 @@ function darkroom.input( type, sdfRate )
   return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
 
+--[=[
 function callOnEntries( T, fnname )
   local TS = symbol(&T,"self")
   local ssStats = {}
   for k,v in pairs( T.entries ) do if v.type:isstruct() then table.insert( ssStats, quote TS.[v.field]:[fnname]() end) end end
   T.methods[fnname] = terra([TS]) [ssStats] end
 end
+]=]
 
 function darkroom.instantiateRegistered( name, fn )
   err( type(name)=="string", "name must be string")

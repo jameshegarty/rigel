@@ -198,12 +198,14 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isOpaque() then
     return "0'b0"
   elseif ty:stripConst()==types.float(32) then
-    local terra floatToBits(a:float) 
-      var o : &opaque = &a
-      return @([&uint32](o))
-    end
-    local v = floatToBits(value)
-    return "32'd"..tostring(v)
+--    local terra floatToBits(a:float) 
+--      var o : &opaque = &a
+--      return @([&uint32](o))
+--    end
+--    local v = floatToBits(value)
+--    return "32'd"..tostring(v)
+--     assert(false)
+    return "32'd0"
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   else

@@ -98,8 +98,12 @@ end
 
 ------------
 
-local terra bitselect(a : uint, bit : uint)
-  return a and bit
+--local terra bitselect(a : uint, bit : uint)
+--  return a and bit
+--end
+
+local function bitselect(a,biti)
+   return bit.band(a,biti)~=0
 end
 
 -- make an array of ram128s to service a certain bandwidth
@@ -127,6 +131,7 @@ modules.ram128 = function(ty, init)
 
   return ram128
 end
+
 
 modules.fifo = memoize(function(ty,items,verbose)
   assert(types.isType(ty))

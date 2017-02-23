@@ -11,9 +11,16 @@ local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 
 
-local data = rigel.data
-local valid = rigel.valid
-local ready = rigel.ready
+--local data = rigel.data
+--local valid = rigel.valid
+--local ready = rigel.ready
+
+darkroom.data = macro(function(i) return `i._0 end)
+local data = darkroom.data
+darkroom.valid = macro(function(i) return `i._1 end)
+local valid = darkroom.valid
+darkroom.ready = macro(function(i) return `i._2 end)
+local ready = darkroom.ready
 
 
 local MT = {}

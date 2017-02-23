@@ -1,5 +1,5 @@
 SRCFILES = $(wildcard *.t)
-SRCS = $(filter-out harness.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t descriptor_core.t,$(SRCFILES))
+SRCS = $(filter-out harness.lua harnessTerra.t examplescommon.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t descriptor_core.t,$(SRCFILES))
 SRCS += $(wildcard *.lua)
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
