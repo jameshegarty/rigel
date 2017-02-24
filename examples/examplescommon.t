@@ -5,44 +5,43 @@ local types = require "types"
 local S = require "systolic"
 local Ssugar = require "systolicsugar"
 local modules = RM
-local cstdlib = terralib.includec("stdlib.h")
+
+if terralib~=nil then CT=require("examplescommonTerra") end
+
 local C = {}
 
 C.identity = memoize(function(A)
   local sinp = S.parameter( "inp", A )
-  local identity = RM.lift( "identity_"..tostring(A), A, A, 0,
-                          terra( a : &A:toTerraType(), out : &A:toTerraType() )
-                            @out = @a
-                  end, sinp, sinp )
+  local tfn
+  if terralib~=nil then tfn=CT.identity(A) end
+  local identity = RM.lift( "identity_"..tostring(A), A, A, 0, tfn, sinp, sinp )
   return identity
-                     end)
+end)
 
 C.cast = memoize(function(A,B)
-                   assert(A:isTuple()==false)
+  assert(A:isTuple()==false)
+
+  local tfn
+  if terralib~=nil then tfn=CT.cast(A,B) end
 
   local sinp = S.parameter( "inp", A )
-  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0,
-                          terra( a : &A:toTerraType(), out : &B:toTerraType() )
-                            @out = [B:toTerraType()](@a)
-                  end, sinp, S.cast(sinp,B) )
+  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, tfn, sinp, S.cast(sinp,B) )
   return docast
 end)
 
 C.tupleToArray = memoize(function(A,N)
-                           local atup = types.tuple(rep(A,N))
-                           local B = types.array2d(A,N)
+  local atup = types.tuple(rep(A,N))
+  local B = types.array2d(A,N)
+
+  local tfn
+  if terralib~=nil then tfn=CT.tupleToArray(A,N,atup,B) end
 
   local sinp = S.parameter( "inp", atup )
   local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
-                          terra( a : &atup:toTerraType(), out : &B:toTerraType() )
-                            escape
-                            for i=0,N-1 do
-                              emit quote (@out)[i] = a.["_"..i] end
-                            end
-                          end
-                  end, sinp, S.cast(sinp,B) )
-return docast
-                         end)
+                          tfn, sinp, S.cast(sinp,B) )
+  return docast
+end)
+
 -- A -> A[W,H]
 C.arrayop = memoize(function(A,W,H)
   local inp = R.input(A)
@@ -53,29 +52,32 @@ end)
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
+  local tfn
+  if terralib~=nil then tfn=CT.multiply(A,B,outputType) end
+
   local sinp = S.parameter( "inp", types.tuple {A,B} )
   local partial = RM.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
-                          terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)*[outputType:toTerraType()](a._1)
-                  end, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
+                          tfn, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
   return partial
-                     end)
+end)
+
 ------------
 -- return A+B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.sum = memoize(function(A,B,outputType,async)
-                  if async==nil then async=false end
+  if async==nil then async=false end
+
+  local tfn
+  if terralib~=nil then tfn=CT.sum(A,B,outputType,async) end
 
   local sinp = S.parameter( "inp", types.tuple {A,B} )
   local delay = 1
   local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
   if async then delay=0; sout = sout:disablePipelining() end
   local partial = RM.lift( "sum_async"..tostring(async), types.tuple {A,B}, outputType, delay,
-                          terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
-                  end, sinp, sout )
+                          tfn, sinp, sout )
   return partial
-                end)
+end)
 
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
@@ -98,14 +100,10 @@ function C.argmin(idxType,vType, async)
     delay = 0
   end
 
-  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay,
-                          terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
-                            if a._0._1 <= a._1._1 then
-                              @out = a._0
-                            else
-                              @out = a._1
-                            end
-                          end, sinp, out )
+  local tfn
+  if terralib~=nil then tfn=CT.argmin(ITYPE,ATYPE) end
+
+  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay, tfn, sinp, out )
   return partial
 end
 
@@ -136,10 +134,10 @@ function C.absoluteDifference(A,outputType,X)
   local out = S.cast(subabs, internalType_uint)
   local out = S.cast(out, outputType)
 
-  local partial = RM.lift( "absoluteDifference", TY, outputType, 1,
-                          terra( a : &(A:toTerraType())[2], out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](cstdlib.abs([internalType_terra]((@a)[0])-[internalType_terra]((@a)[1])) )
-                          end, sinp, out )
+  local tfn
+  if terralib~=nil then tfn = CT.absoluteDifference(A,outputType,internalType_terra) end
+
+  local partial = RM.lift( "absoluteDifference", TY, outputType, 1, tfn, sinp, out )
   return partial
 end
 
@@ -148,14 +146,18 @@ end
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
   local touint8inp = S.parameter("inp", from)
-  local touint8 = RM.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
+  local tfn
+  if terralib~=nil then tfn=CT.shiftAndCast(from,to,shift) end
+  local touint8 = RM.lift( "touint8", from, to, 1, tfn, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
   return touint8
                          end)
 
 C.shiftAndCastSaturate = memoize(function(from, to, shift)
   local touint8inp = S.parameter("inp", from)
   local OT = S.rshift(touint8inp,S.constant(shift,from))
-  local touint8 = RM.lift( "touint8", from, to, 1, terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
+  local tfn
+  if terralib~=nil then tfn=CT.shiftAndCastSaturate(from,to,shift) end
+  local touint8 = RM.lift( "touint8", from, to, 1, tfn, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
   return touint8
                          end)
 
@@ -439,7 +441,7 @@ end
 -------------
 local function invtable(bits)
   local out = {}
-  local terra inv(a:uint32) 
+--[=[  local terra inv(a:uint32) 
     if a==0 then 
       return 0 
     else
@@ -447,7 +449,7 @@ local function invtable(bits)
       if o>255 then return 255 end
       return o
     end 
-  end
+end]=]
 
   local function round(x) if (x%1>=0.5) then return math.ceil(x) else return math.floor(x) end end
 
@@ -606,18 +608,8 @@ function C.border(A,W,H,L,R,B,T,value)
   res.outputType = res.inputType
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
-  local struct Border {}
-  terra Border:reset() end
-  terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for y=0,H do for x=0,W do 
-        if x<L or y<B or x>=W-R or y>=H-T then
-          (@out)[y*W+x] = [value]
-        else
-          (@out)[y*W+x] = (@inp)[y*W+x]
-        end
-    end end
-  end
-  res.terraModule = Border
+
+  if terralib~=nil then res.terraModule = CT.border(res,A,W,H,L,R,B,T,value) end
   return rigel.newFunction(res)
 end
 

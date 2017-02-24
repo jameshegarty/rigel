@@ -94,7 +94,7 @@ for depth=1,TARGET_DEPTH do
     end
 
     -- last level
-    out = P.FIFO(fifos,statements,OUT_TYPE, out, nil, "final", curW, curH, 8)
+    out = P.FIFO(fifos,statements,OUT_TYPE, out, nil, "finalFIFO", curW, curH, 8)
 
     L[depth] = out
 
