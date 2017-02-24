@@ -75,7 +75,7 @@ for depth=1,TARGET_DEPTH do
     out = R.apply("CR"..depth,RM.liftHandshake(RM.changeRate(A,1,curT,8)), out)
 
     -- last level
-    out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "final", curW, curH, 8 )
+    out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "finalFIFO", curW, curH, 8 )
     L[depth] = out
   else
     print("curT",curT)
