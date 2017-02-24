@@ -2,6 +2,7 @@ local IR = require("ir")
 local types = require("types")
 local typecheckAST = require("typecheck")
 local systolic={}
+local ffi = require("ffi")
 
 local ARTEM = false
 
@@ -205,7 +206,9 @@ function systolic.valueToVerilog( value, ty )
 --    local v = floatToBits(value)
 --    return "32'd"..tostring(v)
 --     assert(false)
-    return "32'd0"
+     local a = ffi.new("float[1]",value)
+     local b = ffi.cast("unsigned int*",a)
+     return "32'd"..tostring(b[0])
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   else

@@ -211,7 +211,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   assert(type(inputW)=="number")
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
-  assert(type(outputFilename)=="string")
+  assert(type(filename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   assert(earlyOverride==nil or type(earlyOverride)=="number")
 

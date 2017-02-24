@@ -341,7 +341,7 @@ out/%.hz.txt: out/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > out/$*.hz.txt
 
-out/%.axi.raw: out/%.axi.bit out/%.hz.txt
+out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
 	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
 	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
 	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
@@ -369,7 +369,7 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt
 ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
 
-out/%.axi100.raw: out/%.axi100.bit.bin
+out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
 	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
 	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
 	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
