@@ -2,8 +2,7 @@ local R = require "rigel"
 local RM = require "modules"
 local C = require "examplescommon"
 local types = require("types")
-local cstdlib = terralib.includec("stdlib.h")
-local fixed = require("fixed")
+--local fixed = require("fixed")
 local SDFRate = require "sdfrate"
 
 local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, topModule, X)

@@ -2228,7 +2228,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
     end)
   end
 
-  res.terraModule = MT.lambdaCompile(res)
+  if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
 
   assert( SDFRate.isSDFRate(input.sdfRate) )
   res.sdfInput = input.sdfRate

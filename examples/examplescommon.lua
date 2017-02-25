@@ -470,14 +470,10 @@ function stripMSB(totalbits)
   local inp = R.input(ITYPE)
   local sinp = S.parameter("sinp",types.uint(totalbits))
 --  local sout = S.bitSlice(sinp,0,7)
+  local tfn
+  if terralib~=nil then tfn=CT.stripMSB(totalbits) end
   local sout = S.cast(sinp,types.uint(totalbits-1))
-  return RM.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,
-                       terra(inp:&uint16, out:&uint8)
---                         @out = @inp
-                         var ot : uint8 = @inp
---                         cstdio.printf("stripmsb %d to %d\n",@inp,ot)
-                         @out = ot
-                       end,sinp,sout)
+  return RM.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,tfn,sinp,sout)
 end
 
 -- We want to calculate 1/x
@@ -632,19 +628,8 @@ function C.scale( A, w, h, scaleX, scaleY )
   res.inputType = types.array2d( A, w, h )
   res.outputType = types.array2d( A, w*scaleX, h*scaleY )
   res.delay = 0
-  local struct ScaleModule {}
-  terra ScaleModule:reset() end
-  terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for y=0,[h*scaleY] do 
-      for x=0,[w*scaleX] do
-        var idx = [int](cmath.floor([float](x)/[float](scaleX)))
-        var idy = [int](cmath.floor([float](y)/[float](scaleY)))
---        cstdio.printf("SCALE outx %d outy %d, inx %d iny %d\n",x,y,idx,idy)
-        (@out)[y*[w*scaleX]+x] = (@inp)[idy*w+idx]
-      end
-    end
-  end
-  res.terraModule = ScaleModule
+
+  if terralib~=nil then res.terraModule = CT.scale(res, A, w, h, scaleX, scaleY ) end
 
   return rigel.newFunction(res)
 end
@@ -695,10 +680,10 @@ C.broadcast = memoize(function(A,T)
   err( type(T)=="number", "T should be number")
   local OT = types.array2d(A,T)
   local sinp = S.parameter("inp",A)
-  return modules.lift("Broadcast_"..T,A,OT,0,
-                       terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
-                         for i=0,T do (@out)[i] = @inp end
-                         end, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
+  
+  local tfn
+  if terralib~=nil then tfn=CT.broadcast(A,T,OT) end
+  return modules.lift("Broadcast_"..T,A,OT,0,tfn, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
     end)
 
 -- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
@@ -721,18 +706,7 @@ function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
 
-  local struct Stencil {}
-  terra Stencil:reset() end
-  terra Stencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for i=0,[w*h] do
-      for y = ymin, ymax+1 do
-        for x = xmin, xmax+1 do
-          ((@out)[i])[(y-ymin)*(xmax-xmin+1)+(x-xmin)] = (@inp)[i+x+y*w]
-        end
-      end
-    end
-  end
-  res.terraModule = Stencil
+  if terralib~=nil then res.terraModule = CT.stencil(res, A, w, h, xmin, xmax, ymin, ymax ) end
 
   return rigel.newFunction(res)
 end
@@ -749,12 +723,10 @@ function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
   local outside = S.__or(horizontal,vert)
   local out = S.select(outside,S.constant(Value,A), S.index(inp,1) )
 
-  local f = modules.lift( "BorderSeq", inpType, A, 0, 
-                           terra( inp :&inpType:toTerraType(), out : &A:toTerraType() )
-                             var x,y, inpvalue = inp._0._0, inp._0._1, inp._1
-                                  if x<L or y<B or x>=W-R or y>=H-Top then @out = [Value]
-                                  else @out = inpvalue end
-                                end, inp, out )
+  local tfn
+  if terralib~=nil then tfn=CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType ) end
+
+  local f = modules.lift( "BorderSeq", inpType, A, 0, tfn, inp, out )
   return modules.liftXYSeqPointwise( f, W, H, T )
 end
 
@@ -772,7 +744,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
   return modules.lambda( "cropHelperSeq_"..(tostring(A):gsub('%W','_')).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top, inp, out )
-                                 end)
+end)
 
 
 C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
@@ -797,7 +769,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
   return C.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )) )
-                                            end)
+end)
 
 
 -- purely wiring
@@ -818,18 +790,8 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
-  local struct UnpackStencil {}
-  terra UnpackStencil:reset() end
-  terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    for i=0,[T] do
-      for y=0,[stencilH] do
-        for x=0,[stencilW] do
-          (@out)[i][y*stencilW+x] = (@inp)[y*(stencilW+T-1)+x+i]
-        end
-      end
-    end
-  end
-  res.terraModule = UnpackStencil
+
+  if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
   res.systolicModule = Ssugar.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
   local sinp = S.parameter("inp", res.inputType)
@@ -866,7 +828,9 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     local OT = inputType.list[idxLow+1]
     local systolicInput = S.parameter("inp", inputType)
     local systolicOutput = S.index( systolicInput, idxLow )
-    local tfn = terra( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
+
+    local tfn
+    if terralib~=nil then tfn=CT.sliceTup(inputType,OT,idxLow) end
     return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
@@ -884,18 +848,13 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
 
     local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
     systolicOutput = S.cast( systolicOutput, OT )
-    local tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) 
-      for iy = idyLow,idyHigh+1 do
-        for ix = idxLow, idxHigh+1 do
-          (@out)[(iy-idyLow)*(idxHigh-idxLow+1)+(ix-idxLow)] = (@inp)[ix+iy*W] 
-        end
-      end
-    end
+    local tfn
+    if terralib~=nil then tfn=CT.sliceArr(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W) end
 
     if index then
       OT = inputType:arrayOver()
       systolicOutput = S.index( systolicInput, idxLow, idyLow )
-      tfn = terra(inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = (@inp)[idxLow+idyLow*W] end
+      if terralib~=nil then tfn=CT.sliceArrIdx(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W) end
     end
 
     return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
