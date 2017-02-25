@@ -6,6 +6,9 @@ local harness = require "harness"
 local f = require "fixed_float"
 local S = require("systolic")
 
+local RST
+if terralib~=nil then RST=require "rigelSimpleTerra" end
+
 local RS = {}
 
 local ccnt = 0
@@ -136,10 +139,10 @@ local sumPow2 = function(A,B,outputType)
 
   local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
   sout = sout:disablePipelining()
-  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0,
-                          terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)+([outputType:toTerraType()](a._1)*[outputType:toTerraType()](a._1))
-                  end, sinp, sout )
+  
+  local tfn
+  if terralib~=nil then tfn=RST.sumPow2(A,B,outputType) end
+  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0, tfn, sinp, sout )
   return partial
                 end
 
