@@ -180,9 +180,9 @@ out/%.axi.v: %.t
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
 out/%.verilator: out/%.v out/%.metadata.lua
-	$(eval $@_TOP := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua topModule))
+	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S9_S9.v --top-module $($@_TOP)
-	terra ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
+	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
 	g++ -I${VERPATH} out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${VERPATH}verilated.cpp out/$*.verilator.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
