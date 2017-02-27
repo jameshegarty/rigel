@@ -76,7 +76,7 @@ SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
 AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS))
 AXI100SRCS := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(AXI100SRCS))
 AXI100SRCS := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(AXI100SRCS))
-AXI100SRCS := $(filter-out filterseq.t harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
+AXI100SRCS := $(filter-out filterseq.lua harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
 
 # filter out stuff that's too big for the 7020
 AXISRCS = $(AXI100SRCS)
@@ -87,6 +87,8 @@ AXISRCS := $(filter-out pyramid_large_nofifo_taps_4.t pyramid_large_taps_3.t pyr
 
 AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
 AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
+AXIBITS += $(patsubst %.lua,out/%.axi.v,$(AXISRCS))
+AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(AXISRCS))
 
 AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(AXI100SRCS))
 AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(AXI100SRCS))
@@ -95,6 +97,11 @@ AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.hz.txt,$(AXISRCS))
+
+AXI += $(patsubst %.lua,out/%.axi.raw,$(AXISRCS))
+AXI += $(patsubst %.lua,out/%.axi.bmp,$(AXISRCS))
+AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(AXISRCS))
+AXI += $(patsubst %.lua,out/%.hz.txt,$(AXISRCS))
 AXI += $(AXIBITS)
 
 AXI100 = $(patsubst %.t,out/%.axi100.correct.txt,$(AXI100SRCS))
@@ -184,6 +191,14 @@ out/%.sim.v out/%_half.sim.v: %.t
 
 out/%.axi.v: %.t 
 	terra $< axi
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.axi.v out/build_$*
+	mkdir -p out/build100_$*
+	- cp out/$*.axi.v out/build100_$*
+
+out/%.axi.v: %.lua
+	luajit $< axi
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.axi.v out/build_$*
