@@ -57,7 +57,6 @@ local fifos = {}
 local statements = {}
 
 for depth=1,TARGET_DEPTH do
-  print("DODEPTH",depth,"T",curT)
   local PI
 
   if curT>1 then
@@ -69,12 +68,8 @@ for depth=1,TARGET_DEPTH do
     out = R.apply("p"..depth, PI, out)
   end
 
-  print("PI",PI.inputType,PI.outputType)
-  print(PI.sdfInput[1][1],PI.sdfInput[1][2])
-  print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
-
   local thisW = inputW*inputH/math.pow(4,depth-1)
-  print("thisW",thisW,thisW/outputH)
+
   outputW = outputW + thisW/outputH
 
   if depth>1 then
@@ -99,7 +94,6 @@ for depth=1,TARGET_DEPTH do
     L[depth] = out
 
   else
-    print("curT",curT)
     out= R.apply("out_broadcast"..depth, RM.broadcastStream(THIS_TYPE,2), out)
     out0 = P.FIFO(fifos,statements,THIS_TYPE,R.selectStream("i0"..depth,out,0),nil,"internal"..depth,curW,curH,math.max(curT,1))
 
@@ -130,13 +124,9 @@ for depth=1,TARGET_DEPTH do
 --  if depth>1 then SDF[depth][1] = SDF[depth][1]/2 end
 end
 
-print("outputW",outputW,"outputH",outputH)
 
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 SDF = SDFRate.normalize(SDF)
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
-print("TARGET_DEPTH",TARGET_DEPTH)
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 if TARGET_DEPTH>1 then
   SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 

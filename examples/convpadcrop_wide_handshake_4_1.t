@@ -18,7 +18,6 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local inputH = 64
 
   if size1080p then
-    print("1080p")
     inputW, inputH = 1920, 1080
   end
 
@@ -108,6 +107,5 @@ end
 local first = string.find(arg[0],"%d+")
 local convwidth = string.sub(arg[0],first,first)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
-print("ConvWidth",convwidth,"T",t)
 
 MAKE(tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"),string.find(arg[0],"nostall")~=nil)

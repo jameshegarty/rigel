@@ -20,9 +20,14 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
        --cstdio.printf("Start CPU Sim\n")
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
-    fixed.printHistograms()
+       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); 
+       m:reset(); 
+       m:process(nil,nil); 
+       if DARKROOM_VERBOSE then m:stats();  end
+       cstdlib.free(m) 
+     end)()
 
+    if DARKROOM_VERBOSE then fixed.printHistograms() end
   end
 
 end

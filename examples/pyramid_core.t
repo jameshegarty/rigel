@@ -11,7 +11,6 @@ local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
   local sz = 2048/(math.min(4,A:verilogBits()/8))
   sz = math.max(sz,size)
 
-  --print("FIFO SZ",sz)
   if name==nil then name = "fifo"..tostring(id) end
   table.insert( fifos, R.instantiateRegistered(name, RM.fifo(A,sz,nil,W,H,T)) )
   table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
@@ -38,19 +37,18 @@ function P.pyramidIter(i,doDownsample,internalT,W,H,ConvWidth)
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end
   local PadExtra = PadWidth-(ConvWidth/2)
-  --print("pyramidIter",i,"internalT",internalT,"padWIdth",PadWidth,"padextra",PadExtra)
 
   local internalW = W+PadWidth*2
   local internalH = H+ConvWidth
   local PS = RM.padSeq(A, W, H, internalT, PadWidth, PadWidth, 4, 4, borderValue)
-  --print("PS",PS.sdfInput[1][1],PS.sdfInput[1][2],PS.sdfOutput[1][1],PS.sdfOutput[1][2])
+
   local out = R.apply("pad", RM.liftHandshake(PS), inp)
 
   local out = R.apply( "convLB", RM.makeHandshake(C.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
   local out = R.apply( "convstencils", RM.makeHandshake(C.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
   local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
-  --print("CHS",CHS.sdfInput[1][1],CHS.sdfInput[1][2],CHS.sdfOutput[1][1],CHS.sdfOutput[1][2])
+
   local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
 
   local scaleX, scaleY = 2,2
@@ -91,19 +89,18 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end
   local PadExtra = PadWidth-(ConvWidth/2)
-  --print("pyramidIter",i,"internalT",internalT,"padWIdth",PadWidth,"padextra",PadExtra)
 
   local internalW = W+PadWidth*2
   local internalH = H+ConvWidth
   local PS = RM.padSeq(A, W, H, internalT, PadWidth, PadWidth, 4, 4, borderValue)
-  --print("PS",PS.sdfInput[1][1],PS.sdfInput[1][2],PS.sdfOutput[1][1],PS.sdfOutput[1][2])
+
   local out = R.apply("pad", RM.liftHandshake(PS), out)
 
   local out = R.apply( "convLB", RM.makeHandshake(C.stencilLinebuffer( A, internalW, internalH, internalT, -ConvWidth+1, 0, -ConvWidth+1, 0 )), out)
   local out = R.apply( "convstencils", RM.makeHandshake(C.unpackStencil( A, ConvWidth, ConvWidth, internalT )), out )
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
   local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
-  --print("CHS",CHS.sdfInput[1][1],CHS.sdfInput[1][2],CHS.sdfOutput[1][1],CHS.sdfOutput[1][2])
+
   local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
 
   local scaleX, scaleY = 2,2
@@ -175,7 +172,6 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
 
   local convT = internalT/4 -- T after downsample
 
-  --print("convT",convT)
   if true then
     out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CST", RM.makeHandshake( C.cast(st_type,types.array2d(A,ConvWidth*ConvWidth)) ), out)

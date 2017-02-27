@@ -32,7 +32,6 @@ function doit(full)
   if outputBytes/128 ~= math.floor(outputBytes/128) then
 
     local padAmount = 128-(outputBytes%128)
-    print("OUTPUTBYTES",outputBytes,"PADBYTES",padAmount)
     padAmount = padAmount / 4
 
     ------------

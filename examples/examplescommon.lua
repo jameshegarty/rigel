@@ -368,7 +368,7 @@ function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   err( type(B)=="number", "B should be number")
   err( type(Top)=="number", "Top should be number")
   err( type(f)=="function", "f should be lua function")
-  --print("padcrop","W",W,"H",H,"T",T,"L",L,"R",Right,"B",B,"Top",Top)
+
   assert(X==nil)
   assert(timingFifo==nil or type(timingFifo)=="boolean")
   if timingFifo==nil then timingFifo=true end
@@ -882,22 +882,17 @@ function C.gaussian(W,sigma)
       local dist = math.sqrt(math.pow(x-center,2)+math.pow(y-center,2))
       local v = a*math.exp(-(dist*dist)/(2*sigma*sigma))
       sum = sum + v
-      --print(x,y,v)
       table.insert(tab,v)
     end
   end
 
-  --print("sum",sum)
   local newsum = 0
   for i=1,#tab do 
     tab[i] = math.floor((tab[i]*64/sum)+0.4)
     newsum = newsum + tab[i]
   end
 
-  --print("newsum",newsum)
   tab[center*W+center] = tab[center*W+center] + (64-newsum)
-
-  for i=1,#tab do print(tab[i]) end
 
   return tab
 end

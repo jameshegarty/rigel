@@ -1159,10 +1159,6 @@ function modules.flattenStreams( A, rates, X )
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
   err(sdfSum==1, "rates must sum to 1")
 
-  for i=1,#rates do
-    print("flattenStreams",i,rates[i][1],rates[i][2])
-  end
-
   res.sdfInput = rates
   res.sdfOutput = {{1,1}}
 
