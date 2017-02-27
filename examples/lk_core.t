@@ -48,8 +48,7 @@ function invert2x2( AType, bits )
     --------
     local finp = f.parameter( "finp", types.array2d(AType,4) )
     local fdenom = ((finp:index(0):hist("matrix0"))*finp:index(3))-(finp:index(1)*finp:index(2))
-    --print(fdenom.type,"SDFSDF") 41 2^-4
-    --fdenom = fdenom:normalize(31)
+
     bits.inv22inp[3] = fdenom:precision()
     fdenom = fdenom:reduceBits(bits.inv22inp[1],bits.inv22inp[2])
     fdenom = fdenom:hist("fdenom")

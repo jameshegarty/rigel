@@ -1,7 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
 local C = require "examplescommon"
-local Image = require "image"
 local types = require "types"
 local harness = require "harness"
 

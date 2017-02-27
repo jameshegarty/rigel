@@ -71,6 +71,5 @@ end
 local first,flen = string.find(arg[0],"%d+")
 local convwidth = string.sub(arg[0],first,flen)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",flen+1))
-print("Width",convwidth,"T",t)
 
 makeLK(tonumber(t),tonumber(convwidth))
