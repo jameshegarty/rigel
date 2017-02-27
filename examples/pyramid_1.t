@@ -49,15 +49,15 @@ local statements = {}
 
 
 for depth=1,TARGET_DEPTH do
-  print("DODEPTH",depth)
+  --print("DODEPTH",depth)
   local PI = P.pyramidIter(depth,depth>1,internalT,curW,curH,ConvWidth)
-  print("PI",PI.inputType,PI.outputType)
-  print(PI.sdfInput[1][1],PI.sdfInput[1][2])
-  print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
+  --print("PI",PI.inputType,PI.outputType)
+  --print(PI.sdfInput[1][1],PI.sdfInput[1][2])
+  --print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
   out = R.apply("p"..depth, PI, out)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
-  print("thisW",thisW,thisW/outputH)
+  --print("thisW",thisW,thisW/outputH)
   outputW = outputW + thisW/outputH
 
   if depth>1 then
@@ -78,7 +78,7 @@ for depth=1,TARGET_DEPTH do
     out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "finalFIFO", curW, curH, 8 )
     L[depth] = out
   else
-    print("curT",curT)
+    --print("curT",curT)
 
     out = R.apply("out_broadcast"..depth, RM.broadcastStream(THIS_TYPE,2), out)
     local out0 = R.apply("CR"..depth,RM.liftHandshake(RM.changeRate(A,1,curT,internalT)), R.selectStream("i0"..depth,out,0) )
@@ -97,15 +97,15 @@ for depth=1,TARGET_DEPTH do
 --  if depth>1 then SDF[depth][1] = SDF[depth][1]/2 end
 end
 
-print("outputW",outputW,"outputH",outputH)
+--print("outputW",outputW,"outputH",outputH)
 
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
+--for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 SDF = SDFRate.normalize(SDF)
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
+--for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 
-print("TARGET_DEPTH",TARGET_DEPTH)
+--print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
   SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
   out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.array2d( "sa", L, TARGET_DEPTH, 1, false))

@@ -1,6 +1,5 @@
 local R = require "rigel"
 local RM = require "modules"
-local Image = require "image"
 local types = require("types")
 local S = require("systolic")
 local harness = require("harness")

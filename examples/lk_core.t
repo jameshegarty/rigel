@@ -82,7 +82,7 @@ function invert2x2( AType, bits )
     out = R.apply("out", fout:toDarkroom("fout"), R.tuple("ftupp",{inp,det}))
   end
 
-  print("invert2x2 output type:", output_type)
+  --print("invert2x2 output type:", output_type)
   return RM.lambda("invert2x2", inp, out ), output_type, cost
 end
 
@@ -115,13 +115,13 @@ makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
   local out = finp:index(0)*finp:index(1)
   local prec = out:precision()
   out = out:reduceBits(outMSB,outLSB)
-  print("OUT:COST",out:cost())
+  --print("OUT:COST",out:cost())
   return {out:toDarkroom("partial_"..tostring(ltype)..tostring(rtype)), out.type, prec, out:cost()}
                       end)
 
 makeSumReduce = memoize(function(inputType)
                           assert(types.isType(inputType))
-  print("MakeReduceSum",inputType)
+  --print("MakeReduceSum",inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})
   local inp0 = finp:index(0)
   local O = (inp0+finp:index(1)):truncate(inp0:precision())
@@ -147,7 +147,7 @@ function makeA( dType, window, bits )
   bits.Apartial[3] = partial[3]
   local partial_type=partial[2]
   local partialfn = partial[1]
-  print("A partial type", partial_type, partial[4])
+  --print("A partial type", partial_type, partial[4])
   cost = cost + partial[4]*3*window*window
   local rsum = makeSumReduce(partial_type)
   cost = cost + rsum[2]*3*window*window
@@ -201,7 +201,7 @@ function makeB( dtype, window, bits )
   local gmf = R.tuple("mfgmf",{frame1,frame0})
   gmf = R.apply("SA",C.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type, gmf_cost = minus(types.uint(8))
-  print("GMF type", gmf_type)
+  --print("GMF type", gmf_type)
   cost = cost + gmf_cost*window*window
   gmf = R.apply("SSM",RM.map(m,window,window), gmf)
   ---------
@@ -209,7 +209,7 @@ function makeB( dtype, window, bits )
   local partial = makePartial( dtype, gmf_type, bits.Bpartial[1], bits.Bpartial[2] )
   bits.Bpartial[3] = partial[3]
   local partial_type = partial[2]
-  print("MakeB Partial Type",partial_type)
+  --print("MakeB Partial Type",partial_type)
   local partialfn = partial[1]
   cost = cost + partial[4]*2*window*window
   local rsum = makeSumReduce(partial_type)
@@ -228,7 +228,7 @@ function makeB( dtype, window, bits )
 
   local out = R.array2d("arrrrry0t",{out_0,out_1},2)
 
-  print("B output type", partial_type)
+  --print("B output type", partial_type)
   return RM.lambda("b", finp, out), partial_type, cost
 end
 
@@ -249,7 +249,7 @@ function solve( AinvType, btype, bits )
   out_1 = out_1:reduceBits(bits.solve[1], bits.solve[2])
 
   local out = f.array2d({out_0,out_1},2)
-  print("Solve Output Type", out_0.type,out.type,Ainv.type)
+  --print("Solve Output Type", out_0.type,out.type,Ainv.type)
   return out:toDarkroom("solve"), out_0.type, out:cost()
 end
 
@@ -263,9 +263,9 @@ function display(inpType)
     local B = I*f.constant(32,true,7,0)
     local FF = (B+f.constant(128,true,9,0)):abs()
     local FF_den = FF:denormalize()
-    print("FFDEN TYPE",FF_den.type)
+    --print("FFDEN TYPE",FF_den.type)
     local FF_trunc = FF_den:truncate(8)
-    print("FF_trunc", FF_trunc.type)
+    --print("FF_trunc", FF_trunc.type)
     table.insert(out, FF_trunc:lower(types.uint(8)))
   end
 --  table.insert(out, f.constant(0,true,8,0):lower())
@@ -344,7 +344,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
   local PadRadius = window/2
   local PadRadiusAligned = upToNearest(T,window/2)
   local PadExtra = PadRadiusAligned - PadRadius
-  print("PadRadius",PadRadius,"PRA",PadRadiusAligned)
+  --print("PadRadius",PadRadius,"PRA",PadRadiusAligned)
 
   local internalW = W+PadRadiusAligned*2
   local internalH = H+window+1

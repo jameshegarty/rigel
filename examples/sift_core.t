@@ -238,7 +238,7 @@ end
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
 local function siftKernel(dxdyType)
-  print("sift")
+  --print("sift")
 
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
@@ -308,7 +308,7 @@ local function siftKernel(dxdyType)
 
   local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
+  --print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
 
@@ -329,11 +329,11 @@ end
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H, window)
-  print("makeHarrisWithDXDY")
+  --print("makeHarrisWithDXDY")
   assert(window==16)
 
   local function res(internalW, internalH)
-    print("MAKE HARRIS",internalW, internalH)
+    --print("MAKE HARRIS",internalW, internalH)
 
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
     

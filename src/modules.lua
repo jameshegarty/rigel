@@ -133,7 +133,7 @@ function modules.packTuple( typelist, X )
   for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
 
   if #activePorts>1 then
-    print("WARNING: NYI - packTuple with multiple active ports! This needs a fifo along all but one of the edges")
+    --print("WARNING: NYI - packTuple with multiple active ports! This needs a fifo along all but one of the edges")
   end
     
   local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))

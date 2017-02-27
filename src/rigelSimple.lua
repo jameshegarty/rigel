@@ -238,7 +238,7 @@ end
 function RS.index(t)
   local ty=lookupType(t.input)
   
-  print("FANOUTTYPE",ty)
+  --print("FANOUTTYPE",ty)
   assert( R.isHandshake(ty))
   ty = R.extractData(ty)
   ccnt = ccnt + 1
@@ -255,7 +255,7 @@ function RS.fanOut(t)
       ty = t.input.inst.fn.outputType
     end
 
-    print("FANOUTTYPE",ty)
+    --print("FANOUTTYPE",ty)
     assert( R.isHandshake(ty))
     ty = R.extractData(ty)
     ccnt = ccnt + 1
@@ -317,18 +317,18 @@ function RS.HS(t)
   if types.isType(t) then
     return R.Handshake(t) 
   elseif R.isFunction(t) then
-    print("LIFT",t.name,t.kind,t.inputType,t.outputType)
+    --print("LIFT",t.name,t.kind,t.inputType,t.outputType)
     if R.isV(t.inputType) and R.isRV(t.outputType) then
-      print("LIFTHANDSHAKE")
+      --print("LIFTHANDSHAKE")
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
-      print("ISHANDSHAKE")
+      --print("ISHANDSHAKE")
       return t
     elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and t.outputType.list[2]:isBool()) then
-      print("LIFTDECIM")
+      --print("LIFTDECIM")
       return RM.liftHandshake(RM.liftDecimate(t))
     elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then
-      print("MAKEHANDSHAKE")
+      --print("MAKEHANDSHAKE")
       return RM.makeHandshake(t)
     else
       print(t.inputType)

@@ -3,7 +3,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local fixed = require "fixed"
 
 return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, X)
-  print("UNDERFLOWTEST",underflowTest)
+  --print("UNDERFLOWTEST",underflowTest)
   if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
   local inputCount = (inputW*inputH)/inputT
@@ -19,7 +19,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
-       cstdio.printf("Start CPU Sim\n")
+       --cstdio.printf("Start CPU Sim\n")
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); m:reset(); m:process(nil,nil); m:stats(); cstdlib.free(m) end)()
     fixed.printHistograms()
 

@@ -59,7 +59,7 @@ end
 function harris.makeHarrisKernel(dxType, dyType)
   local K = 0.00000001
 
-  print("HARRISTYPE",dxType)
+  --print("HARRISTYPE",dxType)
   local inp = f.parameter("harrisinp",types.tuple{dxType,dyType})
   local inpdx = inp:index(0)
   local inpdy = inp:index(1)
@@ -99,7 +99,7 @@ function harris.makeNMS(ty, boolOutput, X)
 end
 
 function harris.makeDXDYKernel(ty)
-  print("DXDYINP",ty)
+  --print("DXDYINP",ty)
   local inp = f.parameter("dx",types.array2d(ty,3,3))
 
   local dx = (inp:index(2,1))-(inp:index(0,1))
@@ -172,7 +172,7 @@ function harris.harrisWithStencil(t)
   -- Make DXDY
   local dxdyFn, dxdyType = harris.makeDXDY(t.W,t.H)
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
-  print("DXDY",DXDY_PAIR)
+  --print("DXDY",DXDY_PAIR)
 --  local out = R.apply("ARR",RM.makeHandshake(C.arrayop(types.uint(8),1)), inp)
   local out = R.apply("dxdy",dxdyFn, inp)
 
@@ -204,12 +204,12 @@ function harris.harrisWithStencil(t)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    print("GRAD_INT=true")
+    --print("GRAD_INT=true")
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
   else
-    print("GRAD_INT=false")
+    --print("GRAD_INT=false")
   end
   
   left = C.fifo( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")

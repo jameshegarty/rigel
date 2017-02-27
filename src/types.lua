@@ -358,7 +358,7 @@ function types.checkExplicitCast(from, to, ast)
     -- broadcast
     return types.checkExplicitCast(from, to.over, ast )
   elseif from:isArray() then
-    if from:arrayOver():isBool() and from:channels()==to:sizeof()*8 then
+    if from:arrayOver():isBool() and from:channels()==to:verilogBits() then
       -- casting an array of bools to a type with the same number of bits is OK
       return true
     elseif from:channels()==1 and types.checkExplicitCast(from:arrayOver(),to,ast) then

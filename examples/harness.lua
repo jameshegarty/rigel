@@ -54,7 +54,7 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   if outfileraw~=nil then
     local fi = outfileraw..".cycles.txt"
-    print("WRITE CYCLES",fi)
+    --print("WRITE CYCLES",fi)
     io.output(fi)
     io.write(EC_RAW/frames)
     io.close()
@@ -239,7 +239,7 @@ function harnessTop(t)
   err(type(t.outFile)=="string", "expected output filename to be string")
 
   -- just assume we were given a handshake vector...
-  print("ITYPE",t.fn.inputType)
+  --print("ITYPE",t.fn.inputType)
   R.expectHandshake(t.fn.inputType)
 
   local iover, inputP, oover, outputP, fn
@@ -262,7 +262,7 @@ function harnessTop(t)
     err(iover:isArray(), "expected input to be array but is "..tostring(iover))
     inputP = iover:channels()
 
-    print("OTYPE",t.fn.outputType)
+    --print("OTYPE",t.fn.outputType)
     R.expectHandshake(t.fn.outputType)
     oover = R.extractData(t.fn.outputType)
     assert(oover:isArray())

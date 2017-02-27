@@ -7,6 +7,9 @@ local modules = require "fpgamodules"
 local C = require "examplescommon"
 local CC = {}
 
+local campipeCoreTerra
+if terralib~=nil then campipeCoreTerra=require("campipe_core_terra") end
+
 function CC.blackLevel( pedestal )
   local blackLevelInput = f.parameter("blInput",types.uint(8))
   local bli = blackLevelInput:lift(0)
@@ -53,17 +56,12 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
     local ATYPE = types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)
     for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
     local kernelSelectOut = modules.wideMux( tt, phase )
+
+    local tfn
+    if terralib~=nil then tfn=campipeCoreTerra.demosaic(DEMOSAIC_W,DEMOSAIC_H,phaseX,phaseY,tab) end
+
     return RM.lift(name, ITYPE, ATYPE, 5,
-                         terra(inp:&tuple(uint16,uint16),out:&uint8[DEMOSAIC_W*DEMOSAIC_H])
-                           var x,y = inp._0,inp._1
-                           var phase = ((x+phaseX)%2)+((y+phaseY)%2)*2
-                           var ot : int32[DEMOSAIC_W*DEMOSAIC_H]
-                           if phase==0 then ot = array([tab[1]])
-                           elseif phase==1 then ot = array([tab[2]])
-                           elseif phase==2 then ot = array([tab[3]])
-                           else ot = array([tab[4]]) end
-                           for i=0,DEMOSAIC_W*DEMOSAIC_H do (@out)[i] = ot[i] end
-                         end, kernelSelectInput, kernelSelectOut)
+                         tfn, kernelSelectInput, kernelSelectOut)
   end
   -----------
 

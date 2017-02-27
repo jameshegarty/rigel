@@ -7,7 +7,7 @@ cstdio = terralib.includec("stdio.h")
 local metadata = dofile(arg[3])
 
 terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
-  cstdio.printf("START RAW@BMP\n")
+  --cstdio.printf("START RAW@BMP\n")
   var inp : Image
 --  inp:loadRaw(infile,128,64,8)
   var totalSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
@@ -56,7 +56,7 @@ terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
     inp:addChannels(-1)
   end
 
-  cstdio.printf("%d %d %d %d\n",inp.width,inp.height,inp.channels,totalSize)
+  --cstdio.printf("%d %d %d %d\n",inp.width,inp.height,inp.channels,totalSize)
   -- remember: when using the simulator, the raw file you send in has to be upside down (bottom left pixels comes first
   -- thus, image is flipped). It turns out this is the same convention as BMP, so no flip at the end is necessary.
 --  inp:flip()

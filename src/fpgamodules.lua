@@ -151,7 +151,7 @@ modules.fifo = memoize(function(ty,items,verbose)
     assert(items==128)
     rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
-    print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
+    --print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
     ram = fifo:add(modules.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
   end
 
@@ -573,7 +573,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   local eachInputBytes = math.max(inputBytes/count,1)
   local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
 
-  print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
+  --print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
   assert(eachInputBytes>=1 and eachInputBytes<=4)
   assert(eachInputBytes<=inputBytes)
   assert(eachInputBytes*count==inputBytes)
@@ -584,7 +584,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
     eachOutputBytes = math.max(outputBytes/count,1)
 --    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
 --    eachOutputBytes = math.max(eachOutputBytes,1)
-    print("eachOutputBytes",eachOutputBytes)
+    --print("eachOutputBytes",eachOutputBytes)
     assert(eachOutputBytes>=1 and eachOutputBytes<=4)
     assert(eachOutputBytes<=outputBytes)
     assert(eachOutputBytes*count==outputBytes)
@@ -592,7 +592,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   end
 
   if sizeInBytes < count*2048 then
-    print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
+    --print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
   end
 
   if init~=nil then
@@ -648,7 +648,7 @@ end
 
 function readAll(file)
   local fn = script_path().."misc/"..file
-  print("LOAD FILE "..fn)
+  --print("LOAD FILE "..fn)
   local f = io.open(fn, "rb")
   local content = f:read("*all")
   f:close()
@@ -669,7 +669,7 @@ local function loadVerilogFile(inpType,outType,filestr)
   local outv = 0
   if outType==types.bool() then outv=false end
   fns.process = S.lambda("process",inp,S.cast(S.constant(outv,outType),outType),"out",nil,nil,S.CE("ce"))
-  print("MODULE ",filestr,"DELAY",tonumber(delaystring))
+  --print("MODULE ",filestr,"DELAY",tonumber(delaystring))
   local m = systolic.module.new(filestr,fns,{},true,nil,nil,vstring,{process=tonumber(delaystring)})
   return m
 end

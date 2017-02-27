@@ -57,18 +57,18 @@ local statements = {}
 
 
 for depth=1,TARGET_DEPTH do
-  print("DODEPTH",depth)
+  --print("DODEPTH",depth)
   --local PI = P.pyramidIter(depth,depth>1,internalT,curW,curH,ConvWidth)
   local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO, true )
-  print("PI",PI.inputType,PI.outputType)
-  print(PI.sdfInput[1][1],PI.sdfInput[1][2])
-  print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
+  --print("PI",PI.inputType,PI.outputType)
+  --print(PI.sdfInput[1][1],PI.sdfInput[1][2])
+  --print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
 
   local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,internalT),TAP_TYPE}), R.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
   out = R.apply("p"..depth, PI, piinp)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
-  print("thisW",thisW,thisW/outputH)
+  --print("thisW",thisW,thisW/outputH)
   outputW = outputW + thisW/outputH
 
   if depth>1 then
@@ -106,15 +106,15 @@ for depth=1,TARGET_DEPTH do
 --  if depth>1 then SDF[depth][1] = SDF[depth][1]/2 end
 end
 
-print("outputW",outputW,"outputH",outputH)
+--print("outputW",outputW,"outputH",outputH)
 
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
+--for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 SDF = SDFRate.normalize(SDF)
-for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
+--for k,v in ipairs(SDF) do print("SDF",v[1],v[2]) end
 
 local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 
-print("TARGET_DEPTH",TARGET_DEPTH)
+--print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
   SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
   out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.array2d( "sa", L, TARGET_DEPTH, 1, false))

@@ -1,6 +1,6 @@
 SRCFILES = $(wildcard *.t)
 SRCFILES += $(wildcard *.lua)
-SRCS = $(filter-out harness.lua harnessTerra.t examplescommon.lua examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.t sift_core.t sift_core_hw.t campipe_core.t descriptor_core.t,$(SRCFILES))
+SRCS = $(filter-out harness.lua harnessTerra.t examplescommon.lua examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.t harris_core.lua sift_core.t sift_core_hw.lua sift_core_hw_terra.t campipe_core.lua campipe_core_terra.t descriptor_core.lua,$(SRCFILES))
 
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
@@ -29,6 +29,13 @@ TERRA += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
+
+TERRA += $(patsubst %.lua,out/%.raw,$(TERRASRCS))
+TERRA += $(patsubst %.lua,out/%_half.raw,$(TERRASRCS))
+TERRA += $(patsubst %.lua,out/%.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.lua,out/%_half.bmp,$(TERRASRCS))
+TERRA += $(patsubst %.lua,out/%.correct.txt,$(TERRASRCS))
+TERRA += $(patsubst %.lua,out/%_half.correct.txt,$(TERRASRCS))
 
 VERILATORSRCS = $(filter-out underflow.t, $(SRCS))
 VERILATOR = $(patsubst %.t,out/%.verilator,$(VERILATORSRCS))
@@ -158,6 +165,12 @@ out/%.v out/%.metadata.lua: %.lua
 	- cp out/$*.v out/build_$*
 
 out/%.raw out/%_half.raw: %.t
+	terra $< terrasim
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.cycles.txt out/build_$*
+
+out/%.raw out/%_half.raw: %.lua
 	terra $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*

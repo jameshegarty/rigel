@@ -8,6 +8,8 @@ local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 --f.DISABLE_SYNTH=true
 
+local siftTerra
+if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
 TILES_X = 4
 TILES_Y = 4
@@ -42,10 +44,12 @@ sift.sumPow2 = function(A,B,outputType)
 
   local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
   sout = sout:disablePipelining()
+
+  local tfn
+  if terralib~=nil then tfn=siftTerra.sumPow2(A,B,outputType) end
+
   local partial = RM.lift( "sumpow2", types.tuple {A,B}, outputType, 0,
-                          terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)+([outputType:toTerraType()](a._1)*[outputType:toTerraType()](a._1))
-                  end, sinp, sout )
+                          tfn, sinp, sout )
   return partial
                 end
 
@@ -112,7 +116,7 @@ local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
   for y=0,GAUSS_HEIGHT-1 do
     for x=0,GAUSS_WIDTH-1 do
       G[y*GAUSS_WIDTH+x] = G[y*GAUSS_WIDTH+x]/sum
-      print("GAUSS X",x,"Y",y,"Value",G[y*GAUSS_WIDTH+x])
+      --print("GAUSS X",x,"Y",y,"Value",G[y*GAUSS_WIDTH+x])
     end
   end
 
@@ -293,7 +297,7 @@ end
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
 function sift.siftKernel(dxdyType)
-  print("sift")
+  --print("sift")
 
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
@@ -375,7 +379,7 @@ function sift.siftKernel(dxdyType)
 
   local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
+  --print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
 
@@ -388,30 +392,27 @@ function posSub(x,y)
   local xinp = S.index(sinp,0)
   local yinp = S.index(sinp,1)
 
---  local xo = S.select(S.lt(xinp,S.constant(x,A)),S.constant(0,A),xinp-S.constant(x,A))
---  local yo = S.select(S.lt(yinp,S.constant(y,A)),S.constant(0,A),yinp-S.constant(y,A))
   local xo = xinp-S.constant(x,A)
   local yo = yinp-S.constant(y,A)
 
   local out = S.tuple{xo,yo}
 
+  local tfn
+  if terralib~=nil then tfn=siftTerra.posSub(ITYPE,x,y) end
+
   local ps = RM.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
-                    terra( a : &ITYPE:toTerraType(), out:&ITYPE:toTerraType() )
-                      var xo = a._0-x
-                      var yo = a._1-y
-                      @out = {xo,yo}
-                    end, sinp, out)
+                    tfn, sinp, out)
   return ps
 end
 ----------------
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H)
-  print("makeHarrisWithDXDY")
+  --print("makeHarrisWithDXDY")
   --assert(window==16)
 
   local function res(internalW, internalH)
-    print("MAKE HARRIS",internalW, internalH)
+    --print("MAKE HARRIS",internalW, internalH)
 
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},TILES_X*4,TILES_Y*4)
     
@@ -552,12 +553,12 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    print("GRAD_INT=true")
+    --print("GRAD_INT=true")
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
   else
-    print("GRAD_INT=false")
+    --print("GRAD_INT=false")
   end
   
   left = C.fifo( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
