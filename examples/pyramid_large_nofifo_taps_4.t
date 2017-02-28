@@ -1,1 +1,0 @@
-pyramid_taps_1.t
