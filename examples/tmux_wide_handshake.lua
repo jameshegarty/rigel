@@ -3,13 +3,13 @@ local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
-
+local C = require "examplescommon"
 W = 128
 H = 64
 T = 8
 
-inp = S.parameter("inp",types.uint(8))
-plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
+--inp = S.parameter("inp",types.uint(8))
+--plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 ------------
 ITYPE = types.array2d( types.uint(8), T )
 ------------
@@ -25,7 +25,7 @@ local out = R.apply("toHandshakeArray", RM.toHandshakeArray(ITYPE,{{1,2},{1,2}})
 local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )
 
-multiplexed = R.apply( "plus100", RM.makeHandshake( RM.map(plus100,8),{{1,2},{1,2}}), out )
+multiplexed = R.apply( "plus100", RM.makeHandshake( RM.map(C.plus100,8),{{1,2},{1,2}}), out )
 local out = R.apply("demux", RM.demux(ITYPE,{{1,2},{1,2}}), multiplexed )
 
 

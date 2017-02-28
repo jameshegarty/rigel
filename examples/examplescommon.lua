@@ -897,4 +897,9 @@ function C.gaussian(W,sigma)
   return tab
 end
 
+local plus100tfn
+if terralib~=nil then plus100tfn = CT.plus100tfn end
+local plus100inp = S.parameter("inp",types.uint(8))
+C.plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, plus100tfn, plus100inp, plus100inp + S.constant(100,types.uint(8)) )
+
 return C

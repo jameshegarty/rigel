@@ -9,6 +9,9 @@ local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 f.DISABLE_SYNTH=true
 
+local siftCoreHWTerra
+if terralib~=nil then siftCoreHWTerra=require("sift_core_hw_terra") end
+
 sift = {}
 
 local fixedSum = memoize(function(A)
@@ -317,12 +320,12 @@ function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
   local sinp = S.parameter( "inp", ITYPE )
+
+  local tfn
+  if terralib~=nil then tfn=siftCoreHWTerra.posSub(ITYPE,x,y) end
+
   local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
-                    terra( a : &ITYPE:toTerraType(), out:&ITYPE:toTerraType() )
-                      var xo = a._0-x
-                      var yo = a._1-y
-                      @out = {xo,yo}
-                    end, sinp, sinp)
+                    tfn, sinp, sinp)
   return ps
 end
 ----------------

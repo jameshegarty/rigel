@@ -1,12 +1,10 @@
 local R = require "rigel"
 local RM = require "modules"
-local Im = require "image"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
 local harness = require "harness"
+local C = require "examplescommon"
 
 W = 128
 H = 64
@@ -19,13 +17,13 @@ if f1080p~=nil then
   H=1080
 end
 
-inp = S.parameter("inp",types.uint(8))
-plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
+--inp = S.parameter("inp",types.uint(8))
+--plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 
 ------------
 inp = R.input( types.uint(8) )
-a = R.apply("a", plus100, inp)
-b = R.apply("b", plus100, a)
+a = R.apply("a", C.plus100, inp)
+b = R.apply("b", C.plus100, a)
 p200 = RM.lambda( "p200", inp, b )
 ------------
 ITYPE = types.array2d( types.uint(8), T )

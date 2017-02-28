@@ -169,4 +169,6 @@ return  terra(inp:&uint16, out:&uint8)
                        end
 end
 
+CT.plus100tfn=terra( a : &uint8, out : &uint8  ) @out =  @a+100 end
+
 return CT
