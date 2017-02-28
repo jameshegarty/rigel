@@ -1,8 +1,5 @@
-SRCS_TERRA = $(wildcard *.t)
-SRCS_TERRA := $(filter-out harnessTerra.t examplescommonTerra.t lk_core.t lk_tr_core.t  sift_core_hw_terra.t campipe_core_terra.t stereo_tr_core_terra.t stereo_core_terra.t,$(SRCS_TERRA))
-
-SRCS_LUA = $(wildcard *.lua)
-SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua,$(SRCS_LUA))
+SRCS = $(wildcard *.lua)
+SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua,$(SRCS))
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
@@ -12,36 +9,26 @@ TERRA = ../rigelTerra
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
-# TOO SLOW
-TERRASRCS = $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SRCS_TERRA))
+VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 
-VERILOG = $(patsubst %.t,out/%.v,$(TERRASRCS))
-VERILOG += $(patsubst %.lua,out/%.v,$(TERRASRCS))
+# too slow
+SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
-TERRAOUT = $(patsubst %.t,out/%.raw,$(TERRASRCS))
-TERRAOUT += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
-TERRAOUT += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
-TERRAOUT += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
-TERRAOUT += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
-TERRAOUT += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
+TERRAOUT = $(patsubst %.lua,out/%.raw,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_TERRA))
 
-SRCS_LUA_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua, $(SRCS_LUA))
-
-TERRAOUT += $(patsubst %.lua,out/%.raw,$(SRCS_LUA_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_LUA_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_LUA_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_LUA_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_LUA_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_LUA_TERRA))
-
-SRCS_TERRA_VERILATOR = $(filter-out underflow.t, $(SRCS_TERRA))
-VERILATOR = $(patsubst %.t,out/%.verilator,$(SRCS_TERRA_VERILATOR))
-VERILATOR = $(patsubst %.t,out/%.verilator.raw,$(SRCS_TERRA_VERILATOR))
-#VERILATOR += $(patsubst %.t,out/%_half.raw,$(SRCS_TERRA_VERILATOR))
-VERILATOR += $(patsubst %.t,out/%.verilator.bmp,$(SRCS_TERRA_VERILATOR))
-#VERILATOR += $(patsubst %.t,out/%_half.bmp,$(SRCS_TERRA_VERILATOR))
-VERILATOR += $(patsubst %.t,out/%.verilator.correct.txt,$(SRCS_TERRA_VERILATOR))
-#VERILATOR += $(patsubst %.t,out/%_half.correct.txt,$(SRCS_TERRA_VERILATOR))
+#SRCS_VERILATOR = $(filter-out underflow.lua, $(SRCS_TERRA))
+VERILATOR = $(patsubst %.t,out/%.verilator,$(SRCS))
+VERILATOR = $(patsubst %.t,out/%.verilator.raw,$(SRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.raw,$(SRCS))
+VERILATOR += $(patsubst %.t,out/%.verilator.bmp,$(SRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.bmp,$(SRCS))
+VERILATOR += $(patsubst %.t,out/%.verilator.correct.txt,$(SRCS))
+#VERILATOR += $(patsubst %.t,out/%_half.correct.txt,$(SRCS))
 
 # too slow
 SRCS_TERRA_SIM = $(SRCS_TERRA)
@@ -70,25 +57,20 @@ SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_SIM))
 SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_SIM))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_SIM))
 
-SRCS_TERRA_AXI100 = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS_TERRA))
-SRCS_TERRA_AXI100 := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(SRCS_TERRA_AXI100))
-SRCS_TERRA_AXI100 := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(SRCS_TERRA_AXI100))
-SRCS_TERRA_AXI100 := $(filter-out harris_filterseq.t sift_float.t sift_desc.t,$(SRCS_TERRA_AXI100))
-
-SRCS_LUA_AXI100 := $(filter-out filterseq.lua,$(SRCS_LUA))
+SRCS_AXI100 = $(filter-out linebufferpartial_handshake_1.lua linebufferpartial_handshake_2.lua linebufferpartial_handshake_4.lua convpadcrop_handshake.lua reduceseq_handshake.lua  stereo_wide_handshake_medi.lua,$(SRCS))
+SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_tr_handshake_6_1.lua lk_tr_handshake_6_2.lua lk_tr_handshake_6_3.lua lk_wide_handshake_12_1_float.lua,$(SRCS_AXI100))
+SRCS_AXI100 := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI100))
+SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI100))
 
 # filter out stuff that's too big for the 7020
-SRCS_TERRA_AXI = $(SRCS_TERRA_AXI100)
-SRCS_TERRA_AXI := $(filter-out stereo_wide_handshake_nostall_full.t stereo_wide_handshake_nostall_medi.t stereo_wide_handshake_full.t,$(SRCS_TERRA_AXI))
-SRCS_TERRA_AXI := $(filter-out lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_6_4_axi.t,$(SRCS_TERRA_AXI))
-SRCS_TERRA_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.t lk_wide_handshake_12_1_axi.t,$(SRCS_TERRA_AXI))
+SRCS_AXI = $(SRCS_AXI100)
+SRCS_AXI := $(filter-out stereo_wide_handshake_nostall_full.lua stereo_wide_handshake_nostall_medi.lua stereo_wide_handshake_full.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_6_4_axi.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
 
-SRCS_LUA_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_LUA_AXI))
-
-AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS_TERRA_AXI))
-AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS_TERRA_AXI))
-AXIBITS += $(patsubst %.lua,out/%.axi.v,$(SRCS_LUA_AXI))
-AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(SRCS_LUA_AXI))
+AXIBITS = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
+AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
 
 AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(SRCS_TERRA_AXI100))
 AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(SRCS_TERRA_AXI100))
@@ -189,14 +171,6 @@ out/%.sim.v out/%_half.sim.v: %.t
 	mkdir -p out/build_$*
 	- cp out/$*.sim.v out/build_$*
 
-out/%.axi.v: %.t 
-	$(TERRA) $< axi
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	- cp out/$*.axi.v out/build_$*
-	mkdir -p out/build100_$*
-	- cp out/$*.axi.v out/build100_$*
-
 out/%.axi.v: %.lua
 	$(LUA) $< axi
 	# keep copy for future reference
@@ -229,14 +203,24 @@ out/%.verilator.correct.txt : out/%.verilator.bmp
 #	mkdir -p out/build_$*
 #	test ! -s out/$*.verilator.diff && touch $@
 
-out/%.axi.bit: out/%.axi.v
+out/build_%/system.ngc: out/%.axi.v
 	mkdir -p out/build_$*
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
+
+out/build_%/system.ngd: out/build_%/system.ngc
 	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints.ucf -uc ../../../platform/axi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
+
+out/build_%/system_map.ncd: out/build_%/system.ngd
 	cd out/build_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
+
+out/build_%/system.ncd: out/build_%/system_map.ncd
 	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
+
+out/build_%/system.twr: out/build_%/system.ncd
 	cd out/build_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
+
+out/%.axi.bit: out/build_%/system.twr
 	cd out/build_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
 	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
 	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
