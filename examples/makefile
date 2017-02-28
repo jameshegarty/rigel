@@ -71,25 +71,28 @@ SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_SIM))
 SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_SIM))
 SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_SIM))
 
-AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS))
-AXI100SRCS := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(AXI100SRCS))
-AXI100SRCS := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(AXI100SRCS))
-AXI100SRCS := $(filter-out filterseq.lua harris_filterseq.t sift_float.t sift_desc.t,$(AXI100SRCS))
+SRCS_TERRA_AXI100 = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS_TERRA))
+SRCS_TERRA_AXI100 := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(SRCS_TERRA_AXI100))
+SRCS_TERRA_AXI100 := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_float.t lk_wide_handshake_4_4.t lk_wide_handshake_4_1.t,$(SRCS_TERRA_AXI100))
+SRCS_TERRA_AXI100 := $(filter-out harris_filterseq.t sift_float.t sift_desc.t,$(SRCS_TERRA_AXI100))
+
+SRCS_LUA_AXI100 := $(filter-out filterseq.lua,$(SRCS_LUA))
 
 # filter out stuff that's too big for the 7020
-AXISRCS = $(AXI100SRCS)
-AXISRCS := $(filter-out stereo_wide_handshake_nostall_full.t stereo_wide_handshake_nostall_medi.t stereo_wide_handshake_full.t,$(AXISRCS))
-AXISRCS := $(filter-out lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_6_4_axi.t,$(AXISRCS))
-AXISRCS := $(filter-out lk_wide_handshake_12_1_axi_nostall.t lk_wide_handshake_12_1_axi.t,$(AXISRCS))
-AXISRCS := $(filter-out pyramid_large_nofifo_taps_4.t pyramid_large_taps_3.t pyramid_taps_3.t pyramid_taps_4.t pyramid_large_taps_4.t,$(AXISRCS))
+SRCS_TERRA_AXI = $(SRCS_TERRA_AXI100)
+SRCS_TERRA_AXI := $(filter-out stereo_wide_handshake_nostall_full.t stereo_wide_handshake_nostall_medi.t stereo_wide_handshake_full.t,$(SRCS_TERRA_AXI))
+SRCS_TERRA_AXI := $(filter-out lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_6_4_axi.t,$(SRCS_TERRA_AXI))
+SRCS_TERRA_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.t lk_wide_handshake_12_1_axi.t,$(SRCS_TERRA_AXI))
 
-AXIBITS = $(patsubst %.t,out/%.axi.v,$(AXISRCS))
-AXIBITS += $(patsubst %.t,out/%.axi.bit,$(AXISRCS))
-AXIBITS += $(patsubst %.lua,out/%.axi.v,$(AXISRCS))
-AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(AXISRCS))
+SRCS_LUA_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_LUA_AXI))
 
-AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(AXI100SRCS))
-AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(AXI100SRCS))
+AXIBITS = $(patsubst %.t,out/%.axi.v,$(SRCS_TERRA_AXI))
+AXIBITS += $(patsubst %.t,out/%.axi.bit,$(SRCS_TERRA_AXI))
+AXIBITS += $(patsubst %.lua,out/%.axi.v,$(SRCS_LUA_AXI))
+AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(SRCS_LUA_AXI))
+
+AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(SRCS_TERRA_AXI100))
+AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(SRCS_TERRA_AXI100))
 
 AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
 AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
