@@ -191,7 +191,7 @@ out/%.verilator.raw: out/%.verilator
 	./out/$*.verilator
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
+	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.verilator.bmp out/build_$*
@@ -440,7 +440,7 @@ out/%.axi100.bmp: out/%.axi100.raw
 	cp out/$*.axi100.bmp out/build100_$*
 
 out/%.bmp: out/%.raw out/%.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
+	$(LUA) ../misc/raw2bmp.lua out/$*.raw out/$*.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.bmp out/build_$*
