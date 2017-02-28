@@ -59,4 +59,4 @@ function make(filename)
   io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()
 end
 
-make(string.sub(arg[0],#arg[0]-5,#arg[0]-2))
+make(string.sub(arg[0],#arg[0]-7,#arg[0]-4))

@@ -5,6 +5,8 @@ local f = require "fixed"
 local types = require "types"
 local S = require "systolic"
 
+local stereoTRCoreTerra
+if terralib~=nil then stereoTRCoreTerra=require("stereo_tr_core_terra") end
 
 -- we only display the found match if energy < threshold, or threshold==0 (no thresholding)
 -- if threshold<0, then we only display if energy>-threshold
@@ -26,12 +28,11 @@ function displayOutput( reduceType, threshold )
     out = S.cast(S.tuple{S.select(cond,S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
   end
 
+  local tfn
+  if terralib~=nil then tfn=stereoTRCoreTerra.displayOutput(ITYPE,threshold) end
+
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                terra(a:&ITYPE:toTerraType(), out:&uint8[1])
-                  @out = array(a._0)
-                  if threshold>0 and a._1>threshold then @out = array([uint8](0)) 
-                  elseif threshold<0 and a._1<-threshold then  @out = array([uint8](0)) end
-                end, inp, 
+                tfn, inp, 
                 out 
                 --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
 )
@@ -67,16 +68,10 @@ function displayOutputColor( reduceType, threshold )
     out = S.select(cond,zero,colorOutput)
   end
 
+  local tfn
+  if terralib~=nil then tfn=stereoTRCoreTerra.displayOutputColor(ITYPE,threshold) end
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                terra(a:&ITYPE:toTerraType(), out:&uint8[4][1])
-                  var r : uint8 = (a._0-60) << 4
-                  var g : uint8 = 128
---                  g = a._1 / 16
-                  var b : uint8 = (16-(a._0-60)) << 4
-                  @out = array(array(r,g,b,[uint8](0)))
-                  if threshold>0 and a._1>threshold then @out = array(array([uint8](0),[uint8](0),[uint8](0),[uint8](0))) 
-                  elseif threshold<0 and a._1<-threshold then  @out = array(array([uint8](0),[uint8](0),[uint8](0),[uint8](0))) end
-                end, inp, 
+                tfn, inp, 
                 out 
                 --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
 )

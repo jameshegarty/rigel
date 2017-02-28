@@ -4,6 +4,9 @@ local types = require "types"
 local S = require "systolic"
 local C = require "examplescommon"
 
+local stereoCoreTerra
+if terralib~=nil then stereoCoreTerra=require("stereo_core_terra") end
+
 -- This function is used to select and format the output we want to display to the user
 -- (either the index, or SAD value)
 local function displayOutput(TRESH)
@@ -18,11 +21,11 @@ local function displayOutput(TRESH)
     out = S.cast(S.tuple{S.select(S.gt(S.index(inp,1),S.constant(TRESH,reduceType)),S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
   end
 
+  local tfn
+  if terralib~=nil then tfn=stereoCoreTerra.displayOutput(ITYPE,THRESH) end
+
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                terra(a:&ITYPE:toTerraType(), out:&uint8[1])
-                  @out = array(a._0)
-                  if TRESH~=0 and a._1>TRESH then @out = array([uint8](0)) end
-                end, inp, 
+                tfn, inp, 
                 out
 )
 end

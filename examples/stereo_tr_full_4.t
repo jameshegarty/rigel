@@ -1,1 +1,0 @@
-stereo_tr_tiny_1.t

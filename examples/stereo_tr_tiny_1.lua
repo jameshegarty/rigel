@@ -26,7 +26,7 @@ local reducePrecision = 16
 
 
 local T = string.sub(arg[0],string.find(arg[0],"%d+")) -- throughput #
-local filename = string.sub(arg[0],#arg[0]-6-#T,#arg[0]-3-#T)
+local filename = string.sub(arg[0],#arg[0]-8-#T,#arg[0]-5-#T)
 
 local W = 360
 local H = 203
