@@ -103,7 +103,7 @@ end
 --end
 
 local function bitselect(a,biti)
-   return bit.band(a,biti)~=0
+   return bit.band(a,biti)
 end
 
 -- make an array of ram128s to service a certain bandwidth
