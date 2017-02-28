@@ -6,6 +6,7 @@ SRCS = $(filter-out harness.lua harnessTerra.t examplescommon.lua examplescommon
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
 LUA = luajit
+TERRA = terra
 
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
@@ -160,7 +161,7 @@ clean:
 	rm -Rf out/*
 
 out/%.v out/%.metadata.lua: %.t 
-	terra $<
+	$(TERRA) $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
@@ -172,25 +173,25 @@ out/%.v out/%.metadata.lua: %.lua
 	- cp out/$*.v out/build_$*
 
 out/%.raw out/%_half.raw: %.t
-	terra $< terrasim
+	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
 
 out/%.raw out/%_half.raw: %.lua
-	terra $< terrasim
+	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
 
 out/%.sim.v out/%_half.sim.v: %.t 
-	terra $< isim
+	$(TERRA) $< isim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.sim.v out/build_$*
 
 out/%.axi.v: %.t 
-	terra $< axi
+	$(TERRA) $< axi
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.axi.v out/build_$*
@@ -198,7 +199,7 @@ out/%.axi.v: %.t
 	- cp out/$*.axi.v out/build100_$*
 
 out/%.axi.v: %.lua
-	luajit $< axi
+	$(LUA) $< axi
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.axi.v out/build_$*
@@ -371,13 +372,13 @@ out/%.hz.txt: out/%.axi.bit
 	echo $($@_HZl) > out/$*.hz.txt
 
 out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
-	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
-	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
-	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
-	$(eval $@_BPP_IN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
-	$(eval $@_BPP_OUT := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
-	$(eval $@_OUTW := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
+	$(eval $@_SCALEN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua scaleN))
+	$(eval $@_SCALED := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua scaleD))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBytesPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
 ###### SET THE CLOCK	
 	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 # (* second time around we can't write to fclk_export, so surpress error)
