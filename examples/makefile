@@ -2,7 +2,7 @@ SRCS_TERRA = $(wildcard *.t)
 SRCS_TERRA := $(filter-out harnessTerra.t examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t  sift_core.t sift_core_hw_terra.t campipe_core_terra.t,$(SRCS_TERRA))
 
 SRCS_LUA = $(wildcard *.lua)
-SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core_hw.luacampipe_core.lua descriptor_core.lua,$(SRCS_LUA))
+SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua,$(SRCS_LUA))
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
