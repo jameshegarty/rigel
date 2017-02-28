@@ -8,11 +8,12 @@ H = 64
 T = 8
 
 local invtable = {}
-terra inv(a:uint32) 
+--terra inv(a:uint32) 
+function inv(a)
   if a==0 then 
     return 0 
   else
-    var o = 2048/a
+    local o = math.floor(2048/a)
     if o>255 then return 255 end
     return o
   end 

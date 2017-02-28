@@ -4,6 +4,7 @@ local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require("harness")
+local C = require "examplescommon"
 
 T = 8 -- throughput
 --ConvRadius = 1
@@ -21,17 +22,20 @@ W = inputW
 H = inputH
 
 -------------
-sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8):makeConst()} )
-partial = RM.lift( "partial", types.tuple {types.uint(8),types.uint(8):makeConst()}, types.int(32), 1,
-                  terra( a : &tuple(uint8,uint8), out : &int32 )
-                    @out = [int32](a._0)*[int32](a._1)
-                  end, sinp, S.cast(S.index(sinp,0),types.int(32))*S.cast(S.index(sinp,1),types.int(32)) )
+--sinp = S.parameter( "inp", types.tuple {types.uint(8),types.uint(8):makeConst()} )
+--partial = RM.lift( "partial", types.tuple {types.uint(8),types.uint(8):makeConst()}, types.int(32), 1,
+--                  terra( a : &tuple(uint8,uint8), out : &int32 )
+--                    @out = [int32](a._0)*[int32](a._1)
+--                  end, sinp, S.cast(S.index(sinp,0),types.int(32))*S.cast(S.index(sinp,1),types.int(32)) )
+local partial = C.multiply(types.uint(8),types.uint(8),types.int(32))
 -------------
-touint8inp = S.parameter("inp", types.int(32))
-touint8 = RM.lift( "touint8", types.int(32), types.uint(8), 1, terra( a : &int32, out : &uint8 ) @out = [uint8](@a >> 8) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(8,types.int(32))), types.uint(8)) )
+--touint8inp = S.parameter("inp", types.int(32))
+--touint8 = RM.lift( "touint8", types.int(32), types.uint(8), 1, terra( a : &int32, out : &uint8 ) @out = [uint8](@a >> 8) end, touint8inp, S.cast(S.rshift(touint8inp,S.constant(8,types.int(32))), types.uint(8)) )
+local touint8 = C.shiftAndCast(types.int(32),types.uint(8),8)
 -------------
-rsinp = S.parameter( "inp", types.tuple { types.int(32), types.int(32) } )
-reduceSumInt32 = RM.lift( "reduceSumInt32", types.tuple { types.int(32), types.int(32) }, types.int(32), 1, terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
+--rsinp = S.parameter( "inp", types.tuple { types.int(32), types.int(32) } )
+--reduceSumInt32 = RM.lift( "reduceSumInt32", types.tuple { types.int(32), types.int(32) }, types.int(32), 1, terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, rsinp, S.index(rsinp,0)+S.index(rsinp,1) )
+local reduceSumInt32 = C.sum(types.int(32),types.int(32),types.int(32))
 -------------
 local STTYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
 local ITYPE = types.tuple{STTYPE,STTYPE:makeConst()}
