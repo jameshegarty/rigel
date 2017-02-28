@@ -1,21 +1,18 @@
-SRCFILES = $(wildcard *.t)
-SRCFILES += $(wildcard *.lua)
-SRCS = $(filter-out harness.lua harnessTerra.t examplescommon.lua examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t pyramid_core.lua harris_core.lua sift_core.t sift_core_hw.lua sift_core_hw_terra.t campipe_core.lua campipe_core_terra.t descriptor_core.lua,$(SRCFILES))
+SRCS_TERRA = $(wildcard *.t)
+SRCS_TERRA := $(filter-out harnessTerra.t examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t  sift_core.t sift_core_hw_terra.t campipe_core_terra.t,$(SRCS_TERRA))
 
+SRCS_LUA = $(wildcard *.lua)
+SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core_hw.luacampipe_core.lua descriptor_core.lua,$(SRCS_LUA))
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
-LUA = luajit
-TERRA = terra
+LUA = ../rigel
+TERRA = ../rigelTerra
 
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
-# some images have intentially invalid pixels in them, so we can't compare with golds
-#GOLDS = $(filter-out conv_wide_handshake.t ,$(SRCS))
-GOLDS = $(SRCS)
-
-TERRASRCS = $(filter-out underflow.t, $(SRCS))
+TERRASRCS = $(filter-out underflow.t, $(SRCS_TERRA))
 # TOO SLOW
 TERRASRCS := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(TERRASRCS))
 TERRASRCS := $(filter-out stereo_tr_rgba_full_32.t,$(TERRASRCS))
@@ -24,55 +21,55 @@ TERRASRCS := $(filter-out stereo_ov7660.t,$(TERRASRCS))
 VERILOG = $(patsubst %.t,out/%.v,$(TERRASRCS))
 VERILOG += $(patsubst %.lua,out/%.v,$(TERRASRCS))
 
-TERRA = $(patsubst %.t,out/%.raw,$(TERRASRCS))
-TERRA += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
-TERRA += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
-TERRA += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
-TERRA += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
-TERRA += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
+TERRAOUT = $(patsubst %.t,out/%.raw,$(TERRASRCS))
+TERRAOUT += $(patsubst %.t,out/%_half.raw,$(TERRASRCS))
+TERRAOUT += $(patsubst %.t,out/%.bmp,$(TERRASRCS))
+TERRAOUT += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
+TERRAOUT += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
+TERRAOUT += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
-TERRA += $(patsubst %.lua,out/%.raw,$(TERRASRCS))
-TERRA += $(patsubst %.lua,out/%_half.raw,$(TERRASRCS))
-TERRA += $(patsubst %.lua,out/%.bmp,$(TERRASRCS))
-TERRA += $(patsubst %.lua,out/%_half.bmp,$(TERRASRCS))
-TERRA += $(patsubst %.lua,out/%.correct.txt,$(TERRASRCS))
-TERRA += $(patsubst %.lua,out/%_half.correct.txt,$(TERRASRCS))
+TERRAOUT += $(patsubst %.lua,out/%.raw,$(SRCS_LUA))
+TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_LUA))
+TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_LUA))
+TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_LUA))
+TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_LUA))
+TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_LUA))
 
-VERILATORSRCS = $(filter-out underflow.t, $(SRCS))
-VERILATOR = $(patsubst %.t,out/%.verilator,$(VERILATORSRCS))
-VERILATOR = $(patsubst %.t,out/%.verilator.raw,$(VERILATORSRCS))
-#VERILATOR += $(patsubst %.t,out/%_half.raw,$(VERILATORSRCS))
-VERILATOR += $(patsubst %.t,out/%.verilator.bmp,$(VERILATORSRCS))
-#VERILATOR += $(patsubst %.t,out/%_half.bmp,$(VERILATORSRCS))
-VERILATOR += $(patsubst %.t,out/%.verilator.correct.txt,$(VERILATORSRCS))
-#VERILATOR += $(patsubst %.t,out/%_half.correct.txt,$(VERILATORSRCS))
+SRCS_TERRA_VERILATOR = $(filter-out underflow.t, $(SRCS_TERRA))
+VERILATOR = $(patsubst %.t,out/%.verilator,$(SRCS_TERRA_VERILATOR))
+VERILATOR = $(patsubst %.t,out/%.verilator.raw,$(SRCS_TERRA_VERILATOR))
+#VERILATOR += $(patsubst %.t,out/%_half.raw,$(SRCS_TERRA_VERILATOR))
+VERILATOR += $(patsubst %.t,out/%.verilator.bmp,$(SRCS_TERRA_VERILATOR))
+#VERILATOR += $(patsubst %.t,out/%_half.bmp,$(SRCS_TERRA_VERILATOR))
+VERILATOR += $(patsubst %.t,out/%.verilator.correct.txt,$(SRCS_TERRA_VERILATOR))
+#VERILATOR += $(patsubst %.t,out/%_half.correct.txt,$(SRCS_TERRA_VERILATOR))
 
 # too slow
-SIMSRCS = $(SRCS)
-SIMSRCS := $(filter-out stereo_wide_handshake_medi.t stereo_wide_handshake_nostall_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t ,$(SIMSRCS))
-SIMSRCS := $(filter-out stereo_wide_handshake_full.t stereo_wide_handshake_nostall_full.t stereo_tr_full_4.t stereo_tr_full_8.t stereo_tr_full_16.t stereo_tr_rgba_full_32.t,$(SIMSRCS))
-SIMSRCS := $(filter-out stereo_ov7660.t ,$(SIMSRCS))
-SIMSRCS := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_axi.t lk_wide_handshake_6_4_float.t lk_wide_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_4_1_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t ,$(SIMSRCS))
-SIMSRCS := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SIMSRCS))
-SIMSRCS := $(filter-out campipe_512.t campipe_ov7660.t,$(SIMSRCS))
-SIMSRCS := $(filter-out pyramid_large_1.t pyramid_large_2.t pyramid_large_3.t pyramid_large_4.t pyramid_large_tr_1.t pyramid_large_tr_2.t pyramid_large_tr_3.t pyramid_large_tr_4.t pyramid_large_nofifo_tr_1.t pyramid_large_nofifo_tr_2.t pyramid_large_nofifo_tr_3.t pyramid_large_nofifo_tr_4.t,$(SIMSRCS))
-SIMSRCS := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_large_taps_3.t pyramid_large_taps_4.t pyramid_large_nofifo_taps_1.t pyramid_large_nofifo_taps_2.t pyramid_large_nofifo_taps_3.t pyramid_large_nofifo_taps_4.t,$(SIMSRCS))
-SIMSRCS := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SIMSRCS))
-SIMSRCS := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SIMSRCS))
-SIMSRCS := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SIMSRCS))
+SRCS_TERRA_SIM = $(SRCS_TERRA)
+SRCS_TERRA_SIM := $(filter-out stereo_wide_handshake_medi.t stereo_wide_handshake_nostall_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t ,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out stereo_wide_handshake_full.t stereo_wide_handshake_nostall_full.t stereo_tr_full_4.t stereo_tr_full_8.t stereo_tr_full_16.t stereo_tr_rgba_full_32.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out stereo_ov7660.t ,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_axi.t lk_wide_handshake_6_4_float.t lk_wide_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_4_1_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t ,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out campipe_512.t campipe_ov7660.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out pyramid_large_1.t pyramid_large_2.t pyramid_large_3.t pyramid_large_4.t pyramid_large_tr_1.t pyramid_large_tr_2.t pyramid_large_tr_3.t pyramid_large_tr_4.t pyramid_large_nofifo_tr_1.t pyramid_large_nofifo_tr_2.t pyramid_large_nofifo_tr_3.t pyramid_large_nofifo_tr_4.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_large_taps_3.t pyramid_large_taps_4.t pyramid_large_nofifo_taps_1.t pyramid_large_nofifo_taps_2.t pyramid_large_nofifo_taps_3.t pyramid_large_nofifo_taps_4.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_SIM := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SRCS_TERRA_SIM))
 #nyi
-SIMSRCS := $(filter-out fixed_float_inv.t harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t sift_hw.t sift_hw_1080p.t,$(SIMSRCS))
+SRCS_TERRA_SIM := $(filter-out fixed_float_inv.t harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t sift_hw.t sift_hw_1080p.t,$(SRCS_TERRA_SIM))
 
-SIM = $(patsubst %.t,out/%.sim.bmp,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%.sim.raw,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%_half.sim.raw,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%.sim.v,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%_half.sim.v,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SIMSRCS))
-SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SIMSRCS))
+SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%.sim.v,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_SIM))
+SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_SIM))
 
 AXI100SRCS = $(filter-out linebufferpartial_handshake_1.t linebufferpartial_handshake_2.t linebufferpartial_handshake_4.t convpadcrop_handshake.t reduceseq_handshake.t  stereo_wide_handshake_medi.t,$(SRCS))
 AXI100SRCS := $(filter-out lk_tr_handshake_4_4.t lk_tr_handshake_6_6.t lk_tr_handshake_6_1.t lk_tr_handshake_6_2.t lk_tr_handshake_6_3.t lk_wide_handshake_12_1_float.t,$(AXI100SRCS))
@@ -119,7 +116,7 @@ CAMERABITS = $(patsubst %.t,out/%.axi.v,$(CAMERASRCS))
 CAMERABITS += $(patsubst %.t,out/%.camera.bit,$(CAMERASRCS))
 
 
-RES = $(TERRA)
+RES = $(TERRAOUT)
 RES += $(VERILATOR)
 RES += $(SIM)
 RES += $(AXI)
@@ -137,7 +134,7 @@ dups: $(DUPS)
 
 verilog: $(VERILOG)
 
-terra: $(TERRA)
+terra: $(TERRAOUT)
 
 verilator: $(VERILATOR)
 
@@ -218,7 +215,7 @@ out/%.verilator.raw: out/%.verilator
 	./out/$*.verilator
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
-	terra ../misc/raw2bmp.t out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
+	$(TERRA) ../misc/raw2bmp.t out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.verilator.bmp out/build_$*
@@ -391,7 +388,7 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
-	terra ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
 	# keep copy for future reference
 	cp out/$*.axi.cycles.txt out/build_$*
 
@@ -400,13 +397,13 @@ ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
 
 out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
-	$(eval $@_IMG := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
-	$(eval $@_SCALEN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
-	$(eval $@_SCALED := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
-	$(eval $@_BPP_IN := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
-	$(eval $@_BPP_OUT := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
-	$(eval $@_OUTW := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell terra ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
+	$(eval $@_IMG := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
+	$(eval $@_SCALEN := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
+	$(eval $@_SCALED := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
+	$(eval $@_BPP_IN := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
+	$(eval $@_OUTW := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
 	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.axi100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
@@ -414,7 +411,7 @@ out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
-	terra ../misc/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
+	$(TERRA) ../misc/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
 	# keep copy for future reference
 	cp out/$*.axi100.cycles.txt out/build100_$*
 
@@ -427,43 +424,43 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	split -n 2 -d out/sim_$*/$*.sim.raw out/sim_$*/S
 	mv out/sim_$*/S00 out/$*.sim.raw
 	mv out/sim_$*/S01 out/$*.sim.1.raw
-	terra ../misc/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
+	$(TERRA) ../misc/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.cycles.txt out/build_$*
 
 out/%.sim.bmp: out/%.sim.raw out/%.metadata.lua
-	terra ../misc/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+	$(TERRA) ../misc/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.bmp out/build_$*
 
 out/%.sim.1.bmp: out/%.sim.raw out/%.metadata.lua
-	terra ../misc/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
+	$(TERRA) ../misc/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw
-	terra ../misc/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
+	$(TERRA) ../misc/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.axi.bmp out/build_$*
 
 out/%.axi100.bmp: out/%.axi100.raw
-	terra ../misc/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
+	$(TERRA) ../misc/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build100_$*
 	cp out/$*.axi100.bmp out/build100_$*
 
 out/%.bmp: out/%.raw out/%.metadata.lua
-	terra ../misc/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
+	$(TERRA) ../misc/raw2bmp.t out/$*.raw out/$*.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.bmp out/build_$*
 
 out/%_half.bmp: out/%_half.raw out/%.metadata.lua
-	terra ../misc/raw2bmp.t out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
+	$(TERRA) ../misc/raw2bmp.t out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*_half.bmp out/build_$*
@@ -534,14 +531,14 @@ out/sift_hw_1080p_half.bmp: out/sift_hw_1080p_half.raw
 out/sift_hw_1080p.axi.bmp out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
 	# cut off the axi burst padding
 	head -c 8424000 $< > $@.tmp
-	terra ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
+	$(TERRA) ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
 	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > $@.tmp.lua
-	terra ../misc/raw2bmp.t $@.match $@ $@.tmp.lua 0
+	$(TERRA) ../misc/raw2bmp.t $@.match $@ $@.tmp.lua 0
 
 #out/sift_hw.bmp: out/sift_hw.raw
-#	terra ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
+#	$(TERRA) ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
 #	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/sift_hw.metadata.tmp.lua
-#	terra ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
+#	$(TERRA) ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
 
 out/featuredescriptor.bmp: out/featuredescriptor.raw
 out/featuredescriptor.axi.bmp: out/featuredescriptor.axi.raw
@@ -551,8 +548,8 @@ out/sift_hw.axi.bmp: out/sift_hw.axi.raw
 out/sift_hw_half.bmp: out/sift_hw_half.raw
 
 out/sift_hw.axi.bmp out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp out/featuredescriptor.axi.bmp:
-	terra ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
+	$(TERRA) ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
 	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/__feature.metadata.lua
-	terra ../misc/raw2bmp.t out/__feature.match $@ out/__feature.metadata.lua 0
+	$(TERRA) ../misc/raw2bmp.t out/__feature.match $@ out/__feature.metadata.lua 0
 	rm out/__feature.match
 	rm out/__feature.metadata.lua

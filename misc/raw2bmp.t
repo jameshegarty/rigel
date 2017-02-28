@@ -7,7 +7,7 @@ cstdio = terralib.includec("stdio.h")
 local metadata = dofile(arg[3])
 
 terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
-  --cstdio.printf("START RAW@BMP\n")
+  --cstdio.printf("START RAW@BMP %s\n",infile)
   var inp : Image
 --  inp:loadRaw(infile,128,64,8)
   var totalSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
@@ -15,6 +15,10 @@ terra raw2bmp(infile : &int8, outfile : &int8, axiround:bool)
   inp.data = [&uint8](inp.dataPtr)
 
   var imgIn = cstdio.fopen(infile, "rb");
+  if imgIn==nil then
+    cstdio.printf("Error, file not found %s\n",infile);
+    cstdlib.exit(1)
+  end
 
   cstdio.fseek(imgIn, 0, cstdio.SEEK_END);
   var sz = cstdio.ftell(imgIn);

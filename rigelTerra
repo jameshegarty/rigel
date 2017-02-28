@@ -1,0 +1,4 @@
+#!/bin/bash
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LUA_PATH="./?.lua;$DIR/?.lua;$DIR/src/?.lua;$DIR/misc/?.lua;$DIR/examples/?.lua" TERRA_PATH="./?.t;$DIR/?.t;$DIR/src/?.t;$DIR/misc/?.t;$DIR/examples/?.t" terra "$@"
