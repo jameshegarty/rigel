@@ -18,20 +18,14 @@ local sout = S.select(S.lt(S.index(S.index(inp,0),0),S.constant(320,types.uint(1
 sout = S.tuple{sout,sout,sout,S.constant(0,types.uint(8))}
 sout = S.cast(sout,OTYPE)
 
+local tfn
+if terralib~=nil then
+  local ovt = require("2xov7660_terra")
+  tfn = ovt(SPLIT_TYPE,OTYPE)
+end
+
 splitfn = RM.lift( "split", SPLIT_TYPE, OTYPE , 10, 
-                  terra( a : &SPLIT_TYPE:toTerraType(), out : &OTYPE:toTerraType()  ) 
-                  if a._0._0<320 then
-                    (@out)[0] = (a._1)[0]
-                    (@out)[1] = (a._1)[0]
-                    (@out)[2] = (a._1)[0]
-                    (@out)[3] = 0
-                  else
-                    (@out)[0] = (a._1)[1]
-                    (@out)[1] = (a._1)[1]
-                    (@out)[2] = (a._1)[1]
-                    (@out)[3] = 0
-                  end
-                end, inp, sout )
+                  tfn, inp, sout )
 
 cr = RM.liftHandshake(RM.changeRate(ITYPE,1,4,2))
 sfn = RM.makeHandshake(RM.liftXYSeqPointwise(splitfn,W,H,2))
