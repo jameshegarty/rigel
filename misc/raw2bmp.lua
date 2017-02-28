@@ -17,6 +17,41 @@ typedef struct {} FILE;
 
          ]]
 
+-- add n channels
+-- ** this can actually be used to delete channels too if n<0
+--terra Image:addChannels(n:int)
+function addChannels(n, width, height, stride, channels, bits, data)
+  local size = width*height*(channels+n)*(bits/8)
+  --var temp : &uint8
+  --cstdlib.posix_memalign( [&&opaque](&temp), pageSize, size)
+  local temp = ffi.new("unsigned char["..tostring(size).."]")
+
+  err(stride==width," no stride allowed ")
+  err(bits==8,"8 bit only")
+
+  --var inF = [&uint8](self.data)
+
+  local lineWidth = width*(channels+n)
+  for y = 0, height-1 do
+    for x = 0, width-1 do
+      for c = 0, channels+n-1 do
+        --var aa : uint8 = 0
+        local aa = ffi.new("unsigned char[1]")
+        if c<channels then
+          aa[0] = data[y*channels*width + x*channels + c]
+        end
+        temp[y*lineWidth + x*(channels+n) + c] = aa[0]
+      end
+    end
+  end
+
+  --self:free()
+  --self.data = temp
+  --self.dataPtr = temp
+  --self.channels = self.channels+n
+  return temp
+end
+
 function writeBmp(filename,width,height,stride,channels,data)
   local file = ffi.C.fopen(filename,"wb")
   if file==nil then
@@ -261,10 +296,15 @@ function raw2bmp(infile, outfile, axiround)
   -- we can't write 3 channels per pixel over axi.
   if metadata.outputBytesPerPixel==2 then
     --inp:addChannels(1)
-    assert(false)
+    --assert(false)
+    dataPtr = addChannels(1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,metadata.outputBytesPerPixel, 8, dataPtr)
+    metadata.outputBytesPerPixel = 3
   elseif metadata.outputBytesPerPixel==4 then
     --inp:addChannels(-1)
-    assert(false)
+    --assert(false)
+    dataPtr = addChannels(-1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,metadata.outputBytesPerPixel, 8, dataPtr)
+    metadata.outputBytesPerPixel = 3
+
   end
 
   local file = writeBmp(outfile,metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,
