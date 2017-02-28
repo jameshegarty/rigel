@@ -4,6 +4,7 @@ local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
+local C = require "examplescommon"
 
 function MAKE(T)
   assert(T<=1)
@@ -12,12 +13,13 @@ function MAKE(T)
   local ConvWidth = 4
 
 
-  local sinp = S.parameter( "inp", types.array2d(types.uint(8),ConvWidth*T,ConvWidth) )
-  local extract = RM.lift( "extract", types.array2d(types.uint(8),ConvWidth*T,ConvWidth), types.array2d(types.uint(8),1,1), 1,
-                          terra( a : &uint8[ConvWidth*T*ConvWidth], out : &uint8[1] )
-                            (@out)[0] = (@a)[0]
-                          end, sinp, S.slice(sinp,0,0,0,0) )
-
+  --local sinp = S.parameter( "inp", types.array2d(types.uint(8),ConvWidth*T,ConvWidth) )
+  --local extract = RM.lift( "extract", types.array2d(types.uint(8),ConvWidth*T,ConvWidth), types.array2d(types.uint(8),1,1), 1,
+  --                        terra( a : &uint8[ConvWidth*T*ConvWidth], out : &uint8[1] )
+  --                          (@out)[0] = (@a)[0]
+  --                        end, sinp, S.slice(sinp,0,0,0,0) )
+  local extract = C.index( types.array2d(types.uint(8),ConvWidth*T,ConvWidth), 0, 0 )
+  extract = C.compose("extract",C.arrayop(types.uint(8),1,1),extract)
 
   local inputW = 128
   local inputH = 64

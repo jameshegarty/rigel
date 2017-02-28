@@ -1,14 +1,16 @@
 local R = require "rigel"
 local RM = require "modules"
-local Im = require "image"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
+--local cstdio = terralib.includec("stdio.h")
+--local cstring = terralib.includec("string.h")
 local harness = require "harness"
 local C = require "examplescommon"
 local f = require "fixed"
+
+local edgeTerra={}
+if terralib~=nil then edgeTerra=require("edge_terra") end
 
 W = 640
 H = 480
@@ -47,17 +49,7 @@ local nms_E = S.gt(S.index(inp,1,1),S.index(inp,2,1))
 local nms_W = S.ge(S.index(inp,1,1),S.index(inp,0,1))
 local nmsout = S.__and(S.__and(nms_N,nms_S),S.__and(nms_E,nms_W))
 local nmsout = S.select(nmsout, S.constant(255,types.uint(8)), S.constant(0,types.uint(8)) )
-local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,terra(a:&uint8[9],out:&uint8)
-                      var N = (@a)[1+1*3] >= (@a)[1+0*3]
-                      var So = (@a)[1+1*3] >= (@a)[1+2*3]
-                      var E = (@a)[1+1*3] >= (@a)[2+1*3]
-                      var W = (@a)[1+1*3] >= (@a)[0+1*3]
-                      var nmsout = (N and So) or (E and W)
-                      nmsout = nmsout and ( (@a)[1+1*3] > 10 )
-
---                      nmsout = (@a)[1+1*3] > 10
-                      if nmsout then @out=255 else @out = 0 end
-                                    end, inp, nmsout)
+local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,edgeTerra.nms, inp, nmsout)
 
 --------------
 local function makeThresh()
@@ -69,19 +61,7 @@ local function makeThresh()
   local c_one = S.constant({255,255,255,0},types.array2d(types.uint(8),4))
   local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
   local thout = S.select(S.gt(inpData,inpTap), c_one, c_zero )
-  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,terra(a:&tuple(uint8,uint32),out:&uint8[4])
-                         if (@a)._0 > (@a)._1 then 
-                           (@out)[0]=255 
-                           (@out)[1]=255 
-                           (@out)[2]=255 
-                           (@out)[3]=0
-                         else 
-                           (@out)[0] = 0 
-                           (@out)[1] = 0 
-                           (@out)[2] = 0 
-                           (@out)[3] = 0 
-                         end
-                                                                    end, inp, thout)
+  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,edgeTerra.thresh, inp, thout)
 
   if TAPS==false then
     local THRESH=10
