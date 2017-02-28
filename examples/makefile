@@ -1,8 +1,8 @@
 SRCS_TERRA = $(wildcard *.t)
-SRCS_TERRA := $(filter-out harnessTerra.t examplescommonTerra.t lk_core.t lk_tr_core.t stereo_core.t stereo_tr_core.t  sift_core.t sift_core_hw_terra.t campipe_core_terra.t,$(SRCS_TERRA))
+SRCS_TERRA := $(filter-out harnessTerra.t examplescommonTerra.t lk_core.t lk_tr_core.t  sift_core_hw_terra.t campipe_core_terra.t stereo_tr_core_terra.t stereo_core_terra.t,$(SRCS_TERRA))
 
 SRCS_LUA = $(wildcard *.lua)
-SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua,$(SRCS_LUA))
+SRCS_LUA := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua,$(SRCS_LUA))
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
@@ -12,11 +12,8 @@ TERRA = ../rigelTerra
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
-TERRASRCS = $(filter-out underflow.t, $(SRCS_TERRA))
 # TOO SLOW
-TERRASRCS := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(TERRASRCS))
-TERRASRCS := $(filter-out stereo_tr_rgba_full_32.t,$(TERRASRCS))
-TERRASRCS := $(filter-out stereo_ov7660.t,$(TERRASRCS))
+TERRASRCS = $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SRCS_TERRA))
 
 VERILOG = $(patsubst %.t,out/%.v,$(TERRASRCS))
 VERILOG += $(patsubst %.lua,out/%.v,$(TERRASRCS))
@@ -28,12 +25,14 @@ TERRAOUT += $(patsubst %.t,out/%_half.bmp,$(TERRASRCS))
 TERRAOUT += $(patsubst %.t,out/%.correct.txt,$(TERRASRCS))
 TERRAOUT += $(patsubst %.t,out/%_half.correct.txt,$(TERRASRCS))
 
-TERRAOUT += $(patsubst %.lua,out/%.raw,$(SRCS_LUA))
-TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_LUA))
-TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_LUA))
-TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_LUA))
-TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_LUA))
-TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_LUA))
+SRCS_LUA_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua, $(SRCS_LUA))
+
+TERRAOUT += $(patsubst %.lua,out/%.raw,$(SRCS_LUA_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_LUA_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_LUA_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_LUA_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_LUA_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_LUA_TERRA))
 
 SRCS_TERRA_VERILATOR = $(filter-out underflow.t, $(SRCS_TERRA))
 VERILATOR = $(patsubst %.t,out/%.verilator,$(SRCS_TERRA_VERILATOR))

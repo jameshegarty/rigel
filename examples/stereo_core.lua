@@ -22,7 +22,7 @@ local function displayOutput(TRESH)
   end
 
   local tfn
-  if terralib~=nil then tfn=stereoCoreTerra.displayOutput(ITYPE,THRESH) end
+  if terralib~=nil then tfn=stereoCoreTerra.displayOutput(ITYPE,TRESH) end
 
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
                 tfn, inp, 
