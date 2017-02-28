@@ -72,28 +72,23 @@ SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lu
 AXIBITS = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
 
-AXIBITS100 = $(patsubst %.t,out/%.axi100.bit,$(SRCS_TERRA_AXI100))
-AXIBITS100 += $(patsubst %.t,out/%.axi100.bit.bin,$(SRCS_TERRA_AXI100))
+AXIBITS100 = $(patsubst %.lua,out/%.axi100.bit,$(SRCS_AXI100))
+AXIBITS100 += $(patsubst %.lua,out/%.axi100.bit.bin,$(SRCS_AXI100))
 
-AXI = $(patsubst %.t,out/%.axi.raw,$(AXISRCS))
-AXI += $(patsubst %.t,out/%.axi.bmp,$(AXISRCS))
-AXI += $(patsubst %.t,out/%.axi.correct.txt,$(AXISRCS))
-AXI += $(patsubst %.t,out/%.hz.txt,$(AXISRCS))
-
-AXI += $(patsubst %.lua,out/%.axi.raw,$(AXISRCS))
-AXI += $(patsubst %.lua,out/%.axi.bmp,$(AXISRCS))
-AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(AXISRCS))
-AXI += $(patsubst %.lua,out/%.hz.txt,$(AXISRCS))
+AXI = $(patsubst %.lua,out/%.axi.raw,$(SRCS_AXI))
+AXI += $(patsubst %.lua,out/%.axi.bmp,$(SRCS_AXI))
+AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(SRCS_AXI))
+AXI += $(patsubst %.lua,out/%.hz.txt,$(SRCS_AXI))
 AXI += $(AXIBITS)
 
-AXI100 = $(patsubst %.t,out/%.axi100.correct.txt,$(AXI100SRCS))
-AXI100 += $(patsubst %.t,out/%.axi100.raw,$(AXI100SRCS))
-AXI100 += $(patsubst %.t,out/%.axi100.bmp,$(AXI100SRCS))
+AXI100 = $(patsubst %.lua,out/%.axi100.correct.txt,$(SRCS_AXI100))
+AXI100 += $(patsubst %.lua,out/%.axi100.raw,$(SRCS_AXI100))
+AXI100 += $(patsubst %.lua,out/%.axi100.bmp,$(SRCS_AXI100))
 AXI100 += $(AXIBITS100)
 
-STATS = $(patsubst %.t,out/%.stats.txt,$(AXISRCS))
+STATS = $(patsubst %.lua,out/%.stats.txt,$(AXISRCS))
 
-STATS100 = $(patsubst %.t,out/%.stats100.txt,$(AXI100SRCS))
+STATS100 = $(patsubst %.lua,out/%.stats100.txt,$(SRCS_AXI100))
 
 CAMERASRCS = stereo_ov7660.t 2xov7660.t campipe_ov7660.t
 CAMERABITS = $(patsubst %.t,out/%.axi.v,$(CAMERASRCS))
@@ -416,25 +411,25 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	cp out/$*.sim.cycles.txt out/build_$*
 
 out/%.sim.bmp: out/%.sim.raw out/%.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.bmp out/build_$*
 
 out/%.sim.1.bmp: out/%.sim.raw out/%.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw
-	$(TERRA) ../misc/raw2bmp.t out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.axi.bmp out/build_$*
 
 out/%.axi100.bmp: out/%.axi100.raw
-	$(TERRA) ../misc/raw2bmp.t out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build100_$*
 	cp out/$*.axi100.bmp out/build100_$*
@@ -446,7 +441,7 @@ out/%.bmp: out/%.raw out/%.metadata.lua
 	cp out/$*.bmp out/build_$*
 
 out/%_half.bmp: out/%_half.raw out/%.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
+	$(LUA) ../misc/raw2bmp.lua out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*_half.bmp out/build_$*
@@ -519,7 +514,7 @@ out/sift_hw_1080p.axi.bmp out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
 	head -c 8424000 $< > $@.tmp
 	$(TERRA) ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
 	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > $@.tmp.lua
-	$(TERRA) ../misc/raw2bmp.t $@.match $@ $@.tmp.lua 0
+	$(LUA) ../misc/raw2bmp.lua $@.match $@ $@.tmp.lua 0
 
 #out/sift_hw.bmp: out/sift_hw.raw
 #	$(TERRA) ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
@@ -536,6 +531,6 @@ out/sift_hw_half.bmp: out/sift_hw_half.raw
 out/sift_hw.axi.bmp out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp out/featuredescriptor.axi.bmp:
 	$(TERRA) ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
 	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/__feature.metadata.lua
-	$(TERRA) ../misc/raw2bmp.t out/__feature.match $@ out/__feature.metadata.lua 0
+	$(LUA) ../misc/raw2bmp.lua out/__feature.match $@ out/__feature.metadata.lua 0
 	rm out/__feature.match
 	rm out/__feature.metadata.lua
