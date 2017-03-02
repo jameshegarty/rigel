@@ -10,28 +10,38 @@ Rigel is a language for describing image processing hardware embedded in Lua. Ri
 Install & Run
 -------------
 
-Installing Rigel is not required. However your system needs to have Terra installed, and paths set correctly so that Terra can find all the Rigel sources. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-02-26) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly.
-
-Next, add the Rigel language definition to your lua path environment variable, and the Terra binary location to your PATH. This can be accomplished by adding the following to .profile or .bashrc:
-
-    export RIGEL=[path to rigel git directory root]
-    export TERRADIR=[path to terra root]
-    export TERRA_PATH="$TERRA_PATH;./?.t;$RIGEL/?.t;$RIGEL/src/?.t;$RIGEL/misc/?.t;$TERRADIR/share/tests/lib/?.t;$RIGEL/examples/?.t"
-    export PATH=${TERRADIR}/bin:${PATH}
-
-Rigel and Terra are tested to work on Linux and Mac OS X. Other platforms are unlikely to work.
-
-Now that you have added the correct paths, you should be able to run the example pipelines using Rigel's x86 simulator:
+Installing Rigel is not required. Rigel requires luajit, which can be easily installed with either apt-get or homebrew. Rigel provides a wrapper script (rigelLuajit) that automatically sets up the correct paths for luajit:
 
     cd [rigel root]/examples
+    ../rigelLuajit pointwise_wide_handshake.lua
+
+Which will then generate the verilog file "[rigel root]/examples/out/pointwise_wide_handshake.v".
+
+Rigel has two optional dependencies: Verilator and Terra. Verilator can be installed using apt-get or homebrew, and enables fast verilog simulation:
+
+    cd [rigel root]/examples
+    make out/pointwise_wide_handshake.verilator.bmp
+
+Which runs the pointwise example verilog through Verilator and produces an output image.
+
+Optionally installing terra enables our fast Terra simulator. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-02-26) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly. The terra simulator can then be run similarly to Verilator:
+
+    cd [rigel root]/examples
+    make out/pointwise_wide_handshake.terra.bmp
+
+Once set up, make can be used to run our full suite of tests:
+
+    cd [rigel root]/examples
+    make verilog
+    make verilator
     make terra
 
-This runs 100s of test pipelines, so it may be slow. The output of each test is located at `examples/out/[testname].bmp`. If make completes without errors, this means that all tests were successful.
+This runs 100s of test pipelines, so it may be slow. The output of each test is located at `examples/out/[testname].v`, `examples/out/[testname].verilator.bmp`, and `examples/out/[testname].terra.bmp`. If make completes without errors, this means that all tests were successful.
 
 FPGA Setup
 ----------
 
-`make terra` will write out verilog files for each test (located at `examples/out/[testname].axi.v`). You can compile and run these verilog files on your board using your own flow. However, we also provide a simplified Xilinx FPGA flow that we recommend (implemented in `examples/makefile`). Our flow supports both generating a Xilinx bitstream (.bit) and also loading and running the pipeline on the board automatically (over ethernet).
+`make verilog` will write out verilog files for each test (located at `examples/out/[testname].v`). You can compile and run these verilog files on your board using your own flow. However, we also provide a simplified Xilinx FPGA flow that we recommend (implemented in `examples/makefile`). Our flow supports both generating a Xilinx bitstream (.bit) and also loading and running the pipeline on the board automatically (over ethernet).
 
 Rigel's FPGA flow was tested with [Xilinx ISE 14.5](http://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/design-tools/v2012_4---14_5.html). This is the only version of ISE that works with the Zynq 7100. Later versions of ISE should work fine as well, if you are building for the Zynq 7020. If ISE is installed, our makefile should be able to build bitstreams for the Zynq 7020 and 7100.
 
@@ -55,9 +65,11 @@ Addresses, etc can be modified in `examples/makefile`.
 
 Our makefile supports the following options:
 
-* **make terra:** Run compiler and x86 simulator on all tests. Sim outputs at `examples/out/[testname].bmp` and verilog outputs at `examples/out/[testname].axi.v`
-* **make sim:** Run Verilog simulator on all tests. Outputs at `examples/out/[testname].sim.bmp`
-* **make axibits:** Builds all 7020 bitstreams. Outputs at `examples/out/[testname].axi.bi`t
+* **make verilog:** Build all (generic, platform-independent) Verilog files. Outputs at `examples/out/[testname].v`
+* **make verilator:** Simulator Verilog using Verilator. Outputs at `examples/out/[testname].verilator.bmp`
+* **make terra:** Run compiler and Terra x86 simulator on all tests. Sim outputs at `examples/out/[testname].terra.bmp`.
+* **make isim:** Run Xilinx ISIM simulator on all tests. Outputs at `examples/out/[testname].isim.bmp`
+* **make axibits:** Builds all 7020 bitstreams. Verilog outputs at `examples/out/[testname].axi.v`. Bitstream outputs at `examples/out/[testname].axi.bit`
 * **make axi:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
 * **make axibits100:** Builds all 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
 * **make axi100:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`

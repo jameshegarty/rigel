@@ -168,8 +168,8 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = RM.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".sim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
-    io.output("out/"..filename..ext..".sim.v")
+    local f = RM.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".isim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
+    io.output("out/"..filename..ext..".isim.v")
     io.write(f:toVerilog())
     io.close()
   end

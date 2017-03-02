@@ -3,7 +3,7 @@ SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core
 
 VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
-LUA = ../rigel
+LUA = ../rigelLuajit
 TERRA = ../rigelTerra
 
 RAWS = $(wildcard *.raw)
@@ -14,12 +14,12 @@ VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 # too slow
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
-TERRAOUT = $(patsubst %.lua,out/%.raw,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.raw,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%.bmp,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.bmp,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%.correct.txt,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_TERRA))
+TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.terra.bmp,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.terra.bmp,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%.terra.correct.txt,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,out/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 #SRCS_VERILATOR = $(filter-out underflow.lua, $(SRCS_TERRA))
 VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS))
@@ -46,16 +46,16 @@ SRCS_TERRA_SIM := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4
 #nyi
 SRCS_TERRA_SIM := $(filter-out fixed_float_inv.t harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t sift_hw.t sift_hw_1080p.t,$(SRCS_TERRA_SIM))
 
-SIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%.sim.1.bmp,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%.sim.raw,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%.sim.v,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_SIM))
-SIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_SIM))
+ISIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%.sim.1.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%.sim.raw,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%.sim.v,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_ISIM))
 
 SRCS_AXI100 = $(filter-out linebufferpartial_handshake_1.lua linebufferpartial_handshake_2.lua linebufferpartial_handshake_4.lua convpadcrop_handshake.lua reduceseq_handshake.lua  stereo_wide_handshake_medi.lua,$(SRCS))
 SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_tr_handshake_6_1.lua lk_tr_handshake_6_2.lua lk_tr_handshake_6_3.lua lk_wide_handshake_12_1_float.lua,$(SRCS_AXI100))
@@ -97,7 +97,7 @@ CAMERABITS += $(patsubst %.t,out/%.camera.bit,$(CAMERASRCS))
 
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
-RES += $(SIM)
+RES += $(ISIM)
 RES += $(AXI)
 RES += $(AXIBITS)
 RES += $(AXI100)
@@ -117,7 +117,7 @@ terra: $(TERRAOUT)
 
 verilator: $(VERILATOR)
 
-sim: $(SIM)
+isim: $(ISIM)
 
 stats: $(STATS)
 
@@ -148,20 +148,20 @@ out/%.v out/%.metadata.lua: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.raw out/%_half.raw: %.t
+out/%.terra.raw out/%_half.terra.raw: %.t
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
 
-out/%.raw out/%_half.raw: %.lua
+out/%.terra.raw out/%_half.terra.raw: %.lua
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
 
-out/%.sim.v out/%_half.sim.v: %.t 
-	$(TERRA) $< isim
+out/%.isim.v out/%_half.isim.v: %.t 
+	$(LUA) $< isim
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.sim.v out/build_$*
@@ -397,7 +397,7 @@ out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
 	cp out/$*.axi100.cycles.txt out/build100_$*
 
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
-out/%.sim.raw: out/%.sim.v $(DUPS)
+out/%.isim.raw: out/%.isim.v $(DUPS)
 	mkdir -p out/sim_$*
 	cd out/sim_$*; vlogcomp ../$*.sim.v
 	cd out/sim_$*; fuse -o $* -lib $* -L unisim -L unimacro -top sim
@@ -410,13 +410,13 @@ out/%.sim.raw: out/%.sim.v $(DUPS)
 	mkdir -p out/build_$*
 	cp out/$*.sim.cycles.txt out/build_$*
 
-out/%.sim.bmp: out/%.sim.raw out/%.metadata.lua
+out/%.isim.bmp: out/%.isim.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.sim.bmp out/build_$*
 
-out/%.sim.1.bmp: out/%.sim.raw out/%.metadata.lua
+out/%.isim.1.bmp: out/%.isim.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -434,17 +434,17 @@ out/%.axi100.bmp: out/%.axi100.raw
 	mkdir -p out/build100_$*
 	cp out/$*.axi100.bmp out/build100_$*
 
-out/%.bmp: out/%.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.raw out/$*.bmp out/$*.metadata.lua 0
+out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*.bmp out/build_$*
+	cp out/$*.terra.bmp out/build_$*
 
-out/%_half.bmp: out/%_half.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*_half.raw out/$*_half.bmp out/$*.metadata.lua 0
+out/%_half.terra.bmp: out/%_half.terra.raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*_half.bmp out/build_$*
+	cp out/$*_half.terra.bmp out/build_$*
 
 out/%.axi.correct.txt : out/%.axi.bmp
 	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
@@ -472,27 +472,27 @@ out/%_half.sim.correct.txt : out/%_half.sim.bmp
 	mkdir -p out/build_$*
 	test ! -s out/$*_half.sim.diff && touch out/build_$*/$*_half.sim.correct.txt
 
-out/%.sim.correct.txt : out/%.sim.bmp
-	diff out/$*.sim.bmp gold/$*.bmp > out/$*.sim.diff
-	test ! -s out/$*.sim.diff && touch $@
+out/%.isim.correct.txt : out/%.isim.bmp
+	diff out/$*.isim.bmp gold/$*.bmp > out/$*.isim.diff
+	test ! -s out/$*.isim.diff && touch $@
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	test ! -s out/$*.sim.diff && touch out/build_$*/$*.sim.correct.txt
+	test ! -s out/$*.isim.diff && touch out/build_$*/$*.isim.correct.txt
 
-out/%.sim.1.correct.txt : out/%.sim.1.bmp
-	diff out/$*.sim.1.bmp gold/$*.bmp > out/$*.sim.1.diff
-	test ! -s out/$*.sim.1.diff && touch $@
+out/%.isim.1.correct.txt : out/%.isim.1.bmp
+	diff out/$*.isim.1.bmp gold/$*.bmp > out/$*.isim.1.diff
+	test ! -s out/$*.isim.1.diff && touch $@
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	test ! -s out/$*.sim.1.diff && touch out/build_$*/$*.sim.1.correct.txt
+	test ! -s out/$*.isim.1.diff && touch out/build_$*/$*.isim.1.correct.txt
 
-out/%_half.correct.txt : out/%_half.bmp
-	diff out/$*_half.bmp gold/$*.bmp > out/$*_half.diff
-	test ! -s out/$*_half.diff && touch $@
+out/%_half.terra.correct.txt : out/%_half.terra.bmp
+	diff out/$*_half.terra.bmp gold/$*.bmp > out/$*_half.terra.diff
+	test ! -s out/$*_half.terra.diff && touch $@
 
-out/%.correct.txt : out/%.bmp
-	diff out/$*.bmp gold/$*.bmp > out/$*.diff
-	test ! -s out/$*.diff && touch $@
+out/%.terra.correct.txt : out/%.terra.bmp
+	diff out/$*.terra.bmp gold/$*.bmp > out/$*.terra.diff
+	test ! -s out/$*.terra.diff && touch $@
 
 out/%.raw.dup : %.raw
 	cat $*.raw > $@

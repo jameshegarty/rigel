@@ -15,7 +15,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = RM.seqMapHandshake( harnessWrapperFn( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
+    local f = RM.seqMapHandshake( harnessWrapperFn( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".terra.raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true ), inputType, tapType, tapValue, inputCount, outputCount, false, i )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
