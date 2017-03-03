@@ -1,8 +1,8 @@
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua,$(SRCS))
 
-VERPATH = /usr/local/Cellar/verilator/3.886/share/verilator/include/
 
+VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 LUA = ../rigelLuajit
 TERRA = ../rigelTerra
 
@@ -180,7 +180,7 @@ out/%.verilator: out/%.v out/%.metadata.lua
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S9_S9.v --top-module $($@_TOP)
 	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
-	g++ -I${VERPATH} out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${VERPATH}verilated.cpp out/$*.verilator.cpp -o $@
+	g++ $(shell pkg-config --cflags verilator) out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${VERILATOR_INCLUDE}/verilated.cpp out/$*.verilator.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
 	./out/$*.verilator
