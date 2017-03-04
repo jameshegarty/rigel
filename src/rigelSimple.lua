@@ -68,6 +68,14 @@ function RS.modules.linebuffer(t)
   return RM.makeHandshake(C.compose("v"..ccnt,B,A))
 end
 
+function RS.modules.columnLinebuffer(t)
+  return RM.linebuffer(t.type,t.size[1],t.size[2],t.P,t.stencil)
+end
+
+function RS.modules.stencilShiftRegister(t)
+  return RM.SSR( t.type, t.P, t.stencil[1], t.stencil[2] )
+end
+
 function RS.modules.SoAtoAoS(t)
   if t.size[2]==nil then t.size[2]=1 end
   return RM.SoAtoAoS( t.size[1], t.size[2], t.type )

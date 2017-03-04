@@ -4,7 +4,7 @@ local types = require("types")
 local S = require("systolic")
 local fpgamodules = require("fpgamodules")
 
-fixed={}
+local fixed={}
 
 local fixedTerra
 if terralib~=nil then fixedTerra=require("fixed_terra") end
@@ -65,7 +65,7 @@ function fixed.type( signed, precision, exp )
   end
 end
 
-fixedASTFunctions = {}
+local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
 fixedASTMT={__index = fixedASTFunctions,
@@ -635,7 +635,7 @@ function fixedASTFunctions:toSystolic()
   return res, inp, instances
 end
 
-hists = {}
+local hists = {}
 function fixed.printHistograms()
   for k,v in pairs(hists) do v() end
 end

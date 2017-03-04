@@ -30,7 +30,7 @@ function fixed.extract(ty)
   return ty
 end
 
-fixedASTFunctions = {}
+local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
 fixedASTMT={__index = fixedASTFunctions,

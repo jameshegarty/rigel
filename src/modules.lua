@@ -1588,8 +1588,9 @@ modules.SSR = memoize(function( A, T, xmin, ymin )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), rigel.lower(res.outputType)), "process_output", pipelines, nil, S.CE("process_CE") ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+  local CE = S.CE("process_CE")
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), rigel.lower(res.outputType)), "process_output", pipelines, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, S.parameter("reset",types.bool()), CE ) )
 
   return rigel.newFunction(res)
 end)
