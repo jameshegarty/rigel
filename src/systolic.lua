@@ -1542,10 +1542,17 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
       err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
       table.insert(arglist,", ."..fn.inputParameter.name.."("..inp..")")
     end
-    
+
     if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
       table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
+
+      -- if this fn is never actually used, this output will be dangling, so make a dummy wire to make verilator happy
+      local fnUsed = instance.verilogCompilerState[module][fnname]
+      if fnUsed==nil then
+         table.insert(wires, systolic.declareWire(fn.output.type, instance.name.."_"..fn.outputName, nil, " //unused port tieoff\n" ) )
+      end
     end
+
   end
 
   local params = ""
