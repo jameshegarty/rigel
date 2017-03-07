@@ -147,7 +147,7 @@ CCM={}
 Gamma={}
 
 function makeCampipe(internalW,internalH)
-  print("makeCampipe",internalW,internalH)
+  --print("makeCampipe",internalW,internalH)
   assert(type(internalH)=="number")
   local internalT = 2
 
