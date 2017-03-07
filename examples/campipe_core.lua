@@ -15,12 +15,12 @@ function CC.blackLevel( pedestal )
   local bli = blackLevelInput:lift(0)
   local res = 128*(255/(255-pedestal))
   res = math.floor(res)
-  print("RESCALE",res)
+  --print("RESCALE",res)
   local rescale = f.constant(res,false,8,-7)
   local out = (bli:toSigned()-f.constant(pedestal,false,8,0):toSigned())*rescale:toSigned()
   out = out:abs():denormalize()
   local a = f.constant(255,false,out:precision(),0)
-  print(a.type,out.type)
+  --print(a.type,out.type)
   out = f.select(out:gt(f.constant(255,false,8)),a,out)
   return out:truncate(8):lower():toDarkroom("blackLevel")
 end
@@ -148,7 +148,7 @@ function CC.kernelPad(t)
 end
 
 function CC.shiftKernel(t,W,H,xs,ys)
-  for k,v in ipairs(t) do print(v) end
+  --for k,v in ipairs(t) do print(v) end
 
   local out = {}
   for y=0,H-1 do
@@ -159,7 +159,7 @@ function CC.shiftKernel(t,W,H,xs,ys)
     end
   end
 
-  for k,v in ipairs(out) do print("OUT",v) end
+  --for k,v in ipairs(out) do print("OUT",v) end
   return out
 end
 
