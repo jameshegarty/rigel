@@ -6,4 +6,5 @@ before_install:
 
 script:
   - cd examples
+  - ls /usr/bin
   - make verilog
