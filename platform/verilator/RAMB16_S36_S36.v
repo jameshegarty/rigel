@@ -20,7 +20,7 @@ module RAMB16_S36_S36(
   parameter WRITE_MODE_A = "write_first";
   parameter WRITE_MODE_B = "write_first";
 
-  reg [31:0] ram [256:0];
+  reg [31:0] ram [511:0];
   reg [31:0] bufferA;
   reg [31:0] bufferB;
 

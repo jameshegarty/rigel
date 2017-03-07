@@ -20,7 +20,7 @@ module RAMB16_S9_S9(
   parameter WRITE_MODE_A = "write_first";
   parameter WRITE_MODE_B = "write_first";
 
-  reg [7:0] ram [1024:0];
+  reg [7:0] ram [2047:0];
   reg [7:0] bufferA;
   reg [7:0] bufferB;
 
