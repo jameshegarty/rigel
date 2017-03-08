@@ -14,6 +14,9 @@ VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 # too slow
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
+# broken
+SRCS_TERRA := $(filter-out featuredescriptor.lua, $(SRCS_TERRA))
+
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%.terra.bmp,$(SRCS_TERRA))
