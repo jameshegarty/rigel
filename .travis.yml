@@ -1,10 +1,14 @@
-language: erlang
+language: c
 
 before_install:
   - sudo apt-get -qq update
   - sudo apt-get install luajit
+  - sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
+  - pwd
+  - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
+  - unzip terra-Linux-x86_64-2fa8d0a.zip
+  - ls
 
 script:
   - cd examples
-  - ls /usr/bin
   - make verilog
