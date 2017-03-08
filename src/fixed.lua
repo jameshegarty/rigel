@@ -635,9 +635,9 @@ function fixedASTFunctions:toSystolic()
   return res, inp, instances
 end
 
-local hists = {}
+fixed.hists = {}
 function fixed.printHistograms()
-  for k,v in pairs(hists) do v() end
+  for k,v in pairs(fixed.hists) do v() end
 end
 
 

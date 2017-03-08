@@ -104,7 +104,7 @@ local function toTerra(self)
             cstdio.printf("%d: %d\n", i, gbits[i])
           end
         end
-        table.insert(hists, tfn)
+        table.insert(fixed.hists, tfn)
         res = quote 
           if [args[1]]>0 then 
             var v : uint = [uint](cmath.floor(cmath.log([args[1]])/cmath.log(2.f))) 

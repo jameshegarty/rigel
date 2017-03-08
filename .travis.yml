@@ -2,18 +2,20 @@ language: c
 
 before_install:
   - sudo apt-get -qq update
+
+  # luajit
   - sudo apt-get install luajit
-  - sudo apt-get install verilator
-#  - ls /usr/share/
-  - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
   - sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
-#  - pwd
+
+  # verilator
+  - sudo apt-get install verilator
+  - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
+
+
+  #terra
   - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
   - unzip terra-Linux-x86_64-2fa8d0a.zip
-#  - ls
   - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
-#  - ls -la /usr/bin
-#  - ls -la ./terra-Linux-x86_64-2fa8d0a/bin
 
   # this installs correct version of glibc for terra binary
   - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
