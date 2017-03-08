@@ -12,7 +12,7 @@ before_install:
   - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
   - ls -la /usr/bin
   - ls -la ./terra-Linux-x86_64-2fa8d0a/bin
-  - sudo apt-get install libstdc++6
+  - sudo apt-get dist-upgrade
   - terra examples/pointwise_wide_handshake.lua
   - cd examples
   - make out/pointwise_wide_handshake.terra.correct.txt
