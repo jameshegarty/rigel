@@ -9,7 +9,7 @@ before_install:
   - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
   - unzip terra-Linux-x86_64-2fa8d0a.zip
   - ls
-  - sudo ln -s ./terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
+  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
   - ls -la /usr/bin
   - ls -la ./terra-Linux-x86_64-2fa8d0a/bin
   - terra examples/pointwise_wide_handshake.lua
