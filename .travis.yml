@@ -20,7 +20,7 @@ before_install:
 
   - cd examples
   - make out/pointwise_wide_handshake.terra.correct.txt
-  - make out/pointwise_wide_handshake.verilator.correct.txt
+#  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
   - cd examples
