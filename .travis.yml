@@ -4,7 +4,7 @@ before_install:
   - sudo apt-get -qq update
   - sudo apt-get install luajit
   - sudo apt-get install verilator
-  - ls /usr/share/
+#  - ls /usr/share/
   - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
   - sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
 #  - pwd
@@ -20,9 +20,9 @@ before_install:
   - sudo apt-get -y update
   - sudo apt-get -y install libstdc++6-4.7-dev
 
-  - cd examples
-  - make out/pointwise_wide_handshake.terra.correct.txt
-  - make out/pointwise_wide_handshake.verilator.correct.txt
+#  - cd examples
+#  - make out/pointwise_wide_handshake.terra.correct.txt
+#  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
   - cd examples

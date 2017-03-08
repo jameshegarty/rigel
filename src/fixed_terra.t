@@ -5,6 +5,9 @@ local types = require("types")
 local fixedTerra={}
 
 local function toTerra(self)
+  -- shenanigans: prevent circular dependency between files by not calling require until done with loading
+  local fixed = require("fixed")
+
   local inp
   local res = self:visitEach(
     function( n, args )
