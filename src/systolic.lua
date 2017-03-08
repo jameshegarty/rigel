@@ -2253,7 +2253,7 @@ end
 function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
   if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
-    for i=0,self.type:sizeof()-1 do
+    for i=0,self.type:verilogBits()-1 do
       assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] <= $fgetc("..instance.name.."_file); "
     end
 

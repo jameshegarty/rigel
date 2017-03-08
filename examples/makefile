@@ -15,7 +15,7 @@ VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
 # broken
-SRCS_TERRA := $(filter-out featuredescriptor.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out featuredescriptor.lua sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
@@ -34,31 +34,31 @@ VERILATOR += $(patsubst %.lua,out/%.verilator.correct.txt,$(SRCS))
 #VERILATOR += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS))
 
 # too slow
-SRCS_TERRA_SIM = $(SRCS_TERRA)
-SRCS_TERRA_SIM := $(filter-out stereo_wide_handshake_medi.t stereo_wide_handshake_nostall_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t ,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out stereo_wide_handshake_full.t stereo_wide_handshake_nostall_full.t stereo_tr_full_4.t stereo_tr_full_8.t stereo_tr_full_16.t stereo_tr_rgba_full_32.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out stereo_ov7660.t ,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_axi.t lk_wide_handshake_6_4_float.t lk_wide_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_4_1_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t ,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out campipe_512.t campipe_ov7660.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out pyramid_large_1.t pyramid_large_2.t pyramid_large_3.t pyramid_large_4.t pyramid_large_tr_1.t pyramid_large_tr_2.t pyramid_large_tr_3.t pyramid_large_tr_4.t pyramid_large_nofifo_tr_1.t pyramid_large_nofifo_tr_2.t pyramid_large_nofifo_tr_3.t pyramid_large_nofifo_tr_4.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_large_taps_3.t pyramid_large_taps_4.t pyramid_large_nofifo_taps_1.t pyramid_large_nofifo_taps_2.t pyramid_large_nofifo_taps_3.t pyramid_large_nofifo_taps_4.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SRCS_TERRA_SIM))
-SRCS_TERRA_SIM := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_ISIM = $(SRCS_TERRA)
+SRCS_TERRA_ISIM := $(filter-out stereo_wide_handshake_medi.t stereo_wide_handshake_nostall_medi.t stereo_tr_medi_4.t stereo_tr_medi_8.t stereo_tr_medi_16.t ,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out stereo_wide_handshake_full.t stereo_wide_handshake_nostall_full.t stereo_tr_full_4.t stereo_tr_full_8.t stereo_tr_full_16.t stereo_tr_rgba_full_32.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out stereo_ov7660.t ,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out lk_wide_handshake_4_4_float.t lk_wide_handshake_6_4_axi.t lk_wide_handshake_6_4_float.t lk_wide_handshake_6_1_axi.t lk_wide_handshake_4_4_axi.t lk_wide_handshake_4_1_axi.t lk_tr_handshake_4_4_axi.t lk_tr_handshake_6_6.t lk_tr_handshake_6_6_axi.t lk_tr_handshake_6_1.t lk_tr_handshake_6_1_axi.t lk_tr_handshake_6_2.t lk_tr_handshake_6_2_axi.t lk_tr_handshake_6_3.t lk_tr_handshake_6_3_axi.t ,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out lk_wide_handshake_12_1_float.t lk_wide_handshake_12_1_axi.t lk_wide_handshake_12_1_axi_nostall.t lk_tr_handshake_12_1_axi.t lk_tr_handshake_12_2_axi.t lk_tr_handshake_12_3_axi.t lk_tr_handshake_12_4_axi.t lk_tr_handshake_12_6_axi.t lk_tr_handshake_12_12_axi.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out campipe_512.t campipe_ov7660.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out pyramid_large_1.t pyramid_large_2.t pyramid_large_3.t pyramid_large_4.t pyramid_large_tr_1.t pyramid_large_tr_2.t pyramid_large_tr_3.t pyramid_large_tr_4.t pyramid_large_nofifo_tr_1.t pyramid_large_nofifo_tr_2.t pyramid_large_nofifo_tr_3.t pyramid_large_nofifo_tr_4.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out pyramid_large_taps_1.t pyramid_large_taps_2.t pyramid_large_taps_3.t pyramid_large_taps_4.t pyramid_large_nofifo_taps_1.t pyramid_large_nofifo_taps_2.t pyramid_large_nofifo_taps_3.t pyramid_large_nofifo_taps_4.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out convpadcrop_wide_handshake_4_1_1080p.t convpadcrop_wide_handshake_4_2_1080p.t convpadcrop_wide_handshake_4_4_1080p.t convpadcrop_wide_handshake_4_8_1080p.t convpadcrop_wide_handshake_8_1_1080p.t convpadcrop_wide_handshake_8_2_1080p.t convpadcrop_wide_handshake_8_4_1080p.t convpadcrop_wide_handshake_8_8_1080p.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out convpadcrop_wide_handshake_8_1_1080p_nostall.t convpadcrop_wide_handshake_8_2_1080p_nostall.t convpadcrop_wide_handshake_8_4_1080p_nostall.t convpadcrop_wide_handshake_8_8_1080p_nostall.t,$(SRCS_TERRA_ISIM))
+SRCS_TERRA_ISIM := $(filter-out conv_tr_handshake_4_1_1080p.t conv_tr_handshake_4_2_1080p.t conv_tr_handshake_4_4_1080p.t conv_tr_handshake_4_8_1080p.t conv_tr_handshake_8_1_1080p.t conv_tr_handshake_8_2_1080p.t conv_tr_handshake_8_4_1080p.t conv_tr_handshake_8_8_1080p.t,$(SRCS_TERRA_ISIM))
 #nyi
-SRCS_TERRA_SIM := $(filter-out fixed_float_inv.t harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t sift_hw.t sift_hw_1080p.t,$(SRCS_TERRA_SIM))
+SRCS_TERRA_ISIM := $(filter-out fixed_float_inv.t harris_corner.t filterseq.t harris_filterseq.t sift_float.t sift_desc.t sift_desc_hw.t sift_hw.t sift_hw_1080p.t,$(SRCS_TERRA_ISIM))
 
-ISIM = $(patsubst %.t,out/%.sim.bmp,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%.sim.1.bmp,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%_half.sim.bmp,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%.sim.raw,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%_half.sim.raw,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%.sim.v,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%_half.sim.v,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%.sim.correct.txt,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%.sim.1.correct.txt,$(SRCS_TERRA_ISIM))
-ISIM += $(patsubst %.t,out/%_half.sim.correct.txt,$(SRCS_TERRA_ISIM))
+ISIM = $(patsubst %.lua,out/%.isim.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%.isim.1.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%_half.isim.bmp,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%.isim.raw,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%_half.isim.raw,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%.isim.v,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%_half.isim.v,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%.isim.correct.txt,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%.isim.1.correct.txt,$(SRCS_TERRA_ISIM))
+ISIM += $(patsubst %.lua,out/%_half.isim.correct.txt,$(SRCS_TERRA_ISIM))
 
 SRCS_AXI100 = $(filter-out linebufferpartial_handshake_1.lua linebufferpartial_handshake_2.lua linebufferpartial_handshake_4.lua convpadcrop_handshake.lua reduceseq_handshake.lua  stereo_wide_handshake_medi.lua,$(SRCS))
 SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_tr_handshake_6_1.lua lk_tr_handshake_6_2.lua lk_tr_handshake_6_3.lua lk_wide_handshake_12_1_float.lua,$(SRCS_AXI100))
@@ -139,7 +139,7 @@ axibits100: $(AXIBITS100)
 clean:
 	rm -Rf out/*
 
-out/%.v out/%.metadata.lua: %.t 
+out/%.v out/%.metadata.lua: %.lua
 	$(TERRA) $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -151,7 +151,7 @@ out/%.v out/%.metadata.lua: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.terra.raw out/%_half.terra.raw: %.t
+out/%.terra.raw out/%_half.terra.raw: %.lua
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -163,11 +163,11 @@ out/%.terra.raw out/%_half.terra.raw: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.cycles.txt out/build_$*
 
-out/%.isim.v out/%_half.isim.v: %.t 
+out/%.isim.v out/%_half.isim.v: %.lua
 	$(LUA) $< isim
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	- cp out/$*.sim.v out/build_$*
+	- cp out/$*.isim.v out/build_$*
 
 out/%.axi.v: %.lua
 	$(LUA) $< axi
@@ -402,28 +402,28 @@ out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
 out/%.isim.raw: out/%.isim.v $(DUPS)
 	mkdir -p out/sim_$*
-	cd out/sim_$*; vlogcomp ../$*.sim.v
+	cd out/sim_$*; vlogcomp ../$*.isim.v
 	cd out/sim_$*; fuse -o $* -lib $* -L unisim -L unimacro -top sim
 	cd out/sim_$*; echo "run all" | ./$* > output.txt
-	split -n 2 -d out/sim_$*/$*.sim.raw out/sim_$*/S
-	mv out/sim_$*/S00 out/$*.sim.raw
-	mv out/sim_$*/S01 out/$*.sim.1.raw
-	$(TERRA) ../misc/extractCycles.t out/$*.sim.raw > out/$*.sim.cycles.txt
+	split -n 2 -d out/sim_$*/$*.isim.raw out/sim_$*/S
+	mv out/sim_$*/S00 out/$*.isim.raw
+	mv out/sim_$*/S01 out/$*.isim.1.raw
+	$(TERRA) ../misc/extractCycles.t out/$*.isim.raw > out/$*.isim.cycles.txt
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*.sim.cycles.txt out/build_$*
+	cp out/$*.isim.cycles.txt out/build_$*
 
 out/%.isim.bmp: out/%.isim.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.sim.raw out/$*.sim.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.isim.raw out/$*.isim.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*.sim.bmp out/build_$*
+	cp out/$*.isim.bmp out/build_$*
 
 out/%.isim.1.bmp: out/%.isim.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.sim.1.raw out/$*.sim.1.bmp out/$*.metadata.lua 1
+	$(LUA) ../misc/raw2bmp.lua out/$*.isim.1.raw out/$*.isim.1.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	cp out/$*.sim.1.bmp out/build_$*
+	cp out/$*.isim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw
 	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
@@ -468,12 +468,12 @@ out/%.axi100.correct.txt : out/%.axi100.bmp
 	mkdir -p out/build100_$*
 	test ! -s out/$*.axi100.diff && touch out/build100_$*/$*.axi100.correct.txt
 
-out/%_half.sim.correct.txt : out/%_half.sim.bmp
-	diff out/$*_half.sim.bmp gold/$*.bmp > out/$*_half.sim.diff
-	test ! -s out/$*_half.sim.diff && touch $@
+out/%_half.isim.correct.txt : out/%_half.isim.bmp
+	diff out/$*_half.isim.bmp gold/$*.bmp > out/$*_half.isim.diff
+	test ! -s out/$*_half.isim.diff && touch $@
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	test ! -s out/$*_half.sim.diff && touch out/build_$*/$*_half.sim.correct.txt
+	test ! -s out/$*_half.isim.diff && touch out/build_$*/$*_half.isim.correct.txt
 
 out/%.isim.correct.txt : out/%.isim.bmp
 	diff out/$*.isim.bmp gold/$*.bmp > out/$*.isim.diff
