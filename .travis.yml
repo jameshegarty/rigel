@@ -4,6 +4,8 @@ before_install:
   - sudo apt-get -qq update
   - sudo apt-get install luajit
   - sudo apt-get install verilator
+  - ls /usr/share/
+  - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
   - sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
 #  - pwd
   - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
@@ -20,7 +22,7 @@ before_install:
 
   - cd examples
   - make out/pointwise_wide_handshake.terra.correct.txt
-#  - make out/pointwise_wide_handshake.verilator.correct.txt
+  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
   - cd examples

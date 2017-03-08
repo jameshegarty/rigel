@@ -1,0 +1,11 @@
+Name: verilator
+Description: verilator
+Version: 0
+
+includedir = /usr/share/verilator/include/
+
+Cflags: -I${includedir}
+
+
+
+
