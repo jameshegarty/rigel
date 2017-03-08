@@ -13,6 +13,9 @@ before_install:
   - ls -la /usr/bin
   - ls -la ./terra-Linux-x86_64-2fa8d0a/bin
   - terra examples/pointwise_wide_handshake.lua
+  - cd examples
+  - make out/pointwise_wide_handshake.terra.correct.txt
+  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
   - cd examples
