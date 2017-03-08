@@ -2253,7 +2253,7 @@ end
 function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
   if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
-    for i=0,self.type:verilogBits()-1 do
+    for i=0,(self.type:verilogBits()/8)-1 do
       assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] <= $fgetc("..instance.name.."_file); "
     end
 
@@ -2275,7 +2275,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     local debug = ""
     --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
 
-    for i=0,self.type:sizeof()-1 do
+    for i=0,(self.type:verilogBits()/8)-1 do
       assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
     end
 
