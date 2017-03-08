@@ -10,6 +10,8 @@ before_install:
   - unzip terra-Linux-x86_64-2fa8d0a.zip
   - ls
   - sudo ln -s ./terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
+  - ls -la /usr/bin
+  - ls -la ./terra-Linux-x86_64-2fa8d0a/bin
   - terra examples/pointwise_wide_handshake.lua
 
 script:
