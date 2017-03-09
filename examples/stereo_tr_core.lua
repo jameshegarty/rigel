@@ -114,7 +114,7 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
     sadout = R.apply("sadvalues", RM.map(C.SADFixed( A, reduceType, SADWidth ),perCycleSearch), inp ) -- uint16[perCycleSearch]
   end
 
-  sadout = R.apply("LOWER_SUM", RM.map(LOWER_SUM:toDarkroom("LowerSum"),perCycleSearch), sadout)
+  sadout = R.apply("LOWER_SUM", RM.map(LOWER_SUM:toRigelModule("LowerSum"),perCycleSearch), sadout)
   local packed = R.apply("SOS", C.SoAtoAoS( perCycleSearch, 1, {types.uint(8), LOWER_SUM.type} ), R.tuple("stup",{indices, sadout}) )
 
   local AM = C.argmin(types.uint(8),LOWER_SUM.type)

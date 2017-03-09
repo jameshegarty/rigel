@@ -541,7 +541,7 @@ modules.liftHandshake = memoize(function(f)
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
-  assert( rigel.isFunction(f) )
+  err( rigel.isFunction(f), "first argument to map must be Rigel module" )
   err(type(W)=="number", "width must be number")
   assert(type(H)=="number" or H==nil)
   if H==nil then H=1 end

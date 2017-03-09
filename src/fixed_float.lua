@@ -409,7 +409,7 @@ function fixed.printHistograms()
   for k,v in pairs(hists) do v() end
 end
 
-function fixedASTFunctions:toDarkroom(name,X)
+function fixedASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 

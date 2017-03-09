@@ -21,6 +21,16 @@ local function toTerra(self)
       elseif n.kind=="binop" then
         if n.op==">" then
           res = `[args[1]]>[args[2]]
+        elseif n.op==">=" then
+          res = `[args[1]]>=[args[2]]
+        elseif n.op=="<" then
+          res = `[args[1]]<[args[2]]
+        elseif n.op=="<=" then
+          res = `[args[1]]<=[args[2]]
+        elseif n.op=="and" then
+          res = `[args[1]] and [args[2]]
+        elseif n.op=="or" then
+          res = `[args[1]] or [args[2]]
         else
           local l = `[fixed.extract(n.type):toTerraType()]([args[1]])
           local r = `[fixed.extract(n.type):toTerraType()]([args[2]])
@@ -146,6 +156,8 @@ local function toTerra(self)
       elseif n.kind=="abs" then
         res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
         res = `[fixed.extract(n.type):toTerraType()](res)
+      elseif n.kind=="not" then
+        res = `not [args[1]]
       elseif n.kind=="sign" then
         --res = `[args[1]]<0
         res = quote

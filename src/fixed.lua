@@ -189,7 +189,7 @@ function fixed.constant( value, signed, precision, exp )
 end
 
 function fixed.plainconstant( value, ty )
-  assert(types.isType(ty))
+  err(types.isType(ty), "second argument to plainconstant must be a type")
   return fixed.new{kind="plainconstant", value=value, type=ty:makeConst(),inputs={},loc=getloc()}
 end
 
@@ -348,9 +348,20 @@ local function boolbinop(op,l,r)
 
 end
 
-function fixedASTFunctions:gt(r)
-  return boolbinop(">",self,r)
+function fixedASTFunctions:gt(r) return boolbinop(">",self,r) end
+function fixedASTFunctions:ge(r) return boolbinop(">=",self,r) end
+function fixedASTFunctions:lt(r) return boolbinop("<",self,r) end
+function fixedASTFunctions:le(r) return boolbinop("<=",self,r) end
+
+local function boolboolbinop(op,l,r)
+  err(l.type:isBool() and r.type:isBool(), "bool-bool binop "..op.." expects bool input")
+
+  return fixed.new{kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()}
 end
+
+
+function fixedASTFunctions:__and(r) return boolboolbinop("and",self,r) end
+function fixedASTFunctions:__or(r) return boolboolbinop("or",self,r) end
 
 function fixedASTFunctions:index(ix,iy)
   err(self.type:isTuple() or self.type:isArray(), "attempting to index into something other than an array or tuple")
@@ -396,6 +407,12 @@ function fixedASTFunctions:abs()
   -- we can't represent this without the full # of bits.
   local ty = fixed.type(false, self:precision(), self:exp())
   return fixed.new{kind="abs", type=ty, inputs={self}, loc=getloc()}
+end
+
+
+function fixedASTFunctions:__not()
+  err( self.type==types.bool(), "input to not must be bool" )
+  return fixed.new{kind="not",type=types.bool(),inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:neg()
@@ -506,7 +523,17 @@ function fixedASTFunctions:toSystolic()
         else
           if n.op==">" then
             res = S.gt(args[1],args[2])
-          else
+          elseif n.op==">=" then
+            res = S.ge(args[1],args[2])
+          elseif n.op=="<" then
+            res = S.lt(args[1],args[2])
+          elseif n.op=="<=" then
+            res = S.le(args[1],args[2])
+          elseif n.op=="and" then
+            res = S.__and(args[1],args[2])
+          elseif n.op=="or" then
+            res = S.__or(args[1],args[2])
+          elseif n.op=="+" or n.op=="-" or n.op=="*" then
             local l = S.cast(args[1], fixed.extract(n.type))
             local r = S.cast(args[2], fixed.extract(n.type))
             
@@ -520,6 +547,8 @@ function fixedASTFunctions:toSystolic()
             if fixed.isFixedType(n.type) and n:precision()>20 then
               --print("riduclous binop "..tostring(n.inputs[1].type).." "..tostring(n.inputs[2].type).." "..tostring(n.type)..n.loc)
             end
+          else
+            err(false,"internal error, fixed.lua, unknown binop "..n.op)
           end
         end
 
@@ -562,6 +591,8 @@ function fixedASTFunctions:toSystolic()
       elseif n.kind=="abs" then
         res = S.abs( args[1] )
         res = S.cast( res, fixed.extract(n.type) )
+      elseif n.kind=="not" then
+        res = S.__not(args[1])
       elseif n.kind=="neg" then
         res = S.neg(args[1])
       elseif n.kind=="sign" then
@@ -641,7 +672,7 @@ function fixed.printHistograms()
 end
 
 
-function fixedASTFunctions:toDarkroom(name,X)
+function fixedASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 

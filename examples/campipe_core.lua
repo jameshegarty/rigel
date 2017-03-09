@@ -22,7 +22,7 @@ function CC.blackLevel( pedestal )
   local a = f.constant(255,false,out:precision(),0)
   --print(a.type,out.type)
   out = f.select(out:gt(f.constant(255,false,8)),a,out)
-  return out:truncate(8):lower():toDarkroom("blackLevel")
+  return out:truncate(8):lower():toRigelModule("blackLevel")
 end
 
 function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B)
@@ -112,7 +112,7 @@ function CC.makeCCM(tab)
   end
 
   local res = f.array2d(out,3)
-  return res:toDarkroom("ccm")
+  return res:toRigelModule("ccm")
 end
 
 function CC.addchan()
@@ -122,7 +122,7 @@ function CC.addchan()
     out[c] = inp:index(c)
   end
   out[3] = f.plainconstant(0,types.uint(8))
-  return f.array2d(out,4):toDarkroom("addChan")
+  return f.array2d(out,4):toRigelModule("addChan")
 end
 
 function CC.makeGamma(g)

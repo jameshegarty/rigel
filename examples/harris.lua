@@ -21,7 +21,7 @@ OTYPE = types.float(32)
 local function makeDisplay(ty)
   local ainp = fixed.parameter("ainp",ty)
   local a = (ainp*fixed.constant(1000)):lower(types.uint(8))
-  local out = fixed.array2d({a},1,1):toDarkroom("a")
+  local out = fixed.array2d({a},1,1):toRigelModule("a")
   return out
 end
 

@@ -20,7 +20,7 @@ local fixedSum = memoize(function(A)
   local out = inp:index(0)+inp:index(1)
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedSum")
+  return out:toRigelModule("fixedSum")
                    end)
 
 local fixedSumPow2 = memoize(function(A)
@@ -29,7 +29,7 @@ local fixedSumPow2 = memoize(function(A)
   local out = inp:index(0)+(inp:index(1)*inp:index(1))
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedSumPow2")
+  return out:toRigelModule("fixedSumPow2")
                    end)
 
 local fixedDiv = memoize(function(A)
@@ -38,7 +38,7 @@ local fixedDiv = memoize(function(A)
   local out = (inp:index(0))/(inp:index(1))
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedDiv")
+  return out:toRigelModule("fixedDiv")
                    end)
 
 local fixedSqrt = memoize(function(A)
@@ -47,7 +47,7 @@ local fixedSqrt = memoize(function(A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedSqrt")
+  return out:toRigelModule("fixedSqrt")
                    end)
 
 ----------------
@@ -136,7 +136,7 @@ local function siftBucket(dxdyType,magtype)
   local v5 = f.select((dx_ge_0:__not()):__and((dy_ge_0:__not()):__and(negdx_gt_negdy:__not())),mag,zero)
 
   local out = f.array2d({v0,v1,v2,v3,v4,v5,v6,v7},8)
-  return out:toDarkroom("siftBucket")
+  return out:toRigelModule("siftBucket")
 end
 ----------------
 -- input {dx,dy,gaussweight}
@@ -149,7 +149,7 @@ local function siftMag(dxdyType)
   local mag = magsq:sqrt()
 
   local out = mag*gauss_weight
-  return out:toDarkroom("siftmag"), out.type
+  return out:toRigelModule("siftmag"), out.type
 end
 ----------------
 -- input: {dx,dy}
@@ -235,7 +235,7 @@ local function addDescriptorPos(descType)
   local a = {px,py}
   for i=0,127 do table.insert(a,desc:index(i)) end
   local out = f.array2d(a,130)
-  return out:toDarkroom("addDescriptorPos")
+  return out:toRigelModule("addDescriptorPos")
 end
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}

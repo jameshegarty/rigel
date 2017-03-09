@@ -8,7 +8,7 @@ function toUint8Sign(ty)
   local inp = f.parameter("touint8",ty)
   local outtype = types.array2d(types.uint(8),2)
   local out = f.select(inp:sign(),f.plainconstant({255,255},outtype), f.plainconstant({0,0},outtype))
-  return out:toDarkroom("toUint8")
+  return out:toRigelModule("toUint8")
 end
 
 function toUint8(ty)
@@ -18,12 +18,12 @@ function toUint8(ty)
     local out = inp*f.constant(2^10)
     local out = out:lower(types.uint(8))
     local out = f.array2d({out,out},2)
-    return out:toDarkroom("toUint8")
+    return out:toRigelModule("toUint8")
   else
     inp = inp*f.constant(2^10,inp:isSigned())
     local out = inp:abs():denormalize():truncate(8):lower()
     local out = f.array2d({out,out},2)
-    return out:toDarkroom("toUint8")
+    return out:toRigelModule("toUint8")
   end
 end
 
@@ -42,7 +42,7 @@ function invert2x2( AType, bits )
     local fdenom = (finp:index(0)*finp:index(3))-(finp:index(1)*finp:index(2))
     local fdet = fdenom:invert()
     local fout = f.array2d({fdet*finp:index(3), (fdet:neg())*(finp:index(1)), (fdet:neg())*(finp:index(2)), fdet*finp:index(0)},4)
-    out = R.apply("out", fout:toDarkroom("fout"), inp)
+    out = R.apply("out", fout:toRigelModule("fout"), inp)
     output_type = types.float(32)
   else
     --------
@@ -54,7 +54,7 @@ function invert2x2( AType, bits )
     fdenom = fdenom:hist("fdenom")
     local fdenom_type = fdenom.type
     cost = cost + fdenom:cost()
-    fdenom = fdenom:toDarkroom("denom")
+    fdenom = fdenom:toRigelModule("denom")
     --------
     
     local denom = R.apply("denom", fdenom, inp)
@@ -78,7 +78,7 @@ function invert2x2( AType, bits )
     local fout = f.array2d(OT,4)
     cost = cost + fout:cost()
     ---------
-    out = R.apply("out", fout:toDarkroom("fout"), R.tuple("ftupp",{inp,det}))
+    out = R.apply("out", fout:toRigelModule("fout"), R.tuple("ftupp",{inp,det}))
   end
 
   --print("invert2x2 output type:", output_type)
@@ -92,7 +92,7 @@ function dx(bits)
   local out = ((inp:index(2):lift(0):toSigned()) - (inp:index(0):lift(0):toSigned())):rshift(1)
   bits.d[3] = out:precision()
   out = out:reduceBits(bits.d[1],bits.d[2])
-  return out:toDarkroom("dx"), out.type, out:cost()
+  return out:toRigelModule("dx"), out.type, out:cost()
 end
 
 function dy(bits)
@@ -101,7 +101,7 @@ function dy(bits)
   local inp = f.parameter("dyinp", types.array2d(types.uint(8),1,3))
   local out = ((inp:index(0,2):lift(0):toSigned()) - (inp:index(0,0):lift(0):toSigned())):rshift(1)
   bits.d[3] = out:precision()
-  return out:reduceBits(bits.d[1],bits.d[2]):toDarkroom("dy")
+  return out:reduceBits(bits.d[1],bits.d[2]):toRigelModule("dy")
 end
 
 makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
@@ -115,7 +115,7 @@ makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
   local prec = out:precision()
   out = out:reduceBits(outMSB,outLSB)
   --print("OUT:COST",out:cost())
-  return {out:toDarkroom("partial_"..tostring(ltype)..tostring(rtype)), out.type, prec, out:cost()}
+  return {out:toRigelModule("partial_"..tostring(ltype)..tostring(rtype)), out.type, prec, out:cost()}
                       end)
 
 makeSumReduce = memoize(function(inputType)
@@ -124,7 +124,7 @@ makeSumReduce = memoize(function(inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})
   local inp0 = finp:index(0)
   local O = (inp0+finp:index(1)):truncate(inp0:precision())
-  return {O:toDarkroom("rsum_"..tostring(inputType)),O:cost()}
+  return {O:toRigelModule("rsum_"..tostring(inputType)),O:cost()}
                         end)
 
 -- dType: type of derivative
@@ -175,7 +175,7 @@ function minus(ty)
   assert(types.isType(ty))
   local inp = f.parameter("minux_inp",types.tuple{ty,ty})
   local out = inp:index(0):lift(0):toSigned()-inp:index(1):lift(0):toSigned()
-  return out:toDarkroom("minus"), out.type, out:cost()
+  return out:toRigelModule("minus"), out.type, out:cost()
 end
 
 function makeB( dtype, window, bits )
@@ -249,7 +249,7 @@ function solve( AinvType, btype, bits )
 
   local out = f.array2d({out_0,out_1},2)
   --print("Solve Output Type", out_0.type,out.type,Ainv.type)
-  return out:toDarkroom("solve"), out_0.type, out:cost()
+  return out:toRigelModule("solve"), out_0.type, out:cost()
 end
 
 function display(inpType)
@@ -269,7 +269,7 @@ function display(inpType)
   end
 --  table.insert(out, f.constant(0,true,8,0):lower())
   out = f.array2d(out,2)
-  return out:toDarkroom("display"), out:cost()
+  return out:toRigelModule("display"), out:cost()
 end
 
 function makeLK( T, internalW, internalH, window, bits )
