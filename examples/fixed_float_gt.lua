@@ -14,7 +14,7 @@ local af = ainp:lift(0)
 --local aff = af*af
 local aff = af*af
 local afgt = aff:gt(fixed.constant(1000000000*1000000000))
-local a = (fixed.select(afgt,fixed.plainconstant(65535,types.uint(32)),fixed.plainconstant(0,types.uint(32)))):toDarkroom("a")
+local a = (fixed.select(afgt,fixed.plainconstant(65535,types.uint(32)),fixed.plainconstant(0,types.uint(32)))):toRigelModule("a")
 
 ------------
 ITYPE = types.array2d( types.int(32), T )

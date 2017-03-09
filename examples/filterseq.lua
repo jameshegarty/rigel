@@ -11,7 +11,7 @@ H = 1
 -----------------
 local inp = f.parameter("highselect", types.uint(8))
 local out = inp:gt(f.plainconstant(128,types.uint(8)))
-local HS = out:toDarkroom("highselect")
+local HS = out:toRigelModule("highselect")
 
 ----------------
 local inpraw = R.input(types.array2d(types.uint(8),1))

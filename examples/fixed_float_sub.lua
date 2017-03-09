@@ -11,10 +11,10 @@ T = 2
 ------------
 local ainp = fixed.parameter("ainp",types.int(32))
 local af = ainp:lift(0) 
---local a = (af-fixed.constant(6540982534034)):toDarkroom("a")
+--local a = (af-fixed.constant(6540982534034)):toRigelModule("a")
 local aa = af*fixed.constant(0.1)
-local a = (af-aa):toDarkroom("a")
---local a = (aa):toDarkroom("a")
+local a = (af-aa):toRigelModule("a")
+--local a = (aa):toRigelModule("a")
 
 ------------
 ITYPE = types.array2d( types.int(32), T )
