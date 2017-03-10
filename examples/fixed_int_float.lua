@@ -11,7 +11,7 @@ T = 2
 
 ------------
 local ainp = fixed.parameter("ainp",types.int(32))
-local a = ainp:lift(0):toDarkroom("a")
+local a = ainp:lift(0):toRigelModule("a")
 ------------
 ITYPE = types.array2d( types.int(32), T )
 inp = R.input( ITYPE )

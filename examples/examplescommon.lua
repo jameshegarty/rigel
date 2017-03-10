@@ -269,8 +269,8 @@ function C.SADFixed( A, reduceType, Width, X )
   SUM = SUM:truncate(fixed.extractPrecision(reduceType))
   ------
 
-  local conv = R.apply( "partial", RM.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
-  local conv = R.apply( "sum", RM.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
+  local conv = R.apply( "partial", RM.map( ABS:toRigelModule("absoluteDiff"), Width, Width ), inp )
+  local conv = R.apply( "sum", RM.reduce( SUM:toRigelModule("ABS_SUM"), Width, Width ), conv )
 
   local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
@@ -306,8 +306,8 @@ function C.SADFixed4( A, reduceType, Width, X )
 
   ------
 
-  local conv = R.apply( "partial", RM.map( ABS:toDarkroom("absoluteDiff"), Width, Width ), inp )
-  local conv = R.apply( "sum", RM.reduce( SUM:toDarkroom("ABS_SUM"), Width, Width ), conv )
+  local conv = R.apply( "partial", RM.map( ABS:toRigelModule("absoluteDiff"), Width, Width ), inp )
+  local conv = R.apply( "sum", RM.reduce( SUM:toRigelModule("ABS_SUM"), Width, Width ), conv )
 
   local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
@@ -513,7 +513,7 @@ function C.lutinvert(ty)
   else
     aout = fixed.tuple({a_float,a_exp})
   end
-  local afn = aout:toDarkroom("lutinvert_a")
+  local afn = aout:toRigelModule("lutinvert_a")
   --------------------
   local lutbits = 8
   ------------
@@ -528,7 +528,7 @@ function C.lutinvert(ty)
   local b = (b_inv:cast(types.uint(9))+fixed.plainconstant(256,types.uint(9))):liftFloat(-a_max-17,-a_min-17+8, b_exp:neg()-fixed.plainconstant(17, types.int(8)) )
   if signed then b = b:addSign(binp:index(2)) end
   b = b:hist("lutinvert_output")
-  local bfn = b:toDarkroom("lutinvert_b")
+  local bfn = b:toRigelModule("lutinvert_b")
   ---------------
 
   local inp = R.input( ty )

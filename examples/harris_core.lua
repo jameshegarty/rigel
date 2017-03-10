@@ -16,14 +16,14 @@ floatMult = memoize(function(Atype)
     B = B:lift(0)
   end
   local out = A*B
-  return {out:toDarkroom("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
+  return {out:toRigelModule("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
                     end)
 
 floatSum = memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("fm",types.tuple{A,A})
   local out = (inp:index(0))+(inp:index(1))
-  return {out:toDarkroom("floatSum"), out.type}
+  return {out:toRigelModule("floatSum"), out.type}
                    end)
 
 floatShift = memoize(function(A,amount)
@@ -31,7 +31,7 @@ floatShift = memoize(function(A,amount)
   assert(type(amount)=="number")
   local inp = f.parameter("fm",A)
   local out = inp:rshift(amount)
-  return {out:toDarkroom("floatShift"), out.type}
+  return {out:toRigelModule("floatShift"), out.type}
                      end)
 
 function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
@@ -71,7 +71,7 @@ function harris.makeHarrisKernel(dxType, dyType)
   local trsq = tr*tr
   local out = det - (f.constant(K))*trsq
 --  out = out:lshift(10):lower(types.uint(8))
-  local res = out:toDarkroom("harrisinner")
+  local res = out:toRigelModule("harrisinner")
   return res, out.type
 end
 
@@ -95,7 +95,7 @@ function harris.makeNMS(ty, boolOutput, X)
   if boolOutput==false then
     out = f.select(out,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
   end
-  return out:toDarkroom("nms")
+  return out:toRigelModule("nms")
 end
 
 function harris.makeDXDYKernel(ty)
@@ -109,11 +109,11 @@ function harris.makeDXDYKernel(ty)
   dy = dy:rshift(1)
 
 --  local out = dy:lower(types.uint(8))
---  return out:toDarkroom("DXDY"), types.uint(8)
+--  return out:toRigelModule("DXDY"), types.uint(8)
 
   local out = f.tuple{dx,dy}
 --  print("DXDYTYPE",out.type,dx.type)
-  return out:toDarkroom("DXDY"), dx.type
+  return out:toRigelModule("DXDY"), dx.type
 end
 
 function harris.makeDXDY(W,H,X)

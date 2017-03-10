@@ -18,7 +18,7 @@ FILTER_RATE = 128
 ----------------
 local inp = f.parameter("inp16to8",types.tuple{types.uint(16),types.uint(16)})
 local out = f.array2d({inp:index(0):cast(types.uint(8)),inp:index(1):cast(types.uint(8))},2,1)
-local touint8pair = out:toDarkroom("touint8pair")
+local touint8pair = out:toRigelModule("touint8pair")
 ----------------
 -- harris -> pos fn
 ITYPE = types.array2d(types.uint(8),1)

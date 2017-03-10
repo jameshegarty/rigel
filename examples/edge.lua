@@ -38,7 +38,7 @@ dx = dx:abs()
 local dy = inp:index(1,2):lift(0):toSigned()-inp:index(1,0):lift(0):toSigned()
 dy = dy:abs()
 local mag = (dx+dy):truncate(8):lower()
-local edge = mag:toDarkroom("edgefn")
+local edge = mag:toRigelModule("edgefn")
 --------------
 -- nms
 local ty = types.uint(8)

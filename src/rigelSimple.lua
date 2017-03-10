@@ -125,7 +125,7 @@ local fixedSqrt = memoize(function(A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedSqrtRS")
+  return out:toRigelModule("fixedSqrtRS")
                    end)
 
 local fixedLift = memoize(function(A)
@@ -134,7 +134,7 @@ local fixedLift = memoize(function(A)
   local out = inp:lift()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
-  return out:toDarkroom("fixedLiftRS_"..tostring(A):gsub('%W','_'))
+  return out:toRigelModule("fixedLiftRS_"..tostring(A):gsub('%W','_'))
                    end)
 
 
