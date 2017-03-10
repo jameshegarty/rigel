@@ -283,7 +283,7 @@ function solve( AinvType, btype, bits )
 
   local out = f.array2d({out_0,out_1},2)
   --print("Solve Output Type", out_0.type,out.type,Ainv.type)
-  return out:toRigelModule("solve"), out_0.type, out:cost()
+  return out:toRigelModule("lksolve"), out_0.type, out:cost()
 end
 
 function display(inpType)
@@ -383,7 +383,7 @@ function makeLK( internalT, internalW, internalH, window, bits )
   --print("ATYPE,BTYPE",AInvType,BType)
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
   local vectorField = R.apply("VF", RM.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, R.tuple("solveinp",{Ainv,b},false) )
-  local vectorField = R.apply("solve", RM.makeHandshake(fSolve), vectorField)
+  local vectorField = R.apply("lksolve", RM.makeHandshake(fSolve), vectorField)
   cost = cost + SolveCost
 
   local displayfn, displaycost = display(SolveType)

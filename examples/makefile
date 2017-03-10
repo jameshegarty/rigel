@@ -24,14 +24,17 @@ TERRAOUT += $(patsubst %.lua,out/%_half.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.correct.txt,$(SRCS_TERRA))
 
-#SRCS_VERILATOR = $(filter-out underflow.lua, $(SRCS_TERRA))
-VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS))
-VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS))
-#VERILATOR += $(patsubst %.lua,out/%_half.raw,$(SRCS))
-VERILATOR += $(patsubst %.lua,out/%.verilator.bmp,$(SRCS))
-#VERILATOR += $(patsubst %.lua,out/%_half.bmp,$(SRCS))
-VERILATOR += $(patsubst %.lua,out/%.verilator.correct.txt,$(SRCS))
-#VERILATOR += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS))
+# no support for xilinx prims needed for float
+SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua, $(SRCS))
+
+
+VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS_VERILATOR))
+VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS_VERILATOR))
+#VERILATOR += $(patsubst %.lua,out/%_half.raw,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,out/%.verilator.bmp,$(SRCS_VERILATOR))
+#VERILATOR += $(patsubst %.lua,out/%_half.bmp,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,out/%.verilator.correct.txt,$(SRCS_VERILATOR))
+#VERILATOR += $(patsubst %.lua,out/%_half.correct.txt,$(SRCS_VERILATOR))
 
 # too slow
 SRCS_TERRA_ISIM = $(SRCS_TERRA)
@@ -138,12 +141,6 @@ axibits100: $(AXIBITS100)
 
 clean:
 	rm -Rf out/*
-
-out/%.v out/%.metadata.lua: %.lua
-	$(TERRA) $<
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	- cp out/$*.v out/build_$*
 
 out/%.v out/%.metadata.lua: %.lua
 	$(LUA) $<

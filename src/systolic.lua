@@ -54,7 +54,7 @@ local function typecheck(ast)
 end
 
 function checkReserved(k)
-  if k=="input" or k=="output" or k=="reg" or k=="edge" or k=="final" then
+  if k=="input" or k=="output" or k=="reg" or k=="edge" or k=="final" or k=="solve" then
     print("Error, variable name ",k," is a reserved keyword in verilog")
     assert(false)
   end
