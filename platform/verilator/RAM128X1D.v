@@ -6,8 +6,9 @@ module RAM128X1D(WCLK,D,WE,SPO,DPO,A,DPRA);
    output     DPO; // R port addressed by DPRA
    input [6:0] A; // R/W port address
    input [6:0] DPRA; // R port address
-   
-   reg [127:0] ram;
+   parameter INIT = 128'd0;
+
+   reg [127:0] ram = INIT;
 
    assign DPO = ram[DPRA];
    assign SPO=D;
