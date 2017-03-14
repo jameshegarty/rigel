@@ -40,7 +40,7 @@ padded = R.connect{ input=input, toModule =
 
 -- use linebuffer to convert input stream into stencils
 stenciled = R.connect{ input=padded, toModule =
-  R.HS(R.modules.linebuffer{ type=R.uint8, P=P, size=padSize, stencil={-3,0,-3,0}})}
+  R.HS(R.modules.linebuffer{ type=R.uint8, V=P, size=padSize, stencil={-3,0,-3,0}})}
 
 -- perform convolution vectorized over P
 convolved = R.connect{ input = stenciled, toModule = 

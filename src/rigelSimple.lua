@@ -54,16 +54,16 @@ function RS.modules.devectorize(t)
 end
 
 function RS.modules.upsampleSeq(t)
-  return C.upsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
+  return C.upsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.downsampleSeq(t)
-  return C.downsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
+  return C.downsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.linebuffer(t)
-  local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.P, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
-  local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.P )
+  local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.V, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
+  local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.V )
   ccnt = ccnt + 1
   return RM.makeHandshake(C.compose("v"..ccnt,B,A))
 end

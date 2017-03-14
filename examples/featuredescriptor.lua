@@ -80,7 +80,7 @@ branch2_sumsqrt = R.connect{ input = branch2_sum, toModule =
 
 -- duplicate the sum 128 times to normalize each 128 histogram bucket
 branch2_sum = R.connect{ input = branch2_sumsqrt, toModule = 
-  R.modules.upsampleSeq{type=R.float, P=1, size={W,H}, scale={TILES_X*TILES_Y*8,1}}}
+  R.modules.upsampleSeq{type=R.float, V=1, size={W,H}, scale={TILES_X*TILES_Y*8,1}}}
 
 -----------------------------------
 -- branch 3: Normalize the descriptor values (depends on branch 2)

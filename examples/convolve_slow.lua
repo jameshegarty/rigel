@@ -35,7 +35,7 @@ padded = R.connect{ input=input, toModule =
   R.HS(R.modules.padSeq{ type = R.uint8, V=1, size=inSize, pad={8,8,2,1}, value=0})}
 
 stenciled = R.connect{ input=padded, toModule =
-  R.HS(R.modules.linebuffer{ type=R.uint8, P=1, size=padSize, stencil={-3,0,-3,0}})}
+  R.HS(R.modules.linebuffer{ type=R.uint8, V=1, size=padSize, stencil={-3,0,-3,0}})}
 
 -- split stencil into columns
 partialStencil = R.connect{ input=stenciled, toModule=
