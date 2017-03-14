@@ -15,7 +15,7 @@ VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
 # broken
-SRCS_TERRA := $(filter-out featuredescriptor.lua sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
@@ -506,34 +506,3 @@ out/%.stats.txt : out/%.axi.bmp
 
 out/%.stats100.txt : out/%.axi100.bmp
 	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
-
-# special case SIFT - write out matches as a postprocess
-out/sift_hw_1080p.bmp: out/sift_hw_1080p.raw
-out/sift_hw_1080p.axi.bmp: out/sift_hw_1080p.axi.raw
-out/sift_hw_1080p_half.bmp: out/sift_hw_1080p_half.raw
-
-out/sift_hw_1080p.axi.bmp out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
-	# cut off the axi burst padding
-	head -c 8424000 $< > $@.tmp
-	$(TERRA) ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
-	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > $@.tmp.lua
-	$(LUA) ../misc/raw2bmp.lua $@.match $@ $@.tmp.lua 0
-
-#out/sift_hw.bmp: out/sift_hw.raw
-#	$(TERRA) ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
-#	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/sift_hw.metadata.tmp.lua
-#	$(TERRA) ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
-
-out/featuredescriptor.bmp: out/featuredescriptor.raw
-out/featuredescriptor.axi.bmp: out/featuredescriptor.axi.raw
-out/featuredescriptor_half.bmp: out/featuredescriptor_half.raw
-out/sift_hw.bmp: out/sift_hw.raw
-out/sift_hw.axi.bmp: out/sift_hw.axi.raw
-out/sift_hw_half.bmp: out/sift_hw_half.raw
-
-out/sift_hw.axi.bmp out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp out/featuredescriptor.axi.bmp:
-	$(TERRA) ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
-	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/__feature.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/__feature.match $@ out/__feature.metadata.lua 0
-	rm out/__feature.match
-	rm out/__feature.metadata.lua

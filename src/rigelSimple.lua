@@ -44,13 +44,13 @@ end
 function RS.modules.vectorize(t)
   local H = t.H
   if H==nil then H=1 end
-  return RM.changeRate( t.type, H, 1, 1/t.rate )
+  return RM.changeRate( t.type, H, 1, t.V )
 end
 
 function RS.modules.devectorize(t)
   local H = t.H
   if H==nil then H=1 end
-  return RM.changeRate( t.type, H, 1/t.rate, 1 )
+  return RM.changeRate( t.type, H, t.V, 1 )
 end
 
 function RS.modules.upsampleSeq(t)
@@ -86,7 +86,7 @@ function RS.modules.reduce(t)
 end
 
 function RS.modules.reduceSeq(t)
-  return RM.reduceSeq( t.fn, t.P )
+  return RM.reduceSeq( t.fn, 1/t.V )
 end
 
 function RS.modules.map(t)
