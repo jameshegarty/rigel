@@ -32,7 +32,7 @@ end
 input = R.input( R.HS( R.array( R.uint8, 1) ) )
 
 padded = R.connect{ input=input, toModule = 
-  R.HS(R.modules.padSeq{ type = R.uint8, P=1, size=inSize, pad={8,8,2,1}, value=0})}
+  R.HS(R.modules.padSeq{ type = R.uint8, V=1, size=inSize, pad={8,8,2,1}, value=0})}
 
 stenciled = R.connect{ input=padded, toModule =
   R.HS(R.modules.linebuffer{ type=R.uint8, P=1, size=padSize, stencil={-3,0,-3,0}})}
@@ -54,7 +54,7 @@ convolved = R.connect{ input = summedPartials, toModule =
   R.HS(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }
 
 output = R.connect{ input = convolved, toModule = 
-  R.HS(R.modules.cropSeq{ type = R.uint8, P=1, size=padSize, crop={9,7,3,0} }) }
+  R.HS(R.modules.cropSeq{ type = R.uint8, V=1, size=padSize, crop={9,7,3,0} }) }
 
 
 convolveFunction = R.defineModule{ input = input, output = output }

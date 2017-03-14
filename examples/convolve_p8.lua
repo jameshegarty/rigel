@@ -36,7 +36,7 @@ input = R.input( R.HS( R.array( R.uint8, P) ) )
 
 -- apply boundary condition by padding stream
 padded = R.connect{ input=input, toModule = 
-  R.HS(R.modules.padSeq{ type = R.uint8, P=P, size=inSize, pad={8,8,2,1}, value=0})}
+  R.HS(R.modules.padSeq{ type = R.uint8, V=P, size=inSize, pad={8,8,2,1}, value=0})}
 
 -- use linebuffer to convert input stream into stencils
 stenciled = R.connect{ input=padded, toModule =
@@ -48,7 +48,7 @@ convolved = R.connect{ input = stenciled, toModule =
 
 -- crop stream to remove boundary padding
 output = R.connect{ input = convolved, toModule = 
-  R.HS(R.modules.cropSeq{ type = R.uint8, P=P, size=padSize, crop={9,7,3,0} }) }
+  R.HS(R.modules.cropSeq{ type = R.uint8, V=P, size=padSize, crop={9,7,3,0} }) }
 
 convolveFunction = R.defineModule{ input = input, output = output }
 ----------------
