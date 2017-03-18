@@ -45,7 +45,7 @@ end)
 -- A -> A[W,H]
 C.arrayop = memoize(function(A,W,H)
   err(type(W)=="number","arrayop: W should be number")
-  err(type(H)=="number","arrayop: H should be number")
+  err(type(H)=="number" or H==nil,"arrayop: H should be number or nil")
   
   local inp = R.input(A)
   return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.array2d("ao",{inp},W,H))
