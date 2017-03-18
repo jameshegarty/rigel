@@ -44,6 +44,9 @@ end)
 
 -- A -> A[W,H]
 C.arrayop = memoize(function(A,W,H)
+  err(type(W)=="number","arrayop: W should be number")
+  err(type(H)=="number","arrayop: H should be number")
+  
   local inp = R.input(A)
   return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.array2d("ao",{inp},W,H))
 end)
@@ -734,6 +737,7 @@ end
 -- All it does is throws in a shift register to alter the horizontal phase
 C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err(X==nil, "cropHelperSeq, too many arguments")
+  err(type(T)=="number","T must be number")
   if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
 
   err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
