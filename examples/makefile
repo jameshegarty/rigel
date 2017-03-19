@@ -140,12 +140,6 @@ clean:
 	rm -Rf out/*
 
 out/%.v out/%.metadata.lua: %.lua
-	$(TERRA) $<
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	- cp out/$*.v out/build_$*
-
-out/%.v out/%.metadata.lua: %.lua
 	$(LUA) $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
