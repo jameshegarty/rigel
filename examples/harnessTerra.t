@@ -3,8 +3,8 @@ local cstdlib = terralib.includec("stdlib.h")
 local fixed = require "fixed"
 
 return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, X)
-  --print("UNDERFLOWTEST",underflowTest)
-  if doHalfTest==nil then doHalfTest=true end
+
+if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT

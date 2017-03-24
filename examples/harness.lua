@@ -5,23 +5,22 @@ local types = require("types")
 --local fixed = require("fixed")
 local SDFRate = require "sdfrate"
 
-local function writeMetadata(filename, inputBytesPerPixel, inputWidth, inputHeight, outputBytesPerPixel, outputWidth, outputHeight, inputImage, topModule, X)
-  assert(type(inputImage)=="string")
-  assert(type(inputBytesPerPixel)=="number")
-  assert(type(inputWidth)=="number")
-  assert(type(inputHeight)=="number")
-  assert(type(outputBytesPerPixel)=="number")
-  assert(type(outputWidth)=="number")
-  assert(type(outputHeight)=="number")
-  assert(type(topModule)=="string")
-  assert(X==nil)
-
-  local scaleX = {outputWidth,inputWidth}
-  local scaleY = {outputHeight,inputHeight}
-  local scale = SDFRate.fracMultiply(scaleX,scaleY)
-
+local function writeMetadata(filename, tab)
+  err(type(filename)=="string")
+  err(type(tab)=="table")
+  
   io.output(filename)
-    io.write("return {inputWidth="..inputWidth..",inputHeight="..inputHeight..",outputWidth="..outputWidth..",outputHeight="..outputHeight..",scaleN="..scale[1]..",scaleD="..scale[2]..",inputBytesPerPixel="..inputBytesPerPixel..",outputBytesPerPixel="..outputBytesPerPixel..",inputImage='"..inputImage.."',topModule='"..topModule.."'}")
+
+  local res = {}
+  for k,v in pairs(tab) do
+    if type(v)=="number" then
+      table.insert(res,k.."="..tostring(v))
+    else
+      table.insert(res,k.."='"..tostring(v).."'")
+    end
+  end
+      
+  io.write( "return {"..table.concat(res,",").."}" )
   io.close()
 end
 
@@ -39,7 +38,7 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   return EC, EC_RAW
 end
 
-local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
+local function underoverWrapper( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
   assert(X==nil)
   assert(type(inputCount)=="number")
   assert(type(outputCount)=="number")
@@ -54,7 +53,6 @@ local function harness( hsfn, infile, inputType, tapInputType, outfileraw, outfi
 
   if outfileraw~=nil then
     local fi = outfileraw..".cycles.txt"
-    --print("WRITE CYCLES",fi)
     io.output(fi)
     io.write(EC_RAW/frames)
     io.close()
@@ -139,7 +137,7 @@ local H = {}
 
 
 if terralib~=nil then 
-  harnessWrapperFn = harness
+  harnessWrapperFn = underoverWrapper
   H.terraOnly = require("harnessTerra") 
 end
 
@@ -168,7 +166,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   for i=1,2 do
     local ext=""
     if i==2 then ext="_half" end
-    local f = RM.seqMapHandshake( harness(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".isim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
+    local f = RM.seqMapHandshake( underoverWrapper(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".isim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
     io.output("out/"..filename..ext..".isim.v")
     io.write(f:toVerilog())
     io.close()
@@ -189,14 +187,64 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   assert(earlyOverride==nil or type(earlyOverride)=="number")
 
-  writeMetadata("out/"..filename..".metadata.lua", inputType:verilogBits()/(8*inputT), inputW, inputH, outputType:verilogBits()/(8*outputT), outputW, outputH, inputFilename,hsfn.systolicModule.name)
-
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT})
+  
 ------------------------
 -- verilator just uses the top module directly
   io.output("out/"..filename..".v")
   io.write(hsfn:toVerilog())
   io.close()
 
+end
+
+local function axiRateWrapper(fn, tapType)
+  err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
+  
+    local iover = R.extractData(fn.inputType)
+    
+    if tapType~=nil then
+      -- taps have tap value packed into argument
+      assert(iover.list[2]==tapType)
+      iover = iover.list[1]
+    end
+    
+    err(iover:isArray(), "expected input to be array but is "..tostring(iover))
+    inputP = iover:channels()
+
+    R.expectHandshake(fn.outputType)
+    oover = R.extractData(fn.outputType)
+    assert(oover:isArray())
+    outputP = oover:channels()
+
+    if iover:verilogBits()~=64 or oover:verilogBits()~=64 then
+      local inputP_orig = inputP
+      inputP = (64/fn.inputType:verilogBits())*inputP
+      iover = types.array2d( iover:arrayOver(), inputP )
+      
+      local inp = R.input( R.Handshake(iover) )
+      local out
+      
+      if fn.inputType:verilogBits()~=64 then
+        --out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
+        out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover:arrayOver(), 1, inputP, inputP_orig )), inp)
+      end
+      
+      out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
+      
+      local outputP_orig = outputP
+      outputP = (64/fn.outputType:verilogBits())*outputP
+      oover = types.array2d( oover:arrayOver(), outputP )
+      
+      if fn.outputType:verilogBits()~=64 then
+        --out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
+        out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover:arrayOver(),1,outputP_orig,outputP)),out)
+      end
+      
+      --fn = RS.defineModule{input=inp,output=out}
+      return RM.lambda("hsfn",inp,out)
+    end
+
+  return fn
 end
 
 -- AXI must have T=8
@@ -220,7 +268,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
 
-
+  hsfn = axiRateWrapper(hsfn, tapType)
 
 -- axi runs the sim as well
 --H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
@@ -234,71 +282,55 @@ io.close()
 --------
 end
 
+function guessP(ty, tapType)
+  err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
+  
+  -- if user didn't pass us type, try to guess it
+  -- if array: then it is an array with P=array size
+  -- if not array: then it is P=1
+  local ty = R.extractData(ty)
+
+
+  if tapType~=nil then
+      assert(ty.list[2]==tapType)
+      ty = ty.list[1]
+  end
+
+  local iover, inputP
+  
+  if ty:isArray() then
+      iover = ty
+      inputP = ty:channels()
+  else
+      iover = ty
+      inputP = 1
+  end
+
+  return iover, inputP
+end
+
 function harnessTop(t)
   err(type(t.inFile)=="string", "expected input filename to be string")
   err(type(t.outFile)=="string", "expected output filename to be string")
 
   -- just assume we were given a handshake vector...
-  --print("ITYPE",t.fn.inputType)
   R.expectHandshake(t.fn.inputType)
 
-  local iover, inputP, oover, outputP, fn
+  -- if user explicitly passes us the the info, just trust them...
+  local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
 
-  if t.inType~=nil then
-    -- if user explicitly passes us the type, just trust them...
-    iover, inputP = t.inType, t.inP
-    oover, outputP = t.outType, t.outP
-    fn = t.fn
-  else
-    
-    iover = R.extractData(t.fn.inputType)
-    
-    if t.tapType~=nil then
-      -- taps have tap value packed into argument
-      assert(iover.list[2]==t.tapType)
-      iover = iover.list[1]
-    end
-    
-    err(iover:isArray(), "expected input to be array but is "..tostring(iover))
-    inputP = iover:channels()
-
-    --print("OTYPE",t.fn.outputType)
-    R.expectHandshake(t.fn.outputType)
-    oover = R.extractData(t.fn.outputType)
-    assert(oover:isArray())
-    outputP = oover:channels()
-
-    fn = t.fn
-    
-    if iover:verilogBits()~=64 or oover:verilogBits()~=64 then
-      local inputP_orig = inputP
-      inputP = (64/t.fn.inputType:verilogBits())*inputP
-      iover = types.array2d( iover:arrayOver(), inputP )
-      
-      local inp = R.input( R.Handshake(iover) )
-      local out
-      
-      if t.fn.inputType:verilogBits()~=64 then
-        --out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
-        out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover:arrayOver(), 1, inputP, inputP_orig )), inp)
-      end
-      
-      out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-      
-      local outputP_orig = outputP
-      outputP = (64/t.fn.outputType:verilogBits())*outputP
-      oover = types.array2d( oover:arrayOver(), outputP )
-      
-      if t.fn.outputType:verilogBits()~=64 then
-        --out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
-        out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover:arrayOver(),1,outputP_orig,outputP)),out)
-      end
-      
-      --fn = RS.defineModule{input=inp,output=out}
-      fn = RM.lambda("hsfn",inp,out)
-    end
+  if iover==nil and inputP==nil then
+    iover, inputP = guessP(fn.inputType,t.tapType)
   end
 
+  if oover==nil and outputP==nil then
+    oover, outputP = guessP(fn.outputType)
+  end
+
+  err(types.isType(iover) and type(inputP)=="number","Error, could not derive input type and P from arguments to harness, type was "..tostring(fn.inputType))
+  err(types.isType(oover) and type(outputP)=="number","Error, could not derive output type and P from arguments to harness, type was "..tostring(fn.outputType))
+
+  
   if(arg[1]==nil or arg[1]=="verilog") then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2] )
   elseif(arg[1]=="axi") then

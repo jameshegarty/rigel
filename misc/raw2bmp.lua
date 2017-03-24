@@ -262,7 +262,11 @@ end
 
 
 function raw2bmp(infile, outfile, axiround)
-  local totalSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
+
+  local outputBytesPerPixel = metadata.outputBitsPerPixel/8
+  local inputBytesPerPixel = metadata.inputBitsPerPixel/8
+  
+  local totalSize = metadata.outputWidth*metadata.outputHeight*outputBytesPerPixel
   local dataPtr = ffi.new("unsigned char["..totalSize.."]")
 
   local imgIn = ffi.C.fopen(infile,"rb")
@@ -271,7 +275,7 @@ function raw2bmp(infile, outfile, axiround)
     os.exit(1)
   end
   
-  local expectedOutputSize = metadata.outputWidth*metadata.outputHeight*metadata.outputBytesPerPixel
+  local expectedOutputSize = metadata.outputWidth*metadata.outputHeight*outputBytesPerPixel
   if axiround then
 
     if expectedOutputSize % 128 ~=0 then
@@ -286,7 +290,7 @@ function raw2bmp(infile, outfile, axiround)
   local sz = ffi.C.fread(dataPtr,1,totalSize,imgIn)
 
   if sz~=totalSize then
-    print("File Size: "..sz..", expected size:"..expectedOutputSize)
+    print("File Size: "..tostring(sz)..", expected size:"..tostring(expectedOutputSize))
     print( "Incorrect file size!")
     os.exit(1)
   end
@@ -294,21 +298,24 @@ function raw2bmp(infile, outfile, axiround)
   ffi.C.fclose(imgIn)
 
   -- we can't write 3 channels per pixel over axi.
-  if metadata.outputBytesPerPixel==2 then
+  if outputBytesPerPixel==2 then
     --inp:addChannels(1)
     --assert(false)
-    dataPtr = addChannels(1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,metadata.outputBytesPerPixel, 8, dataPtr)
-    metadata.outputBytesPerPixel = 3
-  elseif metadata.outputBytesPerPixel==4 then
+    dataPtr = addChannels(1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
+    outputBytesPerPixel = 3
+  elseif outputBytesPerPixel==4 then
     --inp:addChannels(-1)
     --assert(false)
-    dataPtr = addChannels(-1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,metadata.outputBytesPerPixel, 8, dataPtr)
-    metadata.outputBytesPerPixel = 3
-
+    dataPtr = addChannels(-1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
+    outputBytesPerPixel = 3
+  elseif outputBytesPerPixel==1 then
+  else
+    print("raw2bmp: unsupported output bytes per pixel ", outputBytesPerPixel)
+    os.exit(1)
   end
 
   local file = writeBmp(outfile,metadata.outputWidth, metadata.outputHeight, metadata.outputWidth,
-                     metadata.outputBytesPerPixel, dataPtr)
+                     outputBytesPerPixel, dataPtr)
 end
 
 raw2bmp(arg[1], arg[2], arg[4]=="1")
