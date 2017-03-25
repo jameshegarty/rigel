@@ -40,6 +40,9 @@ SRCS_VERILATOR := $(filter-out convpadcrop_wide_handshake_4_8.lua convpadcrop_wi
 # TODO:FIX
 SRCS_VERILATOR := $(filter-out convpadcrop_wide_handshake_4_1_1080p.lua convpadcrop_wide_handshake_4_1.lua convpadcrop_wide_handshake_4_2.lua convpadcrop_wide_handshake_4_4.lua convpadcrop_wide_handshake_8_2.lua convpadcrop_wide_handshake_4_2_1080p.lua convpadcrop_wide_handshake_4_8_1080p.lua conv_wide_handshake_taps.lua convpadcrop_wide_handshake_4_4_1080p.lua convpadcrop_wide_handshake_8_1.lua convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_1.lua convpadcrop_wide_handshake_8_1_1080p.lua convpadcrop_wide_handshake_8_1_1080p_nostall.lua pyramid_large_nofifo_tr_3.lua pyramid_large_nofifo_tr_4.lua pyramid_large_nofifo_taps_2.lua shifty_wide_handshake.lua padcrop_wide_handshake.lua, $(SRCS_VERILATOR))
 
+# too slow for travis
+SRCS_VERILATOR := $(filter-out stereo_wide_handshake_full.lua, $(SRCS_VERILATOR))
+
 VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS_VERILATOR))
 #VERILATOR += $(patsubst %.lua,out/%_half.raw,$(SRCS_VERILATOR))
