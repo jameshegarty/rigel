@@ -29,7 +29,7 @@ void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, u
     //
     string outfileMD=string("out/")+id+string(".metadata.lua");
     FILE* md = fopen(outfileMD.c_str(),"w");
-    fprintf(md,"return {width=%d,height=%d,type=%s}",w,h,type.c_str());
+    fprintf(md,"return {width=%d,height=%d,type='%s'}",w,h,type.c_str());
     fclose(md);
   }
 
