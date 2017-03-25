@@ -28,4 +28,4 @@ before_install:
 
 script:
   - cd examples
-  - make -j2 verilog terra verilator
+  - make verilog terra verilator
