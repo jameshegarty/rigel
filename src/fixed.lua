@@ -204,6 +204,7 @@ function fixedASTFunctions:lift(exponant)
   end
 end
 
+-- Throws out OR adds information, to the LSBs
 function fixedASTFunctions:normalize(precision)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   local expshift = self:precision()-precision
@@ -211,7 +212,7 @@ function fixedASTFunctions:normalize(precision)
   return fixed.new{kind="normalize", type=ty,inputs={self},loc=getloc()}
 end
 
--- throw out information!
+-- throw out information! from the MSBs
 function fixedASTFunctions:truncate(precision)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   local ty = fixed.type(self:isSigned(), precision, self:exp())
@@ -282,12 +283,64 @@ end
 
 function fixedASTFunctions:rshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( type(N)=="number", "rshift input must be number" )
+  err( N>0, "rshift input must be >0")
+  
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:lshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   return fixed.new{kind="lshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()+N),shift=N,inputs={self},loc=getloc()}
+end
+
+-- cast to INTEGER.FRACTIONAL format
+-- extends or clamps as necessary
+-- precision = INTEGER+FRACTIONAL
+function fixedASTFunctions:castToIF(INT,FRAC)
+  err( fixed.isFixedType(self.type), "NYI - castToIF only works on fixed types" )
+  err(type(INT)=="number","INT input to castToIF must be number")
+  err(type(FRAC)=="number","FRAC input to castToIF must be number")
+  err(INT>=0,"INT input to castToIF must be >=0")
+  err(FRAC>=0,"FRAC input to castToIF must be >=0")
+  
+  local out
+  
+  -- first deal with MSBs
+  local currentINT = self:precision()+self:exp()
+  print("castToIF: currentINT",currentINT,"currentFRAC",-self:exp(),"targetINT",INT,"targetFRAC",FRAC)
+  
+  if currentINT<INT then
+    out = self:pad(self:precision()+INT-currentINT,self:exp())
+    -- no reason to add more bits than we need
+    --out = self
+  elseif currentINT>INT then
+    --assert(false)
+    out = self:reduceBits(currentINT-INT,0)
+  end
+
+  local currentINT = out:precision()+out:exp()
+  print("CURRENTINT",currentINT,"CURRENTFRAC",-out:exp())
+
+  local currentFRAC = -out:exp()
+
+  if currentFRAC<FRAC then
+    assert(false)
+    --print("IF",INT,FRAC,out:precision())
+    --out = out:pad(INT+FRAC,-FRAC)
+  elseif currentFRAC>FRAC then
+    --assert(false)
+    print("REDFRAC",out:exp())
+    out = out:reduceBits(0,currentFRAC-FRAC)
+    print("REDFRAC",out:exp())
+  end
+
+  assert(out:precision()==INT+FRAC)
+  assert(out:exp()==-FRAC)
+  --local currentINT = out:precision()+out:exp()
+  --assert(currentINT<=INT)
+
+  return out
 end
 
 function fixedASTFunctions:cast(to)
@@ -556,6 +609,7 @@ function fixedASTFunctions:toSystolic()
         --res = S.rshift(args[1],S.constant( n.shift, fixed.extract(n.inputs[1].type)))
         res = args[1]
       elseif n.kind=="truncate" then
+      	assert(fixed.extract(n.type):verilogBits()<=fixed.extract(n.inputs[1].type):verilogBits())
         res = S.cast(args[1],fixed.extract(n.type))
       elseif n.kind=="lift" or n.kind=="lower" then
         -- don't actually do anything: we only add the wrapper at the very end

@@ -2,7 +2,8 @@ SRCS = $(wildcard *.lua)
 SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua,$(SRCS))
 
 
-VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
+RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
+RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
 LUA = ../rigelLuajit
 TERRA = ../rigelTerra
 
@@ -15,7 +16,7 @@ VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
 
 # broken
-SRCS_TERRA := $(filter-out featuredescriptor.lua sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
@@ -180,11 +181,18 @@ out/%.axi.v: %.lua
 out/%.verilator: out/%.v out/%.metadata.lua
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module $($@_TOP)
-	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
-	g++ $(shell pkg-config --cflags verilator) out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${VERILATOR_INCLUDE}/verilated.cpp out/$*.verilator.cpp -o $@
+#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
+	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
-	./out/$*.verilator
+	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
+	$(eval $@_W := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_H := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
+	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
+	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
+	./out/$*.verilator $($@_INPUT) $@ $($@_W) $($@_H)  $($@_INBPP) $($@_INP) $($@_OUTBPP) $($@_OUTP)
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
@@ -504,34 +512,3 @@ out/%.stats.txt : out/%.axi.bmp
 
 out/%.stats100.txt : out/%.axi100.bmp
 	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
-
-# special case SIFT - write out matches as a postprocess
-out/sift_hw_1080p.bmp: out/sift_hw_1080p.raw
-out/sift_hw_1080p.axi.bmp: out/sift_hw_1080p.axi.raw
-out/sift_hw_1080p_half.bmp: out/sift_hw_1080p_half.raw
-
-out/sift_hw_1080p.axi.bmp out/sift_hw_1080p.bmp out/sift_hw_1080p_half.bmp:
-	# cut off the axi burst padding
-	head -c 8424000 $< > $@.tmp
-	$(TERRA) ../misc/sift/match.t $@.tmp 1920 1080 ../misc/sift/boxes_cheesed_233x346.sift 233 346 $@.match
-	echo "return {outputWidth=1920,outputHeight=1080,outputBytesPerPixel=3}" > $@.tmp.lua
-	$(LUA) ../misc/raw2bmp.lua $@.match $@ $@.tmp.lua 0
-
-#out/sift_hw.bmp: out/sift_hw.raw
-#	$(TERRA) ../misc/sift/match.t out/sift_hw.raw 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/sift_hw.raw.match
-#	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/sift_hw.metadata.tmp.lua
-#	$(TERRA) ../misc/raw2bmp.t out/sift_hw.raw.match out/sift_hw.bmp out/sift_hw.metadata.tmp.lua 0
-
-out/featuredescriptor.bmp: out/featuredescriptor.raw
-out/featuredescriptor.axi.bmp: out/featuredescriptor.axi.raw
-out/featuredescriptor_half.bmp: out/featuredescriptor_half.raw
-out/sift_hw.bmp: out/sift_hw.raw
-out/sift_hw.axi.bmp: out/sift_hw.axi.raw
-out/sift_hw_half.bmp: out/sift_hw_half.raw
-
-out/sift_hw.axi.bmp out/sift_hw.bmp out/sift_hw_half.bmp out/featuredescriptor.bmp out/featuredescriptor_half.bmp out/featuredescriptor.axi.bmp:
-	$(TERRA) ../misc/sift/match.t $< 256 256 ../misc/sift/boxes_cheesed_233x346.sift 233 346 out/__feature.match
-	echo "return {outputWidth=256,outputHeight=256,outputBytesPerPixel=3}" > out/__feature.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/__feature.match $@ out/__feature.metadata.lua 0
-	rm out/__feature.match
-	rm out/__feature.metadata.lua

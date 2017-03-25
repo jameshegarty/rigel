@@ -29,11 +29,11 @@ RS.tuple = types.tuple
 
 RS.modules = {}
 function RS.modules.padSeq(t)
-  return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.P, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
+  return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.V, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
 end
 
 function RS.modules.cropSeq(t)
-  return C.cropHelperSeq( t.type, t.size[1], t.size[2], t.P, t.crop[1], t.crop[2], t.crop[3], t.crop[4] )
+  return C.cropHelperSeq( t.type, t.size[1], t.size[2], t.V, t.crop[1], t.crop[2], t.crop[3], t.crop[4] )
 --  return RM.cropSeq( t.type, t.size[1], t.size[2], t.P, t.crop[1], t.crop[2], t.crop[3], t.crop[4] )
 end
 
@@ -44,26 +44,26 @@ end
 function RS.modules.vectorize(t)
   local H = t.H
   if H==nil then H=1 end
-  return RM.changeRate( t.type, H, 1, 1/t.rate )
+  return RM.changeRate( t.type, H, 1, t.V )
 end
 
 function RS.modules.devectorize(t)
   local H = t.H
   if H==nil then H=1 end
-  return RM.changeRate( t.type, H, 1/t.rate, 1 )
+  return RM.changeRate( t.type, H, t.V, 1 )
 end
 
 function RS.modules.upsampleSeq(t)
-  return C.upsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
+  return C.upsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.downsampleSeq(t)
-  return C.downsampleSeq( t.type, t.size[1], t.size[2], t.P, t.scale[1], t.scale[2] )
+  return C.downsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
 function RS.modules.linebuffer(t)
-  local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.P, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
-  local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.P )
+  local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.V, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
+  local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.V )
   ccnt = ccnt + 1
   return RM.makeHandshake(C.compose("v"..ccnt,B,A))
 end
@@ -86,7 +86,7 @@ function RS.modules.reduce(t)
 end
 
 function RS.modules.reduceSeq(t)
-  return RM.reduceSeq( t.fn, t.P )
+  return RM.reduceSeq( t.fn, 1/t.V )
 end
 
 function RS.modules.map(t)
