@@ -362,7 +362,7 @@ end
 -- inner function based on this W,H. We have to do this for alignment reasons.
 -- f should return a handshake function
 -- timingFifo: include a fifo to improve timing. true by default
-function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
+C.padcrop = function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   err( type(W)=="number", "W should be number")
   err( type(H)=="number", "H should be number")
   err( type(T)=="number", "T should be number")
@@ -414,7 +414,7 @@ function C.padcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
 
   table.insert(statements,1,out)
 
-  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f)
+  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f):sub(11)
 
   local hsfn
   if timingFifo then
