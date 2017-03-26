@@ -28,4 +28,10 @@ before_install:
 
 script:
   - cd examples
-  - make verilog terra
+  - make -j2 $TARGET
+#  - make verilog terra verilator
+
+env:
+  - TARGET=verilog
+  - TARGET=verilator
+  - TARGET=terra

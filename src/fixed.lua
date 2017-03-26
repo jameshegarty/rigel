@@ -620,15 +620,16 @@ function fixedASTFunctions:toSystolic()
         res = S.constant( n.value, n.type )
       elseif n.kind=="normalize" or n.kind=="denormalize" then
         local dp = n.inputs[1]:precision()-n:precision()
+        assert(math.abs(dp)<255) -- for the rshift
         if dp==0 then
           res = args[1]
         elseif dp>0 then
-          res = S.rshift(args[1], S.constant(dp, fixed.extract(n.inputs[1].type)) )
+           res = S.rshift(args[1], S.constant(dp, types.uint(8)) )
           res = S.cast(res,fixed.extract(n.type))
         elseif dp<0 then
           -- make larger
           res = S.cast( args[1], fixed.extract(n.type) )
-          res = S.lshift( res, S.constant(-dp, fixed.extract(n.inputs[1].type)) )
+          res = S.lshift( res, S.constant(-dp, types.uint(8)) )
         else
           assert(false)
         end

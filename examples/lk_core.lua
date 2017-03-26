@@ -249,7 +249,7 @@ function solve( AinvType, btype, bits )
 
   local out = f.array2d({out_0,out_1},2)
   --print("Solve Output Type", out_0.type,out.type,Ainv.type)
-  return out:toRigelModule("solve"), out_0.type, out:cost()
+  return out:toRigelModule("lksolve"), out_0.type, out:cost()
 end
 
 function display(inpType)
@@ -323,7 +323,7 @@ function makeLK( T, internalW, internalH, window, bits )
 
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
   local sinp = R.apply("sinp", C.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.tuple("solveinp",{Ainv,b}))
-  local vectorField = R.apply("solve", RM.map(fSolve,T), sinp)
+  local vectorField = R.apply("lksolvemod", RM.map(fSolve,T), sinp)
   cost = cost + SolveCost
   
   local displayfn, displaycost = display(SolveType)

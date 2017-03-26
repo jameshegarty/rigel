@@ -114,7 +114,7 @@ end
 
 local boolops = {["or"]=1,["and"]=1,["=="]=1,["xor"]=1} -- bool -> bool -> bool
 local cmpops = {["=="]=1,["~="]=1,["<"]=1,[">"]=1,["<="]=1,[">="]=1} -- number -> number -> bool
-local binops = {["|"]=1,["^"]=1,["&"]=1,["<<"]=1,[">>"]=1,["+"]=1,["-"]=1,["%"]=1,["*"]=1,["/"]=1}
+local binops = {["|"]=1,["^"]=1,["&"]=1,["+"]=1,["-"]=1,["%"]=1,["*"]=1,["/"]=1}
 -- these binops only work on ints
 local intbinops = {["<<"]=1,[">>"]=1,["and"]=1,["or"]=1,["^"]=1}
 -- ! does a logical not in C, use 'not' instead
@@ -162,6 +162,9 @@ function types.meet( a, b, op, loc)
       -- do it pointwise
       local thistype = types.array2d( types.meet( a.over, b.over, op, loc ), (a:arrayLength())[1], (a:arrayLength())[2] )
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       local thistype = types.array(types.float(32), a:arrayLength() )
       return thistype, thistype, thistype
@@ -178,6 +181,9 @@ function types.meet( a, b, op, loc)
       return types.bool(), thistype, thistype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       local thistype = types.float(32)
       return thistype, thistype, thistype
@@ -193,6 +199,9 @@ function types.meet( a, b, op, loc)
       return types.bool(), thistype, thistype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       local thistype = types.float(32)
       return thistype, thistype, thistype
@@ -221,6 +230,9 @@ function types.meet( a, b, op, loc)
       return types.bool(), thistype, thistype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       return thistype, thistype, thistype
     else
@@ -252,6 +264,9 @@ function types.meet( a, b, op, loc)
       error("Passing a float to an integer binary op "..op)
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       local thistype = types.float(32)
       return thistype, thistype, thistype
@@ -271,6 +286,9 @@ function types.meet( a, b, op, loc)
       error("Passing a float to an integer binary op "..op)
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
+    elseif op=="<<" or op==">>" then
+       -- don't cast shifts - the rhs leads to 2^n shift options!
+       return a, a, b
     elseif op=="pow" then
       local thistype = types.float(32)
       return thistype, thistype, thistype

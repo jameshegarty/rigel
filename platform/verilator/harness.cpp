@@ -19,7 +19,8 @@ void setValid(SData* signal, unsigned int databits, bool valid){
   }    
 }
 
-void setValid(WData (*signal)[3], unsigned int databits, bool valid){
+template<int N>
+void setValid(WData (*signal)[N], unsigned int databits, bool valid){
   int idx = databits/32; // floor
 
   if(valid){
@@ -36,7 +37,8 @@ bool getValid(SData* signal, unsigned int databits){
   return (*signal & (1<<databits)) != 0;
 }
 
-bool getValid(WData (*signal)[3], unsigned int databits){
+template<int N>
+bool getValid(WData (*signal)[N], unsigned int databits){
   int idx = databits/32; // floor
   return ( (*signal)[idx] & (1<<(databits-idx*32)) ) != 0;
 }
@@ -55,7 +57,8 @@ void setData(SData* signal, unsigned int databits, FILE* file){
   }
 }
 
-void setData(WData (*signal)[3], unsigned int databits, FILE* file){
+template<int N>
+void setData(WData (*signal)[N], unsigned int databits, FILE* file){
   for(int j=0; j<2; j++){
     (*signal)[j]=0;
     for(int i=0; i<4; i++){
@@ -78,7 +81,8 @@ void getData(SData* signal, unsigned int databits, FILE* file){
   }
 }
 
-void getData( WData (*signal)[3], unsigned int databits, FILE* file){
+template<int N>
+void getData( WData (*signal)[N], unsigned int databits, FILE* file){
   for(int j=0; j<2; j++){
     for(int i=0; i<4; i++){
       unsigned char ot = (*signal)[j] >> (i*8);
@@ -125,6 +129,8 @@ int main(int argc, char** argv) {
 
   int validcnt = 0;
 
+  unsigned long totalCycles = 0;
+
   while (!Verilated::gotFinish() && validcnt<outPackets) {
     if(CLK){
       if(top->ready){
@@ -139,6 +145,12 @@ int main(int argc, char** argv) {
       if(getValid( &(top->process_output), outbpp*outP ) ){
         validcnt++;
 	getData(&(top->process_output),outbpp*outP,outfile);
+      }
+
+      totalCycles++;
+      if(totalCycles>outPackets*256){
+        printf("Simulation went on for way too long, giving up!\n");
+        exit(1);
       }
     }
 
