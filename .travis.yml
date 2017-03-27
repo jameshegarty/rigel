@@ -27,13 +27,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
-  - if [[ $TARGET=="unit" ]]; then
-       cd unit; 
-       make 
-    else 
-       cd examples; 
-       make -j2 $TARGET 
-    fi
+  - if [[ $TARGET=="unit" ]]; then cd unit;  make;  else cd examples;  make -j2 $TARGET; fi
 #  - make verilog terra verilator
 
 env:
