@@ -10,7 +10,18 @@ unsigned int divCeil(unsigned int a, unsigned int b){
 
 void setValid(SData* signal, unsigned int databits, bool valid){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<16);
+  assert(databits<=16);
+
+  if(valid){
+    *signal |= (1<<databits);
+  }else{
+    *signal = 0;
+  }    
+}
+
+void setValid(IData* signal, unsigned int databits, bool valid){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=32);
 
   if(valid){
     *signal |= (1<<databits);
@@ -37,6 +48,12 @@ bool getValid(SData* signal, unsigned int databits){
   return (*signal & (1<<databits)) != 0;
 }
 
+bool getValid(IData* signal, unsigned int databits){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=32);
+  return (*signal & (1<<databits)) != 0;
+}
+
 template<int N>
 bool getValid(WData (*signal)[N], unsigned int databits){
   int idx = databits/32; // floor
@@ -45,7 +62,21 @@ bool getValid(WData (*signal)[N], unsigned int databits){
     
 void setData(SData* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<16);
+  assert(databits<=16);
+
+  int readBytes = divCeil(databits,8);
+
+  *signal = 0;
+  for(int i=0; i<readBytes; i++){
+    // assume big endian in the file
+    unsigned long inp = fgetc(file);
+    *signal |= (inp << (readBytes-i-1)*8);
+  }
+}
+
+void setData(IData* signal, unsigned int databits, FILE* file){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=32);
 
   int readBytes = divCeil(databits,8);
 
@@ -70,7 +101,20 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
     
 void getData(SData* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<16);
+  assert(databits<=16);
+
+  int readBytes = divCeil(databits,8);
+
+  for(int i=0; i<readBytes; i++){
+    // assume big endian in the file
+    unsigned char ot = (*signal) >> (readBytes-i-1)*8;
+    fputc(ot,file);
+  }
+}
+
+void getData(IData* signal, unsigned int databits, FILE* file){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=32);
 
   int readBytes = divCeil(databits,8);
 

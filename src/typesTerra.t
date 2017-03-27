@@ -58,6 +58,9 @@ function TypeFunctions:valueToTerra(value)
   if self:isUint() or self:isFloat() or self:isInt() then
     assert(type(value)=="number")
     return `[self:toTerraType()](value)
+  elseif self:isBool() then
+    assert(type(value)=="boolean")
+    return `[self:toTerraType()](value)
   elseif self:isArray() then
     assert(type(value)=="table")
     assert(#value==self:channels())

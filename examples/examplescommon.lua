@@ -721,8 +721,16 @@ function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
   local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
   local inp = S.parameter( "process_input", inpType )
   local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
-  local horizontal = S.__or(S.lt(inpx,S.constant(L,types.uint(16))),S.ge(inpx,S.constant(W-R,types.uint(16))))
-  local vert = S.__or(S.lt(inpy,S.constant(B,types.uint(16))),S.ge(inpy,S.constant(H-Top,types.uint(16))))
+
+  local lcheck = S.constant(false,types.bool())
+  if L~=0 then lcheck = S.lt(inpx,S.constant(L,types.uint(16))) end -- verilator lint workaround
+
+  local horizontal = S.__or(lcheck,S.ge(inpx,S.constant(W-R,types.uint(16))))
+
+  local bcheck = S.constant(false,types.bool())
+  if B~=0 then bcheck = S.lt(inpy,S.constant(B,types.uint(16))) end -- verilator lint workaround
+
+  local vert = S.__or(bcheck,S.ge(inpy,S.constant(H-Top,types.uint(16))))
   local outside = S.__or(horizontal,vert)
   local out = S.select(outside,S.constant(Value,A), S.index(inp,1) )
 

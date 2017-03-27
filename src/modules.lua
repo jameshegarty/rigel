@@ -1332,7 +1332,22 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
   local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
   local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
-  local svalid = S.__and(S.__and(S.ge(sx,sL),S.ge(sy,sB)),S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop)))
+
+  -- verilator lint workaround
+  local lbcheck
+  if L==0 and B==0 then
+    lbcheck = S.constant(true,types.bool())
+  elseif L~=0 and B==0 then
+    lbcheck = S.ge(sx,sL)
+  elseif L==0 and B~=0 then
+    lbcheck = S.ge(sy,sB)
+  else
+    lbcheck = S.__and(S.ge(sx,sL),S.ge(sy,sB))
+  end
+
+  local trcheck = S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop))
+
+  local svalid = S.__and(lbcheck,trcheck)
 
   local tfn
   if terralib~=nil then tfn = MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )  end
@@ -1347,7 +1362,12 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
 -- sequentialized to throughput T
 modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
-  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k) assert(type(n)=="number"); err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); err(n>=0,"n<0") end)
+
+  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k) 
+        err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
   A:checkLuaValue(Value)
   err(T>=1, "padSeq, T<1")
 
@@ -1365,7 +1385,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
-  res.systolicModule = Ssugar.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T..T)
+  res.systolicModule = Ssugar.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
 
   local posX = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
@@ -1378,10 +1398,24 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
 
   local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
   local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(32)))
+  local xcheck
+
+  if L==0 then
+    xcheck = C2 -- verilator lint: C1 always true
+  else
+    xcheck = S.__and(C1,C2)
+  end
+
   local C3 = S.ge( posY:get(), S.constant(B,types.uint(16)))
   local C4 = S.lt( posY:get(), S.constant(B+H,types.uint(16)))
-  local xcheck = S.__and(C1,C2)
-  local ycheck = S.__and(C3,C4)
+  local ycheck
+
+  if B==0 then
+    ycheck = C4 -- verilator lint: C1 always true
+  else
+    ycheck = S.__and(C3,C4)
+  end
+
   local isInside = S.__and(xcheck,ycheck)
   local readybit = isInside:disablePipelining()
 
@@ -1949,7 +1983,7 @@ modules.overflow = memoize(function( A, count )
   local res = {kind="overflow", A=A, inputType=A, outputType=rigel.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
   if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
 
-  res.systolicModule = Ssugar.moduleConstructor("Overflow_"..count)
+  res.systolicModule = Ssugar.moduleConstructor("Overflow_"..count.."_"..tostring(A):gsub('%W','_'))
   local cnt = res.systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
 
   local sinp = S.parameter("process_input", A )
@@ -2463,7 +2497,7 @@ modules.freadSeq = memoize(function( filename, ty )
   res.sdfInput={{1,1}}
   res.sdfOutput={{1,1}}
   if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty) end
-  res.systolicModule = Ssugar.moduleConstructor("freadSeq_"..filename:gsub('%W','_'))
+  res.systolicModule = Ssugar.moduleConstructor("freadSeq_"..filename:gsub('%W','_')..tostring(ty):gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("freadfile") )
   local inp = S.parameter("process_input", types.null() )
   local nilinp = S.parameter("process_nilinp", types.null() )
@@ -2472,16 +2506,16 @@ modules.freadSeq = memoize(function( filename, ty )
   res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ), CE ) )
 
   return rigel.newFunction(res)
-                            end)
+end)
 
-function modules.fwriteSeq( filename, ty )
+modules.fwriteSeq = memoize(function( filename, ty )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
   local filenameVerilog=filename
     local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
-  res.systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_'))
+  res.systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_').."_"..tostring(ty):gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
   local printInst
   if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
@@ -2497,7 +2531,7 @@ function modules.fwriteSeq( filename, ty )
   res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ), CE ) )
 
   return rigel.newFunction(res)
-end
+end)
 
 function modules.seqMap( f, W, H, T )
   err( darkroom.isFunction(f), "fn must be a function")

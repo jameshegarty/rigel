@@ -38,7 +38,7 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   return EC, EC_RAW
 end
 
-local function underoverWrapper( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
+local underoverWrapper=memoize(function( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
   assert(X==nil)
   assert(type(inputCount)=="number")
   assert(type(outputCount)=="number")
@@ -91,8 +91,8 @@ local function underoverWrapper( hsfn, infile, inputType, tapInputType, outfiler
   end
 
   local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outfile,outputType)), out )
-  return RM.lambda( "harness"..id, inpSymb, out )
-end
+  return RM.lambda( "harness"..id..hsfn.systolicModule.name, inpSymb, out )
+end)
 
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
 
@@ -331,13 +331,13 @@ function harnessTop(t)
   err(types.isType(oover) and type(outputP)=="number","Error, could not derive output type and P from arguments to harness, type was "..tostring(fn.outputType))
 
   
-  if(arg[1]==nil or arg[1]=="verilog") then
+  if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2] )
   elseif(arg[1]=="axi") then
     H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
   elseif(arg[1]=="isim") then
     H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
-  elseif(arg[1]=="terrasim") then
+  elseif (t.backend==nil and arg[1]=="terrasim") or t.backend=="terra" then
     H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest )
   else
     print("unknown build target "..arg[1])
