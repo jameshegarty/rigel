@@ -183,8 +183,9 @@ int main(int argc, char** argv) {
   fseek(infile, 0L, SEEK_END);
   unsigned long insize = ftell(infile);
   fseek(infile, 0L, SEEK_SET);
-  if(insize!=(inW*inH*inbpp)/8){
-    printf("Error, input file is incorrect size!\n");
+  unsigned int expectedFileSize = inW*inH*divCeil(inbpp,8);
+  if(insize!= expectedFileSize){
+    printf("Error, input file is incorrect size! expected %d (W:%d H:%d bitsPerPixel:%d), but is %d\n", expectedFileSize,inW,inH,inbpp,(unsigned int)insize);
     exit(1);
   }
   
