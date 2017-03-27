@@ -27,11 +27,11 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
-  - cd examples
-  - make -j2 $TARGET
+  - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
 #  - make verilog terra verilator
 
 env:
   - TARGET=verilog
   - TARGET=verilator
   - TARGET=terra
+  - TARGET=unit

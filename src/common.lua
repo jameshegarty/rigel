@@ -535,4 +535,52 @@ function shallowCopy(t)
   return n
 end
 
+-- choose a key out of table
+function choose(t)
+  for k,v in pairs(t) do return k end
+end
+
+-- given t = {k1={a,b}, k2={c,d}}, this will return
+-- [ {k1=a,k2=c},{k1=a,k2=d},{k1=b,k2=c},{k1=b,k2=d} ]
+function cartesian(t)
+  -- base case
+  if keycount(t)==1 then
+    local tmp = {}
+    local k = choose(t)
+    local v = t[k]
+
+    for __,vv in ipairs(v) do 
+      local ttmp = {}
+      ttmp[k] = vv
+      table.insert(tmp,ttmp)
+    end
+    return tmp
+  end
+
+  local tmpt = shallowCopy(t)
+  local k = choose(t)
+  print("CHOOSE",k)
+  local v = t[k]
+  tmpt[k] = nil
+  local list = cartesian(tmpt)
+  print("LIST",#list)
+
+  -- form product
+  local out = {}
+  for _,thisv in ipairs(v) do
+    for __,vv in ipairs(list) do
+      local tt = {}
+      tt[k] = thisv
+
+      for kkk,vvv in pairs(vv) do
+        tt[kkk] = vvv
+      end
+      
+      table.insert(out,tt)
+    end
+  end
+
+  return out
+end
+
 if terralib~=nil then require "commonTerra" end
