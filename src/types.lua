@@ -54,6 +54,7 @@ end
 
 types._uint={[true]={},[false]={}}
 function types.uint(prec,const)
+  err(type(prec)=="number", "precision argument to types.uint must be number")
   err(prec==math.floor(prec), "uint precision should be integer, but is "..tostring(prec) )
   local c = (const==true)
   types._uint[c][prec] = types._uint[c][prec] or setmetatable({kind="uint",precision=prec,constant=c},TypeMT)

@@ -65,7 +65,7 @@ void setData(SData* signal, unsigned int databits, FILE* file){
   assert(databits<=16);
 
   int readBytes = divCeil(databits,8);
-
+  
   *signal = 0;
   for(int i=0; i<readBytes; i++){
     // assume big endian in the file
@@ -90,10 +90,13 @@ void setData(IData* signal, unsigned int databits, FILE* file){
 
 template<int N>
 void setData(WData (*signal)[N], unsigned int databits, FILE* file){
+  assert(databits==64);
+
   for(int j=0; j<2; j++){
     (*signal)[j]=0;
     for(int i=0; i<4; i++){
       unsigned long inp = fgetc(file);
+      assert(inp!=EOF);
       (*signal)[j] |= (inp << i*8);
     }
   }
@@ -127,6 +130,8 @@ void getData(IData* signal, unsigned int databits, FILE* file){
 
 template<int N>
 void getData( WData (*signal)[N], unsigned int databits, FILE* file){
+  assert(databits==64);
+    
   for(int j=0; j<2; j++){
     for(int i=0; i<4; i++){
       unsigned char ot = (*signal)[j] >> (i*8);
@@ -138,8 +143,8 @@ void getData( WData (*signal)[N], unsigned int databits, FILE* file){
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=9){
-    printf("Usage: XXX.verilator infile outfile W H inputBitsPerPixel inP outputBitsPerPixel outP");
+  if(argc!=11){
+    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP");
     exit(1);
   }
 
@@ -147,14 +152,18 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
-  int W = atoi(argv[3]);
-  int H = atoi(argv[4]);
+  int inW = atoi(argv[3]);
+  int inH = atoi(argv[4]);
   int inbpp = atoi(argv[5]);
   int inP = atoi(argv[6]);
-  int outbpp = atoi(argv[7]);
-  int outP = atoi(argv[8]);
 
-  int outPackets = (W*H)/outP;
+  int outW = atoi(argv[7]);
+  int outH = atoi(argv[8]);
+  int outbpp = atoi(argv[9]);
+  int outP = atoi(argv[10]);
+
+  unsigned int inPackets = (inW*inH)/inP;
+  unsigned int outPackets = (outW*outH)/outP;
   
   for(int i=0; i<100; i++){
     CLK = !CLK;
@@ -171,18 +180,32 @@ int main(int argc, char** argv) {
   if(infile==NULL){printf("could not open input\n");}
   if(outfile==NULL){printf("could not open output\n");}
 
+  fseek(infile, 0L, SEEK_END);
+  unsigned long insize = ftell(infile);
+  fseek(infile, 0L, SEEK_SET);
+  if(insize!=(inW*inH*inbpp)/8){
+    printf("Error, input file is incorrect size!\n");
+    exit(1);
+  }
+  
   int validcnt = 0;
 
   unsigned long totalCycles = 0;
 
-  while (!Verilated::gotFinish() && validcnt<outPackets) {
+  unsigned int validInCnt = 0;
+
+  // NOTE: you'd think we could check for overflows (too many output packets), but actually we can't
+  // some of our modules start producing data immediately for the next frame, which is valid behavior (ie pad)
+  
+  while (!Verilated::gotFinish() && validcnt<outPackets ) {
     if(CLK){
       if(top->ready){
-        if(feof(infile)){
+        if(validInCnt>=inPackets){
           setValid(&(top->process_input),inbpp*inP,false);
         }else{
 	  setData(&(top->process_input),inbpp*inP,infile);
           setValid(&(top->process_input),inbpp*inP,true);
+          validInCnt++;
         }
       }
 
@@ -193,7 +216,7 @@ int main(int argc, char** argv) {
 
       totalCycles++;
       if(totalCycles>outPackets*256){
-        printf("Simulation went on for way too long, giving up!\n");
+        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d\n",(unsigned int)totalCycles,outPackets);
         exit(1);
       }
     }
@@ -208,4 +231,6 @@ int main(int argc, char** argv) {
 
   top->final();
   delete top;
+  
+
 }
