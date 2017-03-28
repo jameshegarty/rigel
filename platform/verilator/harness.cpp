@@ -8,6 +8,17 @@ unsigned int divCeil(unsigned int a, unsigned int b){
   return (unsigned int)(ceil(aa/bb));
 }
 
+void setValid(CData* signal, unsigned int databits, bool valid){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=8);
+
+  if(valid){
+    *signal |= (1<<databits);
+  }else{
+    *signal = 0;
+  }    
+}
+
 void setValid(SData* signal, unsigned int databits, bool valid){
   // for this verilator data type, we should have < 16 bits
   assert(databits<=16);
@@ -42,9 +53,15 @@ void setValid(WData (*signal)[N], unsigned int databits, bool valid){
   }    
 }
 
+bool getValid(CData* signal, unsigned int databits){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=8);
+  return (*signal & (1<<databits)) != 0;
+}
+
 bool getValid(SData* signal, unsigned int databits){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<16);
+  assert(databits<=16);
   return (*signal & (1<<databits)) != 0;
 }
 
@@ -101,17 +118,26 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
     }
   }
 }
+
+void getData(CData* signal, unsigned int databits, FILE* file){
+  // for this verilator data type, we should have < 16 bits
+  assert(databits<=8);
+  CData mask = pow(2,databits)-1;
+  fputc(*signal & mask,file);
+}
     
 void getData(SData* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
   assert(databits<=16);
-
+  //  assert(false);
   int readBytes = divCeil(databits,8);
+  SData mask = pow(2,databits)-1;
 
   for(int i=0; i<readBytes; i++){
     // verilator has little endian (x86 style) behavior
     unsigned char ot = (*signal) >> i*8;
-    fputc(ot,file);
+    unsigned char otm = mask >> i*8;
+    fputc(ot & otm,file);
   }
 }
 
@@ -119,12 +145,16 @@ void getData(IData* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
   assert(databits<=32);
 
-  int readBytes = divCeil(databits,8);
+  //int readBytes = divCeil(databits,8);
+  // we may be able to write some bitwidths as 3 bytes, but x86 has no 3 byte type. So always round to 4.
+  int readBytes = 4;
+  IData mask = pow(2,databits)-1;
 
   for(int i=0; i<readBytes; i++){
     // verilator has little endian (x86 style) behavior
     unsigned char ot = (*signal) >> i*8;
-    fputc(ot,file);
+    unsigned char otm = mask >> i*8;
+    fputc(ot & otm,file);
   }
 }
 
