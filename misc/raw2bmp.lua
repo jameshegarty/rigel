@@ -263,8 +263,8 @@ end
 
 function raw2bmp(infile, outfile, axiround)
 
-  local outputBytesPerPixel = metadata.outputBitsPerPixel/8
-  local inputBytesPerPixel = metadata.inputBitsPerPixel/8
+  local outputBytesPerPixel = math.ceil(metadata.outputBitsPerPixel/8)
+  local inputBytesPerPixel = math.ceil(metadata.inputBitsPerPixel/8)
   
   local totalSize = metadata.outputWidth*metadata.outputHeight*outputBytesPerPixel
   local dataPtr = ffi.new("unsigned char["..totalSize.."]")
