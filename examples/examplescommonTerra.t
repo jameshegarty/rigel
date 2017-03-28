@@ -169,6 +169,8 @@ return  terra(inp:&uint16, out:&uint8)
                        end
 end
 
-CT.plus100tfn=terra( a : &uint8, out : &uint8  ) @out =  @a+100 end
+function CT.plus100tfn(ty)
+  return terra( a : ty:toTerraType(true), out : ty:toTerraType(true)  ) @out =  @a+[ty:toTerraType()](100) end
+end
 
 return CT

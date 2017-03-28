@@ -75,3 +75,7 @@ for k,v in pairs(configs) do
 
   end
 end
+
+file = io.open("out/moduleparams.compiles.txt", "w")
+file:write("Hello World")
+file:close()

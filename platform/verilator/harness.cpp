@@ -68,9 +68,9 @@ void setData(SData* signal, unsigned int databits, FILE* file){
   
   *signal = 0;
   for(int i=0; i<readBytes; i++){
-    // assume big endian in the file
+    // assume little endian (x86 style) in the file
     unsigned long inp = fgetc(file);
-    *signal |= (inp << (readBytes-i-1)*8);
+    *signal |= (inp << i*8);
   }
 }
 
@@ -82,9 +82,9 @@ void setData(IData* signal, unsigned int databits, FILE* file){
 
   *signal = 0;
   for(int i=0; i<readBytes; i++){
-    // assume big endian in the file
+    // assume little endian (x86 style) in the file
     unsigned long inp = fgetc(file);
-    *signal |= (inp << (readBytes-i-1)*8);
+    *signal |= (inp << i*8);
   }
 }
 
@@ -109,8 +109,8 @@ void getData(SData* signal, unsigned int databits, FILE* file){
   int readBytes = divCeil(databits,8);
 
   for(int i=0; i<readBytes; i++){
-    // assume big endian in the file
-    unsigned char ot = (*signal) >> (readBytes-i-1)*8;
+    // verilator has little endian (x86 style) behavior
+    unsigned char ot = (*signal) >> i*8;
     fputc(ot,file);
   }
 }
@@ -122,8 +122,8 @@ void getData(IData* signal, unsigned int databits, FILE* file){
   int readBytes = divCeil(databits,8);
 
   for(int i=0; i<readBytes; i++){
-    // assume big endian in the file
-    unsigned char ot = (*signal) >> (readBytes-i-1)*8;
+    // verilator has little endian (x86 style) behavior
+    unsigned char ot = (*signal) >> i*8;
     fputc(ot,file);
   }
 }
