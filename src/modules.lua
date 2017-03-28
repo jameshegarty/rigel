@@ -2514,7 +2514,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
   rigel.expectBasic(ty)
   --local filenameVerilog=filename
 
-if filenameVerilog==nil then filenameVerilog=filename end
+  if filenameVerilog==nil then filenameVerilog=filename end
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
@@ -2533,7 +2533,7 @@ if filenameVerilog==nil then filenameVerilog=filename end
   res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", pipelines, nil,CE ) )
 
   local resetpipe={}
-  --table.insert(resetpipe,sfile:reset()) -- verilator: NOT SUPPORTED
+  table.insert(resetpipe,sfile:reset()) -- verilator: NOT SUPPORTED
   res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", resetpipe, S.parameter("reset", types.bool() ), CE ) )
 
   return rigel.newFunction(res)

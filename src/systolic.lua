@@ -2249,6 +2249,8 @@ function fileModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   return instance.name.."_"..fn.outputName, decl, true
 end
 
+-- verilator doesn't suport $fopen etc so hack around it...
+FILEMODULE_VERILATOR = true
 
 function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
   if instance.callsites.read~=nil and instance.callsites.write==nil then
@@ -2276,20 +2278,52 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
 
     for i=0,(self.type:verilogBits()/8)-1 do
-      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
+      if FILEMODULE_VERILATOR then
+--        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8)..[[],",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
+        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.name.."_buffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
+      else
+        assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
+      end
     end
 
     local RST = ""
     if instance.verilogCompilerState[module].reset~=nil then
-      RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
+      if FILEMODULE_VERILATOR then
+        RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end]]
+      else
+        RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
+      end
     end
-    return debug..[[integer ]]..instance.name..[[_file,r;
+    if FILEMODULE_VERILATOR then
+      local buffers = ""
+      local bufferassn = ""
+      -- if we don't assign to buffers of the right size, the c escape won't work properly
+      for i=0,(self.type:verilogBits()/8)-1 do
+        buffers = buffers.."reg [7:0] "..instance.name.."_buffer_"..tostring(i)..";\n"
+        bufferassn = bufferassn..instance.name.."_buffer_"..tostring(i).."<="..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."];\n"
+      end
+      
+      return debug..buffers..[[
+  reg[63:0] ]]..instance.name..[[_file;
+  reg ]]..instance.name..[[_dowrite=1'b0;
+  initial begin $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); end
+  // I'm not sure why this needs to be negedge, but if its posedge these C calls will be off by one on the number of values...
+  always @ (posedge CLK) begin 
+    ]]..bufferassn..[[
+    if (]]..instance.name..[[_dowrite) begin ]]..assn..[[ end
+    if (]]..instance.verilogCompilerState[module].write[2]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..instance.name..[[_dowrite<=1'b1; end else begin ]]..instance.name..[[_dowrite<=1'b0; end 
+    ]]..RST..[[
+  end
+]]
+    else
+      return debug..[[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
     if (]]..instance.verilogCompilerState[module].write[2]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
   end
 ]]
+   end
   else
     assert(false)
   end
