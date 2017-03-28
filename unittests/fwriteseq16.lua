@@ -13,7 +13,7 @@ H = 64
 ------------
 inp = R.input( types.uint(8) )
 a = R.apply("a", C.cast(types.uint(8),types.uint(16)), inp)
-b = R.apply("b", RM.fwriteSeq("out/fwriteseq16test.raw",types.uint(16),"out/fwriteseqtest16Verilog.raw"),a)
+b = R.apply("b", RM.fwriteSeq("out/fwriteseq16test.raw",types.uint(16),"out/fwriteseq16testVerilog.raw"),a)
 p200 = RM.lambda( "p200", inp, b )
 ------------
 hsfn = RM.makeHandshake(p200)

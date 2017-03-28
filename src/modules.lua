@@ -2527,10 +2527,10 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
   local nilinp = S.parameter("process_nilinp", types.null() )
   local CE = S.CE("CE")
 
-  local pipelines = {sfile:write(inp)}
+  local pipelines = {} --sfile:write(inp)}
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(inp) ) end
 
-  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", pipelines, nil,CE ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, sfile:write(inp), "process_output", pipelines, nil,CE ) )
 
   local resetpipe={}
   table.insert(resetpipe,sfile:reset()) -- verilator: NOT SUPPORTED
