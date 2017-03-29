@@ -14,8 +14,8 @@ T = 8
 
 ------------
 inp = R.input( types.uint(8) )
-a = R.apply("a", C.plus100, inp)
-b = R.apply("b", C.plus100, a)
+a = R.apply("a", C.plus100(types.uint(8)), inp)
+b = R.apply("b", C.plus100(types.uint(8)), a)
 p200 = RM.lambda( "p200", inp, b )
 ------------
 ITYPE = types.array2d( types.uint(8), T )

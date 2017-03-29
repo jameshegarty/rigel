@@ -263,9 +263,18 @@ end
 
 function raw2bmp(infile, outfile, axiround)
 
-  local outputBytesPerPixel = metadata.outputBitsPerPixel/8
-  local inputBytesPerPixel = metadata.inputBitsPerPixel/8
+  local outputBytesPerPixel = math.ceil(metadata.outputBitsPerPixel/8)
+  local inputBytesPerPixel = math.ceil(metadata.inputBitsPerPixel/8)
   
+  -- special case: x86 has no 3 byte type, so round stuff in that range up to 4 bytes
+  if metadata.outputBitsPerPixel>16 and metadata.outputBitsPerPixel<32 then
+    outputBytesPerPixel = 4
+  end
+
+  if metadata.inputBitsPerPixel>16 and metadata.inputBitsPerPixel<32 then
+    inputBytesPerPixel = 4
+  end
+
   local totalSize = metadata.outputWidth*metadata.outputHeight*outputBytesPerPixel
   local dataPtr = ffi.new("unsigned char["..totalSize.."]")
 
@@ -308,7 +317,8 @@ function raw2bmp(infile, outfile, axiround)
     --assert(false)
     dataPtr = addChannels(-1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
     outputBytesPerPixel = 3
-  elseif outputBytesPerPixel==1 then
+  elseif outputBytesPerPixel==1 or outputBytesPerPixel==3 then
+    -- noop: natively supported
   else
     print("raw2bmp: unsupported output bytes per pixel ", outputBytesPerPixel)
     os.exit(1)

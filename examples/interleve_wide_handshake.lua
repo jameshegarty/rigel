@@ -25,7 +25,7 @@ A = R.input( R.Handshake(ITYPE) )
 local Abroadcast = R.apply("Abroadcast", RM.broadcastStream(ITYPE,2), A)
 
 local AinFifo1 = R.applyMethod("L1", fifos[1],"load")
-B = R.apply( "plus100", RM.makeHandshake(RM.map(C.plus100,8)), AinFifo1 )
+B = R.apply( "plus100", RM.makeHandshake(RM.map(C.plus100(types.uint(8)),8)), AinFifo1 )
 
 
 

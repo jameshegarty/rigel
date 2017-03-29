@@ -2508,12 +2508,15 @@ modules.freadSeq = memoize(function( filename, ty )
   return rigel.newFunction(res)
 end)
 
-modules.fwriteSeq = memoize(function( filename, ty )
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
-  local filenameVerilog=filename
-    local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
+  --local filenameVerilog=filename
+
+  if filenameVerilog==nil then filenameVerilog=filename end
+  
+  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
   res.systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_').."_"..tostring(ty):gsub('%W','_'))
   local sfile = res.systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
@@ -2524,11 +2527,14 @@ modules.fwriteSeq = memoize(function( filename, ty )
   local nilinp = S.parameter("process_nilinp", types.null() )
   local CE = S.CE("CE")
 
-  local pipelines = {sfile:write(inp)}
+  local pipelines = {} --sfile:write(inp)}
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(inp) ) end
 
-  res.systolicModule:addFunction( S.lambda("process", inp, inp, "process_output", pipelines, nil,CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ), CE ) )
+  res.systolicModule:addFunction( S.lambda("process", inp, sfile:write(inp), "process_output", pipelines, nil,CE ) )
+
+  local resetpipe={}
+  table.insert(resetpipe,sfile:reset()) -- verilator: NOT SUPPORTED
+  res.systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", resetpipe, S.parameter("reset", types.bool() ), CE ) )
 
   return rigel.newFunction(res)
 end)

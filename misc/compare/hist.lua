@@ -37,18 +37,19 @@ else
 end
 
 
-local pixelCount = metadata.width*metadata.height*bytes
+local pixelCount = metadata.width*metadata.height
+local byteCount = metadata.width*metadata.height*bytes
 
 local dataPtr
 
 if metadata.type=="uint16" then
-  dataPtr = ffi.new("unsigned char["..pixelCount.."]")
+  dataPtr = ffi.new("unsigned short["..pixelCount.."]")
 else
   print("Unknown type "..metadata.type)
   os.exit(1)
 end
 
-local sz = ffi.C.fread(dataPtr,1,pixelCount,imgIn)
+local sz = ffi.C.fread(dataPtr,bytes,pixelCount,imgIn)
 
 if sz~=pixelCount then
     print("File Size: "..tostring(sz)..", expected size:"..tostring(pixelCount))
@@ -63,13 +64,17 @@ local buckets = tonumber(arg[3])
 print("BUCKETS",buckets)
 
 local maxValue, minValue
+local sum = 0
 
-for i=0,metadata.width*metadata.height do
+for i=0,pixelCount do
   local px = dataPtr[i]
 
+  sum = sum + px
+  
   if maxValue==nil or px>maxValue then maxValue=px end
   if minValue==nil or px<minValue then minValue=px end
 end
 
 print("MAX",maxValue)
 print("MIN",minValue)
+print("SUM",sum)

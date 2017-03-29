@@ -25,7 +25,7 @@ local out = R.apply("toHandshakeArray", RM.toHandshakeArray(ITYPE,{{1,2},{1,2}})
 local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )
 
-multiplexed = R.apply( "plus100", RM.makeHandshake( RM.map(C.plus100,8),{{1,2},{1,2}}), out )
+multiplexed = R.apply( "plus100", RM.makeHandshake( RM.map(C.plus100(types.uint(8)),8),{{1,2},{1,2}}), out )
 local out = R.apply("demux", RM.demux(ITYPE,{{1,2},{1,2}}), multiplexed )
 
 

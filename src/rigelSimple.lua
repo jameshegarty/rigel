@@ -349,4 +349,24 @@ end
 
 function RS.harness(t) return harness(t) end
 
+function RS.writePixels(input,id,imageSize,V)
+  local IT = input:typecheck()
+  print("WRITEPX",IT.type)
+
+  local TY
+  if R.isHandshake(IT.type) then
+    TY = R.extractData(IT.type)
+  else
+    assert(false)
+  end
+
+  local mod = RM.fwriteSeq("out/dbg_terra_"..id..".raw",TY,"out/dbg_verilog_"..id..".raw")
+
+  if R.isHandshake(IT.type) then
+     mod = RS.HS(mod)
+  end
+  
+  return RS.connect{input=input, toModule=mod}
+end
+
 return RS

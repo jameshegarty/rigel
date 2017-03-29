@@ -330,6 +330,11 @@ function harnessTop(t)
   err(types.isType(iover) and type(inputP)=="number","Error, could not derive input type and P from arguments to harness, type was "..tostring(fn.inputType))
   err(types.isType(oover) and type(outputP)=="number","Error, could not derive output type and P from arguments to harness, type was "..tostring(fn.outputType))
 
+  local inputCount = (t.inSize[1]*t.inSize[2])/inputP
+  local outputCount = (t.outSize[1]*t.outSize[2])/outputP
+  
+  local expectedOutputCount = (inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2])/(fn.sdfOutput[1][2]*fn.sdfInput[1][1])
+  err(expectedOutputCount==outputCount, "Error, SDF predicted output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
   
   if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2] )

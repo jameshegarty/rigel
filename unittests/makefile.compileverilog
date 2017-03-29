@@ -13,9 +13,10 @@ RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
 LUA = ../rigelLuajit
 
 all: $(TARGETS)
+	touch out/verilogcorrect.txt
 
 out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
+	 $(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.terra.bmp out/build_$*
@@ -28,13 +29,15 @@ out/%.verilator: out/%.v out/%.metadata.lua
 
 out/%.verilator.raw: out/%.verilator
 	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
-	$(eval $@_W := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
-	$(eval $@_H := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
 	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
 	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
 	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
 	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
-	./out/$*.verilator $($@_INPUT) $@ $($@_W) $($@_H)  $($@_INBPP) $($@_INP) $($@_OUTBPP) $($@_OUTP)
+	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP)
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0

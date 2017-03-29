@@ -909,9 +909,16 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-local plus100tfn
-if terralib~=nil then plus100tfn = CT.plus100tfn end
-local plus100inp = S.parameter("inp",types.uint(8))
-C.plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, plus100tfn, plus100inp, plus100inp + S.constant(100,types.uint(8)) )
+C.plusConst = memoize(function(ty, value)
+  err(types.isType(ty),"plus100: expected type input")
+  err(type(value)=="number","plusConst expected numeric input")
+  local plus100tfn
+  if terralib~=nil then plus100tfn = CT.plusConsttfn(ty,value) end
+  local plus100inp = S.parameter("inp",ty)
+  local plus100mod = RM.lift( "plus"..tostring(value), ty,ty , 10, plus100tfn, plus100inp, plus100inp + S.constant(value,ty) )
+  return plus100mod
+end)
+
+function C.plus100(ty) return C.plusConst(ty,100) end
 
 return C

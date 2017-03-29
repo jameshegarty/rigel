@@ -2243,12 +2243,14 @@ function fileModuleFunctions:instanceToVerilog( instance, module, fnname, datava
 
   local decl = nil
   local fn = self.functions[fnname]
-  if fnname=="read" then
+  if fnname=="read" or fnname=="write" then
     decl = declareReg( fn.output.type, instance.name.."_"..fn.outputName)
   end
   return instance.name.."_"..fn.outputName, decl, true
 end
 
+-- verilator doesn't suport $fopen etc so hack around it...
+FILEMODULE_VERILATOR = true
 
 function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
   if instance.callsites.read~=nil and instance.callsites.write==nil then
@@ -2276,20 +2278,62 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
 
     for i=0,(self.type:verilogBits()/8)-1 do
-      assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
+      if FILEMODULE_VERILATOR then
+--        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8)..[[],",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
+        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.name.."_buffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
+      else
+        assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
+      end
     end
 
     local RST = ""
     if instance.verilogCompilerState[module].reset~=nil then
-      RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
+      if FILEMODULE_VERILATOR then
+        RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end]]
+      else
+        RST = "if ("..instance.verilogCompilerState[module].reset[2]..[[) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
+      end
     end
-    return debug..[[integer ]]..instance.name..[[_file,r;
+    if FILEMODULE_VERILATOR then
+      local buffers = ""
+      local bufferassn = ""
+      -- if we don't assign to buffers of the right size, the c escape won't work properly
+      for i=0,(self.type:verilogBits()/8)-1 do
+        buffers = buffers.."reg [7:0] "..instance.name.."_buffer_"..tostring(i)..";\n"
+        bufferassn = bufferassn..[[if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]
+        bufferassn = bufferassn..instance.name.."_buffer_"..tostring(i).."<="..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."]; end\n"
+      end
+
+      local obuffers = ""
+      local fn = self.functions.write
+      obuffers = obuffers..declareReg( fn.output.type, instance.name.."_obuffer0",nil,"\n")
+      --obuffers = obuffers..declareReg( fn.output.type, instance.name.."_obuffer1")
+
+      local oassign = ""
+      oassign = oassign..[[  if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_obuffer0<="..instance.verilogCompilerState[module].write[1].."; end\n"
+      oassign = oassign..[[  if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_writeOut<="..instance.name.."_obuffer0; end\n"
+      
+      return debug..obuffers..buffers..[[
+  reg[63:0] ]]..instance.name..[[_file;
+  reg ]]..instance.name..[[_dowrite=1'b0;
+  initial begin $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); end
+
+  always @ (posedge CLK) begin 
+    ]]..bufferassn..oassign..[[
+    if (]]..instance.name..[[_dowrite]]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end
+    if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.verilogCompilerState[module].write[2]..[[; end 
+    ]]..RST..[[
+  end
+]]
+    else
+      return debug..[[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
     if (]]..instance.verilogCompilerState[module].write[2]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
   end
 ]]
+   end
   else
     assert(false)
   end
@@ -2299,7 +2343,12 @@ function fileModuleFunctions:toVerilog() return "" end
 function fileModuleFunctions:getDependenciesLL() return {} end
 function fileModuleFunctions:getDelay(fnname)
   if fnname=="write" then
-    return 0
+    if FILEMODULE_VERILATOR then
+      -- hack: write enough cycles for the c code to actually execute before we return data, to make sure all writes occur before simulator is killed.
+      return 2
+    else
+      return 0
+    end
   elseif fnname=="read" then
     return 1
   elseif fnname=="reset" then
@@ -2316,9 +2365,9 @@ function systolic.module.file( filename, ty, CE, X)
 
   local res = {kind="file",filename=filename, type=ty, CE=CE }
   res.functions={}
-  res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="out",valid={name="read_valid"},CE=systolic.CE("CE")}
+  res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="readOut",valid={name="read_valid"},CE=systolic.CE("CE")}
   res.functions.read.isPure = function() return false end
-  res.functions.write={name="write",output={type=types.null()},inputParameter={name="input",type=ty},outputName="out",valid={name="write_valid"},CE=systolic.CE("CE")}
+  res.functions.write={name="write",output={type=ty},inputParameter={name="input",type=ty},outputName="writeOut",valid={name="write_valid"},CE=systolic.CE("CE")}
   res.functions.write.isPure = function() return false end
   res.functions.reset = {name="reset",output={type=types.null()},inputParameter={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
   res.functions.reset.isPure = function() return false end

@@ -169,6 +169,19 @@ return  terra(inp:&uint16, out:&uint8)
                        end
 end
 
-CT.plus100tfn=terra( a : &uint8, out : &uint8  ) @out =  @a+100 end
+function CT.plusConsttfn(ty,value)
+  local out = symbol(ty:toTerraType(true))
+  local q = quote end
+  if ty:verilogBits()~=ty:sizeof()*8 then
+    --print(ty:verilogBits(),ty:sizeof()*8)
+    --assert(false)
+    q = quote @[out] = @[out] and ((1<<[ty:verilogBits()])-1) end
+  end
+
+  return terra( a : ty:toTerraType(true), [out] ) 
+    @[out] =  @a+[ty:toTerraType()](value) 
+    [q]
+  end
+end
 
 return CT
