@@ -31,6 +31,8 @@ local bytes
 
 if metadata.type=="uint16" then
   bytes=2
+elseif metadata.type=="float" then
+  bytes=4
 else
   print("Unknown type "..metadata.type)
   os.exit(1)
@@ -44,6 +46,8 @@ local dataPtr
 
 if metadata.type=="uint16" then
   dataPtr = ffi.new("unsigned short["..pixelCount.."]")
+elseif metadata.type=="float" then
+  dataPtr = ffi.new("float["..pixelCount.."]")
 else
   print("Unknown type "..metadata.type)
   os.exit(1)
@@ -65,6 +69,8 @@ print("BUCKETS",buckets)
 
 local maxValue, minValue
 local sum = 0
+local fractionalCount = 0
+local maxFracBits = 0
 
 for i=0,pixelCount do
   local px = dataPtr[i]
@@ -73,8 +79,20 @@ for i=0,pixelCount do
   
   if maxValue==nil or px>maxValue then maxValue=px end
   if minValue==nil or px<minValue then minValue=px end
+
+  if px~=math.floor(px) then fractionalCount = fractionalCount + 1 end
+
+  local fracBits = 0
+  local fpx = px
+  while fpx~=math.floor(fpx) do fracBits=fracBits+1; fpx = fpx*2 end
+  if fracBits>maxFracBits then maxFracBits=fracBits end
 end
 
-print("MAX",maxValue)
-print("MIN",minValue)
+print("Max Value",maxValue)
+print("Min Value",minValue)
 print("SUM",sum)
+print("Pixel Count",pixelCount)
+print("# of non-integer pixels",fractionalCount)
+print("Max Fractional Bits",maxFracBits)
+local maxabs = math.max( math.abs(maxValue), math.abs(minValue) )
+print("Max Integer Bits", math.ceil(math.log(maxabs)/math.log(2)) )

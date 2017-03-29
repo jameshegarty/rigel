@@ -24,6 +24,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="opaque" then
     return "opaque_"..ty.str
+  elseif ty.kind=="named" then
+    return ty.name
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -42,6 +44,19 @@ function types.opaque( str, X )
   assert(X==nil)
   types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
   return types._opaque[str]
+end
+
+types._named={}
+function types.named( name, structure, generator, params, X )
+  err( type(name)=="string","types.named: name must be string")
+  err( types.isType(structure),"types.named: structure must be rigel type")
+  err( type(generator)=="string","types.named: generator must be string")
+  err( type(params)=="table","types.named: params must be table")
+  err(types._named[name]==nil,"Attempting to make new named type with a name that already exists")
+
+  local ty = {kind="named",name=name, structure=structure, generator=generator,params=params}
+  types._named[name] = setmetatable(ty,TypeMT)
+  return types._named[name]
 end
 
 types._bits={[true]={},[false]={}}
@@ -411,6 +426,10 @@ function types.checkExplicitCast(from, to, ast)
     return true
   elseif from.kind=="float" and to.kind=="float" then
     return true
+  elseif from.kind=="named" and to.kind~="named" and from.structure==to then
+    return true
+  elseif from.kind~="named" and to.kind=="named" and from==to.structure then
+    return true
   else
     print("from",from,"to",to)
     assert(false) -- NYI
@@ -438,6 +457,8 @@ function TypeFunctions:const()
     return foldl(andop,true, map(self.list, function(v) return v:const() end ) )
   elseif self:isNull() then
     return true
+  elseif self:isNamed() then
+    return self.structure:const()
   else
     print(":const",self)
     assert(false)
@@ -516,6 +537,8 @@ function TypeFunctions:stripConst()
     return types.tuple(typelist)
   elseif self:isBool() then
     return types.bool(false)
+  elseif self:isNamed() then
+    return self
   else
     print(":stripConst",self)
     assert(false)
@@ -526,7 +549,7 @@ end
 function TypeFunctions:isArray()  return self.kind=="array" end
 
 function TypeFunctions:arrayOver()
-  assert(self.kind=="array")
+  err(self.kind=="array","arrayOver type was not an array")
   return self.over
 end
 
@@ -576,6 +599,8 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isOpaque() then
     return 0
+  elseif self:isNamed() then
+    return self.structure:verilogBits()
   else
     print(self)
     assert(false)
@@ -589,6 +614,7 @@ function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
 function TypeFunctions:isNull() return self.kind=="null" end
 function TypeFunctions:isOpaque() return self.kind=="opaque" end
+function TypeFunctions:isNamed() return self.kind=="named" end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"

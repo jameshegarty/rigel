@@ -10,7 +10,9 @@ function CT.identity(A)
 end
 
 function CT.cast(A,B)
-return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+  err(types.isType(B), "examples common cast, B must be type")
+  
+  return terra( a : &A:toTerraType(), out : &B:toTerraType() )
                             @out = [B:toTerraType()](@a)
                   end
 end

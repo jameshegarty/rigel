@@ -392,6 +392,11 @@ end}
 
 systolicASTFunctions = {}
 setmetatable(systolicASTFunctions,{__index=IR.IRFunctions})
+
+if terralib~=nil then
+  require "systolicTerra"
+end
+
 systolicASTMT={__index = systolicASTFunctions,
 __add=function(l,r) return binop(l,r,"+") end, 
 __sub=function(l,r) return binop(l,r,"-") end,
@@ -432,7 +437,10 @@ function systolic.slice( expr, idxLow, idxHigh, idyLow, idyHigh )
 end
 
 function systolic.index( expr, idx, idy )
-  err( systolicAST.isSystolicAST(expr), "expr should be systolic value") 
+  err( systolicAST.isSystolicAST(expr), "expr should be systolic value")
+  err( type(idx)=="number", "index: idx must be number")
+  err( type(idy)=="number" or idy==nil, "index: idy must be number or nil")
+  
   -- slice will return an array or tuple with one element. so we need to do a cast.
   if expr.type:isArray() then
     return systolic.cast( systolic.slice(expr, idx, idx, idy, idy), expr.type:arrayOver() )
@@ -1321,6 +1329,12 @@ function systolicASTFunctions:toVerilog( module )
           expr = args[1]
         elseif n.inputs[1].type:constSubtypeOf(n.type) then
           expr = args[1] -- casting const to non-const. Verilog doesn't care.
+        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false and n.inputs[1].type.structure==n.type then
+          -- noop, explicit cast of named type to its structural type
+          expr = args[1]
+        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() and n.inputs[1].type==n.type.structure then
+          -- noop, cast to named type with same structure
+          expr = args[1]
         else
           expr = dobasecast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
         end

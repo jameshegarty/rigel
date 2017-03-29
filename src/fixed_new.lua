@@ -1,0 +1,441 @@
+local RM = require "modules"
+local IR = require("ir")
+local types = require("types")
+local S = require("systolic")
+local fpgamodules = require("fpgamodules")
+
+local fixed={}
+
+local fixedTerra
+if terralib~=nil then fixedTerra=require("fixed_new_terra") end
+
+--local fixed = {}
+-- use Xilinx deeply pipelined multipliers instead of regular multipliers
+fixed.DEEP_MULTIPLY = false
+
+local function getloc()
+--  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
+  return debug.traceback()
+end
+
+--function fixed.isFixedType(ty)
+--  assert(types.isType(ty))
+--  if ty:isUint()
+--end
+
+function fixed.expectFixed(ty)
+  err( fixed.isFixedType(ty), "Expected fixed point type")
+end
+
+--[=[
+function fixed.extract(ty)
+  if fixed.isFixedType(ty) then
+    return ty.list[1]
+  end
+  return ty
+end
+
+function fixed.extractExp(ty)
+  fixed.expectFixed(ty)
+  local str = ty.list[2].str:sub(6)
+  return tonumber(str)
+end
+
+function fixed.extractPrecision(ty)
+  fixed.expectFixed(ty)
+  return ty.list[1].precision
+end
+
+function fixed.extractSigned(ty)
+  fixed.expectFixed(ty)
+  return ty.list[1]:isInt()
+end
+]=]
+
+fixed.type = memoize(function( signed, precision, exp )
+  assert(type(signed)=="boolean")
+  assert(type(precision)=="number")
+  assert(type(exp)=="number")
+  err(precision>=0, "precision should be >=0")
+
+  if exp==0 then
+    -- just use regular types
+    if signed then
+      return types.int(precision)
+    else
+      return types.uint(precision)
+    end
+  else
+    local params = {signed=signed, precision=precision,exp=exp}
+    local name = "uint"..tostring(precision).."_"..tostring(exp)
+    local struct = types.uint(precision)
+    if signed then
+      name = "int"..tostring(precision).."_"..tostring(exp)
+      struct = types.int(precision)
+    end
+
+    return types.named( name, struct, "fixed", params )
+  end
+end)
+
+local fixedASTFunctions = {}
+setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
+
+fixedASTMT={__index = fixedASTFunctions,
+__add=function(l,r)
+  if l:isSigned()~=r:isSigned() or
+    l:exp() ~= r:exp() or
+    l:precision() ~= r:precision() then
+    err(false, "Error, fixed add, input types don't match: "..tostring(l.type).." "..tostring(r.type))
+  end
+
+  local p = math.max(l:precision(),r:precision())+1
+  return fixed.new({kind="binop",op="+",inputs={l,r}, type=fixed.type( l:isSigned(), p, l:exp() ), loc=getloc()})
+end, 
+__sub=function(l,r) 
+  if l:isSigned()~=r:isSigned() or
+    l:exp() ~= r:exp() or
+    l:precision() ~= r:precision() then
+    err(false, "Error, fixed sub, input types don't match: "..tostring(l.type).." "..tostring(r.type))
+  end
+
+  local p = math.max(l:precision(),r:precision())+1
+  return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
+ end,
+__mul=function(l,r) 
+  err(l:isSigned() == r:isSigned(), "Fixed *: lhs/rhs sign must match but is ("..tostring(l.type)..","..tostring(r.type)..")")
+  local exp = l:exp() + r:exp()
+
+  local p = l:precision() + r:precision()
+  local ty = fixed.type( l:isSigned(), p, l:exp()+r:exp() )
+  return fixed.new({kind="binop",op="*",inputs={l,r}, type=ty, loc=getloc()})
+ end,
+  __newindex = function(table, key, value)
+                    error("Attempt to modify systolic AST node")
+                  end}
+
+function fixed.isAST(ast)
+  return getmetatable(ast)==fixedASTMT
+end
+
+function fixed.new(tab)
+  assert(type(tab)=="table")
+  assert(type(tab.inputs)=="table")
+  assert(#tab.inputs==keycount(tab.inputs))
+  assert(type(tab.loc)=="string")
+  assert(types.isType(tab.type))
+  return setmetatable(tab,fixedASTMT)
+end
+
+function fixed.parameter( name, ty )
+  err(types.isType(ty), "second arg must be type")
+  return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
+end
+
+function fixed.constant( value )
+  assert(type(value)=="number")
+  err(value==math.floor(value),"fixed.constant: non integer value!")
+
+  local signed = (value<0) 
+
+  local precision = math.ceil(math.log(value)/math.log(2))+1 
+  if signed then precision = precision + 1 end
+
+  local exp = 0
+
+  --err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
+
+  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
+end
+
+--[=[
+function fixedASTFunctions:toFixed()
+  err(fixed.isFixedType(self.type)==false, "expected non-fixed type: "..self.loc)
+  if self.type:isUint() then
+    local ty = fixed.type(false,self.type.precision,0)
+    return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
+  else
+    print("Could not lift type "..tostring(self.type))
+    assert(false)
+  end
+end
+
+-- allowExp: should we allow you to lower something with a non-zero exp? or throw an error
+function fixedASTFunctions:toUnfixed()
+  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+
+  err( self:exp()==0, "attempting to lower a value with nonzero exp")
+
+  return fixed.new{kind="lower", type=fixed.extract(self.type),inputs={self},loc=getloc()}
+end
+]=]
+
+function fixedASTFunctions:toSigned()
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  if self:isSigned() then
+    return self
+  end
+
+  local ty = fixed.type( true, self:precision()+1, self:exp() )
+  return fixed.new{kind="toSigned", type=ty, inputs={self}, loc=getloc() }
+end
+
+function fixedASTFunctions:addLSBs(N)
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( type(N)=="number", "addLSBs input must be number" )
+  err( N>0, "addLBSs input must be >0")
+
+  return fixed.new{kind="addLSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()-N),N=N,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:addMSBs(N)
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( type(N)=="number", "addMSBs input must be number" )
+  err( N>0, "addMBSs input must be >0")
+
+  return fixed.new{kind="addMSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()),N=N,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:rshift(N)
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( type(N)=="number", "rshift input must be number" )
+  err( N>0, "rshift input must be >0")
+  
+  return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:lshift(N)
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  return fixed.new{kind="lshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()+N),shift=N,inputs={self},loc=getloc()}
+end
+
+local function boolbinop(op,l,r)
+  if l:isSigned()~=r:isSigned() or
+    l:exp() ~= r:exp() or
+    l:precision() ~= r:precision() then
+    err(false, "Error, fixed "..op..", input types don't match: "..tostring(l.type).." "..tostring(r.type))
+  end
+
+  return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
+end
+
+function fixedASTFunctions:gt(r) return boolbinop(">",self,r) end
+function fixedASTFunctions:ge(r) return boolbinop(">=",self,r) end
+function fixedASTFunctions:lt(r) return boolbinop("<",self,r) end
+function fixedASTFunctions:le(r) return boolbinop("<=",self,r) end
+
+function fixedASTFunctions:abs()
+  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self:isSigned(), "abs value of a non-signed type is futile")
+
+  -- we actually _CANT_ throw out data here. signed number lose one value
+  -- (either the max or the min). But since one of the max or min remain,
+  -- we can't represent this without the full # of bits.
+  local ty = fixed.type(false, self:precision(), self:exp())
+  return fixed.new{kind="abs", type=ty, inputs={self}, loc=getloc()}
+end
+
+
+function fixedASTFunctions:neg()
+  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err( self.type:isInt() or self:isSigned(), "neg value of a non-signed type is futile")
+  return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
+end
+
+-- f should be a unary function that takes in a single systolic value, and returns a systolic value
+function fixedASTFunctions:applyUnaryLift(f)
+  if type(f)=="function" then
+
+    -- hack to get type
+    local tmpinp = S.parameter("TMP",self.type)
+    local outty = f(tmpinp)
+    outty = outty.type
+    assert( types.isType(outty) )
+    
+    return fixed.new{kind="applyUnaryLiftSystolic", f=f, inputs={self}, type=outty, loc=getloc()}
+  else
+    err(false,"fixed:applyUnaryLift, unknown lift type")
+  end
+end
+
+-- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
+function fixed.applyNaryLift(f,tab)
+  if type(f)=="function" then
+    -- hack to get type
+    local tmpinp = {}
+    for k,v in ipairs(tab) do table.insert(tmpinp,S.parameter("TMP"..k,v.type)) end
+    local outty = f(tmpinp)
+    outty = outty.type
+    assert( types.isType(outty) )
+    
+    return fixed.new{kind="applyNaryLiftSystolic", f=f, inputs=tab, type=outty, loc=getloc()}    
+  else
+    err(false,"fixed:applyNaryLift, unknown lift type")
+  end
+end
+
+function fixedASTFunctions:toSystolic()
+  local instances = {}
+  local inp
+  local res = self:visitEach(
+    function( n, args )
+      local res
+      if n.kind=="parameter" then
+        inp = S.parameter(n.name, n.type)
+        res = inp
+        if n.type:isNamed() and n.type.generator=="fixed" then
+          -- remove wrapper
+          res = S.cast(res,n.type.structure)
+        end
+      elseif n.kind=="binop" then
+
+        if fixed.DEEP_MULTIPLY and fixed.isFixedType(n.type) and n:precision()>=20 and n.op=="*" and 
+          n.inputs[1].type:const()==false and
+          n.inputs[2].type:const()==false then
+          local I = fpgamodules.multiply(n.inputs[1]:underlyingType(), n.inputs[2]:underlyingType(), n:underlyingType() ):instantiate("UNNAMEDINST"..tostring(#instances))
+          table.insert(instances,I)
+          res = I:process(S.tuple{args[1],args[2]})
+        else
+          if n.op==">" then
+            res = S.gt(args[1],args[2])
+          elseif n.op==">=" then
+            res = S.ge(args[1],args[2])
+          elseif n.op=="<" then
+            res = S.lt(args[1],args[2])
+          elseif n.op=="<=" then
+            res = S.le(args[1],args[2])
+          elseif n.op=="+" or n.op=="-" or n.op=="*" then
+            local l = S.cast(args[1], n:underlyingType() )
+            local r = S.cast(args[2], n:underlyingType() )
+            
+            if n.op=="+" then res = l+r
+            elseif n.op=="-" then res = l-r
+            elseif n.op=="*" then res = l*r
+            else
+              assert(false)
+            end
+            
+            --if fixed.isFixedType(n.type) and n:precision()>20 then
+              --print("riduclous binop "..tostring(n.inputs[1].type).." "..tostring(n.inputs[2].type).." "..tostring(n.type)..n.loc)
+            --end
+          else
+            err(false,"internal error, fixed.lua, unknown binop "..n.op)
+          end
+        end
+
+      elseif n.kind=="rshift" or n.kind=="lshift" then
+        --res = S.rshift(args[1],S.constant( n.shift, fixed.extract(n.inputs[1].type)))
+        res = args[1]
+      elseif n.kind=="lift" or n.kind=="lower" then
+        -- don't actually do anything: we only add the wrapper at the very end
+        res = args[1]
+      elseif n.kind=="constant" then
+        res = S.constant( n.value, n:underlyingType() )
+      elseif n.kind=="toSigned" then
+        res = S.cast( args[1], n:underlyingType() )
+      elseif n.kind=="abs" then
+        res = S.abs( args[1] )
+        res = S.cast( res, n:underlyingType() )
+      elseif n.kind=="neg" then
+        res = S.neg(args[1])
+      elseif n.kind=="applyUnaryLiftSystolic" then
+        res = n.f(args[1])
+        assert(systolicAST.isSystolicAST(res))
+        --assert(res.type==n.type)
+      elseif n.kind=="applyNaryLiftSystolic" then
+        res = n.f(args)
+        assert(systolicAST.isSystolicAST(res))
+        --print("restype",res.type,n.type)
+        --assert(res.type==n.type)
+      elseif n.kind=="addLSBs" then
+        res = S.cast(args[1], n:underlyingType() )
+        res = S.lshift(res,S.constant(n.N,types.uint(8)))
+      elseif n.kind=="addMSBs" then
+        res = S.cast(args[1], n:underlyingType() )
+      else
+        print(n.kind)
+        assert(false)
+      end
+
+      return res
+    end)
+
+  if self.type:isNamed() and self.type.generator=="fixed" then
+    -- we want the exterior interface for this module to be an actual fixed type, not the underlying type
+    --local c = S.constant(0, self.type.list[2])
+    --res = S.tuple{res,c}
+    res = S.cast(res,self.type)
+  end
+
+  return res, inp, instances
+end
+
+fixed.hists = {}
+function fixed.printHistograms()
+  for k,v in pairs(fixed.hists) do v() end
+end
+
+
+function fixedASTFunctions:toRigelModule(name,X)
+  assert(type(name)=="string")
+  assert(X==nil)
+
+  local out, inp, instances = self:toSystolic()
+
+  local tfn
+  if terralib~=nil then tfn=fixedTerra.toDarkroom(self,out) end
+  --tfn:printpretty(true,false)
+  return RM.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
+end
+
+--------------------------------------------------------
+-- convenient syntax
+function fixedASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
+function fixed.array2d(tab,w,h) return fixed.applyNaryLift(
+    function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab )
+end
+
+function fixedASTFunctions:writePixel(id,imageSize)
+  local file = io.open("out/debug_"..id..".metadata.lua", "w")
+  file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(self.type).."'}")
+  file:close()
+
+  return self
+end
+
+function fixedASTFunctions:isSigned()
+  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  --return self.type.list[1]:isInt()
+  if self.type:isUint() then return false end
+  if self.type:isInt() then return true end
+  if self.type:isNamed() and self.type.generator=="fixed" then return self.type.params.signed end
+  err(false,":isSigned(), not a numeric type!")
+end
+
+function fixedASTFunctions:exp()
+  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  --local op = self.type.list[2]
+  --return tonumber(op.str:sub(6))
+  if self.type:isUint() then return 0 end
+  if self.type:isInt() then return 0 end
+  if self.type:isNamed() and self.type.generator=="fixed" then return self.type.params.exp end
+  err(false,":exp(), not a numeric type!")
+end
+
+function fixedASTFunctions:precision()
+  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  --return self.type.list[1].precision
+  if self.type:isUint() then return self.type.precision end
+  if self.type:isInt() then return self.type.precision end
+  if self.type:isNamed() and self.type.generator=="fixed" then return self.type.params.precision end
+  err(false,":precision(), not a numeric type!")
+end
+
+function fixedASTFunctions:underlyingType()
+  if self.type:isUint() then return self.type end
+  if self.type:isInt() then return self.type end
+  if self.type:isNamed() and self.type.generator=="fixed" then return self.type.structure end
+  err(false,":precision(), not a numeric type!")
+end
+
+return fixed
