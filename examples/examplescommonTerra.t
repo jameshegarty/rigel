@@ -1,5 +1,6 @@
 local cstdlib = terralib.includec("stdlib.h")
 local rigel = require "rigel"
+local types = require "types"
 
 CT={}
 
