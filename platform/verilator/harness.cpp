@@ -145,9 +145,10 @@ void getData(IData* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
   assert(databits<=32);
 
-  //int readBytes = divCeil(databits,8);
-  // we may be able to write some bitwidths as 3 bytes, but x86 has no 3 byte type. So always round to 4.
-  int readBytes = 4;
+  int readBytes = divCeil(databits,8);
+  // Special case: we may be able to write some bitwidths as 3 bytes, but x86 has no 3 byte type. So always round to 4.
+  if(databits>16 && databits<32){readBytes=4;}
+
   IData mask = pow(2,databits)-1;
 
   for(int i=0; i<readBytes; i++){
