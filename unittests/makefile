@@ -21,10 +21,15 @@ out/moduleparams.compiles.txt: moduleparams.lua
 	../rigelTerra moduleparams.lua
 
 out/moduleparams.correct.txt: out/verilogcorrect.txt
+	# no extra checks
 	touch out/moduleparams.correct.txt
 
 out/fixedtest.compiles.txt: fixedtest.lua
-	../rigelTerra fwriteseq.lua
+	../rigelTerra fixedtest.lua
+
+out/fixedtest.correct.txt: out/verilogcorrect.txt
+	# no extra checks
+	touch out/fixedtest.correct.txt
 
 out/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terrasim
