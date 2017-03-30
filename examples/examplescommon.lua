@@ -921,4 +921,25 @@ end)
 
 function C.plus100(ty) return C.plusConst(ty,100) end
 
+__linearpipelinecnt = 0
+-- convert an array of rigel modules into a straight pipeline
+-- pipeline starts at index 1, ends at index N
+function C.linearPipeline(t,modulename)
+  err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
+
+  if modulename==nil then
+    modulename="linearpipeline"..tostring(__linearpipelinecnt)
+    __linearpipelinecnt = __linearpipelinecnt+1
+  end
+  
+  local inp = R.input(t[1].inputType)
+  local out = inp
+
+  for k,v in ipairs(t) do
+    out = R.apply("linearPipe"..k,v,out)
+  end
+
+  return RM.lambda(modulename,inp,out)
+end
+
 return C
