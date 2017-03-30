@@ -1335,6 +1335,12 @@ function systolicASTFunctions:toVerilog( module )
         elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() and n.inputs[1].type==n.type.structure then
           -- noop, cast to named type with same structure
           expr = args[1]
+        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false then
+          -- structure not identical, attempt base cast
+          expr = dobasecast( args[1], n.inputs[1].type.structure, n.type, argwire[1], n.inputs[1].name )
+        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() then
+          -- structure not identical, attempt base cast
+          expr = dobasecast( args[1], n.inputs[1].type, n.type.structure, argwire[1], n.inputs[1].name )
         else
           expr = dobasecast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
         end

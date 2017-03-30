@@ -8,7 +8,7 @@ end
 local refData, refMetadata, refPixelCount = loadRigelImage(arg[1],arg[2])
 local testData, testMetadata, testPixelCount = loadRigelImage(arg[3],arg[4])
 
-if refMetadata.width ~= testmetadata.width or refMetadata.height ~= testmetadata.height then
+if refMetadata.width ~= testMetadata.width or refMetadata.height ~= testMetadata.height then
   print("Diff error: image size mismatch, reference="..tostring(refMetadata.width).."x"..tostring(refMetadata.height).." test="..tostring(testMetadata.width).."x"..tostring(testMetadata.height))
   os.exit(1)
 end

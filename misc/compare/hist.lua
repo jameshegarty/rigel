@@ -1,6 +1,6 @@
 require "comparecommon"
 
-if type(arg[3])~="string" then
+if type(arg[2])~="string" then
   print("usage: hist.lua image.raw image.metadata.lua buckets")
   os.exit(1)
 end
@@ -9,7 +9,7 @@ dataPtr, metadata, pixelCount = loadRigelImage(arg[1],arg[2])
 
 -- build histogram
 local buckets = tonumber(arg[3])
-print("BUCKETS",buckets)
+--print("BUCKETS",buckets)
 
 local maxValue, minValue
 local sum = 0

@@ -415,7 +415,7 @@ function RS.writePixels(input,id,imageSize,V)
   end
 
   --
-  local file = io.open("out/debug_"..id..".metadata.lua","w")
+  local file = io.open("out/dbg_"..id..".metadata.lua","w")
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TYY).."'}")
   file:close()
   --

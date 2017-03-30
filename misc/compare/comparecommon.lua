@@ -1,4 +1,5 @@
 ffi = require "ffi"
+require "common"
 
 ffi.cdef[[
 typedef struct {} FILE;
@@ -22,11 +23,55 @@ function loadRigelImage(rawfile, metafile)
   end
 
   local bytes
+  local shift = 0
+  local FFIDATATYPE
   
-  if metadata.type=="uint16" then
-    bytes=2
+  if string.find(metadata.type,"int")~=nil then
+
+    local bitstring
+    local signed
+    if string.find(metadata.type,"uint")~=nil then
+      bitstring = metadata.type:sub(5)
+      signed=false
+    else
+      bitstring = metadata.type:sub(4)
+      signed = true
+    end
+    
+    --print("bitstring",bitstring)
+
+    local bits
+
+    if string.find(metadata.type,"_")~=nil then
+      -- this is a fixed type
+      bitstring = explode("_",bitstring)
+      bits = tonumber(bitstring[1])
+      shift = tonumber(bitstring[2])
+    else
+      bits = tonumber(bitstring)
+    end
+    
+    if bits<=8 then
+      bytes = 1
+      FFIDATATYPE = sel(signed,"char","unsigned char")
+    elseif bits <=16 then
+      bytes = 2
+      FFIDATATYPE = sel(signed,"short","unsigned short")
+    elseif bits <=32 then
+      bytes = 4
+      FFIDATATYPE = sel(signed,"int","unsigned int")
+    elseif bits <=64 then
+      bytes = 8
+      FFIDATATYPE = sel(signed,"long","unsigned long")
+    else
+      assert(false)
+    end
+--  elseif metadata.type=="uint16" then
+--    bytes=2
+--    FFIDATATYPE = "unsigned short"
   elseif metadata.type=="float" then
     bytes=4
+    FFIDATATYPE = "float"
   else
     print("Unknown type "..metadata.type)
     os.exit(1)
@@ -36,16 +81,7 @@ function loadRigelImage(rawfile, metafile)
   local pixelCount = metadata.width*metadata.height
   local byteCount = metadata.width*metadata.height*bytes
   
-  local dataPtr
-  
-  if metadata.type=="uint16" then
-    dataPtr = ffi.new("unsigned short["..pixelCount.."]")
-  elseif metadata.type=="float" then
-    dataPtr = ffi.new("float["..pixelCount.."]")
-  else
-    print("Unknown type "..metadata.type)
-    os.exit(1)
-  end
+  local dataPtr = ffi.new(FFIDATATYPE.."["..pixelCount.."]")
   
   local sz = ffi.C.fread(dataPtr,bytes,pixelCount,imgIn)
   
@@ -57,5 +93,16 @@ function loadRigelImage(rawfile, metafile)
 
   ffi.C.fclose(imgIn)
 
+  -- do conversion
+  if shift~=0 then
+    local oldDataPtr = dataPtr
+    dataPtr = ffi.new("double["..pixelCount.."]")
+    local factor = math.pow(2,shift)
+
+    for i=0,pixelCount-1 do
+      dataPtr[i] = tonumber(oldDataPtr[i])*factor
+    end
+  end
+  
   return dataPtr, metadata, pixelCount
 end
