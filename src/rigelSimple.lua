@@ -349,6 +349,35 @@ end
 
 function RS.harness(t) return harness(t) end
 
+function RS.modules.fwriteSeq(t)
+  -- file write only support byte aligned, so make a wrapper that casts up
+  if t.type:verilogBits()%8~=0 then
+    local inp = RS.input(t.type)
+
+    local out, fwritetype
+    if t.type:isUint() then
+
+      
+      fwritetype = types.uint(math.ceil(t.type:verilogBits()/8)*8)
+
+      if t.type:verilogBits()>16 and t.type:verilogBits()<32 then
+        -- special case: no 3 byte type on x86
+        fwritetype = types.uint(32)
+      end
+
+      print("RS FWRITESEQ", t.type, fwritetype)
+      out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
+      out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
+      out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
+      return RS.defineModule{input=inp,output=out}
+    else
+      err(false,"rigelSimple fwriteSeq NYI type "..tostring(t.type))
+    end
+  else
+    return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog)
+  end
+end
+
 function RS.writePixels(input,id,imageSize,V)
   local IT = input:typecheck()
   print("WRITEPX",IT.type)
@@ -357,10 +386,10 @@ function RS.writePixels(input,id,imageSize,V)
   if R.isHandshake(IT.type) then
     TY = R.extractData(IT.type)
   else
-    assert(false)
+    TY = IT.type
   end
 
-  local mod = RM.fwriteSeq("out/dbg_terra_"..id..".raw",TY,"out/dbg_verilog_"..id..".raw")
+  local mod = RS.modules.fwriteSeq{type=TY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}
 
   if R.isHandshake(IT.type) then
      mod = RS.HS(mod)

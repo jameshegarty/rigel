@@ -39,5 +39,22 @@ out/fwriteseq16.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/fwriteseq16testVerilog.raw > out/fwriteseq16test.diff
 	test ! -s out/$*.fwriteseq16test.diff && touch $@
 
+out/fwriteseq12.compiles.txt: fwriteseq12.lua
+	../rigelTerra fwriteseq12.lua terrasim
+	../rigelLuajit fwriteseq12.lua
+
+out/fwriteseq12.correct.txt: out/verilogcorrect.txt
+	diff out/fwriteseq16test.raw out/dbg_terra_fwriteseq12.raw > out/fwriteseq12test.diff
+	diff out/fwriteseq16test.raw out/dbg_verilog_fwriteseq12.raw > out/fwriteseq12testVerilog.diff
+	test ! -s out/$*.fwriteseq12testVerilog.diff && touch $@
+
+out/fwriteseq18.compiles.txt: fwriteseq18.lua
+	../rigelTerra fwriteseq18.lua terrasim
+	../rigelLuajit fwriteseq18.lua
+
+out/fwriteseq18.correct.txt: out/verilogcorrect.txt
+	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilog_fwriteseq18.raw > out/fwriteseq18test.diff
+	test ! -s out/$*.fwriteseq18test.diff && touch $@
+
 clean:
 	rm -Rf out/*

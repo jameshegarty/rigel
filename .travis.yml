@@ -32,7 +32,7 @@ script:
 
 env:
   - TARGET=verilog
-  - TARGET=axi
   - TARGET=verilator
   - TARGET=terra
   - TARGET=unit
+#  - TARGET=axi

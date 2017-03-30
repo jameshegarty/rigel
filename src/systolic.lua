@@ -2291,7 +2291,9 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     local debug = ""
     --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
 
-    for i=0,(self.type:verilogBits()/8)-1 do
+    err(self.type:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(self.type)..") is not byte aligned. NYI. Use a cast!")
+
+    for i=0,math.ceil(self.type:verilogBits()/8)-1 do
       if FILEMODULE_VERILATOR then
 --        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8)..[[],",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
         assn = assn .. [[$c("fwrite( (void*) &",]]..instance.name.."_buffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
@@ -2312,7 +2314,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       local buffers = ""
       local bufferassn = ""
       -- if we don't assign to buffers of the right size, the c escape won't work properly
-      for i=0,(self.type:verilogBits()/8)-1 do
+      for i=0,math.ceil(self.type:verilogBits()/8)-1 do
         buffers = buffers.."reg [7:0] "..instance.name.."_buffer_"..tostring(i)..";\n"
         bufferassn = bufferassn..[[if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]
         bufferassn = bufferassn..instance.name.."_buffer_"..tostring(i).."<="..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."]; end\n"
