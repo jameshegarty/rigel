@@ -3,7 +3,7 @@ local types = require("types")
 local RM = require "modules"
 local C = require "examplescommon"
 local harness = require "harness"
-local f = require "fixed_float"
+local fRS = require "fixed_float"
 local S = require("systolic")
 
 local RST
@@ -121,7 +121,7 @@ end
 
 local fixedSqrt = memoize(function(A)
   assert(types.isType(A))
-  local inp = f.parameter("II",A)
+  local inp = fRS.parameter("II",A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
@@ -130,7 +130,7 @@ local fixedSqrt = memoize(function(A)
 
 local fixedLift = memoize(function(A)
   assert(types.isType(A))
-  local inp = f.parameter("IIlift",A)
+  local inp = fRS.parameter("IIlift",A)
   local out = inp:lift()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
@@ -332,7 +332,7 @@ function RS.HS(t)
     elseif R.isHandshake(t.inputType) then
       --print("ISHANDSHAKE")
       return t
-    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and t.outputType.list[2]:isBool()) then
+    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
       --print("LIFTDECIM")
       return RM.liftHandshake(RM.liftDecimate(t))
     elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then

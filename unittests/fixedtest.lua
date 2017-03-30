@@ -1,0 +1,33 @@
+local R = require "rigelSimple"
+local f = require "fixed_new"
+local types = require "types"
+
+
+local configs = {}
+
+configs.addConst = ( f.parameter("inp",types.uint(8)):addMSBs(3) + f.constant(528) )
+
+local inp = f.parameter("inp",types.uint(8))
+local tp  = f.tuple{ inp }
+--local out = tp:index(1)
+configs.tuple = ( tp )
+
+
+for k,v in pairs(configs) do
+  print("do config",k)
+  
+  local mod = R.HS(v:toRigelModule(k))
+
+  local inputImageSize={64,32}
+  local outputImageSize={64,32}
+
+  local targets = {"verilog","terra"}
+  
+  for _,bk in pairs(targets) do
+    R.harness{ outFile="fixed_test"..k, fn=mod, inFile="../examples/frame_64.raw", inSize=inputImageSize, outSize=outputImageSize, backend=bk }
+  end
+end
+
+file = io.open("out/fixedtest.compiles.txt", "w")
+file:write("Hello World")
+file:close()

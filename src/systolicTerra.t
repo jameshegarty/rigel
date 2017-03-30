@@ -3,6 +3,8 @@
 -- symbols: this is a map of parameter names to terra values
 function systolicASTFunctions:toTerra( symbols )
 
+  local stats = {}
+  
   local finalOut = self:visitEach(
     function(n,args)
       local res
@@ -15,16 +17,24 @@ function systolicASTFunctions:toTerra( symbols )
           local inW = iSz[1]
           local outW = n.idyHigh-n.idyLow+1
 
-          res = quote
-            var out : n.type:toTerraType()
+          local out = symbol(n.type:toTerraType())
+          table.insert(stats, quote
+            var [out]
 
             for y=n.idyLow,n.idyHigh+1 do
               for x=n.idxLow,n.idxHigh+1 do
                 out[x+y*outW] = [args[1]][x+n.idxLow+(y+n.idyLow)*inW]
               end
             end
-          
-            in out end
+          end)
+
+          return out
+        elseif n.inputs[1].type:isTuple() then
+          local out = symbol(n.type:toTerraType())
+
+          table.insert(stats, quote var [out] end)
+
+          return out
         else
           assert(false)
         end
@@ -52,12 +62,13 @@ function systolicASTFunctions:toTerra( symbols )
         end
       elseif n.kind=="tuple" then
         local s = symbol(n.type:toTerraType())
-        local stats = {}
+        --local stats = {}
+        table.insert(stats,quote var [s] end)
         for k,v in ipairs(args) do
           table.insert(stats, quote s.["_"..(k-1)] = [v] end)
         end
 
-        res = quote var [s]; [stats] in s end
+        res = s
       else
         print("Error, systolicAST:toTerra NYI:"..n.kind)
         os.exit(1)
@@ -67,5 +78,5 @@ function systolicASTFunctions:toTerra( symbols )
       return res
     end)
 
-  return finalOut
+  return quote [stats] in finalOut end
 end

@@ -939,6 +939,9 @@ function MT.cycleCounter( res, A, count )
 end
 
 function MT.lift(inputType,outputType,terraFunction)
+  err(types.isType(inputType),"modules terra lift: input type must be type")
+  err(types.isType(outputType),"modules terra lift: output type must be type")
+  
   local struct LiftModule {}
   terra LiftModule:reset() end
   terra LiftModule:stats( name : &int8 )  end

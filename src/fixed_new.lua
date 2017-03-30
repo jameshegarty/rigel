@@ -78,10 +78,10 @@ fixed.type = memoize(function( signed, precision, exp )
   end
 end)
 
-local fixedASTFunctions = {}
-setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
+local fixedNewASTFunctions = {}
+setmetatable(fixedNewASTFunctions,{__index=IR.IRFunctions})
 
-fixedASTMT={__index = fixedASTFunctions,
+fixedNewASTMT={__index = fixedNewASTFunctions,
 __add=function(l,r)
   if l:isSigned()~=r:isSigned() or
     l:exp() ~= r:exp() or
@@ -115,7 +115,7 @@ __mul=function(l,r)
                   end}
 
 function fixed.isAST(ast)
-  return getmetatable(ast)==fixedASTMT
+  return getmetatable(ast)==fixedNewASTMT
 end
 
 function fixed.new(tab)
@@ -124,7 +124,7 @@ function fixed.new(tab)
   assert(#tab.inputs==keycount(tab.inputs))
   assert(type(tab.loc)=="string")
   assert(types.isType(tab.type))
-  return setmetatable(tab,fixedASTMT)
+  return setmetatable(tab,fixedNewASTMT)
 end
 
 function fixed.parameter( name, ty )
@@ -149,7 +149,7 @@ function fixed.constant( value )
 end
 
 --[=[
-function fixedASTFunctions:toFixed()
+function fixedNewASTFunctions:toFixed()
   err(fixed.isFixedType(self.type)==false, "expected non-fixed type: "..self.loc)
   if self.type:isUint() then
     local ty = fixed.type(false,self.type.precision,0)
@@ -161,7 +161,7 @@ function fixedASTFunctions:toFixed()
 end
 
 -- allowExp: should we allow you to lower something with a non-zero exp? or throw an error
-function fixedASTFunctions:toUnfixed()
+function fixedNewASTFunctions:toUnfixed()
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
 
   err( self:exp()==0, "attempting to lower a value with nonzero exp")
@@ -170,7 +170,7 @@ function fixedASTFunctions:toUnfixed()
 end
 ]=]
 
-function fixedASTFunctions:toSigned()
+function fixedNewASTFunctions:toSigned()
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   if self:isSigned() then
     return self
@@ -180,7 +180,7 @@ function fixedASTFunctions:toSigned()
   return fixed.new{kind="toSigned", type=ty, inputs={self}, loc=getloc() }
 end
 
-function fixedASTFunctions:addLSBs(N)
+function fixedNewASTFunctions:addLSBs(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "addLSBs input must be number" )
   err( N>0, "addLBSs input must be >0")
@@ -188,7 +188,7 @@ function fixedASTFunctions:addLSBs(N)
   return fixed.new{kind="addLSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()-N),N=N,inputs={self},loc=getloc()}
 end
 
-function fixedASTFunctions:addMSBs(N)
+function fixedNewASTFunctions:addMSBs(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "addMSBs input must be number" )
   err( N>0, "addMBSs input must be >0")
@@ -196,7 +196,7 @@ function fixedASTFunctions:addMSBs(N)
   return fixed.new{kind="addMSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()),N=N,inputs={self},loc=getloc()}
 end
 
-function fixedASTFunctions:rshift(N)
+function fixedNewASTFunctions:rshift(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "rshift input must be number" )
   err( N>0, "rshift input must be >0")
@@ -204,7 +204,7 @@ function fixedASTFunctions:rshift(N)
   return fixed.new{kind="rshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()-N),shift=N,inputs={self},loc=getloc()}
 end
 
-function fixedASTFunctions:lshift(N)
+function fixedNewASTFunctions:lshift(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   return fixed.new{kind="lshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()+N),shift=N,inputs={self},loc=getloc()}
 end
@@ -219,12 +219,12 @@ local function boolbinop(op,l,r)
   return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
 end
 
-function fixedASTFunctions:gt(r) return boolbinop(">",self,r) end
-function fixedASTFunctions:ge(r) return boolbinop(">=",self,r) end
-function fixedASTFunctions:lt(r) return boolbinop("<",self,r) end
-function fixedASTFunctions:le(r) return boolbinop("<=",self,r) end
+function fixedNewASTFunctions:gt(r) return boolbinop(">",self,r) end
+function fixedNewASTFunctions:ge(r) return boolbinop(">=",self,r) end
+function fixedNewASTFunctions:lt(r) return boolbinop("<",self,r) end
+function fixedNewASTFunctions:le(r) return boolbinop("<=",self,r) end
 
-function fixedASTFunctions:abs()
+function fixedNewASTFunctions:abs()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   err( self:isSigned(), "abs value of a non-signed type is futile")
 
@@ -236,14 +236,14 @@ function fixedASTFunctions:abs()
 end
 
 
-function fixedASTFunctions:neg()
+function fixedNewASTFunctions:neg()
   --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   err( self.type:isInt() or self:isSigned(), "neg value of a non-signed type is futile")
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
 -- f should be a unary function that takes in a single systolic value, and returns a systolic value
-function fixedASTFunctions:applyUnaryLift(f)
+function fixedNewASTFunctions:applyUnaryLift(f)
   if type(f)=="function" then
 
     -- hack to get type
@@ -260,6 +260,8 @@ end
 
 -- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
 function fixed.applyNaryLift(f,tab)
+  err(type(tab)=="table", "applyNaryLift: second argument must be table")
+  
   if type(f)=="function" then
     -- hack to get type
     local tmpinp = {}
@@ -274,7 +276,7 @@ function fixed.applyNaryLift(f,tab)
   end
 end
 
-function fixedASTFunctions:toSystolic()
+function fixedNewASTFunctions:toSystolic()
   local instances = {}
   local inp
   local res = self:visitEach(
@@ -376,7 +378,7 @@ function fixed.printHistograms()
 end
 
 
-function fixedASTFunctions:toRigelModule(name,X)
+function fixedNewASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
@@ -390,12 +392,14 @@ end
 
 --------------------------------------------------------
 -- convenient syntax
-function fixedASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
+function fixedNewASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
 function fixed.array2d(tab,w,h) return fixed.applyNaryLift(
     function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab )
 end
 
-function fixedASTFunctions:writePixel(id,imageSize)
+function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab) end
+
+function fixedNewASTFunctions:writePixel(id,imageSize)
   local file = io.open("out/debug_"..id..".metadata.lua", "w")
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(self.type).."'}")
   file:close()
@@ -403,7 +407,7 @@ function fixedASTFunctions:writePixel(id,imageSize)
   return self
 end
 
-function fixedASTFunctions:isSigned()
+function fixedNewASTFunctions:isSigned()
   --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   --return self.type.list[1]:isInt()
   if self.type:isUint() then return false end
@@ -412,7 +416,7 @@ function fixedASTFunctions:isSigned()
   err(false,":isSigned(), not a numeric type!")
 end
 
-function fixedASTFunctions:exp()
+function fixedNewASTFunctions:exp()
   --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   --local op = self.type.list[2]
   --return tonumber(op.str:sub(6))
@@ -422,7 +426,7 @@ function fixedASTFunctions:exp()
   err(false,":exp(), not a numeric type!")
 end
 
-function fixedASTFunctions:precision()
+function fixedNewASTFunctions:precision()
   --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   --return self.type.list[1].precision
   if self.type:isUint() then return self.type.precision end
@@ -431,7 +435,7 @@ function fixedASTFunctions:precision()
   err(false,":precision(), not a numeric type!")
 end
 
-function fixedASTFunctions:underlyingType()
+function fixedNewASTFunctions:underlyingType()
   if self.type:isUint() then return self.type end
   if self.type:isInt() then return self.type end
   if self.type:isNamed() and self.type.generator=="fixed" then return self.type.structure end

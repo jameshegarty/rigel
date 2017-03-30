@@ -23,6 +23,9 @@ out/moduleparams.compiles.txt: moduleparams.lua
 out/moduleparams.correct.txt: out/verilogcorrect.txt
 	touch out/moduleparams.correct.txt
 
+out/fixedtest.compiles.txt: fixedtest.lua
+	../rigelTerra fwriteseq.lua
+
 out/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terrasim
 	../rigelLuajit fwriteseq.lua
