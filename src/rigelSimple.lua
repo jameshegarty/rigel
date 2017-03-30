@@ -355,16 +355,24 @@ function RS.modules.fwriteSeq(t)
     local inp = RS.input(t.type)
 
     local out, fwritetype
-    if t.type:isUint() then
+    if t.type:isUint() or (t.type:isNamed() and t.type.generator=="fixed") then
 
-      
-      fwritetype = types.uint(math.ceil(t.type:verilogBits()/8)*8)
+      local fwritetype = t.type:toCPUType()
 
-      if t.type:verilogBits()>16 and t.type:verilogBits()<32 then
-        -- special case: no 3 byte type on x86
-        fwritetype = types.uint(32)
+      --[=[
+      if t.type:isUint() then
+        fwritetype = types.uint(math.ceil(t.type:verilogBits()/8)*8)
+
+        if t.type:verilogBits()>16 and t.type:verilogBits()<32 then
+          -- special case: no 3 byte type on x86
+          fwritetype = types.uint(32)
+        end
+      elseif t.type:isNamed() and t.type.generator=="fixed" and
+      else
+        err(false, "rigelSimple fwriteSeq NYI type "..tostring(t.type))
       end
-
+      ]=]
+      
       print("RS FWRITESEQ", t.type, fwritetype)
       out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
       out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
@@ -382,7 +390,7 @@ function RS.writePixels(input,id,imageSize,V)
   err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
   
   local IT = input:typecheck()
-  print("WRITEPX",IT.type)
+  --print("WRITEPX",IT.type)
 
   local TY
   if R.isHandshake(IT.type) then
@@ -405,6 +413,12 @@ function RS.writePixels(input,id,imageSize,V)
   if R.isHandshake(IT.type) then
      mod = RS.HS(mod)
   end
+
+  --
+  local file = io.open("out/debug_"..id..".metadata.lua","w")
+  file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TYY).."'}")
+  file:close()
+  --
   
   return RS.connect{input=input, toModule=mod}
 end

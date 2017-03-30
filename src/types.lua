@@ -426,10 +426,10 @@ function types.checkExplicitCast(from, to, ast)
     return true
   elseif from.kind=="float" and to.kind=="float" then
     return true
-  elseif from.kind=="named" and to.kind~="named" and from.structure==to then
-    return true
-  elseif from.kind~="named" and to.kind=="named" and from==to.structure then
-    return true
+  elseif from.kind=="named" and to.kind~="named" then
+    return types.checkExplicitCast(from.structure,to)
+  elseif from.kind~="named" and to.kind=="named" then
+    return types.checkExplicitCast(from,to.structure)
   else
     print("from",from,"to",to)
     assert(false) -- NYI
@@ -669,6 +669,50 @@ function TypeFunctions:checkLuaValue(v)
     assert(false)
   end
 
+end
+
+-- convert a terra type into a rigel type
+function types.fromTerraType(ty)
+  if ty==uint16 then
+    return types.uint(16)
+  else
+    err(false, "types.fromTerraType NYI"..tostring(ty))
+  end
+end
+
+
+-- CPUs only support certain bit widths. Convert our arbitrary precision types to the nearest CPU that
+-- which doesn't loose precision
+function TypeFunctions:toCPUType()
+  if self:isUint() then
+    if self:verilogBits()<=8 then
+      return types.uint(8)
+    elseif self:verilogBits()<=16 then
+      return types.uint(16)
+    elseif self:verilogBits()<=32 then
+      return types.uint(32)
+    elseif self:verilogBits()<=64 then
+      return types.uint(64)
+    else
+      err(false, "Type:toCPUType() NYI "..tostring(self))
+    end
+  elseif self:isInt() then
+    if self:verilogBits()<=8 then
+      return types.int(8)
+    elseif self:verilogBits()<=16 then
+      return types.int(16)
+    elseif self:verilogBits()<=32 then
+      return types.int(32)
+    elseif self:verilogBits()<=64 then
+      return types.int(64)
+    else
+      err(false, "Type:toCPUType() NYI "..tostring(self))
+    end
+  elseif self:isNamed() then
+    return self.structure:toCPUType()
+  else
+    err(false, "Type:toCPUType() NYI "..tostring(self))
+  end
 end
 
 if terralib~=nil then require("typesTerra") end

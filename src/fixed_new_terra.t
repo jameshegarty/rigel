@@ -46,10 +46,10 @@ local function toTerra(self)
       elseif n.kind=="rshift" or n.kind=="lshift" then
         res = args[1]
       elseif n.kind=="toSigned" then
-        res = `[fixed.extract(n.type):toTerraType()]([args[1]])
+        res = `[n:underlyingType():toTerraType()]([args[1]])
       elseif n.kind=="abs" then
         res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
-        res = `[fixed.extract(n.type):toTerraType()](res)
+        res = `[n:underlyingType():toTerraType()](res)
       elseif n.kind=="neg" then
         res = `-[args[1]]
       elseif n.kind=="applyUnaryLiftSystolic" then

@@ -31,6 +31,7 @@ out/fixedtest.correct.txt: out/verilogcorrect.txt
 	# no extra checks
 	touch out/fixedtest.correct.txt
 
+###################
 out/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terrasim
 	../rigelLuajit fwriteseq.lua
@@ -38,7 +39,7 @@ out/fwriteseq.compiles.txt: fwriteseq.lua
 out/fwriteseq.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseqtest.raw out/fwriteseqtestVerilog.raw > out/fwriteseqtest.diff
 	test ! -s out/$*.fwriteseqtest.diff && touch $@
-
+###################
 out/fwriteseq16.compiles.txt: fwriteseq16.lua
 	../rigelTerra fwriteseq16.lua terrasim
 	../rigelLuajit fwriteseq16.lua
@@ -46,7 +47,7 @@ out/fwriteseq16.compiles.txt: fwriteseq16.lua
 out/fwriteseq16.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/fwriteseq16testVerilog.raw > out/fwriteseq16test.diff
 	test ! -s out/$*.fwriteseq16test.diff && touch $@
-
+###################
 out/fwriteseq12.compiles.txt: fwriteseq12.lua
 	../rigelTerra fwriteseq12.lua terrasim
 	../rigelLuajit fwriteseq12.lua
@@ -55,7 +56,7 @@ out/fwriteseq12.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/dbg_terra_fwriteseq12.raw > out/fwriteseq12test.diff
 	diff out/fwriteseq16test.raw out/dbg_verilog_fwriteseq12.raw > out/fwriteseq12testVerilog.diff
 	test ! -s out/$*.fwriteseq12testVerilog.diff && touch $@
-
+###################
 out/fwriteseq18.compiles.txt: fwriteseq18.lua
 	../rigelTerra fwriteseq18.lua terrasim
 	../rigelLuajit fwriteseq18.lua
@@ -63,6 +64,15 @@ out/fwriteseq18.compiles.txt: fwriteseq18.lua
 out/fwriteseq18.correct.txt: out/verilogcorrect.txt
 	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilog_fwriteseq18.raw > out/fwriteseq18test.diff
 	test ! -s out/$*.fwriteseq18test.diff && touch $@
+###################
+out/fwriteseq37.compiles.txt: fwriteseq37.lua
+	../rigelTerra fwriteseq37.lua terrasim
+	../rigelLuajit fwriteseq37.lua
+
+out/fwriteseq37.correct.txt: out/verilogcorrect.txt
+	diff out/dbg_terra_fwriteseq37.raw out/dbg_verilog_fwriteseq37.raw > out/fwriteseq37test.diff
+	test ! -s out/$*.fwriteseq37test.diff && touch $@
+###################
 
 clean:
 	rm -Rf out/*

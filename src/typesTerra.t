@@ -84,3 +84,4 @@ end
 function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
+
