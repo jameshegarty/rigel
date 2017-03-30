@@ -7,11 +7,20 @@ local configs = {}
 
 configs.addConst = ( f.parameter("inp",types.uint(8)):addMSBs(3) + f.constant(528) )
 
+-----------------------------
 local inp = f.parameter("inp",types.uint(8))
 local tp  = f.tuple{ inp }
 --local out = tp:index(1)
 configs.tuple = ( tp )
-
+----------------------------
+local inp = f.parameter("inp",types.uint(8))
+local tp  = f.tuple{ inp, inp }
+configs.tupleidx = ( tp:index(1) )
+-------------------
+local inp = f.parameter("inp",types.uint(8))
+local tp  = f.array2d({ inp, inp, inp, inp },2,2)
+configs.arrayidx = ( tp:index(1,1) )
+-------------------
 
 for k,v in pairs(configs) do
   print("do config",k)

@@ -7,15 +7,17 @@ local fixedNewTerra={}
 
 local function toTerra(self)
   local inp
+  local stats = {}
+  
   local res = self:visitEach(
     function( n, args )
       local res
       if n.kind=="parameter" then
         inp = symbol(&n.type:toTerraType(), n.name)
         res = `@inp
-        if n.type:isNamed() and n.type.generator=="fixed" then
-          res = `res._0
-        end
+        --if n.type:isNamed() and n.type.generator=="fixed" then
+        --  res = `res._0
+        --end
       elseif n.kind=="binop" then
         if n.op==">" then
           res = `[args[1]]>[args[2]]
@@ -52,8 +54,10 @@ local function toTerra(self)
         res = `-[args[1]]
       elseif n.kind=="applyUnaryLiftSystolic" then
         local si = S.parameter("inp",n.inputs[1].type)
-        res = n.f(si)
-        res = res:toTerra{inp=args[1]}
+        res = symbol(n.type:toTerraType())
+        
+        local svalue = n.f(si)
+        table.insert(stats, quote var [res] =  [svalue:toTerra{inp=args[1]}] end )
       elseif n.kind=="applyNaryLiftSystolic" then
         local si = {}
         local symbols = {}
@@ -61,9 +65,11 @@ local function toTerra(self)
           table.insert( si, S.parameter("inp"..k,v.type) )
           symbols["inp"..k] = args[k]
         end
+
+        res = symbol(n.type:toTerraType())
         
-        res = n.f(si)
-        res = res:toTerra(symbols)
+        local svalue = n.f(si)
+        table.insert(stats, quote var [res] = [svalue:toTerra(symbols)] end)
       elseif n.kind=="addLSBs" then
         res = `[n.type:toTerraType()]([args[1]])
         res = `res << n.N
@@ -78,11 +84,11 @@ local function toTerra(self)
       return res
     end)
 
-  if self.type:isNamed() and self.type.generator=="fixed" then
-    res = `{res,nil}
-  end
+  --if self.type:isNamed() and self.type.generator=="fixed" then
+  --  res = `{res,nil}
+  --end
 
-  return res, inp
+  return quote [stats] in res end, inp
 end
 
 function fixedNewTerra.toDarkroom(ast,out)

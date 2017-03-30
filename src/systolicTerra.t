@@ -17,48 +17,53 @@ function systolicASTFunctions:toTerra( symbols )
           local inW = iSz[1]
           local outW = n.idyHigh-n.idyLow+1
 
-          local out = symbol(n.type:toTerraType())
+          res = symbol(n.type:toTerraType())
           table.insert(stats, quote
-            var [out]
+            var [res]
 
             for y=n.idyLow,n.idyHigh+1 do
               for x=n.idxLow,n.idxHigh+1 do
-                out[x+y*outW] = [args[1]][x+n.idxLow+(y+n.idyLow)*inW]
+                res[(x-n.idxLow)+(y-n.idyLow)*outW] = [args[1]][x+y*inW]
               end
             end
           end)
-
-          return out
         elseif n.inputs[1].type:isTuple() then
-          local out = symbol(n.type:toTerraType())
+          res = symbol(n.type:toTerraType())
+          table.insert(stats, quote var [res] end)
 
-          table.insert(stats, quote var [out] end)
-
-          return out
+          for i=n.idxLow,n.idxHigh do
+            table.insert(stats, quote res.["_"..(i-n.idxLow)] = [args[1]].["_"..i] end)
+          end
         else
           assert(false)
         end
       elseif n.kind=="cast" then
 
         if n.inputs[1].type:isArray() and n.type:isArray()==false then
+          -- casting array to something not an array
+          
           if n.inputs[1].type:channels()==1 and n.inputs[1].type:arrayOver()==n.type then
+            -- casting [A] to A
             res = `[args[1]][0]
           else
-            print("CAST NYI:",n.inputs[1].type, n.type,n.loc)
-            os.exit()
+            err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
           end
         elseif n.inputs[1].type:isTuple() and n.type:isArray() and #n.inputs[1].type.list==n.type:channels() then
-          --assert(false)
+          -- cast tuple to array of same size
           local s = symbol(n.type:toTerraType())
-          local stats = {}
+          table.insert(stats,quote var [s] end)
           for k=0,n.type:channels()-1 do
             table.insert(stats, quote s[k] = [args[1]].["_"..k] end)
           end
 
-          res = quote var [s]; [stats] in s end
+          res = s
+        elseif n.inputs[1].type:isTuple() and #n.inputs[1].type.list==1 and n.type==n.inputs[1].type.list[1] then
+          -- cast {A} to A
+          res = symbol(n.type:toTerraType())
+          table.insert(stats,quote var [res]; res = [args[1]]._0 end)
+
         else
-          print("CAST NYI:",n.inputs[1].type, n.type,n.loc)
-          os.exit()
+          err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
         end
       elseif n.kind=="tuple" then
         local s = symbol(n.type:toTerraType())
@@ -70,13 +75,14 @@ function systolicASTFunctions:toTerra( symbols )
 
         res = s
       else
-        print("Error, systolicAST:toTerra NYI:"..n.kind)
-        os.exit(1)
+        err(false,"Error, systolicAST:toTerra NYI:"..n.kind)
       end
 
       assert(terralib.isquote(res) or terralib.issymbol(res))
       return res
     end)
 
-  return quote [stats] in finalOut end
+  local out = quote [stats] in finalOut end
+--  out:printpretty()
+  return out
 end
