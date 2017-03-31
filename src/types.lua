@@ -329,6 +329,12 @@ function types.meet( a, b, op, loc)
   elseif a:isArray()==false and b:isArray() then
     local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, loc )
     return thistype, lhstype, rhstype
+  elseif a:isNamed() and b:isNamed() then
+    if op=="select" and a==b then
+      return a,a,a
+    else
+      err(false,"NYI - meet of two named types "..tostring(a).." "..tostring(b))
+    end
   else
     error("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op..", "..loc)
   end

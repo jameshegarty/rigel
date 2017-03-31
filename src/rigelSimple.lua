@@ -355,7 +355,7 @@ function RS.modules.fwriteSeq(t)
     local inp = RS.input(t.type)
 
     local out, fwritetype
-    if t.type:isUint() or (t.type:isNamed() and t.type.generator=="fixed") then
+    if t.type:isUint() or t.type:isInt() or (t.type:isNamed() and t.type.generator=="fixed") then
 
       local fwritetype = t.type:toCPUType()
 
@@ -373,7 +373,7 @@ function RS.modules.fwriteSeq(t)
       end
       ]=]
       
-      print("RS FWRITESEQ", t.type, fwritetype)
+      --print("RS FWRITESEQ", t.type, fwritetype)
       out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
       out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
       out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}

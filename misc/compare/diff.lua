@@ -5,7 +5,9 @@ if type(arg[4])~="string" then
   os.exit(1)
 end
 
+--print("Load Reference")
 local refData, refMetadata, refPixelCount = loadRigelImage(arg[1],arg[2])
+--print("Load Test")
 local testData, testMetadata, testPixelCount = loadRigelImage(arg[3],arg[4])
 
 if refMetadata.width ~= testMetadata.width or refMetadata.height ~= testMetadata.height then
@@ -24,7 +26,7 @@ for i=0,refPixelCount-1 do
   errorSum = errorSum + math.abs(delta)
 end
 
-print("Error Sum",errorSum)
+if errorSum~=0 then print("Error Sum",errorSum) end
 
 if errorSum~=0 then
   os.exit(1)

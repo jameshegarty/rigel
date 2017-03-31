@@ -21,6 +21,9 @@ configs.arrayidx = tp:index(1,1)
 local inp = f.parameter("inp",types.uint(8))
 configs.writepx = ( inp:lshift(3):writePixel("writePixelTest",{64,32}) )
 -------------------
+local inp = f.parameter("inp",types.uint(8))
+configs.writepxshift = inp:toSigned():lshift(3):writePixel("writePixelShiftTest",{64,32}):addLSBs(3)
+-------------------
 
 for k,v in pairs(configs) do
   print("do config",k)

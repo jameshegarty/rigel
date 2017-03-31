@@ -65,12 +65,12 @@ local function toTerra(self,name)
         res = `-[args[1]]
       elseif n.kind=="applyUnaryLiftRigel" then
         table.insert( Module.entries, {field=n.name, type=n.f.terraModule})
+        --print("RIGELLIFT",n.type,n.type:toTerraType())
         res = symbol(n.type:toTerraType())
         table.insert(stats,quote var[res];
-                     --cstdio.printf("LIFT RIGEL\n")
-                     mself.[n.name]:process( &[args[1]], &res )
+                     var tmp : n.inputs[1].type:toTerraType() = [args[1]] -- input must be lvalue
+                     mself.[n.name]:process( &tmp, &res )
                      end)
-
         if n.f.stateful then
           table.insert(resetStats, quote mself.[n.name]:reset() end )
         end
@@ -93,6 +93,7 @@ local function toTerra(self,name)
         local svalue = n.f(si)
         table.insert(stats, quote var [res] = [svalue:toTerra(symbols)] end)
       elseif n.kind=="addLSBs" then
+        --print("ADDLSBS",n.type,n.N)
         res = `[n.type:toTerraType()]([args[1]])
         res = `res << n.N
       elseif n.kind=="addMSBs" then
@@ -106,24 +107,19 @@ local function toTerra(self,name)
       return res
     end)
 
-  --if self.type:isNamed() and self.type.generator=="fixed" then
-  --  res = `{res,nil}
-  --end
-
-  return quote [stats] in res end, inp, Module, mself, resetStats
+  return res,stats, inp, Module, mself, resetStats
 end
 
 function fixedNewTerra.toDarkroom(ast,name)
-  local terraout, terrainp, Module, mself, resetStats = toTerra(ast,name)
-
-  --local terra tfn([terrainp], out:&out.type:toTerraType())
-  --  @out = terraout
-  --end
+  local terraout, stats,terrainp, Module, mself, resetStats = toTerra(ast,name)
 
   terra Module.methods.process([mself],[terrainp], out:&ast.type:toTerraType() )
+    [stats]
     @out = terraout
   end
---Module.methods.process:printpretty(true)
+
+  --Module.methods.process:printpretty(true)
+
   terra Module.methods.reset( [mself] ) [resetStats] end
 
   return Module

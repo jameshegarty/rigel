@@ -253,12 +253,18 @@ function fixedNewASTFunctions:neg()
 end
 
 -- f should be a rigel module, of type basic->basic
-function fixedNewASTFunctions:applyUnaryLiftRigel(f)
+-- outputType: override the output type of the rigel module
+--             remember, when we lower, we get rid of the fixed types.
+--             The rigel module should operator on the lowered types,
+--             but for the fixed representation, we want use the fixed type.
+function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType)
   R.isFunction(f)
   R.expectBasic(f.inputType)
   R.expectBasic(f.outputType)
 
-  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=f.outputType, loc=getloc()}
+  if outputType==nil then outputType = f.outputType end
+  
+  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=outputType, loc=getloc()}
 end
 
 -- f should be a unary function that takes in a single systolic value, and returns a systolic value
@@ -454,7 +460,7 @@ function fixedNewASTFunctions:writePixel(id,imageSize)
   local stripType = self.type
   if stripType:isNamed() and stripType.generator=="fixed" then stripType=stripType.structure end
   
-  return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}, self)
+  return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}, self.type)
 end
 
 function fixedNewASTFunctions:isSigned()
