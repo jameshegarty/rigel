@@ -68,8 +68,8 @@ for k,v in pairs(configs) do
 
     -- TODO: hack to get around axi burst nonsense
     local valid = true
-    if ((met.inputImageSize[1]*met.inputImageSize[2]*mod.inputType:verilogBits())/met.inputP)%(128*8)~=0 then valid=false end
-    if ((met.outputImageSize[1]*met.outputImageSize[2]*mod.outputType:verilogBits())/met.outputP)%(128*8)~=0 then valid=false end
+    --if ((met.inputImageSize[1]*met.inputImageSize[2]*mod.inputType:verilogBits())/met.inputP)%(128*8)~=0 then valid=false end
+    --if ((met.outputImageSize[1]*met.outputImageSize[2]*mod.outputType:verilogBits())/met.outputP)%(128*8)~=0 then valid=false end
 
     if (mod.inputType:verilogBits())/met.inputP~=8 or (mod.outputType:verilogBits())/met.outputP~=8 then valid=false end
     

@@ -283,6 +283,23 @@ function fixedNewASTFunctions:applyUnaryLift(f)
   end
 end
 
+-- f should be a unary function that takes in two values, and returns a systolic value
+function fixedNewASTFunctions:applyBinaryLift(f,inp)
+  if type(f)=="function" then
+
+    -- hack to get type
+    local tmpinp0 = S.parameter("TMP0",self.type)
+    local tmpinp1 = S.parameter("TMP1",self.type)
+    local outty = f(tmpinp0,tmpinp1)
+    outty = outty.type
+    assert( types.isType(outty) )
+    
+    return fixed.new{kind="applyBinaryLiftSystolic", f=f, inputs={self,inp}, type=outty, loc=getloc()}
+  else
+    err(false,"fixed:applyBinaryLift, unknown lift type")
+  end
+end
+
 -- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
 function fixed.applyNaryLift(f,tab)
   err(type(tab)=="table", "applyNaryLift: second argument must be table")
@@ -374,7 +391,9 @@ function fixedNewASTFunctions:toSystolic()
       elseif n.kind=="applyUnaryLiftSystolic" then
         res = n.f(args[1])
         assert(systolicAST.isSystolicAST(res))
-        --assert(res.type==n.type)
+      elseif n.kind=="applyBinaryLiftSystolic" then
+        res = n.f(args[1],args[2])
+        assert(systolicAST.isSystolicAST(res))
       elseif n.kind=="applyNaryLiftSystolic" then
         res = n.f(args)
         assert(systolicAST.isSystolicAST(res))
@@ -444,6 +463,7 @@ end
 
 --------------------------------------------------------
 -- convenient syntax
+function fixedNewASTFunctions:__and(b) return self:applyBinaryLift( S.__and, b ) end
 function fixedNewASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
 function fixed.array2d(tab,w,h) return fixed.applyNaryLift(
     function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab )

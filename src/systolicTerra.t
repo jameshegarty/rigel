@@ -11,6 +11,12 @@ function systolicASTFunctions:toTerra( symbols )
       
       if n.kind=="parameter" then
         res = symbols[n.name]
+      elseif n.kind=="binop" then
+        if n.op=="and" then
+          res = `[args[1]] and [args[2]]
+        else
+          err(false,"systolicAST:toTerra Binop NYI: "..n.op)
+        end
       elseif n.kind=="slice" then
         if n.inputs[1].type:isArray() then
           local iSz = n.inputs[1].type:arrayLength()

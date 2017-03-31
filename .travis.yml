@@ -35,4 +35,4 @@ env:
   - TARGET=verilator
   - TARGET=terra
   - TARGET=unit
-#  - TARGET=axi
+  - TARGET=axiverilog

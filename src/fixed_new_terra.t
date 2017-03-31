@@ -80,6 +80,13 @@ local function toTerra(self,name)
         
         local svalue = n.f(si)
         table.insert(stats, quote var [res] =  [svalue:toTerra{inp=args[1]}] end )
+      elseif n.kind=="applyBinaryLiftSystolic" then
+        local si0 = S.parameter("inp0",n.inputs[1].type)
+        local si1 = S.parameter("inp1",n.inputs[2].type)
+        res = symbol(n.type:toTerraType())
+        
+        local svalue = n.f(si0,si1)
+        table.insert(stats, quote var [res] =  [svalue:toTerra{inp0=args[1],inp1=args[2]}] end )
       elseif n.kind=="applyNaryLiftSystolic" then
         local si = {}
         local symbols = {}

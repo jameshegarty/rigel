@@ -38,6 +38,7 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   return EC, EC_RAW
 end
 
+--[=[
 local underoverWrapper=memoize(function( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
   assert(X==nil)
   assert(type(inputCount)=="number")
@@ -93,6 +94,7 @@ local underoverWrapper=memoize(function( hsfn, infile, inputType, tapInputType, 
   local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outfile,outputType)), out )
   return RM.lambda( "harness"..id..hsfn.systolicModule.name, inpSymb, out )
 end)
+]=]
 
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
 
@@ -137,7 +139,7 @@ local H = {}
 
 
 if terralib~=nil then 
-  harnessWrapperFn = underoverWrapper
+  --harnessWrapperFn = underoverWrapper
   H.terraOnly = require("harnessTerra") 
 end
 
@@ -199,52 +201,77 @@ end
 
 local function axiRateWrapper(fn, tapType)
   err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
+
+  R.expectHandshake(fn.inputType)
   
-    local iover = R.extractData(fn.inputType)
-    
-    if tapType~=nil then
-      -- taps have tap value packed into argument
-      assert(iover.list[2]==tapType)
-      iover = iover.list[1]
-    end
-    
-    err(iover:isArray(), "expected input to be array but is "..tostring(iover))
+  local iover = R.extractData(fn.inputType)
+  
+  if tapType~=nil then
+    -- taps have tap value packed into argument
+    assert(iover.list[2]==tapType)
+    iover = iover.list[1]
+  end
+
+  R.expectHandshake(fn.outputType)
+  oover = R.extractData(fn.outputType)
+
+  if iover:verilogBits()==64 and oover:verilogBits()==64 then
+return fn
+  end
+  
+  --err(iover:isArray(), "expected input to be array but is "..tostring(iover))
+
+  local inputP
+  local inputPointwise
+  if iover:isArray() then
     inputP = iover:channels()
+    iover = iover:arrayOver()
+    inputPointwise=false
+  else
+    inputP = 1 -- just assume pointwise...
+    inputPointwise=true
+  end
+  
 
-    R.expectHandshake(fn.outputType)
-    oover = R.extractData(fn.outputType)
-    assert(oover:isArray())
+  local outputP
+  if oover:isArray() then
     outputP = oover:channels()
+    oover = oover:arrayOver()
+  else
+    outputP = 1
+  end
+  
+  local targetInputP = (64/iover:verilogBits())
+  err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP).." tapType:"..tostring(tapType))
+  
+  --iover = types.array2d( iover, inputP )
+  
+  local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
+  local out = inp
+  
+  if fn.inputType:verilogBits()~=64 then
+    out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
+  end
+  
+  if inputPointwise then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
+  out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
+  if inputPointwise then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+  
+  local targetOutputP = (64/oover:verilogBits())
+  err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
+  --oover = types.array2d( oover, outputP )
+  
+  if fn.outputType:verilogBits()~=64 then
+    out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+  end
+  
+    --fn = RS.defineModule{input=inp,output=out}
+  local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
 
-    if iover:verilogBits()~=64 or oover:verilogBits()~=64 then
-      local inputP_orig = inputP
-      inputP = (64/fn.inputType:verilogBits())*inputP
-      iover = types.array2d( iover:arrayOver(), inputP )
-      
-      local inp = R.input( R.Handshake(iover) )
-      local out
-      
-      if fn.inputType:verilogBits()~=64 then
-        --out = RS.connect{input=inp, toModule=RS.HS(RS.modules.changeRate{ type = iover:arrayOver(), H=1, inW=inputP, outW=inputP_orig })}
-        out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover:arrayOver(), 1, inputP, inputP_orig )), inp)
-      end
-      
-      out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-      
-      local outputP_orig = outputP
-      outputP = (64/fn.outputType:verilogBits())*outputP
-      oover = types.array2d( oover:arrayOver(), outputP )
-      
-      if fn.outputType:verilogBits()~=64 then
-        --out = RS.connect{input=out, toModule=RS.HS(RS.modules.changeRate{ type = oover:arrayOver(), H=1, inW=outputP_orig, outW=outputP})}
-        out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover:arrayOver(),1,outputP_orig,outputP)),out)
-      end
-      
-      --fn = RS.defineModule{input=inp,output=out}
-      return RM.lambda("hsfn",inp,out)
-    end
-
-  return fn
+  assert(outFn.inputType:verilogBits()==64)
+  assert(outFn.outputType:verilogBits()==64)
+  
+  return outFn
 end
 
 -- AXI must have T=8
@@ -267,8 +294,6 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
-
-  hsfn = axiRateWrapper(hsfn, tapType)
 
 -- axi runs the sim as well
 --H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
@@ -313,6 +338,10 @@ function harnessTop(t)
   err(type(t.inFile)=="string", "expected input filename to be string")
   err(type(t.outFile)=="string", "expected output filename to be string")
 
+  if(arg[1]=="axi") then
+    t.fn = axiRateWrapper(t.fn, t.tapType)
+  end
+  
   -- just assume we were given a handshake vector...
   R.expectHandshake(t.fn.inputType)
 

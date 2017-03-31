@@ -213,7 +213,7 @@ function writeBmp(filename,width,height,stride,channels,data)
     
     if(padding ~= 0)then
       for h=0,height-1 do
-        ffi.C.fwrite(tempData[h*width*channels], width*channels, 1, file);
+        ffi.C.fwrite(tempData+(h*width*channels), width*channels, 1, file);
         ffi.C.fwrite(pad,padding,1,file);
       end
     else
@@ -239,7 +239,7 @@ function writeBmp(filename,width,height,stride,channels,data)
        
     if(padding ~= 0)then
       for h=0,height-1 do
-        ffi.C.fwrite(expanded[h*width*3], width*3, 1, file);
+        ffi.C.fwrite(expanded+(h*width*3), width*3, 1, file);
         ffi.C.fwrite(pad,padding,1,file);
       end
     else
