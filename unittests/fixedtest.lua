@@ -5,7 +5,7 @@ local types = require "types"
 
 local configs = {}
 
-configs.addConst = ( f.parameter("inp",types.uint(8)):addMSBs(3) + f.constant(528) )
+configs.addConst = ( f.parameter("inp",types.uint(8)):addMSBs(2) + f.constant(528) )
 -----------------------------
 local inp = f.parameter("inp",types.uint(8))
 configs.tuple = f.tuple{ inp }
@@ -23,6 +23,9 @@ configs.writepx = ( inp:lshift(3):writePixel("writePixelTest",{64,32}) )
 -------------------
 local inp = f.parameter("inp",types.uint(8))
 configs.writepxshift = inp:toSigned():lshift(3):writePixel("writePixelShiftTest",{64,32}):addLSBs(3)
+-------------------
+local inp = f.parameter("inp",types.uint(8))
+configs.gt = inp:gt(f.constant(200)):writePixel("gt",{64,32})
 -------------------
 
 for k,v in pairs(configs) do

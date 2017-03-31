@@ -82,6 +82,27 @@ C.sum = memoize(function(A,B,outputType,async)
   return partial
 end)
 
+-----------------------------
+C.select = memoize(function(ty)
+  err(types.isType(ty), "C.select error: input must be type")
+  local ITYPE = types.tuple{types.bool(),ty,ty}
+  local sinp = S.parameter("inp",ITYPE)
+  local sout = S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2))
+
+  local selm = RM.lift("C_select", ITYPE, ty, 1, nil, sinp, sout)
+  return selm
+end)
+-----------------------------
+C.eq = memoize(function(ty)
+  err(types.isType(ty), "C.select error: input must be type")
+  local ITYPE = types.tuple{ty,ty}
+  local sinp = S.parameter("inp",ITYPE)
+  local sout = S.eq(S.index(sinp,0), S.index(sinp,1))
+
+  local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, nil, sinp, sout)
+  return selm
+end)
+
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay

@@ -2435,7 +2435,7 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
   systolicModule:complete()
   local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
-  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction) end
+  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) end
 
   return rigel.newFunction( res )
 end

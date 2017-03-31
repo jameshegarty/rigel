@@ -14,9 +14,13 @@ function systolicASTFunctions:toTerra( symbols )
       elseif n.kind=="binop" then
         if n.op=="and" then
           res = `[args[1]] and [args[2]]
+        elseif n.op=="==" then
+          res = `[args[1]] == [args[2]]
         else
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
         end
+      elseif n.kind=="select" then
+        res = `terralib.select([args[1]], [args[2]], [args[3]] )
       elseif n.kind=="slice" then
         if n.inputs[1].type:isArray() then
           local iSz = n.inputs[1].type:arrayLength()

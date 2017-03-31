@@ -30,6 +30,11 @@ out/fixedtest.compiles.txt: fixedtest.lua
 out/fixedtest.correct.txt: out/verilogcorrect.txt
 	diff out/dbg_terra_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_tt.diff
 	diff out/dbg_verilog_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_vv.diff
+
+	diff gold/dbg_terra_gt.raw out/dbg_terra_gt.raw > out/dbg_fixedtest_gt.diff
+	diff gold/dbg_terra_gt.raw out/dbg_verilog_gt.raw > out/dbg_fixedtest_gt.diff
+	diff gold/dbg_gt.metadata.lua out/dbg_gt.metadata.lua > out/dbg_fixedtest_gt.metadata.diff
+
 	touch out/fixedtest.correct.txt
 
 ###################

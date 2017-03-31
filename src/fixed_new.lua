@@ -148,7 +148,7 @@ function fixed.constant( value )
 
   local signed = (value<0) 
 
-  local precision = math.ceil(math.log(value)/math.log(2))+1 
+  local precision = math.ceil(math.log(value)/math.log(2))
   if signed then precision = precision + 1 end
 
   local exp = 0
