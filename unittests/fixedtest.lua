@@ -6,20 +6,20 @@ local types = require "types"
 local configs = {}
 
 configs.addConst = ( f.parameter("inp",types.uint(8)):addMSBs(3) + f.constant(528) )
-
 -----------------------------
 local inp = f.parameter("inp",types.uint(8))
-local tp  = f.tuple{ inp }
---local out = tp:index(1)
-configs.tuple = ( tp )
+configs.tuple = f.tuple{ inp }
 ----------------------------
 local inp = f.parameter("inp",types.uint(8))
 local tp  = f.tuple{ inp, inp }
-configs.tupleidx = ( tp:index(1) )
+configs.tupleidx = tp:index(1)
 -------------------
 local inp = f.parameter("inp",types.uint(8))
 local tp  = f.array2d({ inp, inp, inp, inp },2,2)
-configs.arrayidx = ( tp:index(1,1) )
+configs.arrayidx = tp:index(1,1)
+-------------------
+local inp = f.parameter("inp",types.uint(8))
+configs.writepx = ( inp:lshift(3):writePixel("writePixelTest",{64,32}) )
 -------------------
 
 for k,v in pairs(configs) do

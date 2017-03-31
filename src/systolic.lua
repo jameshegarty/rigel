@@ -1536,7 +1536,9 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
   local CESeen = {}
   for fnname,fn in pairs(self.functions) do
     local canBeUndriven = fn:isPure()
-    err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
+    local modtype = instance.module.name
+    if modtype==nil then modtype="" end
+    err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." (of type "..modtype..") in module "..module.name)
     
     -- if onlyWire==true, don't try to be clever - always wire the valid bit if it exists.
     if fn:isPure()==false or self.onlyWire then

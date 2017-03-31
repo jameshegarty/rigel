@@ -28,7 +28,8 @@ out/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 
 out/fixedtest.correct.txt: out/verilogcorrect.txt
-	# no extra checks
+	diff out/dbg_terra_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_tt.diff
+	diff out/dbg_verilog_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_vv.diff
 	touch out/fixedtest.correct.txt
 
 ###################

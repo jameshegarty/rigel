@@ -1,20 +1,31 @@
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local types = require("types")
 local S = require("systolic")
 
 local fixedNewTerra={}
 
-local function toTerra(self)
+local function toTerra(self,name)
+  assert(type(name)=="string")
+  
   local inp
   local stats = {}
+  local resetStats = {}
+
+  local Module = terralib.types.newstruct(name)
+  Module.entries = terralib.newlist( {} )
+
+  local mself = symbol(&Module, "moduleself")
   
   local res = self:visitEach(
     function( n, args )
       local res
       if n.kind=="parameter" then
         inp = symbol(&n.type:toTerraType(), n.name)
-        res = `@inp
+        --res = `@inp
+        res = symbol(n.type:toTerraType())
+        table.insert(stats, quote var[res] = @[inp] end)
         --if n.type:isNamed() and n.type.generator=="fixed" then
         --  res = `res._0
         --end
@@ -52,6 +63,17 @@ local function toTerra(self)
         res = `[n:underlyingType():toTerraType()](res)
       elseif n.kind=="neg" then
         res = `-[args[1]]
+      elseif n.kind=="applyUnaryLiftRigel" then
+        table.insert( Module.entries, {field=n.name, type=n.f.terraModule})
+        res = symbol(n.type:toTerraType())
+        table.insert(stats,quote var[res];
+                     --cstdio.printf("LIFT RIGEL\n")
+                     mself.[n.name]:process( &[args[1]], &res )
+                     end)
+
+        if n.f.stateful then
+          table.insert(resetStats, quote mself.[n.name]:reset() end )
+        end
       elseif n.kind=="applyUnaryLiftSystolic" then
         local si = S.parameter("inp",n.inputs[1].type)
         res = symbol(n.type:toTerraType())
@@ -88,17 +110,23 @@ local function toTerra(self)
   --  res = `{res,nil}
   --end
 
-  return quote [stats] in res end, inp
+  return quote [stats] in res end, inp, Module, mself, resetStats
 end
 
-function fixedNewTerra.toDarkroom(ast,out)
-  local terraout, terrainp = toTerra(ast)
+function fixedNewTerra.toDarkroom(ast,name)
+  local terraout, terrainp, Module, mself, resetStats = toTerra(ast,name)
 
-  local terra tfn([terrainp], out:&out.type:toTerraType())
+  --local terra tfn([terrainp], out:&out.type:toTerraType())
+  --  @out = terraout
+  --end
+
+  terra Module.methods.process([mself],[terrainp], out:&ast.type:toTerraType() )
     @out = terraout
   end
+--Module.methods.process:printpretty(true)
+  terra Module.methods.reset( [mself] ) [resetStats] end
 
-  return tfn
+  return Module
 end
 
 return fixedNewTerra

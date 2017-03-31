@@ -2,7 +2,10 @@ local RM = require "modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
+local Ssugar = require("systolicsugar")
 local fpgamodules = require("fpgamodules")
+local RS = require("rigelSimple")
+local R = require("rigel")
 
 local fixed={}
 
@@ -118,12 +121,19 @@ function fixed.isAST(ast)
   return getmetatable(ast)==fixedNewASTMT
 end
 
+__FIXED_NAME_CNT = 0
 function fixed.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
   assert(#tab.inputs==keycount(tab.inputs))
   assert(type(tab.loc)=="string")
   assert(types.isType(tab.type))
+
+  if tab.name==nil then
+    tab.name="fixed"..tostring(__FIXED_NAME_CNT)
+    __FIXED_NAME_CNT = __FIXED_NAME_CNT + 1
+  end
+  
   return setmetatable(tab,fixedNewASTMT)
 end
 
@@ -242,6 +252,15 @@ function fixedNewASTFunctions:neg()
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
+-- f should be a rigel module, of type basic->basic
+function fixedNewASTFunctions:applyUnaryLiftRigel(f)
+  R.isFunction(f)
+  R.expectBasic(f.inputType)
+  R.expectBasic(f.outputType)
+
+  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=f.outputType, loc=getloc()}
+end
+
 -- f should be a unary function that takes in a single systolic value, and returns a systolic value
 function fixedNewASTFunctions:applyUnaryLift(f)
   if type(f)=="function" then
@@ -278,6 +297,7 @@ end
 
 function fixedNewASTFunctions:toSystolic()
   local instances = {}
+  local resetStats = {}
   local inp
   local res = self:visitEach(
     function( n, args )
@@ -340,6 +360,11 @@ function fixedNewASTFunctions:toSystolic()
         res = S.cast( res, n:underlyingType() )
       elseif n.kind=="neg" then
         res = S.neg(args[1])
+      elseif n.kind=="applyUnaryLiftRigel" then
+        local I = n.f.systolicModule:instantiate(n.name)
+        table.insert(instances,I)
+        res = I:process(args[1])
+        if n.f.stateful then table.insert(resetStats,I:reset()) end
       elseif n.kind=="applyUnaryLiftSystolic" then
         res = n.f(args[1])
         assert(systolicAST.isSystolicAST(res))
@@ -369,7 +394,7 @@ function fixedNewASTFunctions:toSystolic()
     res = S.cast(res,self.type)
   end
 
-  return res, inp, instances
+  return res, inp, instances, resetStats
 end
 
 fixed.hists = {}
@@ -382,12 +407,33 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp, instances = self:toSystolic()
+  local out, inp, instances, resetStats = self:toSystolic()
 
   local tfn
-  if terralib~=nil then tfn=fixedTerra.toDarkroom(self,out) end
+
   --tfn:printpretty(true,false)
-  return RM.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
+  --return RM.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
+
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}}
+  if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
+
+  local sys = Ssugar.moduleConstructor(name)
+  for _,v in ipairs(instances) do sys:add(v) end
+  local CE = S.CE("process_CE")
+  sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
+
+  if #resetStats>0 then
+    res.stateful=true
+    sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool()),CE) )
+  else
+    res.stateful=false
+  end
+
+  sys:complete()
+
+  res.systolicModule = sys
+  
+  return R.newFunction(res)
 end
 
 --------------------------------------------------------
@@ -400,11 +446,15 @@ end
 function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab) end
 
 function fixedNewASTFunctions:writePixel(id,imageSize)
-  local file = io.open("out/debug_"..id..".metadata.lua", "w")
+  local file = io.open("out/dbg_"..id..".metadata.lua", "w")
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(self.type).."'}")
   file:close()
 
-  return self
+  -- internally, we don't actually used the fixed types...
+  local stripType = self.type
+  if stripType:isNamed() and stripType.generator=="fixed" then stripType=stripType.structure end
+  
+  return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}, self)
 end
 
 function fixedNewASTFunctions:isSigned()
