@@ -18,12 +18,23 @@ meta.padSeq={}
 for k,v in ipairs(configs.padSeq) do
   if v.type==types.bool() then v.value=true end
   v.pad = shallowCopy(v.pad)
-  for i=1,4 do if v.pad[i]%v.V~=0 then  v.pad[i]=v.V end end
+  for i=1,4 do if v.pad[i]%v.V~=0 then  v.pad[i]=upToNearest(v.V,v.pad[i]) end end
 
   meta.padSeq[k]={inputP=v.V, outputP=v.V, inputImageSize=v.size}
   meta.padSeq[k].outputImageSize={v.size[1]+v.pad[1]+v.pad[2], v.size[2]+v.pad[3]+v.pad[4]}
 end
 
+local cropAmt = { {1,1,1,1}, {0,2,0,2}, {2,0,2,0} }
+configs.cropSeq=cartesian{type=Type, size={IS}, V={1}, crop=cropAmt }
+meta.cropSeq={}
+for k,v in ipairs(configs.cropSeq) do
+  for i=1,4 do if v.crop[i]%v.V~=0 then  v.crop[i]=upToNearest(v.V,v.crop[i]) end end
+    
+  meta.cropSeq[k] = { inputP=v.V, outputP=v.V, inputImageSize=v.size }
+  meta.cropSeq[k].outputImageSize={v.size[1]-v.crop[1]-v.crop[2], v.size[2]-v.crop[3]-v.crop[4]}
+  --print("CCCCCS","V",v.V,v.crop[1],v.crop[2],v.crop[3],v.crop[4])
+  --print("CS",v.size[1],v.size[2],meta.cropSeq[k].outputImageSize[1],meta.cropSeq[k].outputImageSize[2],v.V)
+end
 
 local function configToName(t)
   local name = ""
@@ -52,13 +63,13 @@ for k,v in pairs(configs) do
     local name = configToName(config)
     print("DOCONFIG",name)
 
-    local mod = R.modules[k](config)
+    local mod = R.HS(R.modules[k](config))
     local met = meta[k][configk]
 
     -- TODO: hack to get around axi burst nonsense
     local valid = true
-    if ((met.inputImageSize[1]*met.inputImageSize[2]*mod.inputType:verilogBits())/met.inputP)%(128*8)~=0 then valid=false end
-    if ((met.outputImageSize[1]*met.outputImageSize[2]*mod.outputType:verilogBits())/met.outputP)%(128*8)~=0 then valid=false end
+    --if ((met.inputImageSize[1]*met.inputImageSize[2]*mod.inputType:verilogBits())/met.inputP)%(128*8)~=0 then valid=false end
+    --if ((met.outputImageSize[1]*met.outputImageSize[2]*mod.outputType:verilogBits())/met.outputP)%(128*8)~=0 then valid=false end
 
     if (mod.inputType:verilogBits())/met.inputP~=8 or (mod.outputType:verilogBits())/met.outputP~=8 then valid=false end
     

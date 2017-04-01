@@ -82,6 +82,27 @@ C.sum = memoize(function(A,B,outputType,async)
   return partial
 end)
 
+-----------------------------
+C.select = memoize(function(ty)
+  err(types.isType(ty), "C.select error: input must be type")
+  local ITYPE = types.tuple{types.bool(),ty,ty}
+  local sinp = S.parameter("inp",ITYPE)
+  local sout = S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2))
+
+  local selm = RM.lift("C_select", ITYPE, ty, 1, nil, sinp, sout)
+  return selm
+end)
+-----------------------------
+C.eq = memoize(function(ty)
+  err(types.isType(ty), "C.select error: input must be type")
+  local ITYPE = types.tuple{ty,ty}
+  local sinp = S.parameter("inp",ITYPE)
+  local sout = S.eq(S.index(sinp,0), S.index(sinp,1))
+
+  local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, nil, sinp, sout)
+  return selm
+end)
+
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay
@@ -920,5 +941,26 @@ C.plusConst = memoize(function(ty, value)
 end)
 
 function C.plus100(ty) return C.plusConst(ty,100) end
+
+__linearpipelinecnt = 0
+-- convert an array of rigel modules into a straight pipeline
+-- pipeline starts at index 1, ends at index N
+function C.linearPipeline(t,modulename)
+  err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
+
+  if modulename==nil then
+    modulename="linearpipeline"..tostring(__linearpipelinecnt)
+    __linearpipelinecnt = __linearpipelinecnt+1
+  end
+  
+  local inp = R.input(t[1].inputType)
+  local out = inp
+
+  for k,v in ipairs(t) do
+    out = R.apply("linearPipe"..k,v,out)
+  end
+
+  return RM.lambda(modulename,inp,out)
+end
 
 return C

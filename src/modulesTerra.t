@@ -938,11 +938,29 @@ function MT.cycleCounter( res, A, count )
   return CycleCounter
 end
 
-function MT.lift(inputType,outputType,terraFunction)
+function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicOutput)
+  err(types.isType(inputType),"modules terra lift: input type must be type")
+  err(types.isType(outputType),"modules terra lift: output type must be type")
+
   local struct LiftModule {}
-  terra LiftModule:reset() end
-  terra LiftModule:stats( name : &int8 )  end
-  terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
+
+  if terraFunction==nil and systolicInput~=nil and systolicOutput~=nil then
+    terra LiftModule:reset() end
+    terra LiftModule:stats( name : &int8 )  end
+
+    local inpS = symbol(systolicInput.type:toTerraType())
+    local symbs = {}
+    symbs[systolicInput.name] = inpS
+    local terraOut = systolicOutput:toTerra(symbs)
+    terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType())
+      var [inpS] = @inp
+      @out = [terraOut]
+    end
+  else
+    terra LiftModule:reset() end
+    terra LiftModule:stats( name : &int8 )  end
+    terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
+  end
 
   return LiftModule
 end

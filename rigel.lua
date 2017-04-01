@@ -38,8 +38,14 @@ function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()
 
 
 
-function darkroom.isHandshakeArray(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray" end
-function darkroom.isHandshakeTmuxed(a) return a:isTuple() and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed" end
+function darkroom.isHandshakeArray(a)
+  err(types.isType(a),"isHandshakeArray: argument must be a type")
+  return a:isTuple() and #a.list>1 and  a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray"
+end
+function darkroom.isHandshakeTmuxed(a)
+  return a:isTuple() and #a.list>1 and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed"
+end
+
 function darkroom.isHandshake( a ) return a:isTuple() and a.list[2]==darkroom.HandshakeToken end
 function darkroom.isV( a ) return a:isTuple() and a.list[2]==darkroom.VToken end
 function darkroom.isRV( a ) return a:isTuple() and a.list[2]==darkroom.RVToken end

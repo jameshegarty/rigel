@@ -2,37 +2,30 @@
 #include <iostream>
 #include VERILATORFILE
 
-unsigned int divCeil(unsigned int a, unsigned int b){
+/*unsigned int divCeil(unsigned int a, unsigned int b){
   float aa = a;
   float bb = b;
   return (unsigned int)(ceil(aa/bb));
-}
+  }*/
 
-void setValid(CData* signal, unsigned int databits, bool valid){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=8);
-
-  if(valid){
-    *signal |= (1<<databits);
+unsigned int bitsToBytes(unsigned int bits){
+  if(bits<=8){
+    return 1;
+  }else if(bits<=16){
+    return 2;
+  }else if(bits<=32){
+    return 4;
+  }else if(bits<=64){
+    return 8;
   }else{
-    *signal = 0;
-  }    
+    assert(false);
+  }
 }
 
-void setValid(SData* signal, unsigned int databits, bool valid){
+template<typename T>
+void setValid(T* signal, unsigned int databits, bool valid){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<=16);
-
-  if(valid){
-    *signal |= (1<<databits);
-  }else{
-    *signal = 0;
-  }    
-}
-
-void setValid(IData* signal, unsigned int databits, bool valid){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=32);
+  assert(databits<=sizeof(T)*8);
 
   if(valid){
     *signal |= (1<<databits);
@@ -53,22 +46,11 @@ void setValid(WData (*signal)[N], unsigned int databits, bool valid){
   }    
 }
 
-bool getValid(CData* signal, unsigned int databits){
+template<typename T>
+bool getValid(T* signal, unsigned int databits){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<=8);
-  return (*signal & (1<<databits)) != 0;
-}
-
-bool getValid(SData* signal, unsigned int databits){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=16);
-  return (*signal & (1<<databits)) != 0;
-}
-
-bool getValid(IData* signal, unsigned int databits){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=32);
-  return (*signal & (1<<databits)) != 0;
+  assert(databits<=sizeof(T)*8);
+  return (*signal & ((T)(1)<<databits)) != 0;
 }
 
 template<int N>
@@ -77,25 +59,12 @@ bool getValid(WData (*signal)[N], unsigned int databits){
   return ( (*signal)[idx] & (1<<(databits-idx*32)) ) != 0;
 }
     
-void setData(SData* signal, unsigned int databits, FILE* file){
+template<typename T>
+void setData(T* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<=16);
+  assert(databits<=sizeof(T)*8);
 
-  int readBytes = divCeil(databits,8);
-  
-  *signal = 0;
-  for(int i=0; i<readBytes; i++){
-    // assume little endian (x86 style) in the file
-    unsigned long inp = fgetc(file);
-    *signal |= (inp << i*8);
-  }
-}
-
-void setData(IData* signal, unsigned int databits, FILE* file){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=32);
-
-  int readBytes = divCeil(databits,8);
+  int readBytes = bitsToBytes(databits);
 
   *signal = 0;
   for(int i=0; i<readBytes; i++){
@@ -119,37 +88,16 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
   }
 }
 
-void getData(CData* signal, unsigned int databits, FILE* file){
+
+template<typename T>
+void getData(T* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
-  assert(databits<=8);
-  CData mask = pow(2,databits)-1;
-  fputc(*signal & mask,file);
-}
-    
-void getData(SData* signal, unsigned int databits, FILE* file){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=16);
-  //  assert(false);
-  int readBytes = divCeil(databits,8);
-  SData mask = pow(2,databits)-1;
+  assert(databits<=sizeof(T)*8);
 
-  for(int i=0; i<readBytes; i++){
-    // verilator has little endian (x86 style) behavior
-    unsigned char ot = (*signal) >> i*8;
-    unsigned char otm = mask >> i*8;
-    fputc(ot & otm,file);
-  }
-}
+  int readBytes = bitsToBytes(databits);
 
-void getData(IData* signal, unsigned int databits, FILE* file){
-  // for this verilator data type, we should have < 16 bits
-  assert(databits<=32);
-
-  int readBytes = divCeil(databits,8);
-  // Special case: we may be able to write some bitwidths as 3 bytes, but x86 has no 3 byte type. So always round to 4.
-  if(databits>16 && databits<32){readBytes=4;}
-
-  IData mask = pow(2,databits)-1;
+  T mask = ((T)1 << databits)-1;
+  if(databits==sizeof(T)*8){ mask = ~ (T)(0); }
 
   for(int i=0; i<readBytes; i++){
     // verilator has little endian (x86 style) behavior
@@ -214,7 +162,7 @@ int main(int argc, char** argv) {
   fseek(infile, 0L, SEEK_END);
   unsigned long insize = ftell(infile);
   fseek(infile, 0L, SEEK_SET);
-  unsigned int expectedFileSize = inW*inH*divCeil(inbpp,8);
+  unsigned int expectedFileSize = inW*inH*bitsToBytes(inbpp);
   if(insize!= expectedFileSize){
     printf("Error, input file is incorrect size! expected %d (W:%d H:%d bitsPerPixel:%d), but is %d\n", expectedFileSize,inW,inH,inbpp,(unsigned int)insize);
     exit(1);

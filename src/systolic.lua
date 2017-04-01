@@ -392,6 +392,11 @@ end}
 
 systolicASTFunctions = {}
 setmetatable(systolicASTFunctions,{__index=IR.IRFunctions})
+
+if terralib~=nil then
+  require "systolicTerra"
+end
+
 systolicASTMT={__index = systolicASTFunctions,
 __add=function(l,r) return binop(l,r,"+") end, 
 __sub=function(l,r) return binop(l,r,"-") end,
@@ -432,7 +437,10 @@ function systolic.slice( expr, idxLow, idxHigh, idyLow, idyHigh )
 end
 
 function systolic.index( expr, idx, idy )
-  err( systolicAST.isSystolicAST(expr), "expr should be systolic value") 
+  err( systolicAST.isSystolicAST(expr), "expr should be systolic value")
+  err( type(idx)=="number", "index: idx must be number")
+  err( type(idy)=="number" or idy==nil, "index: idy must be number or nil")
+  
   -- slice will return an array or tuple with one element. so we need to do a cast.
   if expr.type:isArray() then
     return systolic.cast( systolic.slice(expr, idx, idx, idy, idy), expr.type:arrayOver() )
@@ -1321,6 +1329,18 @@ function systolicASTFunctions:toVerilog( module )
           expr = args[1]
         elseif n.inputs[1].type:constSubtypeOf(n.type) then
           expr = args[1] -- casting const to non-const. Verilog doesn't care.
+        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false and n.inputs[1].type.structure==n.type then
+          -- noop, explicit cast of named type to its structural type
+          expr = args[1]
+        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() and n.inputs[1].type==n.type.structure then
+          -- noop, cast to named type with same structure
+          expr = args[1]
+        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false then
+          -- structure not identical, attempt base cast
+          expr = dobasecast( args[1], n.inputs[1].type.structure, n.type, argwire[1], n.inputs[1].name )
+        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() then
+          -- structure not identical, attempt base cast
+          expr = dobasecast( args[1], n.inputs[1].type, n.type.structure, argwire[1], n.inputs[1].name )
         else
           expr = dobasecast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
         end
@@ -1516,7 +1536,9 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
   local CESeen = {}
   for fnname,fn in pairs(self.functions) do
     local canBeUndriven = fn:isPure()
-    err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." in module "..module.name)
+    local modtype = instance.module.name
+    if modtype==nil then modtype="" end
+    err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." (of type "..modtype..") in module "..module.name)
     
     -- if onlyWire==true, don't try to be clever - always wire the valid bit if it exists.
     if fn:isPure()==false or self.onlyWire then
@@ -2277,7 +2299,9 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     local debug = ""
     --debug = [[always @(posedge CLK) begin $display("write v %d ce %d value %h",]]..instance.verilogCompilerState[module].write[2]..[[,CE,]]..instance.verilogCompilerState[module].write[1]..[[); end]]
 
-    for i=0,(self.type:verilogBits()/8)-1 do
+    err(self.type:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(self.type)..") is not byte aligned. NYI. Use a cast!")
+
+    for i=0,math.ceil(self.type:verilogBits()/8)-1 do
       if FILEMODULE_VERILATOR then
 --        assn = assn .. [[$c("fwrite( (void*) &",]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8)..[[],",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
         assn = assn .. [[$c("fwrite( (void*) &",]]..instance.name.."_buffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,");" );]]
@@ -2298,7 +2322,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       local buffers = ""
       local bufferassn = ""
       -- if we don't assign to buffers of the right size, the c escape won't work properly
-      for i=0,(self.type:verilogBits()/8)-1 do
+      for i=0,math.ceil(self.type:verilogBits()/8)-1 do
         buffers = buffers.."reg [7:0] "..instance.name.."_buffer_"..tostring(i)..";\n"
         bufferassn = bufferassn..[[if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]
         bufferassn = bufferassn..instance.name.."_buffer_"..tostring(i).."<="..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."]; end\n"

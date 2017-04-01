@@ -1,80 +1,42 @@
-ffi = require "ffi"
+require "comparecommon"
 
-if type(arg[3])~="string" then
+if type(arg[2])~="string" then
   print("usage: hist.lua image.raw image.metadata.lua buckets")
   os.exit(1)
 end
 
-local metadata = dofile(arg[2])
-
-ffi.cdef[[
-typedef struct {} FILE;
-
-           FILE *fopen(const char *filename, const char *mode);
-           int fprintf(FILE *stream, const char *format, ...);
-           int fclose(FILE *stream);
-           int fseek(FILE *stream, long int offset, int whence);
-           size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
-           size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
-
-         ]]
-
-
-
-local imgIn = ffi.C.fopen(arg[1],"rb")
-if imgIn==nil then
-  print("Error, file not found "..arg[1])
-  os.exit(1)
-end
-
-local bytes
-
-if metadata.type=="uint16" then
-  bytes=2
-else
-  print("Unknown type "..metadata.type)
-  os.exit(1)
-end
-
-
-local pixelCount = metadata.width*metadata.height
-local byteCount = metadata.width*metadata.height*bytes
-
-local dataPtr
-
-if metadata.type=="uint16" then
-  dataPtr = ffi.new("unsigned short["..pixelCount.."]")
-else
-  print("Unknown type "..metadata.type)
-  os.exit(1)
-end
-
-local sz = ffi.C.fread(dataPtr,bytes,pixelCount,imgIn)
-
-if sz~=pixelCount then
-    print("File Size: "..tostring(sz)..", expected size:"..tostring(pixelCount))
-    print( "Incorrect file size!")
-    os.exit(1)
-end
-
-ffi.C.fclose(imgIn)
+dataPtr, metadata, pixelCount = loadRigelImage(arg[1],arg[2])
 
 -- build histogram
 local buckets = tonumber(arg[3])
-print("BUCKETS",buckets)
+--print("BUCKETS",buckets)
 
 local maxValue, minValue
 local sum = 0
+local fractionalCount = 0
+local maxFracBits = 0
 
-for i=0,pixelCount do
+for i=0,pixelCount-1 do
   local px = dataPtr[i]
 
   sum = sum + px
   
   if maxValue==nil or px>maxValue then maxValue=px end
   if minValue==nil or px<minValue then minValue=px end
+
+  if px~=math.floor(px) then fractionalCount = fractionalCount + 1 end
+
+  local fracBits = 0
+  local fpx = px
+  while fpx~=math.floor(fpx) do fracBits=fracBits+1; fpx = fpx*2 end
+  if fracBits>maxFracBits then maxFracBits=fracBits end
 end
 
-print("MAX",maxValue)
-print("MIN",minValue)
+print("Max Value",maxValue)
+print("Min Value",minValue)
 print("SUM",sum)
+print("Pixel Count",pixelCount)
+print("# of non-integer pixels",fractionalCount)
+print("Max Fractional Bits",maxFracBits)
+local maxabs = math.max( math.abs(maxValue), math.abs(minValue) )
+print("Max Integer Bits", math.ceil(math.log(maxabs)/math.log(2)) )

@@ -1,5 +1,6 @@
 local cstdlib = terralib.includec("stdlib.h")
 local rigel = require "rigel"
+local types = require "types"
 
 CT={}
 
@@ -10,7 +11,9 @@ function CT.identity(A)
 end
 
 function CT.cast(A,B)
-return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+  err(types.isType(B), "examples common cast, B must be type")
+  
+  return terra( a : &A:toTerraType(), out : &B:toTerraType() )
                             @out = [B:toTerraType()](@a)
                   end
 end
@@ -175,7 +178,7 @@ function CT.plusConsttfn(ty,value)
   if ty:verilogBits()~=ty:sizeof()*8 then
     --print(ty:verilogBits(),ty:sizeof()*8)
     --assert(false)
-    q = quote @[out] = @[out] and ((1<<[ty:verilogBits()])-1) end
+    q = quote @[out] = @[out] and (([ty:toTerraType()](1)<<[ty:verilogBits()])-1) end
   end
 
   return terra( a : ty:toTerraType(true), [out] ) 

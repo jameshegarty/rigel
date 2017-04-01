@@ -541,7 +541,7 @@ modules.liftHandshake = memoize(function(f)
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
-  err( rigel.isFunction(f), "first argument to map must be Rigel module" )
+  err( rigel.isFunction(f), "first argument to map must be Rigel module, but is "..tostring(f) )
   err(type(W)=="number", "width must be number")
   assert(type(H)=="number" or H==nil)
   if H==nil then H=1 end
@@ -1352,7 +1352,7 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   local tfn
   if terralib~=nil then tfn = MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )  end
 
-  local f = modules.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T), innerInputType, outputType, 0, 
+  local f = modules.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top), innerInputType, outputType, 0, 
                            tfn, sinp, S.tuple{sdata,svalid}, nil, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
   return modules.liftXYSeq( f, W, H, T  )
@@ -2435,7 +2435,7 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
   systolicModule:complete()
   local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
-  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction) end
+  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) end
 
   return rigel.newFunction( res )
 end

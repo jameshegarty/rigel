@@ -62,3 +62,13 @@ void done(){
 void writePixel(string id, int w, int h, unsigned short value){
   writeBytes(id,w,h,"uint16",1,2,(unsigned char*)&value);
 }
+
+void writePixel(string id, int w, int h, float value){
+  writeBytes(id,w,h,"float",1,4,(unsigned char*)&value);
+}
+
+void writePixel(string id, int w, int h, bool value){
+  unsigned char v = 0;
+  if(value){v=255;}
+  writeBytes(id,w,h,"bool",1,1,&v);
+}

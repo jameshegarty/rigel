@@ -213,7 +213,7 @@ function writeBmp(filename,width,height,stride,channels,data)
     
     if(padding ~= 0)then
       for h=0,height-1 do
-        ffi.C.fwrite(tempData[h*width*channels], width*channels, 1, file);
+        ffi.C.fwrite(tempData+(h*width*channels), width*channels, 1, file);
         ffi.C.fwrite(pad,padding,1,file);
       end
     else
@@ -239,7 +239,7 @@ function writeBmp(filename,width,height,stride,channels,data)
        
     if(padding ~= 0)then
       for h=0,height-1 do
-        ffi.C.fwrite(expanded[h*width*3], width*3, 1, file);
+        ffi.C.fwrite(expanded+(h*width*3), width*3, 1, file);
         ffi.C.fwrite(pad,padding,1,file);
       end
     else
@@ -264,16 +264,18 @@ end
 function raw2bmp(infile, outfile, axiround)
 
   local outputBytesPerPixel = math.ceil(metadata.outputBitsPerPixel/8)
-  local inputBytesPerPixel = math.ceil(metadata.inputBitsPerPixel/8)
+  --local inputBytesPerPixel = math.ceil(metadata.inputBitsPerPixel/8)
   
   -- special case: x86 has no 3 byte type, so round stuff in that range up to 4 bytes
   if metadata.outputBitsPerPixel>16 and metadata.outputBitsPerPixel<32 then
     outputBytesPerPixel = 4
+  elseif metadata.outputBitsPerPixel>32 and metadata.outputBitsPerPixel<64 then
+    outputBytesPerPixel = 8
   end
 
-  if metadata.inputBitsPerPixel>16 and metadata.inputBitsPerPixel<32 then
-    inputBytesPerPixel = 4
-  end
+  --if metadata.inputBitsPerPixel>16 and metadata.inputBitsPerPixel<32 then
+  --  inputBytesPerPixel = 4
+  --end
 
   local totalSize = metadata.outputWidth*metadata.outputHeight*outputBytesPerPixel
   local dataPtr = ffi.new("unsigned char["..totalSize.."]")
@@ -312,13 +314,12 @@ function raw2bmp(infile, outfile, axiround)
     --assert(false)
     dataPtr = addChannels(1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
     outputBytesPerPixel = 3
-  elseif outputBytesPerPixel==4 then
-    --inp:addChannels(-1)
-    --assert(false)
-    dataPtr = addChannels(-1, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
-    outputBytesPerPixel = 3
   elseif outputBytesPerPixel==1 or outputBytesPerPixel==3 then
     -- noop: natively supported
+  elseif outputBytesPerPixel>=4 then
+    -- just throw out the extra data!
+    dataPtr = addChannels(3-outputBytesPerPixel, metadata.outputWidth, metadata.outputHeight, metadata.outputWidth, outputBytesPerPixel, 8, dataPtr)
+    outputBytesPerPixel = 3
   else
     print("raw2bmp: unsupported output bytes per pixel ", outputBytesPerPixel)
     os.exit(1)

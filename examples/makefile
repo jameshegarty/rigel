@@ -93,8 +93,12 @@ SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.l
 SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
 
-AXIBITS = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
-AXIBITS += $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
+# type size not a factor of axi bus size
+SRCS_AXI := $(filter-out 12bpp.lua 18bpp.lua,$(SRCS_AXI))
+
+AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
+
+AXIBITS = $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
 
 AXIBITS100 = $(patsubst %.lua,out/%.axi100.bit,$(SRCS_AXI100))
 AXIBITS100 += $(patsubst %.lua,out/%.axi100.bit.bin,$(SRCS_AXI100))
@@ -153,6 +157,8 @@ camerabits: $(CAMERABITS)
 
 axi100: $(AXI100)
 
+axiverilog: $(AXIVERILOG)
+
 axibits: $(AXIBITS)
 
 axibits100: $(AXIBITS100)
@@ -170,13 +176,7 @@ out/%.terra.raw out/%_half.terra.raw: %.lua
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
-	- cp out/$*.cycles.txt out/build_$*
-
-out/%.terra.raw out/%_half.terra.raw: %.lua
-	$(TERRA) $< terrasim
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	- cp out/$*.cycles.txt out/build_$*
+	#- cp out/$*.cycles.txt out/build_$*
 
 out/%.isim.v out/%_half.isim.v: %.lua
 	$(LUA) $< isim

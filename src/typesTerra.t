@@ -3,6 +3,10 @@
 function TypeFunctions:toTerraType(pointer, vectorN)
   local ttype
 
+  if self.kind=="named" then
+    return self.structure:toTerraType(pointer,vectorN)
+  end
+  
   if self:isFloat() and self.precision==32 then
     ttype = float
   elseif self:isFloat() and self.precision==64 then
@@ -80,3 +84,4 @@ end
 function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
+

@@ -3,7 +3,7 @@ local types = require("types")
 local RM = require "modules"
 local C = require "examplescommon"
 local harness = require "harness"
-local f = require "fixed_float"
+local fRS = require "fixed_float"
 local S = require("systolic")
 
 local RST
@@ -121,7 +121,7 @@ end
 
 local fixedSqrt = memoize(function(A)
   assert(types.isType(A))
-  local inp = f.parameter("II",A)
+  local inp = fRS.parameter("II",A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
@@ -130,7 +130,7 @@ local fixedSqrt = memoize(function(A)
 
 local fixedLift = memoize(function(A)
   assert(types.isType(A))
-  local inp = f.parameter("IIlift",A)
+  local inp = fRS.parameter("IIlift",A)
   local out = inp:lift()
 --  out = out:disablePipelining()
 --  out = out:cast(A)
@@ -332,7 +332,7 @@ function RS.HS(t)
     elseif R.isHandshake(t.inputType) then
       --print("ISHANDSHAKE")
       return t
-    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and t.outputType.list[2]:isBool()) then
+    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
       --print("LIFTDECIM")
       return RM.liftHandshake(RM.liftDecimate(t))
     elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then
@@ -349,22 +349,83 @@ end
 
 function RS.harness(t) return harness(t) end
 
+function RS.modules.fwriteSeq(t)
+  -- file write only support byte aligned, so make a wrapper that casts up
+  if t.type:verilogBits()%8~=0 then
+    local inp = RS.input(t.type)
+
+    local out, fwritetype
+    if t.type:isUint() or t.type:isInt() or (t.type:isNamed() and t.type.generator=="fixed") then
+
+      local fwritetype = t.type:toCPUType()
+
+      --[=[
+      if t.type:isUint() then
+        fwritetype = types.uint(math.ceil(t.type:verilogBits()/8)*8)
+
+        if t.type:verilogBits()>16 and t.type:verilogBits()<32 then
+          -- special case: no 3 byte type on x86
+          fwritetype = types.uint(32)
+        end
+      elseif t.type:isNamed() and t.type.generator=="fixed" and
+      else
+        err(false, "rigelSimple fwriteSeq NYI type "..tostring(t.type))
+      end
+      ]=]
+      
+      --print("RS FWRITESEQ", t.type, fwritetype)
+      out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
+      out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
+      out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
+      return RS.defineModule{input=inp,output=out}
+    elseif t.type:isBool() then
+      -- special case: write out bools as 255 or 0 to make it easy to look @ the file
+      local inp = RS.input(types.bool())
+      local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
+      local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
+      local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
+      return RS.defineModule{input=inp,output=out}
+    else
+      err(false,"rigelSimple fwriteSeq NYI type "..tostring(t.type))
+    end
+  else
+    return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog)
+  end
+end
+
 function RS.writePixels(input,id,imageSize,V)
+  err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
+  
   local IT = input:typecheck()
-  print("WRITEPX",IT.type)
+  --print("WRITEPX",IT.type)
 
   local TY
   if R.isHandshake(IT.type) then
     TY = R.extractData(IT.type)
   else
-    assert(false)
+    TY = IT.type
   end
 
-  local mod = RM.fwriteSeq("out/dbg_terra_"..id..".raw",TY,"out/dbg_verilog_"..id..".raw")
+  local TYY = TY
+  if TY:isArray() then
+    TYY = TY:arrayOver()
+  end
+    
+  local mod = RS.modules.fwriteSeq{type=TYY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}
 
+  if TY:isArray() then
+    mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
+  end
+  
   if R.isHandshake(IT.type) then
      mod = RS.HS(mod)
   end
+
+  --
+  local file = io.open("out/dbg_"..id..".metadata.lua","w")
+  file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TYY).."'}")
+  file:close()
+  --
   
   return RS.connect{input=input, toModule=mod}
 end

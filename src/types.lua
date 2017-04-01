@@ -24,6 +24,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="opaque" then
     return "opaque_"..ty.str
+  elseif ty.kind=="named" then
+    return ty.name
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -42,6 +44,19 @@ function types.opaque( str, X )
   assert(X==nil)
   types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
   return types._opaque[str]
+end
+
+types._named={}
+function types.named( name, structure, generator, params, X )
+  err( type(name)=="string","types.named: name must be string")
+  err( types.isType(structure),"types.named: structure must be rigel type")
+  err( type(generator)=="string","types.named: generator must be string")
+  err( type(params)=="table","types.named: params must be table")
+  err(types._named[name]==nil,"Attempting to make new named type with a name that already exists")
+
+  local ty = {kind="named",name=name, structure=structure, generator=generator,params=params}
+  types._named[name] = setmetatable(ty,TypeMT)
+  return types._named[name]
 end
 
 types._bits={[true]={},[false]={}}
@@ -211,36 +226,37 @@ function types.meet( a, b, op, loc)
       assert(false)
     end
   elseif (a.kind=="uint" and b.kind=="int") or (a.kind=="int" and b.kind=="uint") then
-    
-    local ut = a
-    local t = b
-    if a.kind=="int" then ut,t = t,ut end
-    
-    local prec
-    if ut.precision==t.precision and t.precision < 64 then
-      prec = t.precision * 2
-    elseif ut.precision<t.precision then
-      prec = math.max(a.precision,b.precision)
-    else
-      error("Can't meet a "..tostring(ut).." and a "..tostring(t))
-    end
-    
-    local thistype = types.int(prec)
-    
-    if cmpops[op] then
-      return types.bool(), thistype, thistype
-    elseif binops[op] or treatedAsBinops[op] then
-      return thistype, thistype, thistype
-    elseif op=="<<" or op==">>" then
+
+    if op=="<<" or op==">>" then
        -- don't cast shifts - the rhs leads to 2^n shift options!
        return a, a, b
-    elseif op=="pow" then
-      return thistype, thistype, thistype
     else
-      print( "operation " .. op .. " is not implemented for aType:" .. a.kind .. " bType:" .. b.kind .. " " )
-      assert(false)
+      local ut = a
+      local t = b
+      if a.kind=="int" then ut,t = t,ut end
+      
+      local prec
+      if ut.precision==t.precision and t.precision < 64 then
+        prec = t.precision * 2
+      elseif ut.precision<t.precision then
+        prec = math.max(a.precision,b.precision)
+      else
+        error("Can't meet a "..tostring(ut).." and a "..tostring(t))
+      end
+      
+      local thistype = types.int(prec)
+      
+      if cmpops[op] then
+        return types.bool(), thistype, thistype
+      elseif binops[op] or treatedAsBinops[op] then
+        return thistype, thistype, thistype
+      elseif op=="pow" then
+        return thistype, thistype, thistype
+      else
+        print( "operation " .. op .. " is not implemented for aType:" .. a.kind .. " bType:" .. b.kind .. " " )
+        assert(false)
+      end
     end
-    
   elseif (a.kind=="float" and (b.kind=="uint" or b.kind=="int")) or 
     ((a.kind=="uint" or a.kind=="int") and b.kind=="float") then
     
@@ -314,6 +330,12 @@ function types.meet( a, b, op, loc)
   elseif a:isArray()==false and b:isArray() then
     local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, loc )
     return thistype, lhstype, rhstype
+  elseif a:isNamed() and b:isNamed() then
+    if op=="select" and a==b then
+      return a,a,a
+    else
+      err(false,"NYI - meet of two named types "..tostring(a).." "..tostring(b))
+    end
   else
     error("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op..", "..loc)
   end
@@ -411,6 +433,10 @@ function types.checkExplicitCast(from, to, ast)
     return true
   elseif from.kind=="float" and to.kind=="float" then
     return true
+  elseif from.kind=="named" and to.kind~="named" then
+    return types.checkExplicitCast(from.structure,to)
+  elseif from.kind~="named" and to.kind=="named" then
+    return types.checkExplicitCast(from,to.structure)
   else
     print("from",from,"to",to)
     assert(false) -- NYI
@@ -438,6 +464,8 @@ function TypeFunctions:const()
     return foldl(andop,true, map(self.list, function(v) return v:const() end ) )
   elseif self:isNull() then
     return true
+  elseif self:isNamed() then
+    return self.structure:const()
   else
     print(":const",self)
     assert(false)
@@ -516,6 +544,8 @@ function TypeFunctions:stripConst()
     return types.tuple(typelist)
   elseif self:isBool() then
     return types.bool(false)
+  elseif self:isNamed() then
+    return self
   else
     print(":stripConst",self)
     assert(false)
@@ -526,7 +556,7 @@ end
 function TypeFunctions:isArray()  return self.kind=="array" end
 
 function TypeFunctions:arrayOver()
-  assert(self.kind=="array")
+  err(self.kind=="array","arrayOver type was not an array")
   return self.over
 end
 
@@ -576,6 +606,8 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isOpaque() then
     return 0
+  elseif self:isNamed() then
+    return self.structure:verilogBits()
   else
     print(self)
     assert(false)
@@ -589,6 +621,7 @@ function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
 function TypeFunctions:isNull() return self.kind=="null" end
 function TypeFunctions:isOpaque() return self.kind=="opaque" end
+function TypeFunctions:isNamed() return self.kind=="named" end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"
@@ -643,6 +676,50 @@ function TypeFunctions:checkLuaValue(v)
     assert(false)
   end
 
+end
+
+-- convert a terra type into a rigel type
+function types.fromTerraType(ty)
+  if ty==uint16 then
+    return types.uint(16)
+  else
+    err(false, "types.fromTerraType NYI"..tostring(ty))
+  end
+end
+
+
+-- CPUs only support certain bit widths. Convert our arbitrary precision types to the nearest CPU that
+-- which doesn't loose precision
+function TypeFunctions:toCPUType()
+  if self:isUint() then
+    if self:verilogBits()<=8 then
+      return types.uint(8)
+    elseif self:verilogBits()<=16 then
+      return types.uint(16)
+    elseif self:verilogBits()<=32 then
+      return types.uint(32)
+    elseif self:verilogBits()<=64 then
+      return types.uint(64)
+    else
+      err(false, "Type:toCPUType() NYI "..tostring(self))
+    end
+  elseif self:isInt() then
+    if self:verilogBits()<=8 then
+      return types.int(8)
+    elseif self:verilogBits()<=16 then
+      return types.int(16)
+    elseif self:verilogBits()<=32 then
+      return types.int(32)
+    elseif self:verilogBits()<=64 then
+      return types.int(64)
+    else
+      err(false, "Type:toCPUType() NYI "..tostring(self))
+    end
+  elseif self:isNamed() then
+    return self.structure:toCPUType()
+  else
+    err(false, "Type:toCPUType() NYI "..tostring(self))
+  end
 end
 
 if terralib~=nil then require("typesTerra") end
