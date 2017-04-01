@@ -38,6 +38,10 @@ local function toTerra(self,name)
           res = `[args[1]]<[args[2]]
         elseif n.op=="<=" then
           res = `[args[1]]<=[args[2]]
+        elseif n.op=="==" then
+          res = `[args[1]]==[args[2]]
+        elseif n.op=="~=" then
+          res = `[args[1]]~=[args[2]]
         else
           local l = `[n:underlyingType():toTerraType()]([args[1]])
           local r = `[n:underlyingType():toTerraType()]([args[2]])
@@ -103,8 +107,41 @@ local function toTerra(self,name)
         --print("ADDLSBS",n.type,n.N)
         res = `[n.type:toTerraType()]([args[1]])
         res = `res << n.N
+      elseif n.kind=="removeLSBs" then
+        res = `[args[1]] >> n.N
+        res = `[n.type:toTerraType()](res)
       elseif n.kind=="addMSBs" then
         res = `[n.type:toTerraType()]([args[1]])
+      elseif n.kind=="removeMSBs" then
+        if n:isSigned() then
+          local outbits = n:precision()
+
+          local usInputType = types.uint(n.inputs[1]:precision())
+          
+          res = quote
+            var mask = ([usInputType:toTerraType()](1) << outbits) - 1
+            var msb = [usInputType:toTerraType()](1) << (outbits-1)
+            var notmask = not mask
+
+            var inpuint = [usInputType:toTerraType()]([args[1]])
+            var masked = inpuint and mask
+
+            -- extend the sign bit so that the CPU thinks this number has the correct sign
+            -- note that we set the sign bit based on the MSB of the _masked_ portion. This is what verilog will do.
+            -- DO NOT set sign bit based on sign bit of (unmaked) input.
+            if (masked and msb) ~=0 then
+              masked = masked or notmask
+            end
+
+            var r = [n.type:toTerraType()](masked)
+            in r end
+        else
+          local outbits = n:precision()
+          res = quote
+            var mask = ([n.inputs[1].type:toTerraType()](1) << outbits) - 1
+            var r = [n.type:toTerraType()]([args[1]] and mask)
+            in r end
+          end
       else
         print(n.kind)
         assert(false)

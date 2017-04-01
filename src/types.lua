@@ -226,36 +226,37 @@ function types.meet( a, b, op, loc)
       assert(false)
     end
   elseif (a.kind=="uint" and b.kind=="int") or (a.kind=="int" and b.kind=="uint") then
-    
-    local ut = a
-    local t = b
-    if a.kind=="int" then ut,t = t,ut end
-    
-    local prec
-    if ut.precision==t.precision and t.precision < 64 then
-      prec = t.precision * 2
-    elseif ut.precision<t.precision then
-      prec = math.max(a.precision,b.precision)
-    else
-      error("Can't meet a "..tostring(ut).." and a "..tostring(t))
-    end
-    
-    local thistype = types.int(prec)
-    
-    if cmpops[op] then
-      return types.bool(), thistype, thistype
-    elseif binops[op] or treatedAsBinops[op] then
-      return thistype, thistype, thistype
-    elseif op=="<<" or op==">>" then
+
+    if op=="<<" or op==">>" then
        -- don't cast shifts - the rhs leads to 2^n shift options!
        return a, a, b
-    elseif op=="pow" then
-      return thistype, thistype, thistype
     else
-      print( "operation " .. op .. " is not implemented for aType:" .. a.kind .. " bType:" .. b.kind .. " " )
-      assert(false)
+      local ut = a
+      local t = b
+      if a.kind=="int" then ut,t = t,ut end
+      
+      local prec
+      if ut.precision==t.precision and t.precision < 64 then
+        prec = t.precision * 2
+      elseif ut.precision<t.precision then
+        prec = math.max(a.precision,b.precision)
+      else
+        error("Can't meet a "..tostring(ut).." and a "..tostring(t))
+      end
+      
+      local thistype = types.int(prec)
+      
+      if cmpops[op] then
+        return types.bool(), thistype, thistype
+      elseif binops[op] or treatedAsBinops[op] then
+        return thistype, thistype, thistype
+      elseif op=="pow" then
+        return thistype, thistype, thistype
+      else
+        print( "operation " .. op .. " is not implemented for aType:" .. a.kind .. " bType:" .. b.kind .. " " )
+        assert(false)
+      end
     end
-    
   elseif (a.kind=="float" and (b.kind=="uint" or b.kind=="int")) or 
     ((a.kind=="uint" or a.kind=="int") and b.kind=="float") then
     

@@ -150,6 +150,7 @@ function fixed.constant( value )
 
   local precision = math.ceil(math.log(value)/math.log(2))
   if signed then precision = precision + 1 end
+  if value==0 then precision=1 end -- special case
 
   local exp = 0
 
@@ -191,11 +192,17 @@ function fixedNewASTFunctions:toSigned()
 end
 
 function fixedNewASTFunctions:addLSBs(N)
-  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "addLSBs input must be number" )
   err( N>0, "addLBSs input must be >0")
 
   return fixed.new{kind="addLSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()-N),N=N,inputs={self},loc=getloc()}
+end
+
+function fixedNewASTFunctions:removeLSBs(N)
+  err( type(N)=="number", "removeLSBs input must be number" )
+  err( N>0, "removeLBSs input must be >0")
+
+  return fixed.new{kind="removeLSBs", type=fixed.type(self:isSigned(), self:precision()-N, self:exp()+N),N=N,inputs={self},loc=getloc()}
 end
 
 function fixedNewASTFunctions:addMSBs(N)
@@ -204,6 +211,14 @@ function fixedNewASTFunctions:addMSBs(N)
   err( N>0, "addMBSs input must be >0")
 
   return fixed.new{kind="addMSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()),N=N,inputs={self},loc=getloc()}
+end
+
+function fixedNewASTFunctions:removeMSBs(N)
+  --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( type(N)=="number", "removeMSBs input must be number" )
+  err( N>0, "removeMBSs input must be >0")
+
+  return fixed.new{kind="removeMSBs", type=fixed.type(self:isSigned(), self:precision()-N, self:exp()),N=N,inputs={self},loc=getloc()}
 end
 
 function fixedNewASTFunctions:rshift(N)
@@ -233,6 +248,8 @@ function fixedNewASTFunctions:gt(r) return boolbinop(">",self,r) end
 function fixedNewASTFunctions:ge(r) return boolbinop(">=",self,r) end
 function fixedNewASTFunctions:lt(r) return boolbinop("<",self,r) end
 function fixedNewASTFunctions:le(r) return boolbinop("<=",self,r) end
+function fixedNewASTFunctions:eq(r) return boolbinop("==",self,r) end
+function fixedNewASTFunctions:ne(r) return boolbinop("~=",self,r) end
 
 function fixedNewASTFunctions:abs()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
@@ -349,6 +366,10 @@ function fixedNewASTFunctions:toSystolic()
             res = S.lt(args[1],args[2])
           elseif n.op=="<=" then
             res = S.le(args[1],args[2])
+          elseif n.op=="==" then
+            res = S.eq(args[1],args[2])
+          elseif n.op=="~=" then
+            res = S.__not(S.eq(args[1],args[2]))
           elseif n.op=="+" or n.op=="-" or n.op=="*" then
             local l = S.cast(args[1], n:underlyingType() )
             local r = S.cast(args[2], n:underlyingType() )
@@ -402,7 +423,10 @@ function fixedNewASTFunctions:toSystolic()
       elseif n.kind=="addLSBs" then
         res = S.cast(args[1], n:underlyingType() )
         res = S.lshift(res,S.constant(n.N,types.uint(8)))
-      elseif n.kind=="addMSBs" then
+      elseif n.kind=="removeLSBs" then
+        res = S.rshift(args[1],S.constant(n.N,types.uint(8)))
+        res = S.cast(res, n:underlyingType() )
+      elseif n.kind=="addMSBs" or n.kind=="removeMSBs" then
         res = S.cast(args[1], n:underlyingType() )
       else
         print(n.kind)
@@ -514,8 +538,9 @@ end
 function fixedNewASTFunctions:underlyingType()
   if self.type:isUint() then return self.type end
   if self.type:isInt() then return self.type end
+  if self.type:isBool() then return self.type end
   if self.type:isNamed() and self.type.generator=="fixed" then return self.type.structure end
-  err(false,":precision(), not a numeric type!")
+  err(false,":underlyingType(), NYI "..tostring(self.type))
 end
 
 return fixed

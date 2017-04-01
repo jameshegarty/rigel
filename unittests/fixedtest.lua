@@ -27,6 +27,12 @@ configs.writepxshift = inp:toSigned():lshift(3):writePixel("writePixelShiftTest"
 local inp = f.parameter("inp",types.uint(8))
 configs.gt = inp:gt(f.constant(200)):writePixel("gt",{64,32})
 -------------------
+local inp = f.parameter("inp",types.uint(8))
+configs.removelsbs = inp:removeLSBs(4):writePixel("removelsbs",{64,32})
+-------------------
+local inp = f.parameter("inp",types.uint(8))
+configs.removemsbs = inp:removeMSBs(4):writePixel("removemsbs",{64,32})
+-------------------
 
 for k,v in pairs(configs) do
   print("do config",k)
