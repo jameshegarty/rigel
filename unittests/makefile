@@ -35,12 +35,12 @@ out/fixedtest.correct.txt: out/verilogcorrect.txt
 	diff gold/dbg_terra_gt.raw out/dbg_verilog_gt.raw > out/dbg_fixedtest_gt.diff
 	diff gold/dbg_gt.metadata.lua out/dbg_gt.metadata.lua > out/dbg_fixedtest_gt.metadata.diff
 
-	diff gold/dbg_terra_removelsbs.raw out/dbg_terra_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
-	diff gold/dbg_terra_removelsbs.raw out/dbg_verilog_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
+	diff gold/dbg_verilog_removelsbs.raw out/dbg_terra_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
+	diff gold/dbg_verilog_removelsbs.raw out/dbg_verilog_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
 	diff gold/dbg_removelsbs.metadata.lua out/dbg_removelsbs.metadata.lua > out/dbg_fixedtest_removelsbs.metadata.diff
 
-	diff gold/dbg_terra_removemsbs.raw out/dbg_terra_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
-	diff gold/dbg_terra_removemsbs.raw out/dbg_verilog_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
+	diff gold/dbg_verilog_removemsbs.raw out/dbg_terra_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
+	diff gold/dbg_verilog_removemsbs.raw out/dbg_verilog_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
 	diff gold/dbg_removemsbs.metadata.lua out/dbg_removemsbs.metadata.lua > out/dbg_fixedtest_removemsbs.metadata.diff
 
 	touch out/fixedtest.correct.txt
