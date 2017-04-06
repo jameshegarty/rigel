@@ -1027,7 +1027,12 @@ function MT.seqMap(f, W, H, T)
   return SeqMap
 end
 
-function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate)
+-- simCycles: run the simulation for at least this number of cycles
+function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles, X)
+  assert(X==nil)
+
+  if simCycles==nil then simCycles=0 end
+  
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
@@ -1046,7 +1051,7 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
     var downstreamReady = 0
     var cycles : uint = 0
 
-    while inpAddr<inputCount or outAddr<outputCount do
+    while inpAddr<inputCount or outAddr<outputCount or (simCycles~=0 and cycles<simCycles) do
       valid(innerinp)=(inpAddr<inputCount)
       self.inner:calculateReady(downstreamReady==0)
       if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
@@ -1057,6 +1062,7 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
       if downstreamReady==readyRate then downstreamReady=0 end
       cycles = cycles + 1
     end
+
     return cycles
   end
 

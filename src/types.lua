@@ -640,6 +640,8 @@ function TypeFunctions:fakeValue()
       table.insert(t,v:fakeValue())
     end
     return t
+  elseif self:isBool() then
+    return false
   else
     err(false, "could not create fake value for "..tostring(self))
   end

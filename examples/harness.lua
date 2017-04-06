@@ -176,7 +176,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   
 end
 
-function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
+function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,simCycles,X)
 
   assert(X==nil)
   assert( types.isType(inputType) )
@@ -187,9 +187,9 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   assert(type(outputH)=="number")
   assert(type(inputFilename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
-  assert(earlyOverride==nil or type(earlyOverride)=="number")
+  --assert(earlyOverride==nil or type(earlyOverride)=="number")
 
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT})
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles})
   
 ------------------------
 -- verilator just uses the top module directly
@@ -366,13 +366,13 @@ function harnessTop(t)
   err(expectedOutputCount==outputCount, "Error, SDF predicted output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
   
   if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
-    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2] )
+    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles )
   elseif(arg[1]=="axi") then
     H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
   elseif(arg[1]=="isim") then
     H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
   elseif (t.backend==nil and arg[1]=="terrasim") or t.backend=="terra" then
-    H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest )
+    H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles )
   else
     print("unknown build target "..arg[1])
     assert(false)

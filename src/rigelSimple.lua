@@ -61,6 +61,10 @@ function RS.modules.downsampleSeq(t)
   return C.downsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
+function RS.modules.posSeq(t)
+  return RM.posSeq(t.size[1],t.size[2],t.V)
+end
+
 function RS.modules.linebuffer(t)
   local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.V, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
   local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.V )
@@ -172,7 +176,7 @@ function RS.modules.constSeq(t)
 end
 
 function RS.modules.filterSeq(t)
-  return RM.filterSeq( t.type, t.size[1], t.size[2], 1/t.rate, t.fifoSize )
+  return RM.filterSeq( t.type, t.size[1], t.size[2], 1/t.rate, t.fifoSize, t.coerce )
 end
 
 function RS.connect(t)
@@ -246,11 +250,14 @@ end
 function RS.index(t)
   local ty=lookupType(t.input)
   
-  --print("FANOUTTYPE",ty)
-  assert( R.isHandshake(ty))
-  ty = R.extractData(ty)
-  ccnt = ccnt + 1
-  return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
+  if R.isHandshake(ty) then
+    ty = R.extractData(ty)
+    ccnt = ccnt + 1
+    return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
+  else
+    ccnt = ccnt + 1
+    return R.apply("v"..tostring(ccnt), C.index(ty,t.key), t.input )
+  end
 end
 
 
@@ -295,7 +302,7 @@ function RS.fanIn(t)
       assert(false)
     end
 
-    assert( R.isHandshake(ty))
+    err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
     ty = R.extractData(ty)
 
     table.insert(typelist,ty)

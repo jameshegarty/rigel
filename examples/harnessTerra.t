@@ -27,9 +27,9 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   return RM.lambda( "harness"..id..fn.systolicModule.name, inpSymb, out )
 end)
 
-return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, X)
+return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, X)
 
-if doHalfTest==nil then doHalfTest=true end
+  if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
   local inputCount = (inputW*inputH)/inputT
   local outputCount = (outputW*outputH)/outputT
@@ -43,7 +43,7 @@ if doHalfTest==nil then doHalfTest=true end
     --local f = harnessWrapperFn( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".terra.raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true )
     --local f = terraWrapper{fn=hsfn, inputFilename=inputFilename, outputFilename="out/"..filename..ext..".terra.raw",tapType=tapType, inputType=inputType, outputType=outputType,id=i}
     local f = terraWrapper(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".terra.raw",outputType,i)
-    f = RM.seqMapHandshake( f, inputType, tapType, tapValue, inputCount, outputCount, false, i )
+    f = RM.seqMapHandshake( f, inputType, tapType, tapValue, inputCount, outputCount, false, i, simCycles )
     local Module = f:compile()
     if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
     (terra() 
