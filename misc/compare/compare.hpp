@@ -21,6 +21,7 @@ void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, u
     Filestate fs;
     string outfile=string("out/")+id+string(".raw");
     fs.file = fopen(outfile.c_str(),"wb");
+    if(fs.file==NULL){printf("compare.hpp: could not open %s\n",outfile.c_str()); exit(1);}
     fs.seenPixels = 0;
     fs.w=w;
     fs.h=h;
@@ -29,6 +30,7 @@ void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, u
     //
     string outfileMD=string("out/")+id+string(".metadata.lua");
     FILE* md = fopen(outfileMD.c_str(),"w");
+    if(md==NULL){printf("compare.hpp: could not open %s\n",outfileMD.c_str()); exit(1);}
     fprintf(md,"return {width=%d,height=%d,type='%s'}",w,h,type.c_str());
     fclose(md);
   }

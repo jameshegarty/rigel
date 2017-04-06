@@ -2340,7 +2340,9 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       return debug..obuffers..buffers..[[
   reg[63:0] ]]..instance.name..[[_file;
   reg ]]..instance.name..[[_dowrite=1'b0;
-  initial begin $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); end
+  initial begin $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); 
+$c("if(",]]..instance.name..[[_file,"==0){printf(\"ERROR OPENING FILE ]]..self.filename..[[\");exit(1);}");
+end
 
   always @ (posedge CLK) begin 
     ]]..bufferassn..oassign..[[

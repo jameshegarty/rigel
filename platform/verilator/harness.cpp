@@ -122,8 +122,8 @@ void getData( WData (*signal)[N], unsigned int databits, FILE* file){
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=11){
-    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP");
+  if(argc!=11 && argc!=12){
+    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP [simCycles]");
     exit(1);
   }
 
@@ -141,6 +141,9 @@ int main(int argc, char** argv) {
   int outbpp = atoi(argv[9]);
   int outP = atoi(argv[10]);
 
+  int simCycles = 0;
+  if(argc==12){simCycles = atoi(argv[11]);}
+  
   unsigned int inPackets = (inW*inH)/inP;
   unsigned int outPackets = (outW*outH)/outP;
   
@@ -177,7 +180,7 @@ int main(int argc, char** argv) {
   // NOTE: you'd think we could check for overflows (too many output packets), but actually we can't
   // some of our modules start producing data immediately for the next frame, which is valid behavior (ie pad)
   
-  while (!Verilated::gotFinish() && validcnt<outPackets ) {
+  while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
     if(CLK){
       if(top->ready){
         if(validInCnt>=inPackets){
@@ -211,6 +214,4 @@ int main(int argc, char** argv) {
 
   top->final();
   delete top;
-  
-
 }

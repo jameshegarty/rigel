@@ -579,16 +579,18 @@ end)
 
 -- type {A,bool}->A
 -- rate: this will have a valid output every 1/rate cycles
-function modules.filterSeq( A, W,H, rate, fifoSize )
+function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
   assert(types.isType(A))
   err(type(W)=="number", "W must be number")
   err(type(H)=="number", "H must be number")
   err(type(rate)=="number", "rate must be number")
   err(rate>1, "rate must be >1")
   err(type(fifoSize)=="number", "fifoSize must be number")
-  err(isPowerOf2(rate), "rate should be power of 2")
+  --err(isPowerOf2(rate), "rate should be power of 2")
 
-  local logRate = math.log(rate)/math.log(2)
+  if coerce==nil then coerce=true end
+
+  --local logRate = math.log(rate)/math.log(2)
 
   local res = { kind="filterSeq", A=A }
   -- this has type basic->V (decimate)
@@ -598,6 +600,9 @@ function modules.filterSeq( A, W,H, rate, fifoSize )
   res.stateful = true
   res.sdfInput = {{1,1}}
   res.sdfOutput = {{1,rate}}
+
+  local outTokens = (W*H)/rate
+  err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens in non integer ("..tonumber(outTokens)..")")
 
   if terralib~=nil then res.terraModule = MT.filterSeq( res, A, W,H, rate, fifoSize ) end
 
@@ -646,12 +651,28 @@ parameter INSTANCE_NAME="INST";
       phase <= (phase==]]..tostring(rate)..[[)?0:(phase+1);
     end
   end
+]]
 
-  always @(posedge CLK) begin
+  if DARKROOM_VERBOSE then
+    vstring = vstring..[[always @(posedge CLK) begin
     $display("FILTER reset:%d process_valid:%d filterCond:%d validOut:%d phase:%d cyclesSinceOutput:%d currentFifoSize:%d remainingInputs:%d remainingOutputs:%d underflow:%d fifoHasSpace:%d outaTime:%d", reset, process_valid, filterCond, validOut, phase, cyclesSinceOutput, currentFifoSize, remainingInputs, remainingOutputs, underflow, fifoHasSpace, outaTime);
   end
-endmodule
 ]]
+  end
+
+  
+vstring = vstring..[[endmodule
+]]
+
+  if coerce==false then
+   vstring = [[
+module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(rigel.lower(res.outputType):verilogBits()-1)..[[:0] out);
+parameter INSTANCE_NAME="INST";
+  assign out=inp;
+endmodule
+
+]]
+  end
 
   local fns = {}
   local inp = S.parameter("inp",res.inputType)
@@ -2585,7 +2606,7 @@ local function readAll(file)
     return content
 end
 
-function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, X )
+function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles, X )
   err( darkroom.isFunction(f), "fn must be a function")
   err( types.isType(inputType), "inputType must be a type")
   err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
@@ -2607,7 +2628,7 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
 
   if readyRate==nil then readyRate=1 end
 
-  if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate) end
+  if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles) end
 
   local verilogStr
 
