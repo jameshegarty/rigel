@@ -691,4 +691,44 @@ modules.floatToInt = loadVerilogFile(types.float(32),types.int(32),"float32_to_i
 modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_float")
 modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
 
+
+function modules.div(ty)
+  local fns = {}
+  local inp = S.parameter("inp",types.tuple{ty,ty})
+
+  fns.process = S.lambda("process",inp,S.cast(S.constant(0,ty),ty),"out",nil,nil,S.CE("ce"))
+
+  local vstring=[[
+module div(CLK,ce,inp,out);
+  parameter INSTANCE_NAME="INST";
+
+  input CLK;
+  input ce;
+  input []]..(ty:verilogBits()*2-1)..[[:0] inp;
+  output []]..(ty:verilogBits()-1)..[[:0] out;
+
+  reg []]..(ty:verilogBits()*2-1)..[[:0] inpreg;
+
+  wire []]..(ty:verilogBits()-1)..[[:0] a;
+  wire []]..(ty:verilogBits()-1)..[[:0] b;
+  assign a = inpreg[]]..(ty:verilogBits()-1)..[[:0];
+  assign b = inpreg[]]..(ty:verilogBits()*2-1)..":"..(ty:verilogBits())..[[];
+
+  reg []]..(ty:verilogBits()-1)..[[:0] tmp;
+  assign out = tmp;
+
+  always @(posedge CLK) begin
+    if(ce) begin
+      inpreg <= inp;
+//      $c(tmp,"=",a,"/(",b,"==0?1:",b,");");
+      tmp <= $c(a,"/(",b,"==0?1:",b,")");
+    end
+  end
+endmodule
+]]
+  
+  local m = systolic.module.new("div",fns,{},true,nil,nil,vstring,{process=2})
+  return m
+end
+
 return modules

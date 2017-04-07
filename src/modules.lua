@@ -62,7 +62,7 @@ end
 -- This converts SoA to AoS
 -- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
 -- if asArray==true then converts {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d(a[N],W,H). This requires a,b,c be the same...
-function modules.SoAtoAoS( W, H, typelist, asArray )
+modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(typelist)=="table")
@@ -96,7 +96,7 @@ function modules.SoAtoAoS( W, H, typelist, asArray )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
 
   return rigel.newFunction(res)
-end
+end)
 
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
@@ -664,41 +664,42 @@ parameter INSTANCE_NAME="INST";
 vstring = vstring..[[endmodule
 ]]
 
-  if coerce==false then
-   vstring = [[
-module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(rigel.lower(res.outputType):verilogBits()-1)..[[:0] out);
-parameter INSTANCE_NAME="INST";
-  assign out=inp;
-endmodule
-
-]]
-  end
-
-  local fns = {}
-  local inp = S.parameter("inp",res.inputType)
-
-  local datat = rigel.extractData(res.outputType)
-  local datav = datat:fakeValue()
-
-  fns.process = S.lambda("process",inp,S.cast(S.tuple{S.constant(datav,datat),S.constant(true,types.bool())}, rigel.lower(res.outputType)), "out",nil,S.parameter("process_valid",types.bool()),S.CE("ce"))
-  fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
-
-  local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
-
-
   res.systolicModule = Ssugar.moduleConstructor("FilterSeqImplWrap")
 
   -- hack: get broken systolic library to actually wire valid
   local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
 
-  local inner = res.systolicModule:add(FilterSeqImpl:instantiate("filterSeqImplInner"))
-
   local sinp = S.parameter("process_input", res.inputType )
   local CE = S.CE("CE")
   local v = S.parameter("process_valid",types.bool())
-  res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp,v), "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
-  local resetValid = S.parameter("reset",types.bool())
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16))),inner:reset(nil,resetValid)},resetValid,CE) )
+
+  if coerce then
+    local fns = {}
+    local inp = S.parameter("inp",res.inputType)
+    
+    local datat = rigel.extractData(res.outputType)
+    local datav = datat:fakeValue()
+    
+    fns.process = S.lambda("process",inp,S.cast(S.tuple{S.constant(datav,datat),S.constant(true,types.bool())}, rigel.lower(res.outputType)), "out",nil,S.parameter("process_valid",types.bool()),S.CE("ce"))
+    fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
+    
+    local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
+
+    local inner = res.systolicModule:add(FilterSeqImpl:instantiate("filterSeqImplInner"))
+
+    res.systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp,v), "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
+    local resetValid = S.parameter("reset",types.bool())
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16))),inner:reset(nil,resetValid)},resetValid,CE) )
+
+  else
+    res.systolicModule:addFunction( S.lambda("process", sinp, sinp, "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
+    local resetValid = S.parameter("reset",types.bool())
+    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))},resetValid,CE) )
+    
+  end
+
+  
+
   
   return rigel.newFunction(res)
 end

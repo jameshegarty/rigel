@@ -1252,7 +1252,14 @@ function systolicASTFunctions:toVerilog( module )
           if fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
             -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
             local bitdiff = toType.precision-fromType.precision
-            return "{"..bitdiff.."'b0,"..expr.."}"
+
+            if bitdiff>0 then
+              return "{"..bitdiff.."'b0,"..expr.."}"
+            elseif bitdiff==0 then
+              return expr
+            else
+              assert(false)
+            end
           elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
             -- casting smaller int to larger int. must sign extend
             expr = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )

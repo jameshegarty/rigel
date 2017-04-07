@@ -86,7 +86,7 @@ function loadRigelImage(rawfile, metafile)
   local sz = ffi.C.fread(dataPtr,bytes,pixelCount,imgIn)
   
   if sz~=pixelCount then
-    print("File Size: "..tostring(sz)..", expected size:"..tostring(pixelCount))
+    print("Pixel Count: "..tostring(sz)..", expected pixel count:"..tostring(pixelCount))
     print( "Incorrect file size!")
     os.exit(1)
   end

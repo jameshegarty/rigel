@@ -193,8 +193,10 @@ end
 
 function fixedNewASTFunctions:addLSBs(N)
   err( type(N)=="number", "addLSBs input must be number" )
-  err( N>0, "addLBSs input must be >0")
+  err( N>=0, "addLBSs input must be >=0")
 
+  if N==0 then return self end
+  
   return fixed.new{kind="addLSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()-N),N=N,inputs={self},loc=getloc()}
 end
 
@@ -216,8 +218,10 @@ end
 function fixedNewASTFunctions:removeMSBs(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "removeMSBs input must be number" )
-  err( N>0, "removeMBSs input must be >0")
+  err( N>=0, "removeMBSs input must be >=0")
 
+  if N==0 then return self end
+  
   return fixed.new{kind="removeMSBs", type=fixed.type(self:isSigned(), self:precision()-N, self:exp()),N=N,inputs={self},loc=getloc()}
 end
 
@@ -252,7 +256,6 @@ function fixedNewASTFunctions:eq(r) return boolbinop("==",self,r) end
 function fixedNewASTFunctions:ne(r) return boolbinop("~=",self,r) end
 
 function fixedNewASTFunctions:abs()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   err( self:isSigned(), "abs value of a non-signed type is futile")
 
   -- we actually _CANT_ throw out data here. signed number lose one value
@@ -262,6 +265,23 @@ function fixedNewASTFunctions:abs()
   return fixed.new{kind="abs", type=ty, inputs={self}, loc=getloc()}
 end
 
+
+function fixedNewASTFunctions:rcp()
+  -- if P is the precision, we actually calculate 1/x * 2^P, which means we have to subtract P from the exp
+  -- we have to add 1 to precision. Consider the 8 bit case. 2^P=256. 256/1 = 256, which will overflow 8 bits. So we need 9 bits of output.
+
+  -- int8 range: -128 to 127
+  -- int9 range: -256 to 255
+  -- 256/1 = 256, 256/-1 = -256
+  -- so, int8 rcp won't fit into int9, if we mult by 256
+  -- however, if we multiply by 128, it is OK:
+  -- 128/1 = 128, 128/-1 = -128, which fits in int9
+
+  local exp = -self:exp()-self:precision()
+  if self:isSigned() then exp=exp+1 end -- see note above
+  
+  return fixed.new{kind="rcp",type=fixed.type(self:isSigned(), self:precision()+1, exp),inputs={self},loc=getloc()}
+end
 
 function fixedNewASTFunctions:neg()
   --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
@@ -274,14 +294,16 @@ end
 --             remember, when we lower, we get rid of the fixed types.
 --             The rigel module should operator on the lowered types,
 --             but for the fixed representation, we want use the fixed type.
-function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType)
+function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType,operateOnUnderlyingType)
   R.isFunction(f)
   R.expectBasic(f.inputType)
   R.expectBasic(f.outputType)
 
+  if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
+
   if outputType==nil then outputType = f.outputType end
   
-  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=outputType, loc=getloc()}
+  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=outputType, loc=getloc(), operateOnUnderlyingType=operateOnUnderlyingType}
 end
 
 -- f should be a unary function that takes in a single systolic value, and returns a systolic value
@@ -318,10 +340,13 @@ function fixedNewASTFunctions:applyBinaryLift(f,inp)
 end
 
 -- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
-function fixed.applyNaryLift(f,tab)
+function fixed.applyNaryLift(f,tab,operateOnUnderlyingType)
   err(type(tab)=="table", "applyNaryLift: second argument must be table")
   
   if type(f)=="function" then
+
+    if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
+    
     -- hack to get type
     local tmpinp = {}
     for k,v in ipairs(tab) do table.insert(tmpinp,S.parameter("TMP"..k,v.type)) end
@@ -329,9 +354,26 @@ function fixed.applyNaryLift(f,tab)
     outty = outty.type
     assert( types.isType(outty) )
     
-    return fixed.new{kind="applyNaryLiftSystolic", f=f, inputs=tab, type=outty, loc=getloc()}    
+    return fixed.new{kind="applyNaryLiftSystolic", f=f, inputs=tab, type=outty, loc=getloc(), operateOnUnderlyingType=operateOnUnderlyingType}    
   else
     err(false,"fixed:applyNaryLift, unknown lift type")
+  end
+end
+
+-- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
+function fixed.applyTrinaryLift(f,cond,a,b,operateOnUnderlyingType)
+  if type(f)=="function" then
+    -- hack to get type
+    local tmpinp0 = S.parameter("TMP0",cond.type)
+    local tmpinp1 = S.parameter("TMP1",a.type)
+    local tmpinp2 = S.parameter("TMP2",b.type)
+    local outty = f(tmpinp0,tmpinp1,tmpinp2)
+    outty = outty.type
+    assert( types.isType(outty) )
+    
+    return fixed.new{kind="applyTrinaryLiftSystolic", f=f, inputs={cond,a,b}, type=outty, loc=getloc()}
+  else
+    err(false,"fixed:applyTrinaryLift, unknown lift type")
   end
 end
 
@@ -402,6 +444,35 @@ function fixedNewASTFunctions:toSystolic()
       elseif n.kind=="abs" then
         res = S.abs( args[1] )
         res = S.cast( res, n:underlyingType() )
+      elseif n.kind=="rcp" then
+
+        local numerator, denom, isPositive, uintType
+        if n:isSigned() then
+          -- signed behavior: basically, remember the sign, take abs, do unsigned div, then add back sign
+          
+          uintType = n:underlyingType()
+          uintType = types.uint(uintType.precision)
+          numerator = S.constant(math.pow(2,n.inputs[1]:precision()-1),uintType)
+          denom = S.cast(args[1], types.int(uintType.precision) )
+          denom = S.cast(S.abs(denom), uintType)
+
+          isPositive = S.ge(args[1],S.constant(0,types.int(2)))
+        else
+          uintType = n:underlyingType()
+          numerator = S.constant(math.pow(2,n.inputs[1]:precision()),uintType)
+          denom = S.cast( args[1], uintType )
+        end
+        
+        local inst = fpgamodules.div(uintType):instantiate(n.name.."_DIVINST")
+        table.insert(instances,inst)
+        
+        res = inst:process(S.tuple{numerator,denom})
+
+        res = S.cast(res,n:underlyingType())
+
+        if isPositive~=nil then
+          res = S.select(isPositive,res,S.neg(res))
+        end
       elseif n.kind=="neg" then
         res = S.neg(args[1])
       elseif n.kind=="applyUnaryLiftRigel" then
@@ -415,11 +486,25 @@ function fixedNewASTFunctions:toSystolic()
       elseif n.kind=="applyBinaryLiftSystolic" then
         res = n.f(args[1],args[2])
         assert(systolicAST.isSystolicAST(res))
-      elseif n.kind=="applyNaryLiftSystolic" then
-        res = n.f(args)
+      elseif n.kind=="applyTrinaryLiftSystolic" then
+        res = n.f(args[1],args[2],args[3])
         assert(systolicAST.isSystolicAST(res))
-        --print("restype",res.type,n.type)
-        --assert(res.type==n.type)
+      elseif n.kind=="applyNaryLiftSystolic" then
+        local tmp = args
+        if n.operateOnUnderlyingType==false then
+          tmp = {}
+          for k,v in pairs(args) do
+            if v.type~=n.inputs[k].type then
+              tmp[k] = S.cast(v,n.inputs[k].type)
+            else
+              tmp[k] = v
+            end
+          end
+        end
+        
+        res = n.f(tmp)
+
+        assert(systolicAST.isSystolicAST(res))
       elseif n.kind=="addLSBs" then
         res = S.cast(args[1], n:underlyingType() )
         res = S.lshift(res,S.constant(n.N,types.uint(8)))
@@ -458,10 +543,9 @@ function fixedNewASTFunctions:toRigelModule(name,X)
 
   local out, inp, instances, resetStats = self:toSystolic()
 
+  assert(out.type==self.type)
+  
   local tfn
-
-  --tfn:printpretty(true,false)
-  --return RM.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
 
   local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
@@ -490,10 +574,11 @@ end
 function fixedNewASTFunctions:__and(b) return self:applyBinaryLift( S.__and, b ) end
 function fixedNewASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
 function fixed.array2d(tab,w,h) return fixed.applyNaryLift(
-    function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab )
+    function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab, false )
 end
 
-function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab) end
+function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab,false) end
+function fixed.select(cond,a,b) return fixed.applyTrinaryLift(S.select,cond,a,b) end
 
 function fixedNewASTFunctions:writePixel(id,imageSize)
   local file = io.open("out/dbg_"..id..".metadata.lua", "w")
