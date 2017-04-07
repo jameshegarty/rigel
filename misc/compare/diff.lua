@@ -34,7 +34,7 @@ for i=0,refPixelCount-1 do
   if valid then
     errorSumNoInf = errorSumNoInf + math.abs(delta)
     if math.abs(delta)>0 and arg[5]~=nil then
-      if math.abs(delta)>0.0001 then
+      if math.abs(delta)>(2/32) then
 --        print("MISMATCH",i,"ref",refData[i],"test",testData[i],"delta",math.abs(delta))
       end
     end

@@ -193,8 +193,10 @@ end
 
 function fixedNewASTFunctions:addLSBs(N)
   err( type(N)=="number", "addLSBs input must be number" )
-  err( N>0, "addLBSs input must be >0")
+  err( N>=0, "addLBSs input must be >=0")
 
+  if N==0 then return self end
+  
   return fixed.new{kind="addLSBs", type=fixed.type(self:isSigned(), self:precision()+N, self:exp()-N),N=N,inputs={self},loc=getloc()}
 end
 
@@ -216,8 +218,10 @@ end
 function fixedNewASTFunctions:removeMSBs(N)
   --err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
   err( type(N)=="number", "removeMSBs input must be number" )
-  err( N>0, "removeMBSs input must be >0")
+  err( N>=0, "removeMBSs input must be >=0")
 
+  if N==0 then return self end
+  
   return fixed.new{kind="removeMSBs", type=fixed.type(self:isSigned(), self:precision()-N, self:exp()),N=N,inputs={self},loc=getloc()}
 end
 
