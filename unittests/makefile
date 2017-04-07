@@ -17,6 +17,7 @@ all: $(TARGETS)
 out/verilogcorrect.txt: $(COMPILE_TARGETS)
 	make -f makefile.compileverilog
 
+#################
 out/moduleparams.compiles.txt: moduleparams.lua
 	../rigelTerra moduleparams.lua
 
@@ -24,6 +25,7 @@ out/moduleparams.correct.txt: out/verilogcorrect.txt
 	# no extra checks
 	touch out/moduleparams.correct.txt
 
+#################
 out/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 

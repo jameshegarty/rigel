@@ -65,6 +65,35 @@ local function toTerra(self,name)
       elseif n.kind=="abs" then
         res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
         res = `[n:underlyingType():toTerraType()](res)
+      elseif n.kind=="rcp" then
+
+        local numerator, denom, isPositive, uintType
+        if n:isSigned() then
+          -- signed behavior: basically, remember the sign, take abs, do unsigned div, then add back sign
+          uintType = n:underlyingType()
+          local intType = types.int(uintType.precision)
+          uintType = types.uint(uintType.precision)
+          numerator = `[uintType:toTerraType()]([math.pow(2,n.inputs[1]:precision()-1)])
+
+          denom = `[intType:toTerraType()]([args[1]])
+          denom = `[uintType:toTerraType()](terralib.select(denom>0,denom,-denom))
+
+          isPositive = `[args[1]]>=0
+        else
+          uintType = n:underlyingType()
+
+          numerator = `[uintType:toTerraType()]([math.pow(2,n.inputs[1]:precision())])
+
+          denom = `[uintType:toTerraType()]([args[1]])
+        end
+        
+        denom = `terralib.select(denom==0,[uintType:toTerraType()](1),denom)
+        res = `numerator/denom
+
+        if isPositive~=nil then
+          --          res = S.select(isPositive,res,S.neg(res))
+          res = `terralib.select(isPositive,res,-res)
+        end
       elseif n.kind=="neg" then
         res = `-[args[1]]
       elseif n.kind=="applyUnaryLiftRigel" then
@@ -91,6 +120,14 @@ local function toTerra(self,name)
         
         local svalue = n.f(si0,si1)
         table.insert(stats, quote var [res] =  [svalue:toTerra{inp0=args[1],inp1=args[2]}] end )
+      elseif n.kind=="applyTrinaryLiftSystolic" then
+        local si0 = S.parameter("inp0",n.inputs[1].type)
+        local si1 = S.parameter("inp1",n.inputs[2].type)
+        local si2 = S.parameter("inp2",n.inputs[3].type)
+        res = symbol(n.type:toTerraType())
+        
+        local svalue = n.f(si0,si1,si2)
+        table.insert(stats, quote var [res] =  [svalue:toTerra{inp0=args[1],inp1=args[2],inp2=args[3]}] end )
       elseif n.kind=="applyNaryLiftSystolic" then
         local si = {}
         local symbols = {}

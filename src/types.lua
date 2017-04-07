@@ -642,6 +642,8 @@ function TypeFunctions:fakeValue()
     return t
   elseif self:isBool() then
     return false
+  elseif self:isNamed() then
+    return self.structure:fakeValue()
   else
     err(false, "could not create fake value for "..tostring(self))
   end
