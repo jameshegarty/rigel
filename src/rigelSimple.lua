@@ -358,43 +358,24 @@ function RS.harness(t) return harness(t) end
 
 function RS.modules.fwriteSeq(t)
   -- file write only support byte aligned, so make a wrapper that casts up
-  if t.type:verilogBits()%8~=0 then
-    local inp = RS.input(t.type)
-
-    local out, fwritetype
-    if t.type:isUint() or t.type:isInt() or (t.type:isNamed() and t.type.generator=="fixed") then
-
-      local fwritetype = t.type:toCPUType()
-
-      --[=[
-      if t.type:isUint() then
-        fwritetype = types.uint(math.ceil(t.type:verilogBits()/8)*8)
-
-        if t.type:verilogBits()>16 and t.type:verilogBits()<32 then
-          -- special case: no 3 byte type on x86
-          fwritetype = types.uint(32)
-        end
-      elseif t.type:isNamed() and t.type.generator=="fixed" and
-      else
-        err(false, "rigelSimple fwriteSeq NYI type "..tostring(t.type))
-      end
-      ]=]
-      
-      --print("RS FWRITESEQ", t.type, fwritetype)
-      out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
-      out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
-      out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
-      return RS.defineModule{input=inp,output=out}
-    elseif t.type:isBool() then
+  if t.type:isBool() then
       -- special case: write out bools as 255 or 0 to make it easy to look @ the file
       local inp = RS.input(types.bool())
       local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
       local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
       local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
       return RS.defineModule{input=inp,output=out}
-    else
-      err(false,"rigelSimple fwriteSeq NYI type "..tostring(t.type))
-    end
+  elseif t.type:toCPUType()~=t.type then
+    local inp = RS.input(t.type)
+
+    local out, fwritetype
+
+    local fwritetype = t.type:toCPUType()
+    
+    out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
+    out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
+    out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
+    return RS.defineModule{input=inp,output=out}
   else
     return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog)
   end

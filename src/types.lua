@@ -694,6 +694,8 @@ end
 
 -- CPUs only support certain bit widths. Convert our arbitrary precision types to the nearest CPU that
 -- which doesn't loose precision
+--
+-- why do we need this when we have :toTerraType()? B/C we want to support pure-luajit implementations (w/o terra installed)
 function TypeFunctions:toCPUType()
   if self:isUint() then
     if self:verilogBits()<=8 then
