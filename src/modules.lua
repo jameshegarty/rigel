@@ -101,7 +101,7 @@ end)
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
-function modules.packTuple( typelist, X )
+modules.packTuple = memoize(function( typelist, X )
   assert(type(typelist)=="table")
   assert(X==nil)
   
@@ -172,7 +172,7 @@ function modules.packTuple( typelist, X )
   res.systolicModule:addFunction( S.lambda("ready", downstreamReady, readyOut, "ready" ) )
   
   return rigel.newFunction(res)
-end
+end)
 
 
 modules.liftBasic = memoize(function(f)
