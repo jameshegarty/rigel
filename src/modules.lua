@@ -62,7 +62,7 @@ end
 -- This converts SoA to AoS
 -- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
 -- if asArray==true then converts {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d(a[N],W,H). This requires a,b,c be the same...
-function modules.SoAtoAoS( W, H, typelist, asArray )
+modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(typelist)=="table")
@@ -96,7 +96,7 @@ function modules.SoAtoAoS( W, H, typelist, asArray )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
 
   return rigel.newFunction(res)
-end
+end)
 
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
