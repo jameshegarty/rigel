@@ -1,6 +1,7 @@
 local systolic = require("systolic")
 local Ssugar = require("systolicsugar")
 local types = require("types")
+local SS = Ssugar
 
 local S=systolic
 --statemachine = require("statemachine")
@@ -692,7 +693,7 @@ modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_
 modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
 
 
-function modules.div(ty)
+function modules.verilatorDiv(ty)
   local fns = {}
   local inp = S.parameter("inp",types.tuple{ty,ty})
 
@@ -729,6 +730,55 @@ endmodule
   
   local m = systolic.module.new("div",fns,{},true,nil,nil,vstring,{process=2})
   return m
+end
+
+-- see: http://www4.wittenberg.edu/academics/mathcomp/shelburne/comp255/notes/BinaryDivision.pdf
+function modules.div(ty)
+  err(types.isType(ty),"div:argument should be type")
+  err(ty:isUint(),"div: argument should be uint")
+
+  local tyDouble = types.uint(ty.precision*2)
+  
+  local divMod = SS.moduleConstructor("div")
+
+  local process = divMod:addFunction(SS.lambdaConstructor( "process", types.tuple{ty,ty}, "inp" ))
+  process:setCE( S.CE("ce") )
+  local inp = process:getInput()
+  local Qinp = S.index(inp,0)
+  Qinp.name="Qinp"
+  local divisor = S.index(inp,1)
+  divisor.name="divisor"
+  
+  local QR = S.cast(Qinp,tyDouble)
+  QR.name="QRinp"
+
+  for i=1,ty.precision do
+    QR = S.lshift(QR,S.constant(1,types.uint(4)))
+    QR.name="QR"..tostring(i)
+
+    -- if r >= divisor
+    local Q = S.cast(S.bitSlice(QR,0,ty.precision-1),ty)
+    local R = S.cast(S.bitSlice(QR,ty.precision,ty.precision*2-1),ty)
+    local newQ = S.__or(Q,S.constant(1,ty))
+    newQ.name="newQ"..tostring(i)
+    local newR = R-divisor
+    newR.name="newR"..tostring(i)
+    --    local newQR = S.cast( S.tuple{newR,newQ}, tyDouble)
+
+    local newQR = S.cast( S.tuple{S.cast(newQ,types.bits(ty.precision)),S.cast(newR,types.bits(ty.precision))}, types.bits(ty.precision*2))
+    newQR = S.cast(newQR, tyDouble)
+    newQR.name="newQR"..tostring(i)
+    
+    QR = S.select( S.ge(R,divisor), newQR, QR)
+    QR.name="QRout"..tostring(i)
+  end
+
+  local out = S.bitSlice(QR,0,ty.precision-1)
+  process:setOutput(out,"out")
+
+  divMod:complete()
+
+  return divMod
 end
 
 return modules
