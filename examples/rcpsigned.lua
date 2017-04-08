@@ -19,7 +19,7 @@ print("OUTTYPE",out.type)
 ------------
 hsfn = RM.makeHandshake(out:toRigelModule("rcp"))
 
-harness{ outFile="rcpsigned", fn=hsfn, inFile="../examples/frame_128.raw", inSize={W,H}, outSize={W,H} }
+harness{ outFile="rcpsigned", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }
 
 file = io.open("out/rcpsigned.compiles.txt", "w")
 file:write("Hello World")

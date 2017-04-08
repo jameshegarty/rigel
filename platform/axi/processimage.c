@@ -80,43 +80,25 @@ int main(int argc, char *argv[]) {
 	unsigned copy_addr = atoi(argv[1]);
 
   if(argc!=10){
-    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename scaleNumerator scaleDenom inputBytesPerPixel outputBytesPerPixel outputW outH\n");
+    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
     exit(1);
   }
 
-  // dirty tricks: we want to support both upsamples and downsamples.
-  // We use 4 bits to store the amount we shift the input size.
-  // So, can shift the input size by 2^4-1=15 bits.
-  // When shift==0, we shift by 8 bits left, resulting in a 256x upsample.
-  // When shift==8, we shift an aggreagte of 0 bits.
-  // when shift=15, we shift an aggregate of 7 bits, 128x downsample.
-  unsigned int scaleN = atoi(argv[4]);
-  unsigned int scaleD = atoi(argv[5]);
+  unsigned int inputW = atoi(argv[4]);
+  unsigned int inputH = atoi(argv[5]);
+  unsigned int inputBitsPerPixel = atoi(argv[6]);
 
-  unsigned int inputBytesPerPixel = atoi(argv[6]);
-  unsigned int outputBytesPerPixel = atoi(argv[7]);
+  unsigned int outputW = atoi(argv[7]);
+  unsigned int outputH = atoi(argv[8]);
+  unsigned int outputBitsPerPixel = atoi(argv[9]);
 
-  unsigned int outputW = atoi(argv[8]);
-  unsigned int outputH = atoi(argv[9]);
+  if(outputBitsPerPixel%8!=0){
+    printf("Error, NYI - non-byte aligned output bits per pixel not supported!\n");
+    exit(1);
+  }
 
-  //unsigned int downsample = downsampleX*downsampleY;
-  //unsigned int downsampleShift = mylog2(downsample);
-  //printf("DSX %d DSY %d DS %d DSS %d\n",downsampleX,downsampleY,downsample,downsampleShift);
-  //  assert(scaleN==1 || scaleD==1);
-  // b/c we send the shift, only power of two scales are supported
-  //  assert(isPowerOf2(scaleN) && isPowerOf2(scaleD));
-  
-  int downsampleShift=0;
-  //  if(scaleN==1){
-    // a downsample
-  //    downsampleShift = mylog2(scaleD)+8;
-  //  }else if(scaleD==1){
-    // a upsample
-  //    downsampleShift = 8-mylog2(scaleN);
-  //  }
-  //assert( downsampleShift>=0 && downsampleShift<16 );
-  printf("Scale %d/%d, shift:%d\n",scaleN,scaleD,downsampleShift);
-  
+  unsigned int outputBytesPerPixel = outputBitsPerPixel/8;
+
 	unsigned page_size = sysconf(_SC_PAGESIZE);
 
 	printf("GPIO access through /dev/mem. %d\n", page_size);
@@ -137,11 +119,6 @@ int main(int argc, char *argv[]) {
   FILE* imfile = openImage(argv[2], &lenInRaw);
   printf("file LEN %d\n",lenInRaw);
   
-  //unsigned ln = (lenInRaw*scaleN*outputBytesPerPixel);
-  //unsigned ld = (scaleD*inputBytesPerPixel);
-  //assert(ln%ld==0);
-  //unsigned lenOutRaw = ln/ld;
-
   unsigned int lenIn = lenInRaw;
   unsigned int lenOut = outputW*outputH*outputBytesPerPixel;
 
@@ -149,23 +126,8 @@ int main(int argc, char *argv[]) {
     lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
   }
 
-  //if (lenOut%(8*16)!=0){
-  //  lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
-  //}
- 
-
   // extra axi burst of metadata
   lenOut = lenOut + 128;
-
-  // we pad out the length to 128 bytes as required, but just leave it filled with garbage.
-  // pad the smallest of the input/output, and upscale the padded size
-  //  if(lenOutRaw<=lenInRaw){ // a downscale
-  //    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
-  ///    lenIn = (lenOut*scaleD*inputBytesPerPixel)/(scaleN*outputBytesPerPixel);
-  //  }else{ // scaleD==1, a upsample
-  //    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
-  //    lenOut = (lenIn*scaleN*outputBytesPerPixel)/(scaleD*inputBytesPerPixel);
-  //  }
 
   printf("LENOUT %d\n", lenOut);
   assert(lenIn % (8*16) == 0);
@@ -180,10 +142,10 @@ int main(int argc, char *argv[]) {
   }
 
   loadImage( imfile, ptr, lenInRaw );
-  //memset(ptr+len,0,len);
+
   // zero out the output region
   for(int i=0; i<lenOut; i++){ *(unsigned char*)(ptr+lenIn+i)=0; }
-  //saveImage("before.raw",ptr,len);
+
 
   // mmap the device into memory 
   // This mmaps the control region (the MMIO for the control registers).
@@ -201,16 +163,13 @@ int main(int argc, char *argv[]) {
 
   conf->src = copy_addr;
   conf->dest = copy_addr + lenIn;
-  unsigned int lenPacked = lenIn | (downsampleShift << 28);
-  printf("LEN PACKED %d\n",lenPacked);
-  conf->len = lenPacked;
+  conf->len = lenIn;
   conf->cmd = 3;
 
   //usleep(10000);
   sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
   saveImage(argv[3],ptr+lenIn,lenOut);
-  //saveImage(argv[3],ptr,lenRaw);
 
   return 0;
 }
