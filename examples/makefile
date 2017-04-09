@@ -93,8 +93,8 @@ SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.l
 SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
 
-# type size not a factor of axi bus size
-SRCS_AXI := $(filter-out 12bpp.lua 18bpp.lua,$(SRCS_AXI))
+# NYI - type size not a factor of axi bus size
+SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
 
 AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
