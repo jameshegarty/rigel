@@ -2,7 +2,7 @@
 
 cd /home/jhegarty/rigelcron
 
-DATE=`date +%Y-%m-%d`
+DATE=`date +%Y-%m-%d-time-%H-%M`
 
 if /home/jhegarty/rigel/misc/cron.sh > $DATE.txt 2>&1; then
   echo "OK"
