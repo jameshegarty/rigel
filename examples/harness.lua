@@ -128,11 +128,32 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
     hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.tuple("hsfninp",{inpdata,inptaps},false))
   end
 
-  local out = R.apply("hsfna",hsfn,hsfninp)
+  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+
+  local regs, out
+
+  -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
+  -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port 
+  -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect). 
+  -- The problem is intermittent. 
+  local EXTRA_FIFO = true
+
+  if EXTRA_FIFO then
+      regs = {R.instantiateRegistered("f1",RM.fifo(R.extractData(hsfn.outputType),256))}
+      out = R.applyMethod("l1",regs[1],"load")
+  else
+     out = pipelineOut
+  end
+
   out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
   out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
   out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/8 ), out)
-  return RM.lambda( "harnessaxi", inpSymb, out )
+
+  if EXTRA_FIFO then
+     out = R.statements{out,R.applyMethod("s1",regs[1],"store",pipelineOut)}
+  end
+
+  return RM.lambda( "harnessaxi", inpSymb, out, regs )
 end
 
 local H = {}

@@ -86,15 +86,15 @@ SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_t
 SRCS_AXI100 := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI100))
 SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI100))
 
+# NYI - type size not a factor of axi bus size
+SRCS_AXI100 := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI100))
+
 # filter out stuff that's too big for the 7020
 SRCS_AXI = $(SRCS_AXI100)
 SRCS_AXI := $(filter-out stereo_wide_handshake_nostall_full.lua stereo_wide_handshake_nostall_medi.lua stereo_wide_handshake_full.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_6_4_axi.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
-
-# NYI - type size not a factor of axi bus size
-SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
 
 AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
