@@ -100,8 +100,8 @@ AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
 AXIBITS = $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
 
-AXIBITS100 = $(patsubst %.lua,out/%.axi100.bit,$(SRCS_AXI100))
-AXIBITS100 += $(patsubst %.lua,out/%.axi100.bit.bin,$(SRCS_AXI100))
+AXIBITS100 = $(patsubst %.lua,out/%.zynq100.bit,$(SRCS_AXI100))
+AXIBITS100 += $(patsubst %.lua,out/%.zynq100.bit.bin,$(SRCS_AXI100))
 
 AXI = $(patsubst %.lua,out/%.axi.raw,$(SRCS_AXI))
 AXI += $(patsubst %.lua,out/%.axi.bmp,$(SRCS_AXI))
@@ -109,9 +109,9 @@ AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(SRCS_AXI))
 AXI += $(patsubst %.lua,out/%.hz.txt,$(SRCS_AXI))
 AXI += $(AXIBITS)
 
-AXI100 = $(patsubst %.lua,out/%.axi100.correct.txt,$(SRCS_AXI100))
-AXI100 += $(patsubst %.lua,out/%.axi100.raw,$(SRCS_AXI100))
-AXI100 += $(patsubst %.lua,out/%.axi100.bmp,$(SRCS_AXI100))
+AXI100 = $(patsubst %.lua,out/%.zynq100.correct.txt,$(SRCS_AXI100))
+AXI100 += $(patsubst %.lua,out/%.zynq100.raw,$(SRCS_AXI100))
+AXI100 += $(patsubst %.lua,out/%.zynq100.bmp,$(SRCS_AXI100))
 AXI100 += $(AXIBITS100)
 
 STATS = $(patsubst %.lua,out/%.stats.txt,$(AXISRCS))
@@ -155,13 +155,13 @@ axi: $(AXI)
 
 camerabits: $(CAMERABITS)
 
-axi100: $(AXI100)
+zynq100: $(AXI100)
 
 axiverilog: $(AXIVERILOG)
 
 axibits: $(AXIBITS)
 
-axibits100: $(AXIBITS100)
+zynq100bits: $(AXIBITS100)
 
 clean:
 	rm -Rf out/*
@@ -351,23 +351,33 @@ CAMERA_PASS=1234
 	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
 	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
 
-out/%.axi100.bit: out/%.axi.v
-	mkdir -p out/build100_$*
+out/%_zynq100/system.ngc: out/%.axi.v
+	mkdir -p out/$*_zynq100
 	# run xst, then 'help -arch zynq -command run' to get list of options
-	cd out/build100_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z100-2ffg900 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
-	cd out/build100_$*; ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints_100.ucf -uc ../../../platform/axi/system_100.ucf -p xc7z100-2ffg900  system.ngc system.ngd > OUT_ngd.txt
-	cd out/build100_$*; map -detail -p xc7z100-2ffg900 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-	cd out/build100_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-	cd out/build100_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraint_100s.ucf -ucf ../../platform/axi/system_100.ucf > OUT_trce.txt
-	cd out/build100_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
+	cd out/$*_zynq100; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z100-2ffg900 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
+
+out/%_zynq100/system.ngd: out/%_zynq100/system.ngc
+	cd out/$*_zynq100; ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints_100.ucf -uc ../../../platform/axi/system_100.ucf -p xc7z100-2ffg900  system.ngc system.ngd > OUT_ngd.txt
+
+out/%_zynq100/system_map.ncd: out/%_zynq100/system.ngd
+	cd out/$*_zynq100; map -detail -p xc7z100-2ffg900 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
+
+out/%_zynq100/system.ncd: out/%_zynq100/system_map.ncd
+	cd out/$*_zynq100; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
+
+out/%_zynq100/system.twr: out/%_zynq100/system.ncd
+	cd out/$*_zynq100; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraint_100s.ucf -ucf ../../platform/axi/system_100.ucf > OUT_trce.txt
+
+out/%.zynq100.bit: out/%_zynq100/system.twr
+	cd out/$*_zynq100; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
 	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
 	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
 	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/build100_$*/system.bit $@
+	cp out/$*_zynq100/system.bit $@
 
-out/%.axi100.bit.bin: out/%.axi100.bit
-	cd out/build100_$*; bootgen -w -image ../../../platform/axi/boot.bif -split bin -o i system.bin
-	cp out/build100_$*/system.bit.bin $@
+out/%.zynq100.bit.bin: out/%.zynq100.bit
+	cd out/$*_zynq100; bootgen -w -image ../../../platform/axi/boot.bif -split bin -o i system.bin
+	cp out/$*_zynq100/system.bit.bin $@
 
 ZYNQ_WRITE_PATH=/var/volatile
 ZYNQ_ADDR=192.168.2.2
@@ -404,24 +414,24 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
 ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
 
-out/%.axi100.raw: out/%.axi100.bit.bin out/%.metadata.lua
-	$(eval $@_IMG := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua inputImage))
-	$(eval $@_SCALEN := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua scaleN))
-	$(eval $@_SCALED := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua scaleD))
-	$(eval $@_BPP_IN := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua inputBytesPerPixel))
-	$(eval $@_BPP_OUT := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputBytesPerPixel))
-	$(eval $@_OUTW := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(TERRA) ../misc/extractMetadata.t out/$*.metadata.lua outputHeight))
-	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.axi100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
+out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.metadata.lua
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.zynq100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin > /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_SCALEN) $($@_SCALED) $($@_BPP_IN) $($@_BPP_OUT) $($@_OUTW) $($@_OUTH)"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin"
-	$(TERRA) ../misc/extractCycles.t out/$*.axi100.raw > out/$*.axi100.cycles.txt
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin"
+	$(TERRA) ../misc/extractCycles.t out/$*.zynq100.raw > out/$*.zynq100.cycles.txt
 	# keep copy for future reference
-	cp out/$*.axi100.cycles.txt out/build100_$*
+	cp out/$*.zynq100.cycles.txt out/$*_zynq100
 
 # isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
 out/%.isim.raw: out/%.isim.v $(DUPS)
@@ -455,11 +465,11 @@ out/%.axi.bmp: out/%.axi.raw
 	mkdir -p out/build_$*
 	cp out/$*.axi.bmp out/build_$*
 
-out/%.axi100.bmp: out/%.axi100.raw
-	$(LUA) ../misc/raw2bmp.lua out/$*.axi100.raw out/$*.axi100.bmp out/$*.metadata.lua 1
+out/%.zynq100.bmp: out/%.zynq100.raw
+	$(LUA) ../misc/raw2bmp.lua out/$*.zynq100.raw out/$*.zynq100.bmp out/$*.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build100_$*
-	cp out/$*.axi100.bmp out/build100_$*
+	cp out/$*.zynq100.bmp out/build100_$*
 
 out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
@@ -485,12 +495,12 @@ out/sift_desc_hw.axi100.correct.txt : out/sift_desc_hw.axi100.bmp
 	diff out/sift_desc_hw.axi100.bmp gold/sift_desc_hw.axi100.bmp > out/sift_desc_hw.axi100.diff
 	test ! -s out/sift_desc_hw.axi100.diff && touch $@
 
-out/%.axi100.correct.txt : out/%.axi100.bmp
-	diff out/$*.axi100.bmp gold/$*.bmp > out/$*.axi100.diff
-	test ! -s out/$*.axi100.diff && touch $@
+out/%.zynq100.correct.txt : out/%.zynq100.bmp
+	diff out/$*.zynq100.bmp gold/$*.bmp > out/$*.zynq100.diff
+	test ! -s out/$*.zynq100.diff && touch $@
 	# keep copy for future reference
 	mkdir -p out/build100_$*
-	test ! -s out/$*.axi100.diff && touch out/build100_$*/$*.axi100.correct.txt
+	test ! -s out/$*.zynq100.diff && touch out/build100_$*/$*.zynq100.correct.txt
 
 out/%_half.isim.correct.txt : out/%_half.isim.bmp
 	diff out/$*_half.isim.bmp gold/$*.bmp > out/$*_half.isim.diff
@@ -528,5 +538,5 @@ out/%.raw.dup : %.raw
 out/%.stats.txt : out/%.axi.bmp
 	../misc/stats.sh out/build_$* out/$* $* axi $@
 
-out/%.stats100.txt : out/%.axi100.bmp
+out/%.stats100.txt : out/%.zynq100.bmp
 	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
