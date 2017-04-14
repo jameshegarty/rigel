@@ -15,5 +15,5 @@ cd /home/jhegarty/rigelcron
 rm -Rf /home/jhegarty/rigelcron/rigel
 git clone https://github.com/jameshegarty/rigel.git
 cd rigel/examples
-make -j64 -k axi zynq100
+make -j48 -k axibits zynq100
 

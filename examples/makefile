@@ -431,7 +431,7 @@ out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.metadata.lua
 	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.zynq100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.axi100.bit.bin > /dev/xdevcfg"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin > /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
 	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin"
@@ -496,11 +496,6 @@ out/%.axi.correct.txt : out/%.axi.bmp
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	test ! -s out/$*.axi.diff && touch out/build_$*/$*.axi.correct.txt
-
-# hack: this file is different in HW due to floating point differences, so override the check
-out/sift_desc_hw.axi100.correct.txt : out/sift_desc_hw.axi100.bmp
-	diff out/sift_desc_hw.axi100.bmp gold/sift_desc_hw.axi100.bmp > out/sift_desc_hw.axi100.diff
-	test ! -s out/sift_desc_hw.axi100.diff && touch $@
 
 out/%.zynq100.correct.txt : out/%.zynq100.bmp
 	diff out/$*.zynq100.bmp gold/$*.bmp > out/$*.zynq100.diff
