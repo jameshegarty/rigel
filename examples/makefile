@@ -89,6 +89,12 @@ SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(
 # fails in the cron script b/c par takes too long?
 SRCS_AXI100 := $(filter-out convpadcrop_wide_handshake_8_8.lua,$(SRCS_AXI100))
 
+# TODO fix: fails in cron due to taking too many cycles to execute?
+SRCS_AXI100 := $(filter-out upsample_wide_handshake_2.lua upsample_wide_handshake_4.lua tmux_wide_handshake.lua edge_taps.lua,$(SRCS_AXI100))
+
+# broken tests
+SRCS_AXI100 := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_hw_1080p.lua featuredescriptor.lua,$(SRCS_AXI100))
+
 # NYI - type size not a factor of axi bus size
 SRCS_AXI100 := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI100))
 

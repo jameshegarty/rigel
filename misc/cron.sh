@@ -15,5 +15,7 @@ cd /home/jhegarty/rigelcron
 rm -Rf /home/jhegarty/rigelcron/rigel
 git clone https://github.com/jameshegarty/rigel.git
 cd rigel/examples
-make -j48 -k zynq20 zynq100
+make -j64 -k zynq20
+# this needs to use less threads or it will exit due to out of memory errors
+make -j32 -k zynq100
 
