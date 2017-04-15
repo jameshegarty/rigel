@@ -86,8 +86,8 @@ SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_t
 SRCS_AXI100 := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI100))
 SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI100))
 
-# fails in the cron script for some unknown reason? 
-SRCS_AXI100 := $(filter-out stereo_tr_rgba_full_32.lua,$(SRCS_AXI100))
+# fails in the cron script b/c par takes too long?
+SRCS_AXI100 := $(filter-out convpadcrop_wide_handshake_8_8.lua,$(SRCS_AXI100))
 
 # NYI - type size not a factor of axi bus size
 SRCS_AXI100 := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI100))
