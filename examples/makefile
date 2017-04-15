@@ -154,7 +154,7 @@ stats: $(STATS)
 
 stats100: $(STATS100)
 
-axi: $(AXI)
+zynq20: $(AXI)
 
 camerabits: $(CAMERABITS)
 
@@ -162,7 +162,7 @@ zynq100: $(AXI100)
 
 axiverilog: $(AXIVERILOG)
 
-axibits: $(AXIBITS)
+zynq20bits: $(AXIBITS)
 
 zynq100bits: $(AXIBITS100)
 
