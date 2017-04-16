@@ -86,8 +86,8 @@ SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_t
 SRCS_AXI100 := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI100))
 SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI100))
 
-# fails in the cron script b/c par takes too long?
-SRCS_AXI100 := $(filter-out convpadcrop_wide_handshake_8_8.lua,$(SRCS_AXI100))
+# fails in the cron script b/c par takes too long
+SRCS_AXI100 := $(filter-out convpadcrop_wide_handshake_8_8.lua lk_wide_handshake_4_4_axi.lua,$(SRCS_AXI100))
 
 # TODO fix: fails in cron due to taking too many cycles to execute?
 SRCS_AXI100 := $(filter-out upsample_wide_handshake_2.lua upsample_wide_handshake_4.lua tmux_wide_handshake.lua edge_taps.lua,$(SRCS_AXI100))
