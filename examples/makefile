@@ -105,6 +105,12 @@ SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.l
 SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
 SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
 
+# fails due to size in cron script?
+SRCS_AXI := $(filter-out convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_3.lua convpadcrop_wide_handshake_8_8_1080p.lua,$(SRCS_AXI))
+
+# broken in cron script?
+SRCS_AXI := $(filter-out edge.lua upsampley_wide_handshake.lua,$(SRCS_AXI))
+
 AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
 AXIBITS = $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
@@ -407,7 +413,8 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
 	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 	lockfile /tmp/zynq20lock
 # (* second time around we can't write to fclk_export, so surpress error)
-	- sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+#	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
 	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
 ###### CLOCK STUFF END
