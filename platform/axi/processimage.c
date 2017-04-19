@@ -157,13 +157,16 @@ int main(int argc, char *argv[]) {
   }
   
   // this sleep is needed for the z100, but not the z20
-  sleep(2);
+  //sleep(2);
 
   volatile Conf * conf = (Conf*) gpioptr;
 
   conf->src = copy_addr;
   conf->dest = copy_addr + lenIn;
   conf->len = lenIn;
+
+  // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
+  sleep(2);
   conf->cmd = 3;
 
   //usleep(10000);

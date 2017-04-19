@@ -134,7 +134,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   -- The problem is intermittent. 
   local regs, out
   local stats = {}
-  local EXTRA_FIFO = true
+  local EXTRA_FIFO = false
 
   if EXTRA_FIFO then
       regs = {R.instantiateRegistered("f1",RM.fifo(R.extractData(hsfn.inputType),256))}
