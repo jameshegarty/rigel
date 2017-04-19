@@ -682,6 +682,21 @@ function TypeFunctions:checkLuaValue(v)
 
 end
 
+function TypeFunctions:valueToHex(v)
+  if self:isArray() then
+    local tab = {}
+    for i=#v,1,-1 do
+      table.insert(tab,self:arrayOver():valueToHex(v[i]))
+    end
+    return table.concat(tab,"")
+  elseif self:isUint() then
+    local res = string.format("%0"..tostring(self.precision/4).."x",v)
+    return res
+  else
+    err(false,":valueToHex NYI - "..tostring(self))
+  end
+end
+
 -- convert a terra type into a rigel type
 function types.fromTerraType(ty)
   if ty==uint16 then
@@ -707,7 +722,7 @@ function TypeFunctions:toCPUType()
     elseif self:verilogBits()<=64 then
       return types.uint(64)
     else
-      err(false, "Type:toCPUType() NYI "..tostring(self))
+      err(false, "Type:toCPUType() uint NYI "..tostring(self))
     end
   elseif self:isInt() then
     if self:verilogBits()<=8 then
@@ -719,8 +734,11 @@ function TypeFunctions:toCPUType()
     elseif self:verilogBits()<=64 then
       return types.int(64)
     else
-      err(false, "Type:toCPUType() NYI "..tostring(self))
+      err(false, "Type:toCPUType() int NYI "..tostring(self))
     end
+  elseif self:isArray() then
+    local sz = self:arrayLength()
+    return types.array2d(self:arrayOver(),sz[1],sz[2])
   elseif self:isNamed() then
     return self.structure:toCPUType()
   else

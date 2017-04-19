@@ -218,7 +218,15 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   --assert(earlyOverride==nil or type(earlyOverride)=="number")
 
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles})
+  local tapValueString = "x"
+  local tapBits = 0
+  if tapType~=nil then
+    err(tapType:toCPUType()==tapType, "NYI - tap type must be a CPU type")
+    tapValueString = tapType:valueToHex(tapValue)
+    tapBits = tapType:verilogBits()
+  end
+
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString})
   
 ------------------------
 -- verilator just uses the top module directly
