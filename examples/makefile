@@ -81,47 +81,52 @@ ISIM += $(patsubst %.lua,out/%.isim.correct.txt,$(SRCS_TERRA_ISIM))
 ISIM += $(patsubst %.lua,out/%.isim.1.correct.txt,$(SRCS_TERRA_ISIM))
 ISIM += $(patsubst %.lua,out/%_half.isim.correct.txt,$(SRCS_TERRA_ISIM))
 
-SRCS_AXI100 = $(filter-out linebufferpartial_handshake_1.lua linebufferpartial_handshake_2.lua linebufferpartial_handshake_4.lua convpadcrop_handshake.lua reduceseq_handshake.lua  stereo_wide_handshake_medi.lua,$(SRCS))
-SRCS_AXI100 := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_tr_handshake_6_1.lua lk_tr_handshake_6_2.lua lk_tr_handshake_6_3.lua lk_wide_handshake_12_1_float.lua,$(SRCS_AXI100))
-SRCS_AXI100 := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI100))
-SRCS_AXI100 := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI100))
+SRCS_AXI = $(filter-out linebufferpartial_handshake_1.lua linebufferpartial_handshake_2.lua linebufferpartial_handshake_4.lua convpadcrop_handshake.lua reduceseq_handshake.lua  stereo_wide_handshake_medi.lua,$(SRCS))
+SRCS_AXI := $(filter-out lk_tr_handshake_4_4.lua lk_tr_handshake_6_6.lua lk_tr_handshake_6_1.lua lk_tr_handshake_6_2.lua lk_tr_handshake_6_3.lua lk_wide_handshake_12_1_float.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua lk_wide_handshake_4_4.lua lk_wide_handshake_4_1.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out harris_filterseq.lua sift_float.lua sift_desc.lua,$(SRCS_AXI))
 
 # fails in the cron script b/c par takes too long
-SRCS_AXI100 := $(filter-out convpadcrop_wide_handshake_8_8.lua lk_wide_handshake_4_4_axi.lua,$(SRCS_AXI100))
+SRCS_AXI := $(filter-out convpadcrop_wide_handshake_8_8.lua lk_wide_handshake_4_4_axi.lua,$(SRCS_AXI))
 
 # TODO fix: fails in cron due to taking too many cycles to execute?
-SRCS_AXI100 := $(filter-out upsample_wide_handshake_2.lua upsample_wide_handshake_4.lua tmux_wide_handshake.lua edge_taps.lua,$(SRCS_AXI100))
+SRCS_AXI := $(filter-out upsample_wide_handshake_2.lua upsample_wide_handshake_4.lua tmux_wide_handshake.lua edge_taps.lua,$(SRCS_AXI))
 
 # broken tests
-SRCS_AXI100 := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_hw_1080p.lua featuredescriptor.lua,$(SRCS_AXI100))
+SRCS_AXI := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_hw_1080p.lua featuredescriptor.lua,$(SRCS_AXI))
 
 # NYI - type size not a factor of axi bus size
-SRCS_AXI100 := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI100))
+SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
+
+SRCS_AXI100 = $(SRCS_AXI)
+
+# Broken due to 'too many cycles' bug
+SRCS_AXI100 := $(filter-out 2xov7660.lua convolve_p8.lua convpadcrop_wide_handshake_4_2.lua convpadcrop_wide_handshake_4_4_1080p.lua convpadcrop_wide_handshake_8_2_1080p_nostall.lua edge.lua fifo_wide_handshake_2.lua lk_wide_handshake_4_1_axi.lua inv_wide_handshake.lua pyramid_large_1.lua pyramid_large_2.lua pyramid_large_4.lua lk_tr_handshake_12_1_axi.lua convpadcrop_wide_handshake_8_4_1080p.lua lk_tr_handshake_6_1_axi.lua pyramid_large_nofifo_taps_2.lua pyramid_large_taps_4.lua pyramid_large_tr_2.lua pyramid_large_tr_4.lua lk_tr_handshake_6_2_axi.lua,$(SRCS_AXI100))
 
 # filter out stuff that's too big for the 7020
-SRCS_AXI = $(SRCS_AXI100)
-SRCS_AXI := $(filter-out stereo_wide_handshake_nostall_full.lua stereo_wide_handshake_nostall_medi.lua stereo_wide_handshake_full.lua,$(SRCS_AXI))
-SRCS_AXI := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_6_4_axi.lua,$(SRCS_AXI))
-SRCS_AXI := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI))
-SRCS_AXI := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI))
+SRCS_AXI20 = $(SRCS_AXI)
+SRCS_AXI20 := $(filter-out stereo_wide_handshake_nostall_full.lua stereo_wide_handshake_nostall_medi.lua stereo_wide_handshake_full.lua,$(SRCS_AXI20))
+SRCS_AXI20 := $(filter-out lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_6_4_axi.lua,$(SRCS_AXI20))
+SRCS_AXI20 := $(filter-out lk_wide_handshake_12_1_axi_nostall.lua lk_wide_handshake_12_1_axi.lua,$(SRCS_AXI20))
+SRCS_AXI20 := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_large_taps_4.lua,$(SRCS_AXI20))
 
 # fails due to size in cron script?
-SRCS_AXI := $(filter-out convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_3.lua convpadcrop_wide_handshake_8_8_1080p.lua,$(SRCS_AXI))
+SRCS_AXI20 := $(filter-out convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_3.lua convpadcrop_wide_handshake_8_8_1080p.lua,$(SRCS_AXI20))
 
 # broken in cron script?
-SRCS_AXI := $(filter-out edge.lua upsampley_wide_handshake.lua,$(SRCS_AXI))
+SRCS_AXI20 := $(filter-out edge.lua upsampley_wide_handshake.lua,$(SRCS_AXI20))
 
 AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
-AXIBITS = $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI))
+AXIBITS = $(patsubst %.lua,out/%.axi.bit,$(SRCS_AXI20))
 
 AXIBITS100 = $(patsubst %.lua,out/%.zynq100.bit,$(SRCS_AXI100))
 AXIBITS100 += $(patsubst %.lua,out/%.zynq100.bit.bin,$(SRCS_AXI100))
 
-AXI = $(patsubst %.lua,out/%.axi.raw,$(SRCS_AXI))
-AXI += $(patsubst %.lua,out/%.axi.bmp,$(SRCS_AXI))
-AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(SRCS_AXI))
-AXI += $(patsubst %.lua,out/%.hz.txt,$(SRCS_AXI))
+AXI = $(patsubst %.lua,out/%.axi.raw,$(SRCS_AXI20))
+AXI += $(patsubst %.lua,out/%.axi.bmp,$(SRCS_AXI20))
+AXI += $(patsubst %.lua,out/%.axi.correct.txt,$(SRCS_AXI20))
+AXI += $(patsubst %.lua,out/%.hz.txt,$(SRCS_AXI20))
 AXI += $(AXIBITS)
 
 AXI100 = $(patsubst %.lua,out/%.zynq100.correct.txt,$(SRCS_AXI100))
