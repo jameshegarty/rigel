@@ -157,7 +157,7 @@ int main(int argc, char *argv[]) {
   }
   
   // this sleep is needed for the z100, but not the z20
-  //sleep(2);
+  sleep(2);
 
   volatile Conf * conf = (Conf*) gpioptr;
 
