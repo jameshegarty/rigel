@@ -17,5 +17,12 @@ git clone https://github.com/jameshegarty/rigel.git
 cd rigel/examples
 #make -j64 -k zynq20
 # this needs to use less threads or it will exit due to out of memory errors
-make -j32 -k zynq100 zynq20
+make -j32 -k zynq100 zynq20 || echo "SURPRESS"
 
+# we want to fail if bitstreams were not built
+make -j64 -k zynq100bits zynq20bits
+
+../misc/fixbadruns.sh
+
+# we want to fail if its still broken
+make -j32 -k zynq100 zynq20
