@@ -37,7 +37,9 @@ out/%.verilator.raw: out/%.verilator
 	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
 	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
 	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
-	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP)
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
+	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0

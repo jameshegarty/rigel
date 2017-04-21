@@ -62,7 +62,7 @@ bool getValid(WData (*signal)[N], unsigned int databits){
 }
     
 template<typename T>
-void setData(T* signal, unsigned int databits, FILE* file, int startPos){
+void setData(T* signal, unsigned int databits, FILE* file){
   // for this verilator data type, we should have < 16 bits
   assert(databits<=sizeof(T)*8);
 
@@ -72,7 +72,7 @@ void setData(T* signal, unsigned int databits, FILE* file, int startPos){
   for(int i=0; i<readBytes; i++){
     // assume little endian (x86 style) in the file
     unsigned long inp = fgetc(file);
-    *signal |= (inp << (i*8+startPos));
+    *signal |= (inp << (i*8));
   }
 }
 
@@ -95,8 +95,12 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
 
 
 template<typename T>
-void setData(T* signal, unsigned int databits, unsigned int startPos, unsigned char* data){
+void setDataBuf(T* signal, unsigned int databits, unsigned int startPos, unsigned char* data){
   assert(databits+startPos<=sizeof(T)*8);
+
+  if(databits==0){
+return;
+  }
 
   int readBytes = bitsToBytes(databits);
   assert(startPos%8==0);
@@ -109,10 +113,14 @@ void setData(T* signal, unsigned int databits, unsigned int startPos, unsigned c
 }
 
 template<int N>
-void setData(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
+void setDataBuf(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
   assert(startPos%32==0);
   assert(databits%32==0);
   assert(startPos+databits < N*32);
+
+  if(databits==0){
+return;
+  }
 
   for(int j=0; j<(databits)/32; j++){
     for(int i=0; i<4; i++){
@@ -166,15 +174,15 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
-  int inW = atoi(argv[3]);
-  int inH = atoi(argv[4]);
-  int inbpp = atoi(argv[5]);
-  int inP = atoi(argv[6]);
+  unsigned int inW = atoi(argv[3]);
+  unsigned int inH = atoi(argv[4]);
+  unsigned int inbpp = atoi(argv[5]);
+  unsigned int inP = atoi(argv[6]);
 
-  int outW = atoi(argv[7]);
-  int outH = atoi(argv[8]);
-  int outbpp = atoi(argv[9]);
-  int outP = atoi(argv[10]);
+  unsigned int outW = atoi(argv[7]);
+  unsigned int outH = atoi(argv[8]);
+  unsigned int outbpp = atoi(argv[9]);
+  unsigned int outP = atoi(argv[10]);
 
   int tapBits = atoi(argv[11]);
 
@@ -232,7 +240,7 @@ int main(int argc, char** argv) {
           setValid(&(top->process_input),inbpp*inP+tapBits,false);
         }else{
 	        setData(&(top->process_input),inbpp*inP,infile);
-	        setData(&(top->process_input),tapBits,inbpp*inP,tapValue);
+	        setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
           setValid(&(top->process_input),inbpp*inP+tapBits,true);
           validInCnt++;
         }
