@@ -1,5 +1,6 @@
 #include <verilated.h>
 #include <iostream>
+#include <stdio.h>
 #include VERILATORFILE
 
 /*unsigned int divCeil(unsigned int a, unsigned int b){
@@ -28,7 +29,7 @@ void setValid(T* signal, unsigned int databits, bool valid){
   assert(databits<=sizeof(T)*8);
 
   if(valid){
-    *signal |= (1<<databits);
+    *signal |= ((T)(1)<<databits);
   }else{
     *signal = 0;
   }    
@@ -55,6 +56,7 @@ bool getValid(T* signal, unsigned int databits){
 
 template<int N>
 bool getValid(WData (*signal)[N], unsigned int databits){
+  assert(databits<N*32);
   int idx = databits/32; // floor
   return ( (*signal)[idx] & (1<<(databits-idx*32)) ) != 0;
 }
@@ -70,13 +72,16 @@ void setData(T* signal, unsigned int databits, FILE* file){
   for(int i=0; i<readBytes; i++){
     // assume little endian (x86 style) in the file
     unsigned long inp = fgetc(file);
-    *signal |= (inp << i*8);
+    *signal |= (inp << (i*8));
   }
 }
+
+
 
 template<int N>
 void setData(WData (*signal)[N], unsigned int databits, FILE* file){
   assert(databits==64);
+  //assert(N==2);
 
   for(int j=0; j<2; j++){
     (*signal)[j]=0;
@@ -87,6 +92,44 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
     }
   }
 }
+
+
+template<typename T>
+void setDataBuf(T* signal, unsigned int databits, unsigned int startPos, unsigned char* data){
+  assert(databits+startPos<=sizeof(T)*8);
+
+  if(databits==0){
+return;
+  }
+
+  int readBytes = bitsToBytes(databits);
+  assert(startPos%8==0);
+
+  for(int i=0; i<readBytes; i++){
+    // assume little endian (x86 style) in the file
+    unsigned long inp = data[i];
+    *signal |= (inp << (i*8+startPos*8));
+  }
+}
+
+template<int N>
+void setDataBuf(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
+  assert(startPos%32==0);
+  assert(databits%32==0);
+  assert(startPos+databits < N*32);
+
+  if(databits==0){
+return;
+  }
+
+  for(int j=0; j<(databits)/32; j++){
+    for(int i=0; i<4; i++){
+      unsigned long inp = data[j*4+i];
+      (*signal)[j+(startPos/32)] |= (inp << (i*8));
+    }
+  }
+}
+
 
 
 template<typename T>
@@ -122,8 +165,8 @@ void getData( WData (*signal)[N], unsigned int databits, FILE* file){
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=11 && argc!=12){
-    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP [simCycles]");
+  if(argc!=13 && argc!=14){
+    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP tapBits tapValue [simCycles]");
     exit(1);
   }
 
@@ -131,15 +174,25 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
-  int inW = atoi(argv[3]);
-  int inH = atoi(argv[4]);
-  int inbpp = atoi(argv[5]);
-  int inP = atoi(argv[6]);
+  unsigned int inW = atoi(argv[3]);
+  unsigned int inH = atoi(argv[4]);
+  unsigned int inbpp = atoi(argv[5]);
+  unsigned int inP = atoi(argv[6]);
 
-  int outW = atoi(argv[7]);
-  int outH = atoi(argv[8]);
-  int outbpp = atoi(argv[9]);
-  int outP = atoi(argv[10]);
+  unsigned int outW = atoi(argv[7]);
+  unsigned int outH = atoi(argv[8]);
+  unsigned int outbpp = atoi(argv[9]);
+  unsigned int outP = atoi(argv[10]);
+
+  int tapBits = atoi(argv[11]);
+
+  unsigned char* tapValue = (unsigned char*)malloc(tapBits/8);
+  char* pos = argv[12];
+
+  for(int count = 0; count < tapBits/8; count++) {
+    sscanf(pos, "%2hhx", &tapValue[(tapBits/8)-count-1]);
+    pos += 2;
+  }
 
   int simCycles = 0;
   if(argc==12){simCycles = atoi(argv[11]);}
@@ -184,17 +237,21 @@ int main(int argc, char** argv) {
     if(CLK){
       if(top->ready){
         if(validInCnt>=inPackets){
-          setValid(&(top->process_input),inbpp*inP,false);
+          setValid(&(top->process_input),inbpp*inP+tapBits,false);
         }else{
-	  setData(&(top->process_input),inbpp*inP,infile);
-          setValid(&(top->process_input),inbpp*inP,true);
+	        setData(&(top->process_input),inbpp*inP,infile);
+	        setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
+          setValid(&(top->process_input),inbpp*inP+tapBits,true);
           validInCnt++;
         }
       }
 
+      // it's possible the pipeline has 0 cycle delay. in which case, we need to eval the async stuff here.
+     top->eval();
+
       if(getValid( &(top->process_output), outbpp*outP ) ){
         validcnt++;
-	getData(&(top->process_output),outbpp*outP,outfile);
+        getData(&(top->process_output),outbpp*outP,outfile);
       }
 
       totalCycles++;

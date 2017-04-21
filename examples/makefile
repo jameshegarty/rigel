@@ -26,19 +26,16 @@ TERRAOUT += $(patsubst %.lua,out/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
-SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua, $(SRCS))
+SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua, $(SRCS))
+
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
 
+# verilator target doesn't include underflow block
+SRCS_VERILATOR := $(filter-out underflow.lua, $(SRCS_VERILATOR))
 
-# TODO:FIX
-SRCS_VERILATOR := $(filter-out pyramid_large_taps_1.lua pyramid_large_taps_2.lua pyramid_large_taps_3.lua pyramid_large_taps_4.lua underflow.lua pyramid_large_tr_2.lua pyramid_large_tr_3.lua pyramid_large_tr_1.lua pyramid_large_tr_4.lua pyramid_taps_1.lua pyramid_taps_3.lua pyramid_taps_4.lua pyramid_taps_2.lua pyramid_tr_1.lua pyramid_tr_3.lua pyramid_tr_4.lua stereo_tr_rgba_full_32.lua pyramid_tr_2.lua, $(SRCS_VERILATOR))
-
-# TODO:FIX
-SRCS_VERILATOR := $(filter-out convpadcrop_wide_handshake_4_8.lua convpadcrop_wide_handshake_8_2_1080p.lua convpadcrop_wide_handshake_8_2_1080p_nostall.lua convpadcrop_wide_handshake_8_4.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_8.lua convpadcrop_wide_handshake_8_4_1080p_nostall.lua convpadcrop_wide_handshake_8_8_1080p.lua pyramid_large_nofifo_taps_3.lua pyramid_large_nofifo_taps_4.lua pyramid_large_nofifo_tr_1.lua edge_taps.lua pyramid_large_nofifo_tr_2.lua tmux_wide_handshake.lua sift_desc.lua, $(SRCS_VERILATOR))
-
-# TODO:FIX
-SRCS_VERILATOR := $(filter-out convpadcrop_wide_handshake_4_1_1080p.lua convpadcrop_wide_handshake_4_1.lua convpadcrop_wide_handshake_4_2.lua convpadcrop_wide_handshake_4_4.lua convpadcrop_wide_handshake_8_2.lua convpadcrop_wide_handshake_4_2_1080p.lua convpadcrop_wide_handshake_4_8_1080p.lua conv_wide_handshake_taps.lua convpadcrop_wide_handshake_4_4_1080p.lua convpadcrop_wide_handshake_8_1.lua convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_1.lua convpadcrop_wide_handshake_8_1_1080p.lua convpadcrop_wide_handshake_8_1_1080p_nostall.lua pyramid_large_nofifo_tr_3.lua pyramid_large_nofifo_tr_4.lua pyramid_large_nofifo_taps_2.lua, $(SRCS_VERILATOR))
+# TODO: broken
+SRCS_VERILATOR := $(filter-out stereo_tr_rgba_full_32.lua tmux_wide_handshake.lua pyramid_large_taps_3.lua pyramid_taps_4.lua pyramid_tr_3.lua, $(SRCS_VERILATOR))
 
 # too slow for travis
 SRCS_VERILATOR := $(filter-out stereo_wide_handshake_full.lua stereo_wide_handshake_nostall_full.lua, $(SRCS_VERILATOR))
@@ -214,7 +211,7 @@ out/%.axi.v: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
-out/%.verilator: out/%.v out/%.metadata.lua
+out/%.verilator: out/%.v out/%.metadata.lua ../platform/verilator/harness.cpp
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module $($@_TOP)
 #	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
@@ -230,7 +227,9 @@ out/%.verilator.raw: out/%.verilator
 	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
 	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
 	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
-	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP)
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
+	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
 
 out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0

@@ -11,11 +11,13 @@ TARGETS = $(COMPILE_TARGETS)
 TARGETS += out/verilogcorrect.txt
 TARGETS += $(patsubst %.lua,out/%.correct.txt,$(SRCS))
 
+CORES ?= 2
+
 all: $(TARGETS)
 
 # build all .v files
 out/verilogcorrect.txt: $(COMPILE_TARGETS)
-	make -f makefile.compileverilog
+	make -j $(CORES) -f makefile.compileverilog
 
 #################
 out/moduleparams.compiles.txt: moduleparams.lua
