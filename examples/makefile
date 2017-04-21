@@ -446,6 +446,9 @@ out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.metadata.lua
 	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
 	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
 	lockfile /tmp/zynq100lock
+	# kill the DMA test that runs in the background and takes up 100% cpu (!?)
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "chmod a+w /sys/module/dmatest/parameters/iterations"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "echo 1 > /sys/module/dmatest/parameters/iterations"
 	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.zynq100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"

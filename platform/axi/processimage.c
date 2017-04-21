@@ -174,6 +174,9 @@ int main(int argc, char *argv[]) {
 
   saveImage(argv[3],ptr+lenIn,lenOut);
 
+  munmap( gpioptr, page_size );
+  munmap( ptr, lenIn+lenOut );
+
   return 0;
 }
 
