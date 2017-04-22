@@ -1550,7 +1550,7 @@ end)
 modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
-  assert(X==nil)
+  err(X==nil,"linebuffer: too many args!")
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
   err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(w).." T="..tostring(T))
@@ -1583,6 +1583,63 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
     local lbinp = evicted
     if y==0 then lbinp = sinp end
     for x=1,T do outarray[x+(-ymin-y)*T] = S.index(lbinp,x-1) end
+
+    if y<-ymin then
+      -- last line doesn't need a ram
+      local BRAM = res.systolicModule:add( bramMod:instantiate("lb_m"..math.abs(y)) )
+
+      local upcast = S.cast(lbinp,types.bits(bits))
+      upcast = S.cast(upcast,types.bits(bytes*8))
+
+      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), upcast} )
+      evicted = S.bitSlice(evicted,0,bits-1)
+      evicted = S.cast( evicted, rigel.lower(res.inputType) )
+    end
+  end
+
+  local CE = S.CE("CE")
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), rigel.lower(res.outputType) ), "process_output", {addr:setBy(S.constant(true, types.bool()))}, nil, CE ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+
+  return rigel.newFunction(res)
+end)
+
+modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, defaultValue, X )
+  err(imageW>0,"sparseLinebuffer: imageW must be >0"); 
+  err(imageH>0,"sparseLinebuffer: imageH must be >0");
+  err(ymin<=0,"sparseLinebuffer: ymin must be <=0");
+  assert(X==nil)
+  err(type(rowWidth)=="number","rowWidth must be number")
+  A:checkLuaValue(defaultValue)
+
+  local res = {kind="sparseLinebuffer", type=A, imageW=imageW, imageH=imageH, ymin=ymin, rowWidth=rowWidth }
+  rigel.expectBasic(A)
+  res.inputType = types.tuple{A,types.bool()}
+  res.outputType = types.array2d(A,1,-ymin+1)
+  res.stateful = true
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.delay = 0
+
+  if terralib~=nil then res.terraModule = MT.sparseLinebuffer(A, imageW, imageH, rowWidth, ymin, defaultValue) end
+
+  res.systolicModule = Ssugar.moduleConstructor("SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..tostring(A).."_rowWidth"..tostring(rowWidth))
+  local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
+  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), imageW-1 ), true, nil ):instantiate("addr") )
+
+  local outarray = {}
+  local evicted
+
+  local bits = rigel.lower(res.inputType):verilogBits()
+  local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
+  local sizeInBytes = nearestPowerOf2(imageW*bytes)
+
+  local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
+  local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
+
+  for y=0,-ymin do
+    local lbinp = evicted
+    if y==0 then lbinp = sinp end
+    outarray[1+(-ymin-y)] = S.index(lbinp,1-1)
 
     if y<-ymin then
       -- last line doesn't need a ram

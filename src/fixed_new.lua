@@ -580,6 +580,20 @@ end
 function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab,false) end
 function fixed.select(cond,a,b) return fixed.applyTrinaryLift(S.select,cond,a,b) end
 
+function fixedNewASTFunctions:mod(b) 
+  err( isPowerOf2(b), "NYI, fixed mod by non power of 2" )
+  local bits = math.log(b)/math.log(2)
+
+  local ty
+  if self.type:isUint() then
+    ty = types.uint(bits)
+  else
+    assert(false)
+  end
+
+  return self:applyUnaryLift( function(expr) return S.cast(S.bitSlice(expr,0,bits-1),ty) end ) 
+end
+
 function fixedNewASTFunctions:writePixel(id,imageSize)
   local file = io.open("out/dbg_"..id..".metadata.lua", "w")
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(self.type).."'}")

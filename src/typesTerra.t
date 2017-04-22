@@ -11,7 +11,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = float
   elseif self:isFloat() and self.precision==64 then
     ttype = double
-  elseif self:isUint() and self.precision<=8 then
+  elseif (self:isUint() or self:isBits()) and self.precision<=8 then
     ttype = uint8
   elseif self:isInt() and self.precision<=8 then
     ttype = int8
@@ -21,11 +21,11 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = int32
   elseif self:isInt() and self.precision>32 and self.precision<=64 then
     ttype = int64
-  elseif self:isUint() and self.precision>32 and self.precision<=64 then
+  elseif (self:isUint() or self:isBits()) and self.precision>32 and self.precision<=64 then
     ttype = uint64
-  elseif self:isUint() and self.precision>16 and self.precision<=32 then
+  elseif (self:isUint() or self:isBits()) and self.precision>16 and self.precision<=32 then
     ttype = uint32
-  elseif self:isUint() and self.precision>8 and self.precision<=16 then
+  elseif (self:isUint() or self:isBits()) and self.precision>8 and self.precision<=16 then
     ttype = uint16
   elseif self:isInt() and self.precision>8 and self.precision<=16 then
     ttype = int16
