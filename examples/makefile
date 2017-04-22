@@ -110,8 +110,8 @@ SRCS_AXI20 := $(filter-out pyramid_large_nofifo_taps_4.lua pyramid_large_taps_3.
 # fails due to size in cron script?
 SRCS_AXI20 := $(filter-out convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_nofifo_taps_3.lua convpadcrop_wide_handshake_8_8_1080p.lua,$(SRCS_AXI20))
 
-# broken in cron script?
-SRCS_AXI20 := $(filter-out edge.lua upsampley_wide_handshake.lua,$(SRCS_AXI20))
+# TODO broken in cron script?
+SRCS_AXI20 := $(filter-out edge.lua upsampley_wide_handshake.lua pointwise_wide_handshake_1080p.lua,$(SRCS_AXI20))
 
 AXIVERILOG = $(patsubst %.lua,out/%.axi.v,$(SRCS_AXI))
 
