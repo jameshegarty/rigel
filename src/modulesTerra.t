@@ -738,7 +738,8 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
   terra SparseLinebuffer:process( inp : &inputType, out : &outputType )
 
     -- do it in this order to simulate non blocking reads
-    for outi=0,-ymin-1 do
+    for outi=0,-ymin do
+
       if self.xlocfifos[outi]:hasData() and @(self.xlocfifos[outi]:peekFront(0))==self.currentX then
         -- we are ready to read
 	var dat = @(self.fifos[outi]:popFront())
@@ -768,6 +769,7 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
     end
 
     self.currentX = self.currentX+1
+    if self.currentX==imageW then self.currentX=0 end
   end
 
   return SparseLinebuffer
