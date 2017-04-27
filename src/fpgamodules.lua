@@ -141,7 +141,7 @@ modules.fifo = memoize(function(ty,items,verbose)
 
   local fifo = Ssugar.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
-  local addrBits = (math.log(items)/math.log(2))+1 -- the +1 is so that we can disambiguate wraparoudn
+  local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
   local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("readAddr"))
   local bits = ty:verilogBits()
@@ -212,8 +212,8 @@ modules.fifo = memoize(function(ty,items,verbose)
   popFront:addPipeline( popFrontAssert:process( hasData ) )
   local popFrontPrint
   if verbose then 
-    popFrontPrint= fifo:add( systolic.module.print( types.tuple{types.uint(addrBits),types.uint(addrBits),types.uint(addrBits)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") ) 
-    popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
+    popFrontPrint= fifo:add( systolic.module.print( types.tuple{types.uint(addrBits),types.uint(addrBits),types.uint(addrBits),types.bool()},"FIFO readaddr %d writeaddr %d size %d ready %d", true):instantiate("popFrontPrintInst") ) 
+    popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize, readyReg:get()} ) )
   end
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
 

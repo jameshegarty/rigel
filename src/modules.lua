@@ -1385,7 +1385,17 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
 modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( types.isType(A), "A must be a type")
 
-  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k) 
+  err( A~=nil, "padSeq A==nil" )
+  err( W~=nil, "padSeq W==nil" )
+  err( H~=nil, "padSeq H==nil" )
+  err( T~=nil, "padSeq T==nil" )
+  err( L~=nil, "padSeq L==nil" )
+  err( R~=nil, "padSeq R==nil" )
+  err( B~=nil, "padSeq B==nil" )
+  err( Top~=nil, "padSeq Top==nil" )
+  err( Value~=nil, "padSeq Value==nil" )
+  
+  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k)
         err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -1645,8 +1655,10 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   table.insert( resetPipelines, currentX:set( S.constant( 0, types.uint(16) ) ) )
 
   for i=1,-ymin do
-    table.insert( fifos, res.systolicModule:add( fpgamodules.fifo(A,rowWidth,false):instantiate("fifo"..tostring(i)) ) )
-    table.insert( xlocfifos, res.systolicModule:add( fpgamodules.fifo(types.uint(16),rowWidth,false):instantiate("xloc"..tostring(i)) ) )
+    -- TODO hack: due to our FIFO implementation, it needs to have 3 items of slack to meet timing. Just work around this by expanding our # of items by 3.
+    local allocItems = rowWidth+3
+    table.insert( fifos, res.systolicModule:add( fpgamodules.fifo(A,allocItems,false):instantiate("fifo"..tostring(i)) ) )
+    table.insert( xlocfifos, res.systolicModule:add( fpgamodules.fifo(types.uint(16),allocItems,false):instantiate("xloc"..tostring(i)) ) )
 
     table.insert( resetPipelines, fifos[#fifos]:pushBackReset() )
     table.insert( resetPipelines, fifos[#fifos]:popFrontReset() )
@@ -1676,9 +1688,12 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
 
   local inputPx = S.index(sinp,0)
   local inputPxValid = S.index(sinp,1)
-  outputArray[-ymin+1] = S.select( inputPxValid, inputPx, S.constant( defaultValue, A ) )
-
   local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready())
+
+  -- if we can't store the pixel, we just thrown it out (even though we could write it out once). We don't want it to appear and disappear.
+  -- we don't need to check for overflows later - if it fits into the first FIFO, it'll fit into all of them, I think? Maybe there is some wrap around condition?
+  outputArray[-ymin+1] = S.select( shouldPush, inputPx, S.constant( defaultValue, A ) )
+
   table.insert( pipelines, fifos[-ymin]:pushBack( inputPx, shouldPush ) )
   table.insert( pipelines, xlocfifos[-ymin]:pushBack( currentX:get(), shouldPush ) )
     
@@ -2713,7 +2728,9 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
   err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
   if tapInputType~=nil then tapInputType:checkLuaValue(tapValue) end
   err( type(inputCount)=="number", "inputCount must be a number")
+  err( inputCount==math.floor(inputCount), "inputCount must be integer, but is "..tostring(inputCount) )
   err( type(outputCount)=="number", "outputCount must be a number")
+  err( outputCount==math.floor(outputCount), "outputCount must be integer, but is "..tostring(outputCount) )
   err( type(axi)=="boolean", "axi should be a bool")
   assert(X==nil)
 

@@ -756,14 +756,12 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
       end
     end
 
-    if inp._1 then
+    if inp._1 and self.fifos[-ymin-1]:full()==false then
       -- this token is valid, write it out
       (@out)[-ymin] = inp._0
 
-      if self.fifos[-ymin-1]:full()==false then
-        self.xlocfifos[-ymin-1]:pushBack( &self.currentX )
-        self.fifos[-ymin-1]:pushBack( &(inp._0) )
-      end
+      self.xlocfifos[-ymin-1]:pushBack( &self.currentX )
+      self.fifos[-ymin-1]:pushBack( &(inp._0) )
     else
       (@out)[-ymin] = [A:valueToTerra(defaultValue)]
     end

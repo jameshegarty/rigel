@@ -38,70 +38,15 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   return EC, EC_RAW
 end
 
---[=[
-local underoverWrapper=memoize(function( hsfn, infile, inputType, tapInputType, outfileraw, outfile, outputType, id, inputCount, outputCount, frames, underflowTest, earlyOverride, disableCycleCounter, X)
-  assert(X==nil)
-  assert(type(inputCount)=="number")
-  assert(type(outputCount)=="number")
-  err( darkroom.isFunction(hsfn), "hsfn must be a function")
-  assert(type(frames)=="number")
-
-  local fixedTapInputType = tapInputType
-  if tapInputType==nil then fixedTapInputType = types.null() end
-
---  local slack = math.floor(math.max(outputCount*0.3,inputCount*0.3))
-  local EC, EC_RAW = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.5)
-
-  if outfileraw~=nil then
-    local fi = outfileraw..".cycles.txt"
-    io.output(fi)
-    io.write(EC_RAW/frames)
-    io.close()
-  end
-
-  local ECTooSoon = expectedCycles(hsfn,inputCount,outputCount,underflowTest,0.5)
-  if earlyOverride~=nil then ECTooSoon=earlyOverride end
-
-  local outputBytes = outputCount*8
-  local inputBytes = inputCount*8
-
-  -- check that we end up with a multiple of the axi burst size.  If not, just fail.
-  -- dealing with multiple frames w/o this alignment is a pain, so don't allow it
-  err(outputBytes/128==math.floor(outputBytes/128), "outputBytes ("..tostring(outputBytes)..") not aligned to axi burst size")
-  err(inputBytes/128==math.floor(inputBytes/128), "inputBytes not aligned to axi burst size")
- 
-  local ITYPE = types.tuple{types.null(),fixedTapInputType}
-  local inpSymb = R.input( R.Handshake(ITYPE) )
-  -- we give this a less strict timing requirement b/c this counts absolute cycles
-  -- on our quarter throughput test, this means this will appear to take 4x as long as it should
-  local inp = R.apply("underflow_US", RM.underflow(ITYPE, inputBytes/8, EC*4, true, ECTooSoon), inpSymb)
-  local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0)), inp)
-  local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inp)
-  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(infile,inputType)),inpdata)
-  local hsfninp = out
-
-  if tapInputType~=nil then
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapInputType}), R.tuple("hsfninp",{out,inptaps},false))
-  end
-
-  local out = R.apply("HARNESS_inner", hsfn, hsfninp )
-  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(outputType, outputCount))), out)
-  out = R.apply("underflow", RM.underflow(outputType, (outputBytes/8), EC, false, ECTooSoon), out)
-  if disableCycleCounter==nil or disableCycleCounter==false then 
-    out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/(8*frames) ), out)
-  end
-
-  local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outfile,outputType)), out )
-  return RM.lambda( "harness"..id..hsfn.systolicModule.name, inpSymb, out )
-end)
-]=]
-
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
 
 
   local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
   local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
 
+  err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts")
+  err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
+  
   local ITYPE = inputType
   if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
 
@@ -259,14 +204,11 @@ return fn
   --err(iover:isArray(), "expected input to be array but is "..tostring(iover))
 
   local inputP
-  local inputPointwise
   if iover:isArray() then
     inputP = iover:channels()
     iover = iover:arrayOver()
-    inputPointwise=false
   else
     inputP = 1 -- just assume pointwise...
-    inputPointwise=true
   end
   
 
@@ -277,7 +219,7 @@ return fn
   else
     outputP = 1
   end
-  
+
   local targetInputP = (64/iover:verilogBits())
   err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP).." tapType:"..tostring(tapType))
   
@@ -290,9 +232,9 @@ return fn
     out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
   end
   
-  if inputPointwise then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
+  if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-  if inputPointwise then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+  if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
   
   local targetOutputP = (64/oover:verilogBits())
   err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
@@ -335,7 +277,7 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
 -- axi runs the sim as well
 --H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
   local inputCount = (inputW*inputH)/inputT
-local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
+  local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
 local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
@@ -396,7 +338,9 @@ function harnessTop(t)
   err(types.isType(iover) and type(inputP)=="number","Error, could not derive input type and P from arguments to harness, type was "..tostring(fn.inputType))
   err(types.isType(oover) and type(outputP)=="number","Error, could not derive output type and P from arguments to harness, type was "..tostring(fn.outputType))
 
+  err( (t.inSize[1]*t.inSize[2]) % inputP == 0, "Error, # of input tokens is non-integer")
   local inputCount = (t.inSize[1]*t.inSize[2])/inputP
+  err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
   local outputCount = (t.outSize[1]*t.outSize[2])/outputP
   
   local expectedOutputCount = (inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2])/(fn.sdfOutput[1][2]*fn.sdfInput[1][1])
