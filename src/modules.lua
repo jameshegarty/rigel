@@ -11,7 +11,7 @@ local SDFRate = require "sdfrate"
 
 local MT
 if terralib~=nil then
-   MT = require("modulesTerra")
+  MT = require("modulesTerra")
 end
 
 local data = rigel.data
@@ -1598,7 +1598,14 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   end
 
   local CE = S.CE("CE")
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), rigel.lower(res.outputType) ), "process_output", {addr:setBy(S.constant(true, types.bool()))}, nil, CE ) )
+  res.systolicModule:addFunction( S.lambdaTab
+   { name="process", 
+     input=sinp, 
+     output=S.cast( S.tuple( outarray ), rigel.lower(res.outputType) ), 
+     outputName="process_output", 
+     pipelines={addr:setBy(S.constant(true, types.bool()))}, 
+     CE=CE } )
+
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
 
   return rigel.newFunction(res)
@@ -1624,39 +1631,75 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
 
   res.systolicModule = Ssugar.moduleConstructor("SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..tostring(A).."_rowWidth"..tostring(rowWidth))
   local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-  local addr = res.systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), imageW-1 ), true, nil ):instantiate("addr") )
 
-  local outarray = {}
-  local evicted
+  -- index 1 is ymin+1 row, index 2 is ymin+2 row etc
+  -- remember ymin is <0
+  local fifos = {}
+  local xlocfifos = {}
 
-  local bits = rigel.lower(res.inputType):verilogBits()
-  local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
-  local sizeInBytes = nearestPowerOf2(imageW*bytes)
+  local resetPipelines = {}
+  local pipelines = {}
 
-  local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
-  local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
+  local currentX = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), imageW-1, 1 ) ):CE(true):setInit(0):instantiate("currentX") )
+  table.insert( pipelines, currentX:setBy( S.constant(true,types.bool()) ) )
+  table.insert( resetPipelines, currentX:set( S.constant( 0, types.uint(16) ) ) )
 
-  for y=0,-ymin do
-    local lbinp = evicted
-    if y==0 then lbinp = sinp end
-    outarray[1+(-ymin-y)] = S.index(lbinp,1-1)
+  for i=1,-ymin do
+    table.insert( fifos, res.systolicModule:add( fpgamodules.fifo(A,rowWidth,false):instantiate("fifo"..tostring(i)) ) )
+    table.insert( xlocfifos, res.systolicModule:add( fpgamodules.fifo(types.uint(16),rowWidth,false):instantiate("xloc"..tostring(i)) ) )
 
-    if y<-ymin then
-      -- last line doesn't need a ram
-      local BRAM = res.systolicModule:add( bramMod:instantiate("lb_m"..math.abs(y)) )
-
-      local upcast = S.cast(lbinp,types.bits(bits))
-      upcast = S.cast(upcast,types.bits(bytes*8))
-
-      evicted = BRAM:writeAndReturnOriginal( S.tuple{ S.cast(addr:get(),types.uint(addrbits)), upcast} )
-      evicted = S.bitSlice(evicted,0,bits-1)
-      evicted = S.cast( evicted, rigel.lower(res.inputType) )
-    end
+    table.insert( resetPipelines, fifos[#fifos]:pushBackReset() )
+    table.insert( resetPipelines, fifos[#fifos]:popFrontReset() )
+    
+    table.insert( resetPipelines, xlocfifos[#xlocfifos]:pushBackReset() )
+    table.insert( resetPipelines, xlocfifos[#xlocfifos]:popFrontReset() )
   end
 
+  local outputArray = {}
+  
+  for outi=1,-ymin do
+    local readyToRead = S.__and( xlocfifos[outi]:hasData(), S.eq(xlocfifos[outi]:peekFront(),currentX:get() ) )
+
+    local dat = fifos[outi]:popFront(nil,readyToRead)
+    local xloc = xlocfifos[outi]:popFront(nil,readyToRead)
+
+    if outi>1 then
+      table.insert( pipelines, fifos[outi-1]:pushBack( dat, readyToRead ) )
+      table.insert( pipelines, xlocfifos[outi-1]:pushBack( xloc, readyToRead ) )
+    else
+      -- has to appear somewhere
+      table.insert( pipelines, xloc )
+    end
+    
+    outputArray[outi] = S.select(readyToRead,dat,S.constant(defaultValue,A))
+  end
+
+  local inputPx = S.index(sinp,0)
+  local inputPxValid = S.index(sinp,1)
+  outputArray[-ymin+1] = S.select( inputPxValid, inputPx, S.constant( defaultValue, A ) )
+
+  local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready())
+  table.insert( pipelines, fifos[-ymin]:pushBack( inputPx, shouldPush ) )
+  table.insert( pipelines, xlocfifos[-ymin]:pushBack( currentX:get(), shouldPush ) )
+    
   local CE = S.CE("CE")
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( outarray ), rigel.lower(res.outputType) ), "process_output", {addr:setBy(S.constant(true, types.bool()))}, nil, CE ) )
-  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+  
+  res.systolicModule:addFunction( S.lambdaTab
+    { name="process",
+      input=sinp,
+      output=S.cast( S.tuple( outputArray ), rigel.lower(res.outputType) ),
+      outputName="process_output",
+      pipelines=pipelines,
+      CE=CE } )
+  
+  res.systolicModule:addFunction( S.lambdaTab
+    { name="reset",
+      input=S.parameter("r",types.null()),
+      output=nil,
+      outputName="ro",
+      pipelines=resetPipelines,
+      valid=S.parameter("reset",types.bool()),
+      CE=CE } )
 
   return rigel.newFunction(res)
 end)
