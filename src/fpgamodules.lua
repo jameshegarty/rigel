@@ -135,13 +135,13 @@ end
 
 
 modules.fifo = memoize(function(ty,items,verbose)
-  assert(types.isType(ty))
-  assert(type(items)=="number")
-  assert(type(verbose)=="boolean")
+  err(types.isType(ty),"fifo type must be type")
+  err(type(items)=="number","fifo items must be number")
+  err(type(verbose)=="boolean","fifo verbose must be bool")
 
   local fifo = Ssugar.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
-  local addrBits = (math.log(items)/math.log(2))+1 -- the +1 is so that we can disambiguate wraparoudn
+  local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
   local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("readAddr"))
   local bits = ty:verilogBits()
@@ -149,7 +149,7 @@ modules.fifo = memoize(function(ty,items,verbose)
 
   local rams, ram
   if items <= 128 then
-    assert(items==128)
+    --err(items==128,"fifo NYI, items <128")
     rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
     --print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
@@ -212,18 +212,26 @@ modules.fifo = memoize(function(ty,items,verbose)
   popFront:addPipeline( popFrontAssert:process( hasData ) )
   local popFrontPrint
   if verbose then 
-    popFrontPrint= fifo:add( systolic.module.print( types.tuple{types.uint(addrBits),types.uint(addrBits),types.uint(addrBits)},"FIFO readaddr %d writeaddr %d size %d", true):instantiate("popFrontPrintInst") ) 
-    popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize} ) )
+    popFrontPrint= fifo:add( systolic.module.print( types.tuple{types.uint(addrBits),types.uint(addrBits),types.uint(addrBits),types.bool()},"FIFO readaddr %d writeaddr %d size %d ready %d", true):instantiate("popFrontPrintInst") ) 
+    popFront:addPipeline( popFrontPrint:process( S.tuple{readAddr:get(), writeAddr:get(), fsize, readyReg:get()} ) )
   end
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
 
+  local popOutput
   if items<=128 then
     local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
-    popFront:setOutput( systolic.cast( S.tuple(bitfield), ty), "popFront" )
+    popOutput = systolic.cast( S.tuple(bitfield), ty)
+    popFront:setOutput( popOutput, "popFront" )
   else
-    popFront:setOutput( S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),ty), "popFront" )
+    popOutput = S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),ty)
+    popFront:setOutput( popOutput, "popFront" )
   end
 
+  -- peekFront
+  local peekFront = fifo:addFunction( Ssugar.lambdaConstructor("peekFront") )
+  peekFront:setOutput( popOutput, "peekFront" )
+  peekFront:setCE(popCE)
+  
   -- popFrontReset
   local popFrontReset = fifo:addFunction( Ssugar.lambdaConstructor("popFrontReset" ) )
   popFrontReset:setCE(popCE)

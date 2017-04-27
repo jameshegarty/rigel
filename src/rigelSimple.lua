@@ -196,6 +196,11 @@ function RS.connect(t)
         ccnt = ccnt + 1
         inp = R.apply( "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
       end
+    elseif R.isBasic(inputType) and R.isBasic(t.toModule.inputType) then
+      if types.array2d(inputType,1)==t.toModule.inputType then
+        ccnt = ccnt + 1
+        inp = R.apply( "v"..tostring(ccnt), C.arrayop(inputType,1,1), inp )
+      end
     end
   end
 

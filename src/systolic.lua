@@ -249,6 +249,10 @@ function systolic.isFunction(t)
   return getmetatable(t)==systolicFunctionMT --or getmetatable(t)==systolicFunctionConstructorMT
 end
 
+function systolic.lambdaTab( tab )
+  return systolic.lambda(tab.name, tab.input, tab.output, tab.outputName, tab.pipelines, tab.valid, tab.CE )
+end
+
 function systolic.lambda( name, inputParameter, output, outputName, pipelines, valid, CE, X )
   err( systolicAST.isSystolicAST(inputParameter), "input must be a systolic AST" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )

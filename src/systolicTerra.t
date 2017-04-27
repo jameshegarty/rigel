@@ -71,7 +71,8 @@ function systolicASTFunctions:toTerra( symbols )
           -- cast {A} to A
           res = symbol(n.type:toTerraType())
           table.insert(stats,quote var [res]; res = [args[1]]._0 end)
-
+        elseif n.inputs[1].type:isBits() and n.type:isUint() and n.inputs[1].type.precision==n.type.precision then
+	  res = args[1]
         else
           err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
         end
@@ -84,6 +85,16 @@ function systolicASTFunctions:toTerra( symbols )
         end
 
         res = s
+      elseif n.kind=="bitSlice" then
+        local s = symbol(n.type:toTerraType())
+        local q = quote
+	  var sft = [args[1]] >> [n.low]
+          var mask : n.inputs[1].type:toTerraType() = 1
+          mask = (mask << [n.high-n.low+1]) - 1
+	  var [s] = sft and mask
+        end
+	table.insert(stats,q)
+	res = s
       else
         err(false,"Error, systolicAST:toTerra NYI:"..n.kind)
       end

@@ -699,6 +699,80 @@ function MT.linebuffer(res, A, w, h, T, ymin)
   return Linebuffer
 end
 
+function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
+  assert(ymin<=0)
+
+  local struct SparseLinebuffer { 
+    currentX : uint16,
+--    xlocs : uint[-ymin], 
+--    staging : (A:toTerraType())[-ymin+1]
+    -- index 0 is ymin+1 row, index 1 is ymin+2 row etc
+    -- remember ymin is <0
+    fifos : (simmodules.fifo( A:toTerraType(), rowWidth, "sparseLinebuffer FIFO" ))[-ymin]
+    xlocfifos : (simmodules.fifo( uint16, rowWidth, "sparseLinebuffer FIFO" ))[-ymin]
+  }
+
+
+  -- the staging register should contain the next value to write out. so X value in staging register should be > currentX
+
+  -- if X value in staging register equals currentX, write it out, and read next value from FIFO.
+  -- if the next FIFO is full, drop the value instead of writing it.
+
+  -- if input fifo to this line is empty: add a bogus X value (x>imageW) to staging register so that if there are multiple empty lines, 
+  -- we don't write out that value twice.
+
+
+  terra SparseLinebuffer:reset() 
+    self.currentX = 0
+
+    for i=0,-ymin do
+      --self.xlocs[i] = imageW -- invalid value
+      self.fifos[i]:reset()
+      self.xlocfifos[i]:reset()
+    end
+  end
+
+  local inputType = tuple( A:toTerraType(), bool )
+  local outputType = (A:toTerraType())[-ymin+1]
+
+  terra SparseLinebuffer:process( inp : &inputType, out : &outputType )
+
+    -- do it in this order to simulate non blocking reads
+    for outi=0,-ymin do
+
+      if self.xlocfifos[outi]:hasData() and @(self.xlocfifos[outi]:peekFront(0))==self.currentX then
+        -- we are ready to read
+	var dat = @(self.fifos[outi]:popFront())
+	var xloc = @(self.xlocfifos[outi]:popFront())
+        (@out)[outi] = dat
+
+	-- preload the next value into staging
+	if outi>0 then
+          self.fifos[outi-1]:pushBack( &dat )
+          self.xlocfifos[outi-1]:pushBack( &xloc )
+        end
+      else
+        (@out)[outi] = [A:valueToTerra(defaultValue)]
+      end
+    end
+
+    if inp._1 and self.fifos[-ymin-1]:full()==false then
+      -- this token is valid, write it out
+      (@out)[-ymin] = inp._0
+
+      self.xlocfifos[-ymin-1]:pushBack( &self.currentX )
+      self.fifos[-ymin-1]:pushBack( &(inp._0) )
+    else
+      (@out)[-ymin] = [A:valueToTerra(defaultValue)]
+    end
+
+    self.currentX = self.currentX+1
+    if self.currentX==imageW then self.currentX=0 end
+  end
+
+  return SparseLinebuffer
+end
+
 function MT.SSR(res, A, T, xmin, ymin )
   local struct SSR {SR:(A:toTerraType())[-xmin+T][-ymin+1]}
   terra SSR:reset() end

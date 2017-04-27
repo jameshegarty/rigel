@@ -892,7 +892,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
 
     return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
   else
-    assert(false)
+    err(false, "C.index input must be tuple or array but is "..tostring(inputType))
   end
                          end)
 
