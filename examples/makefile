@@ -142,6 +142,9 @@ CAMERASRCS = stereo_ov7660.t 2xov7660.t campipe_ov7660.t
 CAMERABITS = $(patsubst %.t,out/%.axi.v,$(CAMERASRCS))
 CAMERABITS += $(patsubst %.t,out/%.camera.bit,$(CAMERASRCS))
 
+SRCS_ASIC = $(SRCS_VERILATOR)
+
+ASIC = $(patsubst %.lua, out/%.32nm.txt, $(SRCS_ASIC))
 
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
@@ -150,6 +153,7 @@ RES += $(AXI)
 RES += $(AXIBITS)
 RES += $(AXI100)
 RES += $(AXIBITS100)
+RES += $(ASIC)
 
 CD = cd out;
 all: $(RES)
@@ -182,6 +186,8 @@ axiverilog: $(AXIVERILOG)
 zynq20bits: $(AXIBITS)
 
 zynq100bits: $(AXIBITS100)
+
+asic: $(ASIC)
 
 clean:
 	rm -Rf out/*
@@ -565,3 +571,9 @@ out/%.stats.txt : out/%.axi.bmp
 
 out/%.stats100.txt : out/%.zynq100.bmp
 	../misc/stats.sh out/build100_$* out/$* $* axi100 $@
+
+out/%.32nm.txt : out/%.v
+	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
+	mkdir out/$*_32nm
+	cp out/$*.v out/$*_32nm
+	cd out/$*_32nm; dc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nm.txt' -f ../../../platform/32nm/32nm.tcl > OUT.txt

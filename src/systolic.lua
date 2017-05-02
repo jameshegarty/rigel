@@ -1149,7 +1149,7 @@ function systolicASTFunctions:toVerilog( module )
           finalResult = "{"..args[2]..","..args[1].."}"
         else
           for k,v in pairs(argpairs) do
-            table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[===1'bx) begin $display("valid bit can't be x! Module '%s' instance ']]..n.instance.name..[[' function ']]..n.fn..[['", INSTANCE_NAME); end end]])
+            --table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[===1'bx) begin $display("valid bit can't be x! Module '%s' instance ']]..n.instance.name..[[' function ']]..n.fn..[['", INSTANCE_NAME); end end]])
           end
 
           local data = foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
@@ -1666,8 +1666,8 @@ function userModuleFunctions:toVerilog()
 --      if fn:isPure()==false and (self.onlyWire and fn.implicitValid)==false then 
       if fn:isPure()==false and self.onlyWire~=true then
 
-        table.insert(t, [[always @(posedge CLK) begin if(]]..fn.valid.name..[[===1'bx) begin $display("Valid bit can't be x! Module '%s' function ']]..fnname..[['", INSTANCE_NAME);  end end
-]])
+        --table.insert(t, [[always @(posedge CLK) begin if(]]..fn.valid.name..[[===1'bx) begin $display("Valid bit can't be x! Module '%s' function ']]..fnname..[['", INSTANCE_NAME);  end end
+--]])
       end
     end
 
