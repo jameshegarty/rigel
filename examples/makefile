@@ -574,6 +574,6 @@ out/%.stats100.txt : out/%.zynq100.bmp
 
 out/%.32nm.txt : out/%.v
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
-	mkdir out/$*_32nm
+	mkdir -p out/$*_32nm
 	cp out/$*.v out/$*_32nm
 	cd out/$*_32nm; dc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nm.txt' -f ../../../platform/32nm/32nm.tcl > OUT.txt
