@@ -148,7 +148,7 @@ function fixed.constant( value )
 
   local signed = (value<0) 
 
-  local precision = math.ceil(math.log(value)/math.log(2))
+  local precision = math.ceil(math.log(math.abs(value))/math.log(2))
   if signed then precision = precision + 1 end
   if value==0 then precision=1 end -- special case
 
@@ -340,12 +340,14 @@ function fixedNewASTFunctions:applyBinaryLift(f,inp)
 end
 
 -- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
-function fixed.applyNaryLift(f,tab,operateOnUnderlyingType)
+function fixed.applyNaryLift(f,tab,X)
+  err(X==nil, "fixedNaryLift, too many args")
   err(type(tab)=="table", "applyNaryLift: second argument must be table")
   
   if type(f)=="function" then
 
-    if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
+    --if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
+    local operateOnUnderlyingType=true
     
     -- hack to get type
     local tmpinp = {}
@@ -361,7 +363,9 @@ function fixed.applyNaryLift(f,tab,operateOnUnderlyingType)
 end
 
 -- f should be a function that takes in a single table (array format) of systolic values, and returns a systolic value
-function fixed.applyTrinaryLift(f,cond,a,b,operateOnUnderlyingType)
+function fixed.applyTrinaryLift(f,cond,a,b,X)
+  err(X==nil, "applyTrinaryLift too many args")
+  
   if type(f)=="function" then
     -- hack to get type
     local tmpinp0 = S.parameter("TMP0",cond.type)
@@ -387,10 +391,12 @@ function fixedNewASTFunctions:toSystolic()
       if n.kind=="parameter" then
         inp = S.parameter(n.name, n.type)
         res = inp
-        if n.type:isNamed() and n.type.generator=="fixed" then
-          -- remove wrapper
-          res = S.cast(res,n.type.structure)
-        end
+        --if n.type:isNamed() and n.type.generator=="fixed" then
+        -- remove wrapper
+	if n.type~=n.type:stripNamed() then
+	  res = S.cast(res,n.type:stripNamed())
+	end
+        --end
       elseif n.kind=="binop" then
 
         if fixed.DEEP_MULTIPLY and fixed.isFixedType(n.type) and n:precision()>=20 and n.op=="*" and 
@@ -521,12 +527,14 @@ function fixedNewASTFunctions:toSystolic()
       return res
     end)
 
-  if self.type:isNamed() and self.type.generator=="fixed" then
+  --if self.type:isNamed() and self.type.generator=="fixed" then
     -- we want the exterior interface for this module to be an actual fixed type, not the underlying type
     --local c = S.constant(0, self.type.list[2])
-    --res = S.tuple{res,c}
+  --res = S.tuple{res,c}
+  if self.type~=self:underlyingType() then
     res = S.cast(res,self.type)
   end
+  --end
 
   return res, inp, instances, resetStats
 end
@@ -574,10 +582,10 @@ end
 function fixedNewASTFunctions:__and(b) return self:applyBinaryLift( S.__and, b ) end
 function fixedNewASTFunctions:index(x,y) return self:applyUnaryLift( function(expr) return S.index(expr,x,y) end ) end
 function fixed.array2d(tab,w,h) return fixed.applyNaryLift(
-    function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab, false )
+    function(tabi) return S.cast(S.tuple(tabi),types.array2d(tabi[1].type,w,h)) end, tab )
 end
 
-function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab,false) end
+function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab) end
 function fixed.select(cond,a,b) return fixed.applyTrinaryLift(S.select,cond,a,b) end
 
 function fixedNewASTFunctions:mod(b) 
@@ -634,12 +642,6 @@ function fixedNewASTFunctions:precision()
   err(false,":precision(), not a numeric type!")
 end
 
-function fixedNewASTFunctions:underlyingType()
-  if self.type:isUint() then return self.type end
-  if self.type:isInt() then return self.type end
-  if self.type:isBool() then return self.type end
-  if self.type:isNamed() and self.type.generator=="fixed" then return self.type.structure end
-  err(false,":underlyingType(), NYI "..tostring(self.type))
-end
+function fixedNewASTFunctions:underlyingType() return self.type:stripNamed() end
 
 return fixed

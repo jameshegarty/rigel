@@ -153,7 +153,7 @@ function types.meet( a, b, op, loc)
   local treatedAsBinops = {["select"]=1, ["vectorSelect"]=1,["array"]=1, ["mapreducevar"]=1, ["dot"]=1, ["min"]=1, ["max"]=1}
 
   if a:isTuple() and b:isTuple() then
-    assert(a==b)
+    err(a:stripConst()==b:stripConst(),"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
     return a,a,a
   elseif a:isArray() and b:isArray() then
     if a:arrayLength() ~= b:arrayLength() then
@@ -391,6 +391,12 @@ function types.checkExplicitCast(from, to, ast)
         err( channels==to:channels(), "channels don't match") 
         return true
       end
+    elseif to:isTuple() and #from.list==#to.list then
+      for k,v in pairs(from.list) do
+	local r = types.checkExplicitCast(from.list[k],to.list[k],ast)
+	err(r, "Could not cast tuple "..tostring(from).." to "..tostring(to).." because index "..tostring(k-1).." could not be casted")
+      end
+      return true
     end
 
     error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
@@ -405,6 +411,14 @@ function types.checkExplicitCast(from, to, ast)
     elseif from:channels()==1 and types.checkExplicitCast(from:arrayOver(),to,ast) then
       -- can explicitly cast an array of size 1 to a compatible type
       return true
+    elseif to:isArray() then
+      local fsz = from:arrayLength()
+      local tsz = to:arrayLength()
+      if fsz[1]==tsz[1] and fsz[2]==tsz[2] and types.checkExplicitCast(from:arrayOver(),to:arrayOver(),ast) then
+	return true
+      else
+	err(false,"Can't cast array to array due to mismatch size or base type: "..tostring(from).." to "..tostring(to))
+      end
     end
 
     error("Can't cast an array type to a non-array type. "..tostring(from).." to "..tostring(to)..ast.loc)
@@ -552,6 +566,23 @@ function TypeFunctions:stripConst()
   end
 end
 
+-- convert all named types in this type to their equivalent structural type
+function TypeFunctions:stripNamed()
+  if self:isNamed() then
+    return self.structure
+  elseif self:isTuple() then
+    local typelist = map(self.list, function(t) return t:stripNamed() end)
+    return types.tuple(typelist)
+  elseif self:isArray() then
+    local L = self:arrayLength()
+    return types.array2d( self:arrayOver():stripNamed(),L[1],L[2])
+  elseif self:isUint() or self:isInt() or self:isBool() then
+    return self
+  else
+    err(false,":stripNamed(), NYI "..tostring(self))
+    
+  end
+end
 
 function TypeFunctions:isArray()  return self.kind=="array" end
 
