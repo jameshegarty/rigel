@@ -110,8 +110,8 @@ end
 types._tuples = {}
 
 function types.tuple( list )
-  assert(type(list)=="table")
-  assert(keycount(list)==#list)
+  err(type(list)=="table","input to types.tuple must be table")
+  err(keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
