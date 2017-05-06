@@ -211,6 +211,8 @@ function systolic.valueToVerilog( value, ty )
      return "32'd"..tostring(b[0])
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
+  elseif ty:isNamed() then
+    return systolic.valueToVerilog(value,ty.structure)
   else
     print("valueToVerilog",ty)
     assert(false)

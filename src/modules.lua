@@ -503,7 +503,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     local resetPipelines = {}
     resetPipelines[1] = SR:reset( nil, rst, CE )
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
-    
+
     res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst, CE ), prefix.."reset_out", resetPipelines, rst ) )
     
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense

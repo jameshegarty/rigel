@@ -25,7 +25,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="opaque" then
     return "opaque_"..ty.str
   elseif ty.kind=="named" then
-    return ty.name
+    return ty.name..const
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -46,17 +46,24 @@ function types.opaque( str, X )
   return types._opaque[str]
 end
 
-types._named={}
-function types.named( name, structure, generator, params, X )
+types._named={[true]={},[false]={}}
+function types.named( name, structure, generator, params, const, X )
   err( type(name)=="string","types.named: name must be string")
   err( types.isType(structure),"types.named: structure must be rigel type")
   err( type(generator)=="string","types.named: generator must be string")
   err( type(params)=="table","types.named: params must be table")
-  err(types._named[name]==nil,"Attempting to make new named type with a name that already exists")
+  err( const==nil or type(const)=="boolean", "types.named: const must be nil or bool")
 
-  local ty = {kind="named",name=name, structure=structure, generator=generator,params=params}
-  types._named[name] = setmetatable(ty,TypeMT)
-  return types._named[name]
+  local c = (const==true)
+
+  if types._named[c][name]==nil then
+    if c==true then assert(structure:const()) end
+    if c==false then assert(structure:const()==false) end
+    local ty = {kind="named",name=name, structure=structure, generator=generator,params=params, constant=c}
+    types._named[c][name] = setmetatable(ty,TypeMT)
+  end
+  
+  return types._named[c][name]
 end
 
 types._bits={[true]={},[false]={}}
@@ -479,7 +486,7 @@ function TypeFunctions:const()
   elseif self:isNull() then
     return true
   elseif self:isNamed() then
-    return self.structure:const()
+    return self.constant
   else
     print(":const",self)
     assert(false)
@@ -507,6 +514,8 @@ function TypeFunctions:constSubtypeOf(A)
     return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
   elseif self:isOpaque() then
     return self.str==A.str
+  elseif self:isNamed() then
+    return self:const() and A:makeConst()==self
   else
     print(":constSubtypeOf",self,A)
     assert(false)
@@ -533,6 +542,8 @@ function TypeFunctions:makeConst()
     return types.tuple(map(self.list,function(t) return t:makeConst() end ) )
   elseif self:isBool() then
     return types.bool(true)
+  elseif self:isNamed() then
+    return types.named( self.name, self.structure:makeConst(), self.generator, self.params, true )
   else
     print(":makeConst",self)
     assert(false)
@@ -559,7 +570,7 @@ function TypeFunctions:stripConst()
   elseif self:isBool() then
     return types.bool(false)
   elseif self:isNamed() then
-    return self
+    return types.named( self.name, self.structure, self.generator, self.params, false)
   else
     print(":stripConst",self)
     assert(false)
@@ -690,7 +701,7 @@ function TypeFunctions:checkLuaValue(v)
       self:arrayOver():checkLuaValue(v[i])
     end
   elseif self:isTuple() then
-    err( type(v)=="table", "if type is a tuple, v must be a table")
+    err( type(v)=="table", "if type is "..tostring(self)..", v must be a table")
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() then
@@ -706,8 +717,10 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="boolean", "bool must be lua bool")
   elseif self:isOpaque() then
     err( v==0, "opaque must be 0 but is "..tostring(v))
+  elseif self:isNamed() then
+    return self.structure:checkLuaValue(v)
   else
-    print("NYI - ",self)
+    print("NYI - :checkLuaValue with type ",self)
     assert(false)
   end
 

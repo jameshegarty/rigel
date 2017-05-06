@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
       
       totalCycles++;
       if(totalCycles>outPackets*256){
-        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d\n",(unsigned int)totalCycles,outPackets);
+        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
         exit(1);
       }
     }
