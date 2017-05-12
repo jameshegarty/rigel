@@ -579,7 +579,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)
   local out = R.apply("crpidx", RM.makeHandshake(C.index(types.array2d(FILTER_PAIR,1,1),0,0)), out)
   
-  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
+  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,{1,FILTER_RATE},FILTER_FIFO)
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", false)
