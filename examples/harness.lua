@@ -341,10 +341,11 @@ function harnessTop(t)
   err( (t.inSize[1]*t.inSize[2]) % inputP == 0, "Error, # of input tokens is non-integer")
   local inputCount = (t.inSize[1]*t.inSize[2])/inputP
   err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
-  local outputCount = (t.outSize[1]*t.outSize[2])/outputP
-  
-  local expectedOutputCount = (inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2])/(fn.sdfOutput[1][2]*fn.sdfInput[1][1])
-  err(expectedOutputCount==outputCount, "Error, SDF predicted output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
+
+  local outputCountFrac = {t.outSize[1]*t.outSize[2], outputP}
+  local expectedOutputCountFrac = {inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2],fn.sdfOutput[1][2]*fn.sdfInput[1][1]}
+
+  err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
   
   if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles )

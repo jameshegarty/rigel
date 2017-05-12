@@ -221,8 +221,8 @@ function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDep
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
 
-  assert( SDFRate.isSDFRate(tab.sdfInput) )
-  assert( SDFRate.isSDFRate(tab.sdfOutput) )
+  err( SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
+  err( SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
   assert( tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1 )
   assert( tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1 )
 

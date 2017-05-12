@@ -8,8 +8,9 @@ function SDFRate.isSDFRate(t)
     if v=="x" then
       -- ok
     else
-      if type(v)~="table" then return false end
-      if (type(v[1])~="number" or type(v[2])~="number") then return false end
+      --if type(v)~="table" then return false end
+      --if (type(v[1])~="number" or type(v[2])~="number") then return false end
+      return SDFRate.isFrac(v)
     end
   end
   return true
@@ -39,7 +40,7 @@ function SDFRate.normalize( tab )
 end
 
 function SDFRate.isFrac(a)
-  return type(a)=="table" and type(a[1])=="number" and type(a[2])=="number"
+  return type(a)=="table" and type(a[1])=="number" and type(a[2])=="number" and math.floor(a[1])==a[1] and math.floor(a[2])==a[2] and a[1]>=0 and a[2]>0
 end
 
 function SDFRate.fracToNumber(a)
@@ -54,6 +55,8 @@ end
 
 -- format {n,d}
 local function fracSum(a,b)
+  assert(SDFRate.isFrac(a))
+  assert(SDFRate.isFrac(b))
   local denom = a[2]*b[2]
   local num = a[1]*b[2]+b[1]*a[2]
   local n,d=simplify(num,denom)
@@ -61,8 +64,21 @@ local function fracSum(a,b)
 end
 
 function SDFRate.fracMultiply(a,b)
+  err( SDFRate.isFrac(a), "SDFRate.fracMultiple a is not frac: "..tostring(a[1]).." "..tostring(a[2]) )
+  err( SDFRate.isFrac(b), "SDFRate.fracMultiple b is not frac: "..tostring(b[1]).." "..tostring(b[2]) )
+  
   local n,d = simplify(a[1]*b[1],a[2]*b[2])
   return {n,d}
+end
+
+-- format {n,d}
+function SDFRate.fracEq(a,b)
+  assert(SDFRate.isFrac(a))
+  assert(SDFRate.isFrac(b))
+
+  -- never do non-integer comparisons! (0.07*300 ~= 21)!
+  local n,d = a[1]*b[2], a[2]*b[1]
+  return n==d
 end
 
 function SDFRate.sum(tab)
