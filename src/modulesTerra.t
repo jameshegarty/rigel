@@ -726,12 +726,12 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
 
       if self.xlocfifos[outi]:hasData() and @(self.xlocfifos[outi]:peekFront(0))==self.currentX then
         -- we are ready to read
-	var dat = @(self.fifos[outi]:popFront())
-	var xloc = @(self.xlocfifos[outi]:popFront())
+        var dat = @(self.fifos[outi]:popFront())
+        var xloc = @(self.xlocfifos[outi]:popFront())
         (@out)[outi] = dat
 
-	-- preload the next value into staging
-	if outi>0 then
+        -- preload the next value into staging
+        if outi>0 then
           self.fifos[outi-1]:pushBack( &dat )
           self.xlocfifos[outi-1]:pushBack( &xloc )
         end

@@ -74,7 +74,7 @@ function RS.modules.linebuffer(t)
 end
 
 function RS.modules.columnLinebuffer(t)
-  return RM.linebuffer(t.type,t.size[1],t.size[2],t.P,t.stencil)
+  return RM.linebuffer(t.type,t.size[1],t.size[2],t.V,t.stencil)
 end
 
 function RS.modules.stencilShiftRegister(t)
