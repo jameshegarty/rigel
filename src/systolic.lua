@@ -211,6 +211,8 @@ function systolic.valueToVerilog( value, ty )
      return "32'd"..tostring(b[0])
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
+  elseif ty:isNamed() then
+    return systolic.valueToVerilog(value,ty.structure)
   else
     print("valueToVerilog",ty)
     assert(false)
@@ -1244,19 +1246,69 @@ function systolicASTFunctions:toVerilog( module )
         local nonulls = ifilter(args, function(v,k) return n.inputs[k].type:verilogBits()>0 end )
         finalResult="{"..table.concat(reverse(nonulls),",").."}"
       elseif n.kind=="cast" then
-
-        local expr
-        local cmt = " // cast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
         
-        local function dobasecast( expr, fromType, toType, inputIsWire, inputName )
+        local function docast( expr, fromType, toType, inputIsWire, inputName )
           assert(type(expr)=="string")
           assert(type(inputIsWire)=="boolean")
           assert(type(inputName)=="string")
-          
-          if fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
+
+	  
+	  local allBits = true
+	  if fromType:isTuple() then
+	    for k,v in pairs(fromType.list) do if v:isBits()==false then allBits=false end end
+	  end
+	  
+	  if fromType:isTuple() and allBits then
+	    -- casting tuple of bit type {bits,bits,bits...} to anything: a noop
+	    return expr
+	  elseif toType:isBits() or fromType:isBits() then
+	    -- noop: verilog is blind to types anyway
+
+	    local diff = toType:verilogBits()-fromType:verilogBits()
+	    if diff>0 then
+	      -- pad it with some 0's
+	      return "{"..tostring(diff).."'b0,"..expr.."}"
+	    elseif diff==0 then
+	      return expr
+	    else
+	      assert(false)
+	    end
+	  elseif toType:isArray() and fromType:isTuple() then
+	    -- Theoretically, typechecker should only allow valid tuple array casts to be allowed? (always row-major order)
+	    err( toType:verilogBits()==fromType:verilogBits(), "tuple to array cast verilog size doesn't match?")
+	    return expr
+	  elseif toType:isArray() and fromType:isArray()==false and fromType:isTuple()==false then
+	    return "{"..table.concat( map(range(toType:channels()), function(n) return expr end),",").."}" -- broadcast
+	  elseif fromType:isArray() and toType:isArray()==false and fromType:arrayOver():isBool() and (toType:isUint() or toType:isInt()) then
+	    err("systolic cast from array of bools to type NYI")
+	  elseif toType:isArray() and fromType:isArray() and toType:baseType()==fromType:baseType() then
+	    assert(toType:channels() == fromType:channels())
+	    -- array reshaping is noop
+	    return expr
+	  elseif fromType:isTuple() and #fromType.list==1 and fromType.list[1]==toType then
+	    -- {A} to A.  Noop
+	    return expr
+	  elseif fromType:isArray() and fromType:arrayOver()==toType and fromType:channels()==1 then
+	    -- A[1] to A. Noop
+	    return expr
+	  elseif fromType:constSubtypeOf(toType) then
+	    return expr -- casting const to non-const. Verilog doesn't care.
+	  elseif fromType:isNamed() and toType:isNamed()==false and fromType.structure==toType then
+	    -- noop, explicit cast of named type to its structural type
+	    return expr
+	  elseif fromType:isNamed()==false and toType:isNamed() and fromType==toType.structure then
+	    -- noop, cast to named type with same structure
+	    return expr
+	  elseif fromType:isNamed() and toType:isNamed()==false then
+	    -- structure not identical, attempt base cast
+	    return docast( expr, fromType.structure, toType, inputIsWire, inputName )
+	  elseif fromType:isNamed()==false and toType:isNamed() then
+	    -- structure not identical, attempt base cast
+	    return docast( expr, fromType, toType.structure, inputIsWire, inputName )
+	  elseif fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
             -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
             local bitdiff = toType.precision-fromType.precision
-
+	    
             if bitdiff>0 then
               return "{"..bitdiff.."'b0,"..expr.."}"
             elseif bitdiff==0 then
@@ -1279,84 +1331,31 @@ function systolicASTFunctions:toVerilog( module )
             -- noop: verilog is blind to types anyway
             assert(fromType:verilogBits()==toType:verilogBits())
             return expr
-          else
-            print("FAIL TO CAST",fromType,"to",toType)
-            assert(false)
-          end
-        end
-        
-        local allBits = true
-        if n.inputs[1].type:isTuple() then
-          for k,v in pairs(n.inputs[1].type.list) do if v:isBits()==false then allBits=false end end
-        end
+	    	  elseif fromType:isTuple() and toType:isTuple() and #fromType.list==#toType.list then
+	    local allnoop = true
 
-        if n.inputs[1].type:isTuple() and allBits then
-          -- casting tuple of bit type {bits,bits,bits...} to anything: a noop
-          expr = args[1]
-        elseif n.type:isBits() or n.inputs[1].type:isBits() then
-          -- noop: verilog is blind to types anyway
-          --err(n.type:verilogBits()==n.inputs[1].type:verilogBits(), "bad cast? "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
-          local diff = n.type:verilogBits()-n.inputs[1].type:verilogBits()
-          if diff>0 then
-            -- pad it with some 0's
-            expr = "{"..tostring(diff).."'b0,"..args[1].."}"
-          elseif diff==0 then
-            expr = args[1]
+	    local low = 0
+	    for k,v in ipairs(fromType.list) do
+	      local sub = expr.."["..tostring(low+v:verilogBits()-1)..":"..tostring(low).."]"
+	      local e = docast(sub,v,toType.list[k],false,"")
+	      if e~=sub then allnoop=false end
+	    end
+
+	    err( allnoop, "Error, NYI, systolic cast tuple to tuple that is not a noop, "..tostring(fromType).." to "..tostring(toType))
+	    return expr
+	  elseif fromType:isArray() and toType:isArray() and fromType:channels()==toType:channels() then
+	    -- HACK: just check if this is a noop
+
+	    local e = docast(expr,fromType:arrayOver(),toType:arrayOver(),false,"")
+
+	    err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
+	    return expr
           else
-            assert(false)
+            err(false,"FAIL TO CAST"..tostring(fromType).." to "..tostring(toType) )
           end
-        elseif n.type:isArray() and n.inputs[1].type:isTuple() then
-          --err( #n.inputs[1].type.list == n.type:channels(), "tuple to array cast sizes don't match" )
-          --for k,v in pairs(n.inputs[1].type.list) do
-          --  err( v==n.type:arrayOver(), "NYI - tuple to array cast, all tuple types must match array type. Is "..tostring(v).." but should be "..tostring(n.type:arrayOver())..", "..n.loc)
-          --end
-          
-          -- Theoretically, typechecker should only allow valid tuple array casts to be allowed? (always row-major order)
-          err( n.type:verilogBits()==n.inputs[1].type:verilogBits(), "tuple to array cast verilog size doesn't match?")
-          expr = args[1] 
-        elseif n.type:isArray() and n.inputs[1].type:isArray()==false and n.inputs[1].type:isTuple()==false then
-          expr = "{"..table.concat( map(range(n.type:channels()), function(n) return args[1] end),",").."}" -- broadcast
-          cmt = " // broadcast "..tostring(n.inputs[1].type).." to "..tostring(n.type)
-        elseif n.inputs[1].type:isArray() and n.type:isArray()==false and n.inputs[1].type:arrayOver():isBool() and (n.type:isUint() or n.type:isInt()) then
-          assert(false)
-          -- casting an array of bools (bitfield) to an int or uint
-          expr = "}"
-          for c=1,n.expr.type:channels() do
-            if c>1 then expr = ","..expr end
-            expr = inputs.expr[c]..expr
-          end
-          expr = "{"..expr
-        elseif n.type:isArray() and n.inputs[1].type:isArray() and n.type:baseType()==n.inputs[1].type:baseType() then
---          assert(false)
-          assert(n.type:channels() == n.inputs[1].type:channels())
-          -- array reshaping is noop
-          expr = args[1]
-          --cmt = " // cast, array size change from "..tostring(n.expr.type).." to "..tostring(n.type)
-        elseif n.inputs[1].type:isTuple() and #n.inputs[1].type.list==1 and n.inputs[1].type.list[1]==n.type then
-          -- {A} to A.  Noop
-          expr = args[1]
-        elseif n.inputs[1].type:isArray() and n.inputs[1].type:arrayOver()==n.type and n.inputs[1].type:channels()==1 then
-          -- A[1] to A. Noop
-          expr = args[1]
-        elseif n.inputs[1].type:constSubtypeOf(n.type) then
-          expr = args[1] -- casting const to non-const. Verilog doesn't care.
-        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false and n.inputs[1].type.structure==n.type then
-          -- noop, explicit cast of named type to its structural type
-          expr = args[1]
-        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() and n.inputs[1].type==n.type.structure then
-          -- noop, cast to named type with same structure
-          expr = args[1]
-        elseif n.inputs[1].type:isNamed() and n.type:isNamed()==false then
-          -- structure not identical, attempt base cast
-          expr = dobasecast( args[1], n.inputs[1].type.structure, n.type, argwire[1], n.inputs[1].name )
-        elseif n.inputs[1].type:isNamed()==false and n.type:isNamed() then
-          -- structure not identical, attempt base cast
-          expr = dobasecast( args[1], n.inputs[1].type, n.type.structure, argwire[1], n.inputs[1].name )
-        else
-          expr = dobasecast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
         end
         
-        finalResult = expr
+        finalResult = docast( args[1], n.inputs[1].type, n.type, argwire[1], n.inputs[1].name )
       elseif n.kind=="parameter" then
         finalResult = n.name
         wire = true

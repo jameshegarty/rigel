@@ -37,6 +37,8 @@ void setValid(T* signal, unsigned int databits, bool valid){
 
 template<int N>
 void setValid(WData (*signal)[N], unsigned int databits, bool valid){
+  assert(databits<N*32);
+  assert(databits%32==0);
   int idx = databits/32; // floor
 
   if(valid){
@@ -57,6 +59,7 @@ bool getValid(T* signal, unsigned int databits){
 template<int N>
 bool getValid(WData (*signal)[N], unsigned int databits){
   assert(databits<N*32);
+  assert(databits%32==0);
   int idx = databits/32; // floor
   return ( (*signal)[idx] & (1<<(databits-idx*32)) ) != 0;
 }
@@ -152,9 +155,9 @@ void getData(T* signal, unsigned int databits, FILE* file){
 
 template<int N>
 void getData( WData (*signal)[N], unsigned int databits, FILE* file){
-  assert(databits==64);
+  assert(databits%32==0);
     
-  for(int j=0; j<2; j++){
+  for(int j=0; j<databits/32; j++){
     for(int i=0; i<4; i++){
       unsigned char ot = (*signal)[j] >> (i*8);
       fputc(ot,file);
@@ -195,7 +198,7 @@ int main(int argc, char** argv) {
   }
 
   int simCycles = 0;
-  if(argc==12){simCycles = atoi(argv[11]);}
+  if(argc==14){simCycles = atoi(argv[13]);}
   
   unsigned int inPackets = (inW*inH)/inP;
   unsigned int outPackets = (outW*outH)/outP;
@@ -239,24 +242,24 @@ int main(int argc, char** argv) {
         if(validInCnt>=inPackets){
           setValid(&(top->process_input),inbpp*inP+tapBits,false);
         }else{
-	        setData(&(top->process_input),inbpp*inP,infile);
-	        setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
+          setData(&(top->process_input),inbpp*inP,infile);
+          setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
           setValid(&(top->process_input),inbpp*inP+tapBits,true);
           validInCnt++;
         }
       }
-
+      
       // it's possible the pipeline has 0 cycle delay. in which case, we need to eval the async stuff here.
-     top->eval();
-
+      top->eval();
+      
       if(getValid( &(top->process_output), outbpp*outP ) ){
         validcnt++;
         getData(&(top->process_output),outbpp*outP,outfile);
       }
-
+      
       totalCycles++;
       if(totalCycles>outPackets*256){
-        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d\n",(unsigned int)totalCycles,outPackets);
+        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
         exit(1);
       }
     }

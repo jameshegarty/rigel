@@ -25,7 +25,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="opaque" then
     return "opaque_"..ty.str
   elseif ty.kind=="named" then
-    return ty.name
+    return ty.name..const
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
@@ -46,17 +46,24 @@ function types.opaque( str, X )
   return types._opaque[str]
 end
 
-types._named={}
-function types.named( name, structure, generator, params, X )
+types._named={[true]={},[false]={}}
+function types.named( name, structure, generator, params, const, X )
   err( type(name)=="string","types.named: name must be string")
   err( types.isType(structure),"types.named: structure must be rigel type")
   err( type(generator)=="string","types.named: generator must be string")
   err( type(params)=="table","types.named: params must be table")
-  err(types._named[name]==nil,"Attempting to make new named type with a name that already exists")
+  err( const==nil or type(const)=="boolean", "types.named: const must be nil or bool")
 
-  local ty = {kind="named",name=name, structure=structure, generator=generator,params=params}
-  types._named[name] = setmetatable(ty,TypeMT)
-  return types._named[name]
+  local c = (const==true)
+
+  if types._named[c][name]==nil then
+    if c==true then assert(structure:const()) end
+    if c==false then assert(structure:const()==false) end
+    local ty = {kind="named",name=name, structure=structure, generator=generator,params=params, constant=c}
+    types._named[c][name] = setmetatable(ty,TypeMT)
+  end
+  
+  return types._named[c][name]
 end
 
 types._bits={[true]={},[false]={}}
@@ -110,8 +117,8 @@ end
 types._tuples = {}
 
 function types.tuple( list )
-  assert(type(list)=="table")
-  assert(keycount(list)==#list)
+  err(type(list)=="table","input to types.tuple must be table")
+  err(keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
@@ -153,7 +160,7 @@ function types.meet( a, b, op, loc)
   local treatedAsBinops = {["select"]=1, ["vectorSelect"]=1,["array"]=1, ["mapreducevar"]=1, ["dot"]=1, ["min"]=1, ["max"]=1}
 
   if a:isTuple() and b:isTuple() then
-    assert(a==b)
+    err(a:stripConst()==b:stripConst(),"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
     return a,a,a
   elseif a:isArray() and b:isArray() then
     if a:arrayLength() ~= b:arrayLength() then
@@ -391,6 +398,12 @@ function types.checkExplicitCast(from, to, ast)
         err( channels==to:channels(), "channels don't match") 
         return true
       end
+    elseif to:isTuple() and #from.list==#to.list then
+      for k,v in pairs(from.list) do
+	local r = types.checkExplicitCast(from.list[k],to.list[k],ast)
+	err(r, "Could not cast tuple "..tostring(from).." to "..tostring(to).." because index "..tostring(k-1).." could not be casted")
+      end
+      return true
     end
 
     error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
@@ -405,6 +418,14 @@ function types.checkExplicitCast(from, to, ast)
     elseif from:channels()==1 and types.checkExplicitCast(from:arrayOver(),to,ast) then
       -- can explicitly cast an array of size 1 to a compatible type
       return true
+    elseif to:isArray() then
+      local fsz = from:arrayLength()
+      local tsz = to:arrayLength()
+      if fsz[1]==tsz[1] and fsz[2]==tsz[2] and types.checkExplicitCast(from:arrayOver(),to:arrayOver(),ast) then
+	return true
+      else
+	err(false,"Can't cast array to array due to mismatch size or base type: "..tostring(from).." to "..tostring(to))
+      end
     end
 
     error("Can't cast an array type to a non-array type. "..tostring(from).." to "..tostring(to)..ast.loc)
@@ -465,7 +486,7 @@ function TypeFunctions:const()
   elseif self:isNull() then
     return true
   elseif self:isNamed() then
-    return self.structure:const()
+    return self.constant
   else
     print(":const",self)
     assert(false)
@@ -493,6 +514,8 @@ function TypeFunctions:constSubtypeOf(A)
     return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
   elseif self:isOpaque() then
     return self.str==A.str
+  elseif self:isNamed() then
+    return self:const() and A:makeConst()==self
   else
     print(":constSubtypeOf",self,A)
     assert(false)
@@ -519,6 +542,8 @@ function TypeFunctions:makeConst()
     return types.tuple(map(self.list,function(t) return t:makeConst() end ) )
   elseif self:isBool() then
     return types.bool(true)
+  elseif self:isNamed() then
+    return types.named( self.name, self.structure:makeConst(), self.generator, self.params, true )
   else
     print(":makeConst",self)
     assert(false)
@@ -545,13 +570,30 @@ function TypeFunctions:stripConst()
   elseif self:isBool() then
     return types.bool(false)
   elseif self:isNamed() then
-    return self
+    return types.named( self.name, self.structure, self.generator, self.params, false)
   else
     print(":stripConst",self)
     assert(false)
   end
 end
 
+-- convert all named types in this type to their equivalent structural type
+function TypeFunctions:stripNamed()
+  if self:isNamed() then
+    return self.structure
+  elseif self:isTuple() then
+    local typelist = map(self.list, function(t) return t:stripNamed() end)
+    return types.tuple(typelist)
+  elseif self:isArray() then
+    local L = self:arrayLength()
+    return types.array2d( self:arrayOver():stripNamed(),L[1],L[2])
+  elseif self:isUint() or self:isInt() or self:isBool() then
+    return self
+  else
+    err(false,":stripNamed(), NYI "..tostring(self))
+    
+  end
+end
 
 function TypeFunctions:isArray()  return self.kind=="array" end
 
@@ -659,7 +701,7 @@ function TypeFunctions:checkLuaValue(v)
       self:arrayOver():checkLuaValue(v[i])
     end
   elseif self:isTuple() then
-    err( type(v)=="table", "if type is a tuple, v must be a table")
+    err( type(v)=="table", "if type is "..tostring(self)..", v must be a table")
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() then
@@ -675,8 +717,10 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="boolean", "bool must be lua bool")
   elseif self:isOpaque() then
     err( v==0, "opaque must be 0 but is "..tostring(v))
+  elseif self:isNamed() then
+    return self.structure:checkLuaValue(v)
   else
-    print("NYI - ",self)
+    print("NYI - :checkLuaValue with type ",self)
     assert(false)
   end
 
