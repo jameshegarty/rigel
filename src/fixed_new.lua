@@ -143,20 +143,25 @@ function fixed.parameter( name, ty )
 end
 
 function fixed.constant( value )
-  assert(type(value)=="number")
-  err(value==math.floor(value),"fixed.constant: non integer value!")
+  err(type(value)=="number" or type(value)=="boolean","fixed.constant must be number or bool")
 
-  local signed = (value<0) 
+  if type(value)=="boolean" then
+    return fixed.new{kind="constant", value=value, type=types.bool():makeConst(), inputs={},loc=getloc()}
+  else
+    err(value==math.floor(value),"fixed.constant: non integer value!")
+  
+    local signed = (value<0) 
+  
+    local precision = math.ceil(math.log(math.abs(value))/math.log(2))
+    if signed then precision = precision + 1 end
+    if value==0 then precision=1 end -- special case
 
-  local precision = math.ceil(math.log(math.abs(value))/math.log(2))
-  if signed then precision = precision + 1 end
-  if value==0 then precision=1 end -- special case
+    local exp = 0
 
-  local exp = 0
+    --err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
-  --err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
-
-  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
+    return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
+  end
 end
 
 --[=[
@@ -551,7 +556,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
 
   local out, inp, instances, resetStats = self:toSystolic()
 
-  assert(out.type==self.type)
+  err(out.type==self.type,"toRigelModule type mismatch "..tostring(out.type).." "..tostring(self.type))
   
   local tfn
 

@@ -1678,7 +1678,7 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   local outputArray = {}
   
   for outi=1,-ymin do
-    local readyToRead = S.__and( xlocfifos[outi]:hasData(), S.eq(xlocfifos[outi]:peekFront(),currentX:get() ) )
+    local readyToRead = S.__and( xlocfifos[outi]:hasData(), S.eq(xlocfifos[outi]:peekFront(),currentX:get() ):disablePipeliningSingle() ):disablePipeliningSingle()
 
     local dat = fifos[outi]:popFront(nil,readyToRead)
     local xloc = xlocfifos[outi]:popFront(nil,readyToRead)
@@ -1691,16 +1691,16 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
       table.insert( pipelines, xloc )
     end
     
-    outputArray[outi] = S.select(readyToRead,dat,S.constant(defaultValue,A))
+    outputArray[outi] = S.select(readyToRead,dat,S.constant(defaultValue,A)):disablePipeliningSingle()
   end
 
   local inputPx = S.index(sinp,0)
   local inputPxValid = S.index(sinp,1)
-  local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready())
+  local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready()):disablePipeliningSingle()
 
   -- if we can't store the pixel, we just thrown it out (even though we could write it out once). We don't want it to appear and disappear.
   -- we don't need to check for overflows later - if it fits into the first FIFO, it'll fit into all of them, I think? Maybe there is some wrap around condition?
-  outputArray[-ymin+1] = S.select( shouldPush, inputPx, S.constant( defaultValue, A ) )
+  outputArray[-ymin+1] = S.select( shouldPush, inputPx, S.constant( defaultValue, A ) ):disablePipeliningSingle()
 
   table.insert( pipelines, fifos[-ymin]:pushBack( inputPx, shouldPush ) )
   table.insert( pipelines, xlocfifos[-ymin]:pushBack( currentX:get(), shouldPush ) )
