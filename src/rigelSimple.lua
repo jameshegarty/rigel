@@ -5,6 +5,7 @@ local C = require "examplescommon"
 local harness = require "harness"
 local fRS = require "fixed_float"
 local S = require("systolic")
+local SDFRate = require("sdfrate")
 
 local RST
 if terralib~=nil then RST=require "rigelSimpleTerra" end
@@ -73,7 +74,7 @@ function RS.modules.linebuffer(t)
 end
 
 function RS.modules.columnLinebuffer(t)
-  return RM.linebuffer(t.type,t.size[1],t.size[2],t.P,t.stencil)
+  return RM.linebuffer(t.type,t.size[1],t.size[2],t.V,t.stencil)
 end
 
 function RS.modules.stencilShiftRegister(t)
@@ -176,7 +177,18 @@ function RS.modules.constSeq(t)
 end
 
 function RS.modules.filterSeq(t)
-  return RM.filterSeq( t.type, t.size[1], t.size[2], 1/t.rate, t.fifoSize, t.coerce )
+
+  local rate
+  if SDFRate.isFrac(t.rate) then
+    rate=t.rate
+  elseif type(t.rate)=="number" then
+    rate = {1,1/t.rate}
+    err( SDFRate.isFrac(rate),"rigelSimple filterSeq, rate did not convert to frac, "..tostring(t.rate))
+  else
+    err("rigelSimple filterSeq rate is invalid format")
+  end
+  
+  return RM.filterSeq( t.type, t.size[1], t.size[2], rate, t.fifoSize, t.coerce )
 end
 
 function RS.connect(t)

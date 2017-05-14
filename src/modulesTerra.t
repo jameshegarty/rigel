@@ -245,78 +245,62 @@ function MT.map(res,f,W,H)
   return MapModule
 end
 
-function MT.filterSeq( res, A, W,H, rate, fifoSize )
-  local struct FilterSeq { phase:int; cyclesSinceOutput:int; currentFifoSize: int; remainingInputs : int; remainingOutputs : int }
-  terra FilterSeq:reset() self.phase=0; self.cyclesSinceOutput=0; self.currentFifoSize=0; self.remainingInputs=W*H; self.remainingOutputs=W*H/rate; end
-  terra FilterSeq:stats(name:&int8) end
---[=[
-  terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
-    data(out) = inp._0
-    valid(out) = inp._1
+function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
 
-    -- if it has been RATE cycles since we had an output, force us to have an output
-    var underflow = (self.currentFifoSize==0 and self.cyclesSinceOutput==rate)
-    valid(out) = valid(out) or underflow
+  assert(type(coerce)=="boolean")
 
-    -- if fifo is full, surpress output
-    var fifoHasSpace = (self.currentFifoSize<fifoSize)
-    valid(out) = valid(out) and fifoHasSpace
+  if coerce then
+    local invrate = rate[2]/rate[1]
+    err(math.floor(invrate)==invrate,"filterSeq: in coerce mode, 1/rate must be integer but is "..tostring(invrate))
+    
+    local outputCount = (W*H*rate[1])/rate[2]
+    err(math.floor(outputCount)==outputCount,"filterSeq: in coerce mode, outputCount must be integer, but is "..tostring(outputCount))
+    
+    local struct FilterSeq { phase:int; cyclesSinceOutput:int; currentFifoSize: int; remainingInputs : int; remainingOutputs : int }
+    terra FilterSeq:reset() self.phase=0; self.cyclesSinceOutput=0; self.currentFifoSize=0; self.remainingInputs=W*H; self.remainingOutputs=outputCount; end
+    terra FilterSeq:stats(name:&int8) end
 
-    -- we're running out of possible outputs
---    var remainingInputOptions = (self.remainingInputs >> logRate) + (fifoSize-self.currentFifoSize)
-    --var remainingInputOptions = (self.remainingInputs) + (fifoSize-self.currentFifoSize)
-    var outaTime : bool = (self.remainingInputs < self.remainingOutputs*rate)
-    valid(out) = valid(out) or outaTime
+    terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
 
-    if DARKROOM_VERBOSE then cstdio.printf("FilterSeq inputvalid %d outputvalid %d underflow %d fifoHasSpace %d outaTime %d currentFifoSize %d phase %d remainingOutputs %d\n", inp._1, valid(out), underflow, fifoHasSpace, terralib.select(outaTime,1,0), self.currentFifoSize, self.phase, self.remainingOutputs) end
-    --cstdio.printf("remainingInputs %d remainingInputs>>logRate %d remainingOutputs %d\n", self.remainingInputs, self.remainingInputs >> logRate, self.remainingOutputs)
---    cstdio.printf("rate %d\n",rate)
+      var validIn = inp._1
 
-    if valid(out) then
-      if self.phase<rate-1 then
-        -- if self.phase==rate, we consume in the same cycle (net change=0)
-        self.currentFifoSize = self.currentFifoSize + 1
-      end
-
-      self.remainingOutputs = self.remainingOutputs - 1
-      self.cyclesSinceOutput = 0
-    else
-      if self.phase==rate-1 and self.currentFifoSize>0 then self.currentFifoSize = self.currentFifoSize-1 end
-      self.cyclesSinceOutput = self.cyclesSinceOutput + 1
+      var underflow = (self.currentFifoSize==0 and self.cyclesSinceOutput==invrate)
+      var fifoHasSpace = (self.currentFifoSize<fifoSize)
+      var outaTime : bool = (self.remainingInputs < self.remainingOutputs*invrate)
+      var validOut : bool = (((validIn or underflow) and fifoHasSpace) or outaTime)
+      
+      var currentFifoSize = terralib.select(validOut and self.phase<invrate-1, self.currentFifoSize+1, terralib.select(validOut==false and self.phase==invrate-1 and self.currentFifoSize>0,self.currentFifoSize-1,self.currentFifoSize))
+      var cyclesSinceOutput = terralib.select(validOut,0,self.cyclesSinceOutput+1)
+      var remainingOutputs = terralib.select( validOut, self.remainingOutputs-1, self.remainingOutputs )
+      
+      
+      -- now set
+      self.remainingOutputs = remainingOutputs
+      self.cyclesSinceOutput = cyclesSinceOutput
+      self.currentFifoSize = currentFifoSize
+      valid(out) = validOut
+      data(out) = inp._0
+      self.remainingInputs = self.remainingInputs - 1
+      self.phase = self.phase + 1
+      if self.phase==invrate then self.phase = 0 end    
     end
 
-    self.remainingInputs = self.remainingInputs - 1
-    self.phase = self.phase + 1
-    if self.phase==rate then self.phase = 0 end
-  end
-  ]=]
+    return FilterSeq
 
-  terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+  else
+    local struct FilterSeq {  }
+    terra FilterSeq:reset()  end
+    terra FilterSeq:stats(name:&int8) end
 
-    var validIn = inp._1
+    terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+      valid(out) = inp._1
+      data(out) = inp._0
+    end
 
-    var underflow = (self.currentFifoSize==0 and self.cyclesSinceOutput==rate)
-    var fifoHasSpace = (self.currentFifoSize<fifoSize)
-    var outaTime : bool = (self.remainingInputs < self.remainingOutputs*rate)
-    var validOut : bool = (((validIn or underflow) and fifoHasSpace) or outaTime)
+    return FilterSeq
 
-    var currentFifoSize = terralib.select(validOut and self.phase<rate-1, self.currentFifoSize+1, terralib.select(validOut==false and self.phase==rate-1 and self.currentFifoSize>0,self.currentFifoSize-1,self.currentFifoSize))
-    var cyclesSinceOutput = terralib.select(validOut,0,self.cyclesSinceOutput+1)
-    var remainingOutputs = terralib.select( validOut, self.remainingOutputs-1, self.remainingOutputs )
-    
-
-    -- now set
-    self.remainingOutputs = remainingOutputs
-    self.cyclesSinceOutput = cyclesSinceOutput
-    self.currentFifoSize = currentFifoSize
-    valid(out) = validOut
-    data(out) = inp._0
-    self.remainingInputs = self.remainingInputs - 1
-    self.phase = self.phase + 1
-    if self.phase==rate then self.phase = 0 end    
   end
   
-  return FilterSeq
 end
 
 function MT.upsampleXSeq(res,A, T, scale, ITYPE )
@@ -742,12 +726,12 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
 
       if self.xlocfifos[outi]:hasData() and @(self.xlocfifos[outi]:peekFront(0))==self.currentX then
         -- we are ready to read
-	var dat = @(self.fifos[outi]:popFront())
-	var xloc = @(self.xlocfifos[outi]:popFront())
+        var dat = @(self.fifos[outi]:popFront())
+        var xloc = @(self.xlocfifos[outi]:popFront())
         (@out)[outi] = dat
 
-	-- preload the next value into staging
-	if outi>0 then
+        -- preload the next value into staging
+        if outi>0 then
           self.fifos[outi-1]:pushBack( &dat )
           self.xlocfifos[outi-1]:pushBack( &xloc )
         end

@@ -445,7 +445,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,16,16),types.tuple{types.uint(16),types.uint(16)}}
   local out = R.apply("stidx",RM.makeHandshake(C.index(types.array2d(types.tuple{FILTER_TYPE,types.bool()},1),0,0)), out)
 
-  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,FILTER_RATE,FILTER_FIFO)
+  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,{1,FILTER_RATE},FILTER_FIFO)
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)

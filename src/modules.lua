@@ -578,13 +578,13 @@ modules.map = memoize(function( f, W, H )
 end)
 
 -- type {A,bool}->A
--- rate: this will have a valid output every 1/rate cycles
+-- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
+-- if rate={1,16}, filterSeq will return W*H/16 pixels
 function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
   assert(types.isType(A))
   err(type(W)=="number", "W must be number")
   err(type(H)=="number", "H must be number")
-  err(type(rate)=="number", "rate must be number")
-  err(rate>1, "rate must be >1")
+  err( SDFRate.isFrac(rate), "filterSeq: rate must be {n,d} format fraction" )
   err(type(fifoSize)=="number", "fifoSize must be number")
   --err(isPowerOf2(rate), "rate should be power of 2")
 
@@ -599,14 +599,32 @@ function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
   res.delay = 0
   res.stateful = true
   res.sdfInput = {{1,1}}
-  res.sdfOutput = {{1,rate}}
+  res.sdfOutput = {rate}
 
-  local outTokens = (W*H)/rate
+  local outTokens = ((W*H)*rate[1])/rate[2]
   err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens in non integer ("..tonumber(outTokens)..")")
 
-  if terralib~=nil then res.terraModule = MT.filterSeq( res, A, W,H, rate, fifoSize ) end
+  if terralib~=nil then res.terraModule = MT.filterSeq( res, A, W,H, rate, fifoSize, coerce ) end
 
-  local vstring = [[
+
+  res.systolicModule = Ssugar.moduleConstructor("FilterSeqImplWrap")
+
+  -- hack: get broken systolic library to actually wire valid
+  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+
+  local sinp = S.parameter("process_input", res.inputType )
+  local CE = S.CE("CE")
+  local v = S.parameter("process_valid",types.bool())
+
+  if coerce then
+
+    local invrate = rate[2]/rate[1]
+    err(math.floor(invrate)==invrate,"filterSeq: in coerce mode, 1/rate must be integer but is "..tostring(invrate))
+
+    local outputCount = (W*H*rate[1])/rate[2]
+    err(math.floor(outputCount)==outputCount,"filterSeq: in coerce mode, outputCount must be integer, but is "..tostring(outputCount))
+    
+      local vstring = [[
 module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(rigel.lower(res.outputType):verilogBits()-1)..[[:0] out);
 parameter INSTANCE_NAME="INST";
 
@@ -623,13 +641,13 @@ parameter INSTANCE_NAME="INST";
   assign filterCond = inp[]]..tostring(res.inputType:verilogBits()-1)..[[];
 
   wire underflow;
-  assign underflow = (currentFifoSize==0 && cyclesSinceOutput==]]..tostring(rate)..[[);
+  assign underflow = (currentFifoSize==0 && cyclesSinceOutput==]]..tostring(invrate)..[[);
 
   wire fifoHasSpace;
   assign fifoHasSpace = currentFifoSize<]]..tostring(fifoSize)..[[;
 
   wire outaTime;
-  assign outaTime = remainingInputs < (remainingOutputs*]]..tostring(rate)..[[);
+  assign outaTime = remainingInputs < (remainingOutputs*]]..tostring(invrate)..[[);
 
   wire validOut;
   assign validOut = (((filterCond || underflow) && fifoHasSpace) || outaTime);
@@ -642,13 +660,13 @@ parameter INSTANCE_NAME="INST";
       cyclesSinceOutput <= 0;
       currentFifoSize <= 0;
       remainingInputs <= ]]..tostring(W*H)..[[;
-      remainingOutputs <= ]]..tostring(W*H/rate)..[[;
+      remainingOutputs <= ]]..tostring(outputCount)..[[;
     end else if (ce && process_valid) begin
-      currentFifoSize <= (validOut && (phase<]]..tostring(rate-1)..[[))?(currentFifoSize+1):(   (validOut==1'b0 && phase==]]..tostring(rate-1)..[[ && currentFifoSize>0)? (currentFifoSize-1) : (currentFifoSize) );
+      currentFifoSize <= (validOut && (phase<]]..tostring(invrate-1)..[[))?(currentFifoSize+1):(   (validOut==1'b0 && phase==]]..tostring(invrate-1)..[[ && currentFifoSize>0)? (currentFifoSize-1) : (currentFifoSize) );
       cyclesSinceOutput <= (validOut)?0:cyclesSinceOutput+1;
-      remainingOutputs <= validOut?( (remainingOutputs==0)?]]..tostring(W*H/rate)..[[:(remainingOutputs-1) ):remainingOutputs;
+      remainingOutputs <= validOut?( (remainingOutputs==0)?]]..tostring(outputCount)..[[:(remainingOutputs-1) ):remainingOutputs;
       remainingInputs <= (remainingInputs==0)?]]..tostring(W*H)..[[:(remainingInputs-1);
-      phase <= (phase==]]..tostring(rate)..[[)?0:(phase+1);
+      phase <= (phase==]]..tostring(invrate)..[[)?0:(phase+1);
     end
   end
 ]]
@@ -664,16 +682,6 @@ parameter INSTANCE_NAME="INST";
 vstring = vstring..[[endmodule
 ]]
 
-  res.systolicModule = Ssugar.moduleConstructor("FilterSeqImplWrap")
-
-  -- hack: get broken systolic library to actually wire valid
-  local phase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
-
-  local sinp = S.parameter("process_input", res.inputType )
-  local CE = S.CE("CE")
-  local v = S.parameter("process_valid",types.bool())
-
-  if coerce then
     local fns = {}
     local inp = S.parameter("inp",res.inputType)
     
@@ -1670,7 +1678,7 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   local outputArray = {}
   
   for outi=1,-ymin do
-    local readyToRead = S.__and( xlocfifos[outi]:hasData(), S.eq(xlocfifos[outi]:peekFront(),currentX:get() ) )
+    local readyToRead = S.__and( xlocfifos[outi]:hasData(), S.eq(xlocfifos[outi]:peekFront(),currentX:get() ):disablePipeliningSingle() ):disablePipeliningSingle()
 
     local dat = fifos[outi]:popFront(nil,readyToRead)
     local xloc = xlocfifos[outi]:popFront(nil,readyToRead)
@@ -1683,16 +1691,16 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
       table.insert( pipelines, xloc )
     end
     
-    outputArray[outi] = S.select(readyToRead,dat,S.constant(defaultValue,A))
+    outputArray[outi] = S.select(readyToRead,dat,S.constant(defaultValue,A)):disablePipeliningSingle()
   end
 
   local inputPx = S.index(sinp,0)
   local inputPxValid = S.index(sinp,1)
-  local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready())
+  local shouldPush = S.__and(inputPxValid, fifos[-ymin]:ready()):disablePipeliningSingle()
 
   -- if we can't store the pixel, we just thrown it out (even though we could write it out once). We don't want it to appear and disappear.
   -- we don't need to check for overflows later - if it fits into the first FIFO, it'll fit into all of them, I think? Maybe there is some wrap around condition?
-  outputArray[-ymin+1] = S.select( shouldPush, inputPx, S.constant( defaultValue, A ) )
+  outputArray[-ymin+1] = S.select( shouldPush, inputPx, S.constant( defaultValue, A ) ):disablePipeliningSingle()
 
   table.insert( pipelines, fifos[-ymin]:pushBack( inputPx, shouldPush ) )
   table.insert( pipelines, xlocfifos[-ymin]:pushBack( currentX:get(), shouldPush ) )
