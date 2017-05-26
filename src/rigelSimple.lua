@@ -369,14 +369,14 @@ end
 function RS.writePixels(input,id,imageSize,V)
   err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
   
-  local IT = input:typecheck()
+  --local IT = input:typecheck()
   --print("WRITEPX",IT.type)
 
   local TY
-  if R.isHandshake(IT.type) then
-    TY = R.extractData(IT.type)
+  if R.isHandshake(input.type) then
+    TY = R.extractData(input.type)
   else
-    TY = IT.type
+    TY = input.type
   end
 
   local TYY = TY
@@ -390,7 +390,7 @@ function RS.writePixels(input,id,imageSize,V)
     mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
   end
   
-  if R.isHandshake(IT.type) then
+  if R.isHandshake(input.type) then
      mod = RS.HS(mod)
   end
 
