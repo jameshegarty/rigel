@@ -31,7 +31,13 @@ darkroom.RVToken = types.opaque("RV")
 darkroom.HandshakeToken = types.opaque("handshake")
 function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.VToken} end
 function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.RVToken} end
-function darkroom.Handshake(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({ A, darkroom.HandshakeToken }) end
+
+function darkroom.Handshake(A)
+  assert(types.isType(A));
+  assert(darkroom.isBasic(A));
+  return types.tuple({ A, darkroom.HandshakeToken })
+end
+
 function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
 function darkroom.HandshakeTmuxed(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeTmuxed"..N)}) end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
@@ -238,7 +244,9 @@ function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
   IR.new( tab )
-  return setmetatable( tab, darkroomIRMT )
+  local r = setmetatable( tab, darkroomIRMT )
+  r:typecheck()
+  return r
 end
 
 local __sdfTotalCache = {}
@@ -418,8 +426,9 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
 end
 
 function darkroomIRFunctions:typecheck()
-  return self:process(
-    function(n)
+--  return self:process(
+  --    function(n)
+  local n = self
       if n.kind=="apply" then
         err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
         if #n.inputs==0 then
@@ -429,7 +438,7 @@ function darkroomIRFunctions:typecheck()
           err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
         end
         n.type = n.fn.outputType
-        return darkroom.newIR( n )
+        --return darkroom.newIR( n )
       elseif n.kind=="applyMethod" then
         err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
 
@@ -442,30 +451,30 @@ function darkroomIRFunctions:typecheck()
           err(false,"Unknown method "..n.fnname)
         end
 
-        return darkroom.newIR( n )
+        --return darkroom.newIR( n )
       elseif n.kind=="input" then
       elseif n.kind=="constant" then
       elseif n.kind=="tuple" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
-        return darkroom.newIR(n)
+       -- return darkroom.newIR(n)
       elseif n.kind=="array2d" then
         map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
         n.type = types.array2d( n.inputs[1].type, n.W, n.H )
-        return darkroom.newIR(n)
+        --return darkroom.newIR(n)
       elseif n.kind=="statements" then
         n.type = n.inputs[1].type
-        return darkroom.newIR(n)
+       -- return darkroom.newIR(n)
       elseif n.kind=="selectStream" then
         err(n.inputs[1].type:isArray(), "selectStream input must be array of handshakes, but is "..tostring(n.inputs[1].type) )
         err( darkroom.isHandshake(n.inputs[1].type:arrayOver()), "selectStream input must be array of handshakes")
         err( n.i < n.inputs[1].type:channels(), "selectStream index out of bounds")
         n.type = n.inputs[1].type:arrayOver()
-        return darkroom.newIR(n)
+        --return darkroom.newIR(n)
       else
-        print(n.kind)
+        print("Rigel Typecheck NYI ",n.kind)
         assert(false)
       end
-    end)
+--    end)
 end
 
 function darkroomIRFunctions:codegenSystolic( module )

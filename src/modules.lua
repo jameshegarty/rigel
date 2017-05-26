@@ -174,7 +174,6 @@ modules.packTuple = memoize(function( typelist, X )
   return rigel.newFunction(res)
 end)
 
-
 modules.liftBasic = memoize(function(f)
   err(rigel.isFunction(f),"liftBasic argument should be darkroom function")
   local res = {kind="liftBasic", fn = f}
@@ -711,6 +710,36 @@ vstring = vstring..[[endmodule
   
   return rigel.newFunction(res)
 end
+
+modules.readMemory = memoize(function(ty)
+  assert( types.isType(ty) )
+  assert( rigel.expectBasic(ty) )
+
+  local res = {kind="readMemory", ty=ty }
+
+  local addrType = types.uint(32)
+  -- idx 0: address, idx 1: data
+  res.inputType = types.tuple{ rigel.Handshake(addrType), rigel.Handshake(ty) }
+  -- idx 0: output data, idx 1: addr to ram
+  res.outputType = types.tuple{ rigel.Handshake(ty), rigel.Handshake(addrType) }
+  res.stateful = false
+  res.sdfOutput={ {1,1}, 'x' }
+  res.sdfInput={ {1,1},'x'}
+  res.delay=10
+
+  local vstring = [[
+module readMemory_]]..tostring(ty)..[[(input CLK, input reset, input [1:0] ready_downstream, output [1:0] ready, input []]..tostring(ty:verilogBits()-1)..[[:0] process_input, output []]..tostring(ty:verilogBits()-1)..[[:0] process_output);
+
+endmodule]]
+
+  local fns = {}
+
+  local processinp = S.parameter("process_input",rigel.lower(ty))
+  fns.process = S.lambda("process",processinp,S.constant(rigel.lower(ty):fakeValue(),rigel.lower(ty)), rigel.lower(res.outputType), "process_output")
+  fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
+      
+  res.systolicModule = systolic.module.new("readMemory_"..tostring(ty), fns, {}, true,nil,nil, vstring,{process=0,reset=0})
+end)
 
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
@@ -1835,7 +1864,11 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
 end)
 
 -- we could construct this out of liftHandshake, but this is a special case for when we don't need a fifo b/c this is always ready
-modules.makeHandshake = memoize(function( f, tmuxRates )
+-- if nilhandshake is true, and f input type is nil, we produce type Handshake(nil)->Handshake(A)
+-- if nilhandshake is false or nil, and f input type is nil, we produce type nil->Handshake(A)
+-- Handshake(nil) provides a ready bit but no data, vs nil, which provides nothing.
+-- (nilhandshake also applies the same way to the output type)
+modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   assert( rigel.isFunction(f) )
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
@@ -1855,14 +1888,25 @@ modules.makeHandshake = memoize(function( f, tmuxRates )
   else
     rigel.expectBasic(f.inputType)
     rigel.expectBasic(f.outputType)
-    res.inputType = rigel.Handshake(f.inputType)
-    res.outputType = rigel.Handshake(f.outputType)
+
+    if f.inputType~=types.null() or nilhandshake==true then
+      res.inputType = rigel.Handshake(f.inputType)
+    else
+      res.inputType = types.null()
+    end
+
+    if f.outputType~=types.null() or nilhandshake==true then
+      res.outputType = rigel.Handshake(f.outputType)
+    else
+      res.outputType = types.null()
+    end
+    
     res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   end
 
   res.stateful = f.stateful
 
-  if terralib~=nil then res.terraModule = MT.makeHandshake(res, f, tmuxRates ) end
+  if terralib~=nil then res.terraModule = MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end
 
   -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
   res.systolicModule = Ssugar.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
@@ -1887,8 +1931,18 @@ modules.makeHandshake = memoize(function( f, tmuxRates )
   local pready = S.parameter("ready_downstream", types.bool())
   local CE = S.__or(pready,rst)
 
-  local outvalid = SR:pushPop(S.index(pinp,1), S.__not(rst), CE)
-  local out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), CE), outvalid})
+  local outvalid
+  local out
+  if res.inputType~=types.null() or nilhandshake==true then
+    outvalid = SR:pushPop(S.index(pinp,1), S.__not(rst), CE)
+    out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), CE), outvalid})
+  else
+    -- inputType==null
+    outvalid = SR:pushPop(S.constant(true,types.bool()), S.__not(rst), CE)
+    out = S.tuple({inner:process(nil, S.__not(rst), CE), outvalid})
+  end
+  
+
   if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready, pready, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
 
   if tmuxRates~=nil then
@@ -1908,8 +1962,14 @@ modules.makeHandshake = memoize(function( f, tmuxRates )
 
   res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
 
-  res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
-
+  if res.inputType==types.null() and nilhandshake~=true then
+    res.systolicModule:addFunction( S.lambda("ready", pready, nil, "ready" ) )
+  elseif res.outputType==types.null() and nilhandshake~=true then
+    res.systolicModule:addFunction( S.lambda("ready", S.parameter("r",types.null()), S.constant(true,types.bool()), "ready" ) )
+  else
+    res.systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
+  end
+  
   return rigel.newFunction(res)
                                  end)
 
@@ -2367,7 +2427,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   if pipelines~=nil then map( pipelines, function(n) assert(rigel.isIR(n)) end ) end
 
 
-  local output = output:typecheck()
+  --local output = output:typecheck()
 
   input, output = lambdaSDFNormalize(input,output)
 
@@ -2474,7 +2534,10 @@ function modules.lambda( name, input, output, instances, pipelines, X )
     elseif rigel.isHandshake( fn.inputType ) or rigel.isHandshake( fn.outputType )  then
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
+
+      -- if we have nil->Handshake(A) types, we have to drive these ready chains somehow (and they're not connected to input)
       local readyPipelines={}
+      
       fn.output:visitEachReverse(
         function(n, inputs)
           local inputList = {}
@@ -2501,11 +2564,17 @@ function modules.lambda( name, input, output, instances, pipelines, X )
             readyout = input
             return nil
           elseif n.kind=="apply" then
-            --print("systolic ready APPLY",n.fn.kind)
+
             if n.fn.outputType:isArray() and rigel.isHandshake(n.fn.outputType:arrayOver()) then
               return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(),n.fn.outputType:channels())))
             else
-              return module:lookupInstance(n.name):ready(input)
+
+              local res = module:lookupInstance(n.name):ready(input)
+              if n.fn.inputType==types.null() then
+                table.insert(readyPipelines, res)
+              end
+              
+              return res
             end
           elseif n.kind=="applyMethod" then
             if n.fnname=="load" then

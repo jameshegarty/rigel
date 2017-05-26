@@ -810,7 +810,7 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
   return SSRPartial
 end
 
-function MT.makeHandshake(res, f, tmuxRates )
+function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
@@ -827,7 +827,28 @@ function MT.makeHandshake(res, f, tmuxRates )
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end
 
-  terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
+  if res.inputType==types.null() and nilhandshake~=true then
+    terra MakeHandshake:process( out : &rigel.lower(res.outputType):toTerraType())
+      if self.readyDownstream then
+        --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+        if self.delaysr:size()==delay then
+          var ot = self.delaysr:popFront()
+          valid(out) = valid(ot)
+--        data(out) = data(ot)
+          cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+        else
+          valid(out)=validFalse
+        end
+
+        var tout : rigel.lower(res.outputType):toTerraType()
+        valid(tout) = true
+        self.inner:process(&data(tout))
+        self.delaysr:pushBack(&tout)
+      end
+    end
+
+  else
+    terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                out : &rigel.lower(res.outputType):toTerraType())
 
     if self.readyDownstream then
@@ -847,7 +868,10 @@ function MT.makeHandshake(res, f, tmuxRates )
       self.delaysr:pushBack(&tout)
     end
 
+    end
+
   end
+
   terra MakeHandshake:calculateReady( readyDownstream: bool ) self.ready = readyDownstream; self.readyDownstream = readyDownstream end
 
   return MakeHandshake

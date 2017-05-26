@@ -22,7 +22,7 @@ local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  assert(#tab.inputs==keycount(tab.inputs))
+  err(#tab.inputs==keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array")
   if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")

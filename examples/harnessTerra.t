@@ -12,9 +12,9 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   local ITYPE = types.tuple{types.null(),fixedTapInputType}
   local inpSymb = R.input( R.Handshake(ITYPE) )
   
-  local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0)), inpSymb)
+  local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpSymb)
   local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpSymb)
-  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,inputType)),inpdata)
+  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,inputType),nil,true),inpdata)
   local hsfninp = out
   
   if tapType~=nil then
@@ -23,7 +23,7 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
 
   local out = R.apply("HARNESS_inner", fn, hsfninp )
 
-  local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType)), out )
+  local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
   return RM.lambda( "harness"..id..fn.systolicModule.name, inpSymb, out )
 end)
 

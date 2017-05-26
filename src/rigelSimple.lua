@@ -196,28 +196,27 @@ function RS.connect(t)
   local inp = t.input
 
   if t.input~=nil then
-    local inputType = lookupType(t.input)
-    if R.isHandshake(inputType) and R.isHandshake(t.toModule.inputType) then
-      local btype = R.extractData(inputType)
+    if R.isHandshake(t.input.type) and R.isHandshake(t.toModule.inputType) then
+      local btype = R.extractData(t.input.type)
       local itype = R.extractData(t.toModule.inputType)
       
       if btype==types.array2d(itype,1) then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.index(btype,0)), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), RS.HS(C.index(btype,0)), inp )
       elseif types.array2d(btype,1)==itype then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
       end
-    elseif R.isBasic(inputType) and R.isBasic(t.toModule.inputType) then
-      if types.array2d(inputType,1)==t.toModule.inputType then
+    elseif R.isBasic(t.input.type) and R.isBasic(t.toModule.inputType) then
+      if types.array2d(t.input.type,1)==t.toModule.inputType then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), C.arrayop(inputType,1,1), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), C.arrayop(t.input.type,1,1), inp )
       end
     end
   end
 
   ccnt = ccnt + 1
-  return R.apply( "v"..tostring(ccnt), t.toModule, inp )
+  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp )
 end
 
 function RS.constant(t)
@@ -230,30 +229,8 @@ function RS.concat(t)
   return R.tuple( "v"..tostring(ccnt), t )
 end
 
-function lookupType(t)
-  if t.kind=="apply" then
-    return t.fn.outputType
-  elseif t.kind=="selectStream" then
-    return lookupType(t.inputs[1]):arrayOver()
-  elseif t.kind=="applyMethod" then
-    return t.inst.fn.outputType
-  elseif t.kind=="input" then
-    return t.type
-  elseif t.kind=="tuple" then
-    local ty = {}
-    for k,v in ipairs(t.inputs) do table.insert(ty,lookupType(v)) end
-    return types.tuple(ty)
-  elseif t.kind=="constant" then
-    return t.type
-  else
-    print("lookuptype",t.kind)
-    assert(false)
-  end
-
-end
-
 function RS.fifo(t)
-  local ty = lookupType(t.input)
+  local ty = t.input.type
   assert( R.isHandshake(ty))
   ty = R.extractData(ty)
 
@@ -265,7 +242,7 @@ function RS.fifo(t)
 end
 
 function RS.index(t)
-  local ty=lookupType(t.input)
+  local ty=t.input.type
   
   if R.isHandshake(ty) then
     ty = R.extractData(ty)
@@ -309,16 +286,7 @@ end
 function RS.fanIn(t)
   local typelist = {}
   for _,v in ipairs(t) do
-    local ty
-    if v.kind=="apply" then
-      ty = v.fn.outputType
-    elseif v.kind=="applyMethod" then
-      ty = v.inst.fn.outputType
-    else
-      print("KND",v.kind)
-      assert(false)
-    end
-
+    local ty = v.type
     err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
     ty = R.extractData(ty)
 
