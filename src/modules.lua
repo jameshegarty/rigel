@@ -2616,9 +2616,14 @@ function modules.lambda( name, input, output, instances, pipelines, X )
             else
               -- if packStreams==false, then every thing downstream should expect #n.inputs valid bits
               -- (since we're in reverse, then means that our input is #n.inputs valid bits)
-              
-              err( keycount(inputs)== 1,"NYI - tuple multiple consumers "..n.name) -- NYI - multiple consumers - we would need to AND them together for each component
-              return inputList[1]
+              print("TUPKC",keycount(inputs))
+
+              if keycount(inputs)==0 then
+                return input
+              else
+                err( keycount(inputs)== 1,"NYI - tuple multiple consumers "..n.name) -- NYI - multiple consumers - we would need to AND them together for each component
+                return inputList[1]
+              end
             end
           elseif n.kind=="statements" then
             local L = {readyinp}
