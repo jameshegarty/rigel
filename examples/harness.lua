@@ -322,7 +322,7 @@ function harnessTop(t)
   end
   
   -- just assume we were given a handshake vector...
-  R.expectHandshake(t.fn.inputType)
+  --R.expectHandshake(t.fn.inputType)
 
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn

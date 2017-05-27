@@ -2458,7 +2458,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       end
     end)
 
-  if rigel.isHandshake( input.type ) == false and rigel.isHandshake(output.type)==false then
+  if rigel.isBasic( input.type ) or rigel.isBasic(output.type) or rigel.isV(output.type) or rigel.isV(input.type) or rigel.isRV(output.type) or rigel.isRV(input.type) then
   res.delay = output:visitEach(
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
@@ -2503,7 +2503,11 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   end
 
   local function makeSystolic( fn )
-    local module = Ssugar.moduleConstructor( fn.name ):onlyWire(rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType))
+    local onlyWire = rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType)
+    if fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1]) then onlyWire = true end
+    if fn.inputType:isArray() and rigel.isHandshake(fn.inputType:arrayOver()) then onlyWire = true end
+    
+    local module = Ssugar.moduleConstructor( fn.name ):onlyWire(onlyWire)
 
     if rigel.isHandshake(fn.outputType) then
       module:parameters{INPUT_COUNT=0, OUTPUT_COUNT=0}
@@ -2542,7 +2546,10 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
     elseif rigel.isRV( fn.outputType ) then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
-    elseif rigel.isHandshake( fn.inputType ) or rigel.isHandshake( fn.outputType )  then
+    elseif rigel.isHandshake( fn.inputType ) or
+      rigel.isHandshake( fn.outputType ) or
+      (fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1])) then
+       
       local readyinp = S.parameter( "ready_downstream", types.bool() )
       local readyout
 
@@ -2610,7 +2617,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
               -- if packStreams==false, then every thing downstream should expect #n.inputs valid bits
               -- (since we're in reverse, then means that our input is #n.inputs valid bits)
               
-              assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
+              err( keycount(inputs)== 1,"NYI - tuple multiple consumers "..n.name) -- NYI - multiple consumers - we would need to AND them together for each component
               return inputList[1]
             end
           elseif n.kind=="statements" then

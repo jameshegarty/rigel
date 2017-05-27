@@ -26,16 +26,13 @@ local function getloc()
 end
 
 
-darkroom.VToken = types.opaque("V")
-darkroom.RVToken = types.opaque("RV")
-darkroom.HandshakeToken = types.opaque("handshake")
-function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.VToken} end
-function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple{A, darkroom.RVToken} end
+function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.named("V_"..tostring(A), types.tuple{A,types.bool()}, "V", {A=A}) end
+function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.named("RV_"..tostring(A),types.tuple{A,types.bool()}, "RV", {A=A})  end
 
 function darkroom.Handshake(A)
   assert(types.isType(A));
   assert(darkroom.isBasic(A));
-  return types.tuple({ A, darkroom.HandshakeToken })
+  return types.named("Handshake_"..tostring(A), types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
 function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
@@ -52,9 +49,10 @@ function darkroom.isHandshakeTmuxed(a)
   return a:isTuple() and #a.list>1 and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed"
 end
 
-function darkroom.isHandshake( a ) return a:isTuple() and a.list[2]==darkroom.HandshakeToken end
-function darkroom.isV( a ) return a:isTuple() and a.list[2]==darkroom.VToken end
-function darkroom.isRV( a ) return a:isTuple() and a.list[2]==darkroom.RVToken end
+function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+
+function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
+function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
 function darkroom.isBasic(A)
   if A:isArray() and darkroom.isHandshake(A:arrayOver()) then return false end
   if A:isTuple() and darkroom.isHandshake(A.list[1]) then return false end
@@ -72,16 +70,16 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeArray(a) then
-    return types.tuple({a.list[1],types.bool()})
-  elseif darkroom.isHandshakeTmuxed(a) then
-    return types.tuple{a.list[1],types.uint(8)}
-  elseif darkroom.isRV(a) or darkroom.isV(a) then 
-    return types.tuple{a.list[1],types.bool()}
-  elseif a:isArray() and darkroom.isBasic(a:arrayOver())==false then
+  if a:isArray() and darkroom.isBasic(a:arrayOver())==false then
     return types.array2d( darkroom.lower(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
   elseif a:isTuple() and darkroom.isBasic(a.list[1])==false then
     return types.tuple(map(a.list, function(t) return darkroom.lower(t) end ))
+  elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) then
+    return a.structure
+  elseif darkroom.isHandshakeArray(a) then
+    return types.tuple({a.list[1],types.bool()})
+  elseif darkroom.isHandshakeTmuxed(a) then
+    return types.tuple{a.list[1],types.uint(8)}
   elseif darkroom.isBasic(a) then 
     return a 
   end
@@ -93,10 +91,7 @@ end
 -- RV(A) => A
 -- Handshake(A) => A
 function darkroom.extractData(a)
-  if darkroom.isHandshake(a) then return a.list[1]
-  elseif darkroom.isV(a) then return a.list[1]
-  elseif darkroom.isRV(a) then return a.list[1]
-  end
+  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) then return a.params.A end
   return a -- pure
 end
 
@@ -136,37 +131,6 @@ function darkroom.extractValid(a)
   end
   return types.bool()
 end
-
---[=[
-function darkroom.print(TY,inp)
-  local stats = {}
-  local TY = darkroom.extract(TY)
-  if TY:isTuple() then
-    table.insert(stats,quote cstdio.printf("{") end)
-    for i=1,#TY.list do
-      table.insert(stats,darkroom.print(TY.list[i],`&inp.["_"..(i-1)]))
-      table.insert(stats,quote cstdio.printf(",") end)
-    end
-    table.insert(stats,quote cstdio.printf("}") end)
-  elseif TY:isArray() then
-    table.insert(stats,quote cstdio.printf("[") end)
-    for i=0,TY:channels()-1 do
-      table.insert(stats,darkroom.print(TY:arrayOver(),`&(@inp)[i]))
-      table.insert(stats,quote cstdio.printf(",") end)
-    end
-    table.insert(stats,quote cstdio.printf("]") end)
-  elseif TY:isBool() then
-    table.insert(stats,quote if @inp then cstdio.printf("true") else cstdio.printf("false") end end)
-  elseif TY:isInt() or TY:isUint() then
-    table.insert(stats,quote cstdio.printf("%d",@inp) end)
-  elseif TY==types.null() then
-  else
-    print(TY)
-    assert(false)
-  end
-  return quote stats; end
-end
-   --]=]
 
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=darkroomFunctionFunctions}
@@ -350,9 +314,14 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
     end)
 
   -- output is format {{sdfRateInput1,...}, {convergedInput1,...} }
-  assert(#res[2]==1)
-  assert( type(res[2][1])=="boolean")
-  return res[2][1]
+
+  -- check if all are converged
+  for k,v in pairs(res[2]) do
+    assert(type(v)=="boolean")
+    if v==false then return false end
+  end
+  
+  return true
 end
 
 local __sdfConverged = {}
@@ -527,12 +496,17 @@ function darkroomIRFunctions:codegenSystolic( module )
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
-        if darkroom.isHandshake( n.fn.inputType ) or darkroom.isHandshakeArray( n.fn.inputType ) or darkroom.isHandshakeTmuxed( n.fn.inputType ) or darkroom.isHandshake(n.fn.outputType) or (n.fn.inputType:isTuple() and darkroom.isHandshake(n.fn.inputType.list[1])) then
+
+        if darkroom.isHandshake( n.fn.inputType ) or
+          darkroom.isHandshakeArray( n.fn.inputType ) or
+          darkroom.isHandshakeTmuxed( n.fn.inputType ) or
+          darkroom.isHandshake(n.fn.outputType) or
+          (n.fn.inputType:isTuple() and darkroom.isHandshake(n.fn.inputType.list[1])) then
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
         elseif n.fn.stateful then
           module:lookupFunction("reset"):addPipeline( I:reset() )
         end
-                
+        
         if n.fn.inputType==types.null() then
           return { I:process() }
         elseif darkroom.isV(n.inputs[1].type) then
