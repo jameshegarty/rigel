@@ -713,7 +713,7 @@ end
 
 modules.readMemory = memoize(function(ty)
   assert( types.isType(ty) )
-  assert( rigel.expectBasic(ty) )
+  err( rigel.isBasic(ty), "readMemory: expected basic type, but was "..tostring(ty) )
 
   local res = {kind="readMemory", ty=ty }
 
@@ -722,11 +722,17 @@ modules.readMemory = memoize(function(ty)
   res.inputType = types.tuple{ rigel.Handshake(addrType), rigel.Handshake(ty) }
   -- idx 0: output data, idx 1: addr to ram
   res.outputType = types.tuple{ rigel.Handshake(ty), rigel.Handshake(addrType) }
-  res.stateful = false
+  res.stateful = true
   res.sdfOutput={ {1,1}, 'x' }
   res.sdfInput={ {1,1},'x'}
   res.delay=10
 
+  function res:sdfTransfer( I, loc )
+    err( SDFRate.isSDFRate(I[1]), "Error, readMemory SDF input is not valid ")
+    err( #I[1] == #res.sdfInput, "Error, readMemory SDF wrong # of streams")
+    return I
+  end
+  
   local vstring = [[
 module readMemory_]]..tostring(ty)..[[(input CLK, input reset, input [1:0] ready_downstream, output [1:0] ready, input []]..tostring(ty:verilogBits()-1)..[[:0] process_input, output []]..tostring(ty:verilogBits()-1)..[[:0] process_output);
 
@@ -734,11 +740,16 @@ endmodule]]
 
   local fns = {}
 
-  local processinp = S.parameter("process_input",rigel.lower(ty))
-  fns.process = S.lambda("process",processinp,S.constant(rigel.lower(ty):fakeValue(),rigel.lower(ty)), rigel.lower(res.outputType), "process_output")
-  fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
-      
-  res.systolicModule = systolic.module.new("readMemory_"..tostring(ty), fns, {}, true,nil,nil, vstring,{process=0,reset=0})
+  local processinp = S.parameter("process_input",rigel.lower(res.inputType))
+  fns.process = S.lambda("process",processinp,S.constant(rigel.lower(res.outputType):fakeValue(),rigel.lower(res.outputType)), "process_output")
+  fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), nil, "resetout",nil, S.parameter("reset",types.bool()))
+
+  local downstreamReady = S.parameter("ready_downstream", types.array2d(types.bool(),2))
+  fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
+  
+  res.systolicModule = systolic.module.new("readMemory_"..tostring(ty), fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
+
+  return rigel.newFunction(res)
 end)
 
 -- takes A[W,H] to A[W,H/scale]
@@ -2567,6 +2578,9 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 
             if n.fn.outputType:isArray() and rigel.isHandshake(n.fn.outputType:arrayOver()) then
               return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(),n.fn.outputType:channels())))
+            elseif n.fn.outputType:isTuple() and rigel.isHandshake(n.fn.outputType.list[1]) then
+              -- just assume all are handshake
+              return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(), #n.fn.outputType.list)))
             else
 
               local res = module:lookupInstance(n.name):ready(input)

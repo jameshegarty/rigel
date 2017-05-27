@@ -6,6 +6,7 @@ local harness = require "harness"
 local fRS = require "fixed_float"
 local S = require("systolic")
 local SDFRate = require("sdfrate")
+local fixed_new = require("fixed_new")
 
 local RST
 if terralib~=nil then RST=require "rigelSimpleTerra" end
@@ -192,7 +193,8 @@ function RS.modules.filterSeq(t)
 end
 
 function RS.connect(t)
-
+  err( R.isFunction(t.toModule), "RigelSimple.connect: toModule must be rigel module")
+  
   local inp = t.input
 
   if t.input~=nil then
@@ -402,5 +404,70 @@ function RS.writePixels(input,id,imageSize,V)
   
   return RS.connect{input=input, toModule=mod}
 end
+
+-- a metatable that provides a __call function with some auto converstions for making it easier to connect to modules
+-- tab.fn: fn to call to generate the module. Will send a table of 'tab.settings' concated with type
+-- tab.wireFn(arg): an optional function that takes in a rigel value as input and returns additional settings
+-- tab.settings: settings to send to fn
+SimpleModuleWrapperMT={__call=function(tab,arg)
+  err( R.isIR(arg), "argument to module must be rigel value")
+
+  local settings = shallowCopy(tab.settings)
+
+  if tab.wireFn~=nil then
+    local set2 = tab.wireFn(arg)
+    for k,v in pairs(set2) do
+      err(settings[k]==nil, "SimpleModuleWrapper: "..k.." was already set!")
+      settings[k] = v
+    end
+  else
+    err(settings.type==nil, "SimpleModuleWrapper: type was already set!")
+    settings.type = R.extractData(arg.type)
+  end
+  
+  local mod = tab.fn(settings)
+  err( R.isFunction(mod), "SimpleModuleWrapper: fn must return rigel module")
+  
+  if R.isHandshake(arg.type) then
+    mod = RS.HS(mod)
+  end
+
+  return RS.connect{input=arg,toModule=mod}
+end
+                      }
+
+
+function darkroomIRFunctions:selectStream(i)
+  err(type(i)=="number",":selectStream expected number")
+  ccnt = ccnt + 1
+  local res = R.selectStream( "v"..tostring(ccnt), self, i )
+
+  return res
+end
+  
+local fixedid = 0
+function RS.modules.math(t)
+  local inp = fixed_new.parameter("inp",t.type)
+  local out = t.fn(inp)
+  fixedid = fixedid+1
+  return out:toRigelModule( t.name or "fixed"..tostring(fixedid) )
+end
+
+
+function RS.math(fn)
+  local tab = {fn=RS.modules.math,settings={fn=fn},handshake=false}
+  return setmetatable(tab,SimpleModuleWrapperMT)
+end
+
+function RS.modules.readMemory(t)
+  return RM.readMemory(t.type)
+end
+
+RS.readMemory = {fn=RS.modules.readMemory,settings={}}
+RS.readMemory.wireFn = function(arg)
+  err( arg.type:isTuple() and #arg.type.list==2 and R.isHandshake(arg.type.list[1]) and R.isHandshake(arg.type.list[2]), "readMemory wrapper: input must be two handshake streams but is "..tostring(arg.type))
+  return {type=R.extractData(arg.type.list[2])}
+end
+setmetatable(RS.readMemory,SimpleModuleWrapperMT)
 
 return RS

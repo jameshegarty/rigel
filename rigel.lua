@@ -55,7 +55,11 @@ end
 function darkroom.isHandshake( a ) return a:isTuple() and a.list[2]==darkroom.HandshakeToken end
 function darkroom.isV( a ) return a:isTuple() and a.list[2]==darkroom.VToken end
 function darkroom.isRV( a ) return a:isTuple() and a.list[2]==darkroom.RVToken end
-function darkroom.isBasic(A) return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTmuxed(A)==false end
+function darkroom.isBasic(A)
+  if A:isArray() and darkroom.isHandshake(A:arrayOver()) then return false end
+  if A:isTuple() and darkroom.isHandshake(A.list[1]) then return false end
+  return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTmuxed(A)==false
+end
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
 function darkroom.expectRV( A, er ) if darkroom.isRV(A)==false then error(er or "type should be RV") end end
@@ -189,11 +193,12 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
 
   local Isdf, Iconverged = I[1], I[2]
 
+  assert( SDFRate.isSDFRate(Isdf) )
   err( #self.sdfInput == #Isdf, "# of SDF streams doesn't match. Was "..(#Isdf).." but expected "..(#self.sdfInput)..", "..loc )
 
   local R
   for i=1,#self.sdfInput do
-    if self.sdfInput[i]=="x" then
+    if self.sdfInput[i]=="x" or Isdf[i]=="x" then
       -- don't care
     else
       local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
@@ -264,8 +269,6 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           rate=n.sdfRate; 
         end
         res = {rate,broadcast(true,#rate)}
-      elseif n.kind=="extractState" then
-        res = args[1]
       elseif n.kind=="applyMethod" then
         if n.fnname=="load" then
           if registeredInputRates[n.inst]==nil then
@@ -315,7 +318,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         else
           res = {{},{}}
           for k,v in ipairs(args) do
-            assert( #v[1] == 1 )
+            assert( SDFRate.isSDFRate( v[1] ) )
             table.insert(res[1], v[1][1])
             table.insert(res[2], v[2][1])
           end
@@ -331,6 +334,8 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         res = { args[1][1], { allConverged } }
       elseif n.kind=="selectStream" then
         assert( #args==1 )
+        assert( SDFRate.isSDFRate(args[1][1]) )
+        err( args[1][1][n.i+1]~=nil, "selectStream "..tostring(n.i)..": stream does not exist! There are only "..tostring(#args[1][1]).." streams."..n.loc )
         res = { {args[1][1][n.i+1]}, {args[1][2][n.i+1]} }
       else
         print("sdftotal",n.kind)
@@ -465,10 +470,20 @@ function darkroomIRFunctions:typecheck()
         n.type = n.inputs[1].type
        -- return darkroom.newIR(n)
       elseif n.kind=="selectStream" then
-        err(n.inputs[1].type:isArray(), "selectStream input must be array of handshakes, but is "..tostring(n.inputs[1].type) )
-        err( darkroom.isHandshake(n.inputs[1].type:arrayOver()), "selectStream input must be array of handshakes")
-        err( n.i < n.inputs[1].type:channels(), "selectStream index out of bounds")
-        n.type = n.inputs[1].type:arrayOver()
+        if n.inputs[1].type:isArray() then
+          err( darkroom.isHandshake(n.inputs[1].type:arrayOver()), "selectStream input must be array of handshakes")
+          err( n.i < n.inputs[1].type:channels(), "selectStream index out of bounds")
+          n.type = n.inputs[1].type:arrayOver()
+        elseif n.inputs[1].type:isTuple() then
+          for _,v in ipairs(n.inputs[1].type.list) do
+            err( darkroom.isHandshake(v), "selectStream input must be tuple of all handshakes")
+          end
+          err( n.i < #n.inputs[1].type.list, "selectStream index out of bounds")
+          n.type = n.inputs[1].type.list[n.i+1]
+        else
+          err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
+        end
+        
         --return darkroom.newIR(n)
       else
         print("Rigel Typecheck NYI ",n.kind)
@@ -512,7 +527,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
-        if darkroom.isHandshake( n.fn.inputType ) or darkroom.isHandshakeArray( n.fn.inputType ) or darkroom.isHandshakeTmuxed( n.fn.inputType ) or darkroom.isHandshake(n.fn.outputType) then
+        if darkroom.isHandshake( n.fn.inputType ) or darkroom.isHandshakeArray( n.fn.inputType ) or darkroom.isHandshakeTmuxed( n.fn.inputType ) or darkroom.isHandshake(n.fn.outputType) or (n.fn.inputType:isTuple() and darkroom.isHandshake(n.fn.inputType.list[1])) then
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
         elseif n.fn.stateful then
           module:lookupFunction("reset"):addPipeline( I:reset() )
