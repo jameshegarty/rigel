@@ -66,7 +66,7 @@ local function makeThresh()
   if TAPS==false then
     local THRESH=10
     local inp = R.input( types.uint(8) )
-    local out = R.apply("rr", thfn, R.tuple("rof",{inp,R.constant("Rt",THRESH,types.uint(32):makeConst())}))
+    local out = R.apply("rr", thfn, R.concat("rof",{inp,R.constant("Rt",THRESH,types.uint(32):makeConst())}))
     thfn = RM.lambda("EWR",inp,out)
   end
 
@@ -109,7 +109,7 @@ local out = R.apply("bf",blurfn,out)
 local out = R.apply("ef",edgefn,out)
 
 if TAPS then
-  out = R.apply("oack",C.SoAtoAoSHandshake(2,1,{types.uint(8),types.uint(32):makeConst()}),R.tuple("RT",{out,inptaps},false))
+  out = R.apply("oack",C.SoAtoAoSHandshake(2,1,{types.uint(8),types.uint(32):makeConst()}),R.concat("RT",{out,inptaps}))
 end
 
 local out = R.apply("nf",thfn,out)

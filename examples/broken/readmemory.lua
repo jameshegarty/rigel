@@ -30,7 +30,7 @@ local addr = RS.math( function(pos) return (pos:index(0):index(0):addMSBs(8)+(po
 
 local a = addr
 local b = inp:selectStream(1)
-local tub = R.tuple("rrtup",{a,b},false)
+local tub = R.concat("rrtup",{a,b})
 --print("TUPL",a,b,tub,a.type,b.type,tub.type)
 
 local ramread = RS.readMemory(tub)
@@ -39,7 +39,7 @@ local ramread = RS.readMemory(tub)
 local merge = RS.math( function(pac) return (pac:index(0)+pac:index(1)):rshift(1):removeLSBs(1) end )(RS.fanIn{inp:selectStream(0),ramread:selectStream(0)})
 print("MERGETYPE",merge.type,ramread.type)
                      
-fn = RM.lambda( "pointwise_wide", inp, R.tuple("FIN",{merge,ramread:selectStream(1)},false) )
+fn = RM.lambda( "pointwise_wide", inp, R.concat("FIN",{merge,ramread:selectStream(1)}) )
 ------------
 --hsfn = RM.makeHandshake(fn)
 

@@ -122,7 +122,7 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   end
 
   local st_tap_inp = R.apply( "broad", RM.makeHandshake(C.broadcast(TAP_TYPE,convT)), tapinp )
-  st_tap_inp = R.tuple("sttapinp",{out,st_tap_inp},false)
+  st_tap_inp = R.concat("sttapinp",{out,st_tap_inp})
   st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
   out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), st_tap_inp)
 

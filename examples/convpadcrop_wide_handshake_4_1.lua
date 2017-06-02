@@ -62,7 +62,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
 --    out = R.applyMethod("r_clk",fifos[#fifos],"load")
 --  end
   
-  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.tuple("CONVPIPEINP",{out,hsfn_taps},false))
+  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.concat("CONVPIPEINP",{out,hsfn_taps}))
 
   local out = R.apply("HH",RM.makeHandshake(kernel), convpipeinp)
   

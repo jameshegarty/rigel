@@ -48,7 +48,7 @@ C.arrayop = memoize(function(A,W,H)
   err(type(H)=="number" or H==nil,"arrayop: H should be number or nil")
   
   local inp = R.input(A)
-  return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.array2d("ao",{inp},W,H))
+  return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.concatArray2d("ao",{inp},W,H))
 end)
 
 ------------
@@ -218,7 +218,7 @@ function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth, ConvHeight ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvHeight ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast( types.uint(32), A, shift ), conv )
@@ -239,7 +239,7 @@ function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
   local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
 
-  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
 
@@ -370,7 +370,7 @@ function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH,
   local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ) , convLB )
   
   local st_tap_inp = R.apply( "broad", C.broadcast(tapType,T), taps )
-  st_tap_inp = R.tuple("sttapinp",{convstencils,st_tap_inp})
+  st_tap_inp = R.concat("sttapinp",{convstencils,st_tap_inp})
   local ST_TYPE = types.array2d( A, stencilW, stencilH )
   st_tap_inp = R.apply("ST",C.SoAtoAoS(T,1,{ST_TYPE,tapType}),st_tap_inp)
   local convpipe = R.apply( "conv", RM.map( f, T ), st_tap_inp )
@@ -565,7 +565,7 @@ function C.lutinvert(ty)
   local aout_float_lsbs = R.apply("aout_float_lsbs", stripMSB(9), aout_float)
 
   local inv = R.apply("inv", RM.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
-  local out = R.apply( "b", bfn, R.tuple("binp",{inv,aout_exp,aout_sign}) )
+  local out = R.apply( "b", bfn, R.concat("binp",{inv,aout_exp,aout_sign}) )
   local fn = RM.lambda( "lutinvert", inp, out )
 
   return fn, fn.outputType

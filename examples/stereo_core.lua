@@ -51,7 +51,7 @@ local function argmin( SearchWindow, SADWidth, OffsetX, X)
   local indices = R.constant( "convKernel", idx, types.array2d( types.uint(8), SearchWindow ) ) -- uint8[SearchWindow]
 
   local sadout = R.apply("sadvalues", RM.map( C.SAD( A, types.uint(16), SADWidth ), SearchWindow), inp ) -- uint16[SearchWindow]
-  local packed = R.apply("SOS", C.SoAtoAoS( SearchWindow, 1, {types.uint(8), types.uint(16)} ), R.tuple("stup",{indices, sadout}) )
+  local packed = R.apply("SOS", C.SoAtoAoS( SearchWindow, 1, {types.uint(8), types.uint(16)} ), R.concat("stup",{indices, sadout}) )
   local AM = C.argmin(types.uint(8),types.uint(16))
   local out = R.apply("argmin", RM.reduce(AM,SearchWindow,1),packed)
 
@@ -108,7 +108,7 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   right = R.apply("rb", RM.makeHandshake(  C.broadcast( STENCIL_TYPE, SearchWindow )  ), right ) -- A[SADWidth,SADWidth][SearchWindow]
   -------
 
-  local merged = R.apply("merge", C.SoAtoAoSHandshake( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
+  local merged = R.apply("merge", C.SoAtoAoSHandshake( SearchWindow, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.concat("mtup",{left,right})) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[SearchWindow]
   local packStencils = C.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
   local merged = R.apply("mer", RM.makeHandshake(RM.map(packStencils, SearchWindow)  ), merged ) -- A[2][SADWidth, SADWidth][SearchWindow]
   

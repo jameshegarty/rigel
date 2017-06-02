@@ -34,7 +34,7 @@ ITYPE = types.uint(8)
 inp = R.input( ITYPE )
 local aout = R.apply( "a", afn, inp )
 local inv = R.apply("inv", lutinv, aout)
-out = R.apply( "b", bfn, R.tuple("binp",{inp,inv}) )
+out = R.apply( "b", bfn, R.concat("binp",{inp,inv}) )
 fn = RM.lambda( "fixed_wide", inp, out )
 ------------
 hsfninp = R.input(R.Handshake(types.array2d(ITYPE,T)))

@@ -44,7 +44,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
-  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.tuple("ptup", {inp,r}) )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local FM = floatMult(A)
   local conv = R.apply( "partial", RM.map( FM[1], ConvWidth, ConvHeight ), packed )
   local SM = floatSum(FM[2])
@@ -223,7 +223,7 @@ function harris.harrisWithStencil(t)
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
-  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.tuple("MPT",{left,right},false))
+  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.concat("MPT",{left,right}))
 
   local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,t.W+15,t.H+15,1,15,0,15,0))), out)

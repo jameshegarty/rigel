@@ -77,7 +77,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
 
     --local ConvWidth = 3
     local A = types.uint(8)
-    local packed = R.apply( "packedtup"..i, C.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.tuple("ptup"..i, {st,kern}) )
+    local packed = R.apply( "packedtup"..i, C.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.concat("ptup"..i, {st,kern}) )
     local conv = R.apply( "partialll"..i, RM.map( C.multiply(A,A,types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), packed )
     local conv = R.apply( "sum"..i, RM.reduce( C.sum(types.uint(16),types.uint(16),types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), conv )
     local conv = R.apply( "touint8"..i, C.shiftAndCastSaturate( types.uint(16), A, 2 ), conv )
@@ -85,7 +85,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
     out[i] = conv
   end
 
-  local dem = RM.lambda("dem", deminp, R.array2d("ot",out,3))
+  local dem = RM.lambda("dem", deminp, R.concatArray2d("ot",out,3))
   dem = RM.liftXYSeqPointwise(dem,internalW,internalH,internalT)
 
   ---------------

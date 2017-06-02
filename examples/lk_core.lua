@@ -78,7 +78,7 @@ function invert2x2( AType, bits )
     local fout = f.array2d(OT,4)
     cost = cost + fout:cost()
     ---------
-    out = R.apply("out", fout:toRigelModule("fout"), R.tuple("ftupp",{inp,det}))
+    out = R.apply("out", fout:toRigelModule("fout"), R.concat("ftupp",{inp,det}))
   end
 
   --print("invert2x2 output type:", output_type)
@@ -152,21 +152,21 @@ function makeA( dType, window, bits )
   cost = cost + rsum[2]*3*window*window
   local rsumfn = rsum[1]
 
-  local inp0 = R.apply("inp0", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o0",{Fdx,Fdx}) )
+  local inp0 = R.apply("inp0", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o0",{Fdx,Fdx}) )
   local out0 = R.apply("out0", RM.map(partialfn, window, window), inp0 )
   local out0 = R.apply("out0red", RM.reduce(rsumfn, window, window), out0 )
 
-  local inp1 = R.apply("inp1", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o1",{Fdx,Fdy}) )
+  local inp1 = R.apply("inp1", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o1",{Fdx,Fdy}) )
   local out1 = R.apply("out1", RM.map(partialfn, window, window), inp1 )
   local out1 = R.apply("out1red", RM.reduce(rsumfn, window, window), out1 )
 
   local out2 = out1
 
-  local inp3 = R.apply("inp3", C.SoAtoAoS(window,window,{dType,dType}), R.tuple("o3",{Fdy,Fdy}) )
+  local inp3 = R.apply("inp3", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o3",{Fdy,Fdy}) )
   local out3 = R.apply("out3", RM.map(partialfn, window, window), inp3 )
   local out3 = R.apply("out3red", RM.reduce(rsumfn, window, window), out3 )
 
-  local out = R.array2d("out", {out0,out1,out2,out3}, 4 )
+  local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
 
   return RM.lambda("A", inp, out ), partial_type, cost
 end
@@ -197,7 +197,7 @@ function makeB( dtype, window, bits )
   local Fdy = R.apply("fdy", C.index(ITYPE,3), finp)
 
   ---------
-  local gmf = R.tuple("mfgmf",{frame1,frame0})
+  local gmf = R.concat("mfgmf",{frame1,frame0})
   gmf = R.apply("SA",C.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type, gmf_cost = minus(types.uint(8))
   --print("GMF type", gmf_type)
@@ -215,17 +215,17 @@ function makeB( dtype, window, bits )
   local rsumfn = rsum[1]
   cost = cost + rsum[2]*2*window*window
 
-  local out_0 = R.tuple("o0tup",{Fdx, gmf})
+  local out_0 = R.concat("o0tup",{Fdx, gmf})
   local out_0 = R.apply("o0P", C.SoAtoAoS(window,window,{dtype, gmf_type}), out_0)
   local out_0 = R.apply("o0", RM.map(partialfn, window, window), out_0)
   local out_0 = R.apply("out0red", RM.reduce(rsumfn, window, window), out_0 )
 
-  local out_1 = R.tuple("o1tup",{Fdy, gmf})
+  local out_1 = R.concat("o1tup",{Fdy, gmf})
   local out_1 = R.apply("o1P", C.SoAtoAoS(window,window,{dtype,gmf_type}), out_1)
   local out_1 = R.apply("o1", RM.map(partialfn, window, window), out_1)
   local out_1 = R.apply("out1red", RM.reduce(rsumfn, window, window), out_1 )
 
-  local out = R.array2d("arrrrry0t",{out_0,out_1},2)
+  local out = R.concatArray2d("arrrrry0t",{out_0,out_1},2)
 
   --print("B output type", partial_type)
   return RM.lambda("b", finp, out), partial_type, cost
@@ -307,7 +307,7 @@ function makeLK( T, internalW, internalH, window, bits )
 
   local dst_type = types.array2d(dType,window,window)
   local Af, AType, Acost = makeA( dType, window, bits )
-  local Ainp = R.apply("Ainp", C.SoAtoAoS(T,1,{dst_type,dst_type},false),R.tuple("ainp",{fdx_stencil,fdy_stencil}) )
+  local Ainp = R.apply("Ainp", C.SoAtoAoS(T,1,{dst_type,dst_type},false),R.concat("ainp",{fdx_stencil,fdy_stencil}) )
   local A = R.apply("A", RM.map(Af,T), Ainp)
   local fAinv, AInvType = invert2x2( AType, bits )
   local Ainv = R.apply("Ainv", RM.map(fAinv,T), A)
@@ -317,12 +317,12 @@ function makeLK( T, internalW, internalH, window, bits )
   local f0_slice = R.apply("f0slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb0)
   local f1_slice = R.apply("f1slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb1)
   local sm_type = types.array2d(types.uint(8),window,window)
-  local binp = R.apply("binp", C.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.tuple("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
+  local binp = R.apply("binp", C.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.concat("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
   local b = R.apply("b", RM.map(fB,T), binp)
   cost = cost + Bcost
 
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
-  local sinp = R.apply("sinp", C.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.tuple("solveinp",{Ainv,b}))
+  local sinp = R.apply("sinp", C.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.concat("solveinp",{Ainv,b}))
   local vectorField = R.apply("lksolvemod", RM.map(fSolve,T), sinp)
   cost = cost + SolveCost
   

@@ -1373,14 +1373,13 @@ function MT.lambdaCompile(fn)
           end
 
           return out
-        elseif n.kind=="tuple" then
+        elseif n.kind=="concat" then
           map(inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
           return out
-        elseif n.kind=="array2d" then
+        elseif n.kind=="concatArray2d" then
           local ty = rigel.lower(n.type):arrayOver()
           map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
---table.insert(stats, quote cstdio.printf("VAL %d %d\n",(@out)[0]._1,out[1]._1) end)
           return out
         elseif n.kind=="extractState" then
           return `nil

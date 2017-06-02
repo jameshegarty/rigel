@@ -89,7 +89,9 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   local arrList = {}
   for y=0,H-1 do
     for x=0,W-1 do
-      table.insert( arrList, S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end)) )
+      local r = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
+      if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
+      table.insert( arrList, r )
     end
   end
   res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
@@ -162,7 +164,7 @@ modules.packTuple = memoize(function( typelist, X )
     end
   end
   
-  local readyOut = S.tuple(readyOutList)
+  local readyOut = S.cast(S.tuple(readyOutList), types.array2d(types.bool(),#typelist) )
   
   if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
   
@@ -443,13 +445,15 @@ modules.RPassthrough = memoize(function(f)
   return rigel.newFunction(res)
                                 end)
 
-local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
+local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput )
+  assert(type(hasReadyInput)=="table")
+  
   local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
   local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
 
   systolicModule:complete()
 
-  for _,fnname in pairs(liftFns) do
+  for K,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
     local prefix = fnname.."_"
@@ -466,8 +470,16 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
 
     local rst = S.parameter(prefix.."reset",types.bool())
 
-    local downstreamReady = S.parameter(prefix.."ready_downstream", types.bool())
-    local CE = S.__or(rst,downstreamReady)
+    local downstreamReady
+    local CE
+    
+    if hasReadyInput[K] then
+      downstreamReady = S.parameter(prefix.."ready_downstream", types.bool())
+      CE = S.__or(rst,downstreamReady)
+    else
+      downstreamReady = S.parameter(prefix.."ready_downstream", types.null())
+      CE = S.constant(true,types.bool())
+    end
 
     local pout = inner[fnname](inner,pinp,S.__not(rst), CE )
 
@@ -486,7 +498,13 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns )
     --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
     local out = S.tuple{ S.index(pout,0), outvalid }
     
-    local readyOut = systolic.__and(inner[prefix.."ready"](inner),downstreamReady)
+    local readyOut
+    if hasReadyInput[K] then
+      readyOut = systolic.__and(inner[prefix.."ready"](inner),downstreamReady)
+    else
+      readyOut = inner[prefix.."ready"](inner)
+    end
+    
     local pipelines = {}
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
@@ -532,7 +550,7 @@ modules.liftHandshake = memoize(function(f)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
   if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,delay) end
-  res.systolicModule = liftHandshakeSystolic( f.systolicModule, {"process"},{} )
+  res.systolicModule = liftHandshakeSystolic( f.systolicModule, {"process"},{},{true} )
 
   return rigel.newFunction(res)
                                  end)
@@ -1359,7 +1377,7 @@ modules.liftXYSeq = memoize(function( f, W, H, T, X )
   local p = rigel.apply("p", modules.posSeq(W,H,T) )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
 
-  local out = rigel.apply("m", f, rigel.tuple("ptup", {p,inp}) )
+  local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
   return modules.lambda( "liftXYSeq_"..f.kind, inp, out )
 end)
 
@@ -2062,7 +2080,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
     
     res.systolicModule = liftDecimateSystolic(res.systolicModule,{"load"},{"store"})
     res.systolicModule = runIffReadySystolic( res.systolicModule,{"store"},{"load"})
-    res.systolicModule = liftHandshakeSystolic( res.systolicModule,{"load","store"},{})
+    res.systolicModule = liftHandshakeSystolic( res.systolicModule,{"load","store"},{},{true,false})
   end
 
   return rigel.newFunction(res)
@@ -2463,7 +2481,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
         return 0
-      elseif n.kind=="tuple" or n.kind=="array2d" then
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
         return math.max(unpack(inputs))
       elseif n.kind=="apply" then
         if n.fn.inputType==types.null() then return n.fn.delay
@@ -2550,90 +2568,171 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       rigel.isHandshake( fn.outputType ) or
       (fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1])) then
        
-      local readyinp = S.parameter( "ready_downstream", types.bool() )
+      local readyinp -- = S.parameter( "ready_downstream", types.bool() )
       local readyout
 
       -- if we have nil->Handshake(A) types, we have to drive these ready chains somehow (and they're not connected to input)
       local readyPipelines={}
-      
+
+      -- remember, we're visiting the graph in reverse here.
+      -- if the node takes I inputs, we return a lua array of size I
+      -- for each input i in I:
+      -- if that input has 1 input stream, we out[i] is a systolic bool value
+      -- if that input has N input streams, we out[i] is a systolic array of bool values
+      -- if that input is 0 streams, out[i] is nil
+
       fn.output:visitEachReverse(
         function(n, inputs)
-          local inputList = {}
-          for parentNode,v in pairs(inputs) do
-            if parentNode.kind=="selectStream" then
-              assert(inputList[parentNode.i+1]==nil)
-              inputList[parentNode.i+1] = v[1]
-            elseif #parentNode.inputs==1 then
-              assert(v[2]==1)
-              table.insert( inputList, v[1] )
+
+          local input
+
+          for k,i in pairs(inputs) do
+            local parentKey = i[2]
+            local value = i[1]
+            local thisi = value[parentKey]
+
+            if n:outputStreams()==1 then
+              assert(systolicAST.isSystolicAST(thisi))
+              assert(thisi.type:isBool())
+              
+              if input==nil then
+                input = thisi
+              else
+                input = S.__and(input,thisi)
+              end
+            elseif n:outputStreams()>1 then
+              assert(systolicAST.isSystolicAST(thisi))
+
+              if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArray(n.type) then
+                assert(keycount(inputs)==1) -- NYI
+                input = thisi
+              else
+                assert(thisi.type:isArray() and thisi.type:arrayOver():isBool())
+                
+                if input==nil then
+                  input = thisi
+                else
+                  local r = {}
+                  for i=0,n:outputStreams()-1 do
+                    r[i+1] = S.__and(S.index(input,i),S.index(thisi,i))
+                  end
+                  input = S.cast(S.tuple(r),types.array2d(types.bool(),n:outputStreams()))
+                end
+              end
             else
-              -- for operators that take in multiple inputs (array, tuple), we force them
-              -- to provide an array of valid bits, one per input.
-              table.insert( inputList, S.index(v[1],v[2]-1) )
+              --err(false,"no output streams? why is this getting a ready bit? "..n.loc)
+              -- this is OK - fifo:store() for example has nil output
             end
           end
 
-          assert(#inputList==keycount(inputList))
-          -- ready bit for this node is AND of all consumers
-          local input = foldt( inputList, function(a,b) return S.__and(a,b) end, readyinp )
-
+          if keycount(inputs)==0 then
+            -- this is the output of the pipeline
+            assert(readyinp==nil)
+            
+            if n:outputStreams()==1 then
+              readyinp = S.parameter( "ready_downstream", types.bool() )
+              input = readyinp
+            elseif n:outputStreams()>1 then
+              readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
+              input = readyinp
+            else
+              assert(false)
+            end            
+          end
+          
+          local res
+          
           if n.kind=="input" then
             assert(readyout==nil)
             readyout = input
-            return nil
           elseif n.kind=="apply" then
 
-            if n.fn.outputType:isArray() and rigel.isHandshake(n.fn.outputType:arrayOver()) then
-              return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(),n.fn.outputType:channels())))
-            elseif n.fn.outputType:isTuple() and rigel.isHandshake(n.fn.outputType.list[1]) then
-              -- just assume all are handshake
-              return module:lookupInstance(n.name):ready(S.cast(S.tuple(inputList),types.array2d(types.bool(), #n.fn.outputType.list)))
-            else
-
-              local res = module:lookupInstance(n.name):ready(input)
-              if n.fn.inputType==types.null() then
-                table.insert(readyPipelines, res)
-              end
-              
-              return res
+            res = {module:lookupInstance(n.name):ready(input)}
+            if n.fn.inputType==types.null() then
+              table.insert(readyPipelines, res[1])
             end
+            
           elseif n.kind=="applyMethod" then
             if n.fnname=="load" then
               -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
               local inst = module:lookupInstance(n.inst.name)
-              local R = inst[n.fnname.."_ready"](inst, input)
-              table.insert(readyPipelines,R)
-              return R
+              res = {inst[n.fnname.."_ready"](inst, input)}
+              table.insert(readyPipelines,res[1])
+
             elseif n.fnname=="store" then
               local inst = module:lookupInstance(n.inst.name)
-              return inst[n.fnname.."_ready"](inst, input)
+              res = {inst[n.fnname.."_ready"](inst, input)}
             else
               assert(false)
             end
-          elseif n.kind=="tuple" or n.kind=="array2d" then
-            if n.packStreams then
-              return input
-            else
-              -- if packStreams==false, then every thing downstream should expect #n.inputs valid bits
-              -- (since we're in reverse, then means that our input is #n.inputs valid bits)
+          elseif n.kind=="concat" or n.kind=="concatArray2d" then
+            err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
 
-              if keycount(inputs)==0 then
-                return input
-              else
-                err( keycount(inputs)== 1,"NYI - tuple multiple consumers "..n.name) -- NYI - multiple consumers - we would need to AND them together for each component
-                return inputList[1]
-              end
+            -- tuple has N input streams, N output streams
+                
+            res = {}
+            local i=0
+            for i=0,n:outputStreams()-1 do
+              table.insert(res, S.index(input,i) )
             end
           elseif n.kind=="statements" then
-            local L = {readyinp}
-            for i=2,#n.inputs do table.insert(L,S.constant(true,types.bool())) end
-            return S.tuple(L)
+            res = {input}
+            for i=2,#n.inputs do
+              if n.inputs[i]:outputStreams()==1 then
+                res[i] = S.constant(true,types.bool())
+              elseif n.inputs[i]:outputStreams()>1 then
+                local r = {}
+                for ii=1,n.inputs[i]:outputStreams() do table.insert(r,S.constant(true,types.bool())) end
+                res[i] = S.cast(S.concat(r), types.array2d(types.bool(),n.inputs[i]:outputStreams()) ) 
+              else
+                -- res[i]=nil
+              end
+            end
+
           elseif n.kind=="selectStream" then
-            return input
+
+            res = {}
+
+            res[1] = {}
+            for i=1,n.inputs[1]:outputStreams() do
+              if i-1==n.i then
+                res[1][i] = input
+              else
+                res[1][i] = S.constant(true,types.bool())
+              end
+            end
+            res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
           else
             print(n.kind)
             assert(false)
           end
+
+          -- now, validate that the output is what we expect
+          err( #n.inputs==0 or type(res)=="table","res should be table "..n.kind.." inputs "..tostring(#n.inputs))
+              
+          for k,i in ipairs(n.inputs) do
+            if i:outputStreams()==1 then
+              err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
+              err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type) )
+            elseif i:outputStreams()>1 then
+
+              err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
+              if(rigel.isHandshakeTmuxed(i.type)) then
+                err( res[k].type:isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+              elseif rigel.isHandshakeArray(i.type) then
+                err( res[k].type==types.uint(8),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+              else
+                err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+              end
+            elseif i:outputStreams()==0 then
+              err(res[k]==nil, "incorrect ready bit output format "..n.kind.." - "..n.loc)
+            else
+              assert(false)
+            end
+          end
+          -- end validate
+          
+          return res
         end, true)
 
       local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", readyPipelines ) )

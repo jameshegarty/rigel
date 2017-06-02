@@ -220,10 +220,10 @@ function sift.siftDescriptor(dxdyType)
     dy = R.apply("iyl", sift.fixedLift(dxdyType),dy)
   end
 
-  local maginp = R.tuple("maginp",{dx,dy,gweight})
+  local maginp = R.concat("maginp",{dx,dy,gweight})
   local magFn, magType = siftMag(calcType)
   local mag = R.apply("mag",magFn,maginp)
-  local bucketInp = R.tuple("bktinp",{dx,dy,mag})
+  local bucketInp = R.concat("bktinp",{dx,dy,mag})
   local out = R.apply( "out", siftBucket(calcType,magType), bucketInp)
   return RM.lambda("siftDescriptor",inp,out), RED_TYPE
 end
@@ -271,11 +271,11 @@ function sift.tile(W,H,T,A)
           table.insert(out, tab[ty*T+y][tx*T+x])
         end
       end
-      table.insert(outarr, R.array2d("AR_"..ty.."_"..tx,out,T*T) )
+      table.insert(outarr, R.concatArray2d("AR_"..ty.."_"..tx,out,T*T) )
     end
   end
 
-  local fin = R.array2d("fin",outarr,(W/T)*(H/T))
+  local fin = R.concatArray2d("fin",outarr,(W/T)*(H/T))
 
   return RM.lambda("tile", inp, fin )
 end
@@ -366,13 +366,13 @@ function sift.siftKernel(dxdyType)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
   local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc0)
-  local desc = R.apply("pt",RM.packTuple{descType,descType},R.tuple("PTT",{desc0,desc_sum},false))
+  local desc = R.apply("pt",RM.packTuple{descType,descType},R.concat("PTT",{desc0,desc_sum}))
   local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
   -- we now have an array of type descType[128]. Add the pos.
-  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,TILES_X*TILES_Y*8),posType,posType},R.tuple("DPT",{desc,posX,posY},false))
+  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,TILES_X*TILES_Y*8),posType,posType},R.concat("DPT",{desc,posX,posY}))
   local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos(descType)), desc_pack)
 
   table.insert(statements,1,desc)
@@ -423,7 +423,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
     local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
     local pos = R.apply("PS", posSub(TILES_X*4-1,TILES_Y*4-1), pos)
     
-    local filterseqValue = R.tuple("fsv",{inp,pos})
+    local filterseqValue = R.concat("fsv",{inp,pos})
     
     local filterseqCond = R.apply("idx",C.index(ITYPE,TILES_X*2,TILES_Y*2),inp)
     local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
@@ -434,7 +434,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
     local nmsFn = harris.makeNMS( harrisType, true )
     local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
     
-    local fsinp = R.tuple("PTT",{filterseqValue,filterseqCond})
+    local fsinp = R.concat("PTT",{filterseqValue,filterseqCond})
     
     local filterfn = RM.lambda( "filterfn", inp, fsinp )
     
@@ -463,7 +463,7 @@ function sift.addPos(dxdyType,W,H,subX,subY)
     pos = R.apply("possub",posSub(subX,subY), pos)
   end
 
-  local out = R.tuple("FO",{inp,pos})
+  local out = R.concat("FO",{inp,pos})
   return RM.lambda("addPosAtInput",inp,out)
 end
 
@@ -573,7 +573,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
   -- merge left/right
-  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.tuple("MPT",{left,right},false))
+  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.concat("MPT",{left,right}))
 
   local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)

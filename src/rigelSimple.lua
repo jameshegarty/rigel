@@ -228,7 +228,7 @@ end
 
 function RS.concat(t)
   ccnt = ccnt + 1
-  return R.tuple( "v"..tostring(ccnt), t )
+  return R.concat( "v"..tostring(ccnt), t )
 end
 
 function RS.fifo(t)
@@ -297,7 +297,7 @@ function RS.fanIn(t)
   
   ccnt = ccnt + 1
   ccnt = ccnt + 1
-  return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.tuple("v"..tostring(ccnt),t,false) )
+  return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.concat("v"..tostring(ccnt),t) )
 end
 
 function RS.defineModule(t)

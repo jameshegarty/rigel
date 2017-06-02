@@ -1370,7 +1370,8 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       else
         local resTable = {}
-        assert(n.type:channels()==1)
+        err(n.type:channels()==1, "NYI - systolic implicit vector ops "..n.kind)
+        
         for c=0,n.type:channels()-1 do
           local res
           local sub = "["..((c+1)*n.type:baseType():verilogBits()-1)..":"..(c*n.type:baseType():verilogBits()).."]" 

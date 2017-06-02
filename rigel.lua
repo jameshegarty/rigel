@@ -35,18 +35,25 @@ function darkroom.Handshake(A)
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
-function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
-function darkroom.HandshakeTmuxed(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeTmuxed"..N)}) end
+function darkroom.HandshakeArray(A,N)
+  assert(types.isType(A));
+  assert(darkroom.isBasic(A));
+  return types.named("HandshakeArray("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArray", {A=A,N=N} )
+end
+
+function darkroom.HandshakeTmuxed(A,N)
+  assert(types.isType(A));
+  assert(darkroom.isBasic(A));
+  return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
+end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
-
-
 
 function darkroom.isHandshakeArray(a)
   err(types.isType(a),"isHandshakeArray: argument must be a type")
-  return a:isTuple() and #a.list>1 and  a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeArray")=="HandshakeArray"
+  return a:isNamed() and a.generator=="HandshakeArray"
 end
 function darkroom.isHandshakeTmuxed(a)
-  return a:isTuple() and #a.list>1 and a.list[2].kind=="opaque" and a.list[2].str:sub(1,#"HandshakeTmuxed")=="HandshakeTmuxed"
+  return a:isNamed() and a.generator=="HandshakeTmuxed"
 end
 
 function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
@@ -74,12 +81,8 @@ function darkroom.lower( a, loc )
     return types.array2d( darkroom.lower(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
   elseif a:isTuple() and darkroom.isBasic(a.list[1])==false then
     return types.tuple(map(a.list, function(t) return darkroom.lower(t) end ))
-  elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) then
+  elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a)then
     return a.structure
-  elseif darkroom.isHandshakeArray(a) then
-    return types.tuple({a.list[1],types.bool()})
-  elseif darkroom.isHandshakeTmuxed(a) then
-    return types.tuple{a.list[1],types.uint(8)}
   elseif darkroom.isBasic(a) then 
     return a 
   end
@@ -259,8 +262,10 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         else
           assert(false)
         end
-      elseif n.kind=="tuple" or n.kind=="array2d" then
-        if n.packStreams then
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        if n.inputs[1]:outputStreams()==0 then
+          -- for non-handshake values, we just count this as 1 output stream
+          
           local IR, allConverged, ratesMatch
           -- all input rates must match!
           for key,i in pairs(n.inputs) do
@@ -322,6 +327,20 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
   end
   
   return true
+end
+
+function darkroomIRFunctions:outputStreams()
+  if darkroom.isHandshake(self.type) then
+    return 1
+  elseif self.type:isArray() and darkroom.isHandshake(self.type:arrayOver()) then
+    return self.type:channels()
+  elseif self.type:isTuple() and darkroom.isHandshake(self.type.list[1]) then
+    return #self.type.list
+  elseif darkroom.isHandshakeTmuxed(self.type) or darkroom.isHandshakeArray(self.type) then
+    return self.type.params.N
+  else
+    return 0
+  end
 end
 
 local __sdfConverged = {}
@@ -428,10 +447,10 @@ function darkroomIRFunctions:typecheck()
         --return darkroom.newIR( n )
       elseif n.kind=="input" then
       elseif n.kind=="constant" then
-      elseif n.kind=="tuple" then
+      elseif n.kind=="concat" then
         n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
        -- return darkroom.newIR(n)
-      elseif n.kind=="array2d" then
+      elseif n.kind=="concatArray2d" then
         map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
         n.type = types.array2d( n.inputs[1].type, n.W, n.H )
         --return darkroom.newIR(n)
@@ -521,9 +540,9 @@ function darkroomIRFunctions:codegenSystolic( module )
         end
       elseif n.kind=="constant" then
         return {S.constant( n.value, n.type )}
-      elseif n.kind=="tuple" then
+      elseif n.kind=="concat" then
         return {S.tuple( map(inputs,function(i) return i[1] end) ) }
-      elseif n.kind=="array2d" then
+      elseif n.kind=="concatArray2d" then
         local outtype = types.array2d(darkroom.lower(n.type:arrayOver()),n.W,n.H)
         return {S.cast(S.tuple( map(inputs,function(i) return i[1] end) ), outtype) }
       elseif n.kind=="statements" then
@@ -595,26 +614,26 @@ function darkroom.constant( name, value, ty )
 end
 
 -- packStreams: do we consider the output of this to be 1 SDF stream, or N?
-function darkroom.tuple( name, t, packStreams )
+function darkroom.concat( name, t, X )
   err( type(name)=="string", "first tuple input should be name")
   err( type(t)=="table", "tuple input should be table of darkroom values" )
-  if packStreams==nil then packStreams=true end
+  err( X==nil, "rigel.concat: too many arguments")
 
-  local r = {kind="tuple", name=name, loc=getloc(), inputs={}, packStreams = packStreams}
+  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
   map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 
 -- packStreams: do we consider the output of this to be 1 SDF stream, or N?
-function darkroom.array2d( name, t, W, H, packStreams )
+function darkroom.concatArray2d( name, t, W, H, X )
   err( type(t)=="table", "array2d input should be table of darkroom values" )
-  if packStreams==nil then packStreams=true end
+  err(X==nil, "rigel concatArray2d too many arguments")
 
   err( type(W)=="number", "W must be number")
   if H==nil then H=1 end
   err( type(H)=="number", "H must be number")
 
-  local r = {kind="array2d", name=name, loc=getloc(), inputs={}, W=W,H=H, packStreams=packStreams}
+  local r = {kind="concatArray2d", name=name, loc=getloc(), inputs={}, W=W, H=H}
   map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
