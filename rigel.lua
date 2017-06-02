@@ -32,7 +32,7 @@ function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); re
 function darkroom.Handshake(A)
   assert(types.isType(A));
   assert(darkroom.isBasic(A));
-  return types.named("Handshake_"..tostring(A), types.tuple{A,types.bool()}, "Handshake", {A=A} )
+  return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
 function darkroom.HandshakeArray(A,N) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.tuple({A,types.opaque("HandshakeArray"..N)}) end
