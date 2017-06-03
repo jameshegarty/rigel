@@ -1198,9 +1198,9 @@ function MT.lambdaCompile(fn)
           if parentNode.kind=="selectStream" then
               assert(inputList[parentNode.i+1]==nil)
               inputList[parentNode.i+1] = v[1]
-          elseif #parentNode.inputs==1 or (parentNode.kind=="tuple" and parentNode.packStreams==true) then
+          elseif #parentNode.inputs==1 or (parentNode.kind=="concat" and parentNode.inputs[1]:outputStreams()==0) then
             table.insert( inputList, v[1] )
-          elseif ((parentNode.kind=="array2d" or parentNode.kind=="tuple") and parentNode.packStreams==false) or parentNode.kind=="statements" then
+          elseif ((parentNode.kind=="concatArray2d" or parentNode.kind=="concat") and parentNode.inputs[1]:outputStreams()~=0) or parentNode.kind=="statements" then
             local idx = v[2]-1
             table.insert( inputList, `[v[1]][idx] )
           else
@@ -1246,8 +1246,8 @@ function MT.lambdaCompile(fn)
           else
             assert(false)
           end
-        elseif n.kind=="tuple" or n.kind=="array2d" then
-          if n.packStreams then
+        elseif n.kind=="concat" or n.kind=="concatArray2d" then
+          if n.inputs[1]:outputStreams()==0 then
             res = input
           else
             assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component

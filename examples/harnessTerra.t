@@ -18,7 +18,7 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   local hsfninp = out
   
   if tapType~=nil then
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.tuple("hsfninp",{out,inptaps},false))
+    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,inptaps}))
   end
 
   local out = R.apply("HARNESS_inner", fn, hsfninp )

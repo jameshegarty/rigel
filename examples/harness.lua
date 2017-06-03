@@ -70,7 +70,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   if tapType==nil then
     hsfninp = inpdata
   else
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.tuple("hsfninp",{inpdata,inptaps},false))
+    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{inpdata,inptaps}))
   end
 
   -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
