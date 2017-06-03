@@ -43,4 +43,4 @@ fn = RM.lambda( "pointwise_wide", inp, R.concat("FIN",{merge,ramread:selectStrea
 ------------
 --hsfn = RM.makeHandshake(fn)
 
-harness{ outFile="readmemory", fn=fn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }
+harness{ outFile="readmemory", fn=fn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H}, harness=2 }

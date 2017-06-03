@@ -752,9 +752,12 @@ modules.readMemory = memoize(function(ty)
   end
   
   local vstring = [[
-module readMemory_]]..tostring(ty)..[[(input CLK, input reset, input [1:0] ready_downstream, output [1:0] ready, input []]..tostring(ty:verilogBits()-1)..[[:0] process_input, output []]..tostring(ty:verilogBits()-1)..[[:0] process_output);
+module readMemory_]]..tostring(ty)..[[(input CLK, input reset, input [1:0] ready_downstream, output [1:0] ready, input []]..tostring(addrType:verilogBits()+ty:verilogBits()-1+2)..[[:0] process_input, output []]..tostring(addrType:verilogBits()+ty:verilogBits()-1+2)..[[:0] process_output);
+parameter INSTANCE_NAME="INST";
 
-endmodule]]
+endmodule
+
+]]
 
   local fns = {}
 
