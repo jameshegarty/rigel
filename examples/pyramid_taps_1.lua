@@ -64,7 +64,7 @@ for depth=1,TARGET_DEPTH do
   --print(PI.sdfInput[1][1],PI.sdfInput[1][2])
   --print(PI.sdfOutput[1][1],PI.sdfOutput[1][2])
 
-  local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,internalT),TAP_TYPE}), R.tuple("CONVPIPEINP"..depth,{out,tapinp},false))
+  local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,internalT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,{out,tapinp}))
   out = R.apply("p"..depth, PI, piinp)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
@@ -117,7 +117,7 @@ local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 --print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
   SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
-  out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.array2d( "sa", L, TARGET_DEPTH, 1, false))
+  out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.concatArray2d( "sa", L, TARGET_DEPTH, 1))
   out = R.apply("ser", SER, out )
 
   out = R.apply("flatten", RM.flattenStreams(RW_TYPE, SDF), out )

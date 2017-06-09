@@ -4,7 +4,6 @@ local types = require("types")
 local S = require("systolic")
 local Ssugar = require("systolicsugar")
 local fpgamodules = require("fpgamodules")
-local RS = require("rigelSimple")
 local R = require("rigel")
 
 local fixed={}
@@ -155,6 +154,10 @@ function fixed.constant( value )
     local precision = math.ceil(math.log(math.abs(value))/math.log(2))
     if signed then precision = precision + 1 end
     if value==0 then precision=1 end -- special case
+    if signed==false and math.pow(2,precision)==value then
+      -- 2^7==128, but 128 needs 8 bits...
+      precision = precision + 1
+    end
 
     local exp = 0
 
@@ -616,6 +619,9 @@ function fixedNewASTFunctions:writePixel(id,imageSize)
   local stripType = self.type
   if stripType:isNamed() and stripType.generator=="fixed" then stripType=stripType.structure end
   
+  -- nasty hack to get around require circular dependencies
+  local RS = require("rigelSimple")
+
   return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}, self.type)
 end
 

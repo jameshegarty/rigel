@@ -25,7 +25,7 @@ local pos = R.apply("CST", C.cast(types.uint(16),types.uint(8)), pos)
 
 local filter = R.apply("HS",HS, inp)
 
-local fsinp = R.tuple("PTT",{pos,filter})
+local fsinp = R.concat("PTT",{pos,filter})
 local out = R.apply("FS",RM.filterSeq(types.uint(8),W,H,{1,4},8),fsinp)
 local filterfn = RM.lambda( "filterfn", inpraw, out )
 -----------------

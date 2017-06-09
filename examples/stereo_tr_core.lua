@@ -45,7 +45,8 @@ function displayOutputColor( reduceType, threshold )
   local OTYPE = types.array2d(types.array2d(types.uint(8),4),1)
 
   local inp = S.parameter( "inp", ITYPE )
-  local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
+  local out = S.cast(S.index(inp,0),types.array2d(types.uint(8),4))
+  out = S.cast(out,OTYPE)
 
   local zeroS = S.constant(0,types.uint(8))
 
@@ -115,7 +116,7 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
   end
 
   sadout = R.apply("LOWER_SUM", RM.map(LOWER_SUM:toRigelModule("LowerSum"),perCycleSearch), sadout)
-  local packed = R.apply("SOS", C.SoAtoAoS( perCycleSearch, 1, {types.uint(8), LOWER_SUM.type} ), R.tuple("stup",{indices, sadout}) )
+  local packed = R.apply("SOS", C.SoAtoAoS( perCycleSearch, 1, {types.uint(8), LOWER_SUM.type} ), R.concat("stup",{indices, sadout}) )
 
   local AM = C.argmin(types.uint(8),LOWER_SUM.type)
   local AM_async = C.argmin(types.uint(8),LOWER_SUM.type,true)
@@ -193,7 +194,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
 
   -------
 
-  local merged = R.apply("merge", C.SoAtoAoSHandshake( perCycleSearch, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.tuple("mtup",{left,right},false)) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[PCS]
+  local merged = R.apply("merge", C.SoAtoAoSHandshake( perCycleSearch, 1, {STENCIL_TYPE,STENCIL_TYPE} ), R.concat("mtup",{left,right})) -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]}[PCS]
   local packStencils = C.SoAtoAoS( SADWidth, SADWidth, {A,A}, true )  -- {A[SADWidth,SADWidth],A[SADWidth,SADWidth]} to A[2][SADWidth,SADWidth]
   local merged = R.apply("mer", RM.makeHandshake( RM.map(packStencils, perCycleSearch) ), merged ) -- A[2][SADWidth, SADWidth][perCycleSearch]
   

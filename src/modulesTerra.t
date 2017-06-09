@@ -810,7 +810,7 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
   return SSRPartial
 end
 
-function MT.makeHandshake(res, f, tmuxRates )
+function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
@@ -827,7 +827,28 @@ function MT.makeHandshake(res, f, tmuxRates )
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end
 
-  terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
+  if res.inputType==types.null() and nilhandshake~=true then
+    terra MakeHandshake:process( out : &rigel.lower(res.outputType):toTerraType())
+      if self.readyDownstream then
+        --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+        if self.delaysr:size()==delay then
+          var ot = self.delaysr:popFront()
+          valid(out) = valid(ot)
+--        data(out) = data(ot)
+          cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+        else
+          valid(out)=validFalse
+        end
+
+        var tout : rigel.lower(res.outputType):toTerraType()
+        valid(tout) = true
+        self.inner:process(&data(tout))
+        self.delaysr:pushBack(&tout)
+      end
+    end
+
+  else
+    terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                out : &rigel.lower(res.outputType):toTerraType())
 
     if self.readyDownstream then
@@ -847,7 +868,10 @@ function MT.makeHandshake(res, f, tmuxRates )
       self.delaysr:pushBack(&tout)
     end
 
+    end
+
   end
+
   terra MakeHandshake:calculateReady( readyDownstream: bool ) self.ready = readyDownstream; self.readyDownstream = readyDownstream end
 
   return MakeHandshake
@@ -1174,9 +1198,9 @@ function MT.lambdaCompile(fn)
           if parentNode.kind=="selectStream" then
               assert(inputList[parentNode.i+1]==nil)
               inputList[parentNode.i+1] = v[1]
-          elseif #parentNode.inputs==1 or (parentNode.kind=="tuple" and parentNode.packStreams==true) then
+          elseif #parentNode.inputs==1 or (parentNode.kind=="concat" and parentNode.inputs[1]:outputStreams()==0) then
             table.insert( inputList, v[1] )
-          elseif ((parentNode.kind=="array2d" or parentNode.kind=="tuple") and parentNode.packStreams==false) or parentNode.kind=="statements" then
+          elseif ((parentNode.kind=="concatArray2d" or parentNode.kind=="concat") and parentNode.inputs[1]:outputStreams()~=0) or parentNode.kind=="statements" then
             local idx = v[2]-1
             table.insert( inputList, `[v[1]][idx] )
           else
@@ -1222,8 +1246,8 @@ function MT.lambdaCompile(fn)
           else
             assert(false)
           end
-        elseif n.kind=="tuple" or n.kind=="array2d" then
-          if n.packStreams then
+        elseif n.kind=="concat" or n.kind=="concatArray2d" then
+          if n.inputs[1]:outputStreams()==0 then
             res = input
           else
             assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
@@ -1349,14 +1373,13 @@ function MT.lambdaCompile(fn)
           end
 
           return out
-        elseif n.kind=="tuple" then
+        elseif n.kind=="concat" then
           map(inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
           return out
-        elseif n.kind=="array2d" then
+        elseif n.kind=="concatArray2d" then
           local ty = rigel.lower(n.type):arrayOver()
           map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
---table.insert(stats, quote cstdio.printf("VAL %d %d\n",(@out)[0]._1,out[1]._1) end)
           return out
         elseif n.kind=="extractState" then
           return `nil

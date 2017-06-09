@@ -22,7 +22,7 @@ local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  assert(#tab.inputs==keycount(tab.inputs))
+  err(#tab.inputs==keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array")
   if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
@@ -260,7 +260,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
   err( inputParameter.kind=="parameter", "input must be a parameter" )
-  err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given")
+  err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given, but is "..type(outputName))
   err( CE==nil or (systolicAST.isSystolicAST(CE) and CE.kind=="parameter" and CE.type==types.bool(true)), "CE must be nil or CE parameter")
   assert(X==nil)
 
@@ -1370,7 +1370,8 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       else
         local resTable = {}
-        assert(n.type:channels()==1)
+        err(n.type:channels()==1, "NYI - systolic implicit vector ops "..n.kind)
+        
         for c=0,n.type:channels()-1 do
           local res
           local sub = "["..((c+1)*n.type:baseType():verilogBits()-1)..":"..(c*n.type:baseType():verilogBits()).."]" 

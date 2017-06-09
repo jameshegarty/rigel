@@ -58,7 +58,7 @@ local st_tap_inp = R.apply( "broad", C.broadcast(STTYPE:makeConst(),T), inptaps 
 convLB = R.apply( "convLB", C.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inpdata)
 convstencils = R.apply( "convstencils",  C.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T  ), convLB )
 
-st_tap_inp = R.apply("ST",C.SoAtoAoS(T,1,{STTYPE,STTYPE:makeConst()}), R.tuple("Sttap", {convstencils,st_tap_inp}))
+st_tap_inp = R.apply("ST",C.SoAtoAoS(T,1,{STTYPE,STTYPE:makeConst()}), R.concat("Sttap", {convstencils,st_tap_inp}))
 convpipe = R.apply( "conv",  RM.map( convolve, T ), st_tap_inp )
 convpipe = R.apply( "border", C.borderSeq( types.uint(8), inputW, inputH, T, ConvWidth-1, 0, ConvWidth-1, 0, 0 ), convpipe ) -- cut off junk
 

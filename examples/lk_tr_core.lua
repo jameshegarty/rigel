@@ -86,7 +86,7 @@ function invert2x2( AType, bits )
     local fout = f.array2d(OT,4)
     cost = cost + fout:cost()
     ---------
-    out = R.apply("out", fout:toRigelModule("fout"), R.tuple("ftupp",{inp,det}))
+    out = R.apply("out", fout:toRigelModule("fout"), R.concat("ftupp",{inp,det}))
   end
 
   --print("invert2x2 output type:", output_type)
@@ -164,24 +164,24 @@ function makeA( T, dType, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o0",{Fdx,Fdx},false) )
+  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o0",{Fdx,Fdx}) )
   local out0 = R.apply("out0", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp0 )
   local out0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out0 )
   local out0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out0 )
 
-  local inp1 = R.apply("inp1", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o1",{Fdx,Fdy},false) )
+  local inp1 = R.apply("inp1", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o1",{Fdx,Fdy}) )
   local out1 = R.apply("out1", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp1 )
   local out1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out1 )
   local out1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out1 )
 
   local out2 = out1
 
-  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.tuple("o3",{Fdy,Fdy},false) )
+  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o3",{Fdy,Fdy}) )
   local out3 = R.apply("out3", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp3 )
   local out3 = R.apply("out3red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out3 )
   local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )
 
-  local out = R.tuple("out", {out0,out1,out2,out3},false )
+  local out = R.concat("out", {out0,out1,out2,out3} )
   out = R.apply("PT",RM.packTuple({partial_type,partial_type,partial_type,partial_type}),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,4)),out)
 
@@ -225,7 +225,7 @@ function makeB( T, dtype, window, bits )
   local Fdy = FIFO( fifos, statements, DTYPE, Fdy)
 
   ---------
-  local gmf = R.tuple("mfgmf",{frame1,frame0},false)
+  local gmf = R.concat("mfgmf",{frame1,frame0} )
   gmf = R.apply("SA",C.SoAtoAoSHandshake(window*T, window, {types.uint(8),types.uint(8)}), gmf)
   local m, gmf_type, gmf_cost = minus(types.uint(8))
   --print("GMF type", gmf_type)
@@ -243,19 +243,19 @@ function makeB( T, dtype, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local out_0 = R.tuple("o0tup",{Fdx, gmf},false)
+  local out_0 = R.concat("o0tup",{Fdx, gmf})
   local out_0 = R.apply("o0P", C.SoAtoAoSHandshake(window*T,window,{dtype, gmf_type}), out_0)
   local out_0 = R.apply("o0", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_0)
   local out_0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_0 )
   local out_0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_0 )
 
-  local out_1 = R.tuple("o1tup",{Fdy, gmf},false)
+  local out_1 = R.concat("o1tup",{Fdy, gmf})
   local out_1 = R.apply("o1P", C.SoAtoAoSHandshake(window*T,window,{dtype,gmf_type}), out_1)
   local out_1 = R.apply("o1", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_1)
   local out_1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_1 )
   local out_1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_1 )
 
-  local out = R.tuple("arrrrry0t",{out_0,out_1},false)
+  local out = R.concat("arrrrry0t",{out_0,out_1})
   out = R.apply("PT",RM.packTuple({partial_type,partial_type}),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,2)),out)
 
@@ -366,7 +366,7 @@ function makeLK( internalT, internalW, internalH, window, bits )
 
   local Af, AType, Acost = makeA( internalT, dType, window, bits )
 
-  local A = R.apply("APT",RM.packTuple{stDType,stDType},R.tuple("ainp",{fdx_stencil_0,fdy_stencil_0},false))
+  local A = R.apply("APT",RM.packTuple{stDType,stDType},R.concat("ainp",{fdx_stencil_0,fdy_stencil_0}))
   local A = R.apply("A", Af, A)
 
   local fAinv, AInvType = invert2x2( AType, bits )
@@ -376,13 +376,13 @@ function makeLK( internalT, internalW, internalH, window, bits )
   local fB, BType, Bcost = makeB( internalT, dType, window, bits )
 
   local smst = types.array2d(types.uint(8),window*internalT,window)
-  local b = R.apply("bpt", RM.packTuple{smst,smst,stDType,stDType}, R.tuple("btup",{lb0,lb1,fdx_stencil_1,fdy_stencil_1},false) )
+  local b = R.apply("bpt", RM.packTuple{smst,smst,stDType,stDType}, R.concat("btup",{lb0,lb1,fdx_stencil_1,fdy_stencil_1}) )
   local b = R.apply("b",fB, b)
   local b = FIFO(fifos,statements,types.array2d(BType,2),b)
 
   --print("ATYPE,BTYPE",AInvType,BType)
   local fSolve, SolveType, SolveCost = solve( AInvType, BType, bits )
-  local vectorField = R.apply("VF", RM.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, R.tuple("solveinp",{Ainv,b},false) )
+  local vectorField = R.apply("VF", RM.packTuple{types.array2d(AInvType,4), types.array2d(BType,2)}, R.concat("solveinp",{Ainv,b}) )
   local vectorField = R.apply("lksolve", RM.makeHandshake(fSolve), vectorField)
   cost = cost + SolveCost
 

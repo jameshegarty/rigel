@@ -70,7 +70,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   if tapType==nil then
     hsfninp = inpdata
   else
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.tuple("hsfninp",{inpdata,inptaps},false))
+    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{inpdata,inptaps}))
   end
 
   -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
@@ -150,7 +150,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   
 end
 
-function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,simCycles,X)
+function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,simCycles,harnessOption,X)
 
   assert(X==nil)
   assert( types.isType(inputType) )
@@ -171,7 +171,8 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
     tapBits = tapType:verilogBits()
   end
 
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString})
+  if harnessOption==nil then harnessOption=1 end
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
   
 ------------------------
 -- verilator just uses the top module directly
@@ -201,8 +202,6 @@ local function axiRateWrapper(fn, tapType)
 return fn
   end
   
-  --err(iover:isArray(), "expected input to be array but is "..tostring(iover))
-
   local inputP
   if iover:isArray() then
     inputP = iover:channels()
@@ -223,32 +222,28 @@ return fn
   local targetInputP = (64/iover:verilogBits())
   err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP).." tapType:"..tostring(tapType))
   
-  --iover = types.array2d( iover, inputP )
-  
   local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
   local out = inp
   
   if fn.inputType:verilogBits()~=64 then
     out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
   end
-  
+
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
   if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
   
   local targetOutputP = (64/oover:verilogBits())
   err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
-  --oover = types.array2d( oover, outputP )
   
   if fn.outputType:verilogBits()~=64 then
     out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
   end
   
-    --fn = RS.defineModule{input=inp,output=out}
   local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
 
-  assert(outFn.inputType:verilogBits()==64)
-  assert(outFn.outputType:verilogBits()==64)
+  err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
+  err( R.extractData(outFn.outputType):verilogBits()==64, "axi rate wrapper: failed to make output type 64 bit")
   
   return outFn
 end
@@ -322,7 +317,7 @@ function harnessTop(t)
   end
   
   -- just assume we were given a handshake vector...
-  R.expectHandshake(t.fn.inputType)
+  --R.expectHandshake(t.fn.inputType)
 
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
@@ -348,7 +343,7 @@ function harnessTop(t)
   err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
   
   if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
-    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles )
+    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif(arg[1]=="axi") then
     H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
   elseif(arg[1]=="isim") then
