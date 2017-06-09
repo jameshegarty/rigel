@@ -19,7 +19,7 @@ SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow
 SRCS_TERRA := $(filter-out sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
 # NYI
-SRCS_TERRA := $(filter-out readmemory.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_TERRA))
 
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
@@ -99,7 +99,7 @@ SRCS_AXI := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_h
 SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
 
 # NYI
-SRCS_AXI := $(filter-out readmemory.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out readmemory.lua readmemory_flip.lua,$(SRCS_AXI))
 
 SRCS_AXI100 = $(SRCS_AXI)
 
