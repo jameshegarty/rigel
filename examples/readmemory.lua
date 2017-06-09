@@ -26,7 +26,7 @@ posseq = RS.connect{ toModule=RS.HS(RM.posSeq(W,H,1)), name="posseqinst" }
 --local mergeinp = f.parameter( "inp", types.tuple{ITYPE,types.tuple{types.uint(16),types.uint(16)} } )
 --mergefn = (mergeinp:index(0):rshift(4):removeLSBs(4):addMSBs(12)+mergeinp:index(1):index(0))+mergeinp:index(1):index(1):addMSBs(1)
 --mergefn = mergefn:removeMSBs(10)
-local addr = RS.math( function(pos) return (pos:index(0):index(0):addMSBs(8)+(pos:index(0):index(1)*f.constant(W))):addMSBs(7) end )(posseq)
+local addr = RS.math( function(pos) return (pos:index(0):index(0):addMSBs(8)+(pos:index(0):index(1)*f.constant(W))+f.constant(0):addMSBs(24)):addMSBs(6) end )(posseq)
 
 local a = addr
 local b = inp:selectStream(1)
@@ -43,4 +43,4 @@ fn = RM.lambda( "pointwise_wide", inp, R.concat("FIN",{merge,ramread:selectStrea
 ------------
 --hsfn = RM.makeHandshake(fn)
 
-harness{ outFile="readmemory", fn=fn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H}, harness=2 }
+harness{ outFile="readmemory", fn=fn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H}, harness=2, inP=1, outP=1, inType=ITYPE, outType=ITYPE }

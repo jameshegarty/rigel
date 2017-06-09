@@ -18,6 +18,7 @@ unsigned int bitsToBytes(unsigned int bits){
   }
 }
 
+// databits: uses the same addressing scheme as verilog
 template<typename T>
 void setValid(T* signal, unsigned int databits, bool valid){
   // for this verilator data type, we should have < 16 bits
@@ -26,7 +27,7 @@ void setValid(T* signal, unsigned int databits, bool valid){
   if(valid){
     *signal |= ((T)(1)<<databits);
   }else{
-    *signal = 0;
+    *signal &= ~((T)(1)<<databits);
   }    
 }
 
@@ -92,6 +93,7 @@ void setData(WData (*signal)[N], unsigned int databits, FILE* file){
 }
 
 
+// startPos is in verilog index format
 template<typename T>
 void setDataBuf(T* signal, unsigned int databits, unsigned int startPos, unsigned char* data){
   assert(databits+startPos<=sizeof(T)*8);
@@ -101,12 +103,16 @@ return;
   }
 
   int readBytes = bitsToBytes(databits);
-  assert(startPos%8==0);
+  assert(databits % 8 == 0);
+  //xassert(startPos%8==0);
 
   for(int i=0; i<readBytes; i++){
     // assume little endian (x86 style) in the file
-    unsigned long inp = data[i];
-    *signal |= (inp << (i*8+startPos*8));
+    T inp = data[i];
+    T mask = (T)(255) << i*8+startPos;
+    mask = ~mask;
+    *signal &= mask;
+    *signal |= (inp << (i*8+startPos));
   }
 }
 
@@ -158,4 +164,38 @@ void getData( WData (*signal)[N], unsigned int databits, FILE* file){
       fputc(ot,file);
     }
   }
+}
+
+// extract 32 bits of data, starting at bit 'startbit'
+template<int N>
+unsigned int getUintData( WData (*signal)[N], unsigned int startbit){
+  assert(false);
+}
+
+template<typename T>
+unsigned int getUintData(T* signal, unsigned int startbit){
+  assert(startbit+32<=sizeof(T)*8);
+
+  unsigned int m = 0;
+  m = ~m;
+  T mask = m;
+  mask <<= startbit;
+
+  T dat = (*signal) & mask;
+  dat >>= startbit;
+  
+  return dat;
+}
+
+void* readFile(char* filename){
+  FILE *f = fopen(filename, "rb");
+  fseek(f, 0, SEEK_END);
+  long fsize = ftell(f);
+  fseek(f, 0, SEEK_SET);  //same as rewind(f);
+
+  void *buf = malloc(fsize);
+  fread(buf, fsize, 1, f);
+  fclose(f);
+
+  return buf;
 }

@@ -18,6 +18,9 @@ SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow
 # broken
 SRCS_TERRA := $(filter-out sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
+# NYI
+SRCS_TERRA := $(filter-out readmemory.lua, $(SRCS_TERRA))
+
 TERRAOUT = $(patsubst %.lua,out/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%_half.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,out/%.terra.bmp,$(SRCS_TERRA))
@@ -34,8 +37,8 @@ SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_a
 # verilator target doesn't include underflow block
 SRCS_VERILATOR := $(filter-out underflow.lua, $(SRCS_VERILATOR))
 
-# TODO: broken
-SRCS_VERILATOR := $(filter-out stereo_tr_rgba_full_32.lua tmux_wide_handshake.lua pyramid_large_taps_3.lua pyramid_taps_4.lua pyramid_tr_3.lua, $(SRCS_VERILATOR))
+# TODO: broken due to verilator bug?
+SRCS_VERILATOR := $(filter-out stereo_tr_rgba_full_32.lua tmux_wide_handshake.lua pyramid_large_taps_3.lua pyramid_taps_4.lua pyramid_taps_3.lua pyramid_tr_3.lua, $(SRCS_VERILATOR))
 
 # too slow for travis
 SRCS_VERILATOR := $(filter-out stereo_wide_handshake_full.lua stereo_wide_handshake_nostall_full.lua, $(SRCS_VERILATOR))

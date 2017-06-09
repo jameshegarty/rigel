@@ -1,6 +1,7 @@
 #include <verilated.h>
 #include <iostream>
 #include <stdio.h>
+#include <queue>
 #include "harness.h"
 #include VERILATORFILE
 
@@ -74,10 +75,14 @@ int main(int argc, char** argv) {
 
   // NOTE: you'd think we could check for overflows (too many output packets), but actually we can't
   // some of our modules start producing data immediately for the next frame, which is valid behavior (ie pad)
+
+  const int ADDR_DELAY = 10;
+  std::queue<int> addrqueue;
+  unsigned char* dataBuffer = (unsigned char*)(readFile(argv[1]));
   
   while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
     if(CLK){
-      if(top->ready){
+      if( top->ready & (unsigned int)(1) ){
         if(validInCnt>=inPackets){
           setValid(&(top->process_input),inbpp*inP+tapBits,false);
         }else{
@@ -85,6 +90,29 @@ int main(int argc, char** argv) {
           setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
           setValid(&(top->process_input),inbpp*inP+tapBits,true);
           validInCnt++;
+        }
+      }
+
+
+      bool ramReadValid = addrqueue.size()>=ADDR_DELAY && addrqueue.front()!=-1;
+      setValid( &(top->process_input), inbpp*inP+8+1, ramReadValid );
+      //printf("RAMREADVALID %d\n", ramReadValid);
+               
+      if( top->ready & (unsigned int)(2) ){
+        //printf("RAMREADER ready for data\n");
+
+        if(ramReadValid){
+          unsigned int addr = addrqueue.front();
+          addrqueue.pop();
+          
+          if(addr>=0){
+            //printf("Read mem addr %d\n",addr);
+            unsigned char dat = dataBuffer[addr];
+            setDataBuf( &(top->process_input), 8, inbpp*inP+1, &dat );
+          }
+        }else if(addrqueue.size()>=ADDR_DELAY){
+          assert(addrqueue.front()==-1);
+          addrqueue.pop();
         }
       }
       
@@ -95,7 +123,33 @@ int main(int argc, char** argv) {
         validcnt++;
         getData(&(top->process_output),outbpp*outP,outfile);
       }
+
+      // ready to accept addrs
+      //printf("ADDR QUEUE SIZE %d\n",addrqueue.size());
+      bool addrReady = addrqueue.size()<ADDR_DELAY;
+      if(addrReady){
+        top->ready_downstream |= (unsigned int)(2);
+      }else{
+        top->ready_downstream &= (unsigned int)(1);
+      }
+
+      if(getValid( &(top->process_output), outbpp*outP+32+1 ) && addrReady ){
+        //printf("MEM ADDR VALID %d %d\n",outbpp,outP);
+
+        unsigned int addr = getUintData( &(top->process_output), outbpp*outP+1 );
+        //printf("READ ADDR %d\n",addr);
+
+        addrqueue.push(addr);
+        //printf("ADDRQa %d\n",addrqueue.size());
+              
+      }else if(addrReady){
+        //printf("MEM ADDR INVALID %d %d\n",outbpp,outP);
+        addrqueue.push(-1);
+        //printf("ADDRQ %d\n",addrqueue.size());
+
+      }
       
+              
       totalCycles++;
       if(totalCycles>outPackets*256){
         printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
@@ -106,7 +160,11 @@ int main(int argc, char** argv) {
     CLK = !CLK;
 
     top->CLK = CLK;
-    top->ready_downstream = true;
+
+    // ready to accept data
+    top->ready_downstream |= (unsigned int)(1);
+
+    
     top->reset = false;
     top->eval();
   }
