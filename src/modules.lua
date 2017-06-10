@@ -1333,7 +1333,7 @@ modules.posSeq = memoize(function( W, H, T )
   res.inputType = types.null()
   res.outputType = types.array2d(types.tuple({types.uint(16),types.uint(16)}),T)
   res.stateful = true
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = {'x'},{'x'}
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T) end
@@ -2453,7 +2453,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   assert( type(name) == "string" )
   assert( rigel.isIR( input ) )
   assert( input.kind=="input" )
-  assert( rigel.isIR( output ) )
+  err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
   assert( instances==nil or type(instances)=="table")
   if instances~=nil then map( instances, function(n) assert(rigel.isInstance(n)) end ) end
   assert( pipelines==nil or type(pipelines)=="table")
@@ -3063,5 +3063,47 @@ endmodule
 
   return darkroom.newFunction(res)
 end
+
+-- this is a Handshake triggered counter.
+-- it accepts an input value V of type TY.
+-- Then produces N tokens (from V to V+N-1)
+modules.triggeredCounter = memoize(function(TY, N)
+  err(types.isType(TY),"triggeredCounter: TY must be type")
+  err( rigel.expectBasic(TY), "triggeredCounter: TY should be basic")                                   
+  err(type(N)=="number", "triggeredCounter: N must be number")
+
+  local res = {kind="triggeredCounter"}
+  res.inputType = TY
+  res.outputType = rigel.RV(TY)
+  res.sdfInput = {{1,N}}
+  res.sdfOutput = {{1,1}}
+  res.stateful=true
+  res.delay=0
+
+  if terralib~=nil then res.terraModule = MT.triggeredCounter(TY,N) end
+
+  res.systolicModule = Ssugar.moduleConstructor("TriggeredCounter_"..tostring(TY):gsub('%W','_').."_"..tostring(N))
+
+  local sinp = S.parameter( "inp", TY )
+
+  local sPhase = res.systolicModule:add( Ssugar.regByConstructor( TY, fpgamodules.sumwrap(TY,N-1) ):CE(true):instantiate("phase") )
+  local reg = res.systolicModule:add( S.module.reg( TY,true ):instantiate("buffer") )
+
+  local reading = S.eq(sPhase:get(),S.constant(0,TY)):disablePipelining()
+  local out = S.select( reading, sinp, reg:get()+sPhase:get() ) 
+
+  local pipelines = {}
+  table.insert(pipelines, reg:set( sinp, reading ) )
+  table.insert( pipelines, sPhase:setBy( S.constant(1,TY) ) )
+
+  local CE = S.CE("CE")
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
+  res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
+  res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,TY))},S.parameter("reset",types.bool()),CE) )
+
+  return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
+
+  
+                                   end)
 
 return modules

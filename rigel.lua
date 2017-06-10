@@ -201,8 +201,8 @@ function darkroom.newFunction(tab)
 
   err( SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  assert( tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1 )
-  assert( tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1 )
+  err( tab.sdfInput[1]=='x' or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1, "rigel.newFunction: sdf input rate is not <=1" )
+  err( tab.sdfOutput[1]=='x' or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1, "rigel.newFunction: sdf output rate is not <=1" )
 
   return setmetatable( tab, darkroomFunctionMT )
 end
