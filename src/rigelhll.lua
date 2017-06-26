@@ -6,6 +6,8 @@ local fixed_new = require("fixed_new")
 local types = require("types")
 local SDFRate = require "sdfrate"
 
+local ccnt = 0
+
 -- a metatable that provides a __call function with some auto converstions for making it easier to connect to modules
 -- tab.fn: fn to call to generate the module. Will send a table of 'tab.settings' concated with type
 -- tab.wireFn(arg): an optional function that takes in a rigel value as input and returns additional settings
@@ -96,6 +98,8 @@ readMemoryTab.wireFn = function(arg)
 end
 
 setmetatable( readMemoryTab, SimpleModuleWrapperMT )
+
+RHLL.readMemory = readMemoryTab
 
 function RHLL.triggeredCounter(N)
   local tab = {fn=RS.modules.triggeredCounter, settings={N=N}}
