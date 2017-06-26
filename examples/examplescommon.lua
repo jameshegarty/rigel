@@ -77,7 +77,7 @@ C.sum = memoize(function(A,B,outputType,async)
   local delay = 1
   local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
   if async then delay=0; sout = sout:disablePipelining() end
-  local partial = RM.lift( "sum_async"..tostring(async), types.tuple {A,B}, outputType, delay,
+  local partial = RM.lift( "sum_async"..(tostring(A):gsub('%W','_'))..(tostring(B):gsub('%W','_'))..tostring(outputType)..tostring(async), types.tuple {A,B}, outputType, delay,
                           tfn, sinp, sout )
   return partial
 end)
