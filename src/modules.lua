@@ -2814,7 +2814,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
   res.inputType = types.null()
   local W = w*T
-  if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
+  err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
