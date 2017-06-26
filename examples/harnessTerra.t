@@ -14,7 +14,7 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   
   local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpSymb)
   local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpSymb)
-  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,inputType),nil,true),inpdata)
+  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true),inpdata)
   local hsfninp = out
   
   if tapType~=nil then

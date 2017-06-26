@@ -1333,7 +1333,7 @@ modules.posSeq = memoize(function( W, H, T )
   res.inputType = types.null()
   res.outputType = types.array2d(types.tuple({types.uint(16),types.uint(16)}),T)
   res.stateful = true
-  res.sdfInput, res.sdfOutput = {'x'},{'x'}
+  res.sdfInput, res.sdfOutput = {},{{1,1}}
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T) end
@@ -1947,9 +1947,6 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   local outputCount
   if DARKROOM_VERBOSE then outputCount = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
 
-  local printInst
-  if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.bool(),rigel.extractValid(res.inputType),rigel.lower(f.outputType), rigel.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16), types.uint(16)}, "RST %d IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"):instantiate("printInst") ) end
-
   local SRdefault = false
   if tmuxRates~=nil then SRdefault = #tmuxRates end
   local SR = res.systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
@@ -1974,9 +1971,21 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     outvalid = SR:pushPop(S.constant(true,types.bool()), S.__not(rst), CE)
     out = S.tuple({inner:process(nil, S.__not(rst), CE), outvalid})
   end
-  
 
-  if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process( S.tuple{ rst, S.index(pinp,1), S.index(out,0), S.index(out,1), pready, pready, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
+  if DARKROOM_VERBOSE then
+    local typelist = {types.bool(),rigel.lower(f.outputType), rigel.extractValid(res.outputType), types.bool(), types.bool(), types.uint(16), types.uint(16)}
+    local str = "RST %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"
+    local lst = {rst, S.index(out,0), S.index(out,1), pready, pready, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) }
+
+    if res.inputType~=types.null() then
+      table.insert(lst, S.index(pinp,1))
+      table.insert(typelist, rigel.extractValid(res.inputType))
+      str = str.." IV %d"
+    end
+
+    local printInst = res.systolicModule:add( S.module.print( types.tuple(typelist), str):instantiate("printInst") )
+    table.insert(pipelines, printInst:process( S.tuple(lst)  ) )
+  end
 
   if tmuxRates~=nil then
     if DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(S.lt(outvalid,S.constant(#tmuxRates,types.uint(8))), S.__not(rst), CE) ) end
@@ -2437,6 +2446,10 @@ local function lambdaSDFNormalize(input,output)
         assert( SDFRate.isSDFRate(n.sdfRate))
         newInput = rigel.newIR(n)
         return newInput
+      elseif n.kind=="apply" and n.sdfRateOverride~=nil then
+	-- for nullary modules, we sometimes provide an explicit SDF rate, to get around the fact that we don't solve for SDF rates bidirectionally
+	n.sdfRateOverride = SDFRate.multiply(n.sdfRateOverride, scaleFactor[1], scaleFactor[2] )
+	return rigel.newIR(n)
       end
       end)
 
@@ -2747,7 +2760,11 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   res.systolicModule = makeSystolic(res)
   res.systolicModule:toVerilog()
 
-  if DARKROOM_VERBOSE then print("lambda done '"..name.."', size:"..terralib.sizeof(res.terraModule)) end
+  if DARKROOM_VERBOSE then
+    print("lambda done '"..name.."'")
+    if terralib~=nil then print("lambda terra module size:"..terralib.sizeof(res.terraModule)) end
+  end
+  
   return rigel.newFunction( res )
 end
 
@@ -2800,7 +2817,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   if W ~= math.floor(W) then error("constSeq T must divide array size, "..loc) end
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
-  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
+  res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
 
   res.delay = 0
 
@@ -3080,7 +3097,7 @@ modules.triggeredCounter = memoize(function(TY, N)
   res.stateful=true
   res.delay=0
 
-  if terralib~=nil then res.terraModule = MT.triggeredCounter(TY,N) end
+  if terralib~=nil then res.terraModule = MT.triggeredCounter(res,TY,N) end
 
   res.systolicModule = Ssugar.moduleConstructor("TriggeredCounter_"..tostring(TY):gsub('%W','_').."_"..tostring(N))
 

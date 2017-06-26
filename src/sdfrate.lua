@@ -106,6 +106,7 @@ function SDFRate.sum(tab)
 end
 
 function SDFRate.multiply(tab,n,d)
+  assert(SDFRate.isSDFRate(tab))
   assert(type(n)=="number")
   assert(type(d)=="number")
 

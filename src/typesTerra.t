@@ -8,36 +8,36 @@ function TypeFunctions:toTerraType(pointer, vectorN)
   end
   
   if self:isFloat() and self.precision==32 then
-    ttype = float
+    ttype = terralib.types.float
   elseif self:isFloat() and self.precision==64 then
-    ttype = double
+    ttype = terralib.types.double
   elseif (self:isUint() or self:isBits()) and self.precision<=8 then
-    ttype = uint8
+    ttype = terralib.types.uint8
   elseif self:isInt() and self.precision<=8 then
-    ttype = int8
+    ttype = terralib.types.int8
   elseif self:isBool() then
-    ttype = bool
+    ttype = terralib.types.bool
   elseif self:isInt() and self.precision>16 and self.precision<=32 then
-    ttype = int32
+    ttype = terralib.types.int32
   elseif self:isInt() and self.precision>32 and self.precision<=64 then
-    ttype = int64
+    ttype = terralib.types.int64
   elseif (self:isUint() or self:isBits()) and self.precision>32 and self.precision<=64 then
-    ttype = uint64
+    ttype = terralib.types.uint64
   elseif (self:isUint() or self:isBits()) and self.precision>16 and self.precision<=32 then
-    ttype = uint32
+    ttype = terralib.types.uint32
   elseif (self:isUint() or self:isBits()) and self.precision>8 and self.precision<=16 then
-    ttype = uint16
+    ttype = terralib.types.uint16
   elseif self:isInt() and self.precision>8 and self.precision<=16 then
-    ttype = int16
+    ttype = terralib.types.int16
   elseif self:isArray() then
     assert(vectorN==nil)
     ttype = (self.over:toTerraType())[self:channels()]
   elseif self.kind=="tuple" then
-    ttype = tuple( unpack(map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
+    ttype = terralib.types.tuple( unpack(map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
   elseif self.kind=="opaque" then
-    ttype = &opaque
+    ttype = &terralib.types.opaque
   elseif self.kind=="null" then
-    ttype = &opaque
+    ttype = &terralib.types.opaque
   else
     print(":toTerraType",self)
     print(debug.traceback())

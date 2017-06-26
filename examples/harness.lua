@@ -172,7 +172,7 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   end
 
   if harnessOption==nil then harnessOption=1 end
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=R.extractData(inputType):verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
   
 ------------------------
 -- verilator just uses the top module directly

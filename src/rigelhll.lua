@@ -4,6 +4,7 @@ local RS = require "rigelSimple"
 local llharness = require "harness"
 local fixed_new = require("fixed_new")
 local types = require("types")
+local SDFRate = require "sdfrate"
 
 -- a metatable that provides a __call function with some auto converstions for making it easier to connect to modules
 -- tab.fn: fn to call to generate the module. Will send a table of 'tab.settings' concated with type
@@ -83,7 +84,7 @@ local function mathWrap(t)
 end
 
 
-function RHLL.math(fn)
+function RHLL.liftMath(fn)
   local tab = {fn=mathWrap,settings={fn=fn},handshake=false}
   return setmetatable(tab,SimpleModuleWrapperMT)
 end
@@ -125,14 +126,15 @@ function RHLL.HS(tab)
   end
 end
 
-function RHLL.importt()
-  _G.liftMath = RHLL.math
-  _G.triggeredCounter = RHLL.triggeredCounter
-  _G.posSeq = RHLL.posSeq
-  _G.harness = RHLL.harness
-  _G.HS = RHLL.HS
+function RHLL.importAll()
+  rawset(_G,"liftMath",RHLL.liftMath)
+  rawset(_G,"triggeredCounter",RHLL.triggeredCounter)
+  rawset(_G,"posSeq", RHLL.posSeq)
+  rawset(_G,"harness",RHLL.harness)
+  rawset(_G,"HS",RHLL.HS)
 
-  _G.uint8 = types.uint(8)
+  rawset(_G,"uint8",types.uint(8))
+  rawset(_G,"array2d",types.array2d)
 end
 
 return RHLL
