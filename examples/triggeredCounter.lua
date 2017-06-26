@@ -20,4 +20,4 @@ function top(inp)
 end
 
 
-harness{ inFile="frame_128.raw", outFile="triggeredCounter", fn=top, inSize={W,H}, outSize={W*4,H}, inType=HS(array2d(uint8,1)), inP=1, sdfInputRate={{1,1}}}
+harness{ inFile="frame_128.raw", outFile="triggeredCounter", fn=top, inSize={W,H}, outSize={W*4,H}, inType=HS(array2d(uint8,1)), sdfInputRate={{1,1}}}

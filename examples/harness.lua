@@ -315,18 +315,15 @@ function harnessTop(t)
   if(arg[1]=="axi") then
     t.fn = axiRateWrapper(t.fn, t.tapType)
   end
-  
-  -- just assume we were given a handshake vector...
-  --R.expectHandshake(t.fn.inputType)
 
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
 
-  if iover==nil and inputP==nil then
+  if iover==nil or inputP==nil then
     iover, inputP = guessP(fn.inputType,t.tapType)
   end
 
-  if oover==nil and outputP==nil then
+  if oover==nil or outputP==nil then
     oover, outputP = guessP(fn.outputType)
   end
 
