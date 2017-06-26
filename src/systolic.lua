@@ -1478,7 +1478,7 @@ end
 function systolic.parameter( name, ty )
   err( type(name)=="string", "parameter name must be string" )
   checkReserved(name)
-  assert( types.isType(ty) )
+  err( types.isType(ty), "systolic.parameter: type must be type but is "..tostring(ty) )
   return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})
 end
 

@@ -172,7 +172,7 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   end
 
   if harnessOption==nil then harnessOption=1 end
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=inputType:verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
+  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=R.extractData(inputType):verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
   
 ------------------------
 -- verilator just uses the top module directly
@@ -315,18 +315,15 @@ function harnessTop(t)
   if(arg[1]=="axi") then
     t.fn = axiRateWrapper(t.fn, t.tapType)
   end
-  
-  -- just assume we were given a handshake vector...
-  --R.expectHandshake(t.fn.inputType)
 
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
 
-  if iover==nil and inputP==nil then
+  if iover==nil or inputP==nil then
     iover, inputP = guessP(fn.inputType,t.tapType)
   end
 
-  if oover==nil and outputP==nil then
+  if oover==nil or outputP==nil then
     oover, outputP = guessP(fn.outputType)
   end
 

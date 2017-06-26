@@ -7,6 +7,7 @@ local harness = require "harness"
 local C = require "examplescommon"
 local RS = require "rigelSimple"
 local f = require "fixed_new"
+local RHLL = require "rigelhll"
 
 -- (posseq+dramreader) 
 -- read image ->
@@ -26,17 +27,17 @@ posseq = RS.connect{ toModule=RS.HS(RM.posSeq(W,H,1)), name="posseqinst" }
 --local mergeinp = f.parameter( "inp", types.tuple{ITYPE,types.tuple{types.uint(16),types.uint(16)} } )
 --mergefn = (mergeinp:index(0):rshift(4):removeLSBs(4):addMSBs(12)+mergeinp:index(1):index(0))+mergeinp:index(1):index(1):addMSBs(1)
 --mergefn = mergefn:removeMSBs(10)
-local addr = RS.math( function(pos) return (pos:index(0):index(0):addMSBs(9)+(f.constant(H-1):addMSBs(10)-pos:index(0):index(1)):abs()*f.constant(W)):addMSBs(6) end )(posseq)
+local addr = RHLL.liftMath( function(pos) return (pos:index(0):index(0):addMSBs(9)+(f.constant(H-1):addMSBs(10)-pos:index(0):index(1)):abs()*f.constant(W)):addMSBs(6) end )(posseq)
 
 local a = addr
 local b = inp:selectStream(1)
 local tub = R.concat("rrtup",{a,b})
 --print("TUPL",a,b,tub,a.type,b.type,tub.type)
 
-local ramread = RS.readMemory(tub)
+local ramread = RHLL.readMemory(tub)
   
 --merge = RS.connect{ input=RS.fanIn{inp,RS.index{input=posseq,key=0}}, toModule=RS.HS(mergefn:toRigelModule("mergefn")), name="merge" }
-local merge = RS.math( function(pac) return pac:index(1) end )(RS.fanIn{inp:selectStream(0),ramread:selectStream(0)})
+local merge = RHLL.liftMath( function(pac) return pac:index(1) end )(RS.fanIn{inp:selectStream(0),ramread:selectStream(0)})
 print("MERGETYPE",merge.type,ramread.type)
                      
 fn = RM.lambda( "pointwise_wide", inp, R.concat("FIN",{merge,ramread:selectStream(1)}) )

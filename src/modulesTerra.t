@@ -53,7 +53,10 @@ function MT.packTuple(res,typelist)
   
   -- ignore the valid bit on const stuff: it is always considered valid
   local activePorts = {}
-  for k,v in ipairs(typelist) do if v:const()==false then table.insert(activePorts, k) end end
+  for k,v in ipairs(typelist) do
+    assert(types.isType(v))
+    if v:const()==false then table.insert(activePorts, k) end
+  end
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
   map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
@@ -322,6 +325,27 @@ function MT.upsampleXSeq(res,A, T, scale, ITYPE )
   terra UpsampleXSeq:calculateReady()  self.ready = (self.phase==0) end
 
   return UpsampleXSeq
+end
+
+function MT.triggeredCounter(res,TY,N)
+  local struct TriggeredCounter { buffer : TY:toTerraType(), phase:int, ready:bool }
+  terra TriggeredCounter:reset() self.phase=0; end
+  terra TriggeredCounter:stats(name:&int8)  end
+  terra TriggeredCounter:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    valid(out) = true
+    if self.phase==0 then
+      self.buffer = @(inp)
+      data(out) = @(inp)
+    else
+      data(out) = self.buffer+self.phase
+    end
+
+    self.phase = self.phase + 1
+    if self.phase==N then self.phase=0 end
+  end
+  terra TriggeredCounter:calculateReady()  self.ready = (self.phase==0) end
+
+  return TriggeredCounter
 end
 
 function MT.downsampleYSeqFn(innerInputType,outputType,scale)

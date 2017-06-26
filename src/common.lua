@@ -583,4 +583,15 @@ function cartesian(t)
   return out
 end
 
+-- is this an array of identical elements?
+function allTheSame(t)
+  local allTheSame = true
+
+  for k,v in ipairs(t) do
+    if v~=t[1] then allTheSame=false end
+  end
+
+  return allTheSame
+end
+
 if terralib~=nil then require "commonTerra" end

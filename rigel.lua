@@ -201,8 +201,8 @@ function darkroom.newFunction(tab)
 
   err( SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  assert( tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1 )
-  assert( tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1 )
+  err( tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1, "rigel.newFunction: sdf input rate is not <=1" )
+  err( tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1, "rigel.newFunction: sdf output rate is not <=1" )
 
   return setmetatable( tab, darkroomFunctionMT )
 end
@@ -236,6 +236,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           rate=n.sdfRate; 
         end
         res = {rate,broadcast(true,#rate)}
+	if DARKROOM_VERBOSE then print("INPUT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
       elseif n.kind=="applyMethod" then
         if n.fnname=="load" then
           if registeredInputRates[n.inst]==nil then
@@ -256,15 +257,22 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         if #n.inputs==0 then
           assert( SDFRate.isSDFRate(n.fn.sdfOutput))
           res = {n.fn.sdfOutput,broadcast(true,#n.fn.sdfOutput)}
+
+	  if n.sdfRateOverride~=nil then
+	    assert( SDFRate.isSDFRate(n.sdfRateOverride))
+	    res[1] = n.sdfRateOverride
+	  end
+	  
+	  if DARKROOM_VERBOSE then print("NULLARY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
         elseif #n.inputs==1 then
           res =  n.fn:sdfTransfer(args[1], "APPLY "..n.name.." "..n.loc)
-          if DARKROOM_VERBOSE then print("APPLY",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+          if DARKROOM_VERBOSE then print("APPLY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
         else
           assert(false)
         end
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
         if n.inputs[1]:outputStreams()==0 then
-          -- for non-handshake values, we just count this as 1 output stream
+          -- for non-handshake values (i.e. no streams), we just count this as 1 output stream
           
           local IR, allConverged, ratesMatch
           -- all input rates must match!
@@ -284,14 +292,22 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
             end
           end
           res = {{IR},{allConverged and ratesMatch}}
-        else
-          res = {{},{}}
-          for k,v in ipairs(args) do
-            assert( SDFRate.isSDFRate( v[1] ) )
-            table.insert(res[1], v[1][1])
-            table.insert(res[2], v[2][1])
-          end
-        end
+	  if DARKROOM_VERBOSE then print("CONCAT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+	else
+	  res = {{},{}}
+	  for k,v in ipairs(args) do
+	    assert( SDFRate.isSDFRate( v[1] ) )
+	    table.insert(res[1], v[1][1])
+	    table.insert(res[2], v[2][1])
+	  end
+	  
+	  if DARKROOM_VERBOSE then
+	    print("CONCAT",n.name)
+	    for k,v in ipairs(res[2]) do
+	      print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+	    end
+	  end
+	end
       elseif n.kind=="statements" then
         local allConverged = true
         for _,arg in pairs(args) do
@@ -350,7 +366,7 @@ function darkroomIRFunctions:sdfTotal(root)
     local iter, converged = 10, false
     local registeredInputRates = {} -- hold the rate of back edges between iterations
     while iter>=0 and converged==false do
-      if DARKROOM_VERBOSE then print("SDF ITER", iter) end
+      if DARKROOM_VERBOSE then print("SDF ITER", iter,"-------------------------------------") end
       converged = root:sdfTotalInner( registeredInputRates )
       iter = iter - 1
     end
@@ -588,12 +604,14 @@ function darkroom.instantiateRegistered( name, fn )
   return setmetatable(t, darkroomInstanceMT)
 end
 
-function darkroom.apply( name, fn, input )
+-- sdfRateOverride: override the firing rate of this apply. useful for nullary modules.
+function darkroom.apply( name, fn, input, sdfRateOverride )
   err( type(name) == "string", "first argument to apply must be name" )
   err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
-
-  return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input} } )
+  err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )
+  
+  return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input}, sdfRateOverride=sdfRateOverride } )
 end
 
 function darkroom.applyMethod( name, inst, fnname, input )
