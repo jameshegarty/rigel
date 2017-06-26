@@ -271,8 +271,8 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert(false)
         end
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
---[=[        if n.inputs[1]:outputStreams()==0 then
-          -- for non-handshake values, we just count this as 1 output stream
+        if n.inputs[1]:outputStreams()==0 then
+          -- for non-handshake values (i.e. no streams), we just count this as 1 output stream
           
           local IR, allConverged, ratesMatch
           -- all input rates must match!
@@ -293,20 +293,21 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           end
           res = {{IR},{allConverged and ratesMatch}}
 	  if DARKROOM_VERBOSE then print("CONCAT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
-  else]=]
-	res = {{},{}}
-	for k,v in ipairs(args) do
-	  assert( SDFRate.isSDFRate( v[1] ) )
-	  table.insert(res[1], v[1][1])
-	  table.insert(res[2], v[2][1])
-	end
-	if DARKROOM_VERBOSE then
-	  print("CONCAT",n.name)
-	  for k,v in ipairs(res[2]) do
-	    print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+	else
+	  res = {{},{}}
+	  for k,v in ipairs(args) do
+	    assert( SDFRate.isSDFRate( v[1] ) )
+	    table.insert(res[1], v[1][1])
+	    table.insert(res[2], v[2][1])
+	  end
+	  
+	  if DARKROOM_VERBOSE then
+	    print("CONCAT",n.name)
+	    for k,v in ipairs(res[2]) do
+	      print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+	    end
 	  end
 	end
-	--        end
       elseif n.kind=="statements" then
         local allConverged = true
         for _,arg in pairs(args) do
