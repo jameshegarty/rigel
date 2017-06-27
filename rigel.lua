@@ -26,24 +26,35 @@ local function getloc()
 end
 
 
-function darkroom.V(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.named("V_"..tostring(A), types.tuple{A,types.bool()}, "V", {A=A}) end
-function darkroom.RV(A) assert(types.isType(A)); assert(darkroom.isBasic(A)); return types.named("RV_"..tostring(A),types.tuple{A,types.bool()}, "RV", {A=A})  end
+function darkroom.V(A) 
+  err(types.isType(A),"V: argument should be type"); 
+  err(darkroom.isBasic(A), "V: argument should be basic type"); 
+  return types.named("V("..tostring(A)..")", types.tuple{A,types.bool()}, "V", {A=A}) 
+end
+
+function darkroom.RV(A) 
+  err(types.isType(A), "RV: argument should be type"); 
+  err(darkroom.isBasic(A), "RV: argument should be basic type"); 
+  return types.named("RV("..tostring(A)..")",types.tuple{A,types.bool()}, "RV", {A=A})  
+end
 
 function darkroom.Handshake(A)
-  assert(types.isType(A));
-  assert(darkroom.isBasic(A));
+  err(types.isType(A),"Handshake: argument should be type")
+  err(darkroom.isBasic(A),"Handshake: argument should be basic type")
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
 function darkroom.HandshakeArray(A,N)
-  assert(types.isType(A));
-  assert(darkroom.isBasic(A));
+  err(types.isType(A),"HandshakeArray: first argument should be type")
+  err(darkroom.isBasic(A),"HandshakeArray: first argument should be basic type")
+  err(type(N)=="number","HandshakeArray: second argument should be number")
   return types.named("HandshakeArray("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArray", {A=A,N=N} )
 end
 
 function darkroom.HandshakeTmuxed(A,N)
-  assert(types.isType(A));
-  assert(darkroom.isBasic(A));
+  err(types.isType(A),"HandshakeTmuxed: first argument should be type")
+  err(darkroom.isBasic(A),"HandshakeTmuxed: first argument should be basic type")
+  err(type(N)=="number","HandshakeTmuxed: second argument should be number")
   return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
 end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
@@ -136,15 +147,31 @@ function darkroom.extractValid(a)
 end
 
 darkroomFunctionFunctions = {}
-darkroomFunctionMT={__index=darkroomFunctionFunctions}
+darkroomFunctionMT={__index=function(tab,key)
+  local v = rawget(tab, key)
+  if v ~= nil then return v end
+  v = darkroomFunctionFunctions[key]
+  if v~=nil then return v end
+
+  if key=="systolicModule" then
+    -- build the systolic module as needed
+    assert( rawget(tab, "makeSystolic")~=nil )
+    local sm = rawget(tab,"makeSystolic")()
+    assert(S.isModule(sm))
+    rawset(tab,"systolicModule", sm )
+    return sm
+  end
+  end
+  }
+
 
 -- takes SDF input rate I and returns output rate after I is processed by this function
 -- I is the format: {{A_sdfrate,B_sdfrate},{A_converged,B_converged}}
 function darkroomFunctionFunctions:sdfTransfer( I, loc )
-  assert(type(I)=="table")
-  assert( SDFRate.isSDFRate(I[1]) )
-  assert(type(I[2][1])=="boolean")
-  assert( type(loc)=="string" )
+  err( type(I)=="table", "sdfTransfer: first argument should be table" )
+  err( SDFRate.isSDFRate(I[1]), "sdfTransfer: first argument index 1 should be SDF rate" )
+  err( type(I[2][1])=="boolean", "sdfTransfer: converged should be bool")
+  err( type(loc)=="string", "sdfTransfer: loc should be string" )
 
   -- a few things can happen here:
   -- (1) inputs are converged, but ratio is inconsistant. Return unconverged
@@ -160,7 +187,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
 
   local Isdf, Iconverged = I[1], I[2]
 
-  assert( SDFRate.isSDFRate(Isdf) )
+  err( SDFRate.isSDFRate(Isdf), "sdfTransfer: input argument should be SDF rate" )
   err( #self.sdfInput == #Isdf, "# of SDF streams doesn't match. Was "..(#Isdf).." but expected "..(#self.sdfInput)..", "..loc )
 
   local R
@@ -401,7 +428,7 @@ end
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
 local __sdfExtremeRateCache = {}
 function darkroomIRFunctions:sdfExtremeRate( highest )
-  assert(type(highest)=="boolean")
+  err(type(highest)=="boolean", "sdfExtremeRate: first argument should be bool")
 
   __sdfExtremeRateCache[self] = __sdfExtremeRateCache[self] or {}
 
@@ -582,7 +609,7 @@ function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 -- function argument
 function darkroom.input( type, sdfRate )
   err( types.isType( type ), "darkroom.input: first argument should be type" )
-  assert( sdfRate==nil or SDFRate.isSDFRate(sdfRate))
+  err( sdfRate==nil or SDFRate.isSDFRate(sdfRate), "input: second argument should be SDF rate or nil")
   if sdfRate==nil then sdfRate={{1,1}} end
   return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
@@ -616,9 +643,9 @@ end
 
 function darkroom.applyMethod( name, inst, fnname, input )
   err( type(name)=="string", "name must be string")
-  assert( darkroom.isInstance(inst) )
+  err( darkroom.isInstance(inst), "applyMethod: second argument should be instance" )
   err( type(fnname)=="string", "fnname must be string")
-  assert( input==nil or darkroom.isIR( input ) )
+  err( input==nil or darkroom.isIR( input ), "applyMethod: last argument should be rigel value or nil" )
 
   return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )
 end
@@ -659,14 +686,14 @@ end
 function darkroom.selectStream( name, input, i, X )
   err( type(i)=="number", "i must be number")
   err( darkroom.isIR(input), "input must be IR")
-  assert(X==nil)
+  err(X==nil,"selectStream: too many arguments")
   return darkroom.newIR({kind="selectStream", name=name, i=i, loc=getloc(), inputs={input}})
 end
 
 function darkroom.statements( t )
-  assert( type(t)=="table" )
-  assert(#t>0 and keycount(t)==#t)
-  map(t, function(i) assert(darkroom.isIR(i)) end )
+  err( type(t)=="table", "statements: argument should be table" )
+  err(#t>0 and keycount(t)==#t, "statements: argument should be lua array")
+  map(t, function(i) err(darkroom.isIR(i), "statements: argument should be rigel value") end )
   return darkroom.newIR{kind="statements",inputs=t,loc=getloc()}
 end
 

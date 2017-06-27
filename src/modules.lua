@@ -23,8 +23,8 @@ local modules = {}
 
 -- tab should be a table of systolic ASTs, all type array2d. Heights should match
 local function concat2dArrays(tab)
-  assert(type(tab)=="table")
-  assert(#tab>0)
+  assert( type(tab)=="table")
+  assert( #tab>0)
   assert( systolic.isAST(tab[1]))
   local H, ty = (tab[1].type:arrayLength())[2], tab[1].type:arrayOver()
   local totalW = 0
@@ -49,9 +49,9 @@ end
 -- *this should really be in examplescommon.t
 -- f(g())
 function modules.compose(name,f,g)
-  err(type(name)=="string", "first argument to compose must be name of function")
-  assert(darkroom.isFunction(f))
-  assert(darkroom.isFunction(g))
+  err( type(name)=="string", "first argument to compose must be name of function")
+  err( darkroom.isFunction(f), "compose: second argument should be rigel module")
+  err( darkroom.isFunction(g), "compose: third argument should be rigel module")
   local inp = rigel.input( g.inputType, g.sdfInput )
   local gvalue = rigel.apply(name.."_g",g,inp)
   return modules.lambda(name,inp,rigel.apply(name.."_f",f,gvalue))
@@ -63,9 +63,10 @@ end
 -- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
 -- if asArray==true then converts {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d(a[N],W,H). This requires a,b,c be the same...
 modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
-  assert(type(W)=="number")
-  assert(type(H)=="number")
-  assert(type(typelist)=="table")
+  err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
+  err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
+  err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
+  err( asArray==nil or type(asArray)=="boolean", "SoAtoAoS: asArray must be bool or nil")
   if asArray==nil then asArray=false end
 
   local res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
@@ -84,18 +85,20 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
 
   if terralib~=nil then res.terraModule = MT.SoAtoAoS(res,W,H,typelist,asArray) end
 
-  res.systolicModule = Ssugar.moduleConstructor("packTupleArrays_"..(tostring(typelist):gsub('%W','_')))
-  local sinp = S.parameter("process_input", res.inputType )
-  local arrList = {}
-  for y=0,H-1 do
-    for x=0,W-1 do
-      local r = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
-      if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
-      table.insert( arrList, r )
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor("SoAtoAoS_"..(tostring(typelist):gsub('%W','_')))
+    local sinp = S.parameter("process_input", res.inputType )
+    local arrList = {}
+    for y=0,H-1 do
+      for x=0,W-1 do
+        local r = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
+        if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
+        table.insert( arrList, r )
+      end
     end
+    systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
+    return systolicModule
   end
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro") )
 
   return rigel.newFunction(res)
 end)
@@ -104,8 +107,8 @@ end)
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
 modules.packTuple = memoize(function( typelist, X )
-  assert(type(typelist)=="table")
-  assert(X==nil)
+  err( type(typelist)=="table", "packTuple: type list must be table" )
+  err( X==nil, "packTuple: too many arguments" )
   
   local res = {kind="packTuple"}
   
@@ -297,9 +300,10 @@ end
 
 -- This is basically just for testing: artificially reduces the throughput along a path
 function modules.reduceThroughput(A,factor)
-  assert(type(factor)=="number")
-  assert(factor>1)
-  assert(math.floor(factor)==factor)
+  err( type(factor)=="number", "reduceThroughput: second argument must be number (reduce factor)" )
+  err( factor>1, "reduceThroughput: reduce factor must be >1" )
+  err( math.floor(factor)==factor, "reduceThroughput: reduce factor must be an integer" )
+
   local res = {kind="reduceThroughput",factor=factor}
   res.inputType = A
   res.outputType = rigel.RV(A)
@@ -382,7 +386,8 @@ end
 
 -- takes basic->V to V->RV
 modules.liftDecimate = memoize(function(f)
-  assert(rigel.isFunction(f))
+  err( rigel.isFunction(f), "liftDecimate: input should be rigel module" )
+
   local res = {kind="liftDecimate", fn = f}
   rigel.expectBasic(f.inputType)
   res.inputType = rigel.V(f.inputType)
@@ -559,8 +564,8 @@ modules.liftHandshake = memoize(function(f)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
   err( rigel.isFunction(f), "first argument to map must be Rigel module, but is "..tostring(f) )
-  err(type(W)=="number", "width must be number")
-  assert(type(H)=="number" or H==nil)
+  err( type(W)=="number", "width must be number")
+  err( type(H)=="number" or H==nil, "map: H must be number of nil" )
   if H==nil then H=1 end
 
   local res = { kind="map", fn = f, W=W, H=H }
@@ -571,26 +576,33 @@ modules.map = memoize(function( f, W, H )
   res.stateful = f.stateful
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
-  if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
-  res.systolicModule = Ssugar.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
-  local inp = S.parameter("process_input", res.inputType )
-  local out = {}
-  local resetPipelines={}
-  for y=0,H-1 do
-    for x=0,W-1 do 
-      local inst = res.systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
-      table.insert( out, inst:process( S.index( inp, x, y ) ) )
-      if f.stateful then
-        table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
-      end
-    end 
-  end
-  local CE = S.CE("process_CE")
-  res.systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
-  if f.stateful then
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
-  end
 
+  if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
+
+  function res.makeSystolic()
+    local systolicModule= Ssugar.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
+    local inp = S.parameter("process_input", res.inputType )
+    local out = {}
+    local resetPipelines={}
+    for y=0,H-1 do
+      for x=0,W-1 do 
+        local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
+        table.insert( out, inst:process( S.index( inp, x, y ) ) )
+        if f.stateful then
+          table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
+        end
+      end 
+    end
+
+    local CE = S.CE("process_CE")
+
+    systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
+    if f.stateful then
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+    end
+    return systolicModule
+  end
+  
   return rigel.newFunction(res)
 end)
 
@@ -1556,7 +1568,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number")
   err( outputRate==math.floor(outputRate), "outputRate should be integer")
-  assert(X==nil)
+  err( X==nil, "changeRate: too many arguments")
 
   local maxRate = math.max(inputRate,outputRate)
 
@@ -1580,46 +1592,51 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     res.sdfInput, res.sdfOutput = {{1,1}},{{inputRate,outputRate}}
   end
 
-  res.systolicModule = Ssugar.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
-  local svalid = S.parameter("process_valid", types.bool() )
-  local rvalid = S.parameter("reset", types.bool() )
-  local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
+  function res.makeSystolic()
+    local systolicModule= Ssugar.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
 
-  local regs = map( range(maxRate), function(i) return res.systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
-
-  if inputRate>outputRate then
-
-    -- 8 to 4
-    local shifterReads = {}
-    for i=0,outputCount-1 do
-      table.insert(shifterReads, S.slice( pinp, i*outputRate, (i+1)*outputRate-1, 0, H-1 ) )
+    local svalid = S.parameter("process_valid", types.bool() )
+    local rvalid = S.parameter("reset", types.bool() )
+    local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
+    
+    local regs = map( range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
+    
+    if inputRate>outputRate then
+      
+      -- 8 to 4
+      local shifterReads = {}
+      for i=0,outputCount-1 do
+        table.insert(shifterReads, S.slice( pinp, i*outputRate, (i+1)*outputRate-1, 0, H-1 ) )
+      end
+      local out, pipelines, resetPipelines, ready = fpgamodules.addShifterSimple( systolicModule, shifterReads, DARKROOM_VERBOSE )
+      
+      local CE = S.CE("CE")
+      systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.constant(true,types.bool()) }, "process_output", pipelines, svalid, CE) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, rvalid, CE ) )
+      systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
+      
+    else -- inputRate <= outputRate. 4 to 8
+      assert(H==1) -- NYI
+      
+      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):instantiate("phase_changerateup") )
+      local printInst
+      if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", true ):instantiate("printInst") ) end
+      local ConstTrue = S.constant(true,types.bool())
+      local CE = S.CE("CE")
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))) }, rvalid, CE ) )
+      
+      -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
+      local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
+      
+      local out = concat2dArrays(map(range(inputCount-1,0), function(i) return pinp(i) end))
+      local pipelines = {sPhase:setBy(ConstTrue)} 
+      if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{sPhase:get(),out})) end
+      
+      systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,validout}, "process_output", pipelines, svalid, CE) )
+      systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ConstTrue, "ready" ) )
     end
-    local out, pipelines, resetPipelines, ready = fpgamodules.addShifterSimple( res.systolicModule, shifterReads, DARKROOM_VERBOSE )
 
-    local CE = S.CE("CE")
-    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.constant(true,types.bool()) }, "process_output", pipelines, svalid, CE) )
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, rvalid, CE ) )
-    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
-
-  else -- inputRate <= outputRate. 4 to 8
-    assert(H==1) -- NYI
-
-    local sPhase = res.systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):instantiate("phase_changerateup") )
-    local printInst
-    if DARKROOM_VERBOSE then printInst = res.systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", true ):instantiate("printInst") ) end
-    local ConstTrue = S.constant(true,types.bool())
-    local CE = S.CE("CE")
-    res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))) }, rvalid, CE ) )
-
-    -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
-    local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
-
-    local out = concat2dArrays(map(range(inputCount-1,0), function(i) return pinp(i) end))
-    local pipelines = {sPhase:setBy(ConstTrue)} 
-    if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{sPhase:get(),out})) end
-
-    res.systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,validout}, "process_output", pipelines, svalid, CE) )
-    res.systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ConstTrue, "ready" ) )
+    return systolicModule
   end
 
   if terralib~=nil then res.terraModule = MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount ) end
@@ -2441,17 +2458,17 @@ local function lambdaSDFNormalize(input,output)
   local newOutput = output:process(
     function(n,orig)
       if n.kind=="input" then
-        assert(n.id==input.id)
+        err( n.id==input.id, "lambdaSDFNormalize: unexpected input node. input node is not the declared module input." )
         n.sdfRate = SDFRate.multiply(n.sdfRate,scaleFactor[1],scaleFactor[2])
         assert( SDFRate.isSDFRate(n.sdfRate))
         newInput = rigel.newIR(n)
         return newInput
       elseif n.kind=="apply" and n.sdfRateOverride~=nil then
-	-- for nullary modules, we sometimes provide an explicit SDF rate, to get around the fact that we don't solve for SDF rates bidirectionally
-	n.sdfRateOverride = SDFRate.multiply(n.sdfRateOverride, scaleFactor[1], scaleFactor[2] )
-	return rigel.newIR(n)
+        -- for nullary modules, we sometimes provide an explicit SDF rate, to get around the fact that we don't solve for SDF rates bidirectionally
+        n.sdfRateOverride = SDFRate.multiply(n.sdfRateOverride, scaleFactor[1], scaleFactor[2] )
+        return rigel.newIR(n)
       end
-      end)
+    end)
 
   return newInput, newOutput
 end
@@ -2462,18 +2479,15 @@ end
 function modules.lambda( name, input, output, instances, pipelines, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
-  assert(X==nil)
-  assert( type(name) == "string" )
-  assert( rigel.isIR( input ) )
-  assert( input.kind=="input" )
+  err( X==nil, "lambda: too many arguments" )
+  err( type(name) == "string", "lambda: module name must be string" )
+  err( rigel.isIR( input ), "lambda: input must be a rigel value" )
+  err( input.kind=="input", "lambda: input must be a rigel input" )
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
-  assert( instances==nil or type(instances)=="table")
-  if instances~=nil then map( instances, function(n) assert(rigel.isInstance(n)) end ) end
-  assert( pipelines==nil or type(pipelines)=="table")
-  if pipelines~=nil then map( pipelines, function(n) assert(rigel.isIR(n)) end ) end
-
-
-  --local output = output:typecheck()
+  err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
+  if instances~=nil then map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
+  err( pipelines==nil or type(pipelines)=="table", "lambda: pipelines must be nil or a table" )
+  if pipelines~=nil then map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
 
   input, output = lambdaSDFNormalize(input,output)
 
@@ -2757,8 +2771,12 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 
     return module
   end
-  res.systolicModule = makeSystolic(res)
-  res.systolicModule:toVerilog()
+
+  function res.makeSystolic()
+    local systolicModule = makeSystolic(res)
+    systolicModule:toVerilog()
+    return systolicModule
+  end
 
   if DARKROOM_VERBOSE then
     print("lambda done '"..name.."'")
