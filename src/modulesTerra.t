@@ -604,6 +604,32 @@ function MT.posSeq(res,W,H,T)
   return PosSeq
 end
 
+function MT.pad( res, A, W, H, L, R, B, Top, Value )
+--   local struct PadSeq {posX:int; posY:int, ready:bool}
+--   terra PadSeq:reset() self.posX=0; self.posY=0; end
+--   terra PadSeq:stats(name:&int8) end -- not particularly interesting
+--   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+--     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
+
+--     valid(out) = true
+--     if interior then
+--       data(out) = @inp
+--     else
+--       data(out) = arrayof([A:toTerraType()],[rep(A:valueToTerra(Value),T)])
+--     end
+--     -- @todo: implement
+--     self.posX = self.posX+T;
+--     if self.posX==(W+L+R) then
+--       self.posX=0;
+--       self.posY = self.posY+1;
+--     end
+-- --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
+--   end
+--   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
+
+--   return PadSeq
+end
+
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   local struct PadSeq {posX:int; posY:int, ready:bool}

@@ -30,6 +30,10 @@ RS.array2d = RS.array
 RS.tuple = types.tuple
 
 RS.modules = {}
+function RS.modules.pad(t)
+  return RM.pad( t.type, t.size[1], t.size[2], t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value )
+end
+
 function RS.modules.padSeq(t)
   return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.V, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
 end

@@ -586,6 +586,114 @@ modules.liftHandshake = memoize(function(f)
   return rigel.newFunction(res)
                                  end)
 
+-- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
+modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "pad A==nil" )
+  err( W~=nil, "pad W==nil" )
+  err( H~=nil, "pad H==nil" )
+  err( L~=nil, "pad L==nil" )
+  err( R~=nil, "pad R==nil" )
+  err( B~=nil, "pad B==nil" )
+  err( Top~=nil, "pad Top==nil" )
+  err( Value~=nil, "pad Value==nil" )
+  
+  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+        err(type(n)=="number","pad expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"pad non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  A:checkLuaValue(Value)
+
+  local res = {kind="pad", type=A, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = types.array2d(A,W+L+R,H+B+Top)
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+--------
+  if terralib~=nil then res.terraModule = MT.pad( res, A, W, H, L, R, B, Top, Value ) end
+
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor("Pad_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_Value"..tostring(Value))
+		-- local inp = S.parameter("process_input", res.inputType )
+		-- local out = {}
+		-- local resetPipelines={}
+		-- for y=0,H+Top+B-1 do
+		-- 	for x=0,W+L+R-1 do 
+		-- 		local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
+		-- 		table.insert( out, inst:process( S.index( inp, x, y ) ) )
+		-- 	end 
+		-- end
+		
+		-- local CE = S.CE("process_CE")
+		
+		-- systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
+		-- if f.stateful then
+		-- 	systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+		-- end
+		return systolicModule
+	end
+
+  --   local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
+  --   local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
+  --   local printInst
+  --   if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
+    
+  --   local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
+  --   local pvalid = S.parameter("process_valid", types.bool() )
+    
+  --   local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
+  --   local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(32)))
+  --   local xcheck
+    
+  --   if L==0 then
+  --     xcheck = C2 -- verilator lint: C1 always true
+  --   else
+  --     xcheck = S.__and(C1,C2)
+  --   end
+    
+  --   local C3 = S.ge( posY:get(), S.constant(B,types.uint(16)))
+  --   local C4 = S.lt( posY:get(), S.constant(B+H,types.uint(16)))
+  --   local ycheck
+    
+  --   if B==0 then
+  --     ycheck = C4 -- verilator lint: C1 always true
+  --   else
+  --     ycheck = S.__and(C3,C4)
+  --   end
+    
+  --   local isInside = S.__and(xcheck,ycheck)
+  --   local readybit = isInside:disablePipelining()
+    
+  --   local pipelines={}
+
+  --   local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(32))  ):disablePipelining()
+  --   pipelines[1] = posY:setBy( incY )
+  --   pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
+
+  --   local ValueBroadcast = S.cast( S.tuple(broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+  --   local ConstTrue = S.constant(true,types.bool())
+
+  --   local out = S.select( readybit, pinp, ValueBroadcast )
+    
+  --   if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process( S.tuple{ posX:get(), posY:get(), readybit } ) ) end
+    
+  --   local CE = S.CE("CE")
+  --   systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,ConstTrue}, "process_output", pipelines, pvalid, CE) )
+    
+  --   systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(32))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()), CE) )
+    
+  --   systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
+
+  --   return systolicModule
+  -- end
+
+  return rigel.newFunction(res)
+end)
+
+
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
