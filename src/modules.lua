@@ -3220,9 +3220,10 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
   local res = {kind="seqMapHandshake", tapInputType=tapInputType, tapValue=tapValue, inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
   res.sdfInput = f.sdfInput
   res.sdfOutput = f.sdfOutput
-  res.name = "SeqMapHandshake_"..f.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate
 
   if readyRate==nil then readyRate=1 end
+
+  res.name = "SeqMapHandshake_"..f.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate
 
   if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles) end
 
