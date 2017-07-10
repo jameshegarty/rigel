@@ -3006,20 +3006,23 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
 
-
   err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
-  local systolicModule = Ssugar.moduleConstructor(name)
+  local res = { kind="lift_"..name, name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
-  if systolicInstances~=nil then
-    for k,v in pairs(systolicInstances) do systolicModule:add(v) end
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(name)
+
+    if systolicInstances~=nil then
+      for k,v in pairs(systolicInstances) do systolicModule:add(v) end
+    end
+
+    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
+    local nip = S.parameter("nip",types.null())
+
+    systolicModule:complete()
+    return systolicModule
   end
-
-  systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
-  local nip = S.parameter("nip",types.null())
-  --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
-  systolicModule:complete()
-  local res = { kind="lift_"..name, name=name, inputType = inputType, outputType = outputType, delay=delay, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
   if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) end
 
