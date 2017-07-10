@@ -2,7 +2,7 @@ local IR = require("ir")
 local types = require("types")
 local typecheckAST = require("typecheck")
 local systolic={}
--- local ffi = require("ffi")
+local ffi = require("ffi")
 
 local ARTEM = false
 
@@ -199,15 +199,8 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isOpaque() then
     return "0'b0"
   elseif ty:stripConst()==types.float(32) then
---    local terra floatToBits(a:float) 
---      var o : &opaque = &a
---      return @([&uint32](o))
---    end
---    local v = floatToBits(value)
---    return "32'd"..tostring(v)
---     assert(false)
-     -- local a = ffi.new("float[1]",value)
-     -- local b = ffi.cast("unsigned int*",a)
+     local a = ffi.new("float[1]",value)
+     local b = ffi.cast("unsigned int*",a)
      return "32'd"..tostring(b[0])
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
@@ -1103,9 +1096,7 @@ function systolicASTFunctions:internalizeDelays()
   return res[1], res[2]
 end
 
-local a = 0
 function systolicASTFunctions:CSE(repo)
-   a = a + 1
   local seenlist = repo or {}
   return self:process(
     function(n)

@@ -7,6 +7,7 @@ local Ssugar = require "systolicsugar"
 local cstring = terralib.includec("string.h")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 
@@ -605,29 +606,25 @@ function MT.posSeq(res,W,H,T)
 end
 
 function MT.pad( res, A, W, H, L, R, B, Top, Value )
---   local struct PadSeq {posX:int; posY:int, ready:bool}
---   terra PadSeq:reset() self.posX=0; self.posY=0; end
---   terra PadSeq:stats(name:&int8) end -- not particularly interesting
---   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
---     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
+   local struct Pad {}
+   terra Pad:reset()  end
+   terra Pad:stats(name:&int8) end -- not particularly interesting
 
---     valid(out) = true
---     if interior then
---       data(out) = @inp
---     else
---       data(out) = arrayof([A:toTerraType()],[rep(A:valueToTerra(Value),T)])
---     end
---     -- @todo: implement
---     self.posX = self.posX+T;
---     if self.posX==(W+L+R) then
---       self.posX=0;
---       self.posY = self.posY+1;
---     end
--- --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
---   end
---   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
+   local outW = W+L+R
 
---   return PadSeq
+   terra Pad:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H+B+Top do
+       for x=0,W+L+R do
+         if x>=L and x<W+L and y>=B and y<H+B then
+           (@out)[x+y*outW] = (@inp)[(x-L)+(y-B)*W]
+         else
+           (@out)[x+y*outW] = [Value]
+         end
+       end
+     end
+   end
+
+   return Pad
 end
 
 

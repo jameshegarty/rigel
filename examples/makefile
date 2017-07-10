@@ -46,6 +46,9 @@ SRCS_VERILATOR := $(filter-out stereo_wide_handshake_full.lua stereo_wide_handsh
 # fails in travis for some reason?
 SRCS_VERILATOR := $(filter-out stereo_wide_handshake_medi.lua stereo_wide_handshake_nostall_medi.lua, $(SRCS_VERILATOR))
 
+# NYI
+SRCS_VERILATOR := $(filter-out pad.lua, $(SRCS_VERILATOR))
+
 VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS_VERILATOR))
 #VERILATOR += $(patsubst %.lua,out/%_half.raw,$(SRCS_VERILATOR))
@@ -204,7 +207,7 @@ out/%.v out/%.metadata.lua: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.terra.raw out/%_half.terra.raw: %.lua
+out/%.terra.raw out/%_half.terra.raw out/%.metadata.lua: %.lua
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*

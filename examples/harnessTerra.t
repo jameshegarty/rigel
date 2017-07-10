@@ -24,7 +24,7 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   local out = R.apply("HARNESS_inner", fn, hsfninp )
 
   local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
-  return RM.lambda( "harness"..id..fn.systolicModule.name, inpSymb, out )
+  return RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out )
 end)
 
 return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, X)

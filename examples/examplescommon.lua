@@ -805,7 +805,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
 end)
 
 
--- purely wiring
+-- purely wiring. This should really be implemented as a lift.
 C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
@@ -823,10 +823,11 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
+  res.name = "unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T)
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
-  res.systolicModule = Ssugar.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.systolicModule = Ssugar.moduleConstructor(res.name)
   local sinp = S.parameter("inp", res.inputType)
   local out = {}
   for i=1,T do

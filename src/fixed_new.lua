@@ -565,6 +565,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
 
   local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
+  res.name = name
 
   local sys = Ssugar.moduleConstructor(name)
   for _,v in ipairs(instances) do sys:add(v) end

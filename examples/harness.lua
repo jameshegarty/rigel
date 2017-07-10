@@ -162,17 +162,6 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   assert(type(inputFilename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   --assert(earlyOverride==nil or type(earlyOverride)=="number")
-
-  local tapValueString = "x"
-  local tapBits = 0
-  if tapType~=nil then
-    err(tapType:toCPUType()==tapType, "NYI - tap type must be a CPU type")
-    tapValueString = tapType:valueToHex(tapValue)
-    tapBits = tapType:verilogBits()
-  end
-
-  if harnessOption==nil then harnessOption=1 end
-  writeMetadata("out/"..filename..".metadata.lua", {inputBitsPerPixel=R.extractData(inputType):verilogBits()/(inputT), inputWidth=inputW, inputHeight=inputH, outputBitsPerPixel=outputType:verilogBits()/(outputT), outputWidth=outputW, outputHeight=outputH, inputImage=inputFilename, topModule= hsfn.systolicModule.name, inputP=inputT, outputP=outputT, simCycles=simCycles, tapBits=tapBits, tapValue=tapValueString,harness=harnessOption})
   
 ------------------------
 -- verilator just uses the top module directly
@@ -350,6 +339,21 @@ function harnessTop(t)
   else
     print("unknown build target "..arg[1])
     assert(false)
+  end
+
+  if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" or (t.backend==nil and arg[1]=="terrasim") or t.backend=="terra" then
+    local tapValueString = "x"
+    local tapBits = 0
+    if t.tapType~=nil then
+      err(t.tapType:toCPUType()==t.tapType, "NYI - tap type must be a CPU type")
+      tapValueString = t.tapType:valueToHex(t.tapValue)
+      tapBits = t.tapType:verilogBits()
+    end
+    
+    local harnessOption = t.harness
+    if harnessOption==nil then harnessOption=1 end
+
+    writeMetadata("out/"..t.outFile..".metadata.lua", {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption})
   end
 
 end
