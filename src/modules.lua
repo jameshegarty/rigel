@@ -834,6 +834,7 @@ modules.readMemory = memoize(function(ty)
   res.sdfOutput={ {1,1}, 'x' }
   res.sdfInput={ {1,1},'x'}
   res.delay=10
+  res.name = "readMemory_"..tostring(ty)
 
   function res:sdfTransfer( I, loc )
     err( SDFRate.isSDFRate(I[1]), "Error, readMemory SDF input is not valid ")
@@ -860,7 +861,7 @@ endmodule
     local downstreamReady = S.parameter("ready_downstream", types.array2d(types.bool(),2))
     fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
   
-    return systolic.module.new("readMemory_"..tostring(ty), fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
+    return systolic.module.new(res.name, fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
   end
 
   return rigel.newFunction(res)
