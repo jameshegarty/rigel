@@ -70,8 +70,13 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
   err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
   err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
+  err( keycount(typelist)==#typelist, "SoAtoAoS: typelist must be lua array")
   err( asArray==nil or type(asArray)=="boolean", "SoAtoAoS: asArray must be bool or nil")
   if asArray==nil then asArray=false end
+
+  for k,v in ipairs(typelist) do
+    err(types.isType(v),"SoAtoAoS: typelist index "..tostring(k).." must be rigel type")
+  end
 
   local res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
 
@@ -1614,6 +1619,41 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
 
   return modules.liftXYSeq( f, W, H, T  )
                            end)
+
+-- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
+modules.crop = memoize(function( A, W, H, L, R, B, Top, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "crop A==nil" )
+  err( W~=nil, "crop W==nil" )
+  err( H~=nil, "crop H==nil" )
+  err( L~=nil, "crop L==nil" )
+  err( R~=nil, "crop R==nil" )
+  err( B~=nil, "crop B==nil" )
+  err( Top~=nil, "crop Top==nil" )
+  err( X==nil, "crop: too many arguments" )
+  
+  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+        err(type(n)=="number","crop expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"crop non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  local res = {kind="crop", type=A, L=L, R=R, B=B, Top=Top, width=W, height=H}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = types.array2d(A,W-L-R,H-B-Top)
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Crop_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top
+--------
+  if terralib~=nil then res.terraModule = MT.crop( res, A, W, H, L, R, B, Top ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - crop modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T

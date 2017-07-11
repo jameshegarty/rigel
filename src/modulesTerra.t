@@ -1208,6 +1208,25 @@ return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType()
 
 end
 
+function MT.crop( res, A, W, H, L, R, B, Top )
+   local struct Crop {}
+   terra Crop:reset()  end
+   terra Crop:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W-L-R
+
+   terra Crop:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H-B-Top do
+       for x=0,W-L-R do
+           (@out)[x+y*outW] = (@inp)[(x+L)+(y+B)*W]
+       end
+     end
+   end
+
+   return Crop
+end
+
+
 function MT.lambdaCompile(fn)
     local inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" )
     local outputSymbol = symbol( &rigel.lower(fn.output.type):toTerraType(), "lambdaoutput" )
