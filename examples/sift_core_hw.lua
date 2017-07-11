@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local RS = require "rigelSimple"
 local types = require("types")
 local S = require("systolic")
 local harris = require "harris_core"
@@ -38,20 +39,6 @@ local fixedSumPow2 = memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
-
-sift.sumPow2 = function(A,B,outputType)
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
-
-  local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
-  sout = sout:disablePipelining()
-
-  local tfn
-  if terralib~=nil then tfn=siftTerra.sumPow2(A,B,outputType) end
-
-  local partial = RM.lift( "sumpow2", types.tuple {A,B}, outputType, 0,
-                          tfn, sinp, sout )
-  return partial
-                end
 
 sift.fixedDiv = memoize(function(A)
   assert(types.isType(A))
@@ -357,7 +344,7 @@ function sift.siftKernel(dxdyType)
   local desc1 = R.selectStream("d1",desc_broad,1)
   local desc1 = C.fifo( fifos, statements, descTypeRed, desc1, 256, "d1")
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.sumPow2(RED_TYPE,RED_TYPE,RED_TYPE),1/(TILES_X*TILES_Y*8)))),desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=RED_TYPE,outType=RED_TYPE},1/(TILES_X*TILES_Y*8)))),desc1)
   local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc_sum)
 
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
@@ -387,33 +374,26 @@ end
 function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
-  local sinp = S.parameter( "inp", ITYPE )
-
-  local xinp = S.index(sinp,0)
-  local yinp = S.index(sinp,1)
-
-  local xo = xinp-S.constant(x,A)
-  local yo = yinp-S.constant(y,A)
-
-  local out = S.tuple{xo,yo}
-
-  local tfn
-  if terralib~=nil then tfn=siftTerra.posSub(ITYPE,x,y) end
 
   local ps = RM.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
-                    tfn, sinp, out)
+    function(sinp)
+      local xinp = S.index(sinp,0)
+      local yinp = S.index(sinp,1)
+      
+      local xo = xinp-S.constant(x,A)
+      local yo = yinp-S.constant(y,A)
+      
+      return S.tuple{xo,yo}
+    end,
+    function() return siftTerra.posSub(ITYPE,x,y) end)
+
   return ps
 end
 ----------------
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H)
-  --print("makeHarrisWithDXDY")
-  --assert(window==16)
-
   local function res(internalW, internalH)
-    --print("MAKE HARRIS",internalW, internalH)
-
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},TILES_X*4,TILES_Y*4)
     
     local inp = R.input(ITYPE)

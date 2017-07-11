@@ -319,13 +319,10 @@ end
 function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
-  local sinp = S.parameter( "inp", ITYPE )
-
-  local tfn
-  if terralib~=nil then tfn=siftCoreHWTerra.posSub(ITYPE,x,y) end
 
   local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
-                    tfn, sinp, sinp)
+    function(sinp) return sinp end, function() return siftCoreHWTerra.posSub(ITYPE,x,y) end )
+
   return ps
 end
 ----------------

@@ -552,14 +552,14 @@ function fixedASTFunctions:cost()
   return totalCost
 end
 
-function fixedASTFunctions:toSystolic()
+function fixedASTFunctions:toSystolic(inp)
   local instances = {}
-  local inp
+  --local inp
   local res = self:visitEach(
     function( n, args )
       local res
       if n.kind=="parameter" then
-        inp = S.parameter(n.name, n.type)
+        --inp = S.parameter(n.name, n.type)
         res = inp
         if fixed.isFixedType(n.type) then
           -- remove wrapper
@@ -718,7 +718,7 @@ function fixedASTFunctions:toSystolic()
     res = S.tuple{res,c}
   end
 
-  return res, inp, instances
+  return res, instances
 end
 
 fixed.hists = {}
@@ -731,12 +731,17 @@ function fixedASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp, instances = self:toSystolic()
+  local inpType
+  self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  local tfn
-  if terralib~=nil then tfn=fixedTerra.toDarkroom(self,out) end
-  --tfn:printpretty(true,false)
-  return RM.lift( name, inp.type, out.type, 0, tfn, inp, out, instances )
+  return RM.lift( name, inpType, self.type, 0, 
+    function(inp)
+      local out, instances = self:toSystolic(inp)
+      return out, instances
+    end,
+    function()
+      return fixedTerra.toDarkroom(self)
+    end)
 end
 
 return fixed

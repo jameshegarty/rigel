@@ -16,26 +16,21 @@ function displayOutput( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.uint(8),1)
 
-  local inp = S.parameter( "inp", ITYPE )
-  local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
-  if threshold~=0 then
-    local cond
-    if threshold>0 then
-      cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
-    else
-      cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
-    end
-    out = S.cast(S.tuple{S.select(cond,S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
-  end
-
-  local tfn
-  if terralib~=nil then tfn=stereoTRCoreTerra.displayOutput(ITYPE,threshold) end
-
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                tfn, inp, 
-                out 
-                --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
-)
+    function(inp)
+      local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
+      if threshold~=0 then
+        local cond
+        if threshold>0 then
+          cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
+        else
+          cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
+        end
+        out = S.cast(S.tuple{S.select(cond,S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
+      end
+      return out
+    end,
+    function() return stereoTRCoreTerra.displayOutput(ITYPE,threshold) end)
 end
 
 function displayOutputColor( reduceType, threshold )
@@ -44,38 +39,34 @@ function displayOutputColor( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.array2d(types.uint(8),4),1)
 
-  local inp = S.parameter( "inp", ITYPE )
-  local out = S.cast(S.index(inp,0),types.array2d(types.uint(8),4))
-  out = S.cast(out,OTYPE)
-
-  local zeroS = S.constant(0,types.uint(8))
-
-  local colorOutputR = S.lshift(S.index(inp,0)-S.constant(60,types.uint(8)),S.constant(4,types.uint(8)))
-  local colorOutputG = S.constant(128,types.uint(8))
-  local colorOutputB = S.lshift(S.constant(16,types.uint(8))-(S.index(inp,0)-S.constant(60,types.uint(8))),S.constant(4,types.uint(8)))
-  local colorOutput = S.cast(S.tuple{colorOutputR,colorOutputG,colorOutputB,zeroS}, types.array2d(types.uint(8),4))
-  local colorOutput = S.cast(S.tuple{colorOutput},OTYPE)
-  
-  local zero = S.cast(S.tuple{zeroS,zeroS,zeroS,zeroS},types.array2d(types.uint(8),4))
-  local zero = S.cast(S.tuple{zero},OTYPE)
-
-  if threshold~=0 then
-    local cond
-    if threshold>0 then
-      cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
-    else
-      cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
-    end
-    out = S.select(cond,zero,colorOutput)
-  end
-
-  local tfn
-  if terralib~=nil then tfn=stereoTRCoreTerra.displayOutputColor(ITYPE,threshold) end
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                tfn, inp, 
-                out 
-                --S.cast(S.tuple{S.cast(S.index(inp,1),types.uint(8))},OTYPE) 
-)
+    function(inp)
+      local out = S.cast(S.index(inp,0),types.array2d(types.uint(8),4))
+      out = S.cast(out,OTYPE)
+      
+      local zeroS = S.constant(0,types.uint(8))
+      
+      local colorOutputR = S.lshift(S.index(inp,0)-S.constant(60,types.uint(8)),S.constant(4,types.uint(8)))
+      local colorOutputG = S.constant(128,types.uint(8))
+      local colorOutputB = S.lshift(S.constant(16,types.uint(8))-(S.index(inp,0)-S.constant(60,types.uint(8))),S.constant(4,types.uint(8)))
+      local colorOutput = S.cast(S.tuple{colorOutputR,colorOutputG,colorOutputB,zeroS}, types.array2d(types.uint(8),4))
+      local colorOutput = S.cast(S.tuple{colorOutput},OTYPE)
+      
+      local zero = S.cast(S.tuple{zeroS,zeroS,zeroS,zeroS},types.array2d(types.uint(8),4))
+      local zero = S.cast(S.tuple{zero},OTYPE)
+      
+      if threshold~=0 then
+        local cond
+        if threshold>0 then
+          cond = S.gt(S.index(inp,1),S.constant(threshold,reduceType))
+        else
+          cond = S.lt(S.index(inp,1),S.constant(-threshold,reduceType))
+        end
+        out = S.select(cond,zero,colorOutput)
+      end
+      return out
+    end,
+    function() return stereoTRCoreTerra.displayOutputColor(ITYPE,threshold) end)
 end
 
 -- perCycleSearch = (SearchWindow*T)

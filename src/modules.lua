@@ -504,7 +504,6 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     local outputCount
     if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount"):setCoherent(false) ) end
 
-
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
 
     local rst = S.parameter(prefix.."reset",types.bool())
@@ -652,7 +651,7 @@ modules.map = memoize(function( f, W, H )
   res.stateful = f.stateful
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
-  res.name = "map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H)
+  res.name = "map_"..f.name.."_W"..tostring(W).."_H"..tostring(H)
 
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
@@ -883,16 +882,16 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
-  local sdata = S.index(sinp,1)
-  local sy = S.index(S.index(S.index(sinp,0),0),1)
-  local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
-
-  local tfn
-  if terralib~=nil then tfn=MT.downsampleYSeqFn(innerInputType,outputType,scale) end
-
   local f = modules.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale), innerInputType, outputType, 0, 
-                           tfn, sinp, S.tuple{sdata,svalid}, nil, {{1,scale}})
+    function(sinp)
+      local sdata = S.index(sinp,1)
+      local sy = S.index(S.index(S.index(sinp,0),0),1)
+      local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+      return S.tuple{sdata,svalid}
+    end, 
+    function()
+      return MT.downsampleYSeqFn(innerInputType,outputType,scale)
+    end, {{1,scale}})
 
   return modules.liftXYSeq( f, W, H, T )
                                   end)
@@ -920,27 +919,36 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
+--  local sinp = S.parameter( "process_input", innerInputType )
 --  local sdata = S.index(sinp,1)
-  local sy = S.index(S.index(S.index(sinp,0),0),0)
-  local svalid, sdata, tfn, sdfOverride
+
+  local tfn, sdfOverride
 
   if scale>T then -- A[T] to A[1]
     sdfOverride = {{1,scale}}
-    svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
-    sdata = S.index(sinp,1)
     if terralib~=nil then tfn = MT.downsampleXSeqFn(innerInputType,outputType,scale) end
   else
     sdfOverride = {{1,1}}
-    svalid = S.constant(true,types.bool())
-    local datavar = S.index(sinp,1)
-    sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
-    sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
-
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid},nil,sdfOverride)
+  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, 
+    function(sinp)
+      local svalid, sdata
+      local sy = S.index(S.index(S.index(sinp,0),0),0)
+      if scale>T then -- A[T] to A[1]
+        svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+        sdata = S.index(sinp,1)
+      else
+        svalid = S.constant(true,types.bool())
+        local datavar = S.index(sinp,1)
+        sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
+        sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
+      end
+      return S.tuple{sdata,svalid}
+    end,
+    function() return tfn end,
+    sdfOverride)
 
   return modules.liftXYSeq( f, W, H, T )
 
@@ -951,19 +959,18 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
 -- like this: [A[0],A[0],A[1],A[1],A[2],A[2],...]
 local function broadcastWide( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
-  local sinp = S.parameter("inp",types.array2d(A,T))
-  local out = {}
-  for t=0,T-1 do
-    for s=0,scale-1 do
-      table.insert(out, S.index(sinp,t) )
-    end
-  end
-  out = S.cast(S.tuple(out), OTYPE)
 
-  local tfn
-  if terralib~=nil then tfn=MT.broadcastWide(ITYPE,OTYPE,T,scale) end
   return modules.lift("broadcastWide", ITYPE, OTYPE, 0,
-                       tfn, sinp, out)
+    function(sinp)
+      local out = {}
+      for t=0,T-1 do
+        for s=0,scale-1 do
+          table.insert(out, S.index(sinp,t) )
+        end
+      end
+      return S.cast(S.tuple(out), OTYPE)
+    end,
+    function() return MT.broadcastWide(ITYPE,OTYPE,T,scale) end)
 end
 
 -- this has type V->RV
@@ -1575,33 +1582,35 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
-  local sdata = S.index(sinp,1)
-  local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
-  local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
-  local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
-
-  -- verilator lint workaround
-  local lbcheck
-  if L==0 and B==0 then
-    lbcheck = S.constant(true,types.bool())
-  elseif L~=0 and B==0 then
-    lbcheck = S.ge(sx,sL)
-  elseif L==0 and B~=0 then
-    lbcheck = S.ge(sy,sB)
-  else
-    lbcheck = S.__and(S.ge(sx,sL),S.ge(sy,sB))
-  end
-
-  local trcheck = S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop))
-
-  local svalid = S.__and(lbcheck,trcheck)
-
-  local tfn
-  if terralib~=nil then tfn = MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )  end
-
   local f = modules.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top), innerInputType, outputType, 0, 
-                           tfn, sinp, S.tuple{sdata,svalid}, nil, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
+    function(sinp)
+      local sdata = S.index(sinp,1)
+      local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
+      local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
+      local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
+      
+      -- verilator lint workaround
+      local lbcheck
+      if L==0 and B==0 then
+        lbcheck = S.constant(true,types.bool())
+      elseif L~=0 and B==0 then
+        lbcheck = S.ge(sx,sL)
+      elseif L==0 and B~=0 then
+        lbcheck = S.ge(sy,sB)
+      else
+        lbcheck = S.__and(S.ge(sx,sL),S.ge(sy,sB))
+      end
+      
+      local trcheck = S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop))
+      
+      local svalid = S.__and(lbcheck,trcheck)
+      
+      return S.tuple{sdata,svalid}
+    end, 
+    function()
+      return MT.cropSeqFn( innerInputType, outputType, A, W, H, T, L, R, B, Top ) 
+    end, 
+    {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
   return modules.liftXYSeq( f, W, H, T  )
                            end)
@@ -2995,24 +3004,32 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   return rigel.newFunction( res )
 end
 
-function modules.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput, systolicInstances, sdfOutput, X )
-  err( type(name)=="string", "lift name must be string" )
-  assert( types.isType(inputType ) )
-  assert( types.isType(outputType ) )
-  assert( type(delay)=="number" )
-  err( systolic.isAST(systolicOutput), "missing systolic output")
-  err(sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"SDF output must be SDF")
+-- makeTerra: a lua function that returns the terra implementation
+-- makeSystolic: a lua function that returns the systolic implementation. 
+--      Input argument: systolic input value. Output: systolic output value, systolic instances table
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, sdfOutput, X )
+  err( type(name)=="string", "modules.lift: name must be string" )
+  err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
+  err( types.isType( outputType ), "modules.lift: outputType must be rigel type" )
+  err( type(delay)=="number",  "modules.lift: delay must be number" )
+  err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
+  err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
+  err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
-
-  err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
 
   local res = { kind="lift_"..name, name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
 
+    local systolicInput = S.parameter( "inp", inputType )
+
+    local systolicOutput, systolicInstances = makeSystolic(systolicInput)
+    err( systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
+    err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+    
     if systolicInstances~=nil then
       for k,v in pairs(systolicInstances) do systolicModule:add(v) end
     end
@@ -3024,9 +3041,22 @@ function modules.lift( name, inputType, outputType, delay, terraFunction, systol
     return systolicModule
   end
 
-  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) end
+  local res = rigel.newFunction( res )
 
-  return rigel.newFunction( res )
+  if terralib~=nil then 
+    local terraFunction, systolicInput, systolicOutput
+
+    if makeTerra==nil then
+      systolicInput = res.systolicModule.functions.process.inputParameter
+      systolicOutput = res.systolicModule.functions.process.output
+    else
+      terraFunction = makeTerra()
+    end
+
+    res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) 
+  end
+
+  return res
 end
 
 modules.constSeq = memoize(function( value, A, w, h, T, X )
