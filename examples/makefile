@@ -10,10 +10,10 @@ TERRA = ../rigelTerra
 RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
-VERILOG = $(patsubst %.lua,out/%.v,$(SRCS))
-
 # NYI
-SRCS_VERILOG := $(filter-out pad.lua crop.lua, $(SRCS_VERILOG))
+SRCS_VERILOG := $(filter-out pad.lua crop.lua, $(SRCS))
+
+VERILOG = $(patsubst %.lua,out/%.v,$(SRCS_VERILOG))
 
 # too slow
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
