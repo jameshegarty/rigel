@@ -32,9 +32,9 @@ script:
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
 # check that make actually 100% completed, just to be really sure (?)
   - pwd
-  - echo out/$TARGET_done.txt
+  - echo out/${TARGET}_done.txt
 #  - test -e out/{$TARGET}_done.txt
-  - if [[ $TARGET != "unit" ]]; then test -e out/$TARGET_done.txt || exit; fi
+  - if [[ $TARGET != "unit" ]]; then test -e out/${TARGET}_done.txt || exit; fi
 
 env:
   - TARGET=verilog
