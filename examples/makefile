@@ -210,7 +210,8 @@ out/%.v out/%.metadata.lua: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.terra.raw out/%_half.terra.raw out/%.metadata.lua: %.lua
+# HACK: %.terra.metadata.lua output is actually %.metadata.lua. This will just keep us from running the verilog version, if we only want to run terra.
+out/%.terra.raw out/%_half.terra.raw out/%.terra.metadata.lua: %.lua
 	$(TERRA) $< terrasim
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -520,13 +521,14 @@ out/%.zynq100.bmp: out/%.zynq100.raw
 	mkdir -p out/build100_$*
 	cp out/$*.zynq100.bmp out/build100_$*
 
-out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
+# HACK: %.terra.metadata.lua output is actually %.metadata.lua. This will just keep us from running the verilog version, if we only want to run terra.
+out/%.terra.bmp: out/%.terra.raw out/%.terra.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.terra.bmp out/build_$*
 
-out/%_half.terra.bmp: out/%_half.terra.raw out/%.metadata.lua
+out/%_half.terra.bmp: out/%_half.terra.raw out/%.terra.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
