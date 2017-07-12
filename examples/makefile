@@ -208,14 +208,14 @@ asic: $(ASIC)
 clean:
 	rm -Rf out/*
 
-out/%.v out/%.metadata.lua: %.lua
+out/%.v out/%.verilog.metadata.lua: %.lua
 	$(LUA) $<
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.terra.raw out/%_half.terra.raw: %.lua
-	$(TERRA) $< terrasim
+out/%.terra.raw out/%_half.terra.raw out/%.terra.metadata.lua: %.lua
+	$(TERRA) $< terra
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	#- cp out/$*.cycles.txt out/build_$*
@@ -226,7 +226,7 @@ out/%.isim.v out/%_half.isim.v: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.isim.v out/build_$*
 
-out/%.axi.v: %.lua
+out/%.axi.v out/%.axi.metadata.lua: %.lua
 	$(LUA) $< axi
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -236,29 +236,29 @@ out/%.axi.v: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
-out/%.verilator: out/%.v out/%.metadata.lua ../platform/verilator/harness.cpp
-	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
-	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua harness))
+out/%.verilator: out/%.v out/%.verilog.metadata.lua ../platform/verilator/harness.cpp
+	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua topModule))
+	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua harness))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module $($@_TOP)
-#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
+#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.verilog.metadata.lua $* > out/$*.verilator.cpp
 	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DHARNESS=$($@_HARNESS) -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
-	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
-	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
-	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
-	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
-	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
-	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
+	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputImage))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputHeight))
+	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputP))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputHeight))
+	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputBitsPerPixel))
+	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputP))
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapValue))
 	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
 
-out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
+out/%.verilator.bmp: out/%.verilator.raw out/%.verilog.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.verilog.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.verilator.bmp out/build_$*
@@ -431,14 +431,14 @@ out/%.hz.txt: out/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > out/$*.hz.txt
 
-out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
-	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
-	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
-	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
 ###### SET THE CLOCK	
 	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
 	lockfile /tmp/zynq20lock
@@ -462,14 +462,14 @@ out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.metadata.lua
 ZYNQ_100_WRITE_PATH=/tmp
 ZYNQ_100_ADDR=192.168.1.10
 
-out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.metadata.lua
-	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
-	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
-	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.axi.metadata.lua
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
 	lockfile /tmp/zynq100lock
 	# kill the DMA test that runs in the background and takes up 100% cpu (!?)
 	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "chmod a+w /sys/module/dmatest/parameters/iterations"
@@ -512,26 +512,26 @@ out/%.isim.1.bmp: out/%.isim.raw out/%.metadata.lua
 	mkdir -p out/build_$*
 	cp out/$*.isim.1.bmp out/build_$*
 
-out/%.axi.bmp: out/%.axi.raw
-	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.metadata.lua 1
+out/%.axi.bmp: out/%.axi.raw out/%.axi.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.axi.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.axi.bmp out/build_$*
 
-out/%.zynq100.bmp: out/%.zynq100.raw
-	$(LUA) ../misc/raw2bmp.lua out/$*.zynq100.raw out/$*.zynq100.bmp out/$*.metadata.lua 1
+out/%.zynq100.bmp: out/%.zynq100.raw out/%.axi.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.zynq100.raw out/$*.zynq100.bmp out/$*.axi.metadata.lua 1
 	# keep copy for future reference
 	mkdir -p out/build100_$*
 	cp out/$*.zynq100.bmp out/build100_$*
 
-out/%.terra.bmp: out/%.terra.raw
-	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
+out/%.terra.bmp: out/%.terra.raw out/%.terra.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.terra.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.terra.bmp out/build_$*
 
-out/%_half.terra.bmp: out/%_half.terra.raw
-	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.metadata.lua 0
+out/%_half.terra.bmp: out/%_half.terra.raw out/%.terra.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.terra.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*_half.terra.bmp out/build_$*

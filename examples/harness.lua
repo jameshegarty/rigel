@@ -327,21 +327,25 @@ function harnessTop(t)
   local expectedOutputCountFrac = {inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2],fn.sdfOutput[1][2]*fn.sdfInput[1][1]}
 
   err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
+
+  local backend = t.backend
+  if backend==nil then backend = arg[1] end
+  if backend==nil then backend = "verilog" end
   
-  if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" then
+  if backend=="verilog" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
-  elseif(arg[1]=="axi") then
+  elseif(backend=="axi") then
     H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
-  elseif(arg[1]=="isim") then
+  elseif(backend=="isim") then
     H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
-  elseif (t.backend==nil and arg[1]=="terrasim") or t.backend=="terra" then
+  elseif backend=="terra" then
     H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles )
   else
     print("unknown build target "..arg[1])
     assert(false)
   end
 
-  if (t.backend==nil and (arg[1]==nil or arg[1]=="verilog")) or t.backend=="verilog" or (t.backend==nil and arg[1]=="terrasim") or t.backend=="terra" then
+  if backend=="verilog" or backend=="terra" or backend=="axi" then
     local tapValueString = "x"
     local tapBits = 0
     if t.tapType~=nil then
@@ -353,7 +357,7 @@ function harnessTop(t)
     local harnessOption = t.harness
     if harnessOption==nil then harnessOption=1 end
 
-    writeMetadata("out/"..t.outFile..".metadata.lua", {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption})
+    writeMetadata("out/"..t.outFile.."."..backend..".metadata.lua", {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption})
   end
 
 end
