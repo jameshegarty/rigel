@@ -27,9 +27,11 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
 script:
+# early out on errors
+  - set -e
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
-  - if [[ $TARGET != "unit" ]]; then test -e examples/out/$TARGET_built.txt || exit; fi
-#  - make verilog terra verilator
+# check that make actually 100% completed, just to be really sure (?)
+  - if [[ $TARGET != "unit" ]]; then test -e examples/out/{$TARGET}_built.txt || exit; fi
 
 env:
   - TARGET=verilog
