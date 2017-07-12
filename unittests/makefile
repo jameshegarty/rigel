@@ -51,7 +51,7 @@ out/fixedtest.correct.txt: out/verilogcorrect.txt
 
 ###################
 out/fwriteseq.compiles.txt: fwriteseq.lua
-	../rigelTerra fwriteseq.lua terrasim
+	../rigelTerra fwriteseq.lua terra
 	../rigelLuajit fwriteseq.lua
 
 out/fwriteseq.correct.txt: out/verilogcorrect.txt
@@ -59,7 +59,7 @@ out/fwriteseq.correct.txt: out/verilogcorrect.txt
 	test ! -s out/$*.fwriteseqtest.diff && touch $@
 ###################
 out/fwriteseq16.compiles.txt: fwriteseq16.lua
-	../rigelTerra fwriteseq16.lua terrasim
+	../rigelTerra fwriteseq16.lua terra
 	../rigelLuajit fwriteseq16.lua
 
 out/fwriteseq16.correct.txt: out/verilogcorrect.txt
@@ -67,7 +67,7 @@ out/fwriteseq16.correct.txt: out/verilogcorrect.txt
 	test ! -s out/$*.fwriteseq16test.diff && touch $@
 ###################
 out/fwriteseq12.compiles.txt: fwriteseq12.lua
-	../rigelTerra fwriteseq12.lua terrasim
+	../rigelTerra fwriteseq12.lua terra
 	../rigelLuajit fwriteseq12.lua
 
 out/fwriteseq12.correct.txt: out/verilogcorrect.txt
@@ -76,7 +76,7 @@ out/fwriteseq12.correct.txt: out/verilogcorrect.txt
 	test ! -s out/$*.fwriteseq12testVerilog.diff && touch $@
 ###################
 out/fwriteseq18.compiles.txt: fwriteseq18.lua
-	../rigelTerra fwriteseq18.lua terrasim
+	../rigelTerra fwriteseq18.lua terra
 	../rigelLuajit fwriteseq18.lua
 
 out/fwriteseq18.correct.txt: out/verilogcorrect.txt
@@ -84,7 +84,7 @@ out/fwriteseq18.correct.txt: out/verilogcorrect.txt
 	test ! -s out/$*.fwriteseq18test.diff && touch $@
 ###################
 out/fwriteseq24.compiles.txt: fwriteseq24.lua
-	../rigelTerra fwriteseq24.lua terrasim
+	../rigelTerra fwriteseq24.lua terra
 	../rigelLuajit fwriteseq24.lua
 
 out/fwriteseq24.correct.txt: out/verilogcorrect.txt
@@ -94,7 +94,7 @@ out/fwriteseq24.correct.txt: out/verilogcorrect.txt
 	test ! -s out/$*.fwriteseq24test.diff && touch $@
 ###################
 out/fwriteseq37.compiles.txt: fwriteseq37.lua
-	../rigelTerra fwriteseq37.lua terrasim
+	../rigelTerra fwriteseq37.lua terra
 	../rigelLuajit fwriteseq37.lua
 
 out/fwriteseq37.correct.txt: out/verilogcorrect.txt
