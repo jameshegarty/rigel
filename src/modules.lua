@@ -3100,14 +3100,18 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
 end
 
 modules.constSeq = memoize(function( value, A, w, h, T, X )
-  assert(type(value)=="table")
-  assert(type(value[1])=="number")
-  err(#value==w*h, "table has wrong number of values")
+  err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
+  err( keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
+  err(#value==w*h, "constSeq: value array has wrong number of values")
   assert(X==nil)
 
---  assert(type(value[1][1])=="number")
+  err( types.isType(A), "constSeq: type must be type" )
+
+  for k,v in ipairs(value) do
+    err( A:checkLuaValue(v), "constSeq value array index "..tostring(k).." cannot convert to the correct systolic type" )
+  end
+
   assert(T<=1)
-  assert( types.isType(A) )
   assert(type(w)=="number")
   assert(type(h)=="number")
 
@@ -3118,7 +3122,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
-  res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T)
+  res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h)
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
