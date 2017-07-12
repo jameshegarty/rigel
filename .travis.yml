@@ -28,6 +28,7 @@ before_install:
 
 script:
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
+  - if [[ $TARGET != "unit" ]]; then test -e examples/out/$TARGET_built.txt || exit; fi
 #  - make verilog terra verilator
 
 env:

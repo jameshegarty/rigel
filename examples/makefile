@@ -176,10 +176,13 @@ all: $(RES)
 dups: $(DUPS)
 
 verilog: $(VERILOG)
+	touch out/verilog_done.txt
 
 terra: $(TERRAOUT)
+	touch out/terra_done.txt
 
 verilator: $(VERILATOR)
+	touch out/verilator_done.txt
 
 isim: $(ISIM)
 
@@ -194,6 +197,7 @@ camerabits: $(CAMERABITS)
 zynq100: $(AXI100)
 
 axiverilog: $(AXIVERILOG)
+	touch out/axiverilog_done.txt
 
 zynq20bits: $(AXIBITS)
 
