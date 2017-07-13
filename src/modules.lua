@@ -957,7 +957,80 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
 
   return modules.liftXYSeq( f, W, H, T )
 
-                                  end)
+end)
+
+-- takes an image of size A[W,H] to size A[W/scaleX,H/scaleY]. Fills the new pixels with value 'Value'
+modules.downsample = memoize(function( A, W, H, scaleX, scaleY, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "downsample A==nil" )
+  err( W~=nil, "downsample W==nil" )
+  err( H~=nil, "downsample H==nil" )
+  err( scaleX~=nil, "downsample scaleX==nil" )
+  err( scaleY~=nil, "downsample scaleY==nil" )
+  err( X==nil, "downsample: too many arguments" )
+  
+  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+        err(type(n)=="number","downsample expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"downsample non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  err( W%scaleX==0, "downsample: scaleX does not divide width evenly")
+  err( H%scaleY==0, "downsample: scaleY does not divide height evenly")
+
+  local res = {kind="downsample", type=A, width=W, height=H, scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, W, H )
+  res.outputType = types.array2d( A, W/scaleX, H/scaleY )
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Downsample_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_scaleX"..scaleX.."_scaleY"..scaleY
+--------
+  if terralib~=nil then res.terraModule = MT.downsample( res, A, W, H, scaleX, scaleY ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - downsample modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
+
+
+-- takes an image of size A[W,H] to size A[W*scaleX,H*scaleY]. Fills the new pixels with value 'Value'
+modules.upsample = memoize(function( A, W, H, scaleX, scaleY, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "upsample A==nil" )
+  err( W~=nil, "upsample W==nil" )
+  err( H~=nil, "upsample H==nil" )
+  err( scaleX~=nil, "upsample scaleX==nil" )
+  err( scaleY~=nil, "upsample scaleY==nil" )
+  err( X==nil, "upsample: too many arguments" )
+  
+  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+        err(type(n)=="number","upsample expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"upsample non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  err( W%scaleX==0, "upsample: scaleX does not divide width evenly")
+  err( H%scaleY==0, "upsample: scaleY does not divide height evenly")
+
+  local res = {kind="upsample", type=A, width=W, height=H, scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, W, H )
+  res.outputType = types.array2d( A, W*scaleX, H*scaleY )
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Upsample_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_scaleX"..scaleX.."_scaleY"..scaleY
+--------
+  if terralib~=nil then res.terraModule = MT.upsample( res, A, W, H, scaleX, scaleY ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - upsample modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
 
 -- This is actually a pure function
 -- takes A[T] to A[T*scale]

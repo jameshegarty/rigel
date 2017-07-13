@@ -627,6 +627,42 @@ function MT.pad( res, A, W, H, L, R, B, Top, Value )
    return Pad
 end
 
+function MT.downsample( res, A, W, H, scaleX, scaleY )
+   local struct Downsample {}
+   terra Downsample:reset()  end
+   terra Downsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W/scaleX
+
+   terra Downsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H/scaleY do
+       for x=0,W/scaleX do
+         (@out)[x+y*outW] = (@inp)[(x*scaleX)+(y*scaleY)*W]
+       end
+     end
+   end
+
+   return Downsample
+end
+
+function MT.upsample( res, A, W, H, scaleX, scaleY )
+   local struct Upsample {}
+   terra Upsample:reset()  end
+   terra Upsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W*scaleX
+
+   terra Upsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H*scaleY do
+       for x=0,W*scaleX do
+         (@out)[x+y*outW] = (@inp)[(x/scaleX)+(y/scaleY)*W]
+       end
+     end
+   end
+
+   return Upsample
+end
+
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   local struct PadSeq {posX:int; posY:int, ready:bool}

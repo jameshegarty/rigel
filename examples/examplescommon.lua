@@ -702,10 +702,9 @@ C.broadcast = memoize(function(A,T)
     function() return CT.broadcast(A,T,OT) end)
 end)
 
--- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
+-- extractStencils : A[w,h] -> A[(xmax-xmin+1)*(ymax-ymin+1)][w,h]
 -- min, max ranges are inclusive
-function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
-
+C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   assert( type(xmin)=="number" )
   assert( type(xmax)=="number" )
   assert( xmax>=xmin )
@@ -721,11 +720,13 @@ function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.name = "Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax)
+  res.stateful=false
 
   if terralib~=nil then res.terraModule = CT.stencil(res, A, w, h, xmin, xmax, ymin, ymax ) end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
 function C.borderSeq( A, W, H, T, L, R, B, Top, Value )

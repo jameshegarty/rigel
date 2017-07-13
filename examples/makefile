@@ -11,7 +11,7 @@ RAWS = $(wildcard *.raw)
 DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 
 # NYI
-SRCS_VERILOG := $(filter-out pad.lua crop.lua, $(SRCS))
+SRCS_VERILOG := $(filter-out pad.lua crop.lua stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS))
 
 VERILOG = $(patsubst %.lua,out/%.v,$(SRCS_VERILOG))
 
@@ -50,7 +50,7 @@ SRCS_VERILATOR := $(filter-out stereo_wide_handshake_full.lua stereo_wide_handsh
 SRCS_VERILATOR := $(filter-out stereo_wide_handshake_medi.lua stereo_wide_handshake_nostall_medi.lua, $(SRCS_VERILATOR))
 
 # NYI
-SRCS_VERILATOR := $(filter-out pad.lua crop.lua, $(SRCS_VERILATOR))
+SRCS_VERILATOR := $(filter-out pad.lua crop.lua  stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS_VERILATOR))
 
 VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS_VERILATOR))
@@ -105,7 +105,7 @@ SRCS_AXI := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_h
 SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
 
 # NYI
-SRCS_AXI := $(filter-out readmemory.lua readmemory_flip.lua pad.lua crop.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out readmemory.lua readmemory_flip.lua pad.lua crop.lua  stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua,$(SRCS_AXI))
 
 SRCS_AXI100 = $(SRCS_AXI)
 
