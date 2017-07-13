@@ -1174,7 +1174,7 @@ function MT.fwriteSeq(filename,ty)
   end
   terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
     cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
-    @out = @inp
+    cstring.memcpy(out,inp,[ty:sizeof()])
   end
 
   return FwriteSeq
@@ -1413,6 +1413,12 @@ function MT.lambdaCompile(fn)
           if n.fn.inputType==types.null() then
             table.insert( stats, quote mself.[n.name]:process( out ) end )
           else
+            if DARKROOM_VERBOSE then
+              print("COMPILE "..n.fn.name)
+              n.fn.terraModule.methods.process:compile()
+              print("COMPILEDONE "..n.fn.name)
+            end
+
             table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
           end
 
