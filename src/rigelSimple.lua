@@ -222,7 +222,7 @@ function RS.connect(t)
   end
 
   ccnt = ccnt + 1
-  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp )
+  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp, t.util )
 end
 
 function RS.constant(t)
