@@ -260,10 +260,10 @@ local function toTerra(self)
   return res, inp
 end
 
-function fixedTerra.toDarkroom(ast,out)
+function fixedTerra.toDarkroom(ast)
   local terraout, terrainp = toTerra(ast)
 
-  local terra tfn([terrainp], out:&out.type:toTerraType())
+  local terra tfn([terrainp], out:&ast.type:toTerraType())
     @out = terraout
   end
 

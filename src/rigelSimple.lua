@@ -30,6 +30,10 @@ RS.array2d = RS.array
 RS.tuple = types.tuple
 
 RS.modules = {}
+function RS.modules.pad(t)
+  return RM.pad( t.type, t.size[1], t.size[2], t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value )
+end
+
 function RS.modules.padSeq(t)
   return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.V, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
 end
@@ -149,16 +153,16 @@ function RS.modules.sqrt(t)
 end
 
 local sumPow2 = function(A,B,outputType)
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
+  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0, 
+    function(sinp)
+      local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
+      sout = sout:disablePipelining()
+      return sout
+    end,
+    function() return RST.sumPow2(A,B,outputType) end )
 
-  local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
-  sout = sout:disablePipelining()
-  
-  local tfn
-  if terralib~=nil then tfn=RST.sumPow2(A,B,outputType) end
-  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0, tfn, sinp, sout )
   return partial
-                end
+end
 
 function RS.modules.sumPow2(t)
   return sumPow2(t.inType,t.inType,t.outType)
@@ -218,7 +222,7 @@ function RS.connect(t)
   end
 
   ccnt = ccnt + 1
-  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp )
+  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp, t.util )
 end
 
 function RS.constant(t)

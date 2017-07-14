@@ -1,7 +1,5 @@
 local IR = require("ir")
 local types = require("types")
---local simmodules = require("simmodules")
---local cstdio = terralib.includec("stdio.h")
 local ffi = require("ffi")
 local S = require("systolic")
 local Ssugar = require("systolicsugar")
@@ -226,6 +224,7 @@ function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDep
 function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
 
+  err( type(tab.name)=="string", "rigel.newFunction: name must be string ("..tab.kind..")" )
   err( SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1, "rigel.newFunction: sdf input rate is not <=1" )

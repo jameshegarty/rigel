@@ -24,7 +24,7 @@ local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputF
   local out = R.apply("HARNESS_inner", fn, hsfninp )
 
   local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
-  return RM.lambda( "harness"..id..fn.systolicModule.name, inpSymb, out )
+  return RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out )
 end)
 
 return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, X)
@@ -45,15 +45,21 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local f = terraWrapper(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".terra.raw",outputType,i)
     f = RM.seqMapHandshake( f, inputType, tapType, tapValue, inputCount, outputCount, false, i, simCycles )
     local Module = f:compile()
-    if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
-    (terra() 
-       --cstdio.printf("Start CPU Sim\n")
+
+    local terra dosim() 
+       if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); 
        m:reset(); 
        m:process(nil,nil); 
        if DARKROOM_VERBOSE then m:stats();  end
        cstdlib.free(m) 
-     end)()
+     end
+    
+    if DARKROOM_VERBOSE then print("compile terra top") end
+    dosim:compile()
+
+    if DARKROOM_VERBOSE then print("Call CPU sim, heap size: "..terralib.sizeof(Module)) end
+    dosim()
 
     if DARKROOM_VERBOSE then fixed.printHistograms() end
   end

@@ -7,6 +7,7 @@ local Ssugar = require "systolicsugar"
 local cstring = terralib.includec("string.h")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 
@@ -604,6 +605,64 @@ function MT.posSeq(res,W,H,T)
   return PosSeq
 end
 
+function MT.pad( res, A, W, H, L, R, B, Top, Value )
+   local struct Pad {}
+   terra Pad:reset()  end
+   terra Pad:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W+L+R
+
+   terra Pad:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H+B+Top do
+       for x=0,W+L+R do
+         if x>=L and x<W+L and y>=B and y<H+B then
+           (@out)[x+y*outW] = (@inp)[(x-L)+(y-B)*W]
+         else
+           (@out)[x+y*outW] = [Value]
+         end
+       end
+     end
+   end
+
+   return Pad
+end
+
+function MT.downsample( res, A, W, H, scaleX, scaleY )
+   local struct Downsample {}
+   terra Downsample:reset()  end
+   terra Downsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W/scaleX
+
+   terra Downsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H/scaleY do
+       for x=0,W/scaleX do
+         (@out)[x+y*outW] = (@inp)[(x*scaleX)+(y*scaleY)*W]
+       end
+     end
+   end
+
+   return Downsample
+end
+
+function MT.upsample( res, A, W, H, scaleX, scaleY )
+   local struct Upsample {}
+   terra Upsample:reset()  end
+   terra Upsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W*scaleX
+
+   terra Upsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H*scaleY do
+       for x=0,W*scaleX do
+         (@out)[x+y*outW] = (@inp)[(x/scaleX)+(y/scaleY)*W]
+       end
+     end
+   end
+
+   return Upsample
+end
+
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   local struct PadSeq {posX:int; posY:int, ready:bool}
@@ -1115,7 +1174,7 @@ function MT.fwriteSeq(filename,ty)
   end
   terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
     cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
-    @out = @inp
+    cstring.memcpy(out,inp,[ty:sizeof()])
   end
 
   return FwriteSeq
@@ -1184,6 +1243,25 @@ return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType()
                            end
 
 end
+
+function MT.crop( res, A, W, H, L, R, B, Top )
+   local struct Crop {}
+   terra Crop:reset()  end
+   terra Crop:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W-L-R
+
+   terra Crop:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H-B-Top do
+       for x=0,W-L-R do
+           (@out)[x+y*outW] = (@inp)[(x+L)+(y+B)*W]
+       end
+     end
+   end
+
+   return Crop
+end
+
 
 function MT.lambdaCompile(fn)
     local inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" )
@@ -1335,6 +1413,12 @@ function MT.lambdaCompile(fn)
           if n.fn.inputType==types.null() then
             table.insert( stats, quote mself.[n.name]:process( out ) end )
           else
+            if DARKROOM_VERBOSE then
+              print("COMPILE "..n.fn.name)
+              n.fn.terraModule.methods.process:compile()
+              print("COMPILEDONE "..n.fn.name)
+            end
+
             table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
           end
 

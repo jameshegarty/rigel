@@ -4,8 +4,6 @@ local typecheckAST = require("typecheck")
 local systolic={}
 local ffi = require("ffi")
 
-local ARTEM = false
-
 systolicModuleFunctions = {}
 systolicModuleMT={__index=systolicModuleFunctions}
 
@@ -199,13 +197,6 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isOpaque() then
     return "0'b0"
   elseif ty:stripConst()==types.float(32) then
---    local terra floatToBits(a:float) 
---      var o : &opaque = &a
---      return @([&uint32](o))
---    end
---    local v = floatToBits(value)
---    return "32'd"..tostring(v)
---     assert(false)
      local a = ffi.new("float[1]",value)
      local b = ffi.cast("unsigned int*",a)
      return "32'd"..tostring(b[0])
@@ -275,8 +266,6 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
 
   local implicitValid = false
   if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
-  --if output~=nil then output = output:addValid( valid ) end
-  --pipelines = map( pipelines, function(n) return n:addValid(valid) end )
   
   if type(outputName)=="string" then outputName = sanitize(outputName) end
   local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid, CE=CE }
@@ -811,97 +800,6 @@ function systolicASTFunctions:pipeline(stallDomains)
   return self:addPipelineRegisters( delaysAtInput, stallDomains )
 end
 
-artemOp = memoize(function(kind,op,pipelined,hasCE,aType,bType,cType,X)
-                    assert(type(kind)=="string")
-                    assert(type(op)=="string")
-                    assert(type(pipelined)=="boolean")
-                    assert(types.isType(aType))
-                    assert(type(hasCE)=="boolean")
-                    assert(bType==nil or types.isType(bType))
-                    assert(cType==nil or types.isType(cType))
-                    assert(X==nil)
-
-                    local opToStr = {["binop"]={["*"]="MULT",["+"]="PLUS",["-"]="SUB",["and"]="AND",[">>"]="RSHIFT",["=="]="EQ",["or"]="OR",[">="]="GE",["<"]="LT",[">"]="GT"}}
-                    opToStr.select={["select"]="SELECT"}
-                    opToStr.unary={["not"]="NOT",["isX"]="ISX"}
-
-  print("artemOp",kind,op,pipelined,aType,bType,cType,X)
-
-                    local MN = opToStr[kind][op].."_pipelined"..tostring(pipelined).."_"..tostring(aType).."_"..tostring(bType)
-                    MN = MN.."_"..tostring(cType)
-
-                    if hasCE then
-                      MN = MN.."_CE"
-                    else
-                      MN = MN.."_NOCE"
-                    end
-
-  local res = systolic.moduleConstructor(MN)
-  local ITYPE = types.tuple{aType,bType,cType}
-  local sinp = systolic.parameter("process_input", ITYPE )
-  local out
-
-  local function BNOP(lhs, rhs, op)
-    lhs, rhs = checkast(lhs), checkast(rhs)
-    return typecheck({kind="binop",op=op,ARTEM_HACK=true,inputs={lhs,rhs},loc=getloc(),pipelined=pipelined})
-  end
-
-  if kind=="binop" then
-    out = BNOP(systolic.index(sinp,0),S.index(sinp,1),op)
-  elseif kind=="select" then
-    out = typecheck({kind="select",inputs={systolic.index(sinp,0),S.index(sinp,1),S.index(sinp,2)},ARTEM_HACK=true,loc=getloc(),pipelined=pipelined})
-  elseif kind=="unary" then
-    out = typecheck{kind="unary",op=op,inputs={S.index(sinp,0)},loc=getloc(),pipelined=pipelined,ARTEM_HACK=true}
-  else
-    assert(false)
-  end
-
-  local CE = S.CE("process_CE")
-  if hasCE==false then CE=nil end
-  res:addFunction(systolic.lambda("process",sinp,out,"process_output",nil,nil,CE))
-  res:complete()
-  print("ARET",res)
-  return res
-  end)
-
-function systolicASTFunctions:artem(stallDomains,onlyWire)
-  local inst = {}
-  local inames = {}
-  local finalOut = self:process(
-    function(n,orig)
-      if (n.kind=="binop" or n.kind=="unary" or n.kind=="select") and n.ARTEM_HACK==nil then
---      if (n.kind=="binop") and n.ARTEM_HACK==nil then
-        assert(#n.inputs>=1 and #n.inputs<=3)
-        local at = n.inputs[1].type
-        local bt,ct
-        if n.inputs[2]~=nil then bt = n.inputs[2].type end
-        if n.inputs[3]~=nil then ct = n.inputs[3].type end
-        local INAME = n.name.."_PL"..tostring(n.pipelined)
-        
-        if inames[INAME]~=nil then
-          inames[INAME] = inames[INAME] + 1
-          INAME = INAME.."_"..inames[INAME]
-        else
-          inames[INAME] = 1
-        end
-
-        local CE
-        if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then CE = stallDomains[orig] end
-        
-        if (bt==nil or bt:verilogBits()>0) then
-          local I = artemOp(n.kind,n.op or n.kind,n.pipelined and onlyWire==false,CE~=nil,at,bt,ct):instantiate(INAME)
-          table.insert(inst,I)
-          
-          local res = I:process(systolic.tuple{n.inputs[1],n.inputs[2],n.inputs[3]},S.constant(true,types.bool()),CE)
-          
-          return res
-        end
-      end
-    end)
-
-  return finalOut, inst
-end
-
 function systolicASTFunctions:calculateStallDomains()
   local stallDomains = {}
   self:visitEachReverse(
@@ -1252,60 +1150,59 @@ function systolicASTFunctions:toVerilog( module )
           assert(type(inputIsWire)=="boolean")
           assert(type(inputName)=="string")
 
-	  
-	  local allBits = true
-	  if fromType:isTuple() then
-	    for k,v in pairs(fromType.list) do if v:isBits()==false then allBits=false end end
-	  end
-	  
-	  if fromType:isTuple() and allBits then
-	    -- casting tuple of bit type {bits,bits,bits...} to anything: a noop
-	    return expr
-	  elseif toType:isBits() or fromType:isBits() then
-	    -- noop: verilog is blind to types anyway
-
-	    local diff = toType:verilogBits()-fromType:verilogBits()
-	    if diff>0 then
-	      -- pad it with some 0's
-	      return "{"..tostring(diff).."'b0,"..expr.."}"
-	    elseif diff==0 then
-	      return expr
-	    else
-	      assert(false)
-	    end
-	  elseif toType:isArray() and fromType:isTuple() then
-	    -- Theoretically, typechecker should only allow valid tuple array casts to be allowed? (always row-major order)
-	    err( toType:verilogBits()==fromType:verilogBits(), "tuple to array cast verilog size doesn't match?")
-	    return expr
-	  elseif toType:isArray() and fromType:isArray()==false and fromType:isTuple()==false then
-	    return "{"..table.concat( map(range(toType:channels()), function(n) return expr end),",").."}" -- broadcast
-	  elseif fromType:isArray() and toType:isArray()==false and fromType:arrayOver():isBool() and (toType:isUint() or toType:isInt()) then
-	    err("systolic cast from array of bools to type NYI")
-	  elseif toType:isArray() and fromType:isArray() and toType:baseType()==fromType:baseType() then
-	    assert(toType:channels() == fromType:channels())
-	    -- array reshaping is noop
-	    return expr
-	  elseif fromType:isTuple() and #fromType.list==1 and fromType.list[1]==toType then
-	    -- {A} to A.  Noop
-	    return expr
-	  elseif fromType:isArray() and fromType:arrayOver()==toType and fromType:channels()==1 then
-	    -- A[1] to A. Noop
-	    return expr
-	  elseif fromType:constSubtypeOf(toType) then
-	    return expr -- casting const to non-const. Verilog doesn't care.
-	  elseif fromType:isNamed() and toType:isNamed()==false and fromType.structure==toType then
-	    -- noop, explicit cast of named type to its structural type
-	    return expr
-	  elseif fromType:isNamed()==false and toType:isNamed() and fromType==toType.structure then
-	    -- noop, cast to named type with same structure
-	    return expr
-	  elseif fromType:isNamed() and toType:isNamed()==false then
-	    -- structure not identical, attempt base cast
-	    return docast( expr, fromType.structure, toType, inputIsWire, inputName )
-	  elseif fromType:isNamed()==false and toType:isNamed() then
-	    -- structure not identical, attempt base cast
-	    return docast( expr, fromType, toType.structure, inputIsWire, inputName )
-	  elseif fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
+          local allBits = true
+          if fromType:isTuple() then
+            for k,v in pairs(fromType.list) do if v:isBits()==false then allBits=false end end
+          end
+          
+          if fromType:isTuple() and allBits then
+            -- casting tuple of bit type {bits,bits,bits...} to anything: a noop
+            return expr
+          elseif toType:isBits() or fromType:isBits() then
+            -- noop: verilog is blind to types anyway
+            
+            local diff = toType:verilogBits()-fromType:verilogBits()
+            if diff>0 then
+              -- pad it with some 0's
+              return "{"..tostring(diff).."'b0,"..expr.."}"
+            elseif diff==0 then
+              return expr
+            else
+              assert(false)
+            end
+          elseif toType:isArray() and fromType:isTuple() then
+            -- Theoretically, typechecker should only allow valid tuple array casts to be allowed? (always row-major order)
+            err( toType:verilogBits()==fromType:verilogBits(), "tuple to array cast verilog size doesn't match?")
+            return expr
+          elseif toType:isArray() and fromType:isArray()==false and fromType:isTuple()==false then
+            return "{"..table.concat( map(range(toType:channels()), function(n) return expr end),",").."}" -- broadcast
+          elseif fromType:isArray() and toType:isArray()==false and fromType:arrayOver():isBool() and (toType:isUint() or toType:isInt()) then
+            err("systolic cast from array of bools to type NYI")
+          elseif toType:isArray() and fromType:isArray() and toType:baseType()==fromType:baseType() then
+            assert(toType:channels() == fromType:channels())
+            -- array reshaping is noop
+            return expr
+          elseif fromType:isTuple() and #fromType.list==1 and fromType.list[1]==toType then
+            -- {A} to A.  Noop
+            return expr
+          elseif fromType:isArray() and fromType:arrayOver()==toType and fromType:channels()==1 then
+            -- A[1] to A. Noop
+            return expr
+          elseif fromType:constSubtypeOf(toType) then
+            return expr -- casting const to non-const. Verilog doesn't care.
+          elseif fromType:isNamed() and toType:isNamed()==false and fromType.structure==toType then
+            -- noop, explicit cast of named type to its structural type
+            return expr
+          elseif fromType:isNamed()==false and toType:isNamed() and fromType==toType.structure then
+            -- noop, cast to named type with same structure
+            return expr
+          elseif fromType:isNamed() and toType:isNamed()==false then
+            -- structure not identical, attempt base cast
+            return docast( expr, fromType.structure, toType, inputIsWire, inputName )
+          elseif fromType:isNamed()==false and toType:isNamed() then
+            -- structure not identical, attempt base cast
+            return docast( expr, fromType, toType.structure, inputIsWire, inputName )
+          elseif fromType:isUint() and (toType:isInt() or toType:isUint()) and fromType.precision <= toType.precision then
             -- casting smaller uint to larger or equal int or uint. Don't need to sign extend
             local bitdiff = toType.precision-fromType.precision
 	    
@@ -1332,24 +1229,24 @@ function systolicASTFunctions:toVerilog( module )
             assert(fromType:verilogBits()==toType:verilogBits())
             return expr
 	    	  elseif fromType:isTuple() and toType:isTuple() and #fromType.list==#toType.list then
-	    local allnoop = true
-
-	    local low = 0
-	    for k,v in ipairs(fromType.list) do
-	      local sub = expr.."["..tostring(low+v:verilogBits()-1)..":"..tostring(low).."]"
-	      local e = docast(sub,v,toType.list[k],false,"")
-	      if e~=sub then allnoop=false end
-	    end
-
-	    err( allnoop, "Error, NYI, systolic cast tuple to tuple that is not a noop, "..tostring(fromType).." to "..tostring(toType))
-	    return expr
-	  elseif fromType:isArray() and toType:isArray() and fromType:channels()==toType:channels() then
-	    -- HACK: just check if this is a noop
-
-	    local e = docast(expr,fromType:arrayOver(),toType:arrayOver(),false,"")
-
-	    err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
-	    return expr
+            local allnoop = true
+            
+            local low = 0
+            for k,v in ipairs(fromType.list) do
+              local sub = expr.."["..tostring(low+v:verilogBits()-1)..":"..tostring(low).."]"
+              local e = docast(sub,v,toType.list[k],false,"")
+              if e~=sub then allnoop=false end
+            end
+            
+            err( allnoop, "Error, NYI, systolic cast tuple to tuple that is not a noop, "..tostring(fromType).." to "..tostring(toType))
+            return expr
+          elseif fromType:isArray() and toType:isArray() and fromType:channels()==toType:channels() then
+            -- HACK: just check if this is a noop
+            
+            local e = docast(expr,fromType:arrayOver(),toType:arrayOver(),false,"")
+            
+            err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
+            return expr
           else
             err(false,"FAIL TO CAST"..tostring(fromType).." to "..tostring(toType) )
           end
@@ -1646,14 +1543,8 @@ function userModuleFunctions:toVerilog()
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
-    if ARTEM then      
-      table.insert(t,table.concat(map(portlist,function(n) return n[1] end),","))
-      table.insert(t,");\n")
-      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),"; ")..";\n")
-    else
-      table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
-      table.insert(t,");\n")
-    end
+    table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
+    table.insert(t,");\n")
 
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
     if type(self.parameters)=="table" then
@@ -1764,6 +1655,19 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
     _usedPname[v.valid.name]="valid for fn '"..k.."'"
   end
 
+  -- check for dangling params
+  if onlyWire==false then
+    for k,v in pairs(fns) do
+      if v.output~=nil then
+        v.output:visitEach(
+          function(n,args) 
+            if n.kind=="parameter" then 
+              err( n.key==v.inputParameter.key or (v.valid~=nil and n.key==v.valid.key) or (v.CE~=nil and n.key==v.CE.key),"Systolic function '"..name.."' has dangling input parameter '"..n.name.."' (should be '"..v.inputParameter.name.."', or the CE or valid bit), "..n.loc) 
+            end end)
+      end
+    end
+  end
+
   -- different functions can have the same stall domains. We consider them identical if they have the same name
   for k,v in pairs(fns) do
     if v.CE~=nil then 
@@ -1775,13 +1679,6 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
-
-  if ARTEM then
-    local stallDomains = t.ast:calculateStallDomains()
-    local inst
-    t.ast, inst = t.ast:artem(stallDomains,onlyWire==true)
-    t.instances = concat(t.instances, inst)
-  end
 
   -- the idea here is that we first do the pipelineing, before _any_ CSE.
   -- the reason is that pipeline registers need a clock enable. For callsites under multiple

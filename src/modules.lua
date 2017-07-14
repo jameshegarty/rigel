@@ -9,6 +9,10 @@ local Ssugar = require "systolicsugar"
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 
+local function verilogSanitize(s)
+  return s:gsub('%W','_')
+end
+
 local MT
 if terralib~=nil then
   MT = require("modulesTerra")
@@ -66,8 +70,13 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
   err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
   err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
+  err( keycount(typelist)==#typelist, "SoAtoAoS: typelist must be lua array")
   err( asArray==nil or type(asArray)=="boolean", "SoAtoAoS: asArray must be bool or nil")
   if asArray==nil then asArray=false end
+
+  for k,v in ipairs(typelist) do
+    err(types.isType(v),"SoAtoAoS: typelist index "..tostring(k).." must be rigel type")
+  end
 
   local res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
 
@@ -82,11 +91,12 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   res.stateful=false
+  res.name = "SoAtoAoS_"..verilogSanitize(tostring(typelist))
 
   if terralib~=nil then res.terraModule = MT.SoAtoAoS(res,W,H,typelist,asArray) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("SoAtoAoS_"..(tostring(typelist):gsub('%W','_')))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", res.inputType )
     local arrList = {}
     for y=0,H-1 do
@@ -118,13 +128,14 @@ modules.packTuple = memoize(function( typelist, X )
   res.stateful = false
   res.sdfOutput = {{1,1}}
   res.sdfInput = map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
-    
+  res.name = "packTuple_"..verilogSanitize(tostring(typelist))
+
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.packTuple(res,typelist) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("packTuple_"..tostring(typelist))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local CE
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,nil,CE) )
@@ -188,11 +199,12 @@ modules.liftBasic = memoize(function(f)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
   res.stateful = f.stateful
+  res.name = "LiftBasic_"..f.name
 
   if terralib~=nil then res.terraModule = MT.liftBasic(res,f) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("LiftBasic_"..f.systolicModule.name)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local inner = systolicModule:add( f.systolicModule:instantiate("LiftBasic_inner") )
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local CE = S.CE("CE")
@@ -317,11 +329,12 @@ function modules.reduceThroughput(A,factor)
   res.sdfOutput = {{1,factor}}
   res.stateful = true
   res.delay = 0
+  res.name = "ReduceThroughput_"..tostring(factor)
 
   if terralib~=nil then res.terraModule = MT.reduceThroughput(res,A,factor) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("ReduceThroughput_"..factor)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
 
@@ -361,6 +374,7 @@ modules.waitOnInput = memoize(function(f)
   err( type(f.stateful)=="boolean", "Missing stateful annotation for fn "..f.kind)
   res.stateful = f.stateful
   res.delay = f.delay
+  res.name = "WaitOnInput_"..f.name
 
   if terralib~=nil then res.terraModule = MT.waitOnInput(res,f) end
 
@@ -407,6 +421,7 @@ modules.liftDecimate = memoize(function(f)
   local res = {kind="liftDecimate", fn = f}
   rigel.expectBasic(f.inputType)
   res.inputType = rigel.V(f.inputType)
+  res.name = "LiftDecimate_"..f.name
 
   if rigel.isV(f.outputType) then
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
@@ -448,11 +463,12 @@ modules.RPassthrough = memoize(function(f)
   res.stateful = f.stateful
   res.delay = f.delay
   if terralib~=nil then res.terraModule = MT.RPassthrough(res,f) end
+  res.name = "RPassthrough_"..f.name
 
   function res.makeSystolic()
     err( f.systolicModule~=nil, "RPassthrough null module "..f.kind)
 
-    local systolicModule = Ssugar.moduleConstructor("RPassthrough_"..f.systolicModule.name)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local inner = systolicModule:add( f.systolicModule:instantiate("RPassthrough_inner") )
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     
@@ -492,7 +508,6 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 
     local outputCount
     if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount"):setCoherent(false) ) end
-
 
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
 
@@ -568,6 +583,7 @@ modules.liftHandshake = memoize(function(f)
   rigel.expectRV(f.outputType)
   res.inputType = rigel.Handshake(rigel.extractData(f.inputType))
   res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
+  res.name = "LiftHandshake_"..f.name
 
   err( SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
@@ -586,6 +602,44 @@ modules.liftHandshake = memoize(function(f)
   return rigel.newFunction(res)
                                  end)
 
+-- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
+modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "pad A==nil" )
+  err( W~=nil, "pad W==nil" )
+  err( H~=nil, "pad H==nil" )
+  err( L~=nil, "pad L==nil" )
+  err( R~=nil, "pad R==nil" )
+  err( B~=nil, "pad B==nil" )
+  err( Top~=nil, "pad Top==nil" )
+  err( Value~=nil, "pad Value==nil" )
+  
+  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+        err(type(n)=="number","pad expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"pad non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  A:checkLuaValue(Value)
+
+  local res = {kind="pad", type=A, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = types.array2d(A,W+L+R,H+B+Top)
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Pad_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_Value"..tostring(Value)
+--------
+  if terralib~=nil then res.terraModule = MT.pad( res, A, W, H, L, R, B, Top, Value ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - pad modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
+
+
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W, H )
@@ -602,11 +656,12 @@ modules.map = memoize(function( f, W, H )
   res.stateful = f.stateful
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
+  res.name = "map_"..f.name.."_W"..tostring(W).."_H"..tostring(H)
 
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
   function res.makeSystolic()
-    local systolicModule= Ssugar.moduleConstructor("map_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
+    local systolicModule= Ssugar.moduleConstructor(res.name)
     local inp = S.parameter("process_input", res.inputType )
     local out = {}
     local resetPipelines={}
@@ -655,6 +710,7 @@ function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
   res.stateful = true
   res.sdfInput = {{1,1}}
   res.sdfOutput = {rate}
+  res.name = "FilterSeq_"..verilogSanitize(tostring(A))
 
   local outTokens = ((W*H)*rate[1])/rate[2]
   err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens in non integer ("..tonumber(outTokens)..")")
@@ -663,7 +719,7 @@ function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
 
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("FilterSeqImplWrap")
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     -- hack: get broken systolic library to actually wire valid
     local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
@@ -782,6 +838,7 @@ modules.readMemory = memoize(function(ty)
   res.sdfOutput={ {1,1}, 'x' }
   res.sdfInput={ {1,1},'x'}
   res.delay=10
+  res.name = "readMemory_"..tostring(ty)
 
   function res:sdfTransfer( I, loc )
     err( SDFRate.isSDFRate(I[1]), "Error, readMemory SDF input is not valid ")
@@ -808,7 +865,7 @@ endmodule
     local downstreamReady = S.parameter("ready_downstream", types.array2d(types.bool(),2))
     fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
   
-    return systolic.module.new("readMemory_"..tostring(ty), fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
+    return systolic.module.new(res.name, fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
   end
 
   return rigel.newFunction(res)
@@ -830,16 +887,16 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
-  local sdata = S.index(sinp,1)
-  local sy = S.index(S.index(S.index(sinp,0),0),1)
-  local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
-
-  local tfn
-  if terralib~=nil then tfn=MT.downsampleYSeqFn(innerInputType,outputType,scale) end
-
   local f = modules.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale), innerInputType, outputType, 0, 
-                           tfn, sinp, S.tuple{sdata,svalid}, nil, {{1,scale}})
+    function(sinp)
+      local sdata = S.index(sinp,1)
+      local sy = S.index(S.index(S.index(sinp,0),0),1)
+      local svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+      return S.tuple{sdata,svalid}
+    end, 
+    function()
+      return MT.downsampleYSeqFn(innerInputType,outputType,scale)
+    end, {{1,scale}})
 
   return modules.liftXYSeq( f, W, H, T )
                                   end)
@@ -867,54 +924,135 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
+--  local sinp = S.parameter( "process_input", innerInputType )
 --  local sdata = S.index(sinp,1)
-  local sy = S.index(S.index(S.index(sinp,0),0),0)
-  local svalid, sdata, tfn, sdfOverride
+
+  local tfn, sdfOverride
 
   if scale>T then -- A[T] to A[1]
     sdfOverride = {{1,scale}}
-    svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
-    sdata = S.index(sinp,1)
     if terralib~=nil then tfn = MT.downsampleXSeqFn(innerInputType,outputType,scale) end
   else
     sdfOverride = {{1,1}}
-    svalid = S.constant(true,types.bool())
-    local datavar = S.index(sinp,1)
-    sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
-    sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
-
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, tfn, sinp, S.tuple{sdata,svalid},nil,sdfOverride)
+  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, 
+    function(sinp)
+      local svalid, sdata
+      local sy = S.index(S.index(S.index(sinp,0),0),0)
+      if scale>T then -- A[T] to A[1]
+        svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+        sdata = S.index(sinp,1)
+      else
+        svalid = S.constant(true,types.bool())
+        local datavar = S.index(sinp,1)
+        sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
+        sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
+      end
+      return S.tuple{sdata,svalid}
+    end,
+    function() return tfn end,
+    sdfOverride)
 
   return modules.liftXYSeq( f, W, H, T )
 
-                                  end)
+end)
+
+-- takes an image of size A[W,H] to size A[W/scaleX,H/scaleY]. Fills the new pixels with value 'Value'
+modules.downsample = memoize(function( A, W, H, scaleX, scaleY, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "downsample A==nil" )
+  err( W~=nil, "downsample W==nil" )
+  err( H~=nil, "downsample H==nil" )
+  err( scaleX~=nil, "downsample scaleX==nil" )
+  err( scaleY~=nil, "downsample scaleY==nil" )
+  err( X==nil, "downsample: too many arguments" )
+  
+  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+        err(type(n)=="number","downsample expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"downsample non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  err( W%scaleX==0, "downsample: scaleX does not divide width evenly")
+  err( H%scaleY==0, "downsample: scaleY does not divide height evenly")
+
+  local res = {kind="downsample", type=A, width=W, height=H, scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, W, H )
+  res.outputType = types.array2d( A, W/scaleX, H/scaleY )
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Downsample_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_scaleX"..scaleX.."_scaleY"..scaleY
+--------
+  if terralib~=nil then res.terraModule = MT.downsample( res, A, W, H, scaleX, scaleY ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - downsample modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
+
+
+-- takes an image of size A[W,H] to size A[W*scaleX,H*scaleY]. Fills the new pixels with value 'Value'
+modules.upsample = memoize(function( A, W, H, scaleX, scaleY, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "upsample A==nil" )
+  err( W~=nil, "upsample W==nil" )
+  err( H~=nil, "upsample H==nil" )
+  err( scaleX~=nil, "upsample scaleX==nil" )
+  err( scaleY~=nil, "upsample scaleY==nil" )
+  err( X==nil, "upsample: too many arguments" )
+  
+  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+        err(type(n)=="number","upsample expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"upsample non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  err( W%scaleX==0, "upsample: scaleX does not divide width evenly")
+  err( H%scaleY==0, "upsample: scaleY does not divide height evenly")
+
+  local res = {kind="upsample", type=A, width=W, height=H, scaleX=scaleX, scaleY=scaleY}
+  res.inputType = types.array2d( A, W, H )
+  res.outputType = types.array2d( A, W*scaleX, H*scaleY )
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Upsample_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_scaleX"..scaleX.."_scaleY"..scaleY
+--------
+  if terralib~=nil then res.terraModule = MT.upsample( res, A, W, H, scaleX, scaleY ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - upsample modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
 
 -- This is actually a pure function
 -- takes A[T] to A[T*scale]
 -- like this: [A[0],A[0],A[1],A[1],A[2],A[2],...]
 local function broadcastWide( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
-  local sinp = S.parameter("inp",types.array2d(A,T))
-  local out = {}
-  for t=0,T-1 do
-    for s=0,scale-1 do
-      table.insert(out, S.index(sinp,t) )
-    end
-  end
-  out = S.cast(S.tuple(out), OTYPE)
 
-  local tfn
-  if terralib~=nil then tfn=MT.broadcastWide(ITYPE,OTYPE,T,scale) end
   return modules.lift("broadcastWide", ITYPE, OTYPE, 0,
-                       tfn, sinp, out)
+    function(sinp)
+      local out = {}
+      for t=0,T-1 do
+        for s=0,scale-1 do
+          table.insert(out, S.index(sinp,t) )
+        end
+      end
+      return S.cast(S.tuple(out), OTYPE)
+    end,
+    function() return MT.broadcastWide(ITYPE,OTYPE,T,scale) end)
 end
 
 -- this has type V->RV
-function modules.upsampleXSeq( A, T, scale, X )
+modules.upsampleXSeq = memoize(function( A, T, scale, X )
   assert(X==nil)
 
   if T==1 then
@@ -925,13 +1063,13 @@ function modules.upsampleXSeq( A, T, scale, X )
     res.inputType = ITYPE
     res.outputType = rigel.RV(types.array2d(A,T))
     res.delay=0
-
+    res.name = "UpsampleXSeq_"..verilogSanitize(tostring(A)).."_T_"..tostring(T).."_scale_"..tostring(scale)
 
     if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, ITYPE ) end
 
     -----------------
     function res.makeSystolic()
-      local systolicModule = Ssugar.moduleConstructor("UpsampleXSeq")
+      local systolicModule = Ssugar.moduleConstructor(res.name)
       local sinp = S.parameter( "inp", ITYPE )
 
       local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):instantiate("phase") )
@@ -956,10 +1094,10 @@ function modules.upsampleXSeq( A, T, scale, X )
   else
     return modules.compose("upsampleXSeq_"..T, modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
   end
-end
+end)
 
 -- V -> RV
-function modules.upsampleYSeq( A, W, H, T, scale )
+modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
   err( W%T==0,"W%T~=0")
   err( isPowerOf2(scale), "scale must be power of 2")
   err( isPowerOf2(W), "W must be power of 2")
@@ -970,12 +1108,13 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   res.outputType = rigel.RV(types.array2d(A,T))
   res.delay=0
   res.stateful = true
+  res.name = "UpsampleYSeq_"..verilogSanitize(tostring(A)).."_T_"..tostring(T).."_scale_"..tostring(scale).."_w_"..tostring(W).."_h_"..tostring(H)
 
   if terralib~=nil then res.terraModule = MT.upsampleYSeq( res,A, W, H, T, scale, ITYPE ) end
 
   -----------------
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("UpsampleYSeq")
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter( "inp", ITYPE )
 
     -- we currently don't have a way to make a posx counter and phase counter coherent relative to each other. So just use 1 counter for both. This restricts us to only do power of two however!
@@ -1003,22 +1142,23 @@ function modules.upsampleYSeq( A, W, H, T, scale )
   end
 
   return modules.waitOnInput( rigel.newFunction(res) )
-end
+end)
 
 -- Stateful{uint8,uint8,uint8...} -> Stateful(uint8)
 -- Ignores the counts. Just interleaves between streams.
 -- N: number of streams.
 -- period==0: ABABABAB, period==1: AABBAABBAABB, period==2: AAAABBBB
-function modules.interleveSchedule( N, period )
+modules.interleveSchedule = memoize(function( N, period )
   err(type(N)=="number", "N must be number")
   err( isPowerOf2(N), "N must be power of 2")
   err(type(period)=="number", "period must be number")
   local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
+  res.name = "InterleveSchedule_"..N.."_"..period
 
   if terralib~=nil then res.terraModule = MT.interleveSchedule( N, period ) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("InterleveSchedule_"..N.."_"..period)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
@@ -1038,15 +1178,16 @@ function modules.interleveSchedule( N, period )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- wtop is the width of the largest (top) pyramid level
-function modules.pyramidSchedule( depth, wtop, T )
+modules.pyramidSchedule = memoize(function( depth, wtop, T )
   err(type(depth)=="number", "depth must be number")
   err(type(wtop)=="number", "wtop must be number")
   err(type(T)=="number", "T must be number")
   local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
-  
+  res.name = "PyramidSchedule_depth_"..tostring(depth).."_wtop_"..tostring(wtop).."_T_"..tostring(T)
+
   if terralib~=nil then res.terraModule = MT.pyramidSchedule( depth, wtop, T ) end
 
   --------------------
@@ -1069,7 +1210,7 @@ function modules.pyramidSchedule( depth, wtop, T )
   local log2N = math.ceil(math.log(depth)/math.log(2))
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("PyramidSchedule_"..depth.."_"..wtop)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(8), types.uint(16),types.uint(log2N)}, "pyramid schedule addr %d wcnt %d out %d", true):instantiate("printInst") ) end
@@ -1097,10 +1238,10 @@ function modules.pyramidSchedule( depth, wtop, T )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- WARNING: validOut depends on readyDownstream
-function modules.toHandshakeArray( A, inputRates )
+modules.toHandshakeArray = memoize(function( A, inputRates )
   err( types.isType(A), "A must be type" )
   rigel.expectBasic(A)
   err( type(inputRates)=="table", "inputRates must be table")
@@ -1112,6 +1253,8 @@ function modules.toHandshakeArray( A, inputRates )
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
   res.stateful = false
+  res.name = "ToHandshakeArray_"..verilogSanitize(tostring(A)).."_"..#inputRates
+
   function res:sdfTransfer( I, loc ) 
     err(#I[1]==#inputRates, "toHandshakeArray: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
     return I 
@@ -1120,7 +1263,7 @@ function modules.toHandshakeArray( A, inputRates )
   if terralib~=nil then res.terraModule = MT.toHandshakeArray( res,A, inputRates ) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("ToHandshakeArray_"..#inputRates):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
     local printStr = "IV ["..table.concat(broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d/"..(#inputRates-1)
     local printInst
@@ -1160,12 +1303,12 @@ function modules.toHandshakeArray( A, inputRates )
   end
 
   return rigel.newFunction( res )
-end
+end)
 
 -- inputRates is a list of SDF rates
 -- {StatefulHandshakRegistered(A),StatefulHandshakRegistered(A),...} -> StatefulHandshakRegistered({A,stream:uint8}),
 -- where stream is the ID of the input that corresponds to the output
-function modules.serialize( A, inputRates, Schedule, X )
+modules.serialize = memoize(function( A, inputRates, Schedule, X )
   err( types.isType(A), "A must be type" )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates) )
@@ -1179,6 +1322,7 @@ function modules.serialize( A, inputRates, Schedule, X )
   res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
   err( type(Schedule.stateful)=="boolean", "Schedule missing stateful annotation")
   res.stateful = Schedule.stateful
+  res.name = "Serialize_"..verilogSanitize(tostring(A)).."_"..#inputRates
 
   local sdfSum = inputRates[1][1]/inputRates[1][2]
   for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
@@ -1196,7 +1340,7 @@ function modules.serialize( A, inputRates, Schedule, X )
   if terralib~=nil then res.terraModule = MT.serialize( res, A, inputRates, Schedule) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("Serialize_"..#inputRates):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
     local scheduler = systolicModule:add( Schedule.systolicModule:instantiate("Scheduler") )
     local printInst
@@ -1233,10 +1377,10 @@ function modules.serialize( A, inputRates, Schedule, X )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- WARNING: ready depends on ValidIn
-function modules.demux( A, rates, X )
+modules.demux = memoize(function( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
   assert( SDFRate.isSDFRate(rates) )
@@ -1248,6 +1392,7 @@ function modules.demux( A, rates, X )
   res.inputType = rigel.HandshakeTmuxed( A, #rates )
   res.outputType = types.array2d(rigel.Handshake(A), #rates)
   res.stateful = false
+  res.name = "Demux_"..verilogSanitize(tostring(A)).."_"..#rates
 
   local sdfSum = rates[1][1]/rates[1][2]
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
@@ -1264,7 +1409,7 @@ function modules.demux( A, rates, X )
   if terralib~=nil then res.terraModule = MT.demux(res,A,rates) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("Demux_"..#rates):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
     local printInst
     if DARKROOM_VERBOSE then 
@@ -1306,9 +1451,9 @@ function modules.demux( A, rates, X )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
-function modules.flattenStreams( A, rates, X )
+modules.flattenStreams = memoize( function( A, rates, X )
   err( types.isType(A), "A must be type" )
   err( type(rates)=="table", "rates must be table")
   assert( SDFRate.isSDFRate(rates) )
@@ -1327,11 +1472,12 @@ function modules.flattenStreams( A, rates, X )
 
   res.sdfInput = rates
   res.sdfOutput = {{1,1}}
+  res.name = "FlattenStreams_"..verilogSanitize(tostring(A)).."_"..#rates
 
   if terralib~=nil then res.terraModule = MT.flattenStreams(res,A,rates) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("FlattenStreams_"..#rates):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
     local resetValid = S.parameter("reset_valid", types.bool() )
     
@@ -1352,7 +1498,7 @@ function modules.flattenStreams( A, rates, X )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- Takes StatefulHandshake(A) to (StatefulHandshake(A))[N]
 -- HACK(?!): when we fan-out a handshake stream, we need to synchronize the downstream modules.
@@ -1370,11 +1516,12 @@ modules.broadcastStream = memoize(function(A,N,X)
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = broadcast({1,1},N)
+  res.name = "BroadcastStream_"..verilogSanitize(tostring(A)).."_"..N
 
   if terralib~=nil then res.terraModule = MT.broadcastStream(res,A,N) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("BroadcastStream_"..tostring(A):gsub('%W','_').."_"..N):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
     local printStr = "IV %d readyDownstream ["..table.concat(broadcast("%d",N),",").."] ready %d"
     local printInst
@@ -1419,11 +1566,12 @@ modules.posSeq = memoize(function( W, H, T )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {},{{1,1}}
   res.delay = 0
+  res.name = "PosSeq_W"..W.."_H"..H.."_T"..T
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("PosSeq_W"..W.."_H"..H.."_T"..T)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):CE(true):instantiate("posX_posSeq") )
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):CE(true):instantiate("posY_posSeq") )
 
@@ -1456,7 +1604,7 @@ modules.posSeq = memoize(function( W, H, T )
   end
 
   return rigel.newFunction(res)
-                          end)
+end)
 
 -- this takes a pure function f : {{int32,int32}[T],inputType} -> outputType
 -- and drives the first tuple with (x,y) coord
@@ -1512,36 +1660,73 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local sinp = S.parameter( "process_input", innerInputType )
-  local sdata = S.index(sinp,1)
-  local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
-  local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
-  local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
-
-  -- verilator lint workaround
-  local lbcheck
-  if L==0 and B==0 then
-    lbcheck = S.constant(true,types.bool())
-  elseif L~=0 and B==0 then
-    lbcheck = S.ge(sx,sL)
-  elseif L==0 and B~=0 then
-    lbcheck = S.ge(sy,sB)
-  else
-    lbcheck = S.__and(S.ge(sx,sL),S.ge(sy,sB))
-  end
-
-  local trcheck = S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop))
-
-  local svalid = S.__and(lbcheck,trcheck)
-
-  local tfn
-  if terralib~=nil then tfn = MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )  end
-
   local f = modules.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top), innerInputType, outputType, 0, 
-                           tfn, sinp, S.tuple{sdata,svalid}, nil, {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
+    function(sinp)
+      local sdata = S.index(sinp,1)
+      local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
+      local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
+      local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
+      
+      -- verilator lint workaround
+      local lbcheck
+      if L==0 and B==0 then
+        lbcheck = S.constant(true,types.bool())
+      elseif L~=0 and B==0 then
+        lbcheck = S.ge(sx,sL)
+      elseif L==0 and B~=0 then
+        lbcheck = S.ge(sy,sB)
+      else
+        lbcheck = S.__and(S.ge(sx,sL),S.ge(sy,sB))
+      end
+      
+      local trcheck = S.__and(S.lt(sx,sWmR),S.lt(sy,sHmTop))
+      
+      local svalid = S.__and(lbcheck,trcheck)
+      
+      return S.tuple{sdata,svalid}
+    end, 
+    function()
+      return MT.cropSeqFn( innerInputType, outputType, A, W, H, T, L, R, B, Top ) 
+    end, 
+    {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
   return modules.liftXYSeq( f, W, H, T  )
                            end)
+
+-- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
+modules.crop = memoize(function( A, W, H, L, R, B, Top, X )
+	err( types.isType(A), "A must be a type")
+
+  err( A~=nil, "crop A==nil" )
+  err( W~=nil, "crop W==nil" )
+  err( H~=nil, "crop H==nil" )
+  err( L~=nil, "crop L==nil" )
+  err( R~=nil, "crop R==nil" )
+  err( B~=nil, "crop B==nil" )
+  err( Top~=nil, "crop Top==nil" )
+  err( X==nil, "crop: too many arguments" )
+  
+  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+        err(type(n)=="number","crop expected number for argument "..k.." but is "..tostring(n)); 
+        err(n==math.floor(n),"crop non-integer argument "..k..":"..n); 
+        err(n>=0,"n<0") end)
+
+  local res = {kind="crop", type=A, L=L, R=R, B=B, Top=Top, width=W, height=H}
+  res.inputType = types.array2d(A,W,H)
+  res.outputType = types.array2d(A,W-L-R,H-B-Top)
+  res.stateful = false
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.delay=0
+  res.name = "Crop_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top
+--------
+  if terralib~=nil then res.terraModule = MT.crop( res, A, W, H, L, R, B, Top ) end
+
+  function res.makeSystolic()
+    err(false, "NYI - crop modules systolic version")
+	end
+
+  return rigel.newFunction(res)
+end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
@@ -1577,11 +1762,12 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{ (W*H)/T, ((W+L+R)*(H+B+Top))/T}}, {{1,1}}
   res.delay=0
+  res.name = "PadSeq_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value)
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("PadSeq_"..tostring(A):gsub('%W','_').."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
@@ -1666,6 +1852,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   res.stateful = true
 --  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.delay = 0
+  res.name = "ChangeRate_"..verilogSanitize(tostring(A)).."_from"..inputRate.."_to"..outputRate.."_H"..H
 
   if inputRate>outputRate then -- 8 to 4
     res.sdfInput, res.sdfOutput = {{outputRate,inputRate}},{{1,1}}
@@ -1674,7 +1861,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   end
 
   function res.makeSystolic()
-    local systolicModule= Ssugar.moduleConstructor("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
+    local systolicModule= Ssugar.moduleConstructor(res.name)
 
     local svalid = S.parameter("process_valid", types.bool() )
     local rvalid = S.parameter("reset", types.bool() )
@@ -1740,11 +1927,12 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
+  res.name = "linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..verilogSanitize(tostring(A))
 
   if terralib~=nil then res.terraModule = MT.linebuffer(res, A, w, h, T, ymin) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local addr = systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
     
@@ -1809,11 +1997,12 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
+  res.name = "SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..verilogSanitize(tostring(A)).."_rowWidth"..tostring(rowWidth)
 
   if terralib~=nil then res.terraModule = MT.sparseLinebuffer(A, imageW, imageH, rowWidth, ymin, defaultValue) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..tostring(A).."_rowWidth"..tostring(rowWidth))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     
     -- index 1 is ymin+1 row, index 2 is ymin+2 row etc
@@ -1908,11 +2097,12 @@ modules.SSR = memoize(function( A, T, xmin, ymin )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay=0
+  res.name = "SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T.."_A"..verilogSanitize(tostring(A))
 
   if terralib~=nil then res.terraModule = MT.SSR(res, A, T, xmin, ymin ) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..T.."_A"..tostring(A))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("inp", rigel.lower(res.inputType))
     local pipelines = {}
     local SR = {}
@@ -1971,11 +2161,12 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
 
   res.sdfInput, res.sdfOutput = {{1,1/T}},{{1,1}}
   res.delay=0
+  res.name = "SSRPartial_"..verilogSanitize(tostring(A)).."_T"..tostring(T)
 
   if terralib~=nil then res.terraModule =  MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("SSRPartial_"..tostring(A):gsub('%W','_').."_T"..tostring(T))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local P = 1/T
     
@@ -2049,12 +2240,13 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   end
 
   res.stateful = f.stateful
+  res.name = "MakeHandshake_"..f.name
 
   if terralib~=nil then res.terraModule = MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end
 
   function res.makeSystolic()
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
-    local systolicModule = Ssugar.moduleConstructor( "MakeHandshake_"..f.systolicModule.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
     local outputCount
     if DARKROOM_VERBOSE then outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
@@ -2154,12 +2346,14 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local bytes = (size*A:verilogBits())/8
 
+  res.name = "fifo_SIZE"..size.."_"..verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes)
+
   local fifo
   if csimOnly then
     res.systolicModule = fpgamodules.fifonoop(A)
   else
     function res.makeSystolic()
-      local systolicModule = Ssugar.moduleConstructor("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
+      local systolicModule = Ssugar.moduleConstructor(res.name)
 
       local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
 
@@ -2218,7 +2412,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   return rigel.newFunction(res)
                         end)
 
-function modules.lut( inputType, outputType, values )
+modules.lut = memoize(function( inputType, outputType, values )
   err( types.isType(inputType), "inputType must be type")
   rigel.expectBasic( inputType )
   err( types.isType(outputType), "outputType must be type")
@@ -2230,11 +2424,12 @@ function modules.lut( inputType, outputType, values )
   local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 1
+  res.name = "LUT_"..verilogSanitize(tostring(inputType)).."_"..verilogSanitize(tostring(outputType)).."_"..verilogSanitize(tostring(values))
 
   if terralib~=nil then res.terraModule = MT.lut(inputType, outputType, values, inputCount) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("LUT")
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
     local sinp = S.parameter("process_input", res.inputType )
@@ -2250,7 +2445,7 @@ function modules.lut( inputType, outputType, values )
   end
 
   return rigel.newFunction(res)
-end
+end)
 
 modules.reduce = memoize(function( f, W, H )
   if rigel.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
@@ -2270,11 +2465,12 @@ modules.reduce = memoize(function( f, W, H )
 
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
+  res.name = "reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H)
 
   if terralib~=nil then res.terraModule = MT.reduce(res,f,W,H) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("reduce_"..f.systolicModule.name.."_W"..tostring(W).."_H"..tostring(H))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local resetPipelines = {}
     local sinp = S.parameter("process_input", res.inputType )
@@ -2312,6 +2508,7 @@ modules.reduceSeq = memoize(function( f, T, X )
   res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
+  res.name = "ReduceSeq_"..f.name.."_T"..tostring(1/T)
 
   if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,T) end
 
@@ -2319,7 +2516,7 @@ modules.reduceSeq = memoize(function( f, T, X )
     local del = f.systolicModule:getDelay("process")
     err( del == 0, "ReduceSeq function must have delay==0 but instead has delay of "..del )
 
-    local systolicModule = Ssugar.moduleConstructor("ReduceSeq_"..f.systolicModule.name.."_T"..tostring(1/T))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),f.outputType,f.outputType}, "ReduceSeq "..f.systolicModule.name.." phase %d input %d output %d", true):instantiate("printInst") ) end
@@ -2366,9 +2563,10 @@ modules.overflow = memoize(function( A, count )
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=A, outputType=rigel.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
   if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
+  res.name = "Overflow_"..count.."_"..verilogSanitize(tostring(A))
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("Overflow_"..count.."_"..tostring(A):gsub('%W','_'))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
     local cnt = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
 
     local sinp = S.parameter("process_input", A )
@@ -2402,9 +2600,10 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
 
   if terralib~=nil then res.terraModule = MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) end
+  res.name = "Underflow_A"..verilogSanitize(tostring(A)).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor( "Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor( res.name ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
@@ -2493,11 +2692,12 @@ modules.cycleCounter = memoize(function( A, count )
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="cycleCounter", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{count,count+padCount}}, sdfOutput={{1,1}}, delay=0}
+  res.name = "CycleCounter_A"..verilogSanitize(tostring(A)).."_count"..count
 
   if terralib~=nil then res.terraModule = MT.cycleCounter(res,A,count) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor( "CycleCounter_A"..tostring(A).."_count"..count ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
+    local systolicModule = Ssugar.moduleConstructor( res.name ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool(),types.bool()}, "cycleCounter outputCount %d cycleCount %d outValid %d metadataMode %d"):instantiate("printInst") ) end
@@ -2604,7 +2804,6 @@ local function lambdaSDFNormalize(input,output)
 
   return newInput, newOutput
 end
-
 
 -- function definition
 -- output, inputs
@@ -2918,46 +3117,74 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   return rigel.newFunction( res )
 end
 
-function modules.lift( name, inputType, outputType, delay, terraFunction, systolicInput, systolicOutput, systolicInstances, sdfOutput, X )
-  err( type(name)=="string", "lift name must be string" )
-  assert( types.isType(inputType ) )
-  assert( types.isType(outputType ) )
-  assert( type(delay)=="number" )
-  err( systolic.isAST(systolicOutput), "missing systolic output")
-  err(sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"SDF output must be SDF")
+-- makeTerra: a lua function that returns the terra implementation
+-- makeSystolic: a lua function that returns the systolic implementation. 
+--      Input argument: systolic input value. Output: systolic output value, systolic instances table
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, sdfOutput, X )
+  err( type(name)=="string", "modules.lift: name must be string" )
+  err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
+  err( types.isType( outputType ), "modules.lift: outputType must be rigel type" )
+  err( type(delay)=="number",  "modules.lift: delay must be number" )
+  err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
+  err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
+  err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
 
+  local res = { kind="lift_"..name, name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
 
-  err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType) )
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(name)
 
-  local systolicModule = Ssugar.moduleConstructor(name)
+    local systolicInput = S.parameter( "inp", inputType )
 
-  if systolicInstances~=nil then
-    for k,v in pairs(systolicInstances) do systolicModule:add(v) end
+    local systolicOutput, systolicInstances = makeSystolic(systolicInput)
+    err( systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
+    err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+    
+    if systolicInstances~=nil then
+      for k,v in pairs(systolicInstances) do systolicModule:add(v) end
+    end
+
+    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
+    local nip = S.parameter("nip",types.null())
+
+    systolicModule:complete()
+    return systolicModule
   end
 
-  systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
-  local nip = S.parameter("nip",types.null())
-  --systolicModule:addFunction( S.lambda("reset", nip, nil,"reset_output") )
-  systolicModule:complete()
-  local res = { kind="lift_"..name, inputType = inputType, outputType = outputType, delay=delay, systolicModule=systolicModule, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
+  local res = rigel.newFunction( res )
 
-  if terralib~=nil then res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) end
+  if terralib~=nil then 
+    local terraFunction, systolicInput, systolicOutput
 
-  return rigel.newFunction( res )
+    if makeTerra==nil then
+      systolicInput = res.systolicModule.functions.process.inputParameter
+      systolicOutput = res.systolicModule.functions.process.output
+    else
+      terraFunction = makeTerra()
+    end
+
+    res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) 
+  end
+
+  return res
 end
 
 modules.constSeq = memoize(function( value, A, w, h, T, X )
-  assert(type(value)=="table")
-  assert(type(value[1])=="number")
-  err(#value==w*h, "table has wrong number of values")
+  err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
+  err( keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
+  err(#value==w*h, "constSeq: value array has wrong number of values")
   assert(X==nil)
 
---  assert(type(value[1][1])=="number")
+  err( types.isType(A), "constSeq: type must be type" )
+
+  for k,v in ipairs(value) do
+    err( A:checkLuaValue(v), "constSeq value array index "..tostring(k).." cannot convert to the correct systolic type" )
+  end
+
   assert(T<=1)
-  assert( types.isType(A) )
   assert(type(w)=="number")
   assert(type(h)=="number")
 
@@ -2968,13 +3195,13 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
-
+  res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h)
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("constSeq_"..tostring(value):gsub('%W','_').."_T"..tostring(1/T))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local sconsts = map(range(1/T), function() return {} end)
     
@@ -3013,9 +3240,10 @@ modules.freadSeq = memoize(function( filename, ty )
   res.sdfInput={{1,1}}
   res.sdfOutput={{1,1}}
   if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty) end
+  res.name = "freadSeq_"..verilogSanitize(filename)..verilogSanitize(tostring(ty))
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("freadSeq_"..filename:gsub('%W','_')..tostring(ty):gsub('%W','_'))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("freadfile") )
     local inp = S.parameter("process_input", types.null() )
@@ -3041,9 +3269,10 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
+  res.name = "fwriteSeq_"..verilogSanitize(filename).."_"..verilogSanitize(tostring(ty))
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("fwriteSeq_"..filename:gsub('%W','_').."_"..tostring(ty):gsub('%W','_'))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
 
@@ -3078,9 +3307,10 @@ function modules.seqMap( f, W, H, T )
   darkroom.expectBasic(f.outputType)
   local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
   if terralib~=nil then res.terraModule = MT.seqMap(f, W, H, T) end
+  res.name = "SeqMap_"..f.name.."_"..W.."_"..H
 
   function res.makeSystolic()
-    local systolicModule = S.module.new("SeqMap_"..W.."_"..H,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
+    local systolicModule = S.module.new(res.name,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
@@ -3143,57 +3373,60 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
 
   if readyRate==nil then readyRate=1 end
 
+  res.name = "SeqMapHandshake_"..f.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate
+
   if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles) end
 
-  local verilogStr
+  function res.makeSystolic()
+    local verilogStr
 
-  if axi then
-    local baseTypeI = inputType
-    local baseTypeO = darkroom.extractData(f.outputType)
-    err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
-    err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
+    if axi then
+      local baseTypeI = inputType
+      local baseTypeO = darkroom.extractData(f.outputType)
+      err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
+      err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
 
-    local axiv = readAll("../platform/axi/axi.v")
-    axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
-    axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
-    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
+      local axiv = readAll("../platform/axi/axi.v")
+      axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
+      axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
+  
+      -- input/output tokens are one axi bus transaction => they are 8 bytes
+      local inputBytes = upToNearest(128,inputCount*8)
+      local outputBytes = upToNearest(128,outputCount*8)
+      axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
+      -- extra 128 is for the extra AXI burst that contains metadata
+      axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
 
-    -- input/output tokens are one axi bus transaction => they are 8 bytes
-    local inputBytes = upToNearest(128,inputCount*8)
-    local outputBytes = upToNearest(128,outputCount*8)
-    axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
-    -- extra 128 is for the extra AXI burst that contains metadata
-    axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
+      local maxUtilization = 1
 
-    local maxUtilization = 1
+      axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
 
-    axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
+      if tapInputType~=nil then
+        local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
+        local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
 
-    if tapInputType~=nil then
-      local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
-      local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
+        axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
+        axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
+      else
+        axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
+        axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
+      end
 
-      axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
+      verilogStr = readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
     else
-      axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
-    end
+      local rrlog2 = math.log(readyRate)/math.log(2)
+  
+      local readybit = "1'b1"
+      if rrlog2>0 then readybit = "ready_downstream==1" end
+  
+      local tapreg, tapRST = "",""
+      if tapInputType~=nil then 
+        tapreg = S.declareReg( tapInputType, "taps").."\n" 
+        tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
+      end
 
-    verilogStr = readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
-  else
-    local rrlog2 = math.log(readyRate)/math.log(2)
-
-    local readybit = "1'b1"
-    if rrlog2>0 then readybit = "ready_downstream==1" end
-
-    local tapreg, tapRST = "",""
-    if tapInputType~=nil then 
-      tapreg = S.declareReg( tapInputType, "taps").."\n" 
-      tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
-    end
-
-    verilogStr = [[module sim();
+      verilogStr = [[module sim();
 reg CLK = 0;
 integer i = 0;
 reg RST = 1;
@@ -3238,10 +3471,9 @@ reg [31:0] totalClocks = 0;
   end
 endmodule
 ]]
-  end
+    end
 
-  function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("SeqMapHandshake_"..f.systolicModule.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate):verilog(verilogStr)
+    local systolicModule = Ssugar.moduleConstructor(res.name):verilog(verilogStr)
     systolicModule:add(f.systolicModule:instantiate("inst"))
 
     return systolicModule
@@ -3265,11 +3497,12 @@ modules.triggeredCounter = memoize(function(TY, N)
   res.sdfOutput = {{1,1}}
   res.stateful=true
   res.delay=0
+  res.name = "TriggeredCounter_"..verilogSanitize(tostring(TY)).."_"..tostring(N)
 
   if terralib~=nil then res.terraModule = MT.triggeredCounter(res,TY,N) end
 
   function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor("TriggeredCounter_"..tostring(TY):gsub('%W','_').."_"..tostring(N))
+    local systolicModule = Ssugar.moduleConstructor(res.name)
 
     local sinp = S.parameter( "inp", TY )
     

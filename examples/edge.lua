@@ -42,26 +42,31 @@ local edge = mag:toRigelModule("edgefn")
 --------------
 -- nms
 local ty = types.uint(8)
-local inp = S.parameter("inp",types.array2d(types.uint(8),3,3))
-local nms_N = S.gt(S.index(inp,1,1),S.index(inp,1,0))
-local nms_S = S.ge(S.index(inp,1,1),S.index(inp,1,2))
-local nms_E = S.gt(S.index(inp,1,1),S.index(inp,2,1))
-local nms_W = S.ge(S.index(inp,1,1),S.index(inp,0,1))
-local nmsout = S.__and(S.__and(nms_N,nms_S),S.__and(nms_E,nms_W))
-local nmsout = S.select(nmsout, S.constant(255,types.uint(8)), S.constant(0,types.uint(8)) )
-local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,edgeTerra.nms, inp, nmsout)
+
+local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,
+  function(inp)
+    local nms_N = S.gt(S.index(inp,1,1),S.index(inp,1,0))
+    local nms_S = S.ge(S.index(inp,1,1),S.index(inp,1,2))
+    local nms_E = S.gt(S.index(inp,1,1),S.index(inp,2,1))
+    local nms_W = S.ge(S.index(inp,1,1),S.index(inp,0,1))
+    local nmsout = S.__and(S.__and(nms_N,nms_S),S.__and(nms_E,nms_W))
+    return S.select(nmsout, S.constant(255,types.uint(8)), S.constant(0,types.uint(8)) )
+  end,
+  function() return edgeTerra.nms end)
 
 --------------
 local function makeThresh()
---  local THRESH = 10
   local inptype = types.tuple{types.uint(8),types.uint(32):makeConst()}
-  local inp = S.parameter( "inp", inptype )
-  local inpData = S.index( inp, 0 )
-  local inpTap = S.index( inp, 1 )
-  local c_one = S.constant({255,255,255,0},types.array2d(types.uint(8),4))
-  local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
-  local thout = S.select(S.gt(inpData,inpTap), c_one, c_zero )
-  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,edgeTerra.thresh, inp, thout)
+
+  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,
+    function(inp)
+      local inpData = S.index( inp, 0 )
+      local inpTap = S.index( inp, 1 )
+      local c_one = S.constant({255,255,255,0},types.array2d(types.uint(8),4))
+      local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
+      return S.select(S.gt(inpData,inpTap), c_one, c_zero )
+    end,
+    function() return edgeTerra.thresh end)
 
   if TAPS==false then
     local THRESH=10

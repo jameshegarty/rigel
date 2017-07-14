@@ -13,21 +13,17 @@ local function displayOutput(TRESH)
   assert(type(TRESH)=="number")
   local ITYPE = types.tuple{types.uint(8),types.uint(16)}
   local OTYPE = types.array2d(types.uint(8),1)
-  local inp = S.parameter( "inp", ITYPE )
-
-  local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
-  if TRESH~=0 then
-    local reduceType = types.uint(16)
-    out = S.cast(S.tuple{S.select(S.gt(S.index(inp,1),S.constant(TRESH,reduceType)),S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
-  end
-
-  local tfn
-  if terralib~=nil then tfn=stereoCoreTerra.displayOutput(ITYPE,TRESH) end
 
   return RM.lift("displayOutput",ITYPE, OTYPE, 0,
-                tfn, inp, 
-                out
-)
+    function(inp)
+      local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
+      if TRESH~=0 then
+        local reduceType = types.uint(16)
+        out = S.cast(S.tuple{S.select(S.gt(S.index(inp,1),S.constant(TRESH,reduceType)),S.constant(0,types.uint(8)),S.index(inp,0))},OTYPE)
+      end
+      return out
+    end,
+    function() return stereoCoreTerra.displayOutput(ITYPE,TRESH) end)
 end
 
 -- argmin expects type Stateful(A[2][SADWidth,SADWidth][SearchWindow])->StatefulV

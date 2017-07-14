@@ -44,24 +44,24 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
   -----------
   local function KSI(tab,name,phaseX,phaseY)
     local ITYPE = types.tuple{types.uint(16),types.uint(16)}
-    local kernelSelectInput = S.parameter("ksi",ITYPE)
 
-    local x = S.cast(S.index(kernelSelectInput,0),types.uint(16)) + S.constant(phaseX,types.uint(16))
-    x = S.__and(x,S.constant(1,types.uint(16)))
-    local y = S.cast(S.index(kernelSelectInput,1),types.uint(16)) + S.constant(phaseY,types.uint(16))
-    y = S.__and(y,S.constant(1,types.uint(16)))
-    local phase = x+(y*S.constant(2,types.uint(16)))
-
-    local tt = {}
     local ATYPE = types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)
-    for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
-    local kernelSelectOut = modules.wideMux( tt, phase )
-
-    local tfn
-    if terralib~=nil then tfn=campipeCoreTerra.demosaic(DEMOSAIC_W,DEMOSAIC_H,phaseX,phaseY,tab) end
 
     return RM.lift(name, ITYPE, ATYPE, 5,
-                         tfn, kernelSelectInput, kernelSelectOut)
+      function(kernelSelectInput)
+        local x = S.cast(S.index(kernelSelectInput,0),types.uint(16)) + S.constant(phaseX,types.uint(16))
+        x = S.__and(x,S.constant(1,types.uint(16)))
+        local y = S.cast(S.index(kernelSelectInput,1),types.uint(16)) + S.constant(phaseY,types.uint(16))
+        y = S.__and(y,S.constant(1,types.uint(16)))
+        local phase = x+(y*S.constant(2,types.uint(16)))
+        
+        local tt = {}
+
+        for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
+        local kernelSelectOut = modules.wideMux( tt, phase )
+        return kernelSelectOut
+      end, 
+      function() return campipeCoreTerra.demosaic(DEMOSAIC_W,DEMOSAIC_H,phaseX,phaseY,tab) end)
   end
   -----------
 

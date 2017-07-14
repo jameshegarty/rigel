@@ -264,10 +264,8 @@ end
 
 function fixedASTFunctions:cost() return 0 end
 
-function fixedASTFunctions:toSystolic()
+function fixedASTFunctions:toSystolic(inp)
   local instances = {}
-  local inp
-
   local res
 
   if fixed.DISABLE_SYNTH==false then
@@ -275,7 +273,6 @@ function fixedASTFunctions:toSystolic()
     function( n, args )
       local res
       if n.kind=="parameter" then
-        inp = S.parameter(n.name, n.type)
         res = inp
       elseif n.kind=="lift" then
         if (n.inputs[1].type:isInt() and n.inputs[1].type.precision<=32) or (n.inputs[1].type:isUint() and n.inputs[1].type.precision<32) then
@@ -401,7 +398,7 @@ function fixedASTFunctions:toSystolic()
     end
   end
 
-  return res, inp, instances
+  return res, instances
 end
 
 local hists = {}
@@ -413,12 +410,15 @@ function fixedASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp, instances = self:toSystolic()
+  local inpType
+  self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  local tfn
-  if terralib~=nil then tfn=fixedFloatTerra.tfn(self,out) end
-  --tfn:printpretty(true,false)
-  return modules.lift( name, inp.type, self.type, 0, tfn, inp, out, instances )
+  return modules.lift( name, inpType, self.type, 0, 
+    function(inp)
+      local out, instances = self:toSystolic(inp)
+      return out, instances
+    end,
+    function() return fixedFloatTerra.tfn(self) end)
 end
 
 return fixed

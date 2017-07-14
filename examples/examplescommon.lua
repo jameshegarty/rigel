@@ -11,21 +11,13 @@ if terralib~=nil then CT=require("examplescommonTerra") end
 local C = {}
 
 C.identity = memoize(function(A)
-  local sinp = S.parameter( "inp", A )
-  local tfn
-  if terralib~=nil then tfn=CT.identity(A) end
-  local identity = RM.lift( "identity_"..tostring(A), A, A, 0, tfn, sinp, sinp )
+  local identity = RM.lift( "identity_"..tostring(A), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end )
   return identity
 end)
 
 C.cast = memoize(function(A,B)
   assert(A:isTuple()==false)
-
-  local tfn
-  if terralib~=nil then tfn=CT.cast(A,B) end
-
-  local sinp = S.parameter( "inp", A )
-  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, tfn, sinp, S.cast(sinp,B) )
+  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end )
   return docast
 end)
 
@@ -33,12 +25,10 @@ C.tupleToArray = memoize(function(A,N)
   local atup = types.tuple(rep(A,N))
   local B = types.array2d(A,N)
 
-  local tfn
-  if terralib~=nil then tfn=CT.tupleToArray(A,N,atup,B) end
-
-  local sinp = S.parameter( "inp", atup )
   local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
-                          tfn, sinp, S.cast(sinp,B) )
+    function(sinp) return S.cast(sinp,B) end, 
+    function() return CT.tupleToArray(A,N,atup,B) end)
+
   return docast
 end)
 
@@ -55,30 +45,30 @@ end)
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
-  local tfn
-  if terralib~=nil then tfn=CT.multiply(A,B,outputType) end
-
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
   local partial = RM.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
-                          tfn, sinp, S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) )
+                           function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end, function() return CT.multiply(A,B,outputType) end )
   return partial
 end)
 
 ------------
 -- return A+B as a darkroom FN. A,B are types
 -- returns something of type outputType
-C.sum = memoize(function(A,B,outputType,async)
+C.sum = memoize(function( A, B, outputType, async )
   if async==nil then async=false end
 
-  local tfn
-  if terralib~=nil then tfn=CT.sum(A,B,outputType,async) end
+  local delay
+  if async then delay = 0 else delay = 1 end
 
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
-  local delay = 1
-  local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
-  if async then delay=0; sout = sout:disablePipelining() end
   local partial = RM.lift( "sum_async"..(tostring(A):gsub('%W','_'))..(tostring(B):gsub('%W','_'))..tostring(outputType)..tostring(async), types.tuple {A,B}, outputType, delay,
-                          tfn, sinp, sout )
+    function(sinp)
+      local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
+      if async then sout = sout:disablePipelining() end
+      return sout
+    end,
+    function()
+      return CT.sum(A,B,outputType,async)
+    end)
+
   return partial
 end)
 
@@ -86,20 +76,19 @@ end)
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
-  local sinp = S.parameter("inp",ITYPE)
-  local sout = S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2))
 
-  local selm = RM.lift("C_select", ITYPE, ty, 1, nil, sinp, sout)
+  local selm = RM.lift("C_select", ITYPE, ty, 1,
+    function(sinp) return S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2)) end )
+
   return selm
 end)
 -----------------------------
 C.eq = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{ty,ty}
-  local sinp = S.parameter("inp",ITYPE)
-  local sout = S.eq(S.index(sinp,0), S.index(sinp,1))
 
-  local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, nil, sinp, sout)
+  local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, 
+                       function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end)
   return selm
 end)
 
@@ -111,23 +100,31 @@ function C.argmin(idxType,vType, async)
   local ITYPE = types.tuple{ATYPE,ATYPE}
   local sinp = S.parameter( "inp", ITYPE )
 
-  local a0 = S.index(sinp,0)
-  local a0v = S.index(a0,1)
-  local a1 = S.index(sinp,1)
-  local a1v = S.index(a1,1)
 
-  local delay = 2
-  local out = S.select(S.le(a0v,a1v),a0,a1)
+  local delay
 
   if async==true then 
-    out = out:disablePipelining() 
     delay = 0
+  else
+    delay = 2
   end
 
-  local tfn
-  if terralib~=nil then tfn=CT.argmin(ITYPE,ATYPE) end
+  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay, 
+    function(sinp)
+      local a0 = S.index(sinp,0)
+      local a0v = S.index(a0,1)
+      local a1 = S.index(sinp,1)
+      local a1v = S.index(a1,1)
+      local out = S.select(S.le(a0v,a1v),a0,a1)
+      if async==true then 
+        out = out:disablePipelining() 
+      end
+      return out
+    end,
+    function()
+      return CT.argmin(ITYPE,ATYPE)
+    end)
 
-  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay, tfn, sinp, out )
   return partial
 end
 
@@ -142,9 +139,10 @@ function C.absoluteDifference(A,outputType,X)
   assert(X==nil)
 
   local TY = types.array2d(A,2)
-  local sinp = S.parameter( "inp", TY )
+
   local internalType, internalType_uint
   local internalType_terra
+  
   if A==types.uint(8) then
     -- make sure this doesn't overflow when we add sign bit
     internalType = types.int(9)
@@ -154,14 +152,15 @@ function C.absoluteDifference(A,outputType,X)
     assert(false)
   end
 
-  local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
-  local out = S.cast(subabs, internalType_uint)
-  local out = S.cast(out, outputType)
+  local partial = RM.lift( "absoluteDifference", TY, outputType, 1, 
+    function(sinp)
+      local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
+      local out = S.cast(subabs, internalType_uint)
+      local out = S.cast(out, outputType)
+      return out
+    end,
+    function() return CT.absoluteDifference(A,outputType,internalType_terra) end)
 
-  local tfn
-  if terralib~=nil then tfn = CT.absoluteDifference(A,outputType,internalType_terra) end
-
-  local partial = RM.lift( "absoluteDifference", TY, outputType, 1, tfn, sinp, out )
   return partial
 end
 
@@ -169,21 +168,22 @@ end
 -- returns a darkroom FN that casts type 'from' to type 'to'
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
-  local touint8inp = S.parameter("inp", from)
-  local tfn
-  if terralib~=nil then tfn=CT.shiftAndCast(from,to,shift) end
-  local touint8 = RM.lift( "touint8", from, to, 1, tfn, touint8inp, S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) )
+  local touint8 = RM.lift( "touint8", from, to, 1,
+    function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end, 
+    function() return CT.shiftAndCast(from,to,shift) end)
   return touint8
-                         end)
+end)
 
 C.shiftAndCastSaturate = memoize(function(from, to, shift)
-  local touint8inp = S.parameter("inp", from)
-  local OT = S.rshift(touint8inp,S.constant(shift,from))
-  local tfn
-  if terralib~=nil then tfn=CT.shiftAndCastSaturate(from,to,shift) end
-  local touint8 = RM.lift( "touint8", from, to, 1, tfn, touint8inp, S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) )
+  local touint8 = RM.lift( "touint8", from, to, 1,
+    function(touint8inp) 
+      local OT = S.rshift(touint8inp,S.constant(shift,from))
+      return S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) 
+    end,
+    function() return CT.shiftAndCastSaturate(from,to,shift) end )
+
   return touint8
-                         end)
+end)
 
 -------------
 -- returns a function of type {A[ConvWidth,ConvWidth], A_const[ConvWidth,ConvWidth]}
@@ -435,7 +435,7 @@ C.padcrop = function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
 
   table.insert(statements,1,out)
 
-  local name = "hsfn_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..tostring(f):sub(11)
+  local name = "padcrop_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..internalFn.name
 
   local hsfn
   if timingFifo then
@@ -478,12 +478,9 @@ end]=]
   local function round(x) if (x%1>=0.5) then return math.ceil(x) else return math.floor(x) end end
 
   for i=0,math.pow(2,bits)-1 do 
-    --local v = inv(i)
-    --
     local v = (math.pow(2,17)/(256+i)) - 256
     if v>255 then v = 255 end
     v = round(v)
-    --print("LUT ",i,v)
     table.insert(out, v) 
   end
   return out
@@ -491,13 +488,9 @@ end
 
 function stripMSB(totalbits)
   local ITYPE = types.uint(totalbits)
-  local inp = R.input(ITYPE)
-  local sinp = S.parameter("sinp",types.uint(totalbits))
---  local sout = S.bitSlice(sinp,0,7)
-  local tfn
-  if terralib~=nil then tfn=CT.stripMSB(totalbits) end
-  local sout = S.cast(sinp,types.uint(totalbits-1))
-  return RM.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,tfn,sinp,sout)
+  return RM.lift("stripMSB",ITYPE,types.uint(totalbits-1),0,
+    function(sinp) return S.cast(sinp,types.uint(totalbits-1)) end,
+    function() return CT.stripMSB(totalbits) end)
 end
 
 -- We want to calculate 1/x
@@ -703,17 +696,15 @@ C.broadcast = memoize(function(A,T)
   rigel.expectBasic(A)
   err( type(T)=="number", "T should be number")
   local OT = types.array2d(A,T)
-  local sinp = S.parameter("inp",A)
-  
-  local tfn
-  if terralib~=nil then tfn=CT.broadcast(A,T,OT) end
-  return modules.lift("Broadcast_"..T,A,OT,0,tfn, sinp, S.cast(S.tuple(broadcast(sinp,T)),OT) )
-    end)
 
--- extractStencils : A[n] -> A[(xmax-xmin+1)*(ymax-ymin+1)][n]
+  return modules.lift("Broadcast_"..T,A,OT,0,
+    function(sinp) return S.cast(S.tuple(broadcast(sinp,T)),OT) end,
+    function() return CT.broadcast(A,T,OT) end)
+end)
+
+-- extractStencils : A[w,h] -> A[(xmax-xmin+1)*(ymax-ymin+1)][w,h]
 -- min, max ranges are inclusive
-function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
-
+C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   assert( type(xmin)=="number" )
   assert( type(xmax)=="number" )
   assert( xmax>=xmin )
@@ -729,36 +720,38 @@ function C.stencil( A, w, h, xmin, xmax, ymin, ymax )
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.name = "Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax)
+  res.stateful=false
 
   if terralib~=nil then res.terraModule = CT.stencil(res, A, w, h, xmin, xmax, ymin, ymax ) end
 
   return rigel.newFunction(res)
-end
+end)
 
 -- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
 function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
   map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
 
   local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
-  local inp = S.parameter( "process_input", inpType )
-  local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
 
-  local lcheck = S.constant(false,types.bool())
-  if L~=0 then lcheck = S.lt(inpx,S.constant(L,types.uint(16))) end -- verilator lint workaround
+  local f = modules.lift( "BorderSeq", inpType, A, 0, 
+    function(inp)
+      local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
 
-  local horizontal = S.__or(lcheck,S.ge(inpx,S.constant(W-R,types.uint(16))))
+      local lcheck = S.constant(false,types.bool())
+      if L~=0 then lcheck = S.lt(inpx,S.constant(L,types.uint(16))) end -- verilator lint workaround
+      
+      local horizontal = S.__or(lcheck,S.ge(inpx,S.constant(W-R,types.uint(16))))
+      
+      local bcheck = S.constant(false,types.bool())
+      if B~=0 then bcheck = S.lt(inpy,S.constant(B,types.uint(16))) end -- verilator lint workaround
+      
+      local vert = S.__or(bcheck,S.ge(inpy,S.constant(H-Top,types.uint(16))))
+      local outside = S.__or(horizontal,vert)
+      return S.select(outside,S.constant(Value,A), S.index(inp,1) )
+    end,
+    function() return CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType ) end)
 
-  local bcheck = S.constant(false,types.bool())
-  if B~=0 then bcheck = S.lt(inpy,S.constant(B,types.uint(16))) end -- verilator lint workaround
-
-  local vert = S.__or(bcheck,S.ge(inpy,S.constant(H-Top,types.uint(16))))
-  local outside = S.__or(horizontal,vert)
-  local out = S.select(outside,S.constant(Value,A), S.index(inp,1) )
-
-  local tfn
-  if terralib~=nil then tfn=CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType ) end
-
-  local f = modules.lift( "BorderSeq", inpType, A, 0, tfn, inp, out )
   return modules.liftXYSeqPointwise( f, W, H, T )
 end
 
@@ -776,6 +769,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
+
   return modules.lambda( "cropHelperSeq_"..(tostring(A):gsub('%W','_')).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top, inp, out )
 end)
 
@@ -805,7 +799,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
 end)
 
 
--- purely wiring
+-- purely wiring. This should really be implemented as a lift.
 C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
@@ -823,10 +817,11 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
+  res.name = "unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T)
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
-  res.systolicModule = Ssugar.moduleConstructor("unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.systolicModule = Ssugar.moduleConstructor(res.name)
   local sinp = S.parameter("inp", res.inputType)
   local out = {}
   for i=1,T do
@@ -859,12 +854,11 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( idxLow == idxHigh ) -- NYI
     assert( index )
     local OT = inputType.list[idxLow+1]
-    local systolicInput = S.parameter("inp", inputType)
-    local systolicOutput = S.index( systolicInput, idxLow )
 
-    local tfn
-    if terralib~=nil then tfn=CT.sliceTup(inputType,OT,idxLow) end
-    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, tfn, systolicInput, systolicOutput )
+    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, 
+      function(systolicInput) return S.index( systolicInput, idxLow ) end,
+      function() return CT.sliceTup(inputType,OT,idxLow) end)
+
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
@@ -876,25 +870,36 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     err(idyHigh<H, "idyHigh>=H")
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
-    local OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
-    local systolicInput = S.parameter("inp",inputType)
-
-    local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
-    systolicOutput = S.cast( systolicOutput, OT )
-    local tfn
-    if terralib~=nil then tfn=CT.sliceArr(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W) end
+    local OT
 
     if index then
       OT = inputType:arrayOver()
-      systolicOutput = S.index( systolicInput, idxLow, idyLow )
-      if terralib~=nil then tfn=CT.sliceArrIdx(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W) end
+    else
+      OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
     end
 
-    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, tfn, systolicInput, systolicOutput )
+    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, 
+      function(systolicInput)
+        local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
+        systolicOutput = S.cast( systolicOutput, OT )
+
+        if index then
+          systolicOutput = S.index( systolicInput, idxLow, idyLow )
+        end
+        return systolicOutput
+      end,
+      function() 
+        if index then
+          local OT = inputType:arrayOver()
+          return CT.sliceArrIdx(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W)
+        else
+          return CT.sliceArr(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W)
+        end 
+      end)
   else
     err(false, "C.index input must be tuple or array but is "..tostring(inputType))
   end
-                         end)
+end)
 
 function C.index( inputType, idx, idy, X )
   err( types.isType(inputType), "first input to index must be a type" )
@@ -933,10 +938,7 @@ end
 C.plusConst = memoize(function(ty, value)
   err(types.isType(ty),"plus100: expected type input")
   err(type(value)=="number","plusConst expected numeric input")
-  local plus100tfn
-  if terralib~=nil then plus100tfn = CT.plusConsttfn(ty,value) end
-  local plus100inp = S.parameter("inp",ty)
-  local plus100mod = RM.lift( "plus"..tostring(value), ty,ty , 10, plus100tfn, plus100inp, plus100inp + S.constant(value,ty) )
+  local plus100mod = RM.lift( "plus"..tostring(value), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
   return plus100mod
 end)
 
