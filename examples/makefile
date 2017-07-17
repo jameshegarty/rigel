@@ -576,4 +576,10 @@ out/%.32nm.txt : out/%.v
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	mkdir -p out/$*_32nm
 	cp out/$*.v out/$*_32nm
-	cd out/$*_32nm; dc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nm.txt' -f ../../../platform/32nm/32nm.tcl > OUT.txt
+	cd out/$*_32nm; dc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nm.txt; set DDCFILE $*.ddc; set SYNFILE $*.synthesis.v;' -f ../../../platform/32nm/32nm.tcl > OUT.txt
+
+out/%.32nmpnr.txt : out/%.32nm.txt
+	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
+	rm -Rf out/$*_32nm/chiptop.mw
+	cd out/$*_32nm; icc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nmpnr.txt; set DDCFILE $*.ddc; set SYNFILE $*.synthesis.v;' -f ../../../platform/32nm/32nm_icc.tcl
+# > OUT_PNR.txt
