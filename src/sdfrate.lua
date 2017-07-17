@@ -16,6 +16,19 @@ function SDFRate.isSDFRate(t)
   return true
 end
 
+function SDFRate.tostring(t)
+  assert(SDFRate.isSDFRate(t))
+  local str = "{"
+  for _,v in ipairs(t) do
+    if v=='x' then
+      str = str.."x,"
+    else
+      str = str..tostring(v[1]).."/"..tostring(v[2])..","
+    end
+  end
+  str = str.."}"
+  return str
+end
 
 -- normalizes a table of SDF rates so that they sum to 1
 function SDFRate.normalize( tab )
@@ -93,6 +106,7 @@ function SDFRate.sum(tab)
 end
 
 function SDFRate.multiply(tab,n,d)
+  assert(SDFRate.isSDFRate(tab))
   assert(type(n)=="number")
   assert(type(d)=="number")
 

@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local RS = require "rigelSimple"
 local types = require("types")
 local S = require("systolic")
 local harris = require "harris_core"
@@ -38,20 +39,6 @@ local fixedSumPow2 = memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
-
-sift.sumPow2 = function(A,B,outputType)
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
-
-  local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
-  sout = sout:disablePipelining()
-
-  local tfn
-  if terralib~=nil then tfn=siftTerra.sumPow2(A,B,outputType) end
-
-  local partial = RM.lift( "sumpow2", types.tuple {A,B}, outputType, 0,
-                          tfn, sinp, sout )
-  return partial
-                end
 
 sift.fixedDiv = memoize(function(A)
   assert(types.isType(A))
@@ -220,10 +207,10 @@ function sift.siftDescriptor(dxdyType)
     dy = R.apply("iyl", sift.fixedLift(dxdyType),dy)
   end
 
-  local maginp = R.tuple("maginp",{dx,dy,gweight})
+  local maginp = R.concat("maginp",{dx,dy,gweight})
   local magFn, magType = siftMag(calcType)
   local mag = R.apply("mag",magFn,maginp)
-  local bucketInp = R.tuple("bktinp",{dx,dy,mag})
+  local bucketInp = R.concat("bktinp",{dx,dy,mag})
   local out = R.apply( "out", siftBucket(calcType,magType), bucketInp)
   return RM.lambda("siftDescriptor",inp,out), RED_TYPE
 end
@@ -271,11 +258,11 @@ function sift.tile(W,H,T,A)
           table.insert(out, tab[ty*T+y][tx*T+x])
         end
       end
-      table.insert(outarr, R.array2d("AR_"..ty.."_"..tx,out,T*T) )
+      table.insert(outarr, R.concatArray2d("AR_"..ty.."_"..tx,out,T*T) )
     end
   end
 
-  local fin = R.array2d("fin",outarr,(W/T)*(H/T))
+  local fin = R.concatArray2d("fin",outarr,(W/T)*(H/T))
 
   return RM.lambda("tile", inp, fin )
 end
@@ -357,7 +344,7 @@ function sift.siftKernel(dxdyType)
   local desc1 = R.selectStream("d1",desc_broad,1)
   local desc1 = C.fifo( fifos, statements, descTypeRed, desc1, 256, "d1")
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.sumPow2(RED_TYPE,RED_TYPE,RED_TYPE),1/(TILES_X*TILES_Y*8)))),desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=RED_TYPE,outType=RED_TYPE},1/(TILES_X*TILES_Y*8)))),desc1)
   local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc_sum)
 
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
@@ -366,13 +353,13 @@ function sift.siftKernel(dxdyType)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
   local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc0)
-  local desc = R.apply("pt",RM.packTuple{descType,descType},R.tuple("PTT",{desc0,desc_sum},false))
+  local desc = R.apply("pt",RM.packTuple{descType,descType},R.concat("PTT",{desc0,desc_sum}))
   local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
   -- we now have an array of type descType[128]. Add the pos.
-  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,TILES_X*TILES_Y*8),posType,posType},R.tuple("DPT",{desc,posX,posY},false))
+  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,TILES_X*TILES_Y*8),posType,posType},R.concat("DPT",{desc,posX,posY}))
   local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos(descType)), desc_pack)
 
   table.insert(statements,1,desc)
@@ -387,33 +374,26 @@ end
 function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
-  local sinp = S.parameter( "inp", ITYPE )
-
-  local xinp = S.index(sinp,0)
-  local yinp = S.index(sinp,1)
-
-  local xo = xinp-S.constant(x,A)
-  local yo = yinp-S.constant(y,A)
-
-  local out = S.tuple{xo,yo}
-
-  local tfn
-  if terralib~=nil then tfn=siftTerra.posSub(ITYPE,x,y) end
 
   local ps = RM.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
-                    tfn, sinp, out)
+    function(sinp)
+      local xinp = S.index(sinp,0)
+      local yinp = S.index(sinp,1)
+      
+      local xo = xinp-S.constant(x,A)
+      local yo = yinp-S.constant(y,A)
+      
+      return S.tuple{xo,yo}
+    end,
+    function() return siftTerra.posSub(ITYPE,x,y) end)
+
   return ps
 end
 ----------------
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H)
-  --print("makeHarrisWithDXDY")
-  --assert(window==16)
-
   local function res(internalW, internalH)
-    --print("MAKE HARRIS",internalW, internalH)
-
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},TILES_X*4,TILES_Y*4)
     
     local inp = R.input(ITYPE)
@@ -423,7 +403,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
     local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
     local pos = R.apply("PS", posSub(TILES_X*4-1,TILES_Y*4-1), pos)
     
-    local filterseqValue = R.tuple("fsv",{inp,pos})
+    local filterseqValue = R.concat("fsv",{inp,pos})
     
     local filterseqCond = R.apply("idx",C.index(ITYPE,TILES_X*2,TILES_Y*2),inp)
     local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
@@ -434,7 +414,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
     local nmsFn = harris.makeNMS( harrisType, true )
     local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
     
-    local fsinp = R.tuple("PTT",{filterseqValue,filterseqCond})
+    local fsinp = R.concat("PTT",{filterseqValue,filterseqCond})
     
     local filterfn = RM.lambda( "filterfn", inp, fsinp )
     
@@ -463,7 +443,7 @@ function sift.addPos(dxdyType,W,H,subX,subY)
     pos = R.apply("possub",posSub(subX,subY), pos)
   end
 
-  local out = R.tuple("FO",{inp,pos})
+  local out = R.concat("FO",{inp,pos})
   return RM.lambda("addPosAtInput",inp,out)
 end
 
@@ -573,7 +553,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
   -- merge left/right
-  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.tuple("MPT",{left,right},false))
+  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.concat("MPT",{left,right}))
 
   local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)

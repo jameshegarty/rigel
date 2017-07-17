@@ -385,10 +385,10 @@ function types.checkExplicitCast(from, to, ast)
       -- casting {A} to A
       return true
     elseif to:isArray() then
-      local allTheSame = true
-      for k,v in pairs(from.list) do if v:constSubtypeOf(from.list[1])==false then allTheSame=false end end
+      local allSubtype = true
+      for k,v in pairs(from.list) do if v:constSubtypeOf(to:arrayOver())==false then allSubtype=false end end
 
-      if allTheSame and #from.list == to:channels() then
+      if allSubtype and #from.list == to:channels() then
         -- casting {A,A,A,A} to A[4]
         return true
       elseif from.list[1]:isArray() then
@@ -400,15 +400,15 @@ function types.checkExplicitCast(from, to, ast)
       end
     elseif to:isTuple() and #from.list==#to.list then
       for k,v in pairs(from.list) do
-	local r = types.checkExplicitCast(from.list[k],to.list[k],ast)
-	err(r, "Could not cast tuple "..tostring(from).." to "..tostring(to).." because index "..tostring(k-1).." could not be casted")
+        local r = types.checkExplicitCast(from.list[k],to.list[k],ast)
+        err(r, "Could not cast tuple "..tostring(from).." to "..tostring(to).." because index "..tostring(k-1).." could not be casted")
       end
       return true
     end
 
     error("unknown tuple cast? "..tostring(from).." to "..tostring(to))
 
-  elseif (from:isTuple()==false and from:isArray()==false) and to:isArray() then
+  elseif to:isArray() and from==to.over then
     -- broadcast
     return types.checkExplicitCast(from, to.over, ast )
   elseif from:isArray() then
@@ -422,9 +422,9 @@ function types.checkExplicitCast(from, to, ast)
       local fsz = from:arrayLength()
       local tsz = to:arrayLength()
       if fsz[1]==tsz[1] and fsz[2]==tsz[2] and types.checkExplicitCast(from:arrayOver(),to:arrayOver(),ast) then
-	return true
+        return true
       else
-	err(false,"Can't cast array to array due to mismatch size or base type: "..tostring(from).." to "..tostring(to))
+        err(false,"Can't cast array to array due to mismatch size or base type: "..tostring(from).." to "..tostring(to))
       end
     end
 

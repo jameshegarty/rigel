@@ -6,6 +6,7 @@ local harness = require "harness"
 local fRS = require "fixed_float"
 local S = require("systolic")
 local SDFRate = require("sdfrate")
+local fixed_new = require("fixed_new")
 
 local RST
 if terralib~=nil then RST=require "rigelSimpleTerra" end
@@ -29,6 +30,10 @@ RS.array2d = RS.array
 RS.tuple = types.tuple
 
 RS.modules = {}
+function RS.modules.pad(t)
+  return RM.pad( t.type, t.size[1], t.size[2], t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value )
+end
+
 function RS.modules.padSeq(t)
   return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.V, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
 end
@@ -148,16 +153,16 @@ function RS.modules.sqrt(t)
 end
 
 local sumPow2 = function(A,B,outputType)
-  local sinp = S.parameter( "inp", types.tuple {A,B} )
+  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0, 
+    function(sinp)
+      local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
+      sout = sout:disablePipelining()
+      return sout
+    end,
+    function() return RST.sumPow2(A,B,outputType) end )
 
-  local sout = S.cast(S.index(sinp,0),outputType)+(S.cast(S.index(sinp,1),outputType)*S.cast(S.index(sinp,1),outputType))
-  sout = sout:disablePipelining()
-  
-  local tfn
-  if terralib~=nil then tfn=RST.sumPow2(A,B,outputType) end
-  local partial = RM.lift( "RSsumpow2", types.tuple {A,B}, outputType, 0, tfn, sinp, sout )
   return partial
-                end
+end
 
 function RS.modules.sumPow2(t)
   return sumPow2(t.inType,t.inType,t.outType)
@@ -192,32 +197,32 @@ function RS.modules.filterSeq(t)
 end
 
 function RS.connect(t)
-
+  err( R.isFunction(t.toModule), "RigelSimple.connect: toModule must be rigel module")
+  
   local inp = t.input
 
   if t.input~=nil then
-    local inputType = lookupType(t.input)
-    if R.isHandshake(inputType) and R.isHandshake(t.toModule.inputType) then
-      local btype = R.extractData(inputType)
+    if R.isHandshake(t.input.type) and R.isHandshake(t.toModule.inputType) then
+      local btype = R.extractData(t.input.type)
       local itype = R.extractData(t.toModule.inputType)
       
       if btype==types.array2d(itype,1) then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.index(btype,0)), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), RS.HS(C.index(btype,0)), inp )
       elseif types.array2d(btype,1)==itype then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), RS.HS(C.arrayop(btype,1,1)), inp )
       end
-    elseif R.isBasic(inputType) and R.isBasic(t.toModule.inputType) then
-      if types.array2d(inputType,1)==t.toModule.inputType then
+    elseif R.isBasic(t.input.type) and R.isBasic(t.toModule.inputType) then
+      if types.array2d(t.input.type,1)==t.toModule.inputType then
         ccnt = ccnt + 1
-        inp = R.apply( "v"..tostring(ccnt), C.arrayop(inputType,1,1), inp )
+        inp = R.apply( t.name or "v"..tostring(ccnt), C.arrayop(t.input.type,1,1), inp )
       end
     end
   end
 
   ccnt = ccnt + 1
-  return R.apply( "v"..tostring(ccnt), t.toModule, inp )
+  return R.apply( t.name or "v"..tostring(ccnt), t.toModule, inp, t.util )
 end
 
 function RS.constant(t)
@@ -227,33 +232,11 @@ end
 
 function RS.concat(t)
   ccnt = ccnt + 1
-  return R.tuple( "v"..tostring(ccnt), t )
-end
-
-function lookupType(t)
-  if t.kind=="apply" then
-    return t.fn.outputType
-  elseif t.kind=="selectStream" then
-    return lookupType(t.inputs[1]):arrayOver()
-  elseif t.kind=="applyMethod" then
-    return t.inst.fn.outputType
-  elseif t.kind=="input" then
-    return t.type
-  elseif t.kind=="tuple" then
-    local ty = {}
-    for k,v in ipairs(t.inputs) do table.insert(ty,lookupType(v)) end
-    return types.tuple(ty)
-  elseif t.kind=="constant" then
-    return t.type
-  else
-    print("lookuptype",t.kind)
-    assert(false)
-  end
-
+  return R.concat( "v"..tostring(ccnt), t )
 end
 
 function RS.fifo(t)
-  local ty = lookupType(t.input)
+  local ty = t.input.type
   assert( R.isHandshake(ty))
   ty = R.extractData(ty)
 
@@ -265,7 +248,7 @@ function RS.fifo(t)
 end
 
 function RS.index(t)
-  local ty=lookupType(t.input)
+  local ty=t.input.type
   
   if R.isHandshake(ty) then
     ty = R.extractData(ty)
@@ -309,16 +292,7 @@ end
 function RS.fanIn(t)
   local typelist = {}
   for _,v in ipairs(t) do
-    local ty
-    if v.kind=="apply" then
-      ty = v.fn.outputType
-    elseif v.kind=="applyMethod" then
-      ty = v.inst.fn.outputType
-    else
-      print("KND",v.kind)
-      assert(false)
-    end
-
+    local ty = v.type
     err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
     ty = R.extractData(ty)
 
@@ -327,7 +301,7 @@ function RS.fanIn(t)
   
   ccnt = ccnt + 1
   ccnt = ccnt + 1
-  return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.tuple("v"..tostring(ccnt),t,false) )
+  return R.apply("v"..tostring(ccnt-1), RM.packTuple(typelist), R.concat("v"..tostring(ccnt),t) )
 end
 
 function RS.defineModule(t)
@@ -401,14 +375,14 @@ end
 function RS.writePixels(input,id,imageSize,V)
   err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
   
-  local IT = input:typecheck()
+  --local IT = input:typecheck()
   --print("WRITEPX",IT.type)
 
   local TY
-  if R.isHandshake(IT.type) then
-    TY = R.extractData(IT.type)
+  if R.isHandshake(input.type) then
+    TY = R.extractData(input.type)
   else
-    TY = IT.type
+    TY = input.type
   end
 
   local TYY = TY
@@ -422,7 +396,7 @@ function RS.writePixels(input,id,imageSize,V)
     mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
   end
   
-  if R.isHandshake(IT.type) then
+  if R.isHandshake(input.type) then
      mod = RS.HS(mod)
   end
 
@@ -433,6 +407,14 @@ function RS.writePixels(input,id,imageSize,V)
   --
   
   return RS.connect{input=input, toModule=mod}
+end
+
+function RS.modules.readMemory(t)
+  return RM.readMemory(t.type)
+end
+
+function RS.modules.triggeredCounter(t)
+  return RM.triggeredCounter(t.type, t.N)
 end
 
 return RS

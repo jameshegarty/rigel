@@ -44,24 +44,24 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
   -----------
   local function KSI(tab,name,phaseX,phaseY)
     local ITYPE = types.tuple{types.uint(16),types.uint(16)}
-    local kernelSelectInput = S.parameter("ksi",ITYPE)
 
-    local x = S.cast(S.index(kernelSelectInput,0),types.uint(16)) + S.constant(phaseX,types.uint(16))
-    x = S.__and(x,S.constant(1,types.uint(16)))
-    local y = S.cast(S.index(kernelSelectInput,1),types.uint(16)) + S.constant(phaseY,types.uint(16))
-    y = S.__and(y,S.constant(1,types.uint(16)))
-    local phase = x+(y*S.constant(2,types.uint(16)))
-
-    local tt = {}
     local ATYPE = types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)
-    for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
-    local kernelSelectOut = modules.wideMux( tt, phase )
-
-    local tfn
-    if terralib~=nil then tfn=campipeCoreTerra.demosaic(DEMOSAIC_W,DEMOSAIC_H,phaseX,phaseY,tab) end
 
     return RM.lift(name, ITYPE, ATYPE, 5,
-                         tfn, kernelSelectInput, kernelSelectOut)
+      function(kernelSelectInput)
+        local x = S.cast(S.index(kernelSelectInput,0),types.uint(16)) + S.constant(phaseX,types.uint(16))
+        x = S.__and(x,S.constant(1,types.uint(16)))
+        local y = S.cast(S.index(kernelSelectInput,1),types.uint(16)) + S.constant(phaseY,types.uint(16))
+        y = S.__and(y,S.constant(1,types.uint(16)))
+        local phase = x+(y*S.constant(2,types.uint(16)))
+        
+        local tt = {}
+
+        for k,v in ipairs(tab) do table.insert(tt,S.constant(v,ATYPE)) end
+        local kernelSelectOut = modules.wideMux( tt, phase )
+        return kernelSelectOut
+      end, 
+      function() return campipeCoreTerra.demosaic(DEMOSAIC_W,DEMOSAIC_H,phaseX,phaseY,tab) end)
   end
   -----------
 
@@ -77,7 +77,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
 
     --local ConvWidth = 3
     local A = types.uint(8)
-    local packed = R.apply( "packedtup"..i, C.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.tuple("ptup"..i, {st,kern}) )
+    local packed = R.apply( "packedtup"..i, C.SoAtoAoS(DEMOSAIC_W,DEMOSAIC_H,{A,A}), R.concat("ptup"..i, {st,kern}) )
     local conv = R.apply( "partialll"..i, RM.map( C.multiply(A,A,types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), packed )
     local conv = R.apply( "sum"..i, RM.reduce( C.sum(types.uint(16),types.uint(16),types.uint(16)), DEMOSAIC_W, DEMOSAIC_H ), conv )
     local conv = R.apply( "touint8"..i, C.shiftAndCastSaturate( types.uint(16), A, 2 ), conv )
@@ -85,7 +85,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
     out[i] = conv
   end
 
-  local dem = RM.lambda("dem", deminp, R.array2d("ot",out,3))
+  local dem = RM.lambda("dem", deminp, R.concatArray2d("ot",out,3))
   dem = RM.liftXYSeqPointwise(dem,internalW,internalH,internalT)
 
   ---------------

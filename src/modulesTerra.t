@@ -7,6 +7,7 @@ local Ssugar = require "systolicsugar"
 local cstring = terralib.includec("string.h")
 local cmath = terralib.includec("math.h")
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 
@@ -53,7 +54,10 @@ function MT.packTuple(res,typelist)
   
   -- ignore the valid bit on const stuff: it is always considered valid
   local activePorts = {}
-  for k,v in ipairs(typelist) do if v:const()==false then table.insert(activePorts, k) end end
+  for k,v in ipairs(typelist) do
+    assert(types.isType(v))
+    if v:const()==false then table.insert(activePorts, k) end
+  end
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
   map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
@@ -324,6 +328,27 @@ function MT.upsampleXSeq(res,A, T, scale, ITYPE )
   return UpsampleXSeq
 end
 
+function MT.triggeredCounter(res,TY,N)
+  local struct TriggeredCounter { buffer : TY:toTerraType(), phase:int, ready:bool }
+  terra TriggeredCounter:reset() self.phase=0; end
+  terra TriggeredCounter:stats(name:&int8)  end
+  terra TriggeredCounter:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    valid(out) = true
+    if self.phase==0 then
+      self.buffer = @(inp)
+      data(out) = @(inp)
+    else
+      data(out) = self.buffer+self.phase
+    end
+
+    self.phase = self.phase + 1
+    if self.phase==N then self.phase=0 end
+  end
+  terra TriggeredCounter:calculateReady()  self.ready = (self.phase==0) end
+
+  return TriggeredCounter
+end
+
 function MT.downsampleYSeqFn(innerInputType,outputType,scale)
    return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
                              var y = (inp._0)[0]._1
@@ -580,6 +605,64 @@ function MT.posSeq(res,W,H,T)
   return PosSeq
 end
 
+function MT.pad( res, A, W, H, L, R, B, Top, Value )
+   local struct Pad {}
+   terra Pad:reset()  end
+   terra Pad:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W+L+R
+
+   terra Pad:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H+B+Top do
+       for x=0,W+L+R do
+         if x>=L and x<W+L and y>=B and y<H+B then
+           (@out)[x+y*outW] = (@inp)[(x-L)+(y-B)*W]
+         else
+           (@out)[x+y*outW] = [Value]
+         end
+       end
+     end
+   end
+
+   return Pad
+end
+
+function MT.downsample( res, A, W, H, scaleX, scaleY )
+   local struct Downsample {}
+   terra Downsample:reset()  end
+   terra Downsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W/scaleX
+
+   terra Downsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H/scaleY do
+       for x=0,W/scaleX do
+         (@out)[x+y*outW] = (@inp)[(x*scaleX)+(y*scaleY)*W]
+       end
+     end
+   end
+
+   return Downsample
+end
+
+function MT.upsample( res, A, W, H, scaleX, scaleY )
+   local struct Upsample {}
+   terra Upsample:reset()  end
+   terra Upsample:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W*scaleX
+
+   terra Upsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H*scaleY do
+       for x=0,W*scaleX do
+         (@out)[x+y*outW] = (@inp)[(x/scaleX)+(y/scaleY)*W]
+       end
+     end
+   end
+
+   return Upsample
+end
+
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   local struct PadSeq {posX:int; posY:int, ready:bool}
@@ -810,7 +893,7 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
   return SSRPartial
 end
 
-function MT.makeHandshake(res, f, tmuxRates )
+function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
@@ -827,7 +910,28 @@ function MT.makeHandshake(res, f, tmuxRates )
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end
 
-  terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
+  if res.inputType==types.null() and nilhandshake~=true then
+    terra MakeHandshake:process( out : &rigel.lower(res.outputType):toTerraType())
+      if self.readyDownstream then
+        --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+        if self.delaysr:size()==delay then
+          var ot = self.delaysr:popFront()
+          valid(out) = valid(ot)
+--        data(out) = data(ot)
+          cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+        else
+          valid(out)=validFalse
+        end
+
+        var tout : rigel.lower(res.outputType):toTerraType()
+        valid(tout) = true
+        self.inner:process(&data(tout))
+        self.delaysr:pushBack(&tout)
+      end
+    end
+
+  else
+    terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                out : &rigel.lower(res.outputType):toTerraType())
 
     if self.readyDownstream then
@@ -847,7 +951,10 @@ function MT.makeHandshake(res, f, tmuxRates )
       self.delaysr:pushBack(&tout)
     end
 
+    end
+
   end
+
   terra MakeHandshake:calculateReady( readyDownstream: bool ) self.ready = readyDownstream; self.readyDownstream = readyDownstream end
 
   return MakeHandshake
@@ -1067,7 +1174,7 @@ function MT.fwriteSeq(filename,ty)
   end
   terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
     cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
-    @out = @inp
+    cstring.memcpy(out,inp,[ty:sizeof()])
   end
 
   return FwriteSeq
@@ -1137,6 +1244,25 @@ return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType()
 
 end
 
+function MT.crop( res, A, W, H, L, R, B, Top )
+   local struct Crop {}
+   terra Crop:reset()  end
+   terra Crop:stats(name:&int8) end -- not particularly interesting
+
+   local outW = W-L-R
+
+   terra Crop:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+     for y=0,H-B-Top do
+       for x=0,W-L-R do
+           (@out)[x+y*outW] = (@inp)[(x+L)+(y+B)*W]
+       end
+     end
+   end
+
+   return Crop
+end
+
+
 function MT.lambdaCompile(fn)
     local inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" )
     local outputSymbol = symbol( &rigel.lower(fn.output.type):toTerraType(), "lambdaoutput" )
@@ -1174,9 +1300,9 @@ function MT.lambdaCompile(fn)
           if parentNode.kind=="selectStream" then
               assert(inputList[parentNode.i+1]==nil)
               inputList[parentNode.i+1] = v[1]
-          elseif #parentNode.inputs==1 or (parentNode.kind=="tuple" and parentNode.packStreams==true) then
+          elseif #parentNode.inputs==1 or (parentNode.kind=="concat" and parentNode.inputs[1]:outputStreams()==0) then
             table.insert( inputList, v[1] )
-          elseif ((parentNode.kind=="array2d" or parentNode.kind=="tuple") and parentNode.packStreams==false) or parentNode.kind=="statements" then
+          elseif ((parentNode.kind=="concatArray2d" or parentNode.kind=="concat") and parentNode.inputs[1]:outputStreams()~=0) or parentNode.kind=="statements" then
             local idx = v[2]-1
             table.insert( inputList, `[v[1]][idx] )
           else
@@ -1222,8 +1348,8 @@ function MT.lambdaCompile(fn)
           else
             assert(false)
           end
-        elseif n.kind=="tuple" or n.kind=="array2d" then
-          if n.packStreams then
+        elseif n.kind=="concat" or n.kind=="concatArray2d" then
+          if n.inputs[1]:outputStreams()==0 then
             res = input
           else
             assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
@@ -1287,6 +1413,12 @@ function MT.lambdaCompile(fn)
           if n.fn.inputType==types.null() then
             table.insert( stats, quote mself.[n.name]:process( out ) end )
           else
+            if DARKROOM_VERBOSE then
+              print("COMPILE "..n.fn.name)
+              n.fn.terraModule.methods.process:compile()
+              print("COMPILEDONE "..n.fn.name)
+            end
+
             table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
           end
 
@@ -1349,14 +1481,13 @@ function MT.lambdaCompile(fn)
           end
 
           return out
-        elseif n.kind=="tuple" then
+        elseif n.kind=="concat" then
           map(inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
           return out
-        elseif n.kind=="array2d" then
+        elseif n.kind=="concatArray2d" then
           local ty = rigel.lower(n.type):arrayOver()
           map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
---table.insert(stats, quote cstdio.printf("VAL %d %d\n",(@out)[0]._1,out[1]._1) end)
           return out
         elseif n.kind=="extractState" then
           return `nil

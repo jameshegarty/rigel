@@ -253,7 +253,7 @@ modules.fifonoop = memoize(function(ty)
 
   -- pushBack
   local pushBack = fifo:addFunction( systolic.lambda("store",internalData,nil,"store_input",{} ) )
-  local pushBack_ready = fifo:addFunction( systolic.lambda("store_ready",S.parameter("SRNIL",types.bool()),internalReady,"store_ready",{} ) )
+  local pushBack_ready = fifo:addFunction( systolic.lambda("store_ready",S.parameter("SRNIL",types.null()),internalReady,"store_ready",{} ) )
 
   -- popFront
   local popFront = fifo:addFunction( S.lambda("load",S.parameter("pfnil",types.tuple{types.null(),types.bool()}),internalData,"load_output") )

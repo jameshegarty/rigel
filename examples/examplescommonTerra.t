@@ -111,7 +111,10 @@ function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
     for i=0,[w*h] do
       for y = ymin, ymax+1 do
         for x = xmin, xmax+1 do
-          ((@out)[i])[(y-ymin)*(xmax-xmin+1)+(x-xmin)] = (@inp)[i+x+y*w]
+          var idx = i+x+y*w
+          if idx>=0 and idx < w*h then -- prevent segfaults
+            ((@out)[i])[(y-ymin)*(xmax-xmin+1)+(x-xmin)] = (@inp)[idx]
+          end
         end
       end
     end
