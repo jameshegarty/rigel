@@ -102,7 +102,7 @@ function CT.broadcast(A,T,OT)
   return terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
     if type(T) == "number" then
       for i=0,T do (@out)[i] = @inp end
-    else then
+    else
 	  for i=0,T[0] do
 	    for j=0,T[1] do (@out)[i][j] = @inp end
       end
