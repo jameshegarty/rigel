@@ -100,8 +100,14 @@ end
 
 function CT.broadcast(A,T,OT)
   return terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
-    for i=0,T do (@out)[i] = @inp end
-         end
+    if type(T) == "number" then
+      for i=0,T do (@out)[i] = @inp end
+    else then
+	  for i=0,T[0] do
+	    for j=0,T[1] do (@out)[i][j] = @inp end
+      end
+	end
+  end
 end
 
 function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
