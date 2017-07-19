@@ -694,8 +694,7 @@ end
 -- takes A to A[T] by duplicating the input
 C.broadcast = memoize(function(A,T)
   rigel.expectBasic(A)
-  err( type(T)=="number" or type(T)=="table", "T should be number or table")
-  err( type(T)=="table" and type(T[1])=="number", "T should contain numbers")
+  err( type(T)=="number" or type(T)=="table" and type(T[1])=="number", "T should be number or table of numbers")
   local OT, T_s
   if type(T) == "number" then
 	 OT = types.array2d(A,T)
