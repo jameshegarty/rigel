@@ -104,7 +104,7 @@ function CT.broadcast(A,T,OT)
       for i=0,T do (@out)[i] = @inp end
     else
 	  for i=0,T[0] do
-	    for j=0,T[1] do (@out)[i][j] = @inp end
+	    for j=0,T[1] do (@out)[i*T[1]+j] = @inp end
       end
 	end
   end
