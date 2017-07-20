@@ -98,10 +98,12 @@ function CT.scale( res, A, w, h, scaleX, scaleY )
   return ScaleModule
 end
 
-function CT.broadcast(A,T,OT)
+function CT.broadcast(A,W,H,OT)
   return terra(inp : &A:toTerraType(), out:&OT:toTerraType() )
-    for i=0,T do (@out)[i] = @inp end
-         end
+    for y=0,H do
+      for x=0,W do (@out)[y*W+x] = @inp end
+    end
+	end
 end
 
 function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )

@@ -692,14 +692,17 @@ end
 
 
 -- takes A to A[T] by duplicating the input
-C.broadcast = memoize(function(A,T)
+C.broadcast = memoize(function(A,W,H)
   rigel.expectBasic(A)
-  err( type(T)=="number", "T should be number")
-  local OT = types.array2d(A,T)
+  err( type(W)=="number", "broadcast: W should be number")
+  if H==nil then H=1 end
+  err( type(H)=="number", "broadcast: H should be number")
 
-  return modules.lift("Broadcast_"..T,A,OT,0,
-    function(sinp) return S.cast(S.tuple(broadcast(sinp,T)),OT) end,
-    function() return CT.broadcast(A,T,OT) end)
+  local OT = types.array2d(A, W, H)
+
+  return modules.lift("Broadcast_W"..tostring(W).."_H"..tostring(H),A,OT,0,
+    function(sinp) return S.cast(S.tuple(broadcast(sinp,W*H)),OT) end,
+    function() return CT.broadcast(A,W,H,OT) end)
 end)
 
 -- extractStencils : A[w,h] -> A[(xmax-xmin+1)*(ymax-ymin+1)][w,h]

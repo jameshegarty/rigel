@@ -38,6 +38,10 @@ function RS.modules.padSeq(t)
   return RM.liftHandshake(RM.padSeq( t.type, t.size[1], t.size[2], t.V, t.pad[1], t.pad[2], t.pad[3], t.pad[4], t.value ))
 end
 
+function RS.modules.crop(t)
+  return RM.crop( t.type, t.size[1], t.size[2], t.crop[1], t.crop[2], t.crop[3], t.crop[4])
+end
+
 function RS.modules.cropSeq(t)
   return C.cropHelperSeq( t.type, t.size[1], t.size[2], t.V, t.crop[1], t.crop[2], t.crop[3], t.crop[4] )
 --  return RM.cropSeq( t.type, t.size[1], t.size[2], t.P, t.crop[1], t.crop[2], t.crop[3], t.crop[4] )
@@ -63,8 +67,16 @@ function RS.modules.upsampleSeq(t)
   return C.upsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
+function RS.modules.upsample(t)
+  return RM.upsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
+end
+
 function RS.modules.downsampleSeq(t)
   return C.downsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
+end
+
+function RS.modules.downsample(t)
+  return RM.downsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
 end
 
 function RS.modules.posSeq(t)
