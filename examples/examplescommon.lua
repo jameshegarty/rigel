@@ -701,7 +701,7 @@ C.broadcast = memoize(function(A,W,H)
   local OT = types.array2d(A, W, H)
 
   return modules.lift("Broadcast_W"..tostring(W).."_H"..tostring(H),A,OT,0,
-    function(sinp) return S.cast(S.tuple(broadcast(sinp,T)),OT) end,
+    function(sinp) return S.cast(S.tuple(broadcast(sinp,W*H)),OT) end,
     function() return CT.broadcast(A,W,H,OT) end)
 end)
 
