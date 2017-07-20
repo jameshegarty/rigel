@@ -515,11 +515,7 @@ function err(asst, str)
 end
 
 function rep(v,n)
-  if type(n) == "number" then
-    return map(range(n), function(i) return v end)
-  else
-    return map(range(n[1], function(i) return rep(v, n[2]) end))
-  end
+  return map(range(n), function(i) return v end)
 end
 broadcast = rep
 

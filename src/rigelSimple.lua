@@ -68,7 +68,7 @@ function RS.modules.upsampleSeq(t)
 end
 
 function RS.modules.upsample(t)
-	return RM.upsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
+  return RM.upsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
 end
 
 function RS.modules.downsampleSeq(t)
@@ -76,7 +76,7 @@ function RS.modules.downsampleSeq(t)
 end
 
 function RS.modules.downsample(t)
-	return RM.downsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
+  return RM.downsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
 end
 
 function RS.modules.posSeq(t)
