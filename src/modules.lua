@@ -1012,9 +1012,6 @@ modules.upsample = memoize(function( A, W, H, scaleX, scaleY, X )
         err(n==math.floor(n),"upsample non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
 
-  err( W%scaleX==0, "upsample: scaleX does not divide width evenly")
-  err( H%scaleY==0, "upsample: scaleY does not divide height evenly")
-
   local res = {kind="upsample", type=A, width=W, height=H, scaleX=scaleX, scaleY=scaleY}
   res.inputType = types.array2d( A, W, H )
   res.outputType = types.array2d( A, W*scaleX, H*scaleY )
