@@ -1,3 +1,4 @@
+local J = require "common"
 
 -- return a terra quote
 -- symbols: this is a map of parameter names to terra values
@@ -58,7 +59,7 @@ function systolicASTFunctions:toTerra( symbols )
           else
             err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
           end
-        elseif n.inputs[1].type:isTuple() and n.type:isArray() and #n.inputs[1].type.list==n.type:channels() and n.inputs[1].type.list[1]==n.type:arrayOver() and allTheSame(n.inputs[1].type.list) then
+        elseif n.inputs[1].type:isTuple() and n.type:isArray() and #n.inputs[1].type.list==n.type:channels() and n.inputs[1].type.list[1]==n.type:arrayOver() and J.allTheSame(n.inputs[1].type.list) then
           -- cast tuple to array of same size
 	  -- ie {A,A,A} to A[3]
           local s = symbol(n.type:toTerraType())

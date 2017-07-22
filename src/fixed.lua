@@ -3,6 +3,8 @@ local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
 local fpgamodules = require("fpgamodules")
+local J = require "common"
+local err = J.err
 
 local fixed={}
 
@@ -132,7 +134,7 @@ end
 function fixed.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  assert(#tab.inputs==keycount(tab.inputs))
+  assert(#tab.inputs==J.keycount(tab.inputs))
   assert(type(tab.loc)=="string")
   assert(types.isType(tab.type))
   return setmetatable(tab,fixedASTMT)
@@ -183,7 +185,7 @@ function fixed.constant( value, signed, precision, exp )
 
   if exp==nil then exp=0 end
 
-  err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
+  err(value < math.pow(2,precision-J.sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
   return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
 end
@@ -678,7 +680,7 @@ function fixedASTFunctions:toSystolic(inp)
           table.insert(tab, S.tuple{bittrue,S.constant(i+minexp-n.precision+1,types.int(8))} )
         end
 
-        local out = foldt(tab,function(l,r) return S.select(S.index(r,0),r,l) end, 'X')
+        local out = J.foldt(tab,function(l,r) return S.select(S.index(r,0),r,l) end, 'X')
 
         res = S.select(S.eq(args[1],S.constant(0,fixed.extract(n.inputs[1].type))),S.constant(minexp,types.int(8)),S.index(out,1))
       elseif n.kind=="float" then

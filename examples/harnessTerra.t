@@ -4,8 +4,9 @@ local C = require "examplescommon"
 local cstdlib = terralib.includec("stdlib.h")
 local fixed = require "fixed"
 local types = require("types")
+local J = require "common"
 
-local terraWrapper = memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id)
+local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id)
   local fixedTapInputType = tapType
   if tapType==nil then fixedTapInputType = types.null() end
 

@@ -2,7 +2,7 @@ local C = require "examplescommon"
 local harness = require "harness"
 local types = require "types"
 local f = require "fixed"
-
+local J = require "common"
 
 local makeStereo = require "stereo_tr_core"
 
@@ -61,10 +61,10 @@ end
 local hsfn = makeStereo(1/tonumber(T),W,H,A,SearchWindow,SADWidth,OffsetX, reducePrecision, THRESH, false, rgba)
 
 local ATYPE = types.array2d(A,2)
-local ITYPE = types.array2d(ATYPE,sel(rgba,1,4))
+local ITYPE = types.array2d(ATYPE,J.sel(rgba,1,4))
 local OUT_TYPE = types.array2d(types.uint(8),8)
 
-local outfile = "stereo_tr_"..sel(rgba,"rgba_","")..filename.."_"..T
+local outfile = "stereo_tr_"..J.sel(rgba,"rgba_","")..filename.."_"..T
 
 harness{ inFile=infile, fn=hsfn, outFile=outfile, inSize={W,H}, outSize={W,H}}
 io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..filename); io.close()

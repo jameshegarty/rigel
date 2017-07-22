@@ -1,6 +1,7 @@
 local types = require("types")
 local C = require "examplescommon"
 local harness = require "harness"
+local J = require "common"
 
 if string.find(arg[0],"float") then
   f = require "fixed_float"
@@ -61,7 +62,7 @@ function makeLK(T,window)
   if f.FLOAT then
     harness{ outFile="lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
   else
-    local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..sel(f.DEEP_MULTIPLY,"_axi","")
+    local outfile = "lk_tr_handshake_"..tostring(window).."_"..tostring(T)..J.sel(f.DEEP_MULTIPLY,"_axi","")
 
     harness{ outFile=outfile, fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
 

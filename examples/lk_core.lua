@@ -2,6 +2,7 @@ local R = require "rigel"
 local RM = require "modules"
 local types = require "types"
 local C = require "examplescommon"
+local J = require "common"
 
 function toUint8Sign(ty)
   assert(f.FLOAT or f.extractSigned(ty))
@@ -104,7 +105,7 @@ function dy(bits)
   return out:reduceBits(bits.d[1],bits.d[2]):toRigelModule("dy")
 end
 
-makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
+makePartial = J.memoize(function(ltype,rtype,outMSB,outLSB)
   f.expectFixed(ltype)
   f.expectFixed(rtype)
   assert(type(outMSB)=="number")
@@ -118,7 +119,7 @@ makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
   return {out:toRigelModule("partial_"..tostring(ltype)..tostring(rtype)), out.type, prec, out:cost()}
                       end)
 
-makeSumReduce = memoize(function(inputType)
+makeSumReduce = J.memoize(function(inputType)
                           assert(types.isType(inputType))
   --print("MakeReduceSum",inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})
@@ -341,7 +342,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
   assert(X==nil)
 
   local PadRadius = window/2
-  local PadRadiusAligned = upToNearest(T,window/2)
+  local PadRadiusAligned = J.upToNearest(T,window/2)
   local PadExtra = PadRadiusAligned - PadRadius
   --print("PadRadius",PadRadius,"PRA",PadRadiusAligned)
 

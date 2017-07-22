@@ -1,5 +1,6 @@
 darkroom={}
-require("common")
+local J = require "common"
+local err = J.err
 ffi = require "ffi"
 
 local metadata = dofile(arg[3])

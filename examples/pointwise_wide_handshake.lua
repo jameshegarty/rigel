@@ -5,6 +5,7 @@ local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
+require "common".export()
 
 W = 128
 H = 64

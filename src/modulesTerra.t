@@ -10,7 +10,8 @@ local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
-
+local J = require "common"
+local err = J.err
 
 --local data = rigel.data
 --local valid = rigel.valid
@@ -34,11 +35,10 @@ function MT.SoAtoAoS(res,W,H,typelist,asArray)
     for c = 0, [W*H] do
       escape
       if asArray then
-        emit quote (@out)[c] = array( [map(range(0,#typelist-1), function(i) return `(inp.["_"..i])[c] end ) ] ) end
+        emit quote (@out)[c] = array( [J.map(J.range(0,#typelist-1), function(i) return `(inp.["_"..i])[c] end ) ] ) end
       else
-        --        emit quote (@out)[c] = { [map(range(0,#typelist-1), function(i) return `(inp.["_"..i])[c] end ) ] } end
         -- terra doesn't like us copying large structs by value
-        map(typelist, function(t,k) emit quote cstring.memcpy( &(@out)[c].["_"..(k-1)], &(inp.["_"..(k-1)])[c], [t:sizeof()]) end end )
+        J.map(typelist, function(t,k) emit quote cstring.memcpy( &(@out)[c].["_"..(k-1)], &(inp.["_"..(k-1)])[c], [t:sizeof()]) end end )
       end
       end
     end
@@ -60,28 +60,25 @@ function MT.packTuple(res,typelist)
   end
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
-  map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
-  terra PackTuple:reset() [map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
+  J.map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
+  terra PackTuple:reset() [J.map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
   terra PackTuple:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    [map(activePorts, function(i) return quote 
+    [J.map(activePorts, function(i) return quote 
              if valid(inp.["_"..(i-1)]) and self.ready[i-1] then 
                self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) 
              end 
                       end end )]
 
     if self.readyDownstream then
-        var hasData = [foldt(map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), andopterra, true )]
+        var hasData = [J.foldt(J.map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), J.andopterra, true )]
 
-        escape if DARKROOM_VERBOSE then map( typelist, function(t,k) 
+        escape if DARKROOM_VERBOSE then J.map( typelist, function(t,k) 
                       if t:const() then emit quote cstdio.printf("PackTuple FIFO %d valid:%d (const)\n",k-1,1) end 
                else emit quote cstdio.printf("PackTuple FIFO %d valid:%d (size %d)\n", k-1, self.["FIFO"..k]:hasData(),self.["FIFO"..k]:size()) end end end) end end
 
-        --var hasData = [foldt(map(activePorts, function(i) return `valid(inp.["_"..(i-1)]) end ), andopterra, true )]
         if hasData then
---          data(out) = { [map( typelist, function(t,k) if t:const() then print("CONST",k);return `data(inp.["_"..(k-1)]) else return `@(self.["FIFO"..k]:popFront()) end end ) ] }
---          data(out) = { [map( typelist, function(t,k) return `data(inp.["_"..(k-1)]) end ) ] }
           -- terra doesn't like us copying large structs by value
-          escape map( typelist, function(t,k) 
+          escape J.map( typelist, function(t,k) 
                         if t:const() then emit quote cstring.memcpy( &data(out).["_"..(k-1)], &data(inp.["_"..(k-1)]), [t:sizeof()] ) end 
         else emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:sizeof()] ) end end
         end ) end
@@ -675,7 +672,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
     if interior then
       data(out) = @inp
     else
-      data(out) = arrayof([A:toTerraType()],[rep(A:valueToTerra(Value),T)])
+      data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)])
     end
     
     self.posX = self.posX+T;
@@ -861,12 +858,8 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
   terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
   terra SSRPartial:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     var phaseAtStart = self.phase
-    --cstdio.printf("SSRPARTIAL phase %d inpValid %d red %d\n",self.phase, valid(inp),self:ready())
+
     if self.ready then
-      --darkroomAssert( self.phase==[1/T]-1, "SSRPartial set when not in right phase" )
---      darkroomAssert( self.wroteLastColumn, "SSRPartial set when not in right phase" )
---      self.activeCycles = self.activeCycles + 1
---      self.wroteLastColumn=false
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
       for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
@@ -875,17 +868,15 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
     else
       if self.phase<[1/T]-1 then 
         self.phase = self.phase + 1 
---        self.activeCycles = self.activeCycles + 1
       else
         self.phase = 0
---        self.idleCycles = self.idleCycles + 1
       end
     end
 
     var W : int = [(-xmin+1)*T]
     var Wtotal = -xmin+1
     if fullOutput then W = Wtotal end
-    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][fixedModulus(x+phaseAtStart*stride,Wtotal)] end end
+    for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][J.fixedModulus(x+phaseAtStart*stride,Wtotal)] end end
     valid(out)=true
   end
   terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
@@ -1012,9 +1003,9 @@ function MT.reduce(res,f, W, H)
   -- the execution order needs to match the hardware
   local inp = symbol( &res.inputType:toTerraType() )
   local mself = symbol( &ReduceModule )
-  local t = map(range(0,W*H-1), function(i) return `(@inp)[i] end )
+  local t = J.map(J.range(0,W*H-1), function(i) return `(@inp)[i] end )
 
-  local foldout = foldt(t, function(a,b) return quote 
+  local foldout = J.foldt(t, function(a,b) return quote 
     var tinp : f.inputType:toTerraType() = {a,b}
     var tout : f.outputType:toTerraType()
     mself.inner:process(&tinp,&tout)
@@ -1134,7 +1125,7 @@ function MT.constSeq(res, value, A, w, h, T,W )
   local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
   local mself = symbol(&ConstSeqState,"mself")
   local initstats = {}
---  map( value, function(m,i) table.insert( initstats, quote mself.data[[(i-1)]][] = m end ) end )
+
   for C=0,(1/T)-1 do
     for y=0,h-1 do
       for x=0,W-1 do
@@ -1156,11 +1147,11 @@ function MT.freadSeq(filename,ty)
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:reset() 
     self.file = cstdio.fopen(filename, "rb") 
-    darkroomAssert(self.file~=nil, ["file "..filename.." doesnt exist"])
+    [J.darkroomAssert](self.file~=nil, ["file "..filename.." doesnt exist"])
   end
   terra FreadSeq:process(inp : &types.null():toTerraType(), out : &ty:toTerraType())
     var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
-    darkroomAssert(outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+    [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
   end
 
   return FreadSeq
@@ -1170,7 +1161,7 @@ function MT.fwriteSeq(filename,ty)
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 
-    darkroomAssert( self.file~=nil, ["Error opening "..filename.." for writing"] )
+    [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
   end
   terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
     cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
@@ -1312,14 +1303,14 @@ function MT.lambdaCompile(fn)
           end
         end
 
-        if #inputList~=keycount(inputList) then
+        if #inputList~=J.keycount(inputList) then
           print("Strange downstream list ",n.name)
           for k,v in pairs(inputList) do print("K",k,"V",v) end
           assert(false)
         end
 
         -- ready bit for this node is AND of all consumers
-        local input = foldt( inputList, function(a,b) return `(a and b) end, readyInput )
+        local input = J.foldt( inputList, function(a,b) return `(a and b) end, readyInput )
 
         local res
         if n.kind=="input" then
@@ -1352,7 +1343,7 @@ function MT.lambdaCompile(fn)
           if n.inputs[1]:outputStreams()==0 then
             res = input
           else
-            assert( keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
+            assert( J.keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
             res = inputList[1]
           end
         elseif n.kind=="statements" then
@@ -1473,7 +1464,7 @@ function MT.lambdaCompile(fn)
           end
         elseif n.kind=="constant" then
           if n.type:isArray() then
-            map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
+            J.map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
           elseif n.type:isInt() or n.type:isUint() then
             table.insert( stats, quote (@out) = n.value end)
           else
@@ -1482,12 +1473,12 @@ function MT.lambdaCompile(fn)
 
           return out
         elseif n.kind=="concat" then
-          map(inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
+          J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
               table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
           return out
         elseif n.kind=="concatArray2d" then
           local ty = rigel.lower(n.type):arrayOver()
-          map(inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
+          J.map( inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
           return out
         elseif n.kind=="extractState" then
           return `nil

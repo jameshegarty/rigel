@@ -5,6 +5,7 @@ local types = require("types")
 local S = require("systolic")
 local harness = require("harness")
 local C = require "examplescommon"
+require "common".export()
 
 T = 8 -- throughput
 --ConvRadius = 1

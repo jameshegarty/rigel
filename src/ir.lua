@@ -1,3 +1,4 @@
+local J = require "common"
 -- this is the base class for all our compiler IR
 
 IR = {}
@@ -34,7 +35,7 @@ function IR.IRFunctions:visitEachReverse( func, includeKey )
   while i>=1 do
     local node = order[i]
     local argList = {}
-    for parentNode,parentKey in node:parents(self) do argList[parentNode] = sel(includeKey,{value[parentNode],parentKey},value[parentNode]) end
+    for parentNode,parentKey in node:parents(self) do argList[parentNode] = J.sel(includeKey,{value[parentNode],parentKey},value[parentNode]) end
     value[node] = func( node, argList )
     i = i - 1
   end
@@ -132,7 +133,7 @@ end
 
 function IR.IRFunctions:eq(b)
   assert(getmetatable(self)==getmetatable(b))
-  if keycount(self)~=keycount(b) or #self.inputs~=#b.inputs then  return false end
+  if J.keycount(self)~=J.keycount(b) or #self.inputs~=#b.inputs then  return false end
 
   local ignore = {inputs=1,name=1,loc=1}
   for k,v in pairs(self) do

@@ -1,6 +1,7 @@
 cstdio = terralib.includec("stdio.h")
 local cstring = terralib.includec("string.h")
 local M = {}
+local J = require "common"
 
 function M.fifo( T, reqMaxSize, name, verbose )
   assert(terralib.types.istype(T))
@@ -24,8 +25,8 @@ function M.fifo( T, reqMaxSize, name, verbose )
   end
 
   terra FIFO:pushBack( inp : &T ) 
-    darkroomAssert( self:full()==false, ["FIFO overflow "..name] )
---    self.data[self.backAddr % maxSize] = @inp
+    [J.darkroomAssert]( self:full()==false, ["FIFO overflow "..name] )
+
     -- terra doesn't like us copying large structs by value
     cstring.memcpy( &self.data[self.backAddr % maxSize], inp, [terralib.sizeof(T)])
     if verbose then cstdio.printf("fifo %s store addr %d\n", name, self.backAddr) end
@@ -36,9 +37,7 @@ function M.fifo( T, reqMaxSize, name, verbose )
   -- expects idx <=0
   -- idx=0 is the thing that was most recently pushBack'ed
   terra FIFO:peekBack( idx : int ) : &T
---    var addr = (self.backAddr+idx-1) % maxSize
---    cstdio.printf("PeekBack addr %d, %d\n",addr,fixedModulus(self.backAddr+idx-1,maxSize))
-    var addr = fixedModulus(self.backAddr+idx-1,maxSize)
+    var addr = J.fixedModulus(self.backAddr+idx-1,maxSize)
     return &self.data[addr]
   end
 
@@ -48,7 +47,7 @@ function M.fifo( T, reqMaxSize, name, verbose )
   end
 
   terra FIFO:popFront() : &T
-    darkroomAssert( self:hasData(), "fifo has no data")
+    J.darkroomAssert( self:hasData(), "fifo has no data")
     var cur = &self.data[self.frontAddr % maxSize]
     if verbose then cstdio.printf("fifo %s load addr %d\n", name, self.frontAddr) end
     self.frontAddr = self.frontAddr + 1
@@ -84,8 +83,8 @@ function M.HandshakeStub(T)
   terra HandshakeStub:reset() self.hasData=false end
   terra HandshakeStub:ready() return self.hasData==false end
   terra HandshakeStub:valid() return self.hasData end
-  terra HandshakeStub:push(inp:&T) darkroomAssert(self.hasData==false, "stub full"); self.hasData=true; self.d=@inp end
-  terra HandshakeStub:pop(out:&T) darkroomAssert(self.hasData, "stub empty"); self.hasData=false;@out=self.d; end
+  terra HandshakeStub:push(inp:&T) [J.darkroomAssert](self.hasData==false, "stub full"); self.hasData=true; self.d=@inp end
+  terra HandshakeStub:pop(out:&T) [J.darkroomAssert](self.hasData, "stub empty"); self.hasData=false;@out=self.d; end
   return HandshakeStub
 end
 

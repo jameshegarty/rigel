@@ -2,6 +2,7 @@ local RM = require "modules"
 local types = require("types")
 local harness = require "harness"
 local C = require "examplescommon"
+require "common".export()
 
 T = 1 -- throughput
 
@@ -17,7 +18,7 @@ local outputW = inputW
 local outputH = inputH
 
 function conv(internalW, internalH)
-  local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, rep(1,ConvWidth*ConvWidth), 5 )
+  local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, broadcast(1,ConvWidth*ConvWidth), 5 )
   local convpipe = C.stencilKernel( types.uint(8), T, internalW, internalH, ConvWidth, ConvWidth, convolve )
   return RM.makeHandshake(convpipe)
 end

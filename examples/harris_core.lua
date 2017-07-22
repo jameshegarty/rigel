@@ -3,12 +3,13 @@ local RM = require "modules"
 local f = require "fixed_float"
 local types = require "types"
 local C = require "examplescommon"
+local J = require "common"
 
 local G  = {14 , 62 , 104 , 62 , 14}
 
 harris = {}
 
-floatMult = memoize(function(Atype)
+floatMult = J.memoize(function(Atype)
   local inp = f.parameter("fm",types.tuple{Atype,Atype})
   local A,B = inp:index(0), inp:index(1)
   if f.isFixedType(Atype)==false then
@@ -19,14 +20,14 @@ floatMult = memoize(function(Atype)
   return {out:toRigelModule("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
                     end)
 
-floatSum = memoize(function(A)
+floatSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("fm",types.tuple{A,A})
   local out = (inp:index(0))+(inp:index(1))
   return {out:toRigelModule("floatSum"), out.type}
                    end)
 
-floatShift = memoize(function(A,amount)
+floatShift = J.memoize(function(A,amount)
   assert(types.isType(A))
   assert(type(amount)=="number")
   local inp = f.parameter("fm",A)

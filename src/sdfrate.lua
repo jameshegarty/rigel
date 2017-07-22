@@ -1,9 +1,11 @@
 local SDFRate = {}
+local J = require "common"
+local err = J.err
 
 -- t should be format {{number,number},{number,number},...}
 function SDFRate.isSDFRate(t)
   if type(t)~="table" then return false end
-  if keycount(t)~=#t then return false end
+  if J.keycount(t)~=#t then return false end
   for _,v in pairs(t) do
     if v=="x" then
       -- ok
@@ -45,7 +47,7 @@ function SDFRate.normalize( tab )
   local res = {}
   for i=1,#tab do
     local nn,dd = tab[i][1]*sum[2], tab[i][2]*sum[1]
-    local n,d = simplify(nn,dd)
+    local n,d = J.simplify(nn,dd)
     res[i] = {n,d}
   end
   
@@ -72,7 +74,7 @@ local function fracSum(a,b)
   assert(SDFRate.isFrac(b))
   local denom = a[2]*b[2]
   local num = a[1]*b[2]+b[1]*a[2]
-  local n,d=simplify(num,denom)
+  local n,d = J.simplify(num,denom)
   return {n,d}
 end
 
@@ -80,7 +82,7 @@ function SDFRate.fracMultiply(a,b)
   err( SDFRate.isFrac(a), "SDFRate.fracMultiple a is not frac: "..tostring(a[1]).." "..tostring(a[2]) )
   err( SDFRate.isFrac(b), "SDFRate.fracMultiple b is not frac: "..tostring(b[1]).." "..tostring(b[2]) )
   
-  local n,d = simplify(a[1]*b[1],a[2]*b[2])
+  local n,d = J.simplify(a[1]*b[1],a[2]*b[2])
   return {n,d}
 end
 

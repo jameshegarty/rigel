@@ -1,7 +1,9 @@
 local cstdio = terralib.includec("stdio.h")
 local cstdlib = terralib.includec("stdlib.h")
 
-terra upToNearestTerra(roundto : int,x: int)
+local commonTerra = {}
+
+terra commonTerra.upToNearestTerra(roundto : int,x: int)
   if x % roundto == 0 or roundto==0 then return x end
   
   var ox : int
@@ -15,7 +17,7 @@ terra upToNearestTerra(roundto : int,x: int)
 end
 
 
-terra downToNearestTerra(roundto:int,x:int)
+terra commonTerra.downToNearestTerra(roundto:int,x:int)
   if x % roundto == 0 or roundto == 0 then return x end
 
   var ox :int
@@ -47,17 +49,17 @@ local Ctmp = terralib.includecstring [[
 
 --darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
 
-terra orionAssert(cond : bool, str : &int8)
+terra commonTerra.orionAssert(cond : bool, str : &int8)
   if cond==false then
     cstdio.printf("ASSERT fail %s\n", str)
     cstdlib.exit(1)
   end
 end
-darkroomAssert = orionAssert
+commonTerra.darkroomAssert = commonTerra.orionAssert
 
 -- a % b
 -- stupid C mod doesn't treat negative numbers as you'd hope
-terra fixedModulus(a : int,b : int)
+terra commonTerra.fixedModulus(a : int,b : int)
   while a < 0 do a = a+b end
   return a % b
 end
@@ -67,9 +69,16 @@ end
 -- (usual integer divide rounds down for positive numbers, up for negative numbers)
 -- -7/7 = -1, -3/7=-1, -8/7 = -2
 -- assumes b is positive
-terra floorDivide(a : int, b: int)
+terra commonTerra.floorDivide(a : int, b: int)
   return terralib.select(a<0, (a-b+1)/b, a/b)
 end
 
-function andopterra(a,b) return `a and b end
-terra xor( a:bool, b:bool) return (a or b) and (not (a and b)) end
+function commonTerra.andopterra(a,b) return `a and b end
+terra commonTerra.xor( a:bool, b:bool) return (a or b) and (not (a and b)) end
+
+function commonTerra.export(t)
+  if t==nil then t=_G end
+  for k,v in pairs(commonTerra) do rawset(t,k,v) end
+end
+
+return commonTerra

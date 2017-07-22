@@ -1,6 +1,7 @@
 local R = require "rigel"
 local RM = require "modules"
 local CC = require "campipe_core"
+local J = require "common"
 
 function makeCampipeTop()
   -- inp -> |blacklevel| -> |Demosaic| -> |CCM| -> |Gamma| -> out
@@ -115,10 +116,10 @@ elseif string.find(arg[0],"ov7660") then
                 0,0,0}
   DEMOSAIC_G = {g_bl,g_br,g_tl,g_tr}
 
-  DEMOSAIC_R = map(DEMOSAIC_R,CC.kernelPad)
-  DEMOSAIC_R = map(DEMOSAIC_R, function(t) return CC.shiftKernel(t,7,3,2,0) end )
-  DEMOSAIC_G = map(DEMOSAIC_G,CC.kernelPad)
-  DEMOSAIC_B = map(DEMOSAIC_B,CC.kernelPad)
+  DEMOSAIC_R = J.map(DEMOSAIC_R,CC.kernelPad)
+  DEMOSAIC_R = J.map(DEMOSAIC_R, function(t) return CC.shiftKernel(t,7,3,2,0) end )
+  DEMOSAIC_G = J.map(DEMOSAIC_G,CC.kernelPad)
+  DEMOSAIC_B = J.map(DEMOSAIC_B,CC.kernelPad)
 
   DEMOSAIC_W = 7
   DEMOSAIC_H = 3

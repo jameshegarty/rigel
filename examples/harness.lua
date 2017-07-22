@@ -4,6 +4,8 @@ local C = require "examplescommon"
 local types = require("types")
 --local fixed = require("fixed")
 local SDFRate = require "sdfrate"
+local J = require "common"
+local err = J.err
 
 local function writeMetadata(filename, tab)
   err(type(filename)=="string")
@@ -41,8 +43,8 @@ end
 local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, tapType, earlyOverride)
 
 
-  local outputBytes = upToNearest(128,outputCount*8) -- round to axi burst
-  local inputBytes = upToNearest(128,inputCount*8) -- round to axi burst
+  local outputBytes = J.upToNearest(128,outputCount*8) -- round to axi burst
+  local inputBytes = J.upToNearest(128,inputCount*8) -- round to axi burst
 
   err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts")
   err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")

@@ -2,7 +2,8 @@ local modules = require "modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
---
+local J = require "common"
+local err = J.err
 local fpgamodules = require("fpgamodules")
 
 local fixed = {}
@@ -82,7 +83,7 @@ end
 function fixed.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  assert(#tab.inputs==keycount(tab.inputs))
+  assert(#tab.inputs==J.keycount(tab.inputs))
   assert(type(tab.loc)=="string")
   assert(types.isType(tab.type))
   return setmetatable(tab,fixedASTMT)
@@ -388,9 +389,9 @@ function fixedASTFunctions:toSystolic(inp)
 
   if res==nil then
     if self.type:isArray() then
-      res = S.constant(broadcast(0,self.type:channels()),self.type)
+      res = S.constant(J.broadcast(0,self.type:channels()),self.type)
     elseif self.type:isTuple() then
-      res = S.constant(broadcast(0,#self.type.list),self.type)
+      res = S.constant(J.broadcast(0,#self.type.list),self.type)
     elseif self.type:isBool() then
       res = S.constant(false,self.type)
     else

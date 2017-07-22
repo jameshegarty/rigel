@@ -1,3 +1,5 @@
+local J = require "common"
+
 -- if pointer is true, generate a pointer instead of a value
 -- vectorN = width of the vector [optional]
 function TypeFunctions:toTerraType(pointer, vectorN)
@@ -33,7 +35,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     assert(vectorN==nil)
     ttype = (self.over:toTerraType())[self:channels()]
   elseif self.kind=="tuple" then
-    ttype = terralib.types.tuple( unpack(map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
+    ttype = terralib.types.tuple( unpack(J.map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
   elseif self.kind=="opaque" then
     ttype = &terralib.types.opaque
   elseif self.kind=="null" then
@@ -68,12 +70,12 @@ function TypeFunctions:valueToTerra(value)
   elseif self:isArray() then
     assert(type(value)=="table")
     assert(#value==self:channels())
-    local tup = map( value, function(v) return self:arrayOver():valueToTerra(v) end )
+    local tup = J.map( value, function(v) return self:arrayOver():valueToTerra(v) end )
     return `[self:toTerraType()](array(tup))
   elseif self:isTuple() then
     assert(type(value)=="table")
     assert(#value==#self.list)
-    local tup = map( value, function(v,k) return self.list[k]:valueToTerra(v) end )
+    local tup = J.map( value, function(v,k) return self.list[k]:valueToTerra(v) end )
     return `[self:toTerraType()]({tup})
   elseif self:isNamed() then
     return self.structure:valueToTerra(value)

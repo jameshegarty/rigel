@@ -1,11 +1,12 @@
-require("common")
+local J = require("common")
 local IR = require("ir")
+local err = J.err
 
 local types = {}
 
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
-            local const = sel(ty.constant,"_const","")
+            local const = J.sel(ty.constant,"_const","")
   if ty.kind=="bool" then
     return "bool"..const
   elseif ty.kind=="null" then
@@ -21,7 +22,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="array" then
     return tostring(ty.over).."["..table.concat(ty.size,",").."]"
   elseif ty.kind=="tuple" then
-    return "{"..table.concat(map(ty.list, function(n) return tostring(n) end), ",").."}"
+    return "{"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="opaque" then
     return "opaque_"..ty.str
   elseif ty.kind=="named" then
@@ -111,25 +112,24 @@ function types.array2d( _type, w, h )
 
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
-  return deepsetweak(types._array, {_type,w,h}, ty)
+  return J.deepsetweak(types._array, {_type,w,h}, ty)
 end
 
 types._tuples = {}
 
 function types.tuple( list )
   err(type(list)=="table","input to types.tuple must be table")
-  err(keycount(list)==#list,"types.tuple: input table is not an array")
+  err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
   --if #list==1 and types.isType(list[1]) then return list[1] end
 
-  --map( list, function(n) print("types.tuple",n);assert( types.isType(n) ) end )
   types._tuples[#list] = types._tuples[#list] or {}
   local tup = setmetatable( {kind="tuple", list = list }, TypeMT )
   assert(types.isType(tup))
-  local res = deepsetweak( types._tuples[#list], list, tup )
+  local res = J.deepsetweak( types._tuples[#list], list, tup )
   assert(types.isType(res))
   assert(#res.list==#list)
   return res
@@ -143,8 +143,8 @@ local intbinops = {["<<"]=1,[">>"]=1,["and"]=1,["or"]=1,["^"]=1}
 -- ! does a logical not in C, use 'not' instead
 -- ~ does a bitwise not in C
 local unops = {["not"]=1,["-"]=1}
-appendSet(binops,boolops)
-appendSet(binops,cmpops)
+J.appendSet(binops,boolops)
+J.appendSet(binops,cmpops)
 
 -- returns resultType, lhsType, rhsType
 -- ast is used for error reporting
@@ -375,7 +375,7 @@ function types.checkExplicitCast(from, to, ast)
 
     return types.checkExplicitCast(from.over, to.over,ast)
   elseif from:isTuple() then
-    local allbits = foldt( map(from.list, function(n) return n:isBits() end), andop, 'X')
+    local allbits = J.foldt( J.map(from.list, function(n) return n:isBits() end), J.andop, 'X')
 
     if allbits then
       -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
@@ -394,7 +394,7 @@ function types.checkExplicitCast(from, to, ast)
       elseif from.list[1]:isArray() then
         -- we can cast {A[a],A[b],A[c]..} to A[a+b+c]
         local ty, channels = from.list[1]:arrayOver(), 0
-        map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
+        J.map(from.list, function(t) assert(t:arrayOver()==ty); channels = channels + t:channels() end )
         err( channels==to:channels(), "channels don't match") 
         return true
       end
@@ -482,7 +482,7 @@ function TypeFunctions:const()
   elseif self:isArray() then
     return self:arrayOver():const()
   elseif self:isTuple() then
-    return foldl(andop,true, map(self.list, function(v) return v:const() end ) )
+    return J.foldl(J.andop,true, J.map(self.list, function(v) return v:const() end ) )
   elseif self:isNull() then
     return true
   elseif self:isNamed() then
@@ -508,7 +508,7 @@ function TypeFunctions:constSubtypeOf(A)
     end
   elseif self:isTuple() then
     if #A.list~=#self.list then return false end
-    return foldl( andop, true, map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
+    return J.foldl( J.andop, true, J.map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
   elseif self:isArray() then
     local lenmatch = (self:arrayLength())[1]==(A:arrayLength())[1] and (self:arrayLength())[2]==(A:arrayLength())[2]
     return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
@@ -539,7 +539,7 @@ function TypeFunctions:makeConst()
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
   elseif self:isTuple() then
-    return types.tuple(map(self.list,function(t) return t:makeConst() end ) )
+    return types.tuple(J.map(self.list,function(t) return t:makeConst() end ) )
   elseif self:isBool() then
     return types.bool(true)
   elseif self:isNamed() then
@@ -565,7 +565,7 @@ function TypeFunctions:stripConst()
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
   elseif self:isTuple() then
-    local typelist = map(self.list, function(t) return t:stripConst() end)
+    local typelist = J.map(self.list, function(t) return t:stripConst() end)
     return types.tuple(typelist)
   elseif self:isBool() then
     return types.bool(false)
@@ -582,7 +582,7 @@ function TypeFunctions:stripNamed()
   if self:isNamed() then
     return self.structure
   elseif self:isTuple() then
-    local typelist = map(self.list, function(t) return t:stripNamed() end)
+    local typelist = J.map(self.list, function(t) return t:stripNamed() end)
     return types.tuple(typelist)
   elseif self:isArray() then
     local L = self:arrayLength()
@@ -695,7 +695,7 @@ end
 function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
     err( type(v)=="table", "if type is an array, v must be a table")
-    err( #v==keycount(v), "lua table is not an array (unstructured keys)")
+    err( #v==J.keycount(v), "lua table is not an array (unstructured keys)")
     err( #v==self:channels(), "incorrect number of channels, is "..(#v).." but should be "..self:channels() )
     for i=1,#v do
       self:arrayOver():checkLuaValue(v[i])
@@ -703,7 +703,7 @@ function TypeFunctions:checkLuaValue(v)
   elseif self:isTuple() then
     err( type(v)=="table", "if type is "..tostring(self)..", v must be a table")
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
-    map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
+    J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() then
     err( type(v)=="number", "float must be number")
   elseif self:isInt() then

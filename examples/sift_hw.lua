@@ -3,6 +3,7 @@ local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
+local J = require "common"
 
 GRAD_INT = true
 GRAD_SCALE = 4 -- <2 is bad
@@ -47,7 +48,7 @@ function doit(full)
     hsfn = siftFn
   end
 
-  harness{ outFile="sift_hw"..sel(full,"_1080p",""), fn=hsfn, inFile=sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={outputCount,1} }
+  harness{ outFile="sift_hw"..J.sel(full,"_1080p",""), fn=hsfn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={outputCount,1} }
 
 end
 

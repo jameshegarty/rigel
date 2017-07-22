@@ -7,7 +7,8 @@ local fRS = require "fixed_float"
 local S = require("systolic")
 local SDFRate = require("sdfrate")
 local fixed_new = require("fixed_new")
-
+local J = require "common"
+local err = J.err
 local RST
 if terralib~=nil then RST=require "rigelSimpleTerra" end
 
@@ -141,7 +142,7 @@ function RS.modules.pyramidOrder(t)
 end
 
 
-local fixedSqrt = memoize(function(A)
+local fixedSqrt = J.memoize(function(A)
   assert(types.isType(A))
   local inp = fRS.parameter("II",A)
   local out = inp:sqrt()
@@ -150,7 +151,7 @@ local fixedSqrt = memoize(function(A)
   return out:toRigelModule("fixedSqrtRS")
                    end)
 
-local fixedLift = memoize(function(A)
+local fixedLift = J.memoize(function(A)
   assert(types.isType(A))
   local inp = fRS.parameter("IIlift",A)
   local out = inp:lift()
@@ -427,6 +428,11 @@ end
 
 function RS.modules.triggeredCounter(t)
   return RM.triggeredCounter(t.type, t.N)
+end
+
+function RS.modules.lift(t)
+  ccnt = ccnt + 1
+  return RM.lift("v"..tostring(ccnt), t.type, nil, nil, t.fn )
 end
 
 return RS
