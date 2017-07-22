@@ -286,12 +286,12 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert( SDFRate.isSDFRate(n.fn.sdfOutput))
           res = {n.fn.sdfOutput,J.broadcast(true,#n.fn.sdfOutput)}
 
-	  if n.sdfRateOverride~=nil then
-	    assert( SDFRate.isSDFRate(n.sdfRateOverride))
-	    res[1] = n.sdfRateOverride
-	  end
+          if n.sdfRateOverride~=nil then
+            assert( SDFRate.isSDFRate(n.sdfRateOverride))
+            res[1] = n.sdfRateOverride
+          end
 	  
-	  if DARKROOM_VERBOSE then print("NULLARY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+          if DARKROOM_VERBOSE then print("NULLARY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
         elseif #n.inputs==1 then
           res =  n.fn:sdfTransfer(args[1], "APPLY "..n.name.." "..n.loc)
           if DARKROOM_VERBOSE then print("APPLY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end

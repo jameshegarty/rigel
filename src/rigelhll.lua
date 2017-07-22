@@ -6,6 +6,7 @@ local fixed_new = require("fixed_new")
 local types = require("types")
 local SDFRate = require "sdfrate"
 local J = require "common"
+local S = require "systolic"
 local err = J.err
 
 local ccnt = 0
@@ -86,6 +87,17 @@ end
 
 function darkroomIRFunctions:index(i)
   return RS.index{input=self,key=i}
+end
+
+function RHLL.map(fn)
+  err( getmetatable(fn)==SimpleModuleWrapperMT, "NYI - HLL map expects HLL module " )
+  local tab = {fn=RS.modules.map}
+  function tab.wireFn(arg)
+    err( arg.type:isArray(), "map expects an array type as input" )
+    local conn = fn(arg:index(0))
+    return {fn=conn.fn, size={arg.type:arrayLength()[1],arg.type:arrayLength()[2]}}
+  end
+  return setmetatable(tab,SimpleModuleWrapperMT)
 end
 
 local fixedid = 0
