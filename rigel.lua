@@ -4,6 +4,8 @@ local ffi = require("ffi")
 local S = require("systolic")
 local Ssugar = require("systolicsugar")
 local SDFRate = require "sdfrate"
+local J = require "common"
+local err = J.err
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
@@ -89,7 +91,7 @@ function darkroom.lower( a, loc )
   if a:isArray() and darkroom.isBasic(a:arrayOver())==false then
     return types.array2d( darkroom.lower(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
   elseif a:isTuple() and darkroom.isBasic(a.list[1])==false then
-    return types.tuple(map(a.list, function(t) return darkroom.lower(t) end ))
+    return types.tuple(J.map(a.list, function(t) return darkroom.lower(t) end ))
   elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a)then
     return a.structure
   elseif darkroom.isBasic(a) then 
@@ -127,7 +129,7 @@ function darkroom.extractReady(a)
   elseif darkroom.isV(a) then return types.bool()
   elseif darkroom.isRV(a) then return types.bool()
   elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
-    map(a.list,function(i) assert(darkroom.isHandshake(i)); end )
+    J.map(a.list,function(i) assert(darkroom.isHandshake(i)); end )
     return types.array2d(types.bool(),#a.list) -- we always use arrays for ready bits. no reason not to.
   elseif darkroom.isHandshakeArray(a) then
     return types.uint(8)
@@ -194,7 +196,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
       -- don't care
     else
       local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
-      thisR[1],thisR[2] = simplify(thisR[1],thisR[2])
+      thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
       if R==nil then R=thisR end
       consistantRatio = consistantRatio and (R[1]==thisR[1] and R[2]==thisR[2])
 
@@ -205,7 +207,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
 
   local res, resConverged = {},{}
   for i=1,#self.sdfOutput do
-    local On, Od = simplify(self.sdfOutput[i][1]*R[1], self.sdfOutput[i][2]*R[2])
+    local On, Od = J.simplify(self.sdfOutput[i][1]*R[1], self.sdfOutput[i][2]*R[2])
 
     table.insert( res, {On,Od} )
     table.insert( resConverged, allConverged and consistantRatio )
@@ -213,7 +215,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
 
   assert(#res==#resConverged)
   assert( SDFRate.isSDFRate(res) )
-  map( resConverged, function(n) assert(type(n)=="boolean") end )
+  J.map( resConverged, function(n) assert(type(n)=="boolean") end )
 
   return { res, resConverged }
 end
@@ -261,7 +263,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           err( SDFRate.isSDFRate(n.sdfRate),"sdf rate not an sdf rate? "..n.kind..n.loc)
           rate=n.sdfRate; 
         end
-        res = {rate,broadcast(true,#rate)}
+        res = {rate,J.broadcast(true,#rate)}
 	if DARKROOM_VERBOSE then print("INPUT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
       elseif n.kind=="applyMethod" then
         if n.fnname=="load" then
@@ -282,14 +284,14 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
       elseif n.kind=="apply" then
         if #n.inputs==0 then
           assert( SDFRate.isSDFRate(n.fn.sdfOutput))
-          res = {n.fn.sdfOutput,broadcast(true,#n.fn.sdfOutput)}
+          res = {n.fn.sdfOutput,J.broadcast(true,#n.fn.sdfOutput)}
 
-	  if n.sdfRateOverride~=nil then
-	    assert( SDFRate.isSDFRate(n.sdfRateOverride))
-	    res[1] = n.sdfRateOverride
-	  end
+          if n.sdfRateOverride~=nil then
+            assert( SDFRate.isSDFRate(n.sdfRateOverride))
+            res[1] = n.sdfRateOverride
+          end
 	  
-	  if DARKROOM_VERBOSE then print("NULLARY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+          if DARKROOM_VERBOSE then print("NULLARY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
         elseif #n.inputs==1 then
           res =  n.fn:sdfTransfer(args[1], "APPLY "..n.name.." "..n.loc)
           if DARKROOM_VERBOSE then print("APPLY",n.name,n.fn.kind,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
@@ -354,7 +356,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
       end
 
       assert( SDFRate.isSDFRate(res[1]) )
-      map( res[2], function(n) assert(type(n)=="boolean") end )
+      J.map( res[2], function(n) assert(type(n)=="boolean") end )
 
       __sdfTotalCache[n] = res[1]
       return res
@@ -490,10 +492,10 @@ function darkroomIRFunctions:typecheck()
       elseif n.kind=="input" then
       elseif n.kind=="constant" then
       elseif n.kind=="concat" then
-        n.type = types.tuple( map(n.inputs, function(v) return v.type end) )
+        n.type = types.tuple( J.map(n.inputs, function(v) return v.type end) )
        -- return darkroom.newIR(n)
       elseif n.kind=="concatArray2d" then
-        map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
+        J.map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
         n.type = types.array2d( n.inputs[1].type, n.W, n.H )
         --return darkroom.newIR(n)
       elseif n.kind=="statements" then
@@ -583,10 +585,10 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="constant" then
         return {S.constant( n.value, n.type )}
       elseif n.kind=="concat" then
-        return {S.tuple( map(inputs,function(i) return i[1] end) ) }
+        return {S.tuple( J.map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="concatArray2d" then
         local outtype = types.array2d(darkroom.lower(n.type:arrayOver()),n.W,n.H)
-        return {S.cast(S.tuple( map(inputs,function(i) return i[1] end) ), outtype) }
+        return {S.cast(S.tuple( J.map(inputs,function(i) return i[1] end) ), outtype) }
       elseif n.kind=="statements" then
         for i=2,#inputs do
           module:lookupFunction("process"):addPipeline( inputs[i][1] )
@@ -664,7 +666,7 @@ function darkroom.concat( name, t, X )
   err( X==nil, "rigel.concat: too many arguments")
 
   local r = {kind="concat", name=name, loc=getloc(), inputs={} }
-  map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
+  J.map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 
@@ -678,7 +680,7 @@ function darkroom.concatArray2d( name, t, W, H, X )
   err( type(H)=="number", "H must be number")
 
   local r = {kind="concatArray2d", name=name, loc=getloc(), inputs={}, W=W, H=H}
-  map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
+  J.map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 
@@ -691,8 +693,8 @@ end
 
 function darkroom.statements( t )
   err( type(t)=="table", "statements: argument should be table" )
-  err(#t>0 and keycount(t)==#t, "statements: argument should be lua array")
-  map(t, function(i) err(darkroom.isIR(i), "statements: argument should be rigel value") end )
+  err( #t>0 and J.keycount(t)==#t, "statements: argument should be lua array")
+  J.map(t, function(i) err(darkroom.isIR(i), "statements: argument should be rigel value") end )
   return darkroom.newIR{kind="statements",inputs=t,loc=getloc()}
 end
 

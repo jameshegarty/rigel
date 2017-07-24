@@ -8,13 +8,14 @@ local C = require "examplescommon"
 local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 f.DISABLE_SYNTH=true
+local J = require "common"
 
 local siftCoreHWTerra
 if terralib~=nil then siftCoreHWTerra=require("sift_core_hw_terra") end
 
 sift = {}
 
-local fixedSum = memoize(function(A)
+local fixedSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+inp:index(1)
@@ -23,7 +24,7 @@ local fixedSum = memoize(function(A)
   return out:toRigelModule("fixedSum")
                    end)
 
-local fixedSumPow2 = memoize(function(A)
+local fixedSumPow2 = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+(inp:index(1)*inp:index(1))
@@ -32,7 +33,7 @@ local fixedSumPow2 = memoize(function(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
 
-local fixedDiv = memoize(function(A)
+local fixedDiv = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = (inp:index(0))/(inp:index(1))
@@ -41,7 +42,7 @@ local fixedDiv = memoize(function(A)
   return out:toRigelModule("fixedDiv")
                    end)
 
-local fixedSqrt = memoize(function(A)
+local fixedSqrt = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",A)
   local out = inp:sqrt()

@@ -3,6 +3,7 @@ local C = require "examplescommon"
 local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
+local J = require "common"
 
 T = 8 -- throughput
 --ConvRadius = 1
@@ -13,7 +14,7 @@ inputW = 128
 inputH = 64
 
 -- expand to include crop region
-W = upToNearest(T,128+ConvWidth-1)
+W = J.upToNearest(T,128+ConvWidth-1)
 H = 64+ConvWidth-1
 
 

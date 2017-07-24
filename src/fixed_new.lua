@@ -5,7 +5,8 @@ local S = require("systolic")
 local Ssugar = require("systolicsugar")
 local fpgamodules = require("fpgamodules")
 local R = require("rigel")
-
+local J = require "common"
+local err = J.err
 local fixed={}
 
 local fixedTerra
@@ -29,32 +30,7 @@ function fixed.expectFixed(ty)
   err( fixed.isFixedType(ty), "Expected fixed point type")
 end
 
---[=[
-function fixed.extract(ty)
-  if fixed.isFixedType(ty) then
-    return ty.list[1]
-  end
-  return ty
-end
-
-function fixed.extractExp(ty)
-  fixed.expectFixed(ty)
-  local str = ty.list[2].str:sub(6)
-  return tonumber(str)
-end
-
-function fixed.extractPrecision(ty)
-  fixed.expectFixed(ty)
-  return ty.list[1].precision
-end
-
-function fixed.extractSigned(ty)
-  fixed.expectFixed(ty)
-  return ty.list[1]:isInt()
-end
-]=]
-
-fixed.type = memoize(function( signed, precision, exp )
+fixed.type = J.memoize(function( signed, precision, exp )
   assert(type(signed)=="boolean")
   assert(type(precision)=="number")
   assert(type(exp)=="number")
@@ -124,7 +100,7 @@ __FIXED_NAME_CNT = 0
 function fixed.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  assert(#tab.inputs==keycount(tab.inputs))
+  assert(#tab.inputs==J.keycount(tab.inputs))
   assert(type(tab.loc)=="string")
   assert(types.isType(tab.type))
 
@@ -598,7 +574,7 @@ function fixed.tuple(tab) return fixed.applyNaryLift(S.tuple,tab) end
 function fixed.select(cond,a,b) return fixed.applyTrinaryLift(S.select,cond,a,b) end
 
 function fixedNewASTFunctions:mod(b) 
-  err( isPowerOf2(b), "NYI, fixed mod by non power of 2" )
+  err( J.isPowerOf2(b), "NYI, fixed mod by non power of 2" )
   local bits = math.log(b)/math.log(2)
 
   local ty

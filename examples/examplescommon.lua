@@ -5,6 +5,9 @@ local types = require "types"
 local S = require "systolic"
 local Ssugar = require "systolicsugar"
 local modules = RM
+local J = require "common"
+local memoize = J.memoize
+local err = J.err
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
@@ -22,7 +25,7 @@ C.cast = memoize(function(A,B)
 end)
 
 C.tupleToArray = memoize(function(A,N)
-  local atup = types.tuple(rep(A,N))
+  local atup = types.tuple(J.broadcast(A,N))
   local B = types.array2d(A,N)
 
   local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
@@ -95,7 +98,7 @@ end)
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay
-function C.argmin(idxType,vType, async)
+C.argmin = memoize(function(idxType,vType, async)
   local ATYPE = types.tuple {idxType,vType}
   local ITYPE = types.tuple{ATYPE,ATYPE}
   local sinp = S.parameter( "inp", ITYPE )
@@ -126,14 +129,14 @@ function C.argmin(idxType,vType, async)
     end)
 
   return partial
-end
+end)
 
 ------------
 -- this returns a function from A[2]->A
 -- return |A[0]-A[1]| as a darkroom FN. 
 -- The largest absolute difference possible is the max value of A - min value, so returning type A is always fine.
 -- we fuse this with a cast to 'outputType' just for convenience.
-function C.absoluteDifference(A,outputType,X)
+C.absoluteDifference = memoize(function(A,outputType,X)
   assert(types.isType(A))
   assert(types.isType(outputType))
   assert(X==nil)
@@ -162,7 +165,7 @@ function C.absoluteDifference(A,outputType,X)
     function() return CT.absoluteDifference(A,outputType,internalType_terra) end)
 
   return partial
-end
+end)
 
 ------------
 -- returns a darkroom FN that casts type 'from' to type 'to'
@@ -188,7 +191,7 @@ end)
 -------------
 -- returns a function of type {A[ConvWidth,ConvWidth], A_const[ConvWidth,ConvWidth]}
 -- that convolves the two arrays
-function C.convolveTaps( A, ConvWidth, shift )
+C.convolveTaps = memoize(function( A, ConvWidth, shift )
   if shift==nil then shift=7 end
 
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
@@ -204,11 +207,11 @@ function C.convolveTaps( A, ConvWidth, shift )
 
   local convolve = RM.lambda( "convolveTaps", inp, conv )
   return convolve
-end
+end)
 
 ------------
 -- returns a function from A[ConvWidth,ConvHeight]->A
-function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
+C.convolveConstant = memoize(function( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(ConvWidth)=="number")
   assert(type(ConvHeight)=="number")
   assert(type(tab)=="table")
@@ -225,11 +228,11 @@ function C.convolveConstant( A, ConvWidth, ConvHeight, tab, shift, X )
 
   local convolve = RM.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
   return convolve
-end
+end)
 
 ------------
 -- returns a function from A[ConvWidth*T,ConvWidth]->A, with throughput T
-function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
+C.convolveConstantTR = memoize(function( A, ConvWidth, ConvHeight, T, tab, shift, X )
   assert(type(shift)=="number")
   assert(type(T)=="number")
   assert(T<=1)
@@ -254,12 +257,12 @@ function C.convolveConstantTR( A, ConvWidth, ConvHeight, T, tab, shift, X )
   local convolve = RM.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
 
   return convolve
-end
+end)
 
 ------------
 -- returns a function from A[2][Width,Width]->reduceType
 -- 'reduceType' is the precision we do the sum
-function C.SAD( A, reduceType, Width, X )
+C.SAD = memoize(function( A, reduceType, Width, X )
   assert(X==nil)
 
   local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
@@ -269,10 +272,10 @@ function C.SAD( A, reduceType, Width, X )
 
   local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
-end
+end)
 
 
-function C.SADFixed( A, reduceType, Width, X )
+C.SADFixed = memoize(function( A, reduceType, Width, X )
   local fixed = require "fixed"
   assert(X==nil)
   fixed.expectFixed(reduceType)
@@ -298,10 +301,10 @@ function C.SADFixed( A, reduceType, Width, X )
 
   local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
-end
+end)
 
 
-function C.SADFixed4( A, reduceType, Width, X )
+C.SADFixed4 = memoize(function( A, reduceType, Width, X )
   local fixed = require "fixed"
   assert(X==nil)
   fixed.expectFixed(reduceType)
@@ -335,12 +338,12 @@ function C.SADFixed4( A, reduceType, Width, X )
 
   local convolve = RM.lambda( "SAD", inp, conv )
   return convolve
-end
+end)
 
 ------------
 -- takes a function f:A[StencilW,stencilH]->B
 -- returns a function from A[T]->B[T]
-function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
+C.stencilKernel = memoize(function( A, T, imageW, imageH, stencilW, stencilH, f)
   local BASE_TYPE = types.array2d( A, T )
   local inp = R.input( BASE_TYPE )
   
@@ -350,12 +353,12 @@ function C.stencilKernel( A, T, imageW, imageH, stencilW, stencilH, f)
   
   local convpipe = RM.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
   return convpipe
-end
+end)
 
 ------------
 -- takes a function f:{A[StencilW,StencilH],tapType}->B
 -- returns a function that goes from A[T]->B[T]. Applies f using a linebuffer
-function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH, f )
+C.stencilKernelTaps = memoize(function( A, T, tapType, imageW, imageH, stencilW, stencilH, f )
   assert(type(stencilW)=="number")
   assert(type(stencilH)=="number")
 
@@ -377,13 +380,13 @@ function C.stencilKernelTaps( A, T, tapType, imageW, imageH, stencilW, stencilH,
   
   local convpipe = RM.lambda( "convpipe", rawinp, convpipe )
   return convpipe
-end
+end)
 -------------
 -- f should be a _lua_ function that takes two arguments, (internalW,internalH), and returns the 
 -- inner function based on this W,H. We have to do this for alignment reasons.
 -- f should return a handshake function
 -- timingFifo: include a fifo to improve timing. true by default
-C.padcrop = function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
+C.padcrop = memoize(function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   err( type(W)=="number", "W should be number")
   err( type(H)=="number", "H should be number")
   err( type(T)=="number", "T should be number")
@@ -400,8 +403,8 @@ C.padcrop = function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   local RW_TYPE = types.array2d( A, T ) -- simulate axi bus
   local hsfninp = R.input( R.Handshake(RW_TYPE) )
 
-  local internalL = upToNearest(T,L)
-  local internalR = upToNearest(T,Right)
+  local internalL = J.upToNearest(T,L)
+  local internalR = J.upToNearest(T,Right)
 
   local fifos = {}
   local statements = {}
@@ -445,7 +448,7 @@ C.padcrop = function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
   end
 
   return hsfn
-end
+end)
 
 --------
 function C.stencilKernelPadcrop(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
@@ -565,7 +568,7 @@ function C.lutinvert(ty)
 end
 -------------
 C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
-  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
@@ -610,12 +613,12 @@ C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
   local f = modules.SoAtoAoS(W,H,typelist)
   f = modules.makeHandshake(f)
   
-  return C.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, modules.packTuple( map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
+  return C.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, modules.packTuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
                                      end)
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function C.border(A,W,H,L,R,B,T,value)
-  map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
+  J.map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
   local res = {kind="border",L=L,R=R,T=T,B=B,value=value}
   res.inputType = types.array2d(A,W,H)
   res.outputType = res.inputType
@@ -701,7 +704,7 @@ C.broadcast = memoize(function(A,W,H)
   local OT = types.array2d(A, W, H)
 
   return modules.lift("Broadcast_W"..tostring(W).."_H"..tostring(H),A,OT,0,
-    function(sinp) return S.cast(S.tuple(broadcast(sinp,W*H)),OT) end,
+    function(sinp) return S.cast(S.tuple(J.broadcast(sinp,W*H)),OT) end,
     function() return CT.broadcast(A,W,H,OT) end)
 end)
 
@@ -733,7 +736,7 @@ end)
 
 -- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
 function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
-  map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+  J.map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
 
   local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
 
@@ -779,7 +782,7 @@ end)
 
 C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   assert(types.isType(A))
-  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T>=1); assert(w>0); assert(h>0);
   err(xmin<=xmax,"xmin>xmax")
   err(ymin<=ymax,"ymin>ymax")
@@ -790,7 +793,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
 end)
 
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
@@ -836,7 +839,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return rigel.newFunction(res)
@@ -883,7 +886,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
 
     return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0, 
       function(systolicInput)
-        local systolicOutput = S.tuple( map( range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
+        local systolicOutput = S.tuple( J.map( J.range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
         systolicOutput = S.cast( systolicOutput, OT )
 
         if index then

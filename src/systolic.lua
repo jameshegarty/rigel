@@ -3,6 +3,9 @@ local types = require("types")
 local typecheckAST = require("typecheck")
 local systolic={}
 local ffi = require("ffi")
+local J = require "common"
+local err = J.err
+local memoize = J.memoize
 
 systolicModuleFunctions = {}
 systolicModuleMT={__index=systolicModuleFunctions}
@@ -20,12 +23,12 @@ local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  err(#tab.inputs==keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array")
+  err(#tab.inputs==J.keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array")
   if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
   if tab.pipelined==nil then tab.pipelined=true end
-  map(tab.inputs, function(n) assert(systolicAST.isSystolicAST(n)) end)
+  J.map(tab.inputs, function(n) assert(systolicAST.isSystolicAST(n)) end)
   IR.new(tab)
   return setmetatable(tab,systolicASTMT)
 end
@@ -189,11 +192,11 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isArray() then
     assert(type(value)=="table")
     assert(#value==ty:channels())
-    return "{"..table.concat( reverse( map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
+    return "{"..table.concat( J.reverse( J.map( value, function(v) return systolic.valueToVerilog(v,ty:arrayOver()) end ) ), "," ).."}"
   elseif ty:isTuple() then
     assert(type(value)=="table")
     assert(#value==#ty.list)
-    return "{"..table.concat( reverse( map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
+    return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
   elseif ty:isOpaque() then
     return "0'b0"
   elseif ty:stripConst()==types.float(32) then
@@ -262,7 +265,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
     err(v~=output,"pipeline "..k.." is the same as the output!")
     for kk,vv in pairs(pipelines) do err(v~=vv or k==kk, "Pipeline "..k.." is the same as pipeline "..kk) end
   end
-  assert(keycount(pipelines)==#pipelines)
+  assert(J.keycount(pipelines)==#pipelines)
 
   local implicitValid = false
   if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
@@ -290,7 +293,7 @@ end
 function systolicFunctionFunctions:isPure()
   local purePipes = true
   -- it's possible for pipelines to end up being a noop, which are pure
-  map( self.pipelines, function(n) purePipes = purePipes and n:isPure(self.valid) end )
+  J.map( self.pipelines, function(n) purePipes = purePipes and n:isPure(self.valid) end )
 
   if self.output==nil then return purePipes end
   return self.output:isPure(self.valid) and purePipes
@@ -460,14 +463,14 @@ function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
   ty = ty:makeConst()
   ty:checkLuaValue(v)
-  return typecheck({ kind="constant", value=deepcopy(v), type = ty, loc=getloc(), inputs={} })
+  return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
 
 function systolic.tuple( tab )
   err( type(tab)=="table", "input to tuple should be a table")
-  err( #tab==keycount(tab), "tab must be array")
+  err( #tab==J.keycount(tab), "tab must be array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
-  map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
+  J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
   return typecheck(res)
 end
 
@@ -522,7 +525,7 @@ function checkForInst(inst, scopes)
   
   if fnd==false then
     print("missing instance "..inst.name.." (kind "..inst.kind..")")
-    map(scopes, function(n) print("scope",n.name) end)
+    J.map(scopes, function(n) print("scope",n.name) end)
     assert(false)
   end
 end
@@ -578,7 +581,7 @@ function systolicASTFunctions:isPure( validbit )
       elseif n.kind=="fndefn" then
           assert(false) -- we shouldn't call isPure on lowered ASTs
       else
-        return foldl( andop, true, inputs )
+        return J.foldl( J.andop, true, inputs )
       end
     end)
 end
@@ -643,7 +646,7 @@ function systolicASTFunctions:removeDelays( )
     
     delayCache[node] = delayCache[node] or {}
     delayCache[node][validbit] = delayCache[node][validbit] or {}
-    local celookup = sel(cebit==nil,nilCE,cebit)
+    local celookup = J.sel(cebit==nil,nilCE,cebit)
     delayCache[node][validbit][celookup] = delayCache[node][validbit][celookup] or {}
     if delay==0 then return node
     elseif delayCache[node][validbit][celookup][delay]==nil then
@@ -707,7 +710,7 @@ function systolicASTFunctions:calculateDelays(coherentDelays)
   local finalOut = self:visitEach(
     function( n )
       local maxd = 0
-      map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay()) end)
+      J.map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay()) end)
           
       -- for coherent modules, we need all calls to have the same delay at their input.
       -- record what delay the coherent modules are at, and whether we had to change it this round.
@@ -929,7 +932,7 @@ function systolicASTFunctions:addValid( validbit )
             elseif nn.kind=="parameter" and nn.key==validbit.key then 
               error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
             else
-              map(nn.inputs, function(i) checkValidBit(i) end)
+              J.map(nn.inputs, function(i) checkValidBit(i) end)
             end
           end
           checkValidBit(n.inputs[2])
@@ -1027,8 +1030,8 @@ function systolicASTFunctions:toVerilog( module )
   local finalOut = self:visitEach(
     function(n, args)
       local finalResult
-      local argwire = map(args, function(nn) assert(type(nn[2])=="boolean");return nn[2] end)
-      args = map(args, function(nn) assert(type(nn[1])=="string"); return nn[1] end)
+      local argwire = J.map(args, function(nn) assert(type(nn[2])=="boolean");return nn[2] end)
+      args = J.map(args, function(nn) assert(type(nn[1])=="string"); return nn[1] end)
 
       -- if finalResult is already a wire, we don't need to assign it to a wire at the end
       -- if wire==false, then finalResult is an expression, and can't be used multiple times
@@ -1043,7 +1046,7 @@ function systolicASTFunctions:toVerilog( module )
         table.insert( declarations, decl )
       elseif n.kind=="callArbitrate" then
         -- inputs are stored as {data,validbit} pairs, ie {call1data,call1valid,call2data,call2valid}
-        local argpairs = split(args,2)
+        local argpairs = J.split(args,2)
         if #argpairs==1 then
           -- we're in arbitrate mode, but we didn't actually end up calling it multiple times. Passthrough
           finalResult = "{"..args[2]..","..args[1].."}"
@@ -1052,11 +1055,11 @@ function systolicASTFunctions:toVerilog( module )
             --table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[===1'bx) begin $display("valid bit can't be x! Module '%s' instance ']]..n.instance.name..[[' function ']]..n.fn..[['", INSTANCE_NAME); end end]])
           end
 
-          local data = foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
-          local v = foldt(argpairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
+          local data = J.foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
+          local v = J.foldt(argpairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
           
           -- do bitcount w/ the array of valid bits. Pad to 5 bits so that sum works correctly
-          local cnt = foldt(argpairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
+          local cnt = J.foldt(argpairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
           
           table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function ']]..n.fn..[[' on instance ']]..n.instance.name..[[' in module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
           finalResult = "{"..v..","..data.."}"
@@ -1064,7 +1067,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
-            return "{"..table.concat( reverse(map(range(ty:channels()), function(c) return cconst(ty:arrayOver(), val[c])  end)),", " ).."}"
+            return "{"..table.concat( J.reverse( J.map(J.range(ty:channels()), function(c) return cconst(ty:arrayOver(), val[c])  end)),", " ).."}"
           else
             return systolic.valueToVerilog(val, ty)
           end
@@ -1141,8 +1144,8 @@ function systolicASTFunctions:toVerilog( module )
           assert(false)
         end
       elseif n.kind=="tuple" then
-        local nonulls = ifilter(args, function(v,k) return n.inputs[k].type:verilogBits()>0 end )
-        finalResult="{"..table.concat(reverse(nonulls),",").."}"
+        local nonulls = J.ifilter(args, function(v,k) return n.inputs[k].type:verilogBits()>0 end )
+        finalResult="{"..table.concat(J.reverse(nonulls),",").."}"
       elseif n.kind=="cast" then
         
         local function docast( expr, fromType, toType, inputIsWire, inputName )
@@ -1175,7 +1178,7 @@ function systolicASTFunctions:toVerilog( module )
             err( toType:verilogBits()==fromType:verilogBits(), "tuple to array cast verilog size doesn't match?")
             return expr
           elseif toType:isArray() and fromType:isArray()==false and fromType:isTuple()==false then
-            return "{"..table.concat( map(range(toType:channels()), function(n) return expr end),",").."}" -- broadcast
+            return "{"..table.concat( J.map( J.range(toType:channels()), function(n) return expr end),",").."}" -- broadcast
           elseif fromType:isArray() and toType:isArray()==false and fromType:arrayOver():isBool() and (toType:isUint() or toType:isInt()) then
             err("systolic cast from array of bools to type NYI")
           elseif toType:isArray() and fromType:isArray() and toType:baseType()==fromType:baseType() then
@@ -1344,8 +1347,6 @@ function systolicASTFunctions:toVerilog( module )
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false and const==false then
         if n.type==types.null() then
---          print("NULLTYPE",n.kind,n.loc)
---          assert(false)
           -- null outputs with multiple consumers are strange, but OK. Example: A coherent call with null output that is used in two different functions. (they will both share the same node, with null output)
         else
           table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
@@ -1357,11 +1358,9 @@ function systolicASTFunctions:toVerilog( module )
       end
     end)
 
-  declarations = map(declarations, function(i) return "  "..i end )
+  declarations = J.map(declarations, function(i) return "  "..i end )
   local fin = table.concat(declarations,"\n").."\n"
-  --fin = fin.."\nalways @(posedge CLK) begin\n"
-  --fin = fin..table.concat(clockedLogic,"\n")
-  --fin = fin.."end\n"
+
   return fin
 end
 
@@ -1543,7 +1542,7 @@ function userModuleFunctions:toVerilog()
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
-    table.insert(t,table.concat(map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
+    table.insert(t,table.concat(J.map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
     table.insert(t,");\n")
 
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
@@ -1603,7 +1602,7 @@ function userModuleFunctions:getDependenciesLL()
 end
 
 function userModuleFunctions:getDependencies()
-  return table.concat(map(self:getDependenciesLL(), function(n) return n[2] end),"")
+  return table.concat(J.map(self:getDependenciesLL(), function(n) return n[2] end),"")
 end
 
 function userModuleFunctions:getDelay( fnname )
@@ -1622,10 +1621,10 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   name = sanitize(name)
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
-  map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
+  J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
   err( type(instances)=="table", "instances must be a table")
-  map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
-  map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
+  J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
+  J.map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
 
   err( onlyWire==nil or type(onlyWire)=="boolean", "onlyWire must be nil or bool")
   err( coherentDefault==nil or type(coherentDefault)=="boolean", "coherentDefault must be nil or bool")
@@ -1695,11 +1694,11 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
 
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays()
-  t.instances = concat(t.instances, delayRegisters)
+  t.instances = J.concat(t.instances, delayRegisters)
 
   t.ast = t.ast:CSE()
 
-  map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
+  J.map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
 
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
@@ -1734,7 +1733,7 @@ function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVa
 
     if decl==nil then decl="" end
     if self.hasCE or module.hasValid then
-      decl = decl.."  always @ (posedge CLK) begin if ("..sel(self.hasValid,validVar,"")..sel(self.hasValid and self.hasCE," && ","")..sel(self.hasCE,CEVar,"")..") begin "..instance.name.." <= "..inputVar.."; end end"
+      decl = decl.."  always @ (posedge CLK) begin if ("..J.sel(self.hasValid,validVar,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,CEVar,"")..") begin "..instance.name.." <= "..inputVar.."; end end"
     else
       decl = decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
     end
@@ -1882,8 +1881,8 @@ end
 
 local initS = ""
 if self.init~=nil then
-  local strlst = map(self.init,function(n) assert(type(n)=="boolean"); if n then return "1" else return "0" end end)
-  strlst = reverse(strlst)
+  local strlst = J.map(self.init,function(n) assert(type(n)=="boolean"); if n then return "1" else return "0" end end)
+  strlst = J.reverse(strlst)
   initS = " #(.INIT(128'b"..table.concat( strlst,"")..")) "
 end
 
@@ -1972,12 +1971,9 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
   for k,v in pairs(VCS) do assert(k=="writeAndReturnOriginal" or k=="read") end
 
   if self.writeAndReturnOriginal then
-    --assert(keycount(VCS)==1)
     -- we only used 1 port
 
     -- we only use the 18 kbit wide BRAM here, b/c AFAIK using the 36 kbit BRAM doesn't provide a benefit, so there's no reason to special case that
-
---    err(self.inputBits==32 or self.outputBits==32, "BRAM2KSDP requires one of the ports to be 32 bit")
 
     local width
     if self.inputBits==8 then
@@ -2197,7 +2193,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
     return [[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
   always @ (posedge CLK) begin 
-  if (]]..instance.verilogCompilerState[module].read[2]..sel(self.CE," && "..instance.verilogCompilerState[module].read[3],"")..[[) begin ]]..assn..[[ end 
+  if (]]..instance.verilogCompilerState[module].read[2]..J.sel(self.CE," && "..instance.verilogCompilerState[module].read[3],"")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
   end
 ]]
@@ -2232,7 +2228,7 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       -- if we don't assign to buffers of the right size, the c escape won't work properly
       for i=0,math.ceil(self.type:verilogBits()/8)-1 do
         buffers = buffers.."reg [7:0] "..instance.name.."_buffer_"..tostring(i)..";\n"
-        bufferassn = bufferassn..[[if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]
+        bufferassn = bufferassn..[[if (]]..J.sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]
         bufferassn = bufferassn..instance.name.."_buffer_"..tostring(i).."<="..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."]; end\n"
       end
 
@@ -2242,8 +2238,8 @@ function fileModuleFunctions:instanceToVerilogFinalize( instance, module )
       --obuffers = obuffers..declareReg( fn.output.type, instance.name.."_obuffer1")
 
       local oassign = ""
-      oassign = oassign..[[  if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_obuffer0<="..instance.verilogCompilerState[module].write[1].."; end\n"
-      oassign = oassign..[[  if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_writeOut<="..instance.name.."_obuffer0; end\n"
+      oassign = oassign..[[  if (]]..J.sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_obuffer0<="..instance.verilogCompilerState[module].write[1].."; end\n"
+      oassign = oassign..[[  if (]]..J.sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name.."_writeOut<="..instance.name.."_obuffer0; end\n"
       
       return debug..obuffers..buffers..[[
   reg[63:0] ]]..instance.name..[[_file;
@@ -2254,8 +2250,8 @@ end
 
   always @ (posedge CLK) begin 
     ]]..bufferassn..oassign..[[
-    if (]]..instance.name..[[_dowrite]]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end
-    if (]]..sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.verilogCompilerState[module].write[2]..[[; end 
+    if (]]..instance.name..[[_dowrite]]..J.sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end
+    if (]]..J.sel(self.CE,instance.verilogCompilerState[module].write[3],"true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.verilogCompilerState[module].write[2]..[[; end 
     ]]..RST..[[
   end
 ]]
@@ -2263,7 +2259,7 @@ end
       return debug..[[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
-    if (]]..instance.verilogCompilerState[module].write[2]..sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end 
+    if (]]..instance.verilogCompilerState[module].write[2]..J.sel(self.CE," && "..instance.verilogCompilerState[module].write[3],"")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
   end
 ]]
@@ -2368,7 +2364,7 @@ function systolic.module.print( ty, str, CE, showIfInvalid, X )
 
   local res = {kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=sel(CE,systolic.CE("CE"),nil)}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, printModuleMT)
 end
@@ -2402,7 +2398,7 @@ function systolic.module.assert( str, CE, exit, X )
 
   local res = {kind="assert",str=str, exit=exit, CE = CE}
   res.functions={}
-  res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"},CE=sel(CE,systolic.CE("CE"),nil)}
+  res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
   return setmetatable(res, assertModuleMT)
 end

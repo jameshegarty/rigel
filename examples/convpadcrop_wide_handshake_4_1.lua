@@ -4,6 +4,7 @@ local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
+local J = require "common"
 
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p,NOSTALL)
@@ -23,7 +24,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local fifos = {}
   local statements = {}
 
-  local PadRadius = upToNearest(T, ConvRadius)
+  local PadRadius = J.upToNearest(T, ConvRadius)
   
   -- expand to include crop region
   --W = upToNearest(T,128+ConvWidth-1)
@@ -41,7 +42,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
   -------------
   -------------
-  local convKernel = C.convolveTaps( types.uint(8), ConvWidth, sel(ConvWidth==4,7,11))
+  local convKernel = C.convolveTaps( types.uint(8), ConvWidth, J.sel(ConvWidth==4,7,11))
   local kernel = C.stencilKernelTaps( types.uint(8), T, TAP_TYPE, internalW, internalH, ConvWidth, ConvWidth, convKernel)
   -------------
   local BASE_TYPE = types.array2d( types.uint(8), T )
@@ -94,7 +95,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
     outfile = outfile.."_nostall"
   end
 
-  harness{ outFile=outfile, fn=hsfn, inFile=infile, tapType=TAP_TYPE, tapValue=range(ConvWidth*ConvWidth), inSize={inputW,inputH}, outSize={outputW,outputH} }
+  harness{ outFile=outfile, fn=hsfn, inFile=infile, tapType=TAP_TYPE, tapValue=J.range(ConvWidth*ConvWidth), inSize={inputW,inputH}, outSize={outputW,outputH} }
 
   local sizestr = "128 "
   if size1080p then sizestr = "1080p " end

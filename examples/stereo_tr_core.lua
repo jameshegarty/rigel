@@ -4,6 +4,7 @@ local C = require "examplescommon"
 local f = require "fixed"
 local types = require "types"
 local S = require "systolic"
+local J = require "common"
 
 local stereoTRCoreTerra
 if terralib~=nil then stereoTRCoreTerra=require("stereo_tr_core_terra") end
@@ -136,7 +137,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   local statements = {}
 
   local ATYPE = types.array2d(A,2)
-  local TYPE = types.array2d(ATYPE,sel(RGBA,1,4))
+  local TYPE = types.array2d(ATYPE,J.sel(RGBA,1,4))
   local STENCIL_TYPE = types.array2d(A,SADWidth,SADWidth)
   local hsfninp = R.input( R.Handshake(TYPE) )
   local LRTYPE = types.array2d(A,2)
@@ -148,7 +149,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   end
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
-  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
+  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, J.sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
   local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.array2d(A,2),2), inp)
 

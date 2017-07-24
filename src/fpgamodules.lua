@@ -2,6 +2,9 @@ local systolic = require("systolic")
 local Ssugar = require("systolicsugar")
 local types = require("types")
 local SS = Ssugar
+local J = require "common"
+local memoize = J.memoize
+local err = J.err
 
 local S=systolic
 --statemachine = require("statemachine")
@@ -122,12 +125,12 @@ modules.ram128 = function(ty, init)
     end
   end
 
-  local rams = map( range( bits ), function(v) return ram128:add(systolic.module.ram128(false,true,slicedInit[v]):instantiate("ram"..v)) end )
+  local rams = J.map( J.range( bits ), function(v) return ram128:add(systolic.module.ram128(false,true,slicedInit[v]):instantiate("ram"..v)) end )
 
   local read = ram128:addFunction( Ssugar.lambdaConstructor("read",types.uint(8),"read_input") )
 --  pushBackReset:setCE(pushCE)
 
-  local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( read:getInput(), types.uint(7)) ) end)
+  local bitfield = J.map( J.range(bits), function(b) return rams[b]:read( S.cast( read:getInput(), types.uint(7)) ) end)
   read:setOutput( systolic.cast( S.tuple(bitfield), ty), "read_output" )
 
   return ram128
@@ -150,7 +153,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   local rams, ram
   if items <= 128 then
     --err(items==128,"fifo NYI, items <128")
-    rams = map( range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
+    rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
     --print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
     ram = fifo:add(modules.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
@@ -219,7 +222,7 @@ modules.fifo = memoize(function(ty,items,verbose)
 
   local popOutput
   if items<=128 then
-    local bitfield = map( range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
+    local bitfield = J.map( J.range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
     popOutput = systolic.cast( S.tuple(bitfield), ty)
     popFront:setOutput( popOutput, "popFront" )
   else
@@ -282,8 +285,8 @@ modules.fifonoop = memoize(function(ty)
 -- key is 0 indexed
 function modules.wideMux( tab, key )
   assert(#tab>0)
-  local packed = map(tab, function(t,i) return S.tuple{t,S.eq(key,S.constant(i-1,types.uint(16)))} end )
-  local r = foldt( packed, function(a,b) return S.select(S.index(a,1),a,b) end )
+  local packed = J.map(tab, function(t,i) return S.tuple{t,S.eq(key,S.constant(i-1,types.uint(16)))} end )
+  local r = J.foldt( packed, function(a,b) return S.select(S.index(a,1),a,b) end )
   return S.index(r,0)
 end
 
@@ -315,7 +318,7 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   end
   if size==0 then out=inp end
 
-  local CEvar = sel(CE,S.CE("CE"),nil)
+  local CEvar = J.sel(CE,S.CE("CE"),nil)
   local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid, CEvar ) )
   local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid, CEvar) )
 
@@ -353,7 +356,7 @@ local function optimizeShifter( exprs, regs, stride, period, X )
   assert(X==nil)
 
   local CSErepo = {}
-  local internalized = map(exprs, function(e) local node, totalDelay = e:internalizeDelays(); return {node=node:CSE(CSErepo), delay=totalDelay} end)
+  local internalized = J.map(exprs, function(e) local node, totalDelay = e:internalizeDelays(); return {node=node:CSE(CSErepo), delay=totalDelay} end)
 
   local newexprs = {}
 
@@ -412,8 +415,8 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
   assert( S.isModule(module) )
   assert(type(exprs)=="table")
   assert(#exprs>0)
-  assert(#exprs==keycount(exprs))
-  map( exprs, function(e) assert(S.isAST(e)) end )
+  assert(#exprs==J.keycount(exprs))
+  J.map( exprs, function(e) assert(S.isAST(e)) end )
   assert(type(verbose)=="boolean")
   assert(X==nil)
   assert(math.floor(stride)==stride)
@@ -428,23 +431,23 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
 
   local resetPipelines, pipelines, out, reading, ty
 
-  map(exprs, function(e) assert(ty==nil or e.type==ty); ty=e.type; end )
+  J.map(exprs, function(e) assert(ty==nil or e.type==ty); ty=e.type; end )
 
-  local allconst = foldl( andop, true, map(exprs, function(e) return e:const()~=nil end ) )
+  local allconst = J.foldl( J.andop, true, J.map(exprs, function(e) return e:const()~=nil end ) )
 
   if allconst and period*stride==#exprs then
     -- period*stride==#exprs => we will get back to initial condition after 'period' cycles
-    local regs = map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
+    local regs = J.map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):setInit(e:const()):instantiate("SR_"..i) ) end )
 
-    pipelines = map( regs, function(r,i) return r:set( regs[((i-1+stride)%#exprs)+1]:get() )  end )
-    out = map( regs, function(r) return r:get() end )
+    pipelines = J.map( regs, function(r,i) return r:set( regs[((i-1+stride)%#exprs)+1]:get() )  end )
+    out = J.map( regs, function(r) return r:get() end )
   else
     local phase = module:add( Ssugar.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):instantiate("phase") )
 
     resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
-    local regs = map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
+    local regs = J.map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )
 
     exprs = optimizeShifter( exprs, regs, stride, period )
 
@@ -453,11 +456,11 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
     -- it's possible we may not even use regs[1]. This is just if we end up CSEing (optimizeShifter)
     --
     -- disable pipeling on the select to make sure all the reads/write happen in same cycle (or else we will create timing cycle)
-    pipelines = map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[((i-1+stride)%#exprs)+1]:get()):disablePipeliningSingle() ) end )
+    pipelines = J.map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[((i-1+stride)%#exprs)+1]:get()):disablePipeliningSingle() ) end )
     table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
     --out = S.select( reading, exprs[1], regs[2]:get() )
-    out = map( exprs, function(expr,i) return S.select( reading, expr, regs[((i-1+stride)%#exprs)+1]:get() ) end )
+    out = J.map( exprs, function(expr,i) return S.select( reading, expr, regs[((i-1+stride)%#exprs)+1]:get() ) end )
 
     if verbose then
       --local printInst = module:add( S.module.print( types.tuple{types.uint(16),types.bool(),out.type}, "Shifter phase %d reading %d out %h", true):instantiate("printInst") )
@@ -550,12 +553,12 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   
   --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
   local writeAddrs = sizeInBytes/inputBytes
-  err( isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
+  err( J.isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
 
   if outputBytes~=nil then
     err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))
     local readAddrs = sizeInBytes/outputBytes
-    err( isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
+    err( J.isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
   end
   
   -- the idea here is that we want to pack the data into the smallest # of brams possible.
@@ -578,11 +581,9 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   err( count==math.floor(count), "non integer number of BRAMS needed?")
   assert(count <= inputBytes) -- must read at least 1 byte per ram
 
---  local eachInputBytes = sel(count==bwlimit,math.min(inputBytes,4),inputBytes/(sizeInBytes/(2048)))
   local eachInputBytes = math.max(inputBytes/count,1)
   local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
 
-  --print("eachInputBytes",eachInputBytes, "inputaddrbits",inputAddrBits,"count",count,"sizeinbytes",sizeInBytes,"inputBytes",inputBytes,"addressable",addressable)
   assert(eachInputBytes>=1 and eachInputBytes<=4)
   assert(eachInputBytes<=inputBytes)
   assert(eachInputBytes*count==inputBytes)
@@ -591,9 +592,6 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   if outputBytes~=nil then
     assert(count <= outputBytes) -- must read at least 1 byte per ram
     eachOutputBytes = math.max(outputBytes/count,1)
---    eachOutputBytes = sel(count==bwlimit, math.min(outputBytes,4), outputBytes/(sizeInBytes/(2048)))
---    eachOutputBytes = math.max(eachOutputBytes,1)
-    --print("eachOutputBytes",eachOutputBytes)
     assert(eachOutputBytes>=1 and eachOutputBytes<=4)
     assert(eachOutputBytes<=outputBytes)
     assert(eachOutputBytes*count==outputBytes)
@@ -637,10 +635,10 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
     end
 
     local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
 
     if outputBytes~=nil then 
-      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, sel(CE,S.CE("read_CE"),nil) ) ) 
+      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, J.sel(CE,S.CE("read_CE"),nil) ) ) 
     end
 
     return mod

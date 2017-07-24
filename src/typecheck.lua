@@ -1,4 +1,6 @@
 local types = require "types"
+local J = require "common"
+local err = J.err
 
 -- NOTE: does typechecking in place! ast must be a table that's going to be thrown away!
 local function typecheck_inner( ast, newNodeFn )
@@ -156,7 +158,7 @@ local function typecheck_inner( ast, newNodeFn )
       err( ast.idyLow==nil or ast.idyLow==0, "idyLow should be nil "..ast.loc)
       err( ast.idyHigh==nil or ast.idyHigh==0, "idyHigh should be nil "..ast.loc)
 
-      local outlist = slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1)
+      local outlist = J.slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1)
 
       ast.type = types.tuple( outlist )
     else
@@ -213,7 +215,7 @@ local function typecheck_inner( ast, newNodeFn )
 
   elseif ast.kind=="tuple" then
     err( #ast.inputs>0, "no inputs to tuple? "..ast.loc )
-    local ty = map(ast.inputs, function(t) assert(types.isType(t.type)); return t.type end )
+    local ty = J.map(ast.inputs, function(t) assert(types.isType(t.type)); return t.type end )
     ast.type = types.tuple(ty)
   elseif ast.kind=="array" then
     local typeOver

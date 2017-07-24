@@ -5,6 +5,9 @@ local llharness = require "harness"
 local fixed_new = require("fixed_new")
 local types = require("types")
 local SDFRate = require "sdfrate"
+local J = require "common"
+local S = require "systolic"
+local err = J.err
 
 local ccnt = 0
 
@@ -21,8 +24,14 @@ local SimpleModuleWrapperMT={__call=function(...)
     err( R.isIR(args[i]), "argument to module must be rigel value")
   end
   
-  local settings = shallowCopy(tab.settings)
+  local settings
 
+  if tab.settings==nil then
+    settings = {}
+  else
+    settings = J.shallowCopy(tab.settings)
+  end
+  
   print("#ARGS",#args)
   local arg
   if #args==1 then
@@ -75,7 +84,22 @@ function darkroomIRFunctions:selectStream(i)
 
   return res
 end
-  
+
+function darkroomIRFunctions:index(i)
+  return RS.index{input=self,key=i}
+end
+
+function RHLL.map(fn)
+  err( getmetatable(fn)==SimpleModuleWrapperMT, "NYI - HLL map expects HLL module " )
+  local tab = {fn=RS.modules.map}
+  function tab.wireFn(arg)
+    err( arg.type:isArray(), "map expects an array type as input" )
+    local conn = fn(arg:index(0))
+    return {fn=conn.fn, size={arg.type:arrayLength()[1],arg.type:arrayLength()[2]}}
+  end
+  return setmetatable(tab,SimpleModuleWrapperMT)
+end
+
 local fixedid = 0
 local function mathWrap(t)
   print("MATHWRAP",t.type)
@@ -111,11 +135,20 @@ function RHLL.posSeq(t)
   return setmetatable(tab,SimpleModuleWrapperMT)
 end
 
-function RHLL.harness(t)
-  err( types.isType(t.inType), "RHLL.harness: inType must be type ")
+function RHLL.broadcast(W,H)
+  return setmetatable({fn=function(t) return C.broadcast(t.type,t.W,t.H) end, settings={W=W,H=H}}, SimpleModuleWrapperMT)
+end
 
-  local param = R.input(t.inType,t.sdfInputRate)
+function RHLL.upsampleSeq(t)
+  return setmetatable({fn=RS.modules.upsampleSeq, settings={scale=t.scale, size=t.size,V=1} }, SimpleModuleWrapperMT)
+end
+
+function RHLL.harness(t)
+  err( types.isType(t.type), "RHLL.harness: type must be type ")
+
+  local param = R.input(t.type,t.sdfInputRate)
   t.fn = RS.defineModule{ input=param, output=t.fn(param)}
+  t.inType=t.type
   llharness(t)
 end
 
@@ -130,15 +163,31 @@ function RHLL.HS(tab)
   end
 end
 
-function RHLL.importAll()
-  rawset(_G,"liftMath",RHLL.liftMath)
-  rawset(_G,"triggeredCounter",RHLL.triggeredCounter)
-  rawset(_G,"posSeq", RHLL.posSeq)
-  rawset(_G,"harness",RHLL.harness)
-  rawset(_G,"HS",RHLL.HS)
+function RHLL.lambda(fn)
+  local tab = {}
+  function tab.fn(t)
+    local inp = R.input(t.type)
+    local out = fn(inp)
+    return RS.defineModule{input=inp, output=out}
+  end
+  return setmetatable( tab, SimpleModuleWrapperMT )
+end
 
-  rawset(_G,"uint8",types.uint(8))
-  rawset(_G,"array2d",types.array2d)
+local function HLLLift(fn)
+  return setmetatable({fn=RS.modules.lift, settings={fn=fn}}, SimpleModuleWrapperMT )
+end
+
+RHLL.sum = HLLLift(function(x) return S.index(x,0)+S.index(x,1) end )
+RHLL.rshift = HLLLift(function(x) return rshift(S.index(x,0),S.index(x,1)) end )
+
+RHLL.u8 = types.uint(8)
+RHLL.u16 = types.uint(8)
+RHLL.tup = types.tuple
+RHLL.array2d = types.array2d
+
+function RHLL.export(t)
+  if t==nil then t=_G end
+  for k,v in pairs(RHLL) do rawset(t,k,v) end
 end
 
 return RHLL

@@ -4,6 +4,7 @@ local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
+local J = require "common"
 
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p)
@@ -21,7 +22,7 @@ function MAKE(T,ConvWidth,size1080p)
     inputW, inputH = 1920, 1080
   end
   
-  local PadRadius = upToNearest(T, ConvRadius)
+  local PadRadius = J.upToNearest(T, ConvRadius)
   
   -- expand to include crop region
   --W = upToNearest(T,128+ConvWidth-1)
@@ -36,7 +37,7 @@ function MAKE(T,ConvWidth,size1080p)
   local outputW = inputW
   local outputH = inputH
   
-  local convolve = C.convolveConstantTR( types.uint(8), ConvWidth, ConvWidth, T, range(ConvWidth*ConvWidth), sel(ConvWidth==4,7,11) )
+  local convolve = C.convolveConstantTR( types.uint(8), ConvWidth, ConvWidth, T, J.range(ConvWidth*ConvWidth), J.sel(ConvWidth==4,7,11) )
   -------------
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
   local hsfninp = R.input( R.Handshake(RW_TYPE) )

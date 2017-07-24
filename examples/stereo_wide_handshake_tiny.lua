@@ -2,6 +2,7 @@ local C = require "examplescommon"
 local harness = require "harness"
 local types = require "types"
 local makeStereo = require "stereo_core"
+require "common".export()
 
 --local SADRadius = 4
 local SADWidth = 8

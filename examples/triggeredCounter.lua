@@ -1,5 +1,4 @@
-local RHLL = require "rigelhll"
-RHLL.importAll()
+require "rigelhll".export()
 
 local W,H = 128,64
 
@@ -20,4 +19,4 @@ function top(inp)
 end
 
 
-harness{ inFile="frame_128.raw", outFile="triggeredCounter", fn=top, inSize={W,H}, outSize={W*4,H}, inType=HS(array2d(uint8,1)), sdfInputRate={{1,1}}}
+harness{ inFile="frame_128.raw", outFile="triggeredCounter", fn=top, inSize={W,H}, outSize={W*4,H}, type=HS(array2d(u8,1)), sdfInputRate={{1,1}}}

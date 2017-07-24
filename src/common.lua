@@ -1,8 +1,6 @@
---local cstdio = terralib.includec("stdio.h")
---local cstring = terralib.includec("string.h")
---local cstdlib = terralib.includec("stdlib.h")
+local common = {}
 
-function table_print (tt, indent, done)
+function common.table_print (tt, indent, done)
   done = done or {}
   indent = indent or 0
   if type(tt) == "table" then
@@ -36,7 +34,7 @@ function table_print (tt, indent, done)
   end
 end
 
-function to_string( tbl )
+function common.to_string( tbl )
     if  "nil"       == type( tbl ) then
         return tostring(nil)
     elseif  "table" == type( tbl ) then
@@ -48,10 +46,10 @@ function to_string( tbl )
     end
 end
 
-function serialize(tbl) print(to_string(tbl)) end
+function common.serialize(tbl) print(to_string(tbl)) end
 
 
-function deepcopy(object)
+function common.deepcopy(object)
     local lookup_table = {}
     local function _copy(object)
         if type(object) ~= "table" then
@@ -70,7 +68,7 @@ function deepcopy(object)
 end
 
 
-function explode(div,str) -- credit: http://richard.warburton.it
+function common.explode(div,str) -- credit: http://richard.warburton.it
   if (div=='') then return false end
   local pos,arr = 0,{}
   -- for each divider found
@@ -84,20 +82,20 @@ end
 
 -- append elements in 'src' to 'dest'
 -- both have to have only numeric keys
-function appendTable(dest,src)
+function common.appendTable(dest,src)
   for k,v in ipairs(src) do
     assert(type(k)=="number")
     table.insert(dest,v)
   end
 end
 
-function appendSet(dest,src)
+function common.appendSet(dest,src)
   for k,v in pairs(src) do
     dest[k]=v
   end
 end
 
-function joinSet(dest,src)
+function common.joinSet(dest,src)
   local t = {}
 
   for k,v in pairs(dest) do
@@ -115,14 +113,14 @@ function joinSet(dest,src)
   return t
 end
 
-function joinTables(A,B)
+function common.joinTables(A,B)
   local T = {}
   for k,v in ipairs(A) do table.insert(T,v) end
   for k,v in ipairs(B) do table.insert(T,v) end
   return T
 end
 
-function keycount(t)
+function common.keycount(t)
   assert(type(t)=="table")
   local tot = 0
   for k,v in pairs(t) do tot=tot+1 end
@@ -130,7 +128,7 @@ function keycount(t)
 end
 
 -- takes an array of values to a hash where the values are keys
-function invertTable(t)
+function common.invertTable(t)
 --  for k,v in pairs(t) do assert(type(k)=="number") end
 
   local out = {}
@@ -143,7 +141,7 @@ function invertTable(t)
 end
 
 -- dedup t. no guarantee on the behavior of the keys
-function dedup(t)
+function common.dedup(t)
   local invT = {}
   for k,v in pairs(t) do 
     assert(type(k)=="number") 
@@ -158,13 +156,13 @@ function dedup(t)
   return res
 end
 
-function pack(...)
+function common.pack(...)
   local arg = {...}
   return arg
 end
 
 
-function explode(div,str) -- credit: http://richard.warburton.it
+function common.explode(div,str) -- credit: http://richard.warburton.it
  if (div=='') then return false end
   local pos,arr = 0,{}
   -- for each divider found
@@ -177,9 +175,8 @@ function explode(div,str) -- credit: http://richard.warburton.it
 end
 
 -- round x up to the next largest number that has 'roundto' as a factor
-function upToNearest(roundto,x)
+function common.upToNearest(roundto,x)
   assert(type(x)=="number")
-  --if x < 0 then orion.error("uptoNearest x<=0 "..x) end
 
   if x % roundto == 0 or roundto==0 then return x end
   
@@ -192,7 +189,7 @@ function upToNearest(roundto,x)
   return ox
 end
 
-function downToNearest(roundto,x)
+function common.downToNearest(roundto,x)
   assert(type(x)=="number")
   assert(roundto>=0)
   --assert(x>=0)
@@ -211,7 +208,7 @@ end
 
 
 
-function isModuleAvailable(name)
+function common.isModuleAvailable(name)
   if package.loaded[name] then
     return true
   else
@@ -226,36 +223,36 @@ function isModuleAvailable(name)
   end
 end
 
-function isPowerOf2(x)
+function common.isPowerOf2(x)
   local r = math.log(x)/math.log(2)
   return r==math.floor(r)
 end
 
 -- nearestPowerOf2(x) >= x
-function nearestPowerOf2(x)
+function common.nearestPowerOf2(x)
   local r = math.pow(2, math.ceil(math.log(x)/math.log(2)))
   assert(r>=x)
   assert(math.log(r)/math.log(2) == math.ceil(math.log(r)/math.log(2)))
   return r
 end
 
-function gcd(a,b)
+function common.gcd(a,b)
   assert(type(a)=="number")
   assert(type(b)=="number")
   if b ~= 0 then
-    return gcd(b, a % b)
+    return common.gcd(b, a % b)
   else
     return math.abs(a)
   end
 end
 
-function ratioFactor(a,b)
-  local g = gcd(a,b)
+function common.ratioFactor(a,b)
+  local g = common.gcd(a,b)
   return a/g, b/g
 end
-simplify = ratioFactor
+common.simplify = common.ratioFactor
 
-function map(t,f)
+function common.map(t,f)
   assert(type(t)=="table")
   assert(type(f)=="function")
   local res = {}
@@ -268,7 +265,7 @@ end
 -- returns t[a][b][c]
 -- (and also makes the intermediate tables if necessary)
 -- This function has a weakness - we can't detect if we provided insufficient indices! That will still return something.
-function deepsetweak( t, idx, value )
+function common.deepsetweak( t, idx, value )
   assert(type(t)=="table")
   assert(type(idx)=="table")
   assert(#idx>0)
@@ -284,17 +281,17 @@ function deepsetweak( t, idx, value )
     end
   end
 
-  assert(keycount(idx)==#idx)
+  assert(common.keycount(idx)==#idx)
   error("deepsetweak?")
 end
 
 -- if idx={a,b,c} this does
 -- return t[a][b][c]
 -- but returns nil if any of the indexing fails, doesn't error out
-function index(t,idx)
-  assert(type(t)=="table")
+function common.index(t,idx)
+  common.err( type(t)=="table", "common.index: t must be table")
   assert(type(idx)=="table")
-  assert(keycount(idx)==#idx)
+  assert(common.keycount(idx)==#idx)
   assert(#idx>0)
 
   local T = t
@@ -305,7 +302,7 @@ function index(t,idx)
   return T
 end
 
-function concat(t1,t2)
+function common.concat(t1,t2)
   assert(type(t1)=="table")
   assert(type(t2)=="table")
   local t = {}
@@ -314,15 +311,15 @@ function concat(t1,t2)
   return t
 end
 
-function reverse(t)
-  assert(keycount(t)==#t)
+function common.reverse(t)
+  assert( common.keycount(t)==#t )
   local r = {}
   for k,v in ipairs(t) do r[#t-k+1] = v end
   return r
 end
 
 -- t[k] is removed from array if f([t[k])==false
-function filter(t,f)
+function common.filter(t,f)
   local r = {}
   for k,v in pairs(t) do
     if f(v,k) then table.insert(r, v) end
@@ -330,8 +327,9 @@ function filter(t,f)
   return r
 end
 
-function ifilter( t, f )
-  assert(keycount(t)==#t)
+-- works on lua arrays. Compare to filter (above)
+function common.ifilter( t, f )
+  common.err( common.keycount(t)==#t, "ifilter: t must be table" )
   local r = {}
   for k,v in ipairs(t) do
     if f(v,k) then table.insert(r, v) end
@@ -344,8 +342,8 @@ end
 -- f(a,nil) = a
 -- (you don't need to specify these cases in f, but this is how it will behave)
 -- the f(nil,nil) case will only happen if the uses passes in an empty array
-function foldt(t, f, base)
-  assert(#t==keycount(t))
+function common.foldt(t, f, base)
+  assert(#t==common.keycount(t))
   if #t==0 then return base end
   if #t==1 then return t[1] end
   if #t==2 then return f(t[1],t[2]) end
@@ -361,11 +359,11 @@ function foldt(t, f, base)
 
   assert(#res>0)
   if #res==1 then return res[1] end
-  return foldt( res, f, base )
+  return common.foldt( res, f, base )
 end
 
 -- returns a table of values from a to b, inclusive
-function range(a,b)
+function common.range(a,b)
   assert(type(a)=="number" and (a==math.floor(a)))
   assert(type(b)=="number" or b==nil)
   if b==nil then a,b = 1,a end
@@ -380,7 +378,7 @@ function range(a,b)
 end
 
 -- row major order
-function range2d(xlow,xhigh,ylow,yhigh)
+function common.range2d(xlow,xhigh,ylow,yhigh)
   assert(type(xlow)=="number")
   assert(type(xhigh)=="number")
   assert(type(ylow)=="number")
@@ -398,7 +396,7 @@ end
 
 -- takes table m this is a key,value table,
 -- removes the keys and turns it into an array
-function mapToArray(m)
+function common.mapToArray(m)
   local t = {}
   for k,v in pairs(m) do
     table.insert(t,v)
@@ -406,20 +404,20 @@ function mapToArray(m)
   return t
 end
 
-stripkeys = mapToArray
+common.stripkeys = common.mapToArray
 
-function invertAndStripKeys(t)
+function common.invertAndStripKeys(t)
   local r = {}
   for k,v in pairs(t) do table.insert(r,k) end
   return r
 end
 
-function sel(cond,a,b)
+function common.sel(cond,a,b)
   if cond then return a else return b end
 end
 
 -- unlike lua's in place sort, this returns the sorted table
-function sort( a, f )
+function common.sort( a, f )
   assert(type(a)=="table")
   local t = {}
   for k,v in pairs(a) do t[k] = v end
@@ -428,10 +426,10 @@ function sort( a, f )
 end
 
 -- fn(a,b)
-function foldl( fn, base, t )
-  assert(type(fn)=="function")
-  assert(type(t)=="table")
-  assert(#t==keycount(t)) -- should be only numeric keys
+function common.foldl( fn, base, t )
+  common.err(type(fn)=="function","foldl: first argument must be function")
+  common.err( type(t)=="table", "foldl: input must be table")
+  common.err( #t==common.keycount(t), "foldl: table must be lua array" ) -- should be only numeric keys
   
   if #t==0 then return base end
 
@@ -445,11 +443,11 @@ function foldl( fn, base, t )
   return res
 end
 
-function andop(a,b) return a and b end
-function orop(a,b) return a or b end
+function common.andop(a,b) return a and b end
+function common.orop(a,b) return a or b end
 
 -- returns first i elements of the list t
-function take(t,i)
+function common.take(t,i)
   assert(type(t)=="table")
   local r = {}
   for k,v in ipairs(t) do
@@ -460,8 +458,8 @@ end
 
 
 
-__memoized = {}
-__memoizedNilHack = {}
+local __memoized = {}
+local __memoizedNilHack = {}
 
 local function makeDense(t)
   local max = 0
@@ -469,21 +467,21 @@ local function makeDense(t)
   for k=1,max do if t[k]==nil then t[k]=__memoizedNilHack end end
 end
 
-function memoize(f)
+function common.memoize(f)
   assert(type(f)=="function")
   return function(...)
-    local idx = map({...}, function(v) 
+    local idx = common.map({...}, function(v) 
                       -- hack: tables can't have nil keys. To accommodate this, we make a fake table to represent nils, and replace nils with that
                       -- (remember, we use the values of this table as keys for the hash later)
                       if v==nil then return __memoizedNilHack end
-                      err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean","deepsetweak type was "..type(v)) 
+                      common.err(type(v)=="number" or type(v)=="table" or type(v)=="string" or type(v)=="boolean" or type(v)=="function","deepsetweak type was "..type(v)) 
                       return v
                            end)
 
     -- since some values of {...} may be nil, we need to densify it (fill in all keys from min to max)
     makeDense(idx)
 
-    assert(keycount(idx)==#idx)
+    assert(common.keycount(idx)==#idx)
     local cnt = #idx
     __memoized[f] = __memoized[f] or {}
     if cnt==0 then
@@ -491,15 +489,15 @@ function memoize(f)
       return __memoized[f][0]
     else
       __memoized[f][cnt] = __memoized[f][cnt] or {}
-      local t = index(__memoized[f][cnt],idx)
+      local t = common.index(__memoized[f][cnt],idx)
       if t~=nil then return t end -- early out, so that we don't call f multiple times w/ same arguments
-      return deepsetweak( __memoized[f][cnt], idx, f(...) )
+      return common.deepsetweak( __memoized[f][cnt], idx, f(...) )
     end
   end
 end
 
 -- this take [a,b,c,d,e,f] to [[a,b],[c,d],[e,f]] (for n==2)
-function split(t,n)
+function common.split(t,n)
   assert(#t % n == 0)
   local r = {}
   for k,v in ipairs(t) do 
@@ -510,43 +508,42 @@ function split(t,n)
   return r
 end
 
-function err(asst, str)
+function common.err(asst, str)
   if asst==false then error(str) end
 end
 
-function rep(v,n)
-  return map(range(n), function(i) return v end)
+function common.broadcast(v,n)
+  return common.map( common.range(n), function(i) return v end )
 end
-broadcast = rep
 
 -- low, high are inclusive
-function slice(t,low,high) 
+function common.slice(t,low,high) 
   assert( type(t)=="table" )
   assert( type(low)=="number" )
   assert( type(high)=="number" )
   assert( low<=high )
-  return map(range(low,high),function(i) return t[i] end) 
+  return common.map( common.range(low,high), function(i) return t[i] end )
 end
 
-function shallowCopy(t)
-  assert(type(t)=="table")
+function common.shallowCopy(t)
+  common.err(type(t)=="table","shallowCopy: input must be table")
   local n = {}
   for k,v in pairs(t) do n[k] = v end
   return n
 end
 
 -- choose a key out of table
-function choose(t)
+function common.choose(t)
   for k,v in pairs(t) do return k end
 end
 
 -- given t = {k1={a,b}, k2={c,d}}, this will return
 -- [ {k1=a,k2=c},{k1=a,k2=d},{k1=b,k2=c},{k1=b,k2=d} ]
-function cartesian(t)
+function common.cartesian(t)
   -- base case
-  if keycount(t)==1 then
+  if common.keycount(t)==1 then
     local tmp = {}
-    local k = choose(t)
+    local k = common.choose(t)
     local v = t[k]
 
     for __,vv in ipairs(v) do 
@@ -557,12 +554,12 @@ function cartesian(t)
     return tmp
   end
 
-  local tmpt = shallowCopy(t)
-  local k = choose(t)
+  local tmpt = common.shallowCopy(t)
+  local k = common.choose(t)
   print("CHOOSE",k)
   local v = t[k]
   tmpt[k] = nil
-  local list = cartesian(tmpt)
+  local list = common.cartesian(tmpt)
   print("LIST",#list)
 
   -- form product
@@ -584,7 +581,7 @@ function cartesian(t)
 end
 
 -- is this an array of identical elements?
-function allTheSame(t)
+function common.allTheSame(t)
   local allTheSame = true
 
   for k,v in ipairs(t) do
@@ -594,4 +591,11 @@ function allTheSame(t)
   return allTheSame
 end
 
-if terralib~=nil then require "commonTerra" end
+if terralib~=nil then require "commonTerra".export(common) end
+
+function common.export(t)
+  if t==nil then t=_G end
+  for k,v in pairs(common) do rawset(t,k,v) end
+end
+
+return common

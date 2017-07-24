@@ -2,6 +2,7 @@ local R = require "rigel"
 local types = require "types"
 local RM = require "modules"
 local C = require "examplescommon"
+local J = require "common"
 
 local function FIFO(fifos,statements,A,inp)
   local id = #fifos
@@ -112,7 +113,7 @@ function dy(bits)
   return out:reduceBits(bits.d[1],bits.d[2]):toRigelModule("dy")
 end
 
-makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
+makePartial = J.memoize(function(ltype,rtype,outMSB,outLSB)
   f.expectFixed(ltype)
   f.expectFixed(rtype)
   assert(type(outMSB)=="number")
@@ -126,9 +127,9 @@ makePartial = memoize(function(ltype,rtype,outMSB,outLSB)
   return {out:toRigelModule("partial_"..tostring(ltype)..tostring(rtype).."_"..outMSB.."_"..outLSB), out.type, prec, out:cost()}
                       end)
 
-makeSumReduce = memoize(function(inputType,async)
-                          assert(types.isType(inputType))
-                          assert(type(async)=="boolean")
+makeSumReduce = J.memoize(function(inputType,async)
+  assert(types.isType(inputType))
+  assert(type(async)=="boolean")
 
   --print("MakeReduceSum",inputType)
   local finp = f.parameter("pi",types.tuple{inputType,inputType})

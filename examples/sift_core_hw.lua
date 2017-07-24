@@ -7,7 +7,7 @@ local harris = require "harris_core"
 local C = require "examplescommon"
 local f = require "fixed_float"
 local SDFRate = require "sdfrate"
---f.DISABLE_SYNTH=true
+local J = require "common"
 
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
@@ -22,7 +22,7 @@ RED_SCALE = 1024/GRAD_SCALE -- 1024
 
 sift = {}
 
-local fixedSum = memoize(function(A)
+local fixedSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+inp:index(1)
@@ -31,7 +31,7 @@ local fixedSum = memoize(function(A)
   return out:toRigelModule("fixedSum")
                    end)
 
-local fixedSumPow2 = memoize(function(A)
+local fixedSumPow2 = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+(inp:index(1)*inp:index(1))
@@ -40,7 +40,7 @@ local fixedSumPow2 = memoize(function(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
 
-sift.fixedDiv = memoize(function(A)
+sift.fixedDiv = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = (inp:index(0))*(inp:index(1):invert())
@@ -49,7 +49,7 @@ sift.fixedDiv = memoize(function(A)
   return out:toRigelModule("fixedDiv")
                    end)
 
-sift.fixedSqrt = memoize(function(A)
+sift.fixedSqrt = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",A)
   local out = inp:sqrt()
@@ -58,7 +58,7 @@ sift.fixedSqrt = memoize(function(A)
   return out:toRigelModule("fixedSqrt")
                    end)
 
-sift.fixedLift = memoize(function(A)
+sift.fixedLift = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("IIlift",A)
   local out = inp:lift()
@@ -67,7 +67,7 @@ sift.fixedLift = memoize(function(A)
   return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
                    end)
 
-sift.lowerPair = memoize(function(FROM,TO,scale)
+sift.lowerPair = J.memoize(function(FROM,TO,scale)
   assert(types.isType(FROM))
   assert(types.isType(TO))
   local inp = f.parameter("IIlift",types.tuple{FROM,FROM})

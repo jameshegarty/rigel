@@ -3,11 +3,11 @@ local types = require "types"
 local S = require "systolic"
 local systolic = S
 local Ssugar = require "systolicsugar"
---local cstring = terralib.includec("string.h")
---local cmath = terralib.includec("math.h")
---local cstdlib = terralib.includec("stdlib.h")
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
+local J = require "common"
+local memoize = J.memoize
+local err = J.err
 
 local function verilogSanitize(s)
   return s:gsub('%W','_')
@@ -52,14 +52,14 @@ end
 
 -- *this should really be in examplescommon.t
 -- f(g())
-function modules.compose(name,f,g)
+modules.compose = memoize(function(name,f,g)
   err( type(name)=="string", "first argument to compose must be name of function")
   err( darkroom.isFunction(f), "compose: second argument should be rigel module")
   err( darkroom.isFunction(g), "compose: third argument should be rigel module")
   local inp = rigel.input( g.inputType, g.sdfInput )
   local gvalue = rigel.apply(name.."_g",g,inp)
   return modules.lambda(name,inp,rigel.apply(name.."_f",f,gvalue))
-end
+end)
 
 
 -- *this should really be in examplescommon.t
@@ -70,7 +70,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
   err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
   err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
-  err( keycount(typelist)==#typelist, "SoAtoAoS: typelist must be lua array")
+  err( J.keycount(typelist)==#typelist, "SoAtoAoS: typelist must be lua array")
   err( asArray==nil or type(asArray)=="boolean", "SoAtoAoS: asArray must be bool or nil")
   if asArray==nil then asArray=false end
 
@@ -80,9 +80,9 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
 
   local res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
 
-  res.inputType = types.tuple( map(typelist, function(t) return types.array2d(t,W,H) end) )
+  res.inputType = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
   if asArray then
-    map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
+    J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
     res.outputType = types.array2d(types.array2d(typelist[1],#typelist),W,H)
   else
     res.outputType = types.array2d(types.tuple(typelist),W,H)
@@ -101,7 +101,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     local arrList = {}
     for y=0,H-1 do
       for x=0,W-1 do
-        local r = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
+        local r = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
         if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
         table.insert( arrList, r )
       end
@@ -122,12 +122,12 @@ modules.packTuple = memoize(function( typelist, X )
   
   local res = {kind="packTuple"}
   
-  map(typelist, function(t) rigel.expectBasic(t) end )
-  res.inputType = types.tuple( map(typelist, function(t) return rigel.Handshake(t) end) )
+  J.map(typelist, function(t) rigel.expectBasic(t) end )
+  res.inputType = types.tuple( J.map(typelist, function(t) return rigel.Handshake(t) end) )
   res.outputType = rigel.Handshake( types.tuple(typelist) )
   res.stateful = false
   res.sdfOutput = {{1,1}}
-  res.sdfInput = map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
+  res.sdfInput = J.map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
   res.name = "packTuple_"..verilogSanitize(tostring(typelist))
 
   res.delay = 0
@@ -142,19 +142,19 @@ modules.packTuple = memoize(function( typelist, X )
     
     systolicModule:onlyWire(true)
     
-    local printStr = "IV ["..table.concat(broadcast("%d",#typelist),",").."] OV %d ready ["..table.concat(broadcast("%d",#typelist),",").."] readyDownstream %d"
+    local printStr = "IV ["..table.concat( J.broadcast("%d",#typelist),",").."] OV %d ready ["..table.concat(J.broadcast("%d",#typelist),",").."] readyDownstream %d"
     local printInst 
-    if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple(broadcast(types.bool(),(#typelist)*2+2)), printStr):instantiate("printInst") ) end
+    if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple(J.broadcast(types.bool(),(#typelist)*2+2)), printStr):instantiate("printInst") ) end
     
     local activePorts={}
     for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
       
-    local outv = S.tuple(map(range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
+    local outv = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
       
     -- valid bit is the AND of all the inputs
-    local validInList = map(activePorts,function(i) return S.index(S.index(sinp,i-1),1) end)
-    local validInFullList = map(typelist,function(i,k) return S.index(S.index(sinp,k-1),1) end)
-    local validOut = foldt(validInList,function(a,b) return S.__and(a,b) end,"X")
+    local validInList = J.map(activePorts,function(i) return S.index(S.index(sinp,i-1),1) end)
+    local validInFullList = J.map(typelist,function(i,k) return S.index(S.index(sinp,k-1),1) end)
+    local validOut = J.foldt(validInList,function(a,b) return S.__and(a,b) end,"X")
   
     local pipelines={}
     
@@ -224,7 +224,7 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
   for _,fnname in pairs(passthroughFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
-    res:addFunction( S.lambda(fnname, srcFn:getInput(), inner[fnname]( inner, srcFn:getInput() ), srcFn:getOutputName(), nil, sel(onlyWire,nil,srcFn:getValid()), srcFn:getCE() ) )
+    res:addFunction( S.lambda(fnname, srcFn:getInput(), inner[fnname]( inner, srcFn:getInput() ), srcFn:getOutputName(), nil, J.sel(onlyWire,nil,srcFn:getValid()), srcFn:getCE() ) )
 
     local readySrcFn = systolicModule:lookupFunction(fnname.."_ready")
     if readySrcFn~=nil then
@@ -317,7 +317,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 end
 
 -- This is basically just for testing: artificially reduces the throughput along a path
-function modules.reduceThroughput(A,factor)
+modules.reduceThroughput = memoize(function(A,factor)
   err( type(factor)=="number", "reduceThroughput: second argument must be number (reduce factor)" )
   err( factor>1, "reduceThroughput: reduce factor must be >1" )
   err( math.floor(factor)==factor, "reduceThroughput: reduce factor must be an integer" )
@@ -354,7 +354,7 @@ function modules.reduceThroughput(A,factor)
   end
 
   return modules.waitOnInput( rigel.newFunction(res) )
-end
+end)
 
 -- f should be basic->RV
 -- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
@@ -615,7 +615,7 @@ modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
   err( Top~=nil, "pad Top==nil" )
   err( Value~=nil, "pad Value==nil" )
   
-  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+  J.map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
         err(type(n)=="number","pad expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"pad non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -690,17 +690,15 @@ end)
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
-function modules.filterSeq( A, W,H, rate, fifoSize, coerce )
+modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
   assert(types.isType(A))
   err(type(W)=="number", "W must be number")
   err(type(H)=="number", "H must be number")
   err( SDFRate.isFrac(rate), "filterSeq: rate must be {n,d} format fraction" )
   err(type(fifoSize)=="number", "fifoSize must be number")
-  --err(isPowerOf2(rate), "rate should be power of 2")
 
   if coerce==nil then coerce=true end
 
-  --local logRate = math.log(rate)/math.log(2)
 
   local res = { kind="filterSeq", A=A }
   -- this has type basic->V (decimate)
@@ -821,7 +819,7 @@ vstring = vstring..[[endmodule
   end
   
   return rigel.newFunction(res)
-end
+end)
 
 modules.readMemory = memoize(function(ty)
   assert( types.isType(ty) )
@@ -876,10 +874,10 @@ end)
 -- basic -> V
 modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
   assert( types.isType(A) )
-  map({W,H,T,scale},function(n) assert(type(n)=="number") end)
+  J.map({W,H,T,scale},function(n) assert(type(n)=="number") end)
   assert(scale>=1)
   err( W%T==0, "downsampleYSeq, W%T~=0")
-  err( isPowerOf2(scale), "scale must be power of 2")
+  err( J.isPowerOf2(scale), "scale must be power of 2")
   local sbits = math.log(scale)/math.log(2)
 
   local inputType = types.array2d(A,T)
@@ -908,10 +906,10 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
 modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
   assert( types.isType(A) )
-  map({W,H,T,scale},function(n) assert(type(n)=="number") end)
+  J.map({W,H,T,scale},function(n) assert(type(n)=="number") end)
   assert(scale>=1)
   err( W%T==0, "downsampleXSeq, W%T~=0")
-  err( isPowerOf2(scale), "NYI - scale must be power of 2")
+  err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
   local sbits = math.log(scale)/math.log(2)
 
   local outputT
@@ -947,7 +945,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
       else
         svalid = S.constant(true,types.bool())
         local datavar = S.index(sinp,1)
-        sdata = map(range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
+        sdata = J.map(J.range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
         sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
       end
       return S.tuple{sdata,svalid}
@@ -970,7 +968,7 @@ modules.downsample = memoize(function( A, W, H, scaleX, scaleY, X )
   err( scaleY~=nil, "downsample scaleY==nil" )
   err( X==nil, "downsample: too many arguments" )
   
-  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+  J.map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
         err(type(n)=="number","downsample expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"downsample non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -1007,7 +1005,7 @@ modules.upsample = memoize(function( A, W, H, scaleX, scaleY, X )
   err( scaleY~=nil, "upsample scaleY==nil" )
   err( X==nil, "upsample: too many arguments" )
   
-  map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
+  J.map({W=W,H=H,scaleX=scaleX,scaleY=scaleY},function(n,k)
         err(type(n)=="number","upsample expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"upsample non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -1050,7 +1048,10 @@ end
 
 -- this has type V->RV
 modules.upsampleXSeq = memoize(function( A, T, scale, X )
-  assert(X==nil)
+  err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
+  err( type(T)=="number", "upsampleXSeq: vector width must be number")
+  err( type(scale)=="number","upsampleXSeq: scale must be number")
+  err(X==nil, "upsampleXSeq: too many arguments")
 
   if T==1 then
     -- special case the EZ case of taking one value and writing it out N times
@@ -1096,8 +1097,8 @@ end)
 -- V -> RV
 modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
   err( W%T==0,"W%T~=0")
-  err( isPowerOf2(scale), "scale must be power of 2")
-  err( isPowerOf2(W), "W must be power of 2")
+  err( J.isPowerOf2(scale), "scale must be power of 2")
+  err( J.isPowerOf2(W), "W must be power of 2")
 
   local res = {kind="upsampleYSeq", sdfInput={{1,scale}}, sdfOutput={{1,1}}, A=A, T=T, width=W, height=H, scale=scale}
   local ITYPE = types.array2d(A,T)
@@ -1146,9 +1147,9 @@ end)
 -- N: number of streams.
 -- period==0: ABABABAB, period==1: AABBAABBAABB, period==2: AAAABBBB
 modules.interleveSchedule = memoize(function( N, period )
-  err(type(N)=="number", "N must be number")
-  err( isPowerOf2(N), "N must be power of 2")
-  err(type(period)=="number", "period must be number")
+  err( type(N)=="number", "N must be number")
+  err( J.isPowerOf2(N), "N must be power of 2")
+  err( type(period)=="number", "period must be number")
   local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true }
   res.name = "InterleveSchedule_"..N.."_"..period
 
@@ -1262,9 +1263,9 @@ modules.toHandshakeArray = memoize(function( A, inputRates )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
-    local printStr = "IV ["..table.concat(broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d/"..(#inputRates-1)
+    local printStr = "IV ["..table.concat(J.broadcast("%d",#inputRates),",").."] OV %d readyDownstream %d/"..(#inputRates-1)
     local printInst
-    if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple(concat(broadcast(types.bool(),#inputRates+1),{types.uint(8)})), printStr):instantiate("printInst") ) end
+    if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple(J.concat(J.broadcast(types.bool(),#inputRates+1),{types.uint(8)})), printStr):instantiate("printInst") ) end
     
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     
@@ -1283,17 +1284,17 @@ modules.toHandshakeArray = memoize(function( A, inputRates )
       table.insert( validList, S.__and(inpValid[i], S.eq(readyDownstream, S.constant(i-1,types.uint(8))) ) )
     end
     
-    local validOut = foldt( validList, function(a,b) return S.__or(a,b) end, "X" )
+    local validOut = J.foldt( validList, function(a,b) return S.__or(a,b) end, "X" )
     
     local pipelines = {}
-    local tab = concat(concat(inpValid,{validOut}), {readyDownstream})
+    local tab = J.concat( J.concat(inpValid,{validOut}), {readyDownstream})
     assert(#tab==(#inputRates+2))
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple(tab) ) ) end
     
     local dataOut = fpgamodules.wideMux( inpData, readyDownstream )
     systolicModule:addFunction( S.lambda("process", inp, S.tuple{dataOut,validOut} , "process_output", pipelines) )
     
-    local readyOut = map(range(#inputRates), function(i) return S.eq(S.constant(i-1,types.uint(8)), readyDownstream) end )
+    local readyOut = J.map(J.range(#inputRates), function(i) return S.eq(S.constant(i-1,types.uint(8)), readyDownstream) end )
     systolicModule:addFunction( S.lambda("ready", readyDownstream, S.cast(S.tuple(readyOut),types.array2d(types.bool(),#inputRates)), "ready" ) )
 
     return systolicModule
@@ -1410,7 +1411,7 @@ modules.demux = memoize(function( A, rates, X )
 
     local printInst
     if DARKROOM_VERBOSE then 
-      printInst = systolicModule:add( S.module.print( types.tuple(concat({types.uint(8)},broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) 
+      printInst = systolicModule:add( S.module.print( types.tuple( J.concat({types.uint(8)},J.broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(J.broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) 
     end
 
     local resetValid = S.parameter("reset_valid", types.bool() )
@@ -1430,7 +1431,7 @@ modules.demux = memoize(function( A, rates, X )
       table.insert( readyOut, S.__and( S.index(readyDownstream,i-1),  S.eq(inpValid,S.constant(i-1,types.uint(8)))) )
     end
     
-    local readyOut = foldt( readyOut, function(a,b) return S.__or(a,b) end, "X" )
+    local readyOut = J.foldt( readyOut, function(a,b) return S.__or(a,b) end, "X" )
     readyOut = S.__or(readyOut, S.eq(inpValid, S.constant(#rates, types.uint(8)) ) )
     
     local printList = {}
@@ -1512,7 +1513,7 @@ modules.broadcastStream = memoize(function(A,N,X)
   local res = {kind="broadcastStream", A=A, N=N, inputType = rigel.Handshake(A), outputType = types.array2d( rigel.Handshake(A), N), stateful=false}
 
   res.sdfInput = {{1,1}}
-  res.sdfOutput = broadcast({1,1},N)
+  res.sdfOutput = J.broadcast({1,1},N)
   res.name = "BroadcastStream_"..verilogSanitize(tostring(A)).."_"..N
 
   if terralib~=nil then res.terraModule = MT.broadcastStream(res,A,N) end
@@ -1520,26 +1521,26 @@ modules.broadcastStream = memoize(function(A,N,X)
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
-    local printStr = "IV %d readyDownstream ["..table.concat(broadcast("%d",N),",").."] ready %d"
+    local printStr = "IV %d readyDownstream ["..table.concat( J.broadcast("%d",N),",").."] ready %d"
     local printInst
     if DARKROOM_VERBOSE then 
-      printInst = systolicModule:add( S.module.print( types.tuple(broadcast(types.bool(),N+2)), printStr):instantiate("printInst") ) 
+      printInst = systolicModule:add( S.module.print( types.tuple( J.broadcast(types.bool(),N+2)), printStr):instantiate("printInst") ) 
     end
 
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     local inpData = S.index(inp,0)
     local inpValid = S.index(inp,1)
     local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),N) )
-    local readyDownstreamList = map(range(N), function(i) return S.index(readyDownstream,i-1) end )
+    local readyDownstreamList = J.map(J.range(N), function(i) return S.index(readyDownstream,i-1) end )
     
-    local allReady = foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
+    local allReady = J.foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
     local validOut = S.__and(inpValid,allReady)
-    local out = S.tuple(broadcast(S.tuple{inpData, validOut}, N))
+    local out = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
     out = S.cast(out, rigel.lower(res.outputType) )
     
     local pipelines = {}
     
-    if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple( concat(concat({inpValid}, readyDownstreamList),{allReady}) ) ) ) end
+    if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple( J.concat( J.concat({inpValid}, readyDownstreamList),{allReady}) ) ) ) end
     
     systolicModule:addFunction( S.lambda("process", inp, out, "process_output", pipelines ) )
 
@@ -1609,7 +1610,7 @@ end)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
 modules.liftXYSeq = memoize(function( f, W, H, T, X )
   assert(rigel.isFunction(f))
-  map({W,H,T},function(n) assert(type(n)=="number") end)
+  J.map({W,H,T},function(n) assert(type(n)=="number") end)
   assert(X==nil)
 
   local inputType = f.inputType.list[2]
@@ -1642,7 +1643,7 @@ end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
-  map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
+  J.map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
   err(T>=1,"cropSeq T<1")
 
   err( L>=0, "cropSeq, L<0")
@@ -1703,7 +1704,7 @@ modules.crop = memoize(function( A, W, H, L, R, B, Top, X )
   err( Top~=nil, "crop Top==nil" )
   err( X==nil, "crop: too many arguments" )
   
-  map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
+  J.map({W=W,H=H,L=L,R=R,B=B,Top=Top},function(n,k)
         err(type(n)=="number","crop expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"crop non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -1740,7 +1741,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( Top~=nil, "padSeq Top==nil" )
   err( Value~=nil, "padSeq Value==nil" )
   
-  map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k)
+  J.map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k)
         err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
@@ -1803,7 +1804,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
     pipelines[1] = posY:setBy( incY )
     pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 
-    local ValueBroadcast = S.cast( S.tuple(broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+    local ValueBroadcast = S.cast( S.tuple( J.broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
     local ConstTrue = S.constant(true,types.bool())
 
     local out = S.select( readybit, pinp, ValueBroadcast )
@@ -1864,7 +1865,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     local rvalid = S.parameter("reset", types.bool() )
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     
-    local regs = map( range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
+    local regs = J.map( J.range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
     
     if inputRate>outputRate then
       
@@ -1893,7 +1894,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
       -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
       local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
       
-      local out = concat2dArrays(map(range(inputCount-1,0), function(i) return pinp(i) end))
+      local out = concat2dArrays(J.map(J.range(inputCount-1,0), function(i) return pinp(i) end))
       local pipelines = {sPhase:setBy(ConstTrue)} 
       if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{sPhase:get(),out})) end
       
@@ -1937,9 +1938,9 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
     local evicted
     
     local bits = rigel.lower(res.inputType):verilogBits()
-    local bytes = nearestPowerOf2(upToNearest(8,bits)/8)
-    local sizeInBytes = nearestPowerOf2((w/T)*bytes)
-    --local init = map(range(0,sizeInBytes-1), function(i) return i%256 end)  
+    local bytes = J.nearestPowerOf2(J.upToNearest(8,bits)/8)
+    local sizeInBytes = J.nearestPowerOf2((w/T)*bytes)
+
     local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
     local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
     
@@ -2084,7 +2085,7 @@ end)
 
 -- xmin, ymin are inclusive
 modules.SSR = memoize(function( A, T, xmin, ymin )
-  map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
+  J.map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
   assert(ymin<=0)
   assert(xmin<=0)
   assert(T>0)
@@ -2180,7 +2181,7 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
     if fullOutput then
       shifterOut = concat2dArrays( shifterOut )
     else
-      shifterOut = concat2dArrays( slice( shifterOut, 1, Weach) )
+      shifterOut = concat2dArrays( J.slice( shifterOut, 1, Weach) )
     end
     
     local processValid = S.parameter("process_valid",types.bool())
@@ -2471,10 +2472,10 @@ modules.reduce = memoize(function( f, W, H )
 
     local resetPipelines = {}
     local sinp = S.parameter("process_input", res.inputType )
-    local t = map( range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
+    local t = J.map( J.range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
 
     local i=0
-    local expr = foldt(t, function(a,b) 
+    local expr = J.foldt(t, function(a,b) 
                          local I = systolicModule:add(f.systolicModule:instantiate("inner"..i))
                          i = i + 1
                          return I:process(S.tuple{a,b}) end, nil )
@@ -2816,9 +2817,9 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   err( input.kind=="input", "lambda: input must be a rigel input" )
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
   err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
-  if instances~=nil then map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
+  if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
   err( pipelines==nil or type(pipelines)=="table", "lambda: pipelines must be nil or a table" )
-  if pipelines~=nil then map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
+  if pipelines~=nil then J.map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
 
   input, output = lambdaSDFNormalize(input,output)
 
@@ -2966,7 +2967,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
               assert(systolicAST.isSystolicAST(thisi))
 
               if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArray(n.type) then
-                assert(keycount(inputs)==1) -- NYI
+                assert(J.keycount(inputs)==1) -- NYI
                 input = thisi
               else
                 assert(thisi.type:isArray() and thisi.type:arrayOver():isBool())
@@ -2987,7 +2988,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
             end
           end
 
-          if keycount(inputs)==0 then
+          if J.keycount(inputs)==0 then
             -- this is the output of the pipeline
             assert(readyinp==nil)
             
@@ -3120,11 +3121,12 @@ end
 -- makeTerra: a lua function that returns the terra implementation
 -- makeSystolic: a lua function that returns the systolic implementation. 
 --      Input argument: systolic input value. Output: systolic output value, systolic instances table
+-- outputType, delay are optional, but will cause systolic to be built if they are missing!
 function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, sdfOutput, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
-  err( types.isType( outputType ), "modules.lift: outputType must be rigel type" )
-  err( type(delay)=="number",  "modules.lift: delay must be number" )
+  err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type" )
+  err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
   err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
@@ -3156,6 +3158,14 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
 
   local res = rigel.newFunction( res )
 
+  if res.outputType==nil then
+    res.outputType = res.systolicModule.fns.process.output.type
+  end
+
+  if res.delay==nil then
+    res.delay = res.systolicModule:getDelay("process")
+  end
+
   if terralib~=nil then 
     local terraFunction, systolicInput, systolicOutput
 
@@ -3174,8 +3184,8 @@ end
 
 modules.constSeq = memoize(function( value, A, w, h, T, X )
   err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
-  err( keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
-  err(#value==w*h, "constSeq: value array has wrong number of values")
+  err( J.keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
+  err( #value==w*h, "constSeq: value array has wrong number of values")
   assert(X==nil)
 
   err( types.isType(A), "constSeq: type must be type" )
@@ -3203,7 +3213,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sconsts = map(range(1/T), function() return {} end)
+    local sconsts = J.map(J.range(1/T), function() return {} end)
     
     for C=0, (1/T)-1 do
       for y=0, h-1 do
@@ -3213,7 +3223,7 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
       end
     end
 
-    local shiftOut, shiftPipelines = fpgamodules.addShifterSimple( systolicModule, map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
+    local shiftOut, shiftPipelines = fpgamodules.addShifterSimple( systolicModule, J.map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
     
     if shiftOut.type:const() then
       -- this happens if we have an array of size 1, for example (becomes a passthrough). Strip the const-ness so that the module returns a consistant type with different parameters.
@@ -3392,8 +3402,8 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
       axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
   
       -- input/output tokens are one axi bus transaction => they are 8 bytes
-      local inputBytes = upToNearest(128,inputCount*8)
-      local outputBytes = upToNearest(128,outputCount*8)
+      local inputBytes = J.upToNearest(128,inputCount*8)
+      local outputBytes = J.upToNearest(128,outputCount*8)
       axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
       -- extra 128 is for the extra AXI burst that contains metadata
       axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
@@ -3403,7 +3413,7 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
       axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
 
       if tapInputType~=nil then
-        local tv = map(range(tapInputType:verilogBits()),function(i) return sel(math.random()>0.5,"1","0") end )
+        local tv = J.map( J.range(tapInputType:verilogBits()),function(i) return J.sel(math.random()>0.5,"1","0") end )
         local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
 
         axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
@@ -3438,7 +3448,7 @@ reg [31:0] totalClocks = 0;
 ]]..tapreg..[[
 ]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
 
-]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
+]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..J.sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
       // clock in reset bit
       while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
@@ -3455,7 +3465,7 @@ reg [31:0] totalClocks = 0;
   assign valid = (RST==0 && validInCnt < ]]..inputCount..[[);
 
   always @(posedge CLK) begin
-    ]]..sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
+    ]]..J.sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
     // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
     // keep simulating for N cycles to make sure we don't send any more
 ]]..tapRST..[[

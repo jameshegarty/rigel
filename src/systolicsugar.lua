@@ -1,5 +1,7 @@
 local types = require "types"
 local systolic = require "systolic"
+local J = require "common"
+local err = J.err
 
 local sugar = {}
 
@@ -178,7 +180,7 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
-    local fns = map(self.functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
+    local fns = J.map(self.functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
     self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
     self.isComplete = true
   end
