@@ -2758,7 +2758,10 @@ modules.cycleCounter = memoize(function( A, count )
 -- and (2) no node should have SDF rate > 1
 local function lambdaSDFNormalize(input,output)
   local sdfMaxRate = output:sdfExtremeRate(true)
-  err( SDFRate.fracToNumber(sdfMaxRate)>=1, "sdf max rate is <1?")
+  if SDFRate.fracToNumber(sdfMaxRate) < 1 then
+	 print("Warning: SDF Rate < 1, inefficient hardware may be generated")
+	 return input, output
+  end
 
   if input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
