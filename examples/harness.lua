@@ -23,7 +23,7 @@ local function writeMetadata(filename, tab)
   end
       
   io.write( "return {"..table.concat(res,",").."}" )
-  io.close()
+  -- io.close()
 end
 
 local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPercent)
@@ -147,7 +147,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     local f = RM.seqMapHandshake( underoverWrapper(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".isim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
     io.output("out/"..filename..ext..".isim.v")
     io.write(f:toVerilog())
-    io.close()
+    io.output():close()
   end
   
 end
@@ -169,7 +169,7 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
 -- verilator just uses the top module directly
   io.output("out/"..filename..".v")
   io.write(hsfn:toVerilog())
-  io.close()
+  io.output():close()
 
 end
 
