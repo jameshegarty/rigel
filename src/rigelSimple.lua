@@ -350,7 +350,7 @@ function RS.HS(t)
       --print("MAKEHANDSHAKE")
       return RM.makeHandshake(t)
     else
-      print(t.inputType)
+      print(t.inputType, t.outputType)
       assert(false)
     end
   else
