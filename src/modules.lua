@@ -9,9 +9,7 @@ local J = require "common"
 local memoize = J.memoize
 local err = J.err
 
-local function verilogSanitize(s)
-  return s:gsub('%W','_')
-end
+local verilogSanitize = J.verilogSanitize
 
 local MT
 if terralib~=nil then
@@ -885,7 +883,7 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local f = modules.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale), innerInputType, outputType, 0, 
+  local f = modules.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T), innerInputType, outputType, 0, 
     function(sinp)
       local sdata = S.index(sinp,1)
       local sy = S.index(S.index(S.index(sinp,0),0),1)
@@ -922,9 +920,6 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
---  local sinp = S.parameter( "process_input", innerInputType )
---  local sdata = S.index(sinp,1)
-
   local tfn, sdfOverride
 
   if scale>T then -- A[T] to A[1]
@@ -935,7 +930,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H), innerInputType, outputType, 0, 
+  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), innerInputType, outputType, 0, 
     function(sinp)
       local svalid, sdata
       local sy = S.index(S.index(S.index(sinp,0),0),0)

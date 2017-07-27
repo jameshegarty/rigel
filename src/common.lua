@@ -598,4 +598,9 @@ function common.export(t)
   for k,v in pairs(common) do rawset(t,k,v) end
 end
 
+function common.verilogSanitize(s)
+  return s:gsub('%W','_')
+end
+
+
 return common

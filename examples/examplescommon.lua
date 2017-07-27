@@ -656,23 +656,30 @@ end
 
 
 -- V -> RV
-function C.downsampleSeq( A, W, H, T, scaleX, scaleY )
+C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
+
+  if scaleX==1 and scaleY==1 then
+    return C.identity(A)
+  end
+
   local inp = rigel.input( rigel.V(types.array2d(A,T)) )
   local out = inp
   if scaleY>1 then
     out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W, H, T, scaleY )), out)
   end
   if scaleX>1 then
-    out = rigel.apply("downsampleSeq_X", modules.RPassthrough(modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))), out)
+    local mod = modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))
+    if scaleY>1 then mod=modules.RPassthrough(mod) end
+
+    out = rigel.apply("downsampleSeq_X", mod, out)
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(types.uint(8),1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  return modules.lambda("downsampleSeq", inp, out)
-end
-
+  return modules.lambda("downsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), inp, out)
+end)
 
 
 -- this is always Handshake
