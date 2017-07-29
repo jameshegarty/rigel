@@ -551,7 +551,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
 
-  err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
+  err( math.floor(inputBytes)==inputBytes, "bramSDP: inputBytes not integral "..tostring(inputBytes))
   
   --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
   local writeAddrs = sizeInBytes/inputBytes

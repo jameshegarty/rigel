@@ -2437,14 +2437,18 @@ modules.lut = memoize(function( inputType, outputType, values )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
+
+    -- bram can only read byte aligned?
+    local inputBytes = math.ceil(inputType:verilogBits()/8)
+    
+    local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputBytes, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
     local sinp = S.parameter("process_input", res.inputType )
 
     local pipelines = {}
 
     -- needs to be driven, but set valid==false
-    table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputType:verilogBits()))},S.constant(false,types.bool())) )
+    table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputBytes*8))},S.constant(false,types.bool())) )
 
     systolicModule:addFunction( S.lambda("process",sinp, S.cast(lut:read(sinp),outputType), "process_output", pipelines, nil, S.CE("process_CE") ) )
 
@@ -2887,8 +2891,15 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 --    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
 --    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
   else
-    print("INP",#res.sdfInput,res.sdfInput[1][1],res.sdfInput[1][2])
-    print("out",#res.sdfOutput,res.sdfOutput[1][1],res.sdfOutput[1][2])
+    print("INP count",#res.sdfInput,"sum",isum[1],isum[2])
+    for k,v in ipairs(res.sdfInput) do
+      print(res.sdfInput[k][1],res.sdfInput[k][2])
+    end
+    
+    print("out",#res.sdfOutput,"sum",osum[1],osum[2])
+    for k,v in ipairs(res.sdfOutput) do
+      print(res.sdfOutput[k][1],res.sdfOutput[k][2])
+    end
     err(false, "lambda '"..name.."' has strange SDF rate")
   end
 
@@ -2936,9 +2947,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
     elseif rigel.isRV( fn.outputType ) then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
-    elseif rigel.isHandshake( fn.inputType ) or
-      rigel.isHandshake( fn.outputType ) or
-      (fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1])) then
+    elseif rigel.streamCount(fn.inputType)>0 then
        
       local readyinp -- = S.parameter( "ready_downstream", types.bool() )
       local readyout
@@ -3008,6 +3017,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
               readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
               input = readyinp
             else
+              print("Input to function had streams, but output has none? type: "..tostring(n.type))
               assert(false)
             end            
           end

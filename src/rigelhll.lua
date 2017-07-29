@@ -261,7 +261,9 @@ function RHLL.harness(t)
   err( types.isType(t.type), "RHLL.harness: type must be type ")
 
   local param = R.input(t.type,t.sdfInputRate)
-  t.fn = RS.defineModule{ input=param, output=t.fn(param)}
+  local out = t.fn(param)
+  print("HARNESS OUT",out.type)
+  t.fn = RS.defineModule{ input=param, output=out, name="RHLLharness"}
   t.inType=t.type
   llharness(t)
 end
@@ -288,9 +290,11 @@ function RHLL.lambda(fn,settings)
   function tab.fn(t)
     local sdf
     if settings~=nil then sdf=settings.sdfRate end
-    local inp = R.input(t.type, sdf)
-    local out = fn(inp)
-    return RS.defineModule{input=inp, output=out}
+    --local inp = R.input(t.type, sdf)
+    --local out = fn(inp)
+    t.input = R.input(t.type,sdf)
+    t.output = fn(t.input)
+    return RS.defineModule(t)
   end
   return setmetatable( tab, SimpleModuleWrapperMT )
 end

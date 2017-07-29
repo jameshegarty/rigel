@@ -334,7 +334,7 @@ function RS.defineModule(t)
     fifoList = t.fifoList.fifos
   end
 
-  return RM.lambda("v"..tostring(ccnt), t.input, out, fifoList )
+  return RM.lambda(t.name or "v"..tostring(ccnt), t.input, out, fifoList )
 end
 
 function RS.HS(t) 
