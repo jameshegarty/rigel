@@ -12,7 +12,9 @@ local modules = {}
 
 -- calculate A+B s.t. A+B <= limit
 modules.sumwrap = memoize(function( ty, limit, X)
-                            assert(types.isType(ty))
+  err( types.isType(ty), "sumwrap: type must be rigel type" )
+  err( ty:isNumber(), "sumwrap: type must be numeric rigel type, but is "..tostring(ty))
+  
   assert(type(limit)=="number")
   assert(X==nil)
 

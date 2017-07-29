@@ -43,14 +43,16 @@ function CT.sum(A,B,outputType,async)
                   end
 end
 
-function CT.argmin(ITYPE,ATYPE)
-  return terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
-                            if a._0._1 <= a._1._1 then
-                              @out = a._0
-                            else
-                              @out = a._1
-                            end
-                          end
+function CT.argmin(ITYPE,ATYPE,domax)
+  if domax then
+    return terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
+      if a._0._1 >= a._1._1 then @out = a._0 else @out = a._1 end
+    end
+  else
+    return terra( a : &ITYPE:toTerraType(), out : &ATYPE:toTerraType() )
+      if a._0._1 <= a._1._1 then @out = a._0 else @out = a._1 end
+    end
+  end
 end
 
 function CT.absoluteDifference(A,outputType,internalType_terra)

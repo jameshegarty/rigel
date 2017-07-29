@@ -453,9 +453,9 @@ end
 -- low,high are inclusive
 function systolic.bitSlice( expr, low, high )
   err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast")
-  err( type(low)=="number", "low must be number")
-  err( type(high)=="number", "high must be number")
-  err( high>=low, "high<low" )
+  err( type(low)=="number", "bitSlice: low must be number")
+  err( type(high)=="number", "bitSlice: high must be number")
+  err( high>=low, "bitSlice: high<low, (low="..tostring(low)..",high="..tostring(high)..")" )
   return typecheck({kind="bitSlice",inputs={expr},low=low,high=high,loc=getloc()})
 end
 

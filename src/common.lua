@@ -509,6 +509,7 @@ function common.split(t,n)
 end
 
 function common.err(asst, str)
+  if str==nil then str="MISSING ERROR!" end
   if asst==false then error(str) end
 end
 
