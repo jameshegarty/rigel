@@ -453,9 +453,9 @@ end
 -- low,high are inclusive
 function systolic.bitSlice( expr, low, high )
   err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast")
-  err( type(low)=="number", "low must be number")
-  err( type(high)=="number", "high must be number")
-  err( high>=low, "high<low" )
+  err( type(low)=="number", "bitSlice: low must be number")
+  err( type(high)=="number", "bitSlice: high must be number")
+  err( high>=low, "bitSlice: high<low, (low="..tostring(low)..",high="..tostring(high)..")" )
   return typecheck({kind="bitSlice",inputs={expr},low=low,high=high,loc=getloc()})
 end
 
@@ -1415,7 +1415,7 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
 
   if fn.CE~=nil then
-    err(type(cevar)=="string", "Missing CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc)
+    err(type(cevar)=="string", "Missing CE. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)
 
     if instance.CEState[module][fn.CE.name]==nil then
       instance.CEState[module][fn.CE.name]=cevar

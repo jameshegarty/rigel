@@ -146,6 +146,20 @@ function darkroom.extractValid(a)
   return types.bool()
 end
 
+function darkroom.streamCount(A)
+  if darkroom.isHandshake(A) then
+    return 1
+  elseif A:isArray() and darkroom.isHandshake(A:arrayOver()) then
+    return A:channels()
+  elseif A:isTuple() and darkroom.isHandshake(A.list[1]) then
+    return #A.list
+  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) then
+    return A.params.N
+  else
+    return 0
+  end
+end
+
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=function(tab,key)
   local v = rawget(tab, key)
@@ -181,7 +195,9 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.kind)
 
   -- if we're going from N->N, we don't know how stuff maps so we can't do it automatically
-  err( #self.sdfInput==1 or #self.sdfOutput==1, "sdf rate with no default behavior "..loc )
+  if #self.sdfInput~=1 and #self.sdfOutput~=1 then
+    print( "ERROR: sdf rate with no default behavior ("..self.kind..": "..tostring(#self.sdfInput).."->"..tostring(#self.sdfOutput)..") "..loc )
+  end
 
   local allConverged, consistantRatio = true, true
 
@@ -373,19 +389,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
   return true
 end
 
-function darkroomIRFunctions:outputStreams()
-  if darkroom.isHandshake(self.type) then
-    return 1
-  elseif self.type:isArray() and darkroom.isHandshake(self.type:arrayOver()) then
-    return self.type:channels()
-  elseif self.type:isTuple() and darkroom.isHandshake(self.type.list[1]) then
-    return #self.type.list
-  elseif darkroom.isHandshakeTmuxed(self.type) or darkroom.isHandshakeArray(self.type) then
-    return self.type.params.N
-  else
-    return 0
-  end
-end
+function darkroomIRFunctions:outputStreams() return darkroom.streamCount(self.type) end
 
 local __sdfConverged = {}
 function darkroomIRFunctions:sdfTotal(root)
@@ -608,11 +612,17 @@ function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
-function darkroom.input( type, sdfRate )
-  err( types.isType( type ), "darkroom.input: first argument should be type" )
+function darkroom.input( ty, sdfRate )
+  err( types.isType( ty ), "darkroom.input: first argument should be type" )
   err( sdfRate==nil or SDFRate.isSDFRate(sdfRate), "input: second argument should be SDF rate or nil")
-  if sdfRate==nil then sdfRate={{1,1}} end
-  return darkroom.newIR( {kind="input", type = type, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
+
+  if sdfRate==nil then
+    sdfRate=J.broadcast({1,1}, math.max(1,darkroom.streamCount(ty)) )
+  end
+
+  err( darkroom.streamCount(ty)==0 or darkroom.streamCount(ty)==#sdfRate, "rigel.input: number of streams in type "..tostring(ty).." ("..tostring(darkroom.streamCount(ty))..") != number of SDF streams passed in ("..tostring(#sdfRate)..")" )
+  
+  return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
 
 --[=[

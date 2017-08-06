@@ -1025,10 +1025,10 @@ end)
 -- This is actually a pure function
 -- takes A[T] to A[T*scale]
 -- like this: [A[0],A[0],A[1],A[1],A[2],A[2],...]
-local function broadcastWide( A, T, scale )
+broadcastWide = memoize(function( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
 
-  return modules.lift("broadcastWide", ITYPE, OTYPE, 0,
+  return modules.lift("broadcastWide_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), ITYPE, OTYPE, 0,
     function(sinp)
       local out = {}
       for t=0,T-1 do
@@ -1039,11 +1039,12 @@ local function broadcastWide( A, T, scale )
       return S.cast(S.tuple(out), OTYPE)
     end,
     function() return MT.broadcastWide(ITYPE,OTYPE,T,scale) end)
-end
+end)
 
 -- this has type V->RV
 modules.upsampleXSeq = memoize(function( A, T, scale, X )
   err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
+  err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
   err( type(scale)=="number","upsampleXSeq: scale must be number")
   err(X==nil, "upsampleXSeq: too many arguments")
@@ -1091,6 +1092,13 @@ end)
 
 -- V -> RV
 modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
+  err( types.isType(A), "upsampleYSeq: type must be type")
+  err( rigel.isBasic(A), "upsampleYSeq: type must be basic type")
+  err( type(W)=="number", "upsampleYSeq: W must be number")
+  err( type(H)=="number", "upsampleYSeq: H must be number")
+  err( type(T)=="number", "upsampleYSeq: T must be number")
+  err( type(scale)=="number", "upsampleYSeq: scale must be number")
+  err( scale>1, "upsampleYSeq: scale must be > 1 ")
   err( W%T==0,"W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
   err( J.isPowerOf2(W), "W must be power of 2")
@@ -1552,7 +1560,13 @@ end)
 
 -- output type: {uint16,uint16}[T]
 modules.posSeq = memoize(function( W, H, T )
-  assert(W>0); assert(H>0); assert(T>=1);
+  err(type(W)=="number","posSeq: W must be number")
+  err(type(H)=="number","posSeq: H must be number")
+  err(type(T)=="number","posSeq: T must be number")
+  err(W>0, "posSeq: W must be >0");
+  err(H>0, "posSeq: H must be >0");
+  err(T>=1, "posSeq: T must be >=1");
+                           
   local res = {kind="posSeq", T=T, W=W, H=H }
   res.inputType = types.null()
   res.outputType = types.array2d(types.tuple({types.uint(16),types.uint(16)}),T)
@@ -1684,7 +1698,7 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
     {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
   return modules.liftXYSeq( f, W, H, T  )
-                           end)
+end)
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
 modules.crop = memoize(function( A, W, H, L, R, B, Top, X )
@@ -2406,9 +2420,9 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
                         end)
 
 modules.lut = memoize(function( inputType, outputType, values )
-  err( types.isType(inputType), "inputType must be type")
+  err( types.isType(inputType), "LUT: inputType must be type")
   rigel.expectBasic( inputType )
-  err( types.isType(outputType), "outputType must be type")
+  err( types.isType(outputType), "LUT: outputType must be type")
   rigel.expectBasic( outputType )
 
   local inputCount = math.pow(2, inputType:verilogBits())
@@ -2423,14 +2437,18 @@ modules.lut = memoize(function( inputType, outputType, values )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputType:verilogBits()/8, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
+
+    -- bram can only read byte aligned?
+    local inputBytes = math.ceil(inputType:verilogBits()/8)
+    
+    local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputBytes, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
     local sinp = S.parameter("process_input", res.inputType )
 
     local pipelines = {}
 
     -- needs to be driven, but set valid==false
-    table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputType:verilogBits()))},S.constant(false,types.bool())) )
+    table.insert(pipelines, lut:writeAndReturnOriginal( S.tuple{sinp,S.constant(0,types.bits(inputBytes*8))},S.constant(false,types.bool())) )
 
     systolicModule:addFunction( S.lambda("process",sinp, S.cast(lut:read(sinp),outputType), "process_output", pipelines, nil, S.CE("process_CE") ) )
 
@@ -2834,7 +2852,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       end
     end)
 
-  if rigel.isBasic( input.type ) or rigel.isBasic(output.type) or rigel.isV(output.type) or rigel.isV(input.type) or rigel.isRV(output.type) or rigel.isRV(input.type) then
+  if rigel.streamCount(input.type)==0 and rigel.streamCount(output.type)==0 then
   res.delay = output:visitEach(
     function(n, inputs)
       if n.kind=="input" or n.kind=="constant" then
@@ -2845,7 +2863,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
         if n.fn.inputType==types.null() then return n.fn.delay
         else return inputs[1] + n.fn.delay end
       else
-        print(n.kind)
+        print(n.kind,input.type,output.type)
         assert(false)
       end
     end)
@@ -2873,8 +2891,15 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 --    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
 --    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
   else
-    print("INP",#res.sdfInput,res.sdfInput[1][1],res.sdfInput[1][2])
-    print("out",#res.sdfOutput,res.sdfOutput[1][1],res.sdfOutput[1][2])
+    print("INP count",#res.sdfInput,"sum",isum[1],isum[2])
+    for k,v in ipairs(res.sdfInput) do
+      print(res.sdfInput[k][1],res.sdfInput[k][2])
+    end
+    
+    print("out",#res.sdfOutput,"sum",osum[1],osum[2])
+    for k,v in ipairs(res.sdfOutput) do
+      print(res.sdfOutput[k][1],res.sdfOutput[k][2])
+    end
     err(false, "lambda '"..name.."' has strange SDF rate")
   end
 
@@ -2922,9 +2947,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
     elseif rigel.isRV( fn.outputType ) then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
-    elseif rigel.isHandshake( fn.inputType ) or
-      rigel.isHandshake( fn.outputType ) or
-      (fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1])) then
+    elseif rigel.streamCount(fn.inputType)>0 then
        
       local readyinp -- = S.parameter( "ready_downstream", types.bool() )
       local readyout
@@ -2994,6 +3017,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
               readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
               input = readyinp
             else
+              print("Input to function had streams, but output has none? type: "..tostring(n.type))
               assert(false)
             end            
           end
@@ -3138,7 +3162,10 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
 
     local systolicOutput, systolicInstances = makeSystolic(systolicInput)
     err( systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
-    err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+
+    if outputType~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
+      err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+    end
     
     if systolicInstances~=nil then
       for k,v in pairs(systolicInstances) do systolicModule:add(v) end
@@ -3154,7 +3181,9 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   local res = rigel.newFunction( res )
 
   if res.outputType==nil then
-    res.outputType = res.systolicModule.fns.process.output.type
+    err( S.isModule(res.systolicModule), "modules.lift: outputType is missing, and so is the systolic module?")
+    res.outputType = res.systolicModule.functions.process.output.type
+    err( types.isType(res.outputType), "modules.lift: systolic module did not return a valid type")
   end
 
   if res.delay==nil then
@@ -3491,8 +3520,10 @@ end
 -- it accepts an input value V of type TY.
 -- Then produces N tokens (from V to V+N-1)
 modules.triggeredCounter = memoize(function(TY, N)
-  err(types.isType(TY),"triggeredCounter: TY must be type")
-  err( rigel.expectBasic(TY), "triggeredCounter: TY should be basic")                                   
+  err( types.isType(TY),"triggeredCounter: TY must be type")
+  err( rigel.expectBasic(TY), "triggeredCounter: TY should be basic")
+  err( TY:isNumber(), "triggeredCounter: type must be numeric rigel type, but is "..tostring(TY))
+  
   err(type(N)=="number", "triggeredCounter: N must be number")
 
   local res = {kind="triggeredCounter"}

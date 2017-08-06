@@ -84,6 +84,10 @@ function RS.modules.posSeq(t)
   return RM.posSeq(t.size[1],t.size[2],t.V)
 end
 
+function RS.modules.LUT(t)
+  return RM.lut(t.type,t.outputType,t.values)
+end
+
 function RS.modules.linebuffer(t)
   local A = C.stencilLinebuffer( t.type, t.size[1], t.size[2], t.V, t.stencil[1], t.stencil[2], t.stencil[3], t.stencil[4] )
   local B = C.unpackStencil( t.type, -t.stencil[1]+1, -t.stencil[3]+1, t.V )
@@ -109,6 +113,7 @@ function RS.modules.reduce(t)
 end
 
 function RS.modules.reduceSeq(t)
+  err( type(t.V)=="number", "reduceSeq: V must be number ")
   return RM.reduceSeq( t.fn, 1/t.V )
 end
 
@@ -195,7 +200,7 @@ function RS.modules.constSeq(t)
 end
 
 function RS.modules.filterSeq(t)
-
+  
   local rate
   if SDFRate.isFrac(t.rate) then
     rate=t.rate
@@ -329,7 +334,7 @@ function RS.defineModule(t)
     fifoList = t.fifoList.fifos
   end
 
-  return RM.lambda("v"..tostring(ccnt), t.input, out, fifoList )
+  return RM.lambda(t.name or "v"..tostring(ccnt), t.input, out, fifoList )
 end
 
 function RS.HS(t) 

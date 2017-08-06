@@ -1,3 +1,4 @@
+local R = require "rigel"
 local RM = require "modules"
 local IR = require("ir")
 local types = require("types")
@@ -113,7 +114,8 @@ function fixed.new(tab)
 end
 
 function fixed.parameter( name, ty )
-  err(types.isType(ty), "second arg must be type")
+  err(types.isType(ty), "fixed.parameter: second arg must be type")
+  err( R.isBasic(ty),"fixed.parameter: expected basic type but is "..tostring(ty))
   return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
 end
 

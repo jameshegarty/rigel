@@ -21,6 +21,13 @@ for k,v in ipairs(configs.downsampleSeq) do
   meta.downsampleSeq[k].outputImageSize={v.size[1]/v.scale[1], v.size[2]/v.scale[2]}
 end
 
+configs.upsampleSeq = J.cartesian{type=Type, size={IS}, V=NumP, scale={ {1,1},{2,1},{1,2},{2,2} } }
+meta.upsampleSeq = {}
+for k,v in ipairs(configs.upsampleSeq) do
+  meta.upsampleSeq[k] = {inputP=v.V, outputP=v.V, inputImageSize=v.size}
+  meta.upsampleSeq[k].outputImageSize={v.size[1]*v.scale[1], v.size[2]*v.scale[2]}
+end
+
 configs.padSeq = J.cartesian{type=Type, size={IS}, V=NumP, pad=LRBT, value={0,18}}
 meta.padSeq={}
 for k,v in ipairs(configs.padSeq) do

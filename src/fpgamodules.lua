@@ -12,7 +12,9 @@ local modules = {}
 
 -- calculate A+B s.t. A+B <= limit
 modules.sumwrap = memoize(function( ty, limit, X)
-                            assert(types.isType(ty))
+  err( types.isType(ty), "sumwrap: type must be rigel type" )
+  err( ty:isNumber(), "sumwrap: type must be numeric rigel type, but is "..tostring(ty))
+  
   assert(type(limit)=="number")
   assert(X==nil)
 
@@ -549,7 +551,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
 
-  err( math.floor(inputBytes)==inputBytes, "inputBytes not integral "..tostring(inputBytes))
+  err( math.floor(inputBytes)==inputBytes, "bramSDP: inputBytes not integral "..tostring(inputBytes))
   
   --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
   local writeAddrs = sizeInBytes/inputBytes

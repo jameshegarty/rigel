@@ -19,6 +19,8 @@ C.identity = memoize(function(A)
 end)
 
 C.cast = memoize(function(A,B)
+  err(types.isType(A),"cast: A should be type")
+  err(types.isType(B),"cast: B should be type")
   assert(A:isTuple()==false)
   local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end )
   return docast
@@ -98,7 +100,7 @@ end)
 -------------
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay
-C.argmin = memoize(function(idxType,vType, async)
+C.argmin = memoize(function(idxType,vType, async, domax)
   local ATYPE = types.tuple {idxType,vType}
   local ITYPE = types.tuple{ATYPE,ATYPE}
   local sinp = S.parameter( "inp", ITYPE )
@@ -112,20 +114,32 @@ C.argmin = memoize(function(idxType,vType, async)
     delay = 2
   end
 
-  local partial = RM.lift( "argmin_async"..tostring(async), ITYPE, ATYPE, delay, 
+  local name = "argmin"
+  if domax then name="argmax" end
+  if async then name=name.."_async" end
+  name = name.."_"..J.verilogSanitize(tostring(idxType))
+  name = name.."_"..J.verilogSanitize(tostring(vType))
+  
+  local partial = RM.lift( name, ITYPE, ATYPE, delay, 
     function(sinp)
       local a0 = S.index(sinp,0)
       local a0v = S.index(a0,1)
       local a1 = S.index(sinp,1)
       local a1v = S.index(a1,1)
-      local out = S.select(S.le(a0v,a1v),a0,a1)
+      local out
+      if domax then
+        out = S.select(S.ge(a0v,a1v),a0,a1)
+      else
+        out = S.select(S.le(a0v,a1v),a0,a1)
+      end
+      
       if async==true then 
         out = out:disablePipelining() 
       end
       return out
     end,
     function()
-      return CT.argmin(ITYPE,ATYPE)
+      return CT.argmin(ITYPE,ATYPE,domax)
     end)
 
   return partial
@@ -683,10 +697,14 @@ end)
 
 
 -- this is always Handshake
-function C.upsampleSeq( A, W, H, T, scaleX, scaleY )
+C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
   assert(scaleX>=1)
   assert(scaleY>=1)
 
+  if scaleX==1 and scaleY==1 then
+    return C.identity(A)
+  end
+    
   local inner
   if scaleY>1 and scaleX==1 then
     inner = modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY ))
@@ -694,11 +712,11 @@ function C.upsampleSeq( A, W, H, T, scaleX, scaleY )
     inner = modules.upsampleXSeq( A, T, scaleX )
   else
     local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = C.compose("upsampleSeq", f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )))
+    inner = C.compose("upsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )))
   end
 
     return inner
-end
+end)
 
 
 -- takes A to A[T] by duplicating the input
@@ -710,7 +728,7 @@ C.broadcast = memoize(function(A,W,H)
 
   local OT = types.array2d(A, W, H)
 
-  return modules.lift("Broadcast_W"..tostring(W).."_H"..tostring(H),A,OT,0,
+  return modules.lift("Broadcast_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H),A,OT,0,
     function(sinp) return S.cast(S.tuple(J.broadcast(sinp,W*H)),OT) end,
     function() return CT.broadcast(A,W,H,OT) end)
 end)
@@ -788,13 +806,23 @@ end)
 
 
 C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  assert(types.isType(A))
-  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T>=1); assert(w>0); assert(h>0);
-  err(xmin<=xmax,"xmin>xmax")
-  err(ymin<=ymax,"ymin>ymax")
-  assert(xmax==0)
-  assert(ymax==0)
+  err(types.isType(A), "stencilLinebuffer: A must be type")
+
+  err(type(T)=="number","stencilLinebuffer: T must be number")
+  err(type(w)=="number","stencilLinebuffer: w must be number")
+  err(type(h)=="number","stencilLinebuffer: h must be number")
+  err(type(xmin)=="number","stencilLinebuffer: xmin must be number")
+  err(type(xmax)=="number","stencilLinebuffer: xmax must be number")
+  err(type(ymin)=="number","stencilLinebuffer: ymin must be number")
+  err(type(ymax)=="number","stencilLinebuffer: ymax must be number")
+  
+  err(T>=1, "stencilLinebuffer: T must be >=1");
+  err(w>0,"stencilLinebuffer: w must be >0");
+  err(h>0,"stencilLinebuffer: h must be >0");
+  err(xmin<=xmax,"stencilLinebuffer: xmin>xmax")
+  err(ymin<=ymax,"stencilLinebuffer: ymin>ymax")
+  err(xmax==0,"stencilLinebuffer: xmax must be 0")
+  err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
   return C.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ) )
 end)
@@ -875,8 +903,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
-    assert(idxLow<W)
-    err(idxHigh<W, "idxHigh>=W")
+    err(idxLow<W,"slice: idxLow>=W")
+    err(idxHigh<W, "slice: idxHigh>=W")
     assert(type(idyLow)=="number")
     assert(type(idyHigh)=="number")
     assert(idyLow<H)
