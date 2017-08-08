@@ -558,7 +558,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil) )
 
         if darkroom.isHandshake( n.fn.inputType ) or
           darkroom.isHandshakeArray( n.fn.inputType ) or

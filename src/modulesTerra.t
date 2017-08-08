@@ -1161,6 +1161,7 @@ function MT.fwriteSeq(filename,ty)
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:reset() 
     self.file = cstdio.fopen(filename, "wb") 
+    if self.file==nil then cstdio.perror(["Error opening "..filename.." for writing"]) end
     [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
   end
   terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
