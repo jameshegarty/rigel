@@ -433,7 +433,7 @@ modules.liftDecimate = memoize(function(f)
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
 
-  err( SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
+  err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
 
   res.delay = f.delay
@@ -583,7 +583,7 @@ modules.liftHandshake = memoize(function(f)
   res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
   res.name = "LiftHandshake_"..f.name
 
-  err( SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
+  err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful
@@ -2834,7 +2834,7 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   err( pipelines==nil or type(pipelines)=="table", "lambda: pipelines must be nil or a table" )
   if pipelines~=nil then J.map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
 
-  input, output = lambdaSDFNormalize(input,output)
+  if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
   local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines }
   res.inputType = input.type
@@ -2871,36 +2871,38 @@ function modules.lambda( name, input, output, instances, pipelines, X )
 
   if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
 
-  assert( SDFRate.isSDFRate(input.sdfRate) )
-  res.sdfInput = input.sdfRate
-  res.sdfOutput = output:sdfTotal(output)
-
-  local isum = SDFRate.sum(res.sdfInput)
-  local osum = SDFRate.sum(res.sdfOutput)
-
-  if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
-
-  if (isum[1]/isum[2]<=1 and osum[1]/osum[2]<=1)  then
-    -- normal. it is possible for a function to have input AND output rate <1.
-    -- for example: pad->decimate. pad won't read every cycle, decimate won't write every cycle
-  elseif (isum[1]/isum[2])*#res.sdfOutput == (osum[1]/osum[2])*#res.sdfInput then
-    -- this is OK. This is like a packTuple. it takes in 2 streams at rate 1 (sum=2), and produces 1 stream of rate 1 (sum=1)
-    -- we normalize by the number of streams. 
---  elseif (osum[1]/osum[2]>1) then
-    -- it's impossible to produce more than one output per cycle
---    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
---    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
-  else
-    print("INP count",#res.sdfInput,"sum",isum[1],isum[2])
-    for k,v in ipairs(res.sdfInput) do
-      print(res.sdfInput[k][1],res.sdfInput[k][2])
-    end
+  if rigel.SDF then
+    assert( SDFRate.isSDFRate(input.sdfRate) )
+    res.sdfInput = input.sdfRate
+    res.sdfOutput = output:sdfTotal(output)
     
-    print("out",#res.sdfOutput,"sum",osum[1],osum[2])
-    for k,v in ipairs(res.sdfOutput) do
-      print(res.sdfOutput[k][1],res.sdfOutput[k][2])
+    local isum = SDFRate.sum(res.sdfInput)
+    local osum = SDFRate.sum(res.sdfOutput)
+    
+    if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
+    
+    if (isum[1]/isum[2]<=1 and osum[1]/osum[2]<=1)  then
+      -- normal. it is possible for a function to have input AND output rate <1.
+      -- for example: pad->decimate. pad won't read every cycle, decimate won't write every cycle
+    elseif (isum[1]/isum[2])*#res.sdfOutput == (osum[1]/osum[2])*#res.sdfInput then
+      -- this is OK. This is like a packTuple. it takes in 2 streams at rate 1 (sum=2), and produces 1 stream of rate 1 (sum=1)
+      -- we normalize by the number of streams. 
+      --  elseif (osum[1]/osum[2]>1) then
+      -- it's impossible to produce more than one output per cycle
+      --    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
+      --    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
+    else
+      print("INP count",#res.sdfInput,"sum",isum[1],isum[2])
+      for k,v in ipairs(res.sdfInput) do
+        print(res.sdfInput[k][1],res.sdfInput[k][2])
+      end
+      
+      print("out",#res.sdfOutput,"sum",osum[1],osum[2])
+      for k,v in ipairs(res.sdfOutput) do
+        print(res.sdfOutput[k][1],res.sdfOutput[k][2])
+      end
+      err(false, "lambda '"..name.."' has strange SDF rate")
     end
-    err(false, "lambda '"..name.."' has strange SDF rate")
   end
 
   local function makeSystolic( fn )
