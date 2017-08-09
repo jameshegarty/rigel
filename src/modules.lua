@@ -2807,14 +2807,14 @@ modules.cycleCounter = memoize(function( A, count )
 -- this takes in a darkroom IR graph and normalizes the input SDF rate so that
 -- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
 -- and (2) no node should have SDF rate > 1
-local function lambdaSDFNormalize(input,output)
+local function lambdaSDFNormalize( input, output )
   local sdfMaxRate = output:sdfExtremeRate(true)
   if SDFRate.fracToNumber(sdfMaxRate) < 1 then
 	 print("Warning: SDF Rate < 1, inefficient hardware may be generated")
 	 return input, output
   end
 
-  if input.sdfRate~=nil then
+  if input~=nil and input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
 
     for k,v in pairs(input.sdfRate) do
@@ -2863,8 +2863,8 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
 
   err( X==nil, "lambda: too many arguments" )
   err( type(name) == "string", "lambda: module name must be string" )
-  err( rigel.isIR( input ), "lambda: input must be a rigel value" )
-  err( input.kind=="input", "lambda: input must be a rigel input" )
+  err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
+  err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
   err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
   if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
@@ -2875,7 +2875,13 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
   local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines, generator=generatorStr }
-  res.inputType = input.type
+
+  if input==nil then
+    res.inputType = types.null()
+  else
+    res.inputType = input.type
+  end
+
   res.outputType = output.type
 
   res.stateful=false
@@ -2890,28 +2896,33 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
       end
     end)
 
-  if rigel.streamCount(input.type)==0 and rigel.streamCount(output.type)==0 then
-  res.delay = output:visitEach(
-    function(n, inputs)
-      if n.kind=="input" or n.kind=="constant" then
-        return 0
-      elseif n.kind=="concat" or n.kind=="concatArray2d" then
-        return math.max(unpack(inputs))
-      elseif n.kind=="apply" then
-        if n.fn.inputType==types.null() then return n.fn.delay
-        else return inputs[1] + n.fn.delay end
-      else
-        print(n.kind,input.type,output.type)
-        assert(false)
-      end
-    end)
+  if input~=nil and rigel.streamCount(input.type)==0 and rigel.streamCount(output.type)==0 then
+    res.delay = output:visitEach(
+      function(n, inputs)
+        if n.kind=="input" or n.kind=="constant" then
+          return 0
+        elseif n.kind=="concat" or n.kind=="concatArray2d" then
+          return math.max(unpack(inputs))
+        elseif n.kind=="apply" then
+          if n.fn.inputType==types.null() then return n.fn.delay
+          else return inputs[1] + n.fn.delay end
+        else
+          print(n.kind,input.type,output.type)
+          assert(false)
+        end
+      end)
   end
 
   if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
 
   if rigel.SDF then
-    assert( SDFRate.isSDFRate(input.sdfRate) )
-    res.sdfInput = input.sdfRate
+    if input==nil then
+      res.sdfInput = {}
+    else
+      assert( SDFRate.isSDFRate(input.sdfRate) )
+      res.sdfInput = input.sdfRate
+    end
+
     res.sdfOutput = output:sdfTotal(output)
     
     local isum = SDFRate.sum(res.sdfInput)
@@ -3251,24 +3262,23 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
   err( J.keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
   err( #value==w*h, "constSeq: value array has wrong number of values")
-  assert(X==nil)
-
+  err( X==nil, "constSeq: too many arguments")
+  err( T<=1, "constSeq: T must be <=1")
+  err( type(w)=="number", "constSeq: W must be number" )
+  err( type(h)=="number", "constSeq: H must be number" )
   err( types.isType(A), "constSeq: type must be type" )
 
   for k,v in ipairs(value) do
     err( A:checkLuaValue(v), "constSeq value array index "..tostring(k).." cannot convert to the correct systolic type" )
   end
 
-  assert(T<=1)
-  assert(type(w)=="number")
-  assert(type(h)=="number")
-
   local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
   res.inputType = types.null()
   local W = w*T
   err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)
-  res.stateful = true
+  res.stateful = false
+  --if T==1 then res.stateful=false end
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
   res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h)
   res.delay = 0
@@ -3434,13 +3444,15 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
   err( type(outputCount)=="number", "outputCount must be a number")
   err( outputCount==math.floor(outputCount), "outputCount must be integer, but is "..tostring(outputCount) )
   err( type(axi)=="boolean", "axi should be a bool")
-  assert(X==nil)
+  err( X==nil, "seqMapHandshake: too many arguments" )
 
-  darkroom.expectHandshake(f.inputType)
+  err( f.inputType==types.null() or darkroom.isHandshake(f.inputType), "seqMapHandshake: input must be handshook or null")
   darkroom.expectHandshake(f.outputType)
 
-  local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
-  err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
+  if f.inputType~=types.null() and rigel.SDF then
+    local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
+    err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
+  end
 
   local res = {kind="seqMapHandshake", tapInputType=tapInputType, tapValue=tapValue, inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
   res.sdfInput = f.sdfInput

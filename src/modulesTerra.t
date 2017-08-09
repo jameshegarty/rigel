@@ -1208,12 +1208,12 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
     var downstreamReady = 0
     var cycles : uint = 0
 
-    while inpAddr<inputCount or outAddr<outputCount or (simCycles~=0 and cycles<simCycles) do
-      valid(innerinp)=(inpAddr<inputCount)
+    while [J.sel(inputType==types.null(),false,`inpAddr<inputCount)] or outAddr<outputCount or (simCycles~=0 and cycles<simCycles) do
+      [J.sel(inputType==types.null(),quote end, quote valid(innerinp)=(inpAddr<inputCount) end)]
       self.inner:calculateReady(downstreamReady==0)
-      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, self.inner.ready, downstreamReady==0, cycles) end
-      self.inner:process(&innerinp,&o)
-      if self.inner.ready then inpAddr = inpAddr + 1 end
+      if DARKROOM_VERBOSE then cstdio.printf("---------------------------------- RUNPIPE inpAddr %d/%d outAddr %d/%d ready %d downstreamReady %d cycle %d\n", inpAddr, inputCount, outAddr, outputCount, [J.sel(inputType==types.null(),true,`self.inner.ready)], downstreamReady==0, cycles) end
+      [J.sel(inputType==types.null(),quote self.inner:process(&o) end, quote self.inner:process(&innerinp,&o) end)]
+      [J.sel(inputType==types.null(),quote end, quote if self.inner.ready then inpAddr = inpAddr + 1 end end)]
       if valid(o) and (downstreamReady==0) then outAddr = outAddr + 1 end
       downstreamReady = downstreamReady+1
       if downstreamReady==readyRate then downstreamReady=0 end
@@ -1237,55 +1237,57 @@ return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType()
 end
 
 function MT.crop( res, A, W, H, L, R, B, Top )
-   local struct Crop {}
-   terra Crop:reset()  end
-   terra Crop:stats(name:&int8) end -- not particularly interesting
-
-   local outW = W-L-R
-
-   terra Crop:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-     for y=0,H-B-Top do
-       for x=0,W-L-R do
-           (@out)[x+y*outW] = (@inp)[(x+L)+(y+B)*W]
-       end
-     end
-   end
-
-   return Crop
+  local struct Crop {}
+  terra Crop:reset()  end
+  terra Crop:stats(name:&int8) end -- not particularly interesting
+  
+  local outW = W-L-R
+  
+  terra Crop:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    for y=0,H-B-Top do
+      for x=0,W-L-R do
+        (@out)[x+y*outW] = (@inp)[(x+L)+(y+B)*W]
+      end
+    end
+  end
+  
+  return Crop
 end
 
 
 function MT.lambdaCompile(fn)
-    local inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" )
-    local outputSymbol = symbol( &rigel.lower(fn.output.type):toTerraType(), "lambdaoutput" )
+  local inputSymbol
+  if fn.input~=nil then inputSymbol = symbol( &rigel.lower(fn.input.type):toTerraType(), "lambdainput" ) end
+  
+  local outputSymbol = symbol( &rigel.lower(fn.output.type):toTerraType(), "lambdaoutput" )
+  
+  local stats = {}
+  local resetStats = {}
+  local readyStats = {}
+  local statStats = {}
+  
+  local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
+  Module.entries = terralib.newlist( {} )
+  
+  local readyInput
+  if rigel.hasReady(fn.output.type) then 
+    readyInput = symbol(rigel.extractReady(fn.output.type):toTerraType(), "readyinput")
+    if fn.input~=nil then table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} ) end
+    table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
+  end
+  
+  local mself = symbol( &Module, "module self" )
+  
+  if fn.instances~=nil then for k,v in pairs(fn.instances) do 
+    err(v.fn.terraModule~=nil, "Missing terra module for "..v.fn.kind)
+    table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
+  end
 
-    local stats = {}
-    local resetStats = {}
-    local readyStats = {}
-    local statStats = {}
-
-    local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
-    Module.entries = terralib.newlist( {} )
-
-    local readyInput
-    if rigel.hasReady(fn.output.type) then 
-      readyInput = symbol(rigel.extractReady(fn.output.type):toTerraType(), "readyinput")
-      table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} )
-      table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
-    end
-
-    local mself = symbol( &Module, "module self" )
-
-    if fn.instances~=nil then for k,v in pairs(fn.instances) do 
-        err(v.fn.terraModule~=nil, "Missing terra module for "..v.fn.kind)
-        table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
-    end
-
-    local readyOutput
+  local readyOutput
     
     -- build ready calculation
-    if rigel.isBasic(fn.output.type)==false then
-      fn.output:visitEachReverse(
+  if rigel.isBasic(fn.output.type)==false then
+    fn.output:visitEachReverse(
       function(n, inputs)
         local inputList = {}
         for parentNode,v in pairs(inputs) do
@@ -1318,7 +1320,6 @@ function MT.lambdaCompile(fn)
           assert(readyOutput==nil)
           readyOutput = input
         elseif n.kind=="apply" then
---          print("systolic ready APPLY",n.fn.kind)
           if rigel.isHandshake(n.fn.outputType) or  rigel.isRV(n.fn.inputType) or rigel.isHandshakeArray(n.fn.outputType) or rigel.isHandshakeTmuxed(n.fn.outputType) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady(input) end )
             res = `mself.[n.name].ready
@@ -1363,56 +1364,52 @@ function MT.lambdaCompile(fn)
 
         return res
       end, true)
-    end
+  end
 
-    if rigel.isRV(fn.inputType) then
-      assert(readyOutput~=nil)
-      terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
-    elseif rigel.isRV(fn.outputType) then
-      assert(readyOutput~=nil)
-      -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
-      terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
-    elseif rigel.isHandshake(fn.outputType) then
-      terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = [readyOutput] end
-    end
+  if rigel.isRV(fn.inputType) then
+    assert(readyOutput~=nil)
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
+  elseif rigel.isRV(fn.outputType) then
+    assert(readyOutput~=nil)
+    -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
+    terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
+  elseif rigel.isHandshake(fn.outputType) then
+    local TMP = quote end
+    if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
+  end
 
-    local out = fn.output:visitEach(
-      function(n, inputs)
+  local out = fn.output:visitEach(
+    function(n, inputs)
+      local out
 
-        --if true then table.insert( stats, quote cstdio.printf([n.name.."\n"]) end ) end
+      if n==fn.output then
+        out = outputSymbol
+      elseif n.kind=="applyRegStore" then
+      elseif n.kind~="input" then
+        table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
+        out = `&mself.["simstateoutput_"..n.name]
+      end
 
-        local out
+      if n.kind=="input" then
+        if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
+        return inputSymbol
+      elseif n.kind=="apply" then
+        table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
+        table.insert( resetStats, quote mself.[n.name]:reset() end )
+        table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
 
-        if n==fn.output then
-          out = outputSymbol
-        elseif n.kind=="applyRegStore" then
-        elseif n.kind~="input" then
-          table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
-          out = `&mself.["simstateoutput_"..n.name]
-        end
-
-        if n.kind=="input" then
-
-          if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
-          return inputSymbol
-        elseif n.kind=="apply" then
-          --print("APPLY",n.fn.kind, n.inputs[1].type, n.type)
-          --print("APP",n.name, n.fn.terraModule, "inputtype",n.fn.inputType,"outputtype",n.fn.outputType)
-          table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
-          table.insert( resetStats, quote mself.[n.name]:reset() end )
-          table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
-
-          if n.fn.inputType==types.null() then
-            table.insert( stats, quote mself.[n.name]:process( out ) end )
-          else
-            if DARKROOM_VERBOSE then
-              print("COMPILE "..n.fn.name)
-              n.fn.terraModule.methods.process:compile()
-              print("COMPILEDONE "..n.fn.name)
-            end
-
-            table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+        if n.fn.inputType==types.null() then
+          table.insert( stats, quote mself.[n.name]:process( out ) end )
+        else
+          if DARKROOM_VERBOSE then
+            print("COMPILE "..n.fn.name)
+            n.fn.terraModule.methods.process:compile()
+            print("COMPILEDONE "..n.fn.name)
           end
+
+          table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
+        end
 
           if DARKROOM_VERBOSE then
             if n.type:isArray() and rigel.isHandshake(n.type:arrayOver()) then
@@ -1495,16 +1492,21 @@ function MT.lambdaCompile(fn)
           print(n.kind)
           assert(false)
         end
-      end)
+    end)
 
+  if fn.input==nil then
+    terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
+  else
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
-    terra Module.methods.reset( [mself] ) [resetStats] end
-    terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
+  end
 
-    --if DARKROOM_VERBOSE then Module.methods.process:printpretty(true,false) end
-    --if Module.methods.calculateReady~=nil then Module.methods.calculateReady:printpretty(true,false) end
+  terra Module.methods.reset( [mself] ) [resetStats] end
+  terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
 
-    return Module
+  --if DARKROOM_VERBOSE then Module.methods.process:printpretty(true,false) end
+  --if Module.methods.calculateReady~=nil then Module.methods.calculateReady:printpretty(true,false) end
+
+  return Module
 end
 
 return MT
