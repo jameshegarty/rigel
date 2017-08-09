@@ -50,13 +50,13 @@ end
 
 -- *this should really be in examplescommon.t
 -- f(g())
-modules.compose = memoize(function(name,f,g)
+modules.compose = memoize(function(name,f,g,generator)
   err( type(name)=="string", "first argument to compose must be name of function")
   err( darkroom.isFunction(f), "compose: second argument should be rigel module")
   err( darkroom.isFunction(g), "compose: third argument should be rigel module")
   local inp = rigel.input( g.inputType, g.sdfInput )
   local gvalue = rigel.apply(name.."_g",g,inp)
-  return modules.lambda(name,inp,rigel.apply(name.."_f",f,gvalue))
+  return modules.lambda( name, inp, rigel.apply(name.."_f",f,gvalue), nil, nil, generatorStr )
 end)
 
 
@@ -870,12 +870,17 @@ end)
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
 -- basic -> V
-modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
-  assert( types.isType(A) )
-  J.map({W,H,T,scale},function(n) assert(type(n)=="number") end)
-  assert(scale>=1)
+modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
+  err( types.isType(A), "downsampleYSeq: type must be rigel type")
+  err( type(W)=="number", "downsampleYSeq: W must be number" )
+  err( type(H)=="number", "downsampleYSeq: H must be number" )
+  err( type(T)=="number", "downsampleYSeq: T must be number" )
+  err( type(scale)=="number", "downsampleYSeq: scale must be number" )
+  err( scale>=1, "downsampleYSeq: scale must be >=1" )
   err( W%T==0, "downsampleYSeq, W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
+  err( X==nil, "downsampleYSeq: too many arguments" )
+
   local sbits = math.log(scale)/math.log(2)
 
   local inputType = types.array2d(A,T)
@@ -883,7 +888,9 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local f = modules.lift( "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T), innerInputType, outputType, 0, 
+  local modname = "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T)
+
+  local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
       local sdata = S.index(sinp,1)
       local sy = S.index(S.index(S.index(sinp,0),0),1)
@@ -892,22 +899,27 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale )
     end, 
     function()
       return MT.downsampleYSeqFn(innerInputType,outputType,scale)
-    end, {{1,scale}})
+    end, nil, {{1,scale}})
 
-  return modules.liftXYSeq( f, W, H, T )
-                                  end)
+  return modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W, H, T )
+end)
 
 -- takes A[W,H] to A[W/scale,H]
 -- lines where xcoord%scale==0 are kept
 -- basic -> V
 -- 
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
-modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
-  assert( types.isType(A) )
-  J.map({W,H,T,scale},function(n) assert(type(n)=="number") end)
-  assert(scale>=1)
+modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
+  err( types.isType(A), "downsampleXSeq: type must be rigel type" )
+  err( type(W)=="number", "downsampleXSeq: W must be number" )
+  err( type(H)=="number", "downsampleXSeq: H must be number" )
+  err( type(T)=="number", "downsampleXSeq: T must be number" )
+  err( type(scale)=="number", "downsampleXSeq: scale must be number" )
+  err( scale>=1, "downsampleXSeq: scale must be >=1 ")
   err( W%T==0, "downsampleXSeq, W%T~=0")
   err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
+  err( X==nil, "downsampleXSeq: too many arguments" )
+
   local sbits = math.log(scale)/math.log(2)
 
   local outputT
@@ -930,7 +942,9 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local f = modules.lift( "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), innerInputType, outputType, 0, 
+  local modname = "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale)
+
+  local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
       local svalid, sdata
       local sy = S.index(S.index(S.index(sinp,0),0),0)
@@ -945,10 +959,10 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale )
       end
       return S.tuple{sdata,svalid}
     end,
-    function() return tfn end,
+    function() return tfn end, nil,
     sdfOverride)
 
-  return modules.liftXYSeq( f, W, H, T )
+  return modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W, H, T )
 
 end)
 
@@ -1617,10 +1631,14 @@ end)
 -- and drives the first tuple with (x,y) coord
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
-modules.liftXYSeq = memoize(function( f, W, H, T, X )
-  assert(rigel.isFunction(f))
-  J.map({W,H,T},function(n) assert(type(n)=="number") end)
-  assert(X==nil)
+modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, X )
+  err( type(name)=="string", "liftXYSeq: name must be string" )
+  err( type(generatorStr)=="string", "liftXYSeq: generatorStr must be string" )
+  err( rigel.isFunction(f), "liftXYSeq: f must be function")
+  err( type(W)=="number", "liftXYSeq: W must be number")
+  err( type(H)=="number", "liftXYSeq: H must be number")
+  err( type(T)=="number", "liftXYSeq: T must be number")
+  err( X==nil, "liftXYSeq: too many arguments")
 
   local inputType = f.inputType.list[2]
 
@@ -1630,13 +1648,21 @@ modules.liftXYSeq = memoize(function( f, W, H, T, X )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
 
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
-  return modules.lambda( "liftXYSeq_"..f.kind, inp, out )
+  return modules.lambda( "liftXYSeq_"..name, inp, out,nil,nil,generatorStr )
 end)
 
 -- this takes a function f : {{uint16,uint16},inputType} -> outputType
 -- and returns a function of type inputType[T]->outputType[T]
-function modules.liftXYSeqPointwise( f, W, H, T )
-  assert(f.inputType:isTuple())
+function modules.liftXYSeqPointwise( name, generatorStr, f, W, H, T, X )
+  err( type(name)=="string", "liftXYSeqPointwise: name must be string" )
+  err( type(generatorStr)=="string", "liftXYSeqPointwise: generatorStr must be string" )
+  err( rigel.isFunction(f), "liftXYSeqPointwise: f must be function")
+  err( f.inputType:isTuple(), "liftXYSeqPointwise: f input type must be tuple")
+  err( type(W)=="number", "liftXYSeqPointwise: W must be number" )
+  err( type(H)=="number", "liftXYSeqPointwise: H must be number" )
+  err( type(T)=="number", "liftXYSeqPointwise: T must be number" )
+  err( X==nil, "liftXYSeqPointwise: too many arguments" )
+
   local fInputType = f.inputType.list[2]
   local inputType = types.array2d(fInputType,T)
   local xyinner = types.tuple{types.uint(16),types.uint(16)}
@@ -1647,27 +1673,38 @@ function modules.liftXYSeqPointwise( f, W, H, T )
   local unpacked = rigel.apply("unp", modules.SoAtoAoS(T,1,{xyinner,fInputType}), inp) -- {{uint16,uint16},A}[T]
   local out = rigel.apply("f", modules.map(f,T), unpacked )
   local ff = modules.lambda("liftXYSeqPointwise_"..f.kind, inp, out )
-  return modules.liftXYSeq(ff,W,H,T)
+  return modules.liftXYSeq(name, generatorStr, ff, W, H, T )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
-  J.map({W,H,T,L,R,B,Top},function(n) assert(type(n)=="number");err(n>=0,"n<0") end)
-  err(T>=1,"cropSeq T<1")
+modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
+  err( types.isType(A), "cropSeq: type must be rigel type ")
+  err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
+  err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
+  err( type(T)=="number", "cropSeq: T must be number"); err(T>=0, "cropSeq: T must be >=0")
+  err( type(L)=="number", "cropSeq: L must be number"); err(L>=0, "cropSeq: L must be >=0")
+  err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
+  err( type(B)=="number", "cropSeq: B must be number"); err(B>=0, "cropSeq: B must be >=0")
+  err( type(Top)=="number", "cropSeq: Top must be number"); err(Top>=0, "cropSeq: Top must be >=0")
 
-  err( L>=0, "cropSeq, L<0")
-  err( R>=0, "cropSeq, R<0")
-  err( W%T==0, "cropSeq, W%T~=0")
-  err( L%T==0, "cropSeq, L%T~=0")
-  err( R%T==0, "cropSeq, R%T~=0")
-  err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T~=0")
+  err(T>=1,"cropSeq T must be <1")
+
+  err( L>=0, "cropSeq, L must be <0")
+  err( R>=0, "cropSeq, R must be <0")
+  err( W%T==0, "cropSeq, W%T must be 0")
+  err( L%T==0, "cropSeq, L%T must be 0")
+  err( R%T==0, "cropSeq, R%T must be 0")
+  err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
+  err( X==nil, "cropSeq: too many arguments" )
 
   local inputType = types.array2d(A,T)
   local outputType = types.tuple{inputType,types.bool()}
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local f = modules.lift( "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top), innerInputType, outputType, 0, 
+  local modname = "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top)
+
+  local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
       local sdata = S.index(sinp,1)
       local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
@@ -1694,10 +1731,10 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top )
     end, 
     function()
       return MT.cropSeqFn( innerInputType, outputType, A, W, H, T, L, R, B, Top ) 
-    end, 
+    end, nil,
     {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
-  return modules.liftXYSeq( f, W, H, T  )
+  return modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T  )
 end)
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
@@ -2821,7 +2858,7 @@ end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instances, pipelines, X )
+function modules.lambda( name, input, output, instances, pipelines, generatorStr, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -2832,11 +2869,12 @@ function modules.lambda( name, input, output, instances, pipelines, X )
   err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
   if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
   err( pipelines==nil or type(pipelines)=="table", "lambda: pipelines must be nil or a table" )
+  err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
   if pipelines~=nil then J.map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
 
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines, generator=generatorStr }
   res.inputType = input.type
   res.outputType = output.type
 
@@ -3143,7 +3181,7 @@ end
 -- makeSystolic: a lua function that returns the systolic implementation. 
 --      Input argument: systolic input value. Output: systolic output value, systolic instances table
 -- outputType, delay are optional, but will cause systolic to be built if they are missing!
-function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, sdfOutput, X )
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type" )
@@ -3151,11 +3189,12 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
   err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
+  err( generatorStr==nil or type(generatorStr)=="string", "generatorStr must be nil or string")
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
 
-  local res = { kind="lift_"..name, name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false }
+  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false, generator=generatorStr }
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
@@ -3563,8 +3602,7 @@ modules.triggeredCounter = memoize(function(TY, N)
   end
 
   return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
-
   
-                                   end)
+end)
 
 return modules

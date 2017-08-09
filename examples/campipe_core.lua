@@ -86,7 +86,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
   end
 
   local dem = RM.lambda("dem", deminp, R.concatArray2d("ot",out,3))
-  dem = RM.liftXYSeqPointwise(dem,internalW,internalH,internalT)
+  dem = RM.liftXYSeqPointwise("dem","dem",dem,internalW,internalH,internalT)
 
   ---------------
   local demtop = R.input(types.array2d(types.uint(8),internalT))
