@@ -50,7 +50,7 @@ end
 
 -- *this should really be in examplescommon.t
 -- f(g())
-modules.compose = memoize(function(name,f,g,generator)
+modules.compose = memoize(function( name, f, g, generatorStr )
   err( type(name)=="string", "first argument to compose must be name of function")
   err( darkroom.isFunction(f), "compose: second argument should be rigel module")
   err( darkroom.isFunction(g), "compose: third argument should be rigel module")
