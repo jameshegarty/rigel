@@ -326,9 +326,12 @@ function harnessTop(t)
   err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
 
   local outputCountFrac = {t.outSize[1]*t.outSize[2], outputP}
-  local expectedOutputCountFrac = {inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2],fn.sdfOutput[1][2]*fn.sdfInput[1][1]}
 
-  err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
+  if R.SDF and iover~=types.null() then
+    local expectedOutputCountFrac = {inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2],fn.sdfOutput[1][2]*fn.sdfInput[1][1]}
+
+    err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
+  end
 
   local backend = t.backend
   if backend==nil then backend = arg[1] end

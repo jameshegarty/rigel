@@ -4,7 +4,7 @@ local J = require "common"
 
 --local Type = {types.bool(), types.uint(7), types.int(16)}
 --local Type = {types.bool(), types.uint(8), types.uint(7)}
-local Type = {types.uint(8)}
+local Type = {types.uint(8), types.array2d(types.uint(8),1,1), types.tuple{types.uint(8)}}
 local NumP = {1,2,8}
 local NumPZ = {0,3,8}
 local Num = {-8,-3,0,2,7}
@@ -32,6 +32,7 @@ configs.padSeq = J.cartesian{type=Type, size={IS}, V=NumP, pad=LRBT, value={0,18
 meta.padSeq={}
 for k,v in ipairs(configs.padSeq) do
   if v.type==types.bool() then v.value=true end
+  if v.type:isArray() or v.type:isTuple() then v.value={v.value} end
   v.pad = J.shallowCopy(v.pad)
   for i=1,4 do if v.pad[i]%v.V~=0 then  v.pad[i]=J.upToNearest(v.V,v.pad[i]) end end
 
@@ -59,6 +60,24 @@ for k,v in ipairs(configs.changeRate) do
   meta.changeRate[k] = {inputP=v.inW, outputP=v.outW, inputImageSize=IS, outputImageSize=IS}
 end
 
+configs.constSeq = {}
+local CSC = J.cartesian{type=Type, W=NumP, H=NumP, P=NumP, value={42}}
+meta.constSeq={}
+for k,v in ipairs(CSC) do
+  if v.P <= v.W then
+    local val = v.value
+    if v.type:isArray() or v.type:isTuple() then val={val} end
+    v.value = J.broadcast(val,v.W*v.H)
+    
+    v.type = types.array2d(v.type,v.W,v.H)
+    v.P = 1/v.P
+    v.W=nil; v.H=nil
+
+    table.insert(configs.constSeq, v)
+    meta.constSeq[#configs.constSeq] = {inputP=0, outputP=v.type:channels()/v.P, outputImageSize=IS}
+  end
+end
+
 local function configToName(t)
   local name = ""
 
@@ -67,9 +86,11 @@ local function configToName(t)
     if type(k)=="number" then key="" end -- not interesting!
 
     if type(v)=="number" or type(v)=="boolean" or type(v)=="string" or types.isType(v) then
-      name = name..key..tostring(v).."_"
+      name = name..key..J.verilogSanitize(tostring(v)).."_"
     elseif type(v)=="table" then
-      name = name..key..configToName(v).."_"
+      local rec = configToName(v)
+      if #rec>20 then rec = string.sub(rec,1,20) end
+      name = name..key..rec.."_"
     else
       print("CONFIGTONAME",type(v))
       assert(false)
@@ -91,13 +112,6 @@ for k,v in pairs(configs) do
 
     -- TODO: hack to get around axi burst nonsense
     local valid = true
-    --if ((met.inputImageSize[1]*met.inputImageSize[2]*mod.inputType:verilogBits())/met.inputP)%(128*8)~=0 then valid=false end
-    --if ((met.outputImageSize[1]*met.outputImageSize[2]*mod.outputType:verilogBits())/met.outputP)%(128*8)~=0 then valid=false end
-
-    --    if (mod.inputType:verilogBits())/met.inputP~=8 or (mod.outputType:verilogBits())/met.outputP~=8 then valid=false end
-    
-    -- TODO: 
-    --if mod.inputType:isArray() and mod.inputType:arrayOver():isBool() then valid=false end
     
     local targets = {"verilog"}
     if valid then 

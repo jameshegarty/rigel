@@ -105,7 +105,7 @@ SRCS_AXI := $(filter-out fixed_float_inv.lua sift_desc_hw.lua sift_hw.lua sift_h
 SRCS_AXI := $(filter-out 4bpp.lua 12bpp.lua 18bpp.lua,$(SRCS_AXI))
 
 # NYI
-SRCS_AXI := $(filter-out readmemory.lua readmemory_flip.lua pad.lua crop.lua  stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua,$(SRCS_AXI))
+SRCS_AXI := $(filter-out readmemory.lua readmemory_flip.lua pad.lua crop.lua  stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua nullary.lua,$(SRCS_AXI))
 
 SRCS_AXI100 = $(SRCS_AXI)
 
@@ -239,9 +239,10 @@ out/%.axi.v out/%.axi.metadata.lua: %.lua
 out/%.verilator: out/%.v out/%.verilog.metadata.lua ../platform/verilator/harness.cpp
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua topModule))
 	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua harness))
+	$(eval $@_INBPP := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputBitsPerPixel))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module $($@_TOP)
 #	$(LUA) ../platform/verilator/makeHarness.lua out/$*.verilog.metadata.lua $* > out/$*.verilator.cpp
-	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DHARNESS=$($@_HARNESS) -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
+	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DHARNESS=$($@_HARNESS) -DINBPP=$($@_INBPP) -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
 
 out/%.verilator.raw: out/%.verilator
 	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputImage))

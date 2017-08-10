@@ -2,6 +2,7 @@ local types = require "types"
 local systolic = require "systolic"
 local J = require "common"
 local err = J.err
+local checkReserved = J.verilogCheckReserved
 
 local sugar = {}
 

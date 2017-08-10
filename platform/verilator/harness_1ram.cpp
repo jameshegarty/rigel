@@ -44,7 +44,11 @@ int main(int argc, char** argv) {
   
   for(int i=0; i<100; i++){
     CLK = !CLK;
+
+#if INBPP>0
     setValid(&(top->process_input),inbpp*inP,false);
+#endif
+
     top->CLK = CLK;
     top->reset = true;
     top->ready_downstream = 1;
@@ -77,6 +81,7 @@ int main(int argc, char** argv) {
   
   while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
     if(CLK){
+#if INBPP>0
       if(top->ready){
         if(validInCnt>=inPackets){
           setValid(&(top->process_input),inbpp*inP+tapBits,false);
@@ -87,6 +92,7 @@ int main(int argc, char** argv) {
           validInCnt++;
         }
       }
+#endif
       
       // it's possible the pipeline has 0 cycle delay. in which case, we need to eval the async stuff here.
       top->eval();
@@ -114,5 +120,5 @@ int main(int argc, char** argv) {
   top->final();
   delete top;
 
-  printf("Cycles: %d\n", totalCycles);
+  printf("Cycles: %d\n", (int)totalCycles);
 }

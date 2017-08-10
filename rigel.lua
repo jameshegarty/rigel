@@ -13,6 +13,9 @@ STREAMING = false
 
 darkroom = {}
 
+-- enable SDF checking? (true:enable, false:disable)
+darkroom.SDF = true
+
 DEFAULT_FIFO_SIZE = 2048*16*16
 
 if os.getenv("v") then
@@ -243,10 +246,10 @@ function darkroom.newFunction(tab)
   assert( type(tab) == "table" )
 
   err( type(tab.name)=="string", "rigel.newFunction: name must be string ("..tab.kind..")" )
-  err( SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1, "rigel.newFunction: sdf input rate is not <=1" )
-  err( tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1, "rigel.newFunction: sdf output rate is not <=1" )
+  err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
+  err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
+  err( darkroom.SDF==false or (tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1), "rigel.newFunction: sdf input rate is not <=1" )
+  err( darkroom.SDF==false or (tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1), "rigel.newFunction: sdf output rate is not <=1" )
 
   return setmetatable( tab, darkroomFunctionMT )
 end
@@ -553,16 +556,9 @@ function darkroomIRFunctions:codegenSystolic( module )
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
         err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         
-        local params
-        if darkroom.isHandshake( n.fn.inputType ) then
-          local IC = n.inputs[1]:sdfTotal(self)
-          local OC = n:sdfTotal(self)
-          params={INPUT_COUNT="(INPUT_COUNT*"..IC[1][1]..")/"..IC[1][2],OUTPUT_COUNT="(INPUT_COUNT*"..OC[1][1]..")/"..OC[1][2]}
-        end
-        
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil,params) )
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil) )
 
         if darkroom.isHandshake( n.fn.inputType ) or
           darkroom.isHandshakeArray( n.fn.inputType ) or

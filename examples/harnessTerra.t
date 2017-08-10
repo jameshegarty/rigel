@@ -7,24 +7,33 @@ local types = require("types")
 local J = require "common"
 
 local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id)
-  local fixedTapInputType = tapType
-  if tapType==nil then fixedTapInputType = types.null() end
 
-  local ITYPE = types.tuple{types.null(),fixedTapInputType}
-  local inpSymb = R.input( R.Handshake(ITYPE) )
+  local out
+  local inpSymb
+
+  if inputType~=types.null() then
+    local fixedTapInputType = tapType
+    if tapType==nil then fixedTapInputType = types.null() end
+    
+    local ITYPE = types.tuple{types.null(),fixedTapInputType}
+    inpSymb = R.input( R.Handshake(ITYPE) )
+    
+    local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpSymb)
+    local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpSymb)
+    
+    out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true),inpdata)
+    local hsfninp = out
   
-  local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpSymb)
-  local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpSymb)
-  local out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true),inpdata)
-  local hsfninp = out
-  
-  if tapType~=nil then
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,inptaps}))
+    if tapType~=nil then
+      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,inptaps}))
+    end
+
+    out = R.apply("HARNESS_inner", fn, hsfninp )
+  else
+    out = R.apply("HARNESS_inner", fn )
   end
 
-  local out = R.apply("HARNESS_inner", fn, hsfninp )
-
-  local out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
+  out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
   return RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out )
 end)
 
@@ -50,9 +59,11 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local terra dosim() 
        if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
        var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); 
+       m:init()
        m:reset(); 
        m:process(nil,nil); 
        if DARKROOM_VERBOSE then m:stats();  end
+       m:free()
        cstdlib.free(m) 
      end
     

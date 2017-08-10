@@ -599,9 +599,37 @@ function common.export(t)
   for k,v in pairs(common) do rawset(t,k,v) end
 end
 
-function common.verilogSanitize(s)
-  return s:gsub('%W','_')
+function common.verilogCheckReserved(k)
+  if k=="input" or k=="output" or k=="reg" or k=="edge" or k=="final" or k=="solve" then
+    print("Error, variable name ",k," is a reserved keyword in verilog")
+    assert(false)
+  end
+
+  if tonumber(k:sub(1,1))~=nil then
+    common.err(false, "verilog variables cant start with numbers ("..k..")")
+  end
 end
 
+function common.verilogSanitize(s)
+  --local s = s:gsub('%W','_')
+  local s = s:gsub("%[","_OB_")
+  s = s:gsub("%]","_CB_")
+  s = s:gsub("%(","_OP_")
+  s = s:gsub("%)","_CP_")
+  s = s:gsub("%{","_OC_")
+  s = s:gsub("%}","_CC_")
+  s = s:gsub("%,","_CO_")
+  s = s:gsub("%.","_P_")
+  s = s:gsub("%W","_")
+  s = s:gsub('%__','_')
+
+  return s
+end
+common.sanitize = common.verilogSanitize
+
+function common.fileExists(name)
+   local f=io.open(name,"r")
+   if f~=nil then io.close(f) return true else return false end
+end
 
 return common

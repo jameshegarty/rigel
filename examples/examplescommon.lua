@@ -14,7 +14,7 @@ if terralib~=nil then CT=require("examplescommonTerra") end
 local C = {}
 
 C.identity = memoize(function(A)
-  local identity = RM.lift( "identity_"..tostring(A), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end )
+  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
   return identity
 end)
 
@@ -22,28 +22,21 @@ C.cast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
   err(types.isType(B),"cast: B should be type")
   assert(A:isTuple()==false)
-  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end )
+  local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
 
 C.tupleToArray = memoize(function(A,N)
+  err(types.isType(A),"tupleToArray: A should be type")
+
   local atup = types.tuple(J.broadcast(A,N))
   local B = types.array2d(A,N)
 
-  local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
+  local docast = RM.lift( "tupleToArray_"..J.verilogSanitize(tostring(A)).."_"..tostring(N), atup, B, 0,
     function(sinp) return S.cast(sinp,B) end, 
-    function() return CT.tupleToArray(A,N,atup,B) end)
+    function() return CT.tupleToArray(A,N,atup,B) end, "C.tupleToArray")
 
   return docast
-end)
-
--- A -> A[W,H]
-C.arrayop = memoize(function(A,W,H)
-  err(type(W)=="number","arrayop: W should be number")
-  err(type(H)=="number" or H==nil,"arrayop: H should be number or nil")
-  
-  local inp = R.input(A)
-  return RM.lambda("arrayop_"..tostring(A).."_W"..W.."_H"..tostring(H),inp,R.concatArray2d("ao",{inp},W,H))
 end)
 
 ------------
@@ -51,7 +44,9 @@ end)
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
   local partial = RM.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
-                           function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end, function() return CT.multiply(A,B,outputType) end )
+    function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end, 
+    function() return CT.multiply(A,B,outputType) end,
+    "C.multiply" )
   return partial
 end)
 
@@ -72,7 +67,8 @@ C.sum = memoize(function( A, B, outputType, async )
     end,
     function()
       return CT.sum(A,B,outputType,async)
-    end)
+    end,
+    "C.sum")
 
   return partial
 end)
@@ -83,7 +79,8 @@ C.select = memoize(function(ty)
   local ITYPE = types.tuple{types.bool(),ty,ty}
 
   local selm = RM.lift("C_select", ITYPE, ty, 1,
-    function(sinp) return S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2)) end )
+    function(sinp) return S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2)) end,nil,
+    "C.select" )
 
   return selm
 end)
@@ -93,7 +90,9 @@ C.eq = memoize(function(ty)
   local ITYPE = types.tuple{ty,ty}
 
   local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, 
-                       function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end)
+    function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end, nil,
+    "C.eq" )
+
   return selm
 end)
 
@@ -140,7 +139,8 @@ C.argmin = memoize(function(idxType,vType, async, domax)
     end,
     function()
       return CT.argmin(ITYPE,ATYPE,domax)
-    end)
+    end,
+    "C.argmin" )
 
   return partial
 end)
@@ -176,7 +176,8 @@ C.absoluteDifference = memoize(function(A,outputType,X)
       local out = S.cast(out, outputType)
       return out
     end,
-    function() return CT.absoluteDifference(A,outputType,internalType_terra) end)
+    function() return CT.absoluteDifference(A,outputType,internalType_terra) end,
+    "C.absoluteDifference")
 
   return partial
 end)
@@ -187,7 +188,8 @@ end)
 C.shiftAndCast = memoize(function(from, to, shift)
   local touint8 = RM.lift( "touint8", from, to, 1,
     function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end, 
-    function() return CT.shiftAndCast(from,to,shift) end)
+    function() return CT.shiftAndCast(from,to,shift) end,
+    "C.shiftAndCast")
   return touint8
 end)
 
@@ -197,7 +199,8 @@ C.shiftAndCastSaturate = memoize(function(from, to, shift)
       local OT = S.rshift(touint8inp,S.constant(shift,from))
       return S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to)) 
     end,
-    function() return CT.shiftAndCastSaturate(from,to,shift) end )
+    function() return CT.shiftAndCastSaturate(from,to,shift) end,
+    "C.shiftAndCastSaturate")
 
   return touint8
 end)
@@ -284,7 +287,7 @@ C.SAD = memoize(function( A, reduceType, Width, X )
   local conv = R.apply( "partial", RM.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
 
-  local convolve = RM.lambda( "SAD", inp, conv )
+  local convolve = RM.lambda( "SAD", inp, conv, nil, nil, "C.SAD" )
   return convolve
 end)
 
@@ -313,7 +316,7 @@ C.SADFixed = memoize(function( A, reduceType, Width, X )
   local conv = R.apply( "partial", RM.map( ABS:toRigelModule("absoluteDiff"), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( SUM:toRigelModule("ABS_SUM"), Width, Width ), conv )
 
-  local convolve = RM.lambda( "SAD", inp, conv )
+  local convolve = RM.lambda( "SAD", inp, conv, nil, nil, "C.SADFixed" )
   return convolve
 end)
 
@@ -365,7 +368,7 @@ C.stencilKernel = memoize(function( A, T, imageW, imageH, stencilW, stencilH, f)
   local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ), convLB )
   local convpipe = R.apply( "conv", RM.map( f, T ), convstencils )
   
-  local convpipe = RM.lambda( "convpipe_"..f.kind.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe )
+  local convpipe = RM.lambda( "convpipe_"..f.name.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe, nil, nil, "C.stencilKernel" )
   return convpipe
 end)
 
@@ -400,18 +403,18 @@ end)
 -- inner function based on this W,H. We have to do this for alignment reasons.
 -- f should return a handshake function
 -- timingFifo: include a fifo to improve timing. true by default
-C.padcrop = memoize(function(A,W,H,T,L,Right,B,Top,borderValue,f,timingFifo,X)
-  err( type(W)=="number", "W should be number")
-  err( type(H)=="number", "H should be number")
-  err( type(T)=="number", "T should be number")
-  err( type(L)=="number", "L should be number")
-  err( type(Right)=="number", "Right should be number")
-  err( type(B)=="number", "B should be number")
-  err( type(Top)=="number", "Top should be number")
-  err( type(f)=="function", "f should be lua function")
+C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timingFifo, X )
+  err( type(W)=="number", "padcrop: W should be number")
+  err( type(H)=="number", "padcrop: H should be number")
+  err( type(T)=="number", "padcrop: T should be number")
+  err( type(L)=="number", "padcrop: L should be number")
+  err( type(Right)=="number", "padcrop: Right should be number")
+  err( type(B)=="number", "padcrop: B should be number")
+  err( type(Top)=="number", "padcrop: Top should be number")
+  err( type(f)=="function", "padcrop: f should be lua function")
 
-  assert(X==nil)
-  assert(timingFifo==nil or type(timingFifo)=="boolean")
+  err( X==nil, "padcrop: too many arguments" )
+  err( timingFifo==nil or type(timingFifo)=="boolean", "padcrop: timingFIFO must be nil or boolean" )
   if timingFifo==nil then timingFifo=true end
 
   local RW_TYPE = types.array2d( A, T ) -- simulate axi bus
@@ -633,7 +636,7 @@ C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function C.border(A,W,H,L,R,B,T,value)
   J.map({W,H,L,R,T,B,value},function(n) assert(type(n)=="number") end)
-  local res = {kind="border",L=L,R=R,T=T,B=B,value=value}
+  local res = {kind="border",generator="C.border",L=L,R=R,T=T,B=B,value=value}
   res.inputType = types.array2d(A,W,H)
   res.outputType = res.inputType
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
@@ -689,10 +692,10 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(types.uint(8),1,downsampleT,T)), out )
+      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  return modules.lambda("downsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), inp, out)
+  return modules.lambda("downsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), inp, out,nil,nil,"C.downsampleSeq")
 end)
 
 
@@ -712,7 +715,7 @@ C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
     inner = modules.upsampleXSeq( A, T, scaleX )
   else
     local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = C.compose("upsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )))
+    inner = C.compose("upsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,nil,"C.upsampleSeq")
   end
 
     return inner
@@ -730,8 +733,10 @@ C.broadcast = memoize(function(A,W,H)
 
   return modules.lift("Broadcast_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H),A,OT,0,
     function(sinp) return S.cast(S.tuple(J.broadcast(sinp,W*H)),OT) end,
-    function() return CT.broadcast(A,W,H,OT) end)
+    function() return CT.broadcast(A,W,H,OT) end,
+    "C.broadcast")
 end)
+C.arrayop=C.broadcast
 
 -- extractStencils : A[w,h] -> A[(xmax-xmin+1)*(ymax-ymin+1)][w,h]
 -- min, max ranges are inclusive
@@ -746,12 +751,12 @@ C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   rigel.expectBasic(A)
   if A:isArray() then error("Input to extract stencils must not be array") end
 
-  local res = {kind="stencil", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax }
+  local res = {kind="stencil", type=A, w=w, h=h, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, generator="C.stencil" }
   res.delay=0
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.name = "Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax)
+  res.name = "Stencil_"..J.verilogSanitize(tostring(A)).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax)
   res.stateful=false
 
   if terralib~=nil then res.terraModule = CT.stencil(res, A, w, h, xmin, xmax, ymin, ymax ) end
@@ -760,12 +765,16 @@ C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
 end)
 
 -- this applies a border around the image. Takes A[W,H] to A[W,H], but with a border. Sequentialized to throughput T.
-function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
-  J.map({W,H,T,L,R,B,Top,Value},function(n) assert(type(n)=="number") end)
+C.borderSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
+  err( types.isType(A), "borderSeq: type must be type")
+  J.map({W=W or "W",H = H or "H",T = T or "T",L = L or "L",R=R or "R",B = B or "B",Top = Top or "Top",Value = Value or "Value"},function(n,k) err(type(n)=="number","borderSeq: "..k.." must be number") end)
+  err( X==nil, "borderSeq: too many arguments")
 
   local inpType = types.tuple{types.tuple{types.uint(16),types.uint(16)},A}
 
-  local f = modules.lift( "BorderSeq", inpType, A, 0, 
+  local modname = "BorderSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top).."_Value"..tostring(Value)
+
+  local f = modules.lift( modname, inpType, A, 0, 
     function(inp)
       local inpx, inpy = S.index(S.index(inp,0),0), S.index(S.index(inp,0),1)
 
@@ -783,8 +792,8 @@ function C.borderSeq( A, W, H, T, L, R, B, Top, Value )
     end,
     function() return CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType ) end)
 
-  return modules.liftXYSeqPointwise( f, W, H, T )
-end
+  return modules.liftXYSeqPointwise( modname, "C.borderSeq", f, W, H, T )
+end)
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
@@ -824,7 +833,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
-  return C.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ) )
+  return C.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
 end)
 
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
@@ -836,7 +845,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(ymax==0)
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )) )
+  return C.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )), "C.stencilLinebufferPartial" )
 end)
 
 
@@ -852,13 +861,13 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
   assert(X==nil)
 
-  local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T}
+  local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T,generator="C.unpackStencil"}
   res.inputType = types.array2d( A, stencilW+T-1, stencilH)
   res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
-  res.name = "unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T)
+  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
@@ -896,9 +905,10 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, 
+    return modules.lift( "index_"..tostring(inputType).."_"..idxLow, inputType, OT, 0, 
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
-      function() return CT.sliceTup(inputType,OT,idxLow) end)
+      function() return CT.sliceTup(inputType,OT,idxLow) end,
+      "C.slice")
 
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
@@ -936,7 +946,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
         else
           return CT.sliceArr(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W)
         end 
-      end)
+      end,
+      "C.slice")
   else
     err(false, "C.index input must be tuple or array but is "..tostring(inputType))
   end

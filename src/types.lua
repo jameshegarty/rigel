@@ -423,6 +423,12 @@ function types.checkExplicitCast(from, to, ast)
       local tsz = to:arrayLength()
       if fsz[1]==tsz[1] and fsz[2]==tsz[2] and types.checkExplicitCast(from:arrayOver(),to:arrayOver(),ast) then
         return true
+      elseif fsz[1] == 1 and fsz[2] == 1 and types.checkExplicitCast(from:arrayOver(), to, ast) then
+        -- if from is array[1,1] then unwrap it and try again
+        return true
+      elseif tsz[1] == 1 and tsz[2] == 1 and types.checkExplicitCast(from, to:arrayOver(), ast) then
+        -- if to is array[1,1] then unwrap it and try again
+        return true
       else
         err(false,"Can't cast array to array due to mismatch size or base type: "..tostring(from).." to "..tostring(to))
       end

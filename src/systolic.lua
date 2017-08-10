@@ -39,14 +39,7 @@ local function getloc()
   return debug.traceback()
 end
 
-function sanitize(s)
-  s = s:gsub("%[","_")
-  s = s:gsub("%]","_")
-  s = s:gsub("%,","_")
-  s = s:gsub("%.","_")
-  s = s:gsub("%W","_")
-  return s
-end
+local sanitize = J.verilogSanitize
 
 local function checkast(ast) err( systolicAST.isSystolicAST(ast), "input should be a systolic AST" ); return ast end
 
@@ -54,16 +47,8 @@ local function typecheck(ast)
   return systolicAST.new( typecheckAST(ast,systolicAST.new) )
 end
 
-function checkReserved(k)
-  if k=="input" or k=="output" or k=="reg" or k=="edge" or k=="final" or k=="solve" then
-    print("Error, variable name ",k," is a reserved keyword in verilog")
-    assert(false)
-  end
+local checkReserved = J.verilogCheckReserved
 
-  if tonumber(k:sub(1,1))~=nil then
-    err(false, "verilog variables cant start with numbers ("..k..")")
-  end
-end
 
 local binopToVerilog={["+"]="+",["*"]="*",["<<"]="<<<",[">>"]=">>>",["pow"]="**",["=="]="==",["and"]="&",["or"]="|",["-"]="-",["<"]="<",[">"]=">",["<="]="<=",[">="]=">="}
 
@@ -215,9 +200,8 @@ end
 
 function systolicModuleFunctions:instantiate( name, coherent, arbitrate, parameters, X )
   err( type(name)=="string", "instantiation name must be a string")
-  assert(X==nil)
-
-  name = sanitize(name)
+  err( X==nil,"instantiate: too many arguments" )
+  err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
 
   -- coherence is a property of instances. By default, inherit the coherence option from the module
   -- (This makes registers coherent by default for example)
@@ -1250,6 +1234,21 @@ function systolicASTFunctions:toVerilog( module )
             
             err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
             return expr
+          elseif fromType:isArray() and toType:isArray() then
+            -- HACK: just check if this is a noop
+
+            -- HACK: if just one of the types is an array of one element, unwrap it and try again
+            if fromType:channels() == 1 then
+              local e = docast(expr,fromType:arrayOver(),toType,false,"")
+              err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
+            elseif toType:channels() == 1 then
+              local e = docast(expr,fromType,toType:arrayOver(),false,"")
+              err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
+            else
+              err(false,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
+            end
+
+            return expr
           else
             err(false,"FAIL TO CAST"..tostring(fromType).." to "..tostring(toType) )
           end
@@ -1617,8 +1616,9 @@ end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
 function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, parameters, verilog, verilogDelay )
-  assert(type(name)=="string")
-  name = sanitize(name)
+  err( type(name)=="string", "systolic.module.new: name must be string" )
+  --name = sanitize(name)
+  err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
   J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
