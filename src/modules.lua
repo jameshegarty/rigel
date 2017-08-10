@@ -455,7 +455,7 @@ modules.RPassthrough = memoize(function(f)
   rigel.expectRV(f.outputType)
   res.inputType = rigel.RV(rigel.extractData(f.inputType))
   res.outputType = rigel.RV(rigel.extractData(f.outputType))
-  err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
+  err( rigel.SDF==false or type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err( type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
