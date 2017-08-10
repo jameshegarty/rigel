@@ -1235,10 +1235,10 @@ function systolicASTFunctions:toVerilog( module )
             err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
             return expr
           elseif fromType:isArray() and toType:isArray() then
-			-- HACK: just check if this is a noop
+            -- HACK: just check if this is a noop
 
-			-- HACK: if just one of the types is an array of one element, unwrap it and try again
-			if fromType:channels() == 1 then
+            -- HACK: if just one of the types is an array of one element, unwrap it and try again
+            if fromType:channels() == 1 then
               local e = docast(expr,fromType:arrayOver(),toType,false,"")
               err(e==expr,"NYI - systolic cast array type to array type that is not a noop. "..tostring(fromType).." to "..tostring(toType))
             elseif toType:channels() == 1 then
