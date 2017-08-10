@@ -22,7 +22,7 @@ C.cast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
   err(types.isType(B),"cast: B should be type")
   assert(A:isTuple()==false)
-  local docast = RM.lift( "cast_"..J.verilogSanitize(tostring(A)).."_"..J.verilogSanitize(tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
+  local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
 
