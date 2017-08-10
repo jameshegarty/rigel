@@ -867,7 +867,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
-  res.name = "unpackStencil_"..tostring(A):gsub('%W','_').."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T)
+  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
@@ -905,7 +905,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    return modules.lift( "index_"..tostring(inputType):gsub('%W','_').."_"..idxLow, inputType, OT, 0, 
+    return modules.lift( "index_"..tostring(inputType).."_"..idxLow, inputType, OT, 0, 
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")

@@ -27,18 +27,18 @@ modules.sumwrap = memoize(function( ty, limit, X)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
 modules.incIf=memoize(function(inc,ty,hasCE)
-                        if inc==nil then inc=1 end
-                        if ty==nil then ty=types.uint(16) end
-                        if hasCE==nil then hasCE=true end
-                        assert(type(hasCE)=="boolean")
+  if inc==nil then inc=1 end
+  if ty==nil then ty=types.uint(16) end
+  if hasCE==nil then hasCE=true end
+  assert(type(hasCE)=="boolean")
 
-      local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
-
-      local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-      local CE = S.CE("CE")
-      if hasCE==false then CE=nil end
-      return S.module.new( "incif_"..inc..tostring(ty).."_CE"..tostring(CE), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{},nil,true)
-              end)
+  local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
+  
+  local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
+  local CE = S.CE("CE")
+  if hasCE==false then CE=nil end
+  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{},nil,true)
+end)
 
 -- this will never wrap around
 modules.incIfNowrap=memoize(function(inc,ty)
@@ -115,7 +115,7 @@ end
 -- make an array of ram128s to service a certain bandwidth
 modules.ram128 = function(ty, init)
   assert(types.isType(ty))
-  local ram128 = Ssugar.moduleConstructor("ram128_"..sanitize(tostring(ty)) )
+  local ram128 = Ssugar.moduleConstructor( J.sanitize("ram128_"..tostring(ty)) )
   local bits = ty:verilogBits()
   
   assert(type(init)=="table")
@@ -144,7 +144,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   err(type(items)=="number","fifo items must be number")
   err(type(verbose)=="boolean","fifo verbose must be bool")
 
-  local fifo = Ssugar.moduleConstructor("fifo_"..sanitize(tostring(ty).."_"..items) )
+  local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
@@ -251,7 +251,7 @@ modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbos
 modules.fifonoop = memoize(function(ty)
   assert(types.isType(ty))
 
-  local fifo = Ssugar.moduleConstructor("fifonoop_"..sanitize(tostring(ty))):onlyWire(true)
+  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty))):onlyWire(true)
 
   local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
   local internalReady = systolic.parameter("load_ready_downstream",types.bool())
@@ -612,7 +612,8 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   end
 
   if writeAndReturnOriginal then
-    local mod = Ssugar.moduleConstructor( "bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init) )
+     local name = J.sanitize("bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init))
+    local mod = Ssugar.moduleConstructor( name )
     local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
     local sinpRead
     if outputBytes~=nil then sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits)) end

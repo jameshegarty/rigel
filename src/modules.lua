@@ -10,6 +10,7 @@ local memoize = J.memoize
 local err = J.err
 
 local verilogSanitize = J.verilogSanitize
+local sanitize = verilogSanitize
 
 local MT
 if terralib~=nil then
@@ -657,7 +658,7 @@ modules.map = memoize(function( f, W, H )
   res.stateful = f.stateful
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = f.delay
-  res.name = "map_"..f.name.."_W"..tostring(W).."_H"..tostring(H)
+  res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
 
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
@@ -709,7 +710,7 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
   res.stateful = true
   res.sdfInput = {{1,1}}
   res.sdfOutput = {rate}
-  res.name = "FilterSeq_"..verilogSanitize(tostring(A))
+  res.name = sanitize("FilterSeq_"..tostring(A))
 
   local outTokens = ((W*H)*rate[1])/rate[2]
   err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens in non integer ("..tonumber(outTokens)..")")
@@ -1271,7 +1272,7 @@ modules.toHandshakeArray = memoize(function( A, inputRates )
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
   res.stateful = false
-  res.name = "ToHandshakeArray_"..verilogSanitize(tostring(A)).."_"..#inputRates
+  res.name = sanitize("ToHandshakeArray_"..tostring(A).."_"..#inputRates)
 
   function res:sdfTransfer( I, loc ) 
     err(#I[1]==#inputRates, "toHandshakeArray: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
@@ -1340,7 +1341,7 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
   err( type(Schedule.stateful)=="boolean", "Schedule missing stateful annotation")
   res.stateful = Schedule.stateful
-  res.name = "Serialize_"..verilogSanitize(tostring(A)).."_"..#inputRates
+  res.name = sanitize("Serialize_"..tostring(A).."_"..#inputRates)
 
   local sdfSum = inputRates[1][1]/inputRates[1][2]
   for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
@@ -1410,7 +1411,7 @@ modules.demux = memoize(function( A, rates, X )
   res.inputType = rigel.HandshakeTmuxed( A, #rates )
   res.outputType = types.array2d(rigel.Handshake(A), #rates)
   res.stateful = false
-  res.name = "Demux_"..verilogSanitize(tostring(A)).."_"..#rates
+  res.name = sanitize("Demux_"..tostring(A).."_"..#rates)
 
   local sdfSum = rates[1][1]/rates[1][2]
   for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
@@ -1490,7 +1491,7 @@ modules.flattenStreams = memoize( function( A, rates, X )
 
   res.sdfInput = rates
   res.sdfOutput = {{1,1}}
-  res.name = "FlattenStreams_"..verilogSanitize(tostring(A)).."_"..#rates
+  res.name = sanitize("FlattenStreams_"..tostring(A).."_"..#rates)
 
   if terralib~=nil then res.terraModule = MT.flattenStreams(res,A,rates) end
 
@@ -1534,7 +1535,7 @@ modules.broadcastStream = memoize(function(A,N,X)
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = J.broadcast({1,1},N)
-  res.name = "BroadcastStream_"..verilogSanitize(tostring(A)).."_"..N
+  res.name = sanitize("BroadcastStream_"..tostring(A).."_"..N)
 
   if terralib~=nil then res.terraModule = MT.broadcastStream(res,A,N) end
 
@@ -1974,7 +1975,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
-  res.name = "linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..verilogSanitize(tostring(A))
+  res.name = sanitize("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
 
   if terralib~=nil then res.terraModule = MT.linebuffer(res, A, w, h, T, ymin) end
 
@@ -2044,7 +2045,7 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
-  res.name = "SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..verilogSanitize(tostring(A)).."_rowWidth"..tostring(rowWidth)
+  res.name = sanitize("SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..tostring(A).."_rowWidth"..tostring(rowWidth))
 
   if terralib~=nil then res.terraModule = MT.sparseLinebuffer(A, imageW, imageH, rowWidth, ymin, defaultValue) end
 
@@ -2208,7 +2209,7 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
 
   res.sdfInput, res.sdfOutput = {{1,1/T}},{{1,1}}
   res.delay=0
-  res.name = "SSRPartial_"..verilogSanitize(tostring(A)).."_T"..tostring(T)
+  res.name = sanitize("SSRPartial_"..tostring(A).."_T"..tostring(T))
 
   if terralib~=nil then res.terraModule =  MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput) end
 
@@ -2393,7 +2394,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local bytes = (size*A:verilogBits())/8
 
-  res.name = "fifo_SIZE"..size.."_"..verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes)
+  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
 
   local fifo
   if csimOnly then
@@ -2516,7 +2517,7 @@ modules.reduce = memoize(function( f, W, H )
 
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
-  res.name = "reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H)
+  res.name = sanitize("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
 
   if terralib~=nil then res.terraModule = MT.reduce(res,f,W,H) end
 
@@ -2651,7 +2652,7 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
 
   if terralib~=nil then res.terraModule = MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) end
-  res.name = "Underflow_A"..verilogSanitize(tostring(A)).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream)
+  res.name = sanitize("Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor( res.name ):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
@@ -2743,7 +2744,7 @@ modules.cycleCounter = memoize(function( A, count )
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="cycleCounter", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput={{count,count+padCount}}, sdfOutput={{1,1}}, delay=0}
-  res.name = "CycleCounter_A"..verilogSanitize(tostring(A)).."_count"..count
+  res.name = sanitize("CycleCounter_A"..tostring(A).."_count"..count)
 
   if terralib~=nil then res.terraModule = MT.cycleCounter(res,A,count) end
 

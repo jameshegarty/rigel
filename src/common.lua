@@ -625,6 +625,7 @@ function common.verilogSanitize(s)
 
   return s
 end
+common.sanitize = common.verilogSanitize
 
 function common.fileExists(name)
    local f=io.open(name,"r")
