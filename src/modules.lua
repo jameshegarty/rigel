@@ -54,6 +54,9 @@ modules.compose = memoize(function( name, f, g, generatorStr )
   err( type(name)=="string", "first argument to compose must be name of function")
   err( darkroom.isFunction(f), "compose: second argument should be rigel module")
   err( darkroom.isFunction(g), "compose: third argument should be rigel module")
+
+  name = J.verilogSanitize(name)
+
   local inp = rigel.input( g.inputType, g.sdfInput )
   local gvalue = rigel.apply(name.."_g",g,inp)
   return modules.lambda( name, inp, rigel.apply(name.."_f",f,gvalue), nil, nil, generatorStr )
@@ -1071,7 +1074,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
     res.inputType = ITYPE
     res.outputType = rigel.RV(types.array2d(A,T))
     res.delay=0
-    res.name = "UpsampleXSeq_"..verilogSanitize(tostring(A)).."_T_"..tostring(T).."_scale_"..tostring(scale)
+    res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale))
 
     if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, ITYPE ) end
 
@@ -1123,7 +1126,7 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
   res.outputType = rigel.RV(types.array2d(A,T))
   res.delay=0
   res.stateful = true
-  res.name = "UpsampleYSeq_"..verilogSanitize(tostring(A)).."_T_"..tostring(T).."_scale_"..tostring(scale).."_w_"..tostring(W).."_h_"..tostring(H)
+  res.name = verilogSanitize("UpsampleYSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale).."_w_"..tostring(W).."_h_"..tostring(H))
 
   if terralib~=nil then res.terraModule = MT.upsampleYSeq( res,A, W, H, T, scale, ITYPE ) end
 
@@ -1702,7 +1705,7 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = "CropSeq_"..tostring(A):gsub('%W','_').."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_"..tostring(L).."_"..tostring(R).."_"..tostring(B).."_"..tostring(Top)
+  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -1806,7 +1809,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{ (W*H)/T, ((W+L+R)*(H+B+Top))/T}}, {{1,1}}
   res.delay=0
-  res.name = "PadSeq_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..verilogSanitize(tostring(Value))
+  res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
@@ -1896,7 +1899,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   res.stateful = true
 --  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.delay = 0
-  res.name = "ChangeRate_"..verilogSanitize(tostring(A)).."_from"..inputRate.."_to"..outputRate.."_H"..H
+  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
 
   if inputRate>outputRate then -- 8 to 4
     res.sdfInput, res.sdfOutput = {{outputRate,inputRate}},{{1,1}}
@@ -2874,6 +2877,8 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
 
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
+  name = J.verilogSanitize(name)
+
   local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines, generator=generatorStr }
 
   if input==nil then
@@ -3204,6 +3209,8 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
+
+  name = J.verilogSanitize(name)
 
   local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false, generator=generatorStr }
 
