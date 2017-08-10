@@ -14,7 +14,7 @@ if terralib~=nil then CT=require("examplescommonTerra") end
 local C = {}
 
 C.identity = memoize(function(A)
-  local identity = RM.lift( "identity_"..tostring(A), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
+  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
   return identity
 end)
 
@@ -22,15 +22,17 @@ C.cast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
   err(types.isType(B),"cast: B should be type")
   assert(A:isTuple()==false)
-  local docast = RM.lift( "cast_"..tostring(A).."_"..tostring(B), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
+  local docast = RM.lift( "cast_"..J.verilogSanitize(tostring(A)).."_"..J.verilogSanitize(tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
 
 C.tupleToArray = memoize(function(A,N)
+  err(types.isType(A),"tupleToArray: A should be type")
+
   local atup = types.tuple(J.broadcast(A,N))
   local B = types.array2d(A,N)
 
-  local docast = RM.lift( "tupleToArray_"..tostring(A).."_"..tostring(N), atup, B, 0,
+  local docast = RM.lift( "tupleToArray_"..J.verilogSanitize(tostring(A)).."_"..tostring(N), atup, B, 0,
     function(sinp) return S.cast(sinp,B) end, 
     function() return CT.tupleToArray(A,N,atup,B) end, "C.tupleToArray")
 
@@ -690,7 +692,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(types.uint(8),1,downsampleT,T)), out )
+      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
   return modules.lambda("downsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), inp, out,nil,nil,"C.downsampleSeq")

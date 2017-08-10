@@ -1100,7 +1100,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
 
     return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
   else
-    return modules.compose("upsampleXSeq_"..T, modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
+    return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
   end
 end)
 
@@ -1806,7 +1806,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{ (W*H)/T, ((W+L+R)*(H+B+Top))/T}}, {{1,1}}
   res.delay=0
-  res.name = "PadSeq_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value)
+  res.name = "PadSeq_"..verilogSanitize(tostring(A)).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..verilogSanitize(tostring(Value))
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 

@@ -3,6 +3,7 @@ local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
 local err = J.err
+local MT = require "modulesTerra"
 
 CT={}
 
@@ -71,7 +72,7 @@ end
 
 function CT.border(res,A,W,H,L,R,B,T,value)
   local struct Border {}
-  terra Border:reset() end
+
   terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for y=0,H do for x=0,W do 
         if x<L or y<B or x>=W-R or y>=H-T then
@@ -82,12 +83,12 @@ function CT.border(res,A,W,H,L,R,B,T,value)
     end end
   end
 
-  return Border
+  return MT.new(Border)
 end
 
 function CT.scale( res, A, w, h, scaleX, scaleY )
   local struct ScaleModule {}
-  terra ScaleModule:reset() end
+
   terra ScaleModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for y=0,[h*scaleY] do 
       for x=0,[w*scaleX] do
@@ -99,7 +100,7 @@ function CT.scale( res, A, w, h, scaleX, scaleY )
     end
   end
 
-  return ScaleModule
+  return MT.new(ScaleModule)
 end
 
 function CT.broadcast(A,W,H,OT)
@@ -112,7 +113,7 @@ end
 
 function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
   local struct Stencil {}
-  terra Stencil:reset() end
+
   terra Stencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for i=0,[w*h] do
       for y = ymin, ymax+1 do
@@ -126,7 +127,7 @@ function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
     end
   end
 
-  return Stencil
+  return MT.new(Stencil)
 end
 
 function CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType )
@@ -140,7 +141,6 @@ end
 
 function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
   local struct UnpackStencil {}
-  terra UnpackStencil:reset() end
   terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     for i=0,[T] do
       for y=0,[stencilH] do
@@ -151,7 +151,7 @@ function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
     end
   end
 
-  return UnpackStencil
+  return MT.new(UnpackStencil)
 end
 
 function CT.sliceTup(inputType,OT,idxLow)

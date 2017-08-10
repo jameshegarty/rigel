@@ -3,6 +3,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local types = require("types")
 local S = require("systolic")
+local MT = require("modulesTerra")
 
 local fixedNewTerra={}
 
@@ -12,6 +13,8 @@ local function toTerra(self,name)
   local inp
   local stats = {}
   local resetStats = {}
+  local initStats = {}
+  local freeStats = {}
 
   local Module = terralib.types.newstruct(name)
   Module.entries = terralib.newlist( {} )
@@ -107,6 +110,9 @@ local function toTerra(self,name)
         if n.f.stateful then
           table.insert(resetStats, quote mself.[n.name]:reset() end )
         end
+
+        table.insert(initStats, quote mself.[n.name]:init() end )
+        table.insert(freeStats, quote mself.[n.name]:free() end )
       elseif n.kind=="applyUnaryLiftSystolic" then
         local si = S.parameter("inp",n.inputs[1].type)
         res = symbol(n.type:toTerraType())
@@ -188,11 +194,11 @@ local function toTerra(self,name)
       return res
     end)
 
-  return res,stats, inp, Module, mself, resetStats
+  return res,stats, inp, Module, mself, resetStats, initStats, freeStats
 end
 
 function fixedNewTerra.toDarkroom(ast,name)
-  local terraout, stats,terrainp, Module, mself, resetStats = toTerra(ast,name)
+  local terraout, stats,terrainp, Module, mself, resetStats, initStats, freeStats = toTerra(ast,name)
 
   terra Module.methods.process([mself],[terrainp], out:&ast.type:toTerraType() )
     [stats]
@@ -202,8 +208,10 @@ function fixedNewTerra.toDarkroom(ast,name)
   --Module.methods.process:printpretty(true)
 
   terra Module.methods.reset( [mself] ) [resetStats] end
+  terra Module.methods.init( [mself] ) [initStats] end
+  terra Module.methods.free( [mself] ) [freeStats] end
 
-  return Module
+  return MT.new(Module)
 end
 
 return fixedNewTerra

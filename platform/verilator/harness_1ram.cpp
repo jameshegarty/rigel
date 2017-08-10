@@ -120,5 +120,5 @@ int main(int argc, char** argv) {
   top->final();
   delete top;
 
-  printf("Cycles: %d\n", totalCycles);
+  printf("Cycles: %d\n", (int)totalCycles);
 }
