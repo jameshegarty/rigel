@@ -600,8 +600,14 @@ function common.export(t)
 end
 
 function common.verilogSanitize(s)
-  return s:gsub('%W','_')
+  local s = s:gsub('%W','_')
+  s = s:gsub('%__','_')
+  return s
 end
 
+function common.fileExists(name)
+   local f=io.open(name,"r")
+   if f~=nil then io.close(f) return true else return false end
+end
 
 return common
