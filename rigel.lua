@@ -163,6 +163,21 @@ function darkroom.streamCount(A)
   end
 end
 
+-- is this type any type of handshake type?
+function darkroom.isStreaming(A)
+  if darkroom.isHandshake(A) then
+    return true
+  elseif A:isArray() and darkroom.isHandshake(A:arrayOver()) then
+    return true
+  elseif A:isTuple() and darkroom.isHandshake(A.list[1]) then
+    return true
+  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) then
+    return true
+  end
+
+  return false
+end
+
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=function(tab,key)
   local v = rawget(tab, key)

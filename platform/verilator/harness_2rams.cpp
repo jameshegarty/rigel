@@ -13,6 +13,9 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
+  printf("RAMBITS %d %s\n",RAMBITS,RAMFILE);
+  
+
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
@@ -46,6 +49,7 @@ int main(int argc, char** argv) {
   for(int i=0; i<100; i++){
     CLK = !CLK;
     setValid(&(top->process_input),inbpp*inP,false);
+    setValid(&(top->process_input),inbpp*inP+RAMBITS+1,false);
     top->CLK = CLK;
     top->reset = true;
     top->ready_downstream = 1;
@@ -78,7 +82,9 @@ int main(int argc, char** argv) {
 
   const int ADDR_DELAY = 10;
   std::queue<int> addrqueue;
-  unsigned char* dataBuffer = (unsigned char*)(readFile(argv[1]));
+  unsigned char* dataBuffer = (unsigned char*)(readFile(RAMFILE));
+
+  printf("STARTSIM\n");
   
   while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
     if(CLK){
@@ -95,7 +101,7 @@ int main(int argc, char** argv) {
 
 
       bool ramReadValid = addrqueue.size()>=ADDR_DELAY && addrqueue.front()!=-1;
-      setValid( &(top->process_input), inbpp*inP+8+1, ramReadValid );
+      setValid( &(top->process_input), inbpp*inP+RAMBITS+1, ramReadValid );
       //printf("RAMREADVALID %d\n", ramReadValid);
                
       if( top->ready & (unsigned int)(2) ){

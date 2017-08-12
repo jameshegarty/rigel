@@ -1318,7 +1318,7 @@ function systolicASTFunctions:toVerilog( module )
                 res = "(("..res.."["..(n.type:verilogBits()-1).."])?(-"..res.."):("..res.."))"
               else
                 --              return inputs.expr[c] -- must be unsigned
-                assert(false)
+                err(false,"NYI - abs on type "..tostring(n.type))
               end
             elseif n.op=="-" then
               res = "(-"..args[1]..")"
@@ -1414,7 +1414,7 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
   if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
 
   if fn.CE~=nil then
-    err(type(cevar)=="string", "Missing CE. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)
+    err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)
 
     if instance.CEState[module][fn.CE.name]==nil then
       instance.CEState[module][fn.CE.name]=cevar
@@ -1997,7 +1997,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
         local S = {}
         for i=0,31 do 
           local value = self.init[block*32+i+1]
-          assert( value < 256 )
+          err( value < 256 and value>=0, "bram2KSDP: value must be <256 and >=0, but is "..tostring(value)..", block "..tostring(block).." index "..tostring(i) )
           table.insert(S,1,string.format("%02x",value)) 
         end
         initS = initS..".INIT_"..string.format("%02X",block).."(256'h"..table.concat(S,"").."),\n"

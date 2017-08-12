@@ -2399,6 +2399,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   local fifo
   if csimOnly then
     res.systolicModule = fpgamodules.fifonoop(A)
+    res.stateful = false
   else
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -2467,8 +2468,12 @@ modules.lut = memoize(function( inputType, outputType, values )
   rigel.expectBasic( outputType )
 
   local inputCount = math.pow(2, inputType:verilogBits())
-  err( inputCount==#values, "values array has insufficient entries, has "..tonumber(#values).." but should have "..tonumber(inputCount))
+  err( inputCount==#values and J.keycount(values)==inputCount, "values array has insufficient entries, has "..tonumber(#values).." but should have "..tonumber(inputCount))
 
+  for _,v in ipairs(values) do
+    outputType:checkLuaValue(v)
+  end
+  
   local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 1
@@ -2902,7 +2907,7 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
       end
     end)
 
-  if input~=nil and rigel.streamCount(input.type)==0 and rigel.streamCount(output.type)==0 then
+  if input~=nil and rigel.isStreaming(input.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
         if n.kind=="input" or n.kind=="constant" then
@@ -2967,14 +2972,10 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
     
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire(onlyWire)
 
-    if rigel.isHandshake(fn.outputType) then
-      module:parameters{INPUT_COUNT=0, OUTPUT_COUNT=0}
-    end
-
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
-    if rigel.isHandshake(fn.inputType)==false and rigel.isHandshake(fn.outputType)==false then 
+    if rigel.isStreaming(fn.inputType)==false and rigel.isStreaming(fn.outputType)==false then 
       local CE = S.CE("CE")
       process:setCE(CE)
       reset:setCE(CE)

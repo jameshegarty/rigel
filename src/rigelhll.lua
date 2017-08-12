@@ -207,7 +207,7 @@ function RHLL.broadcast(W,H)
 end
 
 function RHLL.cast(ty)
-  return setmetatable({fn=function(t) return C.cast(t.type,ty) end}, SimpleModuleWrapperMT)
+  return setmetatable({fn=function(t) return C.cast(t.type,ty) end, wireFn=stripHS}, SimpleModuleWrapperMT)
 end
 
 function RHLL.linebuffer(t)
@@ -260,11 +260,40 @@ end
 function RHLL.harness(t)
   err( types.isType(t.type), "RHLL.harness: type must be type ")
 
-  local param = R.input(t.type,t.sdfInputRate)
+  --err( R.isBasic(t.type), "RHLL.harness: type should be basic" )
+  
+  --local inpty = RS.HS(t.type)
+  local inpty = t.type
+
+  if t.harness==2 then
+    -- HACK
+    err( R.isBasic(t.ramType), "RHLL.harness 2ram hack: ramType should be basic" )
+    err( R.isBasic(t.type), "RHLL.harness 2ram hack: type should be basic" )
+    inpty = types.tuple{RS.HS(inpty),RS.HS(t.ramType)}
+
+    t.inType=t.type
+    t.inP=1
+  else
+    t.inType=t.type
+  end
+  
+  local param = R.input(inpty,t.sdfInputRate)
   local out = t.fn(param)
   print("HARNESS OUT",out.type)
   t.fn = RS.defineModule{ input=param, output=out, name="RHLLharness"}
-  t.inType=t.type
+
+  if t.harness==2 then
+    -- HACK
+    assert( t.fn.outputType:isTuple() )
+    assert( R.isHandshake(t.fn.outputType.list[1]) )
+    err( R.isHandshake(t.fn.outputType.list[2]),"RHLL.harness 2ram hack expected second tup to be handshake but was:"..tostring(t.fn.outputType) )
+    err( R.extractData(t.fn.outputType.list[2]) == types.uint(32), "RHLL.harness 2ram hack: output addr type should be uint32")
+    
+    t.outP=1
+    t.outType = R.extractData(t.fn.outputType.list[1])
+  end
+    
+  print("RHLLHARNESS",t.inType)
   llharness(t)
 end
 
@@ -330,7 +359,7 @@ RHLL.argminAsync = setmetatable({fn=function(t)
 end}, SimpleModuleWrapperMT)
 
 RHLL.msb = RHLL.lambda(function(x)
-  err( x.type:isUint(), "msb: type must be uint")
+  err( x.type:isUint(), "msb: type must be uint but is "..tostring(x.type))
   local outbits = math.ceil(math.log(x.type:verilogBits())/math.log(2))
   local idx = RHLL.c(types.array2d(RHLL.u(outbits),x.type:verilogBits()), J.range(0,x.type:verilogBits()-1))
   local pow = RHLL.c(types.array2d(x.type,x.type:verilogBits()), J.map(J.range(0,x.type:verilogBits()-1),function(y) return math.pow(2,y) end) )
@@ -341,6 +370,7 @@ end)
 RHLL.b = types.bool()
 RHLL.u8 = types.uint(8)
 RHLL.u16 = types.uint(16)
+RHLL.u32 = types.uint(32)
 RHLL.u = types.uint
 RHLL.i32 = types.int(32)
 RHLL.tup = types.tuple

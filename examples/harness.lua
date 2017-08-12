@@ -321,6 +321,9 @@ function harnessTop(t)
   err(types.isType(iover) and type(inputP)=="number","Error, could not derive input type and P from arguments to harness, type was "..tostring(fn.inputType))
   err(types.isType(oover) and type(outputP)=="number","Error, could not derive output type and P from arguments to harness, type was "..tostring(fn.outputType))
 
+  err( R.isBasic(iover), "Harness error: iover ended up being handshake?")
+  err( R.isBasic(oover), "Harness error: oover ended up being handshake?")
+  
   err( (t.inSize[1]*t.inSize[2]) % inputP == 0, "Error, # of input tokens is non-integer, inSize={"..tostring(t.inSize[1])..","..tostring(t.inSize[2]).."}, inputP="..tostring(inputP))
   local inputCount = (t.inSize[1]*t.inSize[2])/inputP
   err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
@@ -362,7 +365,10 @@ function harnessTop(t)
     local harnessOption = t.harness
     if harnessOption==nil then harnessOption=1 end
 
-    writeMetadata("out/"..t.outFile.."."..backend..".metadata.lua", {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption})
+    local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile}
+    if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
+    
+    writeMetadata("out/"..t.outFile.."."..backend..".metadata.lua", MD)
   end
 
 end
