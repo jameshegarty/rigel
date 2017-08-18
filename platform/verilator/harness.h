@@ -1,8 +1,3 @@
-/*unsigned int divCeil(unsigned int a, unsigned int b){
-  float aa = a;
-  float bb = b;
-  return (unsigned int)(ceil(aa/bb));
-  }*/
 
 unsigned int bitsToBytes(unsigned int bits){
   if(bits<=8){
@@ -14,6 +9,7 @@ unsigned int bitsToBytes(unsigned int bits){
   }else if(bits<=64){
     return 8;
   }else{
+    printf("NYI - bits to bytes %d\n",bits);
     assert(false);
   }
 }
@@ -34,7 +30,7 @@ void setValid(T* signal, unsigned int databits, bool valid){
 template<int N>
 void setValid(WData (*signal)[N], unsigned int databits, bool valid){
   assert(databits<N*32);
-  assert(databits%32==0);
+
   int idx = databits/32; // floor
 
   if(valid){
@@ -55,7 +51,7 @@ bool getValid(T* signal, unsigned int databits){
 template<int N>
 bool getValid(WData (*signal)[N], unsigned int databits){
   assert(databits<N*32);
-  assert(databits%32==0);
+
   int idx = databits/32; // floor
   return ( (*signal)[idx] & (1<<(databits-idx*32)) ) != 0;
 }
@@ -118,23 +114,20 @@ return;
 
 template<int N>
 void setDataBuf(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
-  assert(startPos%32==0);
-  assert(databits%32==0);
+  assert(databits%8==0);
   assert(startPos+databits < N*32);
 
   if(databits==0){
 return;
   }
 
-  for(int j=0; j<(databits)/32; j++){
-    for(int i=0; i<4; i++){
-      unsigned long inp = data[j*4+i];
-      (*signal)[j+(startPos/32)] |= (inp << (i*8));
-    }
+  int startWord = startPos/32; // floor
+      
+  for(int j=0; j<(databits)/8; j++){
+    unsigned long inp = data[j];
+    (*signal)[(j/4)+startWord] |= (inp << ((j%4)*8 + (startPos-startWord*32)));
   }
 }
-
-
 
 template<typename T>
 void getData(T* signal, unsigned int databits, FILE* file){
@@ -156,20 +149,25 @@ void getData(T* signal, unsigned int databits, FILE* file){
 
 template<int N>
 void getData( WData (*signal)[N], unsigned int databits, FILE* file){
-  assert(databits%32==0);
+  assert(databits%8==0);
     
-  for(int j=0; j<databits/32; j++){
-    for(int i=0; i<4; i++){
-      unsigned char ot = (*signal)[j] >> (i*8);
-      fputc(ot,file);
-    }
+  for(int j=0; j<databits/8; j++){
+    unsigned char ot = (*signal)[j/4] >> ((j%4)*8);
+    fputc(ot,file);
   }
 }
 
 // extract 32 bits of data, starting at bit 'startbit'
 template<int N>
 unsigned int getUintData( WData (*signal)[N], unsigned int startbit){
-  assert(false);
+  int startWord = startbit/32;
+
+  unsigned long tmp = (*signal)[startWord+1];
+  tmp = tmp << 32;
+  tmp |= (*signal)[startWord];
+  tmp = tmp >> (startbit-startWord*32);
+
+  return (unsigned int)(tmp);
 }
 
 template<typename T>
@@ -189,6 +187,8 @@ unsigned int getUintData(T* signal, unsigned int startbit){
 
 void* readFile(char* filename){
   FILE *f = fopen(filename, "rb");
+  if(f==NULL){ printf("Error, could not open file %s\n", filename); exit(1); }
+
   fseek(f, 0, SEEK_END);
   long fsize = ftell(f);
   fseek(f, 0, SEEK_SET);  //same as rewind(f);

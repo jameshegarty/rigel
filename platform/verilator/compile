@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# print all commands
+#set -x
+
+# usage: verilogFile metadataFile buildDir outputFile
+# buildDir is a directory where intermediates can be stored (WITHOUT trailing slash)
+
+VERILATOR_INCLUDE_PKGCFG=$(exec pkg-config --variable=includedir verilator)
+VERILATOR_CFLAGS_PKGCFG=$(exec pkg-config --cflags verilator)
+
+VERILATOR_INCLUDE="${VERILATOR_INCLUDE:-$VERILATOR_INCLUDE_PKGCFG}"
+VERILATOR_CFLAGS="${VERILATOR_CFLAGS:-$VERILATOR_CFLAGS_PKGCFG}"
+
+VERILOG_FILE=$1
+METADATA_FILE=$2
+BUILDDIR=$3
+OUTFILE=$4
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+TOP=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE topModule)
+HARNESS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE harness)
+INBPP=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE inputBitsPerPixel)
+
+# HACK
+RAMBITS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE ramBits)
+RAMFILE=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE ramFile)
+
+verilator -cc -Mdir $BUILDDIR $VERILOG_FILE $DIR/RAM128X1D.v $DIR/RAMB16_S36_S36.v $DIR/RAMB16_S18_S18.v $DIR/RAMB16_S9_S9.v $DIR/RAMB16_RIGEL.v --top-module $TOP
+g++ ${VERILATOR_CFLAGS} -I. -DHARNESS=$HARNESS -DINBPP=$INBPP -DRAMBITS=$RAMBITS -DRAMFILE="\"$RAMFILE\"" -DVERILATORCLASS="V${TOP}" -DVERILATORFILE="\"${BUILDDIR}/V${TOP}.h\"" $BUILDDIR/V${TOP}.cpp $BUILDDIR/V${TOP}__Syms.cpp ${VERILATOR_INCLUDE}/verilated.cpp $DIR/harness.cpp -o $OUTFILE
