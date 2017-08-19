@@ -1,5 +1,6 @@
 local R = require "rigel"
 local RM = require "modules"
+local RS = require "rigelSimple"
 local types = require "types"
 local C = require "examplescommon"
 local P = {}
@@ -78,13 +79,14 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()
   local INP_TYPE = types.tuple{DATA_TYPE,TAP_TYPE}
   local inp = R.input( R.Handshake(INP_TYPE) )
+  local inpL, inpR = RS.fanOut{input=inp, branches=2}
   local borderValue = 0
 
   local fifos = {}
   local statements = {}
 
-  local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inp)
-  local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inp)
+  local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inpL)
+  local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inpR)
 
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end

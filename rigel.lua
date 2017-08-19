@@ -117,7 +117,9 @@ function darkroom.hasReady(a)
   elseif darkroom.isRV(a) then return true
   elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
     return true
-  elseif darkroom.isHandshakeArray(a) then
+  elseif a:isArray() and darkroom.isHandshake(a:arrayOver()) then
+    return true
+  elseif darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false

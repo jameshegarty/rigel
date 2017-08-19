@@ -95,12 +95,17 @@ else
 end
 
 local inp = R.input(R.Handshake(FNTYPE))
+local inpB = R.apply("inpB", RM.broadcastStream(FNTYPE,2), inp)
+local inp0 = R.selectStream("inp0",inpB,0)
+local inp1 = R.selectStream("inp1",inpB,1)
+--local inp0, inp1 = RS.fanOut{input=inp, branches=2}
+
 local out
 local inptaps
 
 if TAPS then
-  out = R.apply( "i0", RM.makeHandshake(C.index(FNTYPE,0)), inp)
-  inptaps = R.apply("idx1",RM.makeHandshake(C.index(FNTYPE,1)), inp)
+  out = R.apply( "i0", RM.makeHandshake(C.index(FNTYPE,0)), inp0)
+  inptaps = R.apply("idx1",RM.makeHandshake(C.index(FNTYPE,1)), inp1)
   inptaps = R.apply("idx11",RM.makeHandshake(C.index(TTYPE,0)), inptaps)
   inptaps = R.apply("IIT", RM.makeHandshake(C.broadcast(types.uint(32):makeConst(),2)), inptaps)
 else

@@ -29,7 +29,7 @@ function fixed.isFixedType(ty)
 end
 
 function fixed.expectFixed(ty)
-  err( fixed.isFixedType(ty), "Expected fixed point type")
+  err( fixed.isFixedType(ty), "Expected fixed point type but was "..tostring(ty))
 end
 
 function fixed.extract(ty)

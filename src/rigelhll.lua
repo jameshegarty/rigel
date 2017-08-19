@@ -23,6 +23,7 @@ local function devec(t)
 end
 
 RHLL.fanIn =function(t) return RS.fanIn(devec(t)) end
+RHLL.fanOut = RS.fanOut
 RHLL.concat = function(t) return RS.concat(devec(t)) end
 
 -- a metatable that provides a __call function with some auto converstions for making it easier to connect to modules
