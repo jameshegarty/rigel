@@ -1357,20 +1357,21 @@ function MT.lambdaCompile(fn)
     fn.output:visitEachReverseBreakout(
       function(n, args)
 
-        -- special case: the only time a handshake node should have multiple consumers is if this is a broadcastStream!!
-        if n.kind=="apply" and (n.fn.kind=="broadcastStream" or n.fn.kind=="demux") then
+        -- special case: multiple stream output with multiple consumers
+        -- the only time this should happen is if everything is selectstreamed
+        if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
           -- all of then N consumers should be selectStream
           local list = {}
           for dsNode, _ in n:parents(fn.output) do
             if dsNode.kind=="selectStream" then
               err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
-              list[dsNode.i+1] = args[dsNode]
+              list[dsNode.i+1] = `[args[dsNode]][1]
             else
-              err( false, "Error, a boardcastStream is being consumed by something other than a selectStream? "..n.loc )
+              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
             end
           end
 
-          err( n:outputStreams()==#list and #list==J.keycount(list),"broadcastStream error: incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n.fn.N)..". "..n.loc)
+          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
 
           table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
     return {`mself.[n.name].ready}
@@ -1434,7 +1435,8 @@ function MT.lambdaCompile(fn)
             table.insert( res, `true )
           end
         elseif n.kind=="selectStream" then
-          res = {arg}
+          -- dirty trick: the only case that is not covered by the 'special' case at the top is an array of size 1. So always do this, even though it is not correct in general
+          res = {`array(arg)}
         else
           print(n.kind)
           assert(false)

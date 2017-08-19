@@ -52,6 +52,7 @@ for depth=1,TARGET_DEPTH do
 end
 
 local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp1)
+--print("TOT",totT)
 local tapinpL = J.pack(RS.fanOut{input=tapinp, branches=totT})
   
 curT = T
