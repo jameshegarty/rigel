@@ -1365,7 +1365,7 @@ function MT.lambdaCompile(fn)
           for dsNode, _ in n:parents(fn.output) do
             if dsNode.kind=="selectStream" then
               err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
-              list[dsNode.i+1] = `[args[dsNode]][1]
+              list[dsNode.i+1] = `[args[dsNode]][0]
             else
               err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
             end
