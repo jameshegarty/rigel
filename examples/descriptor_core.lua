@@ -43,9 +43,10 @@ descriptor.descriptor = sift.siftDescriptor(types.int(8))
 
 function norm()
   local inp = R.input( R.HS( R.tuple{ R.array(R.int32,1), R.array(R.float,1) } ) )
+  local inp0, inp1 = R.fanOut{input=inp, branches=2}
 
-  local desc_sum = R.index{input=R.index{input=inp, key=1 }, key=0}
-  local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp,key=0 },key=0} )
+  local desc_sum = R.index{input=R.index{input=inp0, key=1 }, key=0}
+  local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp1,key=0 },key=0} )
   
   local desc = rigel.apply("pt",RM.packTuple{R.float,R.float},rigel.concat("PTT",{desc0,desc_sum}))
   local desc = rigel.apply("ptt",RM.makeHandshake(sift.fixedDiv(R.float)),desc)

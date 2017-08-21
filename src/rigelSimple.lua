@@ -280,31 +280,19 @@ end
 
 
 function RS.fanOut(t)
-  if t.input.kind=="apply" or t.input.kind=="applyMethod" then
-    local ty
-    if t.input.kind=="apply" then
-      ty = t.input.fn.outputType
-    else
-      ty = t.input.inst.fn.outputType
-    end
+  local ty = t.input.type
 
-    --print("FANOUTTYPE",ty)
-    assert( R.isHandshake(ty))
-    ty = R.extractData(ty)
-    ccnt = ccnt + 1
-    local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
-    
-    local res = {}
-    for i=1,t.branches do
-      ccnt = ccnt + 1
-      table.insert(res, R.selectStream("v"..tostring(ccnt), out, i-1) )
-    end
-    return unpack(res)
-  else
-    print(t.input.kind)
-    assert(false)
-  end
+  err( R.isHandshake(ty), "calling fanOut on a non handshake type "..tostring(t.input.type))
+  ty = R.extractData(ty)
+  ccnt = ccnt + 1
+  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
   
+  local res = {}
+  for i=1,t.branches do
+    ccnt = ccnt + 1
+    table.insert(res, R.selectStream("v"..tostring(ccnt), out, i-1) )
+  end
+  return unpack(res)
 end
 
 function RS.fanIn(t)

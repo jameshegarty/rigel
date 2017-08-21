@@ -1148,11 +1148,17 @@ end
 
 function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicOutput)
   err(types.isType(inputType),"modules terra lift: input type must be type")
-  err(types.isType(outputType),"modules terra lift: output type must be type")
+
 
   local struct LiftModule {}
 
   if terraFunction==nil and systolicInput~=nil and systolicOutput~=nil then
+    if outputType==nil then
+      outputType = systolicOutput.type
+    end
+
+    err(types.isType(outputType),"modules terra lift: output type must be type")
+    
     local inpS = symbol(systolicInput.type:toTerraType())
     local symbs = {}
     symbs[systolicInput.name] = inpS
@@ -1162,6 +1168,7 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
       @out = [terraOut]
     end
   else
+    err(types.isType(outputType),"modules terra lift: output type must be type")
     terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
   end
 
@@ -1347,83 +1354,96 @@ function MT.lambdaCompile(fn)
     
     -- build ready calculation
   if rigel.isBasic(fn.output.type)==false then
-    fn.output:visitEachReverse(
-      function(n, inputs)
-        local inputList = {}
-        for parentNode,v in pairs(inputs) do
-          if parentNode.kind=="selectStream" then
-              assert(inputList[parentNode.i+1]==nil)
-              inputList[parentNode.i+1] = v[1]
-          elseif #parentNode.inputs==1 or (parentNode.kind=="concat" and parentNode.inputs[1]:outputStreams()==0) then
-            table.insert( inputList, v[1] )
-          elseif ((parentNode.kind=="concatArray2d" or parentNode.kind=="concat") and parentNode.inputs[1]:outputStreams()~=0) or parentNode.kind=="statements" then
-            local idx = v[2]-1
-            table.insert( inputList, `[v[1]][idx] )
-          else
-            -- is there some other way to cross the streams?
-            print("KIND",parentNode.kind, parentNode.packStreams)
+    fn.output:visitEachReverseBreakout(
+      function(n, args)
+
+        -- special case: multiple stream output with multiple consumers
+        -- the only time this should happen is if everything is selectstreamed
+        if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
+          -- all of then N consumers should be selectStream
+          local list = {}
+          for dsNode, _ in n:parents(fn.output) do
+            if dsNode.kind=="selectStream" then
+              err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
+              list[dsNode.i+1] = `[args[dsNode]][0]
+            else
+              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
+            end
+          end
+
+          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
+
+          table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+    return {`mself.[n.name].ready}
+        end
+
+        local arg
+  
+        if J.keycount(args)==0 then
+          -- special case: the input node
+          arg = readyInput
+        else
+          if J.keycount(args)>1 then
+            print("Error: a handshook node ("..tostring(n.name)..") has multiple consumers! This should only happen with broadcastStream! "..n.loc)
+            for parentNode,parentValue in pairs(args) do
+              print("Consumer "..tostring(parentNode).." "..parentNode.loc)
+            end
             assert(false)
+          end
+          
+          for k,v in pairs(args) do
+            assert(terralib.isquote(v) or terralib.issymbol(v))
+            arg=v
           end
         end
 
-        if #inputList~=J.keycount(inputList) then
-          print("Strange downstream list ",n.name)
-          for k,v in pairs(inputList) do print("K",k,"V",v) end
-          assert(false)
-        end
-
-        -- ready bit for this node is AND of all consumers
-        local input = J.foldt( inputList, function(a,b) return `(a and b) end, readyInput )
-
+        assert(rigel.hasReady(fn.output.type)==false or terralib.isquote(arg) or terralib.issymbol(arg))
+        
         local res
         if n.kind=="input" then
           assert(readyOutput==nil)
-          readyOutput = input
+          readyOutput = arg
         elseif n.kind=="apply" then
-          if rigel.isHandshake(n.fn.outputType) or  rigel.isRV(n.fn.inputType) or rigel.isHandshakeArray(n.fn.outputType) or rigel.isHandshakeTmuxed(n.fn.outputType) then
-            table.insert( readyStats, quote mself.[n.name]:calculateReady(input) end )
-            res = `mself.[n.name].ready
-          elseif n.fn.outputType:isArray() and rigel.isHandshake(n.fn.outputType:arrayOver()) then
-            table.insert( readyStats, quote mself.[n.name]:calculateReady(array(inputList)) end )
-            res = `mself.[n.name].ready
-          else
+          --print("APPLY",n.name,n.fn.kind,n.fn.inputType, n.fn.outputType)
+
+          if rigel.hasReady(n.fn.outputType)==false or rigel.isV(n.fn.inputType) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady() end )
-            res = `mself.[n.name].ready
+            res = {`mself.[n.name].ready}
+          else
+            table.insert( readyStats, quote mself.[n.name]:calculateReady(arg) end )
+            res = {`mself.[n.name].ready}
           end
         elseif n.kind=="applyMethod" then
           if n.fnname=="load" then 
             -- load has nothing upstream, so whatever
-            table.insert( readyStats, quote mself.[n.inst.name]:calculateLoadReady(input) end ) 
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateLoadReady(arg) end ) 
           elseif n.fnname=="store" then
             -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
             table.insert( readyStats, quote mself.[n.inst.name]:calculateStoreReady() end ) 
-            res = `mself.[n.inst.name].ready
+            res = {`mself.[n.inst.name].ready}
           else
             assert(false)
           end
         elseif n.kind=="concat" or n.kind=="concatArray2d" then
-          if n.inputs[1]:outputStreams()==0 then
-            res = input
-          else
-            assert( J.keycount(inputs)== 1) -- NYI - multiple consumers - we would need to AND them together for each component
-            res = inputList[1]
+          res = {}
+          for k,_ in ipairs(n.inputs) do
+            res[k] = `[arg][ [k-1] ]
           end
         elseif n.kind=="statements" then
-          local L = {readyInput}
+          res = {readyInput}
           for i=2,#n.inputs do 
-            table.insert( L, `true )
+            table.insert( res, `true )
           end
-          res = `array(L)
-        elseif n.kind=="constant" or n.kind=="extractState" then
         elseif n.kind=="selectStream" then
-          res = input
+          -- dirty trick: the only case that is not covered by the 'special' case at the top is an array of size 1. So always do this, even though it is not correct in general
+          res = {`array(arg)}
         else
           print(n.kind)
           assert(false)
         end
 
         return res
-      end, true)
+      end)
   end
 
   if rigel.isRV(fn.inputType) then
@@ -1526,13 +1546,14 @@ function MT.lambdaCompile(fn)
             assert(false)
           end
         elseif n.kind=="constant" then
-          if n.type:isArray() then
-            J.map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
-          elseif n.type:isInt() or n.type:isUint() then
-            table.insert( stats, quote (@out) = n.value end)
-          else
-            assert(false)
-          end
+          table.insert( stats, quote (@out) = [n.type:valueToTerra(n.value)] end )
+          --if n.type:isArray() then
+          --  J.map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
+          --elseif n.type:isInt() or n.type:isUint() then
+          --  table.insert( stats, quote (@out) = n.value end)
+          --else
+          --  assert(false)
+          --end
 
           return out
         elseif n.kind=="concat" then

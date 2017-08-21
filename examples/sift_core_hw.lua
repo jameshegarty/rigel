@@ -300,11 +300,12 @@ function sift.siftKernel(dxdyType)
   local inp_pos = C.fifo( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true) -- fifo size can also be 1 (tested in SW)
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
   local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "posfifo")
+  local pos0, pos1 = RS.fanOut{input=pos,branches=2}
 
 --  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
-  local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos)
+  local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos0)
   local posX = C.fifo( fifos, statements, posType, posX, 1024, "pxfifo" )
-  local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos)
+  local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos1)
   local posY = C.fifo( fifos, statements, posType, posY, 1024, "pyfifo" )
 
   local inp_dxdy = C.fifo( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true) -- fifo size can also be 1 (tested in SW)

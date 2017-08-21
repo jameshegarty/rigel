@@ -1,4 +1,5 @@
 local R = require "rigel"
+local RS = require "rigelSimple"
 local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
@@ -49,8 +50,9 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
   local HST = types.tuple{RW_TYPE,TAP_TYPE}
   local hsfninp_raw = R.input( R.Handshake(HST) )
-  local hsfninp = R.apply( "idx0", RM.makeHandshake(C.index(HST,0)), hsfninp_raw )
-  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), hsfninp_raw )
+  local inp0, inp1 = RS.fanOut{input=hsfninp_raw,branches=2}
+  local hsfninp = R.apply( "idx0", RM.makeHandshake(C.index(HST,0)), inp0 )
+  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), inp1 )
   local out = hsfninp
   
   local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,T)), out )

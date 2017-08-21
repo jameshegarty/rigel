@@ -3021,16 +3021,16 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
       -- if that input is 0 streams, out[i] is nil
 
       fn.output:visitEachReverse(
-        function(n, inputs)
+        function(n, args)
 
           local input
 
-          for k,i in pairs(inputs) do
+          for k,i in pairs(args) do
             local parentKey = i[2]
             local value = i[1]
             local thisi = value[parentKey]
 
-            if n:outputStreams()==1 then
+            if rigel.isHandshake(n.type) then
               assert(systolicAST.isSystolicAST(thisi))
               assert(thisi.type:isBool())
               
@@ -3039,11 +3039,11 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
               else
                 input = S.__and(input,thisi)
               end
-            elseif n:outputStreams()>1 then
+            elseif n:outputStreams()>1 or (n.type:isArray() and rigel.isHandshake(n.type:arrayOver())) then
               assert(systolicAST.isSystolicAST(thisi))
 
               if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArray(n.type) then
-                assert(J.keycount(inputs)==1) -- NYI
+                assert(J.keycount(args)==1) -- NYI
                 input = thisi
               else
                 assert(thisi.type:isArray() and thisi.type:arrayOver():isBool())
@@ -3064,7 +3064,7 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
             end
           end
 
-          if J.keycount(inputs)==0 then
+          if J.keycount(args)==0 then
             -- this is the output of the pipeline
             assert(readyinp==nil)
             
@@ -3141,6 +3141,7 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
                 res[1][i] = S.constant(true,types.bool())
               end
             end
+
             res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
           else
             print(n.kind)
@@ -3151,10 +3152,10 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
           err( #n.inputs==0 or type(res)=="table","res should be table "..n.kind.." inputs "..tostring(#n.inputs))
               
           for k,i in ipairs(n.inputs) do
-            if i:outputStreams()==1 then
+            if rigel.isHandshake(i.type) then
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
-              err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type) )
-            elseif i:outputStreams()>1 then
+              err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." (type "..tostring(i.type)..", name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
+            elseif i:outputStreams()>1 or (i.type:isArray() and rigel.isHandshake(i.type:arrayOver())) then
 
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               if(rigel.isHandshakeTmuxed(i.type)) then
@@ -3167,6 +3168,7 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
             elseif i:outputStreams()==0 then
               err(res[k]==nil, "incorrect ready bit output format "..n.kind.." - "..n.loc)
             else
+              print("NYI "..tostring(i.type))
               assert(false)
             end
           end

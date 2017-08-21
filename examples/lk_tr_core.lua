@@ -152,9 +152,21 @@ function makeA( T, dType, window, bits )
 
   local stt = types.array2d(dType, window*T, window)
   local inpt = types.tuple{ stt, stt }
-  local inp = R.input( R.Handshake(inpt) )
-  local Fdx = R.apply("fdx", RM.makeHandshake(C.index(inpt,0)), inp)
-  local Fdy = R.apply("fdy", RM.makeHandshake(C.index(inpt,1)), inp)
+  local input = R.input( R.Handshake(inpt) )
+  local inputB = R.apply("inpB", RM.broadcastStream(inpt,2),input)
+  local input0 = R.selectStream("input0",inputB,0)
+  local input1 = R.selectStream("input1",inputB,1)
+  
+  local Fdx = R.apply("fdx", RM.makeHandshake(C.index(inpt,0)), input0)
+  local FdxB = R.apply("fdxB", RM.broadcastStream(stt,2),Fdx)
+  local Fdx0 = R.selectStream("fdx0",FdxB,0)
+  local Fdx1 = R.selectStream("fdx1",FdxB,1)
+  
+  local Fdy = R.apply("fdy", RM.makeHandshake(C.index(inpt,1)), input1)
+  --local Fdy0, Fdy1 = RS.fanOut{input=Fdy, branches=2}
+  local FdyB = R.apply("fdyB", RM.broadcastStream(stt,2),Fdy)
+  local Fdy0 = R.selectStream("fdy0",FdyB,0)
+  local Fdy1 = R.selectStream("fdy1",FdyB,1)
 
   local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
   bits.Apartial[3] = partial[3]
@@ -165,19 +177,19 @@ function makeA( T, dType, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o0",{Fdx,Fdx}) )
+  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o0",{Fdx0,Fdx0}) )
   local out0 = R.apply("out0", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp0 )
   local out0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out0 )
   local out0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out0 )
 
-  local inp1 = R.apply("inp1", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o1",{Fdx,Fdy}) )
+  local inp1 = R.apply("inp1", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o1",{Fdx1,Fdy0}) )
   local out1 = R.apply("out1", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp1 )
   local out1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out1 )
   local out1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out1 )
 
   local out2 = out1
 
-  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o3",{Fdy,Fdy}) )
+  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o3",{Fdy1,Fdy1}) )
   local out3 = R.apply("out3", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp3 )
   local out3 = R.apply("out3red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out3 )
   local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )
@@ -186,7 +198,7 @@ function makeA( T, dType, window, bits )
   out = R.apply("PT",RM.packTuple({partial_type,partial_type,partial_type,partial_type}),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,4)),out)
 
-  return RM.lambda("A", inp, out ), partial_type
+  return RM.lambda("A", input, out ), partial_type
 end
 
 function minus(ty)
@@ -232,7 +244,13 @@ function makeB( T, dtype, window, bits )
   --print("GMF type", gmf_type)
   cost = cost + gmf_cost*window*window
   gmf = R.apply("SSM",RM.makeHandshake(RM.map(m,window*T,window)), gmf)
-  gmf = FIFO( fifos, statements, types.array2d(gmf_type,window*T,window), gmf)
+  local GMFT = types.array2d(gmf_type,window*T,window)
+  gmf = FIFO( fifos, statements, GMFT, gmf)
+
+  local gmfB = R.apply("inpB", RM.broadcastStream(GMFT,2),gmf)
+  local gmf0 = R.selectStream("inp0",gmfB,0)
+  local gmf1 = R.selectStream("inp1",gmfB,1)
+
   ---------
 
   local partial = makePartial( dtype, gmf_type, bits.Bpartial[1], bits.Bpartial[2] )
@@ -244,13 +262,13 @@ function makeB( T, dtype, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local out_0 = R.concat("o0tup",{Fdx, gmf})
+  local out_0 = R.concat("o0tup",{Fdx, gmf0})
   local out_0 = R.apply("o0P", C.SoAtoAoSHandshake(window*T,window,{dtype, gmf_type}), out_0)
   local out_0 = R.apply("o0", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_0)
   local out_0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_0 )
   local out_0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_0 )
 
-  local out_1 = R.concat("o1tup",{Fdy, gmf})
+  local out_1 = R.concat("o1tup",{Fdy, gmf1})
   local out_1 = R.apply("o1P", C.SoAtoAoSHandshake(window*T,window,{dtype,gmf_type}), out_1)
   local out_1 = R.apply("o1", RM.makeHandshake(RM.map(partialfn, window*T, window)), out_1)
   local out_1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out_1 )
@@ -318,8 +336,13 @@ function makeLK( internalT, internalW, internalH, window, bits )
 
   local INPTYPE = types.array2d(types.uint(8),2)
   local inp = R.input(R.Handshake(INPTYPE))
-  local frame0 = R.apply("f0", RM.makeHandshake(C.index(INPTYPE, 0 )), inp)
-  local frame1 = R.apply("f1", RM.makeHandshake(C.index(INPTYPE, 1 )), inp)
+
+  local inpB = R.apply("inpB", RM.broadcastStream(INPTYPE,2),inp)
+  local inp0 = R.selectStream("inp0",inpB,0)
+  local inp1 = R.selectStream("inp1",inpB,1)
+
+  local frame0 = R.apply("f0", RM.makeHandshake(C.index(INPTYPE, 0 )), inp0)
+  local frame1 = R.apply("f1", RM.makeHandshake(C.index(INPTYPE, 1 )), inp1)
 
 
   local frame0_arr = R.apply("f0_arr", RM.makeHandshake(C.arrayop(types.uint(8),1)), frame0)

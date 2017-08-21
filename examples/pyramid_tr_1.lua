@@ -1,10 +1,12 @@
 local R = require "rigel"
 local RM = require "modules"
+local RS = require "rigelSimple"
 local types = require("types")
 local harness = require "harness"
 local C = require "examplescommon"
 local P = require "pyramid_core"
 local SDFRate = require "sdfrate"
+local J = require "common"
 
 T = 4 -- throughput
 outputT = 8
@@ -35,14 +37,24 @@ local DATA_TYPE = types.array2d(A,8)
 local HST = types.tuple{DATA_TYPE,TAP_TYPE}
 
 local inp = R.input( R.Handshake(HST) )
+local inp0, inp1 = RS.fanOut{input=inp,branches=2}
 
-local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp)
+local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp0)
 if T<8 then
   out = R.apply("CRtop", RM.liftHandshake( RM.changeRate(A,1,8,T)), out)
 end
 
-local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp)
+local totT = 0
+local totTT = T
+for depth=1,TARGET_DEPTH do
+  if totTT>1 then  totT=totT+1 end
+  if depth>1 then totTT=totTT/4; end
+end
 
+local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp1)
+--print("TOT",totT)
+local tapinpL = J.pack(RS.fanOut{input=tapinp, branches=totT})
+  
 curT = T
 --vecT = T
 curW = inputW
@@ -61,7 +73,7 @@ for depth=1,TARGET_DEPTH do
 
   if curT>1 then
     PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false)
-    local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,{out,tapinp}))
+    local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,{out,tapinpL[depth]}))
     out = R.apply("p"..depth, PI, piinp)
   else
     PI = P.pyramidIterTR(depth,curT,curW,curH,ConvWidth,NOFIFO)

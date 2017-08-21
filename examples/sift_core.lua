@@ -1,4 +1,5 @@
 local R = require "rigel"
+local RS = require "rigelSimple"
 local RM = require "modules"
 local types = require("types")
 local S = require("systolic")
@@ -258,10 +259,11 @@ local function siftKernel(dxdyType)
   local inp_pos = C.fifo( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
   local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "posfifo")
+  local posL, posR = RS.fanOut{input=pos,branches=2}
 --  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
-  local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos)
+  local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),posL)
   local posX = C.fifo( fifos, statements, posType, posX, 1024, "pxfifo" )
-  local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos)
+  local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),posR)
   local posY = C.fifo( fifos, statements, posType, posY, 1024, "pyfifo" )
 
   local inp_dxdy = C.fifo( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true)

@@ -17,9 +17,17 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outpu
     
     local ITYPE = types.tuple{types.null(),fixedTapInputType}
     inpSymb = R.input( R.Handshake(ITYPE) )
+
+    local inpL, inpR = inpSymb, inpSymb
+
+    if tapType~=nil then
+      local O = R.apply("bstream",RM.broadcastStream(ITYPE,2),inpSymb)
+      inpL = R.selectStream("b0",O,0)
+      inpR = R.selectStream("b1",O,1)
+    end
     
-    local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpSymb)
-    local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpSymb)
+    local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpL)
+    local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpR)
     
     out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true),inpdata)
     local hsfninp = out

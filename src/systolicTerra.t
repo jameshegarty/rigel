@@ -1,4 +1,6 @@
 local J = require "common"
+local cstdlib = terralib.includec("stdlib.h")
+local err = J.err
 
 -- return a terra quote
 -- symbols: this is a map of parameter names to terra values
@@ -17,8 +19,32 @@ function systolicASTFunctions:toTerra( symbols )
           res = `[args[1]] and [args[2]]
         elseif n.op=="==" then
           res = `[args[1]] == [args[2]]
+        elseif n.op=="+" then
+          res = `[args[1]] + [args[2]]
+        elseif n.op=="-" then
+          res = `[args[1]] - [args[2]]
+        elseif n.op=="*" then
+          res = `[args[1]] * [args[2]]
+        elseif n.op==">>" then
+          res = `[args[1]] >> [args[2]]
+        elseif n.op=="<<" then
+          res = `[args[1]] << [args[2]]
+        elseif n.op=="<" then
+          res = `[args[1]] < [args[2]]
         else
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
+        end
+      elseif n.kind=="unary" then
+        if n.op=="abs" then
+          if n.inputs[1].type:isInt() then
+            res = `cstdlib.abs([args[1]])
+          else
+            err(false,"systolicAST:toTerra NYI abs with type "..tostring(n.inputs[1].type))
+          end
+        elseif n.op=="-" then
+          res = `-[args[1]]
+        else
+          err(false,"systolicAST:toTerra unary NYI: "..n.op)
         end
       elseif n.kind=="select" then
         res = `terralib.select([args[1]], [args[2]], [args[3]] )
@@ -75,7 +101,12 @@ function systolicASTFunctions:toTerra( symbols )
           res = symbol(n.type:toTerraType())
           table.insert(stats,quote var [res]; res = [args[1]]._0 end)
         elseif n.inputs[1].type:isBits() and n.type:isUint() and n.inputs[1].type.precision==n.type.precision then
-	  res = args[1]
+          res = args[1]
+        elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
+          err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
+          assert( n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 )
+          
+          res = `[n.type:toTerraType()]([args[1]])
         else
           err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
         end
@@ -91,13 +122,13 @@ function systolicASTFunctions:toTerra( symbols )
       elseif n.kind=="bitSlice" then
         local s = symbol(n.type:toTerraType())
         local q = quote
-	  var sft = [args[1]] >> [n.low]
+          var sft = [args[1]] >> [n.low]
           var mask : n.inputs[1].type:toTerraType() = 1
           mask = (mask << [n.high-n.low+1]) - 1
-	  var [s] = sft and mask
+          var [s] = sft and mask
         end
-	table.insert(stats,q)
-	res = s
+        table.insert(stats,q)
+        res = s
       else
         err(false,"Error, systolicAST:toTerra NYI:"..n.kind)
       end

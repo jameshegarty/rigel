@@ -117,7 +117,9 @@ function darkroom.hasReady(a)
   elseif darkroom.isRV(a) then return true
   elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
     return true
-  elseif darkroom.isHandshakeArray(a) then
+  elseif a:isArray() and darkroom.isHandshake(a:arrayOver()) then
+    return true
+  elseif darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
@@ -150,7 +152,9 @@ function darkroom.extractValid(a)
 end
 
 function darkroom.streamCount(A)
-  if darkroom.isHandshake(A) then
+  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) then
+    return 0
+  elseif darkroom.isHandshake(A) then
     return 1
   elseif A:isArray() and darkroom.isHandshake(A:arrayOver()) then
     return A:channels()
@@ -159,7 +163,7 @@ function darkroom.streamCount(A)
   elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) then
     return A.params.N
   else
-    return 0
+    err(false, "NYI streamCount "..tostring(A))
   end
 end
 

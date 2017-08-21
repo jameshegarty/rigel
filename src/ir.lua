@@ -41,6 +41,33 @@ function IR.IRFunctions:visitEachReverse( func, includeKey )
   end
 end
 
+-- compare to visitEachReverse above.
+-- if a node has multiple inputs (real inputs - i.e. #node.inputs>1), func
+-- provides an array of values that is then broken out to each of the N inputs.
+-- func for 'node' must always provide a lua array of size #node.inputs.
+-- the key of the breakout will match the key of the node.input array
+function IR.IRFunctions:visitEachReverseBreakout( func )
+  local order = {}
+  self:visitEach( function(n) table.insert(order,n) end )
+  local i = #order
+  local value = {}
+  while i>=1 do
+    local node = order[i]
+    local argList = {}
+    for parentNode,parentKey in node:parents(self) do
+      argList[parentNode] = value[parentNode][parentKey]
+    end
+    value[node] = func( node, argList )
+
+    if #node.inputs>1 then
+      J.err( type(value[node])=="table", "visitEachReverseBreakout: func must return lua array")
+      J.err( #value[node]==#node.inputs and J.keycount(value[node])==#value[node], "visitEachReverseBreakout: func must return lua array of size #node.inputs ("..tostring(#node.inputs)..") but is "..tostring(#value[node]))
+    end
+
+    i = i - 1
+  end
+end
+
 function IR.IRFunctions:process( func )
   return self:visitEach( 
     function( n, inputs )
