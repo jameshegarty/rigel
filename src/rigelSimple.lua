@@ -253,6 +253,11 @@ function RS.concat(t)
   return R.concat( "v"..tostring(ccnt), t )
 end
 
+function RS.selectStream(t)
+  ccnt = ccnt + 1
+  return R.selectStream( "v"..tostring(ccnt), t.input, t.index )
+end
+
 function RS.fifo(t)
   local ty = t.input.type
   assert( R.isHandshake(ty))
