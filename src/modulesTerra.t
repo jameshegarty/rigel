@@ -1041,6 +1041,87 @@ function MT.fifo( res, A, size, nostall, W, H, T, csimOnly)
 end
 
 
+FR = terralib.includecstring([[
+#include <stdio.h>
+#include <stdlib.h>
+void fr(FILE* file,unsigned char** mem, unsigned int* fsize){
+fseek(file,0,SEEK_END);
+*fsize = ftell(file);
+fseek(file,0,SEEK_SET);
+*mem = malloc(*fsize);
+fread(*mem,1,*fsize,file);
+}
+
+]])
+
+function MT.dram( res, A, delay, filename )
+  local struct Dram { fifo : simmodules.fifo(int,delay,"dramfifo"), ready:bool, readyDownstream:bool, mem:&A:toTerraType(), fsize:uint }
+  terra Dram:reset() self.fifo:reset() end
+
+  terra Dram:init() 
+    var file = cstdio.fopen(filename, "rb") 
+    [J.darkroomAssert](file~=nil, ["file "..filename.." doesnt exist"])
+
+    --var n : int = 0
+    --while cstdio.fread(self.mem+n,1,[A:sizeof()],file)>0 do n=n+1 end
+    FR.fr(file,[&&uint8](&self.mem),&self.fsize)
+    
+    cstdio.fclose(file)
+  end
+
+  terra Dram:free() cstdlib.free(self.mem) end
+
+  local VV = false
+
+  terra Dram:store( inp : &rigel.lower(res.inputType):toTerraType())
+    if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM ADDR REQUEST ready:%d valid:%d\n",self.ready,valid(inp)) end
+    -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
+    -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
+    if valid(inp) and self.ready then
+      var a :int = data(inp)
+      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM STORE, valid input %d\n",a) end
+
+      if a>self.fsize then
+        cstdio.printf("DRAM SEGFAULT %d\n",a)
+      end
+      
+      self.fifo:pushBack(&a)
+    elseif self.ready then
+      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM STORE, invalid input, ready=%d\n",self.ready) end
+      var a : int = -1
+      self.fifo:pushBack(&a)
+    end
+  end
+
+  terra Dram:load( out : &rigel.lower(res.outputType):toTerraType())
+    if self.readyDownstream then
+      if self.fifo:hasData() and @(self.fifo:peekFront(0))>=0 then
+        var addr : int = @(self.fifo:popFront())
+        if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, hasData. addr=%d size=%d\n", addr,self.fifo:size()) end
+        valid(out) = true
+
+
+        data(out) = self.mem[addr]
+      else
+        if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, no data. sizee=%d\n", self.fifo:size()) end
+        valid(out) = false
+
+        if self.fifo:hasData() then
+          -- remove bubbles
+          self.fifo:popFront()
+        end
+      end
+    else
+      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, not ready. FIFO size: %d\n", self.fifo:size()) end
+    end
+  end
+
+  terra Dram:calculateStoreReady() self.ready = (self.fifo:full()==false) end
+  terra Dram:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
+
+  return MT.new(Dram)
+end
+
 function MT.lut(inputType, outputType, values, inputCount)
   local struct LUTModule { lut : (outputType:toTerraType())[inputCount] }
   terra LUTModule:reset() self.lut = arrayof([outputType:toTerraType()], values) end
@@ -1337,8 +1418,9 @@ function MT.lambdaCompile(fn)
   Module.entries = terralib.newlist( {} )
   
   local readyInput
-  if rigel.hasReady(fn.output.type) then 
-    readyInput = symbol(rigel.extractReady(fn.output.type):toTerraType(), "readyinput")
+  if rigel.hasReady(fn.output.type) then
+    local RIT = rigel.extractReady(fn.output.type):toTerraType()
+    readyInput = symbol(RIT, "readyinput")
     if fn.input~=nil then table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} ) end
     table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
   end
@@ -1353,19 +1435,21 @@ function MT.lambdaCompile(fn)
   local readyOutput
     
     -- build ready calculation
-  if rigel.isBasic(fn.output.type)==false then
+  if rigel.isBasic(fn.output.type)==false or fn.output:outputStreams()>0 then
+    
     fn.output:visitEachReverseBreakout(
       function(n, args)
 
         -- special case: multiple stream output with multiple consumers
         -- the only time this should happen is if everything is selectstreamed
         if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
+
           -- all of then N consumers should be selectStream
           local list = {}
           for dsNode, _ in n:parents(fn.output) do
             if dsNode.kind=="selectStream" then
               err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
-              list[dsNode.i+1] = `[args[dsNode]][0]
+              list[dsNode.i+1] = `[args[dsNode]][dsNode.i]
             else
               err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
             end
@@ -1373,7 +1457,12 @@ function MT.lambdaCompile(fn)
 
           err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
 
-          table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+          if n.kind=="input" then
+            readyOutput = `array(list)
+          else
+            table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+          end
+  
     return {`mself.[n.name].ready}
         end
 
@@ -1403,9 +1492,8 @@ function MT.lambdaCompile(fn)
         if n.kind=="input" then
           assert(readyOutput==nil)
           readyOutput = arg
+          assert(readyOutput~=nil)
         elseif n.kind=="apply" then
-          --print("APPLY",n.name,n.fn.kind,n.fn.inputType, n.fn.outputType)
-
           if rigel.hasReady(n.fn.outputType)==false or rigel.isV(n.fn.inputType) then
             table.insert( readyStats, quote mself.[n.name]:calculateReady() end )
             res = {`mself.[n.name].ready}
@@ -1435,8 +1523,9 @@ function MT.lambdaCompile(fn)
             table.insert( res, `true )
           end
         elseif n.kind=="selectStream" then
-          -- dirty trick: the only case that is not covered by the 'special' case at the top is an array of size 1. So always do this, even though it is not correct in general
-          res = {`array(arg)}
+          res = symbol(bool[n.inputs[1]:outputStreams()])
+          table.insert( readyStats, quote var [res]; [res][n.i] = [arg] end )
+          res = {res}
         else
           print(n.kind)
           assert(false)
@@ -1453,7 +1542,7 @@ function MT.lambdaCompile(fn)
     assert(readyOutput~=nil)
     -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
     terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
-  elseif rigel.isHandshake(fn.outputType) then
+  elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
     if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
     terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
@@ -1573,7 +1662,11 @@ function MT.lambdaCompile(fn)
           table.insert( stats, quote @out = @[inputs[1]] end)
           return inputs[1]
         elseif n.kind=="selectStream" then
-          return `&((@[inputs[1]])[n.i])
+          if n.inputs[1].type:isTuple() then
+            return `&((@[inputs[1]]).["_"..tostring(n.i)])
+          else
+            return `&((@[inputs[1]])[n.i])
+          end
         else
           print(n.kind)
           assert(false)

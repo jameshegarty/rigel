@@ -2459,7 +2459,19 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   end
 
   return rigel.newFunction(res)
-                        end)
+end)
+
+modules.dram = memoize(function( A, delay, filename, X )
+  rigel.expectBasic(A)
+  assert(X==nil)
+
+  local res = {kind="dram", inputType=rigel.Handshake(types.uint(32)), outputType=rigel.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
+
+  if terralib~=nil then res.terraModule = MT.dram(res,A,delay,filename) end
+
+  res.name = sanitize("DRAM_"..tostring(A))
+  return rigel.newFunction(res)
+end)
 
 modules.lut = memoize(function( inputType, outputType, values )
   err( types.isType(inputType), "LUT: inputType must be type")
@@ -2894,6 +2906,21 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
   end
 
   res.outputType = output.type
+
+  local usedNames = {}
+  output:visitEach(
+    function(n)
+      if n.name~=nil then
+        assert(type(n.name)=="string")
+        if usedNames[n.name]~=nil then
+          print("NAME USED TWICE")
+          print("FIRST: "..usedNames[n.name])
+          print("SECOND: "..n.loc)
+          assert(false)
+        end
+        usedNames[n.name] = n.loc
+      end
+    end)
 
   res.stateful=false
   output:visitEach(

@@ -10,8 +10,6 @@ local J = require "common"
 local S = require "systolic"
 local err = J.err
 
-local ccnt = 0
-
 local function devec(t)
   for k,v in pairs(t) do
     if v.vectorized then
@@ -120,10 +118,7 @@ end
 
 function darkroomIRFunctions:selectStream(i)
   err(type(i)=="number",":selectStream expected number")
-  ccnt = ccnt + 1
-  local res = R.selectStream( "v"..tostring(ccnt), self, i )
-
-  return res
+  return RS.selectStream{input=self, index=i}
 end
 
 function darkroomIRFunctions:index(i)
