@@ -1,0 +1,31 @@
+# Red LEDs
+set_io LED0 99
+set_io LED1 98
+set_io LED2 97
+set_io LED3 96
+
+# Green LED
+set_io LED4 95
+
+# FTDI Port B UART
+#set_io DCDn 1
+#set_io DSRn 2
+#set_io DTRn 3
+#set_io CTSn 4
+#set_io RTSn 7
+set_io TX 8
+set_io RX 9
+
+
+# 12 MHz clock
+set_io CLK 21
+
+# Pmod connector
+set_io PMOD_1 78 # Pin 1
+set_io PMOD_2 79 # Pin 2
+#set_io PIO1_04 80 # Pin 3
+#set_io PIO1_05 81 # Pin 4
+#set_io PIO1_06 87 # Pin 7
+#set_io PIO1_07 88 # Pin 8
+#set_io PIO1_08 90 # Pin 9
+#set_io PIO1_09 91 # Pin 10
