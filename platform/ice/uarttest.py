@@ -1,10 +1,10 @@
 import serial
 import sys
 
-print "usage: test.py inputfile.raw outputfile.raw"
+print("usage: test.py inputfile.raw outputfile.raw")
 
-print "infile:"+sys.argv[1]
-print "outfile:"+sys.argv[2]
+print("infile:"+sys.argv[1])
+print("outfile:"+sys.argv[2])
 
 infile = open(sys.argv[1],"rb")
 outfile = open(sys.argv[2],"wb")

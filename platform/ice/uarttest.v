@@ -128,11 +128,11 @@ end
 endmodule
 
 module main (input CLK, input RX, output TX,
-	output LED0,
-	output LED1,
-	output LED2,
-	output LED3,
-	output LED4,
+  output LED0,
+  output LED1,
+  output LED2,
+  output LED3,
+  output LED4,
   output PMOD_1,
   output PMOD_2);
 
@@ -143,34 +143,21 @@ module main (input CLK, input RX, output TX,
   wire readValid;
 
   reg [7:0] readDataReg;
-  reg readAny = 0;
   wire txReady;
   reg txValid = 0;
 
-//  reg readValidReg = 0;
-
   always @(posedge CLK) begin
     if(readValid) begin
-      readAny <= 1;
       readDataReg <= readData;
-//      readValidReg <= 1;
       txValid <= 1;
     end else if(txReady) begin
       txValid <= 0;
     end
-//      readDataReg <= (readValid)?readData:readValidReg;
   end
 
   assign LED4 = readValid;
-	assign {LED3, LED2, LED1, LED0} = readDataReg[3:0];
+  assign {LED3, LED2, LED1, LED0} = readDataReg[3:0];
 
   RXMOD rxmod(.RX(RX), .CLK(CLK), .data(readData), .valid(readValid) );
-
-
-//  TXMOD txmod(.TX(TX), .CLK(CLK), .data(8'b00110001), .valid(readAny), .ready(txReady) );
   TXMOD txmod(.TX(TX), .CLK(CLK), .data(readDataReg+10), .valid(txValid), .ready(txReady) );
-//  TXMOD txmod(.TX(TX), .CLK(CLK), .data(readData+1), .valid(readValid), .ready(txReady) );
-
-
-//  assign TX = RX;
 endmodule
