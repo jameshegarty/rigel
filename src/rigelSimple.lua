@@ -396,16 +396,16 @@ function RS.writePixels(input,id,imageSize,V)
     TY = input.type
   end
 
-  local TYY = TY
-  if TY:isArray() then
-    TYY = TY:arrayOver()
-  end
+--  local TYY = TY
+--  if TY:isArray() then
+--    TYY = TY:arrayOver()
+--  end
     
-  local mod = RS.modules.fwriteSeq{type=TYY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}
+  local mod = RS.modules.fwriteSeq{type=TY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}
 
-  if TY:isArray() then
-    mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
-  end
+--  if TY:isArray() then
+--    mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
+--  end
   
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)
@@ -413,7 +413,7 @@ function RS.writePixels(input,id,imageSize,V)
 
   --
   local file = io.open("out/dbg_"..id..".metadata.lua","w")
-  file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TYY).."'}")
+  file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TY).."'}")
   file:close()
   --
   

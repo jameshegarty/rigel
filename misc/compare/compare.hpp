@@ -36,12 +36,12 @@ void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, u
   }
 
   if(state[id].seenPixels>w*h){
-    printf("Error, more pixels written than expected!\n");
+    printf("Error, more pixels written than expected! file:%s\n",id.c_str());
     //exit(1);
   }
 
   if(state[id].w!=w || state[id].h!=h){
-    printf("Error, image size changed\n");
+    printf("Error, image size changed file:%s old:%d,%d new:%d,%d\n",id.c_str(),state[id].w,state[id].h,w,h);
   }
   
   state[id].seenPixels+=pixels;
@@ -63,6 +63,10 @@ void done(){
 
 void writePixel(string id, int w, int h, unsigned short value){
   writeBytes(id,w,h,"uint16",1,2,(unsigned char*)&value);
+}
+
+void writePixel(string id, int w, int h, unsigned int value){
+  writeBytes(id,w,h,"uint32",1,4,(unsigned char*)&value);
 }
 
 void writePixel(string id, int w, int h, float value){

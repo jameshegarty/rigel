@@ -6,7 +6,7 @@ local fixed = require "fixed"
 local types = require("types")
 local J = require "common"
 
-local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id,harnessoption)
+local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id,harnessoption,ramFile)
 
   local out
   local inpSymb
@@ -40,7 +40,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outpu
 
 
     if harnessoption==2 then
-      dram = R.instantiateRegistered("dram", RM.dram( types.array2d(types.int(32),4,4),10,"dot_dist.raw"))
+      dram = R.instantiateRegistered("dram", RM.dram( R.extractData(fn.inputType.list[2]),10,ramFile))
       table.insert(instances,dram)
       local dramData = R.applyMethod("dramData", dram, "load" )
       hsfninp = R.concat("hsfninp2",{out,dramData})
@@ -67,7 +67,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outpu
   return RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out, instances )
 end)
 
-return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, harnessoption, X)
+return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, harnessoption, ramFile, X)
 
   if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
@@ -82,7 +82,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     if i==2 then ext="_half" end
     --local f = harnessWrapperFn( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".terra.raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true )
     --local f = terraWrapper{fn=hsfn, inputFilename=inputFilename, outputFilename="out/"..filename..ext..".terra.raw",tapType=tapType, inputType=inputType, outputType=outputType,id=i}
-    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption)
+    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
     f = RM.seqMapHandshake( f, inputType, tapType, tapValue, inputCount, outputCount, false, i, simCycles )
     local Module = f:compile()
 

@@ -3392,7 +3392,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
-  res.name = "fwriteSeq_"..verilogSanitize(filename).."_"..verilogSanitize(tostring(ty))
+  res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
