@@ -1,5 +1,6 @@
 local RHLL = {}
 local R = require "rigel"
+local RM = require "modules"
 local C = require "examplescommon"
 local RS = require "rigelSimple"
 local llharness = require "harness"
@@ -116,6 +117,16 @@ local function stripHS(arg)
   return {type=arg.type}
 end
 
+local function expectHS(arg)
+  if arg==nil then return {} end -- nullary fn
+  
+  if R.isHandshake(arg.type) then
+    return {type=R.extractData(arg.type)}
+  else
+    err(false,"Expected handshake input")
+  end
+end
+
 function darkroomIRFunctions:selectStream(i)
   err(type(i)=="number",":selectStream expected number")
   return RS.selectStream{input=self, index=i}
@@ -208,6 +219,17 @@ end
 
 function RHLL.linebuffer(t)
   return setmetatable({fn=RS.modules.linebuffer, settings=t, wireFn=stripHS, vectorized=true}, SimpleModuleWrapperMT)
+end
+
+local fifofn = J.memoize(function(A,size)
+  local inp = R.input( R.Handshake(A) )
+  local regs = { R.instantiateRegistered("f1", RM.fifo(A,size) ) }
+  local out = R.applyMethod("l1",regs[1],"load")
+  return RM.lambda( "fifohll_"..tostring(A).."_"..tostring(size), inp, R.statements{out, R.applyMethod("s1",regs[1],"store",inp)}, regs )
+end)
+
+function RHLL.fifo(size)
+  return setmetatable({fn=function(t) return fifofn(t.type,t.size) end, settings={size=size}, wireFn=expectHS}, SimpleModuleWrapperMT)
 end
 
 function RHLL.filterSeq(t)

@@ -5,7 +5,7 @@ before_install:
 
   # luajit
   - sudo apt-get install luajit
-  - sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
+  #- sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
 
   # verilator
   - sudo apt-get install verilator

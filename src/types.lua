@@ -789,6 +789,10 @@ function TypeFunctions:toCPUType()
   elseif self:isArray() then
     local sz = self:arrayLength()
     return types.array2d(self:arrayOver(),sz[1],sz[2])
+  elseif self:isTuple() then
+    local l = {}
+    for _,v in pairs(self.list) do table.insert(l, v:toCPUType()) end
+    return types.tuple(l)
   elseif self:isNamed() then
     return self.structure:toCPUType()
   else
