@@ -14,7 +14,11 @@ int main(int argc, char** argv) {
   }
 
   printf("RAMBITS %d %s\n",RAMBITS,RAMFILE);
-  
+
+  if(RAMBITS%8!=0){
+    printf("RAMBITS not byte aligned!\n");
+    exit(1);
+  }
 
   VERILATORCLASS* top = new VERILATORCLASS;
 
@@ -82,7 +86,8 @@ int main(int argc, char** argv) {
 
   const int ADDR_DELAY = 10;
   std::queue<int> addrqueue;
-  unsigned char* dataBuffer = (unsigned char*)(readFile(RAMFILE));
+  long RAMFILE_size;
+  unsigned char* dataBuffer = (unsigned char*)(readFile(RAMFILE,&RAMFILE_size));
 
   printf("STARTSIM\n");
   
@@ -112,9 +117,20 @@ int main(int argc, char** argv) {
           addrqueue.pop();
           
           if(addr>=0){
-            //printf("Read mem addr %d\n",addr);
-            unsigned char dat = dataBuffer[addr];
-            setDataBuf( &(top->process_input), 8, inbpp*inP+1, &dat );
+            //
+            //unsigned char dat = dataBuffer[addr];
+            unsigned int raddr = (addr*RAMBITS)/8;
+            //printf("Read mem addr %d %d\n",addr,raddr);
+            if(raddr>=RAMFILE_size){
+              printf("READ BEYOND END OF MEMORY!!\n");
+              exit(1);
+            }
+
+            for(int j=0; j<(RAMBITS/8); j++){
+              //printf("RAM %d %d\n",j,dataBuffer[raddr+j]);
+            }
+            
+            setDataBuf( &(top->process_input), RAMBITS, inbpp*inP+1, &dataBuffer[raddr] );
           }
         }else if(addrqueue.size()>=ADDR_DELAY){
           assert(addrqueue.front()==-1);
