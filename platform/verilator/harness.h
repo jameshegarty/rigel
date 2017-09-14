@@ -128,11 +128,17 @@ return;
     unsigned long inp = data[j];
     unsigned int sft = ((j%4)*8 + (startPos-startWord*32));
 
+    unsigned long mask = 255;
+    
     assert(sft<=56);
     inp <<= sft;
+    mask <<= sft;
+
+    mask = ~mask;
     
     // 'trick' to write bytes that straddle the 32 bit boundaries
     for(int i=0; i<2; i++){
+      (*signal)[(j/4)+startWord+i] &= mask >> (i*32);
       (*signal)[(j/4)+startWord+i] |= inp >> (i*32);
     }
   }
