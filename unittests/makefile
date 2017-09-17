@@ -103,4 +103,4 @@ out/fwriteseq37.correct.txt: out/verilogcorrect.txt
 ###################
 
 clean:
-	rm -Rf out/*
+	echo out/* | xargs -n 100 rm -Rf
