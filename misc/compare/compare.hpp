@@ -69,6 +69,10 @@ void writePixel(string id, int w, int h, unsigned int value){
   writeBytes(id,w,h,"uint32",1,4,(unsigned char*)&value);
 }
 
+void writePixel(string id, int w, int h, unsigned char value){
+  writeBytes(id,w,h,"uint8",1,1,(unsigned char*)&value);
+}
+
 void writePixel(string id, int w, int h, float value){
   writeBytes(id,w,h,"float",1,4,(unsigned char*)&value);
 }

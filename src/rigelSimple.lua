@@ -129,6 +129,14 @@ function RS.modules.sum(t)
   return C.sum(t.inType, t.inType, t.outType)
 end
 
+function RS.modules.sub(t)
+  return C.sub(t.inType, t.inType, t.outType)
+end
+
+function RS.modules.rcp(t)
+  return C.rcp(t.type)
+end
+
 function RS.modules.sumAsync(t)
   return C.sum( t.inType, t.inType, t.outType, true )
 end

@@ -742,6 +742,7 @@ endmodule
 end
 
 -- see: http://www4.wittenberg.edu/academics/mathcomp/shelburne/comp255/notes/BinaryDivision.pdf
+-- if divisor==0, this returns all 1's (??)
 function modules.div(ty)
   err(types.isType(ty),"div:argument should be type")
   err(ty:isUint(),"div: argument should be uint")
