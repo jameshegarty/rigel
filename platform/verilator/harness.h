@@ -116,7 +116,8 @@ template<int N>
 void setDataBuf(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
   assert(databits%8==0);
   assert(startPos+databits < N*32);
-
+  assert(sizeof(WData)==4);
+  
   if(databits==0){
 return;
   }
@@ -125,7 +126,21 @@ return;
       
   for(int j=0; j<(databits)/8; j++){
     unsigned long inp = data[j];
-    (*signal)[(j/4)+startWord] |= (inp << ((j%4)*8 + (startPos-startWord*32)));
+    unsigned int sft = ((j%4)*8 + (startPos-startWord*32));
+
+    unsigned long mask = 255;
+    
+    assert(sft<=56);
+    inp <<= sft;
+    mask <<= sft;
+
+    mask = ~mask;
+    
+    // 'trick' to write bytes that straddle the 32 bit boundaries
+    for(int i=0; i<2; i++){
+      (*signal)[(j/4)+startWord+i] &= mask >> (i*32);
+      (*signal)[(j/4)+startWord+i] |= inp >> (i*32);
+    }
   }
 }
 
@@ -185,16 +200,16 @@ unsigned int getUintData(T* signal, unsigned int startbit){
   return dat;
 }
 
-void* readFile(char* filename){
+void* readFile(char* filename, long* fsize){
   FILE *f = fopen(filename, "rb");
   if(f==NULL){ printf("Error, could not open file %s\n", filename); exit(1); }
 
   fseek(f, 0, SEEK_END);
-  long fsize = ftell(f);
+  *fsize = ftell(f);
   fseek(f, 0, SEEK_SET);  //same as rewind(f);
 
-  void *buf = malloc(fsize);
-  fread(buf, fsize, 1, f);
+  void *buf = malloc(*fsize);
+  fread(buf, *fsize, 1, f);
   fclose(f);
 
   return buf;

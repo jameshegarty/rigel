@@ -74,9 +74,15 @@ for k,v in ipairs(CSC) do
     v.W=nil; v.H=nil
 
     table.insert(configs.constSeq, v)
-    meta.constSeq[#configs.constSeq] = {inputP=0, outputP=v.type:channels()/v.P, outputImageSize=IS}
+    meta.constSeq[#configs.constSeq] = {inputP=0, outputP=v.type:channels()/v.P, outputImageSize=IS, inputImageSize=IS}
   end
 end
+
+configs.sub = {{inType=types.int(8),outType=types.int(8)}}
+meta.sub={{inputP=1,outputP=1,inputImageSize={32,32},outputImageSize={32,32}}}
+
+configs.rcp = {{type=types.uint(8)}}
+meta.rcp={{inputP=1,outputP=1,inputImageSize=IS,outputImageSize=IS}}
 
 local function configToName(t)
   local name = ""
@@ -121,7 +127,7 @@ for k,v in pairs(configs) do
     end
     
     for _,bk in pairs(targets) do
-      R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=IS, outSize=met.outputImageSize, backend=bk }
+      R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=met.inputImageSize, outSize=met.outputImageSize, backend=bk }
     end
 
   end

@@ -8,6 +8,7 @@ local modules = RM
 local J = require "common"
 local memoize = J.memoize
 local err = J.err
+local f = require "fixed_new"
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
@@ -45,7 +46,7 @@ end)
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
-  local partial = RM.lift( "partial_mult_A"..(tostring(A):gsub('%W','_')).."_B"..(tostring(B):gsub('%W','_')), types.tuple {A,B}, outputType, 1,
+    local partial = RM.lift( J.sanitize("partial_mult_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, 1,
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end, 
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
@@ -61,7 +62,8 @@ C.sum = memoize(function( A, B, outputType, async )
   local delay
   if async then delay = 0 else delay = 1 end
 
-  local partial = RM.lift( "sum_async"..(tostring(A):gsub('%W','_'))..(tostring(B):gsub('%W','_'))..tostring(outputType)..tostring(async), types.tuple {A,B}, outputType, delay,
+  local partial = RM.lift( 
+    J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
     function(sinp)
       local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
       if async then sout = sout:disablePipelining() end
@@ -71,6 +73,26 @@ C.sum = memoize(function( A, B, outputType, async )
       return CT.sum(A,B,outputType,async)
     end,
     "C.sum")
+
+  return partial
+end)
+
+------------
+-- return A-B as a darkroom FN. A,B are types
+-- returns something of type outputType
+C.sub = memoize(function( A, B, outputType, async )
+  if async==nil then async=false end
+
+  local delay
+  if async then delay = 0 else delay = 1 end
+
+    local partial = RM.lift( J.sanitize("sub_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
+    function(sinp)
+      local sout = S.cast(S.index(sinp,0),outputType)-S.cast(S.index(sinp,1),outputType)
+      if async then sout = sout:disablePipelining() end
+      return sout
+    end,nil,
+    "C.sub")
 
   return partial
 end)
@@ -88,7 +110,7 @@ C.select = memoize(function(ty)
 end)
 -----------------------------
 C.eq = memoize(function(ty)
-  err(types.isType(ty), "C.select error: input must be type")
+  err(types.isType(ty), "C.eq error: input must be type")
   local ITYPE = types.tuple{ty,ty}
 
   local selm = RM.lift("C_eq", ITYPE, types.bool(), 1, 
@@ -96,6 +118,12 @@ C.eq = memoize(function(ty)
     "C.eq" )
 
   return selm
+end)
+
+-----------------------------
+C.rcp = memoize(function(ty)
+  err(types.isType(ty), "C.rcp error: input must be type")
+  return f.parameter("finp",ty):rcp():toRigelModule("rcp_"..tostring(ty))
 end)
 
 -------------
@@ -457,7 +485,7 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
 
   table.insert(statements,1,out)
 
-  local name = "padcrop_"..tostring(A):gsub('%W','_').."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..internalFn.name
+  local name = J.sanitize("padcrop_"..tostring(A).."L"..tostring(L).."_R"..tostring(Right).."_B"..tostring(B).."_T"..tostring(Top).."_W"..tostring(W).."_H"..tostring(H)..internalFn.name)
 
   local hsfn
   if timingFifo then
@@ -632,7 +660,7 @@ C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
   local f = modules.SoAtoAoS(W,H,typelist)
   f = modules.makeHandshake(f)
   
-  return C.compose("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..(tostring(typelist):gsub('%W','_')), f, modules.packTuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
+  return C.compose( J.sanitize("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..tostring(typelist)), f, modules.packTuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) ) ) 
                                      end)
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
@@ -812,7 +840,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
 
-  return modules.lambda( "cropHelperSeq_"..(tostring(A):gsub('%W','_')).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top, inp, out )
+  return modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top), inp, out )
 end)
 
 
@@ -835,7 +863,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
-  return C.compose("stencilLinebuffer_A"..(tostring(A):gsub('%W','_')).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
+  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
 end)
 
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
@@ -847,7 +875,7 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(ymax==0)
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose("stencilLinebufferPartial_A"..tostring(A):gsub('%W','_').."_W"..tostring(w).."_H"..tostring(h), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )), "C.stencilLinebufferPartial" )
+  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )), "C.stencilLinebufferPartial" )
 end)
 
 

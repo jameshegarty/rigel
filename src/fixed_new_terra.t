@@ -90,8 +90,16 @@ local function toTerra(self,name)
           denom = `[uintType:toTerraType()]([args[1]])
         end
         
+
+        -- need to prevent divides by 0
+        local origdenom = denom
         denom = `terralib.select(denom==0,[uintType:toTerraType()](1),denom)
         res = `numerator/denom
+
+        -- if denom==0, the HW module returns all 1's?
+        local MAXV = math.pow(2,n:precision())-1
+
+        res = `terralib.select(origdenom==0,[uintType:toTerraType()](MAXV),res)
 
         if isPositive~=nil then
           --          res = S.select(isPositive,res,S.neg(res))
