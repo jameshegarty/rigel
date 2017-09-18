@@ -98,7 +98,7 @@ local function toTerra(self,name)
 
         -- if denom==0, the HW module returns all 1's?
         local MAXV = math.pow(2,n:precision())-1
-        print("MAXV",MAXV,uintType)
+
         res = `terralib.select(origdenom==0,[uintType:toTerraType()](MAXV),res)
 
         if isPositive~=nil then

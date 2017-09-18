@@ -107,29 +107,21 @@ int main(int argc, char** argv) {
 
       bool ramReadValid = addrqueue.size()>=ADDR_DELAY && addrqueue.front()!=-1;
       setValid( &(top->process_input), inbpp*inP+RAMBITS+1, ramReadValid );
-      //printf("RAMREADVALID %d\n", ramReadValid);
                
       if( top->ready & (unsigned int)(2) ){
-        //printf("RAMREADER ready for data\n");
 
         if(ramReadValid){
           unsigned int addr = addrqueue.front();
           addrqueue.pop();
           
           if(addr>=0){
-            //
-            //unsigned char dat = dataBuffer[addr];
             unsigned int raddr = (addr*RAMBITS)/8;
-            //printf("Read mem addr %d %d\n",addr,raddr);
+
             if(raddr>=RAMFILE_size){
               printf("READ BEYOND END OF MEMORY!!\n");
               exit(1);
             }
 
-            for(int j=0; j<(RAMBITS/8); j++){
-              //printf("RAM %d %d\n",j,dataBuffer[raddr+j]);
-            }
-            
             setDataBuf( &(top->process_input), RAMBITS, inbpp*inP+1, &dataBuffer[raddr] );
           }
         }else if(addrqueue.size()>=ADDR_DELAY){
