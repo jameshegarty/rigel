@@ -217,13 +217,13 @@ end)
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
   if shift >= 0 then
-    local touint8 = RM.lift( "touint8", from, to, 1,
+    local touint8 = RM.lift( "fromuint" .. from.precision .. "touint" .. to.precision, from, to, 1,
       function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
     return touint8
   else
-    local touint8 = RM.lift( "touint8", from, to, 1,
+    local touint8 = RM.lift( "fromuint" .. from.precision .. "touint" .. to.precision, from, to, 1,
       function(touint8inp) return S.cast(S.lshift(touint8inp,S.constant(-shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
