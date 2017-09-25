@@ -45,9 +45,11 @@ new=function( ty, setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
-complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
+complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init, self.resetValue, self.hasSetFn ) end,
 configFns={CE=function(self,v) self.CE=v; return self end, 
-setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end}
+hasSet=function(self,v) err(type(v)=="boolean", "hasSet should be bool");self.hasSetFn=v; return self end, 
+setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end,
+setReset=function(self,I) self.type:checkLuaValue(I); self.resetValue=I; return self end}
 }
 
 --------------------------------------------------------------------

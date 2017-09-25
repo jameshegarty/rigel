@@ -147,8 +147,8 @@ modules.fifo = memoize(function(ty,items,verbose)
   local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
-  local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("writeAddr"))
-  local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true ):instantiate("readAddr"))
+  local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("writeAddr"))
+  local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("readAddr"))
   local bits = ty:verilogBits()
   local bytes = bits/8
 
@@ -206,8 +206,7 @@ modules.fifo = memoize(function(ty,items,verbose)
 
   -- pushBackReset
   local pushBackReset = fifo:addFunction( Ssugar.lambdaConstructor("pushBackReset" ) )
-  pushBackReset:setCE(pushCE)
-  pushBackReset:addPipeline( writeAddr:set(systolic.constant(0,types.uint(addrBits))))
+  pushBackReset:addPipeline( writeAddr:reset() )
 
   -- popFront
   local popCE = S.CE("CE_pop")
@@ -239,11 +238,10 @@ modules.fifo = memoize(function(ty,items,verbose)
   
   -- popFrontReset
   local popFrontReset = fifo:addFunction( Ssugar.lambdaConstructor("popFrontReset" ) )
-  popFrontReset:setCE(popCE)
-  popFrontReset:addPipeline( readAddr:set(systolic.constant(0,types.uint(addrBits))))
+  popFrontReset:addPipeline( readAddr:reset() )
 
   return fifo
-                          end)
+end)
 
 
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
@@ -308,21 +306,21 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   local rstvalid = systolic.parameter("reset",types.bool())
 
   for i=1,size do
-    local I = M:add( systolic.module.reg( ty, CE ):instantiate("SR"..i):setArbitrate("valid") )
+    local I = M:add( systolic.module.reg( ty, CE, nil, nil, resetValue ):instantiate("SR"..i):setArbitrate("valid") )
     table.insert( regs, I )
     if i==1 then
       table.insert(pipelines, I:set(inp) )
     else
       table.insert(pipelines, I:set(regs[i-1]:get()) )
     end
-    table.insert( resetPipelines, I:set( systolic.constant( resetValue, ty ) ) )
+    table.insert( resetPipelines, I:reset() )
     if i==size then out=I:get() end
   end
   if size==0 then out=inp end
 
   local CEvar = J.sel(CE,S.CE("CE"),nil)
   local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid, CEvar ) )
-  local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid, CEvar) )
+  local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid ) )
 
   return M
                                 end)
@@ -444,9 +442,9 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
     pipelines = J.map( regs, function(r,i) return r:set( regs[((i-1+stride)%#exprs)+1]:get() )  end )
     out = J.map( regs, function(r) return r:get() end )
   else
-    local phase = module:add( Ssugar.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):instantiate("phase") )
+    local phase = module:add( Ssugar.regByConstructor( types.uint(16), modules.sumwrap(types.uint(16),period-1) ):CE(true):setReset(0):instantiate("phase") )
 
-    resetPipelines = {phase:set( S.constant(0,types.uint(16)) )}
+    resetPipelines = {phase:reset()}
     reading = S.eq(phase:get(),S.constant(0,types.uint(16))):disablePipelining():setName("reading")
 
     local regs = J.map(exprs, function(e,i) return module:add( Ssugar.regConstructor(ty):CE(true):instantiate("SR_"..i) ) end )

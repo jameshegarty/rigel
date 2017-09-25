@@ -234,9 +234,10 @@ function systolic.lambdaTab( tab )
 end
 
 function systolic.lambda( name, inputParameter, output, outputName, pipelines, valid, CE, X )
-  err( systolicAST.isSystolicAST(inputParameter), "input must be a systolic AST" )
+  err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
+  if valid~=nil then err(valid.kind=="parameter","valid must be parameter") end
   err( inputParameter.kind=="parameter", "input must be a parameter" )
   err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given, but is "..type(outputName))
   err( CE==nil or (systolicAST.isSystolicAST(CE) and CE.kind=="parameter" and CE.type==types.bool(true)), "CE must be nil or CE parameter")
@@ -848,7 +849,7 @@ local function addArbitration( callsite )
   if fn.inputParameter.type==types.null() then
     -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
     return callsite
-  elseif instance.arbitrate==nil then
+  elseif true or instance.arbitrate==nil then
     -- no arbitration
     if #instance.callsites[fnname]==0 then
       table.insert(instance.callsites[fnname],callsite)
@@ -1714,38 +1715,68 @@ regModuleMT={__index=regModuleFunctions}
 function regModuleFunctions:instanceToVerilogStart( instance, module )
   instance.verilogCompilerState = instance.verilogCompilerState or {}
   assert(instance.verilogCompilerState[module]==nil)
-  instance.verilogCompilerState[module] = false
+  instance.verilogCompilerState[module] = {decl=false}
 end
 
 
 function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar, CEVar )
   local decl = nil
-  if instance.verilogCompilerState[module]==false then
+  if instance.verilogCompilerState[module].decl==false then
     decl = declareReg(self.type, instance.name, self.initial)
-    instance.verilogCompilerState[module]=true
+    instance.verilogCompilerState[module].decl=true
   end
 
   if fnname=="delay" or fnname=="set" then
     if self.hasCE==false and CEVar~=nil then err(false, "Reg was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
     if self.hasCE and type(CEVar)~="string" then err(false, "Reg missing a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
 
-    --err( #instance.callsites[fnname]==1, "Error, multiple ("..(#instance.callsites[fnname])..") calls to '"..fnname.."' on instance '"..instance.name.."'")
+    err( type(inputVar)=="string", "reg:set() or reg:delay() expected an input!")
 
-    if decl==nil then decl="" end
-    if self.hasCE or module.hasValid then
-      decl = decl.."  always @ (posedge CLK) begin if ("..J.sel(self.hasValid,validVar,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,CEVar,"")..") begin "..instance.name.." <= "..inputVar.."; end end"
-    else
-      decl = decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
-    end
+    instance.verilogCompilerState[module].setData = inputVar
+    instance.verilogCompilerState[module].setValid = validVar
+    instance.verilogCompilerState[module].setCE = CEVar
+
     local name = instance.name
     if fnname=="set" then name = "_____REG_SET" end
     return name, decl, true
   elseif fnname=="get" then
     return instance.name, decl, true
+  elseif fnname=="reset" then
+    err( type(validVar)=="string", "reg:reset() was not given a valid var, but expects one "..instance.loc)
+    err( CEVar==nil, "reg:reset() was given a CE, but does not expect one")
+    --err( inputVar==nil, "reg:reset() was given data ("..inputVar..", but does not expect any")
+    instance.verilogCompilerState[module].resetValid = validVar
+    return "_____REG_RESET", decl, true
   else
     print("regModuleFunctions:instanceToVerilog",fnname)
     assert(false)
   end
+
+end
+
+function regModuleFunctions:instanceToVerilogFinalize( instance, module )
+  local setData, setValid, setCE, resetValid = instance.verilogCompilerState[module].setData, instance.verilogCompilerState[module].setValid, instance.verilogCompilerState[module].setCE, instance.verilogCompilerState[module].resetValid
+
+  err( type(setData)=="string", "reg, missing input value? "..instance.loc)
+
+  if (self.hasCE or module.hasValid) then
+    local resetExpr
+    if self.resetValue~=nil then resetExpr = " && "..resetValid.."==1'b0" end
+    local decl = "  always @ (posedge CLK) begin if (("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") "..J.sel(self.resetValue~=nil,resetExpr,"")..") begin "..instance.name.." <= "..setData.."; end end"
+
+    if self.resetValue~=nil then
+      decl = decl..[[
+
+  always @ (posedge CLK) begin if(]]..resetValid..") begin "..instance.name.." <= "..systolic.valueToVerilog(self.resetValue,self.type).."; end end"
+    end
+
+    return decl
+  elseif self.resetValue~=nil then
+    return "  always @ (posedge CLK) begin "..instance.name.." <= ("..resetValid..")?"..systolic.valueToVerilog(self.resetValue,self.type)..":"..setData.."; end"
+  else
+    return "  always @ (posedge CLK) begin "..instance.name.." <= "..setData.."; end"
+  end
+
 end
 
 function regModuleFunctions:getDependenciesLL() return {} end
@@ -1755,7 +1786,7 @@ function regModuleFunctions:getDelay( fnname )
 end
 
 -- by default, hasValid=true. (you would only want a register w/o a valid bit if you're wiring stuff up by hand and doing strange things)
-function systolic.module.reg( ty, hasCE, initial, hasValid, X )
+function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
   ty = ty:stripConst() -- output of register obviously can't be const
@@ -1763,30 +1794,40 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, X )
   if initial~=nil then ty:checkLuaValue(initial) end
   assert(hasValid==nil or type(hasValid)=="boolean")
   if hasValid==nil then hasValid=true end
+  if resetValue~=nil then ty:checkLuaValue(resetValue) end
 
   -- ******** Note that hasValid==false makes this module pure!!!!!!!!!!!
 
-  local t = {kind="reg",initial=initial,type=ty,options={coherent=true}, hasCE=hasCE, hasValid=hasValid}
+  local t = {kind="reg",initial=initial,type=ty,options={coherent=true}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT",CE=systolic.CE("CE")}
   t.functions.delay.isPure = function() return hasValid==false end
   t.functions.set={name="set", output={type=types.null()}, inputParameter={name="SET_INPUT",type=ty},outputName="SET_OUTPUT",CE=systolic.CE("CE")}
   t.functions.set.isPure = function() return hasValid==false end
+
+  if resetValue~=nil then
+    t.functions.reset={name="reset", output={type=types.null()}, inputParameter={name="RESET_INPUT",type=types.null()},outputName="RESET_OUTPUT"}
+    t.functions.reset.isPure = function() return false end
+  end
+
   t.functions.get={name="get", output={type=ty}, inputParameter={name="GET_INPUT",type=types.null()},outputName="GET_OUTPUT"}
   t.functions.get.isPure = function() return true end
   return setmetatable(t,regModuleMT)
 end
 
 -------------------
-systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
-  assert( types.isType(ty) )
+systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
+  err( types.isType(ty), "systolic.module.regBy, type must be type" )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
   assert( CE==nil or type(CE)=="boolean" )
   if init~=nil then ty:checkLuaValue(init) end
+  if resetValue~=nil then ty:checkLuaValue(resetValue) end
+  if hasSet==nil then hasSet=false end
+  err( type(hasSet)=="boolean", "systolic.module.regBy: hasSet must be boolean but is "..tostring(hasSet))
   assert(X==nil)
 
-  local R = systolic.module.reg( ty, CE, init ):instantiate("R"):setArbitrate("valid"):setCoherent(false)
+  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R"):setArbitrate("valid"):setCoherent(false)
   local inner = setby:instantiate("regby_inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
@@ -1803,16 +1844,32 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, X)
   local CEVar
   if CE then CEVar = systolic.CE("CE") end
 
+  -- if we include the set function, and both set and setBy are called in the same cycle, set gets prescedence
+  local sinp, setvalid
+  if hasSet then
+    sinp = systolic.parameter("set_inp",ty)
+    setvalid = systolic.parameter("set_valid",types.bool())
+    fns.set = systolic.lambda("set", sinp, nil, "SET_OUTPUT",{}, setvalid, CEVar )
+  end
+
   local sbinp = systolic.parameter("setby_inp",setbyTypeB)
-  local setbyvalid = systolic.parameter("setby_valid",types.bool())
+  local setbyvalidparam = systolic.parameter("setby_valid",types.bool())
+  local setbyvalid = setbyvalidparam
   local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null(),CEVar)
-  fns.setBy = systolic.lambda("setby", sbinp, setbyout, "SETBY_OUTPUT",{R:set(setbyout,setbyvalid,CEVar)}, setbyvalid, CEVar )
 
-  local sinp = systolic.parameter("set_inp",ty)
-  local setvalid = systolic.parameter("set_valid",types.bool())
-  fns.set = systolic.lambda("set", sinp, R:set(sinp,setvalid,CEVar), "SET_OUTPUT",{}, setvalid, CEVar )
+  if hasSet then
+    setbyvalid = systolic.__or(setbyvalid,setvalid)
+    setbyout = systolic.select(setvalid,sinp,setbyout)
+  end
 
-  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init), fns, {R,inner}, true, true, nil,nil,{get=0,set=0,setBy=0} )
+  fns.setBy = systolic.lambda("setby", sbinp, setbyout, "SETBY_OUTPUT",{R:set(setbyout,setbyvalid,CEVar)}, setbyvalidparam, CEVar )
+
+  if resetValue~=nil then
+    local resetvalid = systolic.parameter("reset_valid",types.bool())
+    fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
+  end
+
+  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue), fns, {R,inner}, true, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
   assert(systolic.isModule(M))
   return M
 end)

@@ -211,7 +211,7 @@ modules.liftBasic = memoize(function(f)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ inner:process(sinp), S.constant(true, types.bool())}, "process_output", nil, nil, CE ) )
-    if f.stateful then systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool()),CE) ) end
+    if f.stateful then systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) ) end
     systolicModule:complete()
     
     return systolicModule
@@ -235,7 +235,7 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
 
     local resetSrcFn = systolicModule:lookupFunction(fnname.."_reset")
     if resetSrcFn~=nil then
-      res:addFunction( S.lambda(fnname.."_reset", resetSrcFn:getInput(), inner[fnname.."_reset"]( inner, resetSrcFn:getInput() ), resetSrcFn:getOutputName(), nil, resetSrcFn:getValid(), resetSrcFn:getCE() ) )
+      res:addFunction( S.lambda(fnname.."_reset", resetSrcFn:getInput(), inner[fnname.."_reset"]( inner, resetSrcFn:getInput() ), resetSrcFn:getOutputName(), nil, resetSrcFn:getValid() ) )
     end
 
   end
@@ -269,7 +269,7 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
 
     local CE = S.CE("CE")
     res:addFunction( S.lambda(fnname, sinp, S.tuple{ out, S.__and( runable,svalid ):disablePipelining() }, fnname.."_output", pipelines, svalid, CE ) )
-    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST, CE) )
+    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST) )
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
   end
 
@@ -310,7 +310,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     local CE = S.CE("CE")
     res:addFunction( S.lambda(fnname, sinp, S.tuple{ S.index(out,0), S.__and(S.index(out,1),S.__and(runable,svalid):disablePipelining()):disablePipeliningSingle() }, fnname.."_output", pipelines, svalid, CE ) )
-    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST, CE) )
+    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST) )
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
   end
 
@@ -338,7 +338,7 @@ modules.reduceThroughput = memoize(function(A,factor)
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), factor-1, 1 ) ):CE(true):setInit(0):setReset(0):instantiate("phase") ) 
 
     local reading = S.eq( phase:get(), S.constant(0,types.uint(16)) ):disablePipelining()
     
@@ -350,7 +350,7 @@ modules.reduceThroughput = memoize(function(A,factor)
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{sinp,reading}, "process_output", pipelines, nil, CE) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()},S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -406,7 +406,7 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, S.__and(pout_valid,S.index(sinp,1))}, fnname.."_output",nil,nil,CE ) )
     if systolicModule:lookupFunction(prefix.."reset")~=nil then
       -- stateless modules don't have a reset
-      res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool()), CE) )
+      res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool())) )
     end
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
   end
@@ -480,7 +480,7 @@ modules.RPassthrough = memoize(function(f)
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ S.index(out,0), S.index(out,1) }, "process_output", nil, nil, CE ) )
     if f.stateful then
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, S.parameter("reset",types.bool()), CE) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {}, S.parameter("reset",types.bool())) )
     end
     local rinp = S.parameter("ready_input", types.bool() )
     systolicModule:addFunction( S.lambda("ready", rinp, S.__and(inner:ready(),rinp):disablePipelining(), "ready", {} ) )
@@ -563,10 +563,10 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     res:addFunction( S.lambda(fnname, pinp, out, fnname.."_output", pipelines ) ) 
     
     local resetPipelines = {}
-    resetPipelines[1] = SR:reset( nil, rst, CE )
+    resetPipelines[1] = SR:reset( nil, rst )
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
 
-    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst, CE ), prefix.."reset_out", resetPipelines, rst ) )
+    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst ), prefix.."reset_out", resetPipelines, rst ) )
     
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
     
@@ -681,7 +681,7 @@ modules.map = memoize(function( f, W, H )
 
     systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
     if f.stateful then
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()),CE ) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
     end
     return systolicModule
   end
@@ -722,7 +722,7 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
     -- hack: get broken systolic library to actually wire valid
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setInit(0):instantiate("phase") ) 
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setReset(0):setInit(0):instantiate("phase") ) 
     
     local sinp = S.parameter("process_input", res.inputType )
     local CE = S.CE("CE")
@@ -801,7 +801,7 @@ vstring = vstring..[[endmodule
       local datav = datat:fakeValue()
     
       fns.process = S.lambda("process",inp,S.cast(S.tuple{S.constant(datav,datat),S.constant(true,types.bool())}, rigel.lower(res.outputType)), "out",nil,S.parameter("process_valid",types.bool()),S.CE("ce"))
-      fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()),S.CE("ce"))
+      fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()))
     
       local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
 
@@ -809,12 +809,12 @@ vstring = vstring..[[endmodule
 
       systolicModule:addFunction( S.lambda("process", sinp, inner:process(sinp,v), "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
       local resetValid = S.parameter("reset",types.bool())
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16))),inner:reset(nil,resetValid)},resetValid,CE) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset(),inner:reset(nil,resetValid)},resetValid) )
 
     else
       systolicModule:addFunction( S.lambda("process", sinp, sinp, "process_output", {phase:setBy(S.constant(true,types.bool()))}, v, CE ) )
       local resetValid = S.parameter("reset",types.bool())
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))},resetValid,CE) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()},resetValid) )
     end
 
     return systolicModule
@@ -1084,7 +1084,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
       local systolicModule = Ssugar.moduleConstructor(res.name)
       local sinp = S.parameter( "inp", ITYPE )
 
-      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):instantiate("phase") )
+      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):setReset(0):instantiate("phase") )
       local reg = systolicModule:add( S.module.reg( ITYPE,true ):instantiate("buffer") )
 
       local reading = S.eq(sPhase:get(),S.constant(0,types.uint(8))):disablePipelining()
@@ -1097,7 +1097,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
       local CE = S.CE("CE")
       systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
       systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,types.uint(8)))},S.parameter("reset",types.bool()),CE) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool())) )
 
       return systolicModule
     end
@@ -1137,7 +1137,7 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
     local sinp = S.parameter( "inp", ITYPE )
 
     -- we currently don't have a way to make a posx counter and phase counter coherent relative to each other. So just use 1 counter for both. This restricts us to only do power of two however!
-    local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),(W/T)*scale-1) ):CE(true):instantiate("xpos") )
+    local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),(W/T)*scale-1) ):setReset(0):CE(true):instantiate("xpos") )
 
     local addrbits = math.log(W/T)/math.log(2)
     assert(addrbits==math.floor(addrbits))
@@ -1155,7 +1155,7 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -1183,7 +1183,7 @@ modules.interleveSchedule = memoize(function( N, period )
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.uint(8), "interleve schedule phase %d", true):instantiate("printInst") ) end
     
     local inp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):CE(true):instantiate("interlevePhase") )
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):setReset(0):CE(true):instantiate("interlevePhase") )
     local log2N = math.log(N)/math.log(2)
     
     local CE = S.CE("CE")
@@ -1191,7 +1191,7 @@ modules.interleveSchedule = memoize(function( N, period )
     if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(phase:get())) end
     
     systolicModule:addFunction( S.lambda("process", inp, S.cast(S.cast(S.bitSlice(phase:get(),period,period+log2N-1),types.uint(log2N)), types.uint(8)), "process_output", pipelines, nil, CE ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(8)))}, S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()}, S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -1237,8 +1237,8 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
     local tokensPerAddr = (wtop*minTargetW)/T
     
     local inp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), patternTotal-1, 1 ) ):setInit(0):CE(true):instantiate("patternAddr") )
-    local wcnt = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), tokensPerAddr-1, 1 ) ):setInit(0):CE(true):instantiate("wcnt") )
+    local addr = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), patternTotal-1, 1 ) ):setInit(0):CE(true):setReset(0):instantiate("patternAddr") )
+    local wcnt = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), tokensPerAddr-1, 1 ) ):setInit(0):CE(true):setReset(0):instantiate("wcnt") )
     local patternRam = systolicModule:add(fpgamodules.ram128(types.uint(log2N), pattern):instantiate("patternRam"))
 
     
@@ -1251,7 +1251,7 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
     if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{addr:get(),wcnt:get(),out})) end
     
     systolicModule:addFunction( S.lambda("process", inp, out, "process_output", pipelines, nil, CE ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(8))), wcnt:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:reset(), wcnt:reset()}, S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -1380,7 +1380,7 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
     local schedulerCE = S.__or(resetValid, readyDownstream)
     local nextFIFO = scheduler:process(nil,stepSchedule, schedulerCE)
     
-    table.insert( resetPipelines, scheduler:reset(nil, resetValid, schedulerCE ) )
+    table.insert( resetPipelines, scheduler:reset(nil, resetValid ) )
     
     local validOut = S.select(inpValid,nextFIFO,S.constant(#inputRates,types.uint(8)))
     
@@ -1597,8 +1597,8 @@ modules.posSeq = memoize(function( W, H, T )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):CE(true):instantiate("posX_posSeq") )
-    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):CE(true):instantiate("posY_posSeq") )
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
+    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
 
     local printInst
 
@@ -1621,7 +1621,7 @@ modules.posSeq = memoize(function( W, H, T )
 
     systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(16),types.uint(16)},T)), "process_output", pipelines, nil, CE ) )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(16))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()), CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:reset(), posY:reset()}, S.parameter("reset",types.bool())) )
 
     systolicModule:complete()
 
@@ -1817,8 +1817,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):instantiate("posX_padSeq") ) 
-    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):instantiate("posY_padSeq") ) 
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):setReset(0):instantiate("posX_padSeq") ) 
+    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):setReset(0):instantiate("posY_padSeq") ) 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
     
@@ -1864,7 +1864,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,ConstTrue}, "process_output", pipelines, pvalid, CE) )
     
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:set(S.constant(0,types.uint(32))), posY:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()), CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:reset(), posY:reset()},S.parameter("reset",types.bool())) )
     
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readybit, "ready", {} ) )
 
@@ -1915,7 +1915,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
     local rvalid = S.parameter("reset", types.bool() )
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     
-    local regs = J.map( J.range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
+    --local regs = J.map( J.range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
     
     if inputRate>outputRate then
       
@@ -1928,18 +1928,18 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
       
       local CE = S.CE("CE")
       systolicModule:addFunction( S.lambda("process", pinp, S.tuple{ out, S.constant(true,types.bool()) }, "process_output", pipelines, svalid, CE) )
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, rvalid, CE ) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, rvalid ) )
       systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
       
     else -- inputRate <= outputRate. 4 to 8
       assert(H==1) -- NYI
       
-      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):instantiate("phase_changerateup") )
+      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):setReset(0):instantiate("phase_changerateup") )
       local printInst
       if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.array2d(A,outputRate)}, "phase %d buffer %h", true ):instantiate("printInst") ) end
       local ConstTrue = S.constant(true,types.bool())
       local CE = S.CE("CE")
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:set(S.constant(0,types.uint(16))) }, rvalid, CE ) )
+      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", { sPhase:reset() }, rvalid ) )
       
       -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
       local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
@@ -1982,7 +1982,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil ):instantiate("addr") )
+    local addr = systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
     
     local outarray = {}
     local evicted
@@ -2022,7 +2022,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
         pipelines={addr:setBy(S.constant(true, types.bool()))}, 
         CE=CE } )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:set(S.constant(0,types.uint(16)))},S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {addr:reset()},S.parameter("reset",types.bool())) )
     
     return systolicModule
   end
@@ -2061,9 +2061,9 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
     local resetPipelines = {}
     local pipelines = {}
     
-    local currentX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), imageW-1, 1 ) ):CE(true):setInit(0):instantiate("currentX") )
+    local currentX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), imageW-1, 1 ) ):CE(true):setInit(0):setReset(0):instantiate("currentX") )
     table.insert( pipelines, currentX:setBy( S.constant(true,types.bool()) ) )
-    table.insert( resetPipelines, currentX:set( S.constant( 0, types.uint(16) ) ) )
+    table.insert( resetPipelines, currentX:reset() )
     
     for i=1,-ymin do
       -- TODO hack: due to our FIFO implementation, it needs to have 3 items of slack to meet timing. Just work around this by expanding our # of items by 3.
@@ -2124,8 +2124,7 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
         output=nil,
         outputName="ro",
         pipelines=resetPipelines,
-        valid=S.parameter("reset",types.bool()),
-        CE=CE } )
+        valid=S.parameter("reset",types.bool())} )
 
     return systolicModule
   end
@@ -2177,7 +2176,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin )
     
     local CE = S.CE("process_CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple( out ), rigel.lower(res.outputType)), "process_output", pipelines, nil, CE ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, S.parameter("reset",types.bool()), CE ) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, S.parameter("reset",types.bool()) ) )
 
     return systolicModule
   end
@@ -2237,7 +2236,7 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
     local processValid = S.parameter("process_valid",types.bool())
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid, CE) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", shifterResetPipelines,S.parameter("reset",types.bool()), CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", shifterResetPipelines,S.parameter("reset",types.bool())) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), shifterReading, "ready", {} ) )
 
     return systolicModule
@@ -2345,10 +2344,10 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
     
     local resetOutput
-    if f.stateful then resetOutput = inner:reset(nil,rst,CE) end
+    if f.stateful then resetOutput = inner:reset(nil,rst) end
     
     local resetPipelines = {}
-    table.insert( resetPipelines, SR:reset(nil,rst,CE) )
+    table.insert( resetPipelines, SR:reset(nil,rst) )
     if DARKROOM_VERBOSE then table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
@@ -2421,7 +2420,6 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
       end
 
       local storeReset = systolicModule:addFunction( Ssugar.lambdaConstructor( "store_reset" ) )
-      storeReset:setCE(storeCE)
       storeReset:addPipeline(fifo:pushBackReset())
 
       --------------
@@ -2431,22 +2429,21 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
       load:setCE(loadCE)
       load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
       local loadReset = systolicModule:addFunction( Ssugar.lambdaConstructor( "load_reset" ) )
-      loadReset:setCE(loadCE)
       loadReset:addPipeline(fifo:popFrontReset())
 
       --------------
       -- debug
       if W~=nil then
-        local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):instantiate("outputCount") )
+        local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):setReset(0):instantiate("outputCount") )
         load:addPipeline(outputCount:setBy(fifo:hasData()))
-        loadReset:addPipeline(outputCount:set(S.constant(0,types.uint(32))))
+        loadReset:addPipeline(outputCount:reset())
         
-        local maxSize = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):CE(true):setInit(0):instantiate("maxSize") ) 
+        local maxSize = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):setReset(0):CE(true):setInit(0):instantiate("maxSize") ) 
         local printInst = systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
         load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
         local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
         load:addPipeline(printInst:process(maxSize:get(), lastCycle))
-        loadReset:addPipeline(maxSize:set(S.constant(0,types.uint(16))))
+        loadReset:addPipeline(maxSize:reset())
       end
       --------------
       
@@ -2593,7 +2590,7 @@ modules.reduceSeq = memoize(function( f, T, X )
     local sinp = S.parameter("process_input", f.outputType )
     local svalid = S.parameter("process_valid", types.bool() )
 
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):instantiate("phase") )
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):setReset(0):instantiate("phase") )
     
     local pipelines = {}
     table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
@@ -2604,7 +2601,7 @@ modules.reduceSeq = memoize(function( f, T, X )
       -- hack: Our reduce fn always adds two numbers. If we only have 1 number, it won't work! just return the input.
       out = sinp
     else
-      local sResult = systolicModule:add( Ssugar.regByConstructor( f.outputType, f.systolicModule ):CE(true):instantiate("result") )
+      local sResult = systolicModule:add( Ssugar.regByConstructor( f.outputType, f.systolicModule ):CE(true):hasSet(true):instantiate("result") )
       table.insert( pipelines, sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() ) )
       out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
     end
@@ -2614,7 +2611,7 @@ modules.reduceSeq = memoize(function( f, T, X )
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (1/T)-1, types.uint(16))) }, "process_output", pipelines, svalid, CE) )
     
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:set(S.constant(0,types.uint(16)))}, S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()}, S.parameter("reset",types.bool())) )
     
     return systolicModule
   end
@@ -2643,7 +2640,7 @@ modules.overflow = memoize(function( A, count )
 
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sinp, S.lt(cnt:get(), S.constant( count, types.uint(32))) }, "process_output", {cnt:setBy(S.constant(true,types.bool()))}, nil, CE ) )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(32)))}, S.parameter("reset",types.bool()), CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(32)))}, S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -3005,7 +3002,6 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
     if rigel.isStreaming(fn.inputType)==false and rigel.isStreaming(fn.outputType)==false then 
       local CE = S.CE("CE")
       process:setCE(CE)
-      reset:setCE(CE)
     end
 
     if fn.instances~=nil then
@@ -3374,7 +3370,7 @@ modules.freadSeq = memoize(function( filename, ty )
     local CE = S.CE("CE")
 
     systolicModule:addFunction( S.lambda("process", inp, sfile:read(), "process_output", nil, nil, CE ) )
-    systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ), CE ) )
+    systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
     return systolicModule
   end
@@ -3413,7 +3409,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
 
     local resetpipe={}
     table.insert(resetpipe,sfile:reset()) -- verilator: NOT SUPPORTED
-    systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", resetpipe, S.parameter("reset", types.bool() ), CE ) )
+    systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", resetpipe, S.parameter("reset", types.bool() ) ) )
 
     return systolicModule
   end
@@ -3633,7 +3629,7 @@ modules.triggeredCounter = memoize(function(TY, N)
 
     local sinp = S.parameter( "inp", TY )
     
-    local sPhase = systolicModule:add( Ssugar.regByConstructor( TY, fpgamodules.sumwrap(TY,N-1) ):CE(true):instantiate("phase") )
+    local sPhase = systolicModule:add( Ssugar.regByConstructor( TY, fpgamodules.sumwrap(TY,N-1) ):CE(true):setReset(0):instantiate("phase") )
     local reg = systolicModule:add( S.module.reg( TY,true ):instantiate("buffer") )
     
     local reading = S.eq(sPhase:get(),S.constant(0,TY)):disablePipelining()
@@ -3646,7 +3642,7 @@ modules.triggeredCounter = memoize(function(TY, N)
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), reading, "ready", {} ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:set(S.constant(0,TY))},S.parameter("reset",types.bool()),CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool()) ) )
 
     return systolicModule
   end
