@@ -1214,80 +1214,63 @@ function systolicASTFunctions:toVerilog( module )
         wire = true
       elseif n.kind=="select" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
-      else
-        local resTable = {}
-        err(n.type:channels()==1, "NYI - systolic implicit vector ops "..n.kind)
-        
-        for c=0,n.type:channels()-1 do
-          local res
-          local sub = "["..((c+1)*n.type:baseType():verilogBits()-1)..":"..(c*n.type:baseType():verilogBits()).."]" 
-          if n.type:channels()==1 then sub="" end
-
-          if n.kind=="binop" then
-
-            if n.op=="<" or n.op==">" or n.op=="<=" or n.op==">=" then
-              local lhs = n.inputs[1]
-              local rhs = n.inputs[2]
-              if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
-                local lhsv = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for $signed")
-                local rhsv = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, args[2], "// wire for $signed")
-                res = "($signed("..lhsv..")"..n.op.."$signed("..rhsv.."))"
-              elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
-                res = "(("..args[1]..")"..n.op.."("..args[2].."))"
-              else
-                print( n.type:baseType():isBool() , n.lhs.type:baseType():isInt() , n.rhs.type:baseType():isInt(),n.type:baseType():isBool() , n.lhs.type:baseType():isUint() , n.rhs.type:baseType():isUint())
-                assert(false)
-              end
-            elseif n.type:isBool() then
-              local op = binopToVerilogBoolean[n.op]
-              if type(op)~="string" then print("OP_BOOLEAN",n.op); assert(false) end
-              res = "("..args[1]..op..args[2]..")"
-            else
-              local op = binopToVerilog[n.op]
-              if type(op)~="string" then print("OP",n.op); assert(false) end
-              local lhs = args[1]
-              if n.inputs[1].type:baseType():isInt() then 
-                lhs = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, lhs, "// wire for $signed")
-                lhs = "$signed("..lhs..")" 
-              end
-              local rhs = args[2]
-              if n.inputs[2].type:baseType():isInt() then 
-                rhs = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, rhs, "// wire for $signed")
-                rhs = "$signed("..rhs..")" 
-              end
-              res = "("..lhs..op..rhs..")"
-            end
-
-          elseif n.kind=="unary" then
-            if n.op=="abs" then
-              if n.type:isInt() then
-                res = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for abs")
-                res = "(("..res.."["..(n.type:verilogBits()-1).."])?(-"..res.."):("..res.."))"
-              else
-                --              return inputs.expr[c] -- must be unsigned
-                err(false,"NYI - abs on type "..tostring(n.type))
-              end
-            elseif n.op=="-" then
-              res = "(-"..args[1]..")"
-            elseif n.op=="not" then
-              res = "(~"..args[1]..")"
-            elseif n.op=="isX" then
-              res = "("..args[1].."===1'bx)"
-            else
-              print(n.op)
-              assert(false)
-            end
-          elseif n.kind=="vectorSelect" then
-            res = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
+      elseif n.kind=="binop" then
+        if n.op=="<" or n.op==">" or n.op=="<=" or n.op==">=" then
+          local lhs = n.inputs[1]
+          local rhs = n.inputs[2]
+          if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
+            local lhsv = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for $signed")
+            local rhsv = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, args[2], "// wire for $signed")
+            finalResult = "($signed("..lhsv..")"..n.op.."$signed("..rhsv.."))"
+          elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
+            finalResult = "(("..args[1]..")"..n.op.."("..args[2].."))"
           else
-            print(n.kind)
+            print( n.type:baseType():isBool() , n.lhs.type:baseType():isInt() , n.rhs.type:baseType():isInt(),n.type:baseType():isBool() , n.lhs.type:baseType():isUint() , n.rhs.type:baseType():isUint())
             assert(false)
           end
-          
-          table.insert( resTable, res )
+        elseif n.type:isBool() then
+          local op = binopToVerilogBoolean[n.op]
+          if type(op)~="string" then print("OP_BOOLEAN",n.op); assert(false) end
+          finalResult = "("..args[1]..op..args[2]..")"
+        else
+          local op = binopToVerilog[n.op]
+          if type(op)~="string" then print("OP",n.op); assert(false) end
+          local lhs = args[1]
+          if n.inputs[1].type:baseType():isInt() then 
+            lhs = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, lhs, "// wire for $signed")
+            lhs = "$signed("..lhs..")" 
+          end
+          local rhs = args[2]
+          if n.inputs[2].type:baseType():isInt() then 
+            rhs = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, rhs, "// wire for $signed")
+            rhs = "$signed("..rhs..")" 
+          end
+          finalResult = "("..lhs..op..rhs..")"
         end
-
-        finalResult = "{"..table.concat(resTable,",").."}"
+        
+      elseif n.kind=="unary" then
+        if n.op=="abs" then
+          if n.type:isInt() then
+            finalResult = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for abs")
+            finalResult = "(("..finalResult.."["..(n.type:verilogBits()-1).."])?(-"..finalResult.."):("..finalResult.."))"
+          else
+            err(false,"NYI - abs on type "..tostring(n.type))
+          end
+        elseif n.op=="-" then
+          finalResult = "(-"..args[1]..")"
+        elseif n.op=="not" then
+          finalResult = "(~"..args[1]..")"
+        elseif n.op=="isX" then
+          finalResult = "("..args[1].."===1'bx)"
+        else
+          print(n.op)
+          assert(false)
+        end
+      elseif n.kind=="vectorSelect" then
+        finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
+      else
+        print(n.kind)
+        assert(false)
       end
 
       -- if this value is used multiple places, store it in a variable
