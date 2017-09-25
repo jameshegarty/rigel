@@ -306,7 +306,7 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   local rstvalid = systolic.parameter("reset",types.bool())
 
   for i=1,size do
-    local I = M:add( systolic.module.reg( ty, CE, nil, nil, resetValue ):instantiate("SR"..i):setArbitrate("valid") )
+    local I = M:add( systolic.module.reg( ty, CE, nil, nil, resetValue ):instantiate("SR"..i) )
     table.insert( regs, I )
     if i==1 then
       table.insert(pipelines, I:set(inp) )

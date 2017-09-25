@@ -198,7 +198,7 @@ function systolic.valueToVerilog( value, ty )
   end
 end
 
-function systolicModuleFunctions:instantiate( name, coherent, arbitrate, parameters, X )
+function systolicModuleFunctions:instantiate( name, coherent, parameters, X )
   err( type(name)=="string", "instantiation name must be a string")
   err( X==nil,"instantiate: too many arguments" )
   err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
@@ -206,12 +206,11 @@ function systolicModuleFunctions:instantiate( name, coherent, arbitrate, paramet
   -- coherence is a property of instances. By default, inherit the coherence option from the module
   -- (This makes registers coherent by default for example)
   err( coherent==nil or type(coherent)=="boolean", "coherent must be bool")
-  err( arbitrate==nil or type(arbitrate)=="string", "arbitrate must be string")
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
   -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
-  return systolicInstance.new({ kind="module", module=self, name=name, coherent=coherent, arbitrate=arbitrate, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
+  return systolicInstance.new({ kind="module", module=self, name=name, coherent=coherent, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
 function systolicModuleFunctions:lookupFunction( fnname )
@@ -261,7 +260,6 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   return setmetatable(t,systolicFunctionMT)
 end
 
-function systolicInstanceFunctions:setArbitrate( v )  self.arbitrate=v; return self end
 function systolicInstanceFunctions:setCoherent( v )  self.coherent=v; return self end
 function systolicInstanceFunctions:setParameters( v )  self.parameters=v; return self end
 
@@ -675,7 +673,7 @@ function systolicASTFunctions:internalDelay()
     else
       return 0,0
     end
-  elseif self.kind=="tuple" or self.kind=="callArbitrate" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -849,7 +847,7 @@ local function addArbitration( callsite )
   if fn.inputParameter.type==types.null() then
     -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
     return callsite
-  elseif true or instance.arbitrate==nil then
+  else
     -- no arbitration
     if #instance.callsites[fnname]==0 then
       table.insert(instance.callsites[fnname],callsite)
@@ -857,38 +855,6 @@ local function addArbitration( callsite )
     else
       error("Function '"..fn.name.."' on instance '"..instance.name.."' can't have multiple callsites!"..callsite.loc)
     end
-  elseif instance.arbitrate=="valid" then
-    if #instance.arbitration[fnname]==0  then
-      -- need to make a new callArbitrate node
-      err(input~=nil, "call aribtrate - missing input?")
-      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-      local tca = { kind="callArbitrate", fn=fn.name, instance=instance, type=types.tuple{fn.inputParameter.type,types.bool()}, loc=getloc(), inputs={input,valid} }
-      tca = systolicAST.new(tca)
-      local I, V = systolic.index(tca,0), systolic.index(tca,1)
-      local CS = createCallsite( fn, fnname, instance, I, V, CE)
-      table.insert(instance.arbitration[fnname], {tca,CS})
-      return CS
-    else
-      -- mutate the callArbitrate. Don't introduce cycles! NYI - CHECK FOR THAT
-      local tcaDATA = instance.arbitration[fnname][1]
-      local tca,CS = tcaDATA[1], tcaDATA[2]
-
-      assert(input:contains(tca)==false)
-      assert(valid:contains(tca)==false)
-
-      err(input~=nil, "call aribtrate - missing input?")
-      table.insert( tca.inputs, input )
-      err(valid~=nil, "NYI - in call arbitrate, you must explicitly pass valid bits")
-      table.insert(tca.inputs, valid)
-
-      err( CE==CS.inputs[3], "With call arbitration, stall domains must match exactly! "..callsite.loc)
-
-      return CS
-    end
-    assert(false)
-  else
-    print("ARBITRATE", instance.arbitrate)
-    assert(false)
   end
 end
 
@@ -1029,26 +995,6 @@ function systolicASTFunctions:toVerilog( module )
         local decl
         finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.fnname, args[1], args[2], args[3] )
         table.insert( declarations, decl )
-      elseif n.kind=="callArbitrate" then
-        -- inputs are stored as {data,validbit} pairs, ie {call1data,call1valid,call2data,call2valid}
-        local argpairs = J.split(args,2)
-        if #argpairs==1 then
-          -- we're in arbitrate mode, but we didn't actually end up calling it multiple times. Passthrough
-          finalResult = "{"..args[2]..","..args[1].."}"
-        else
-          for k,v in pairs(argpairs) do
-            --table.insert( declarations, "always @(posedge CLK) begin if("..v[2]..[[===1'bx) begin $display("valid bit can't be x! Module '%s' instance ']]..n.instance.name..[[' function ']]..n.fn..[['", INSTANCE_NAME); end end]])
-          end
-
-          local data = J.foldt(argpairs, function(a,b) return "(("..a[2]..")?("..a[1].."):("..b[1].."))" end )
-          local v = J.foldt(argpairs, function(a,b) return "("..a[2].."||"..b[2]..")" end )
-          
-          -- do bitcount w/ the array of valid bits. Pad to 5 bits so that sum works correctly
-          local cnt = J.foldt(argpairs, function(a,b) return {"LOL","(({4'b0,"..a[2].."})+({4'b0,"..b[2].."}))"} end )
-          
-          table.insert( declarations, "always @(posedge CLK) begin if("..cnt[2]..[[ > 5'd1) begin $display("error, function ']]..n.fn..[[' on instance ']]..n.instance.name..[[' in module '%s' has multiple valid bits active in same cycle!",INSTANCE_NAME);$finish(); end end]])
-          finalResult = "{"..v..","..data.."}"
-        end
       elseif n.kind=="constant" then
         local function cconst( ty, val )
           if ty:isArray() then
@@ -1827,7 +1773,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSe
   err( type(hasSet)=="boolean", "systolic.module.regBy: hasSet must be boolean but is "..tostring(hasSet))
   assert(X==nil)
 
-  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R"):setArbitrate("valid"):setCoherent(false)
+  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R"):setCoherent(false)
   local inner = setby:instantiate("regby_inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
