@@ -520,13 +520,13 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     
     if hasReadyInput[K] then
       downstreamReady = S.parameter(prefix.."ready_downstream", types.bool())
-      CE = S.__or(rst,downstreamReady)
+      CE = downstreamReady
     else
       downstreamReady = S.parameter(prefix.."ready_downstream", types.null())
       CE = S.constant(true,types.bool())
     end
 
-    local pout = inner[fnname](inner,pinp,S.__not(rst), CE )
+    local pout = inner[fnname](inner,pinp,S.constant(true,types.bool()), CE )
 
     -- not blocked downstream: either downstream is ready (downstreamReady), or we don't have any data anyway (pout[1]==false), so we can work on clearing the pipe
     -- Actually - I don't think this is legal. We can't have our stall signal depend on our own output. We would have to register it, etc
@@ -537,7 +537,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     -- basically, for the first N cycles the pipeline is executed, it will have garbage in the pipe (valid was false at the time those cycles occured). So we need to gate the output by the delayed valid bits. This is a little big goofy here, since process_valid is always true, except for resets! It's not true for the first few cycles after resets! And if we ignore that the first few outputs will be garbage!
     local SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
     
-    local srvalue = SR:pushPop(S.constant(true,types.bool()), S.__not(rst), CE )
+    local srvalue = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
     local outvalid = S.__and(S.index(pout,1), srvalue )
     local outvalidRaw = outvalid
     --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
@@ -2308,16 +2308,16 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     local pipelines = {}
 
     local pready = S.parameter("ready_downstream", types.bool())
-    local CE = S.__or(pready,rst)
+    local CE = pready
     
     local outvalid
     local out
     if res.inputType~=types.null() or nilhandshake==true then
-      outvalid = SR:pushPop(S.index(pinp,1), S.__not(rst), CE)
+      outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), CE), outvalid})
     else
-      outvalid = SR:pushPop(S.constant(true,types.bool()), S.__not(rst), CE)
-      out = S.tuple({inner:process(nil, S.__not(rst), CE), outvalid})
+      outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
+      out = S.tuple({inner:process(nil, S.constant(true,types.bool()), CE), outvalid})
     end
     
     if DARKROOM_VERBOSE then
@@ -2338,7 +2338,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     if tmuxRates~=nil then
       if DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(S.lt(outvalid,S.constant(#tmuxRates,types.uint(8))), S.__not(rst), CE) ) end
     else
-      if DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
+      if DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.constant(true,types.bool()), CE) ) end
     end
     
     systolicModule:addFunction( S.lambda("process", pinp, out, "process_output", pipelines) ) 
