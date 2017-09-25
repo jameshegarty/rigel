@@ -1374,10 +1374,10 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
     local pipelines = {}
     local resetPipelines = {}
     
-    local stepSchedule = S.__and( S.__and(inpValid, readyDownstream), S.__not(resetValid) )
+    local stepSchedule = S.__and(inpValid, readyDownstream)
     
     assert( Schedule.systolicModule:getDelay("process")==0 )
-    local schedulerCE = S.__or(resetValid, readyDownstream)
+    local schedulerCE = readyDownstream
     local nextFIFO = scheduler:process(nil,stepSchedule, schedulerCE)
     
     table.insert( resetPipelines, scheduler:reset(nil, resetValid ) )
@@ -2633,14 +2633,14 @@ modules.overflow = memoize(function( A, count )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local cnt = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):instantiate("cnt") )
+    local cnt = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32))):CE(true):setReset(0):instantiate("cnt") )
 
     local sinp = S.parameter("process_input", A )
     local CE = S.CE("CE")
 
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ sinp, S.lt(cnt:get(), S.constant( count, types.uint(32))) }, "process_output", {cnt:setBy(S.constant(true,types.bool()))}, nil, CE ) )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:set(S.constant(0,types.uint(32)))}, S.parameter("reset",types.bool())) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {cnt:reset()}, S.parameter("reset",types.bool())) )
 
     return systolicModule
   end
@@ -2674,10 +2674,10 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
     
-    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("outputCount"):setCoherent(false) )
+    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("outputCount"):setCoherent(false) )
     
     -- NOTE THAT WE Are counting cycles where downstream_ready == true
-    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):instantiate("cycleCount"):setCoherent(false) )
+    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("cycleCount"):setCoherent(false) )
     
     local rst = S.parameter("reset",types.bool())
     
@@ -2688,7 +2688,7 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     
     local fixupMode = S.gt(cycleCount:get(),S.constant(cycles,types.uint(32)))
     
-    local CE = S.__or(pready,rst)
+    local CE = pready
     local CE_cycleCount = CE  
 
     if upstream then  
@@ -2697,8 +2697,8 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     end
 
     local pipelines = {}
-    table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.__not(rst), CE) )
-    table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.__not(rst), CE_cycleCount) )
+    table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.constant(true,types.bool()), CE) )
+    table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.constant(true,types.bool()), CE_cycleCount) )
     
     local outData
     if A:verilogBits()==0 then
@@ -2708,13 +2708,12 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     end
     
     local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
-    outValid = S.__and(outValid,S.__not(rst))
     
     if tooSoonCycles~=nil then
       local asstInst = systolicModule:add( S.module.assert( "pipeline completed eariler than expected", true, false ):instantiate("asstInst") )
       local tooSoon = S.eq(cycleCount:get(),S.constant(tooSoonCycles,types.uint(32)))
       tooSoon = S.__and(tooSoon,S.ge(outputCount:get(),S.constant(count,types.uint(32))))
-      table.insert( pipelines, asstInst:process(S.__not(tooSoon),S.__not(rst),CE) )
+      table.insert( pipelines, asstInst:process(S.__not(tooSoon),S.constant(true,types.bool()),CE) )
       
       -- ** throw in valids to mess up result
       -- just raising an assert doesn't work b/c verilog is dumb
@@ -2726,8 +2725,8 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     systolicModule:addFunction( S.lambda("process", pinp, S.tuple{outData,outValid}, "process_output", pipelines) ) 
     
     local resetPipelines = {}
-    table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(32)),rst,CE) )
-    table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst,CE_cycleCount) )
+    table.insert( resetPipelines, outputCount:reset(nil,rst) )
+    table.insert( resetPipelines, cycleCount:reset(nil,rst) )
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
     
@@ -2742,7 +2741,7 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
   end
 
   return rigel.newFunction( res )
-    end)
+end)
 
 
 -- record the # of cycles needed to complete the computation, and write it into the last axi burst
@@ -2768,8 +2767,8 @@ modules.cycleCounter = memoize(function( A, count )
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool(),types.bool()}, "cycleCounter outputCount %d cycleCount %d outValid %d metadataMode %d"):instantiate("printInst") ) end
     
-    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):instantiate("outputCount"):setCoherent(false) )
-    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):instantiate("cycleCount"):setCoherent(false) )
+    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):setReset(0):instantiate("outputCount"):setCoherent(false) )
+    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):setReset(0):instantiate("cycleCount"):setCoherent(false) )
     
     local rst = S.parameter("reset",types.bool())
     
@@ -2782,11 +2781,11 @@ modules.cycleCounter = memoize(function( A, count )
 
     local metadataMode = done
 
-    local CE = S.__or(pready,rst)
+    local CE = pready
     
     local pipelines = {}
-    table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,metadataMode)), S.__not(rst), CE) )
-    table.insert( pipelines, cycleCount:setBy(S.__not(done), S.__not(rst)) )
+    table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,metadataMode)), S.constant(true,types.bool()), CE) )
+    table.insert( pipelines, cycleCount:setBy(S.__not(done), S.constant(true,types.bool())) )
     
     local outData
     
@@ -2800,15 +2799,14 @@ modules.cycleCounter = memoize(function( A, count )
     end
 
     local outValid = S.__or(metadataMode,pvalid)
-    outValid = S.__and(outValid,S.__not(rst))
     
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple{outputCount:get(),cycleCount:get(),outValid,metadataMode}) ) end
     
     systolicModule:addFunction( S.lambda("process", pinp, S.tuple{outData,outValid}, "process_output", pipelines) ) 
     
     local resetPipelines = {}
-    table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(32)),rst,CE) )
-    table.insert( resetPipelines, cycleCount:set(S.constant(0,types.uint(32)),rst) )
+    table.insert( resetPipelines, outputCount:reset(nil,rst) )
+    table.insert( resetPipelines, cycleCount:reset(nil,rst) )
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
     
@@ -2820,7 +2818,7 @@ modules.cycleCounter = memoize(function( A, count )
   end
 
   return rigel.newFunction( res )
-    end)
+end)
 
 -- this takes in a darkroom IR graph and normalizes the input SDF rate so that
 -- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
