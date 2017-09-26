@@ -198,19 +198,15 @@ function systolic.valueToVerilog( value, ty )
   end
 end
 
-function systolicModuleFunctions:instantiate( name, coherent, parameters, X )
+function systolicModuleFunctions:instantiate( name, parameters, X )
   err( type(name)=="string", "instantiation name must be a string")
   err( X==nil,"instantiate: too many arguments" )
   err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
 
-  -- coherence is a property of instances. By default, inherit the coherence option from the module
-  -- (This makes registers coherent by default for example)
-  err( coherent==nil or type(coherent)=="boolean", "coherent must be bool")
-
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
   -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
-  return systolicInstance.new({ kind="module", module=self, name=name, coherent=coherent, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
+  return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
 function systolicModuleFunctions:lookupFunction( fnname )
@@ -260,7 +256,6 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   return setmetatable(t,systolicFunctionMT)
 end
 
-function systolicInstanceFunctions:setCoherent( v )  self.coherent=v; return self end
 function systolicInstanceFunctions:setParameters( v )  self.parameters=v; return self end
 
 function systolicInstanceFunctions:getDelay( fn )
@@ -513,32 +508,6 @@ function checkForInst(inst, scopes)
   end
 end
 
--- check that all of the variables refered to are actually in scope
--- scopes goes from innermost (index 1) to outermost (index n)
-function systolicASTFunctions:checkVariables(scopes)
-  assert(type(scopes)=="table")
-
-  local function astcheck(n)
-    if n.kind=="readinput" or n.kind=="reg" or n.kind=="ram128" or n.kind=="call" then
-      checkForInst(n.inst, scopes)
-    end
-
-    if n.kind=="fndefn" then
-      local i=1
-      while n["dst"..i] do
-        checkForInst(n["dst"..i], scopes)
-        i = i + 1
-      end
-    end
-
-    if n.kind=="call" and n.func:isPure()==false then
-      assert(systolicAST.isSystolicAST(n.valid))
-    end
-  end
-
-  self:visitEach(astcheck)
-end
-
 function systolicASTFunctions:checkInstances( instMap )
   self:visitEach( 
     function(n)
@@ -596,16 +565,6 @@ function systolicASTFunctions:disablePipelining()
   return self
 end
 
--- This will assign this node to NO transaction. Even if :setTransaction() is called on it, it will remain in no transaction!
-function systolicASTFunctions:setNoTransaction()
-  return self:process(function(n) n.transaction=false; return systolicAST.new(n) end)
-end
-
-function systolicASTFunctions:setTransaction(tname)
-  assert( type(tname)=="string" )
-  return self:process(function(n) if(n.transaction==nil or n.transaction~=false) then n.transaction=tname; end return systolicAST.new(n) end)
-end
-
 -- this disables pipelining on a single node.
 -- Note that this doesn't guarantee that this is at pipe depth 0! (no pipelining).
 -- this just requests that we don't add any pipeline registers (if we were going to)
@@ -639,7 +598,7 @@ function systolicASTFunctions:removeDelays( )
       if cebit~=nil then CENAME="_CE"..cebit.name end
       local hasvalid = true
       if validbit==nil or validbit.kind=="null" then hasvalid=false end
-      local reg = systolic.module.reg( node.type, cebit~=nil, nil, hasvalid ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME):setCoherent(false)
+      local reg = systolic.module.reg( node.type, cebit~=nil, nil, hasvalid ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME)
       table.insert( pipelineRegisters, reg )
       local d = getDelayed(node, delay-1, validbit, cebit)
       delayCache[node][validbit][celookup][delay] = reg:delay( d, validbit, cebit )
@@ -1545,7 +1504,7 @@ function userModuleFunctions:getDelay( fnname )
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
-function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, parameters, verilog, verilogDelay )
+function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
@@ -1557,10 +1516,11 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
   J.map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
 
   err( onlyWire==nil or type(onlyWire)=="boolean", "onlyWire must be nil or bool")
-  err( coherentDefault==nil or type(coherentDefault)=="boolean", "coherentDefault must be nil or bool")
   err( parameters==nil or type(parameters)=="table", "parameters must be nil or table")
-  err( verilog==nil or type(verilog)=="string", "verilog must be nil or string")
-  err( verilogDelay==nil or type(verilogDelay)=="table", "verilogDelay must be nil or table")
+  err( verilog==nil or type(verilog)=="string", "verilog must be nil or string, module "..name)
+  err( verilogDelay==nil or type(verilogDelay)=="table", "verilogDelay must be nil or table, module "..name)
+
+  err( X==nil, "systolic.module.new: too many arguments" )
 
   -- not actually true: verilogDelay can be missing if this module is never used by a module with onlyWire==false
   --if onlyWire then err(type(verilogDelay)=="table", "if onlyWire is true, verilogDelay must be passed") end
@@ -1604,7 +1564,7 @@ function systolic.module.new( name, fns, instances, onlyWire, coherentDefault, p
     end
   end
 
-  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, coherentDefault=coherentDefault, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog}
+  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
@@ -1756,7 +1716,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSe
   err( type(hasSet)=="boolean", "systolic.module.regBy: hasSet must be boolean but is "..tostring(hasSet))
   assert(X==nil)
 
-  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R"):setCoherent(false)
+  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R")
   local inner = setby:instantiate("regby_inner")
   local fns = {}
   fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
@@ -1798,7 +1758,7 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSe
     fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
   end
 
-  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue), fns, {R,inner}, true, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
+  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue), fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
   assert(systolic.isModule(M))
   return M
 end)

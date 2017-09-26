@@ -22,8 +22,8 @@ modules.sumwrap = memoize(function( ty, limit, X)
   local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,ty)),
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( "sumwrap_"..tostring(ty).."_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
-                  end)
+  return S.module.new( "sumwrap_"..tostring(ty).."_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
 modules.incIf=memoize(function(inc,ty,hasCE)
@@ -37,59 +37,59 @@ modules.incIf=memoize(function(inc,ty,hasCE)
   local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
   local CE = S.CE("CE")
   if hasCE==false then CE=nil end
-  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{},nil,true)
+  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{})
 end)
 
 -- this will never wrap around
 modules.incIfNowrap=memoize(function(inc,ty)
-                        if inc==nil then inc=1 end
-                        if ty==nil then ty=types.uint(16) end
-
-                        local max
-                        if ty:isUint() then
-                          max = math.pow(2,ty.precision)-1
-                        else
-                          assert(false)
-                        end
-      local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
-
-      local ot = S.select( S.__and(S.index(swinp,1),S.lt(S.index(swinp,0),S.constant(max,ty))), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incifnowrap_"..inc..tostring(ty), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
-              end)
+  if inc==nil then inc=1 end
+  if ty==nil then ty=types.uint(16) end
+  
+  local max
+  if ty:isUint() then
+    max = math.pow(2,ty.precision)-1
+  else
+    assert(false)
+  end
+  local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
+  
+  local ot = S.select( S.__and(S.index(swinp,1),S.lt(S.index(swinp,0),S.constant(max,ty))), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
+  return S.module.new( "incifnowrap_"..inc..tostring(ty), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+end)
 
 -- we generally want to use incIf if we are going to increment a variable based on some (calculated) condition.
 -- The reason for this is if we module the valid bit based on the condition, the valid bit may go into a undefined state.
 -- (ie at init time the condition will be unstable garbage or X's). This allows us to not mess with the valid bit,
 -- but still conditionally increment.
 modules.incIfWrap=memoize(function(ty,limit,inc)
-                            assert(types.isType(ty))
-                        assert(type(limit)=="number")
-                        err(limit<math.pow(2,ty:verilogBits()), "limit out of bounds!")
-                        local incv = inc or 1
-      local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
-
-      local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
-      local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-      return S.module.new( "incif_wrap"..tostring(ty).."_"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{},nil,true)
-              end)
+  assert(types.isType(ty))
+  assert(type(limit)=="number")
+  err(limit<math.pow(2,ty:verilogBits()), "limit out of bounds!")
+  local incv = inc or 1
+  local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
+  
+  local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
+  local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
+  return S.module.new( "incif_wrap"..tostring(ty).."_"..limit.."_inc"..tostring(inc), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+end)
 
 
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.uint(16),types.uint(16)})
-modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
+modules.sum = S.module.new( "summodule", {process=S.lambda("process",swinp,(S.index(swinp,0)+S.index(swinp,1)):disablePipelining(),"process_output")},{})
 ------------
 modules.max = memoize(function(ty,hasCE)
-                        local swinp = S.parameter("process_input", types.tuple{ty,ty})
-                        local CE = S.CE("CE")
-                        if hasCE==false then CE=nil end
-                        return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil,CE)},{},nil,true)
-                      end)
+  local swinp = S.parameter("process_input", types.tuple{ty,ty})
+  local CE = S.CE("CE")
+  if hasCE==false then CE=nil end
+  return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil,CE)},{})
+end)
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
-modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{},nil,true)
+modules.__and = S.module.new( "andmodule", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)),"process_output")},{})
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
-modules.__andSingleCycle = S.module.new( "andmoduleSingleCycle", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output")},{},nil,true)
+modules.__andSingleCycle = S.module.new( "andmoduleSingleCycle", {process=S.lambda("process",swinp,S.__and(S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output")},{})
 ------------
 -- modsub calculates A-B where A,B are mod 'wrap'. We say that A>=B always. So if A<B (as stored), we calculate it as if they have just wrapped around circularly.
 -- This is obviously ambiguous - we can't tell how many times A vs B have wrapped around. Assume they have only wrapped around once.
@@ -678,19 +678,19 @@ local function loadVerilogFile(inpType,outType,filestr)
   if outType==types.bool() then outv=false end
   fns.process = S.lambda("process",inp,S.cast(S.constant(outv,outType),outType),"out",nil,nil,S.CE("ce"))
   --print("MODULE ",filestr,"DELAY",tonumber(delaystring))
-  local m = systolic.module.new(filestr,fns,{},true,nil,nil,vstring,{process=tonumber(delaystring)})
+  local m = systolic.module.new(filestr,fns,{},true,nil,vstring,{process=tonumber(delaystring)})
   return m
 end
 
 modules.binop = memoize(function(op,lhsType,rhsType,outType)
-assert(type(op)=="string")
-                             assert(types.isType(lhsType))
-                             assert(types.isType(rhsType))
-                             assert(types.isType(outType))
-
-                             local str = op.."_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
-                             return loadVerilogFile( types.tuple{lhsType,rhsType}, outType, str)
-                           end)
+  assert(type(op)=="string")
+  assert(types.isType(lhsType))
+  assert(types.isType(rhsType))
+  assert(types.isType(outType))
+  
+  local str = op.."_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
+  return loadVerilogFile( types.tuple{lhsType,rhsType}, outType, str)
+end)
 
 modules.multiply = function(lhsType,rhsType,outType) return modules.binop("mul",lhsType,rhsType,outType) end
 
@@ -698,7 +698,6 @@ modules.intToFloat = loadVerilogFile(types.int(32),types.float(32),"int32_to_flo
 modules.floatToInt = loadVerilogFile(types.float(32),types.int(32),"float32_to_int")
 modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_float")
 modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
-
 
 function modules.verilatorDiv(ty)
   local fns = {}

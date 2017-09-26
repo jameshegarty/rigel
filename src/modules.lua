@@ -509,7 +509,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutputCount %d"):instantiate(prefix.."printInst") ) end
 
     local outputCount
-    if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount"):setCoherent(false) ) end
+    if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount") ) end
 
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
 
@@ -803,7 +803,7 @@ vstring = vstring..[[endmodule
       fns.process = S.lambda("process",inp,S.cast(S.tuple{S.constant(datav,datat),S.constant(true,types.bool())}, rigel.lower(res.outputType)), "out",nil,S.parameter("process_valid",types.bool()),S.CE("ce"))
       fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()))
     
-      local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil,nil, vstring,{process=0,reset=0})
+      local FilterSeqImpl = systolic.module.new("FilterSeqImpl", fns, {}, true,nil, vstring,{process=0,reset=0})
 
       local inner = systolicModule:add(FilterSeqImpl:instantiate("filterSeqImplInner"))
 
@@ -865,7 +865,7 @@ endmodule
     local downstreamReady = S.parameter("ready_downstream", types.array2d(types.bool(),2))
     fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
   
-    return systolic.module.new(res.name, fns, {}, true,nil,nil, vstring,{process=0,reset=0,ready=0})
+    return systolic.module.new(res.name, fns, {}, true,nil, vstring,{process=0,reset=0,ready=0})
   end
 
   return rigel.newFunction(res)
@@ -1147,7 +1147,7 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
     local phasebits = (math.log(scale)/math.log(2))
     local phase = S.cast(S.bitSlice( sPhase:get(), addrbits, addrbits+phasebits-1 ), types.uint(phasebits))
     
-    local sBuffer = systolicModule:add( fpgamodules.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits()/8, ITYPE:verilogBits()/8,nil,true ):instantiate("buffer"):setCoherent(true) )
+    local sBuffer = systolicModule:add( fpgamodules.bramSDP( true, (A:verilogBits()*W)/8, ITYPE:verilogBits()/8, ITYPE:verilogBits()/8,nil,true ):instantiate("buffer") )
     local reading = S.eq( phase, S.constant(0,types.uint(phasebits)) ):disablePipelining()
     
     local pipelines = {sBuffer:writeAndReturnOriginal(S.tuple{xpos,S.cast(sinp,types.bits(ITYPE:verilogBits()))}, reading), sPhase:setBy( S.constant(1, types.uint(16)) )}
@@ -2296,11 +2296,11 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
     local outputCount
-    if DARKROOM_VERBOSE then outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount"):setCoherent(false) ) end
+    if DARKROOM_VERBOSE then outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount") ) end
     
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
-    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name):setCoherent(false) )
+    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name) )
     local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())
@@ -2674,10 +2674,10 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
     
-    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("outputCount"):setCoherent(false) )
+    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("outputCount") )
     
     -- NOTE THAT WE Are counting cycles where downstream_ready == true
-    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("cycleCount"):setCoherent(false) )
+    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("cycleCount") )
     
     local rst = S.parameter("reset",types.bool())
     
@@ -2767,8 +2767,8 @@ modules.cycleCounter = memoize(function( A, count )
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool(),types.bool()}, "cycleCounter outputCount %d cycleCount %d outValid %d metadataMode %d"):instantiate("printInst") ) end
     
-    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):setReset(0):instantiate("outputCount"):setCoherent(false) )
-    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):setReset(0):instantiate("cycleCount"):setCoherent(false) )
+    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count+padCount-1,1) ):CE(true):setReset(0):instantiate("outputCount") )
+    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32),false) ):CE(false):setReset(0):instantiate("cycleCount") )
     
     local rst = S.parameter("reset",types.bool())
     
@@ -3256,7 +3256,6 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     end
 
     systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
-    local nip = S.parameter("nip",types.null())
 
     systolicModule:complete()
     return systolicModule
