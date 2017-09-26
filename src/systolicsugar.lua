@@ -45,9 +45,11 @@ new=function( ty, setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
-complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init ) end,
+complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init, self.resetValue, self.hasSetFn ) end,
 configFns={CE=function(self,v) self.CE=v; return self end, 
-setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end}
+hasSet=function(self,v) err(type(v)=="boolean", "hasSet should be bool");self.hasSetFn=v; return self end, 
+setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end,
+setReset=function(self,I) self.type:checkLuaValue(I); self.resetValue=I; return self end}
 }
 
 --------------------------------------------------------------------
@@ -182,7 +184,7 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
     local fns = J.map(self.functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
-    self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.coherentDefault, self.options.parameters, self.options.verilog, self.options.verilogDelay )
+    self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.parameters, self.options.verilog, self.options.verilogDelay )
     self.isComplete = true
   end
 end

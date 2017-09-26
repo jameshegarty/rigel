@@ -199,7 +199,7 @@ C.absoluteDifference = memoize(function(A,outputType,X)
     assert(false)
   end
 
-  local partial = RM.lift( "absoluteDifference", TY, outputType, 1,
+  local partial = RM.lift( "absoluteDifference_"..tostring(A).."_"..tostring(outputType), TY, outputType, 1,
     function(sinp)
       local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
       local out = S.cast(subabs, internalType_uint)
@@ -217,13 +217,13 @@ end)
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
   if shift >= 0 then
-    local touint8 = RM.lift( "fromuint" .. from.precision .. "touint" .. to.precision, from, to, 1,
+    local touint8 = RM.lift( "shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift), from, to, 1,
       function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
     return touint8
   else
-    local touint8 = RM.lift( "fromuint" .. from.precision .. "touint" .. to.precision, from, to, 1,
+    local touint8 = RM.lift( "shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift), from, to, 1,
       function(touint8inp) return S.cast(S.lshift(touint8inp,S.constant(-shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
@@ -871,7 +871,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
+  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
 end)
 
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )

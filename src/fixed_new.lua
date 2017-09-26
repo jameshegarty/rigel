@@ -552,7 +552,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
 
   if #resetStats>0 then
     res.stateful=true
-    sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool()),CE) )
+    sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
   else
     res.stateful=false
   end
