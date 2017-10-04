@@ -266,159 +266,6 @@ out/%.verilator.correct.txt : out/%.verilator.bmp
 #	mkdir -p out/build_$*
 #	test ! -s out/$*.verilator.diff && touch $@
 
-out/build_%/system.ngc: out/%.axi.v
-	mkdir -p out/build_$*
-	# run xst, then 'help -arch zynq -command run' to get list of options
-	cd out/build_$*; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
-
-out/build_%/system.ngd: out/build_%/system.ngc
-	cd out/build_$*; ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints.ucf -uc ../../../platform/axi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
-
-out/build_%/system_map.ncd: out/build_%/system.ngd
-	cd out/build_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-
-out/build_%/system.ncd: out/build_%/system_map.ncd
-	cd out/build_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-
-out/build_%/system.twr: out/build_%/system.ncd
-	cd out/build_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
-
-out/%.axi.bit: out/build_%/system.twr
-	cd out/build_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
-	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
-	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
-	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/build_$*/system.bit $@
-
-
-out/%.camera.bit: out/%.axi.v
-	mkdir -p out/buildcamera_$*
-	echo "verilog work \"../$*.axi.v\"" > out/buildcamera_$*/system.prj
-	echo "verilog work \"../../../platform/camera/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
-	cp ../platform/camera/vsrc/*.ngc out/buildcamera_$*/.
-	cd out/buildcamera_$*; xst -ifn ../../../platform/camera/system.xst  | tee OUT_xst.log
-	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../platform/camera/ps7_constraints.ucf -uc ../../../platform/camera/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
-	cd out/buildcamera_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-	cd out/buildcamera_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-	cd out/buildcamera_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
-	cd out/buildcamera_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
-	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
-	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
-	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/buildcamera_$*/system.bit $@
-
-out/%.camera1x.bit: out/%.axi.v
-	mkdir -p out/buildcamera_$*
-	echo "verilog work \"../$*.axi.v\"" > out/buildcamera_$*/system.prj
-	echo "verilog work \"../../../platform/camera1x/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
-	cp ../platform/camera1x/vsrc/*.ngc out/buildcamera_$*/.
-	cd out/buildcamera_$*; xst -ifn ../../../platform/camera/system.xst  | tee OUT_xst.log
-	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../platform/camera/ps7_constraints.ucf -uc ../../../platform/camera1x/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
-	cd out/buildcamera_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-	cd out/buildcamera_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-	cd out/buildcamera_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
-	cd out/buildcamera_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
-	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
-	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
-	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/buildcamera_$*/system.bit $@
-
-out/%.camera2.0.bit: out/%.axi.v
-	mkdir -p out/buildcamera_$*
-	echo "verilog work \"../$*.axi.v\"" > out/buildcamera_$*/system.prj
-	echo "verilog work \"../../../platform/camera2.0/vsrc/*.v\"" >> out/buildcamera_$*/system.prj
-	cp ../platform/camera2.0/vsrc/*.ngc out/buildcamera_$*/.
-	cd out/buildcamera_$*; xst -ifn ../../../platform/camera/system.xst  | tee OUT_xst.log
-	cd out/buildcamera_$*; ngdbuild -nt timestamp -uc ../../../platform/camera/ps7_constraints.ucf -uc ../../../platform/camera2.0/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd | tee OUT_ngd.log
-	cd out/buildcamera_$*; map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-	cd out/buildcamera_$*; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-	cd out/buildcamera_$*; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
-	cd out/buildcamera_$*; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
-	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
-	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
-	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/buildcamera_$*/system.bit $@
-
-
-CAMERA_ADDR=192.168.42.50
-CAMERA_WRITE_PATH=/tmp
-CAMERA_PASS=1234
-
-%.camera.run: out/%.camera.bit
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
-###### CLOCK STUFF END
-	sshpass -p $(CAMERA_PASS) scp ../platform/camera/csrc/processimage out/$*.camera.bit root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/.
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat $(CAMERA_WRITE_PATH)/$*.camera.bit > /dev/xdevcfg"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "$(CAMERA_WRITE_PATH)/processimage 0" 
-	-sshpass -p $(CAMERA_PASS) scp root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/*.raw .
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "rm $(CAMERA_WRITE_PATH)/processimage $(CAMERA_WRITE_PATH)/$*.camera.bit"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-
-%.camera1x.run: out/%.camera1x.bit
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
-###### CLOCK STUFF END
-	sshpass -p $(CAMERA_PASS) scp ../platform/camera1x/csrc/processimage out/$*.camera1x.bit root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/.
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat $(CAMERA_WRITE_PATH)/$*.camera1x.bit > /dev/xdevcfg"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "$(CAMERA_WRITE_PATH)/processimage 0" 
-	-sshpass -p $(CAMERA_PASS) scp root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/*.raw .
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "rm $(CAMERA_WRITE_PATH)/processimage $(CAMERA_WRITE_PATH)/$*.camera1x.bit"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-
-%.camera2.0.run: out/%.camera2.0.bit
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '100000000' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk0/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo '96000000' > /sys/class/fclk/fclk1/set_rate"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat /sys/class/fclk/fclk1/set_rate"
-###### CLOCK STUFF END
-	sshpass -p $(CAMERA_PASS) scp ../platform/camera2.0/csrc/processimage out/$*.camera2.0.bit root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/.
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "cat $(CAMERA_WRITE_PATH)/$*.camera2.0.bit > /dev/xdevcfg"
-	sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "$(CAMERA_WRITE_PATH)/processimage 0" 
-	-sshpass -p $(CAMERA_PASS) scp root@$(CAMERA_ADDR):$(CAMERA_WRITE_PATH)/*.raw .
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "rm $(CAMERA_WRITE_PATH)/processimage $(CAMERA_WRITE_PATH)/$*.camera2.0.bit"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-	-sshpass -p $(CAMERA_PASS) ssh root@$(CAMERA_ADDR) "echo 'fclk1' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_unexport"
-
-out/%_zynq100/system.ngc: out/%.axi.v
-	mkdir -p out/$*_zynq100
-	# run xst, then 'help -arch zynq -command run' to get list of options
-	cd out/$*_zynq100; echo "run -ifn ../$*.axi.v -ifmt Verilog -p xc7z100-2ffg900 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
-
-out/%_zynq100/system.ngd: out/%_zynq100/system.ngc
-	cd out/$*_zynq100; ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints_100.ucf -uc ../../../platform/axi/system_100.ucf -p xc7z100-2ffg900  system.ngc system.ngd > OUT_ngd.txt
-
-out/%_zynq100/system_map.ncd: out/%_zynq100/system.ngd
-	cd out/$*_zynq100; map -detail -p xc7z100-2ffg900 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
-
-out/%_zynq100/system.ncd: out/%_zynq100/system_map.ncd
-	cd out/$*_zynq100; par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
-
-out/%_zynq100/system.twr: out/%_zynq100/system.ncd
-	cd out/$*_zynq100; trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraint_100s.ucf -ucf ../../platform/axi/system_100.ucf > OUT_trce.txt
-
-out/%.zynq100.bit: out/%_zynq100/system.twr
-	cd out/$*_zynq100; bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
-	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
-	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
-	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
-	cp out/$*_zynq100/system.bit $@
-
-out/%.zynq100.bit.bin: out/%.zynq100.bit
-	cd out/$*_zynq100; bootgen -w -image ../../../platform/axi/boot.bif -split bin -o i system.bin
-	cp out/$*_zynq100/system.bit.bin $@
 
 ZYNQ_WRITE_PATH=/var/volatile
 ZYNQ_ADDR=192.168.2.2
@@ -482,31 +329,6 @@ out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.axi.metadata.lua
 	# keep copy for future reference
 	cp out/$*.zynq100.cycles.txt out/$*_zynq100
 
-# isim is crap, and if we run multiple processes at the same time in the same directory, they will clobber each other. So we need to run in different directories.
-out/%.isim.raw: out/%.isim.v $(DUPS)
-	mkdir -p out/sim_$*
-	cd out/sim_$*; vlogcomp ../$*.isim.v
-	cd out/sim_$*; fuse -o $* -lib $* -L unisim -L unimacro -top sim
-	cd out/sim_$*; echo "run all" | ./$* > output.txt
-	split -n 2 -d out/sim_$*/$*.isim.raw out/sim_$*/S
-	mv out/sim_$*/S00 out/$*.isim.raw
-	mv out/sim_$*/S01 out/$*.isim.1.raw
-	$(TERRA) ../misc/extractCycles.t out/$*.isim.raw > out/$*.isim.cycles.txt
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.isim.cycles.txt out/build_$*
-
-out/%.isim.bmp: out/%.isim.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.isim.raw out/$*.isim.bmp out/$*.metadata.lua 1
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.isim.bmp out/build_$*
-
-out/%.isim.1.bmp: out/%.isim.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.isim.1.raw out/$*.isim.1.bmp out/$*.metadata.lua 1
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.isim.1.bmp out/build_$*
 
 out/%.axi.bmp: out/%.axi.raw out/%.axi.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.axi.metadata.lua 1
@@ -546,26 +368,6 @@ out/%.zynq100.correct.txt : out/%.zynq100.bmp
 	mkdir -p out/build100_$*
 	test ! -s out/$*.zynq100.diff && touch out/build100_$*/$*.zynq100.correct.txt
 
-out/%_half.isim.correct.txt : out/%_half.isim.bmp
-	diff out/$*_half.isim.bmp gold/$*.bmp > out/$*_half.isim.diff
-	test ! -s out/$*_half.isim.diff && touch $@
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	test ! -s out/$*_half.isim.diff && touch out/build_$*/$*_half.isim.correct.txt
-
-out/%.isim.correct.txt : out/%.isim.bmp
-	diff out/$*.isim.bmp gold/$*.bmp > out/$*.isim.diff
-	test ! -s out/$*.isim.diff && touch $@
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	test ! -s out/$*.isim.diff && touch out/build_$*/$*.isim.correct.txt
-
-out/%.isim.1.correct.txt : out/%.isim.1.bmp
-	diff out/$*.isim.1.bmp gold/$*.bmp > out/$*.isim.1.diff
-	test ! -s out/$*.isim.1.diff && touch $@
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	test ! -s out/$*.isim.1.diff && touch out/build_$*/$*.isim.1.correct.txt
 
 out/%_half.terra.correct.txt : out/%_half.terra.bmp
 	diff out/$*_half.terra.bmp gold/$*.bmp > out/$*_half.terra.diff
@@ -595,4 +397,13 @@ out/%.32nmpnr.txt : out/%.32nm.txt
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
 	rm -Rf out/$*_32nm/chiptop.mw
 	cd out/$*_32nm; icc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nmpnr.txt; set DDCFILE $*.ddc; set SYNFILE $*.synthesis.v;' -f ../../../platform/32nm/32nm_icc.tcl
-# > OUT_PNR.txt
+
+PLATFORMDIRS = $(wildcard ../platform/*)
+AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
+
+define MyRule
+out/%.$(1).bit: out/%.axi.v
+	../platform/$(1)/compile $(shell pwd)/out/$$*.axi.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
+endef
+
+$(foreach a,$(AA),$(eval $(call MyRule,$(a))))

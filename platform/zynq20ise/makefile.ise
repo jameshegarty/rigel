@@ -1,0 +1,23 @@
+$(BUILD_DIR)/system.ngc: $(INPUT)
+	mkdir -p $(BUILD_DIR)
+	# run xst, then 'help -arch zynq -command run' to get list of options
+	cd $(BUILD_DIR); echo "run -ifn $^ -ifmt Verilog -p xc7z020-clg484-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
+
+$(BUILD_DIR)/system.ngd: $(BUILD_DIR)/system.ngc
+	cd $(BUILD_DIR); ngdbuild -nt timestamp -uc ../../../platform/axi/ps7_constraints.ucf -uc ../../../platform/axi/system.ucf -p xc7z020-clg484-1 system.ngc system.ngd > OUT_ngd.txt
+
+$(BUILD_DIR)/system_map.ncd: $(BUILD_DIR)/system.ngd
+	cd $(BUILD_DIR); map -detail -p xc7z020-clg484-1 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -mt off -ir off -pr off -lc off -power off -o system_map.ncd system.ngd system.pcf > OUT_map.txt
+
+$(BUILD_DIR)/system.ncd: $(BUILD_DIR)/system_map.ncd
+	cd $(BUILD_DIR); par -w -ol high -mt off system_map.ncd system.ncd system.pcf > OUT_par.txt
+
+$(BUILD_DIR)/system.twr: $(BUILD_DIR)/system.ncd
+	cd $(BUILD_DIR); trce -v 3 -s 1 -n 3 -fastpaths -xml system.twx system.ncd -o system.twr system.pcf -ucf ../../platform/axi/ps7_constraints.ucf -ucf ../../platform/axi/system.ucf > OUT_trce.txt
+
+$(OUTFILE): $(BUILD_DIR)/system.twr
+	cd $(BUILD_DIR); bitgen -w -g Binary:no -g CRC:Enable -g ProgPin:PullUp -g InitPin:Pullup -g TckPin:PullUp -g TdiPin:PullUp \
+	  -g TdoPin:PullUp -g TmsPin:PullUp -g Disable_JTAG:No -g UnusedPin:PullDown -g UserID:0xFFFFFFFF -g OverTempPowerDown:Disable \
+	  -g USR_ACCESS:None -g JTAG_XADC:Enable -g DCIUpdateMode:AsRequired -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 -g GWE_cycle:6 \
+	  -g Match_cycle:Auto -g Security:None -g ICAP_select:Auto -g DonePipe:Yes -g DriveDone:No system.ncd > OUT_bitgen.txt
+	cp $(BUILD_DIR)/system.bit $@

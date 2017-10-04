@@ -15,7 +15,7 @@ static map<string,Filestate> state;
 
 // pixels: # of pixels being written this time
 void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, unsigned char* data){
-
+#ifndef DISABLE_WRITE_PIXELS
   if(state.count(id)==0){
     // initialize
     Filestate fs;
@@ -46,7 +46,7 @@ void writeBytes(string id, int w, int h, string type, int pixels, int bytecnt, u
   
   state[id].seenPixels+=pixels;
   for(int i=0; i<bytecnt; i++){fputc(data[i],state[id].file);}
-
+#endif
 }
 
 void done(){
