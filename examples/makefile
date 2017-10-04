@@ -208,8 +208,8 @@ asic: $(ASIC)
 clean:
 	rm -Rf out/*
 
-out/%.v out/%.verilog.metadata.lua: %.lua
-	$(LUA) $<
+out/%.v out/%.verilator.metadata.lua: %.lua
+	$(LUA) $< verilator
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
@@ -236,117 +236,26 @@ out/%.axi.v out/%.axi.metadata.lua: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
-out/%.verilator: out/%.v out/%.verilog.metadata.lua ../platform/verilator/harness.cpp
-	../platform/verilator/compile out/$*.v out/$*.verilog.metadata.lua out/$*_verilator $@
+out/%.verilator: out/%.v out/%.verilator.metadata.lua ../platform/verilator/harness.cpp
+	../platform/verilator/compile out/$*.v out/$*.verilator.metadata.lua out/$*_verilator $@
 
 out/%.verilator.raw: out/%.verilator
-	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputImage))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputHeight))
-	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputP))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputHeight))
-	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputBitsPerPixel))
-	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputP))
-	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapBits))
-	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapValue))
+	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputImage))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputHeight))
+	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputP))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputHeight))
+	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputBitsPerPixel))
+	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputP))
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua tapValue))
 	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
-
-out/%.verilator.bmp: out/%.verilator.raw out/%.verilog.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.verilog.metadata.lua 0
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.verilator.bmp out/build_$*
-
-out/%.verilator.correct.txt : out/%.verilator.bmp
-	diff out/$*.verilator.bmp gold/$*.bmp > out/$*.verilator.diff
-	test ! -s out/$*.verilator.diff && touch $@
-	# keep copy for future reference
-#	mkdir -p out/build_$*
-#	test ! -s out/$*.verilator.diff && touch $@
-
-
-ZYNQ_WRITE_PATH=/var/volatile
-ZYNQ_ADDR=192.168.2.2
 
 out/%.hz.txt: out/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > out/$*.hz.txt
-
-out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
-	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
-	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
-	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
-###### SET THE CLOCK	
-	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
-	lockfile /tmp/zynq20lock
-# (* second time around we can't write to fclk_export, so surpress error)
-#	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
-###### CLOCK STUFF END
-	sshpass -p 'root' scp ../platform/axi/processimage out/$*.axi.bit $($@_IMG) root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.axi.bit > /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
-	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
-	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
-	rm -f /tmp/zynq20lock
-	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
-	# keep copy for future reference
-	cp out/$*.axi.cycles.txt out/build_$*
-
-
-ZYNQ_100_WRITE_PATH=/tmp
-ZYNQ_100_ADDR=192.168.1.10
-
-out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.axi.metadata.lua
-	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
-	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
-	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
-	lockfile /tmp/zynq100lock
-	# kill the DMA test that runs in the background and takes up 100% cpu (!?)
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "chmod a+w /sys/module/dmatest/parameters/iterations"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "echo 1 > /sys/module/dmatest/parameters/iterations"
-	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.zynq100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin > /dev/xdevcfg"
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
-	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
-	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin"
-	rm -f /tmp/zynq100lock
-	$(TERRA) ../misc/extractCycles.t out/$*.zynq100.raw > out/$*.zynq100.cycles.txt
-	# keep copy for future reference
-	cp out/$*.zynq100.cycles.txt out/$*_zynq100
-
-
-out/%.axi.bmp: out/%.axi.raw out/%.axi.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.axi.raw out/$*.axi.bmp out/$*.axi.metadata.lua 1
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.axi.bmp out/build_$*
-
-out/%.zynq100.bmp: out/%.zynq100.raw out/%.axi.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.zynq100.raw out/$*.zynq100.bmp out/$*.axi.metadata.lua 1
-	# keep copy for future reference
-	mkdir -p out/build100_$*
-	cp out/$*.zynq100.bmp out/build100_$*
-
-out/%.terra.bmp: out/%.terra.raw out/%.terra.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.terra.metadata.lua 0
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.terra.bmp out/build_$*
 
 out/%_half.terra.bmp: out/%_half.terra.raw out/%.terra.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.terra.metadata.lua 0
@@ -354,28 +263,9 @@ out/%_half.terra.bmp: out/%_half.terra.raw out/%.terra.metadata.lua
 	mkdir -p out/build_$*
 	cp out/$*_half.terra.bmp out/build_$*
 
-out/%.axi.correct.txt : out/%.axi.bmp
-	diff out/$*.axi.bmp gold/$*.bmp > out/$*.axi.diff
-	test ! -s out/$*.axi.diff && touch $@
-	# keep copy for future reference
-	mkdir -p out/build_$*
-	test ! -s out/$*.axi.diff && touch out/build_$*/$*.axi.correct.txt
-
-out/%.zynq100.correct.txt : out/%.zynq100.bmp
-	diff out/$*.zynq100.bmp gold/$*.bmp > out/$*.zynq100.diff
-	test ! -s out/$*.zynq100.diff && touch $@
-	# keep copy for future reference
-	mkdir -p out/build100_$*
-	test ! -s out/$*.zynq100.diff && touch out/build100_$*/$*.zynq100.correct.txt
-
-
 out/%_half.terra.correct.txt : out/%_half.terra.bmp
 	diff out/$*_half.terra.bmp gold/$*.bmp > out/$*_half.terra.diff
 	test ! -s out/$*_half.terra.diff && touch $@
-
-out/%.terra.correct.txt : out/%.terra.bmp
-	diff out/$*.terra.bmp gold/$*.bmp > out/$*.terra.diff
-	test ! -s out/$*.terra.diff && touch $@
 
 out/%.raw.dup : %.raw
 	cat $*.raw > $@
@@ -404,6 +294,19 @@ AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
 define MyRule
 out/%.$(1).bit: out/%.axi.v
 	../platform/$(1)/compile $(shell pwd)/out/$$*.axi.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
+
+out/%.$(1).correct.txt : out/%.$(1).bmp
+	diff out/$$*.$(1).bmp gold/$$*.bmp > out/$$*.$(1).diff
+	test ! -s out/$$*.$(1).diff && touch $$@
+
+out/%.$(1).raw: out/%.$(1).bit
+	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw
+
+out/%.$(1).bmp: out/%.$(1).raw out/%.$(1).metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.$(1).metadata.lua 0
+	# keep copy for future reference
+	mkdir -p out/$$*_$(1)
+	cp out/$$*.$(1).bmp out/$$*_$(1)
 endef
 
 $(foreach a,$(AA),$(eval $(call MyRule,$(a))))
