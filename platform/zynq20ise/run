@@ -1,0 +1,29 @@
+ZYNQ_WRITE_PATH=/var/volatile
+ZYNQ_ADDR=192.168.2.2
+
+out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
+###### SET THE CLOCK	
+	$(eval $@_HZ := $(shell cat out/$*.hz.txt))
+	lockfile /tmp/zynq20lock
+# (* second time around we can't write to fclk_export, so surpress error)
+#	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
+###### CLOCK STUFF END
+	sshpass -p 'root' scp ../platform/axi/processimage out/$*.axi.bit $($@_IMG) root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "cat $(ZYNQ_WRITE_PATH)/$*.axi.bit > /dev/xdevcfg"
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "$(ZYNQ_WRITE_PATH)/processimage 805339136 $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
+	sshpass -p 'root' scp root@$(ZYNQ_ADDR):$(ZYNQ_WRITE_PATH)/out.raw out/$*.axi.raw
+	sshpass -p 'root' ssh root@$(ZYNQ_ADDR) "rm $(ZYNQ_WRITE_PATH)/processimage $(ZYNQ_WRITE_PATH)/$($@_IMG) $(ZYNQ_WRITE_PATH)/out.raw $(ZYNQ_WRITE_PATH)/$*.axi.bit"
+	rm -f /tmp/zynq20lock
+	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+	# keep copy for future reference
+	cp out/$*.axi.cycles.txt out/build_$*

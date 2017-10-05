@@ -1650,16 +1650,12 @@ function regModuleFunctions:instanceToVerilogFinalize( instance, module )
 
   if (self.hasCE or module.hasValid) then
     local resetExpr
-    if self.resetValue~=nil then resetExpr = " && "..resetValid.."==1'b0" end
-    local decl = "  always @ (posedge CLK) begin if (("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") "..J.sel(self.resetValue~=nil,resetExpr,"")..") begin "..instance.name.." <= "..setData.."; end end"
-
     if self.resetValue~=nil then
-      decl = decl..[[
-
-  always @ (posedge CLK) begin if(]]..resetValid..") begin "..instance.name.." <= "..systolic.valueToVerilog(self.resetValue,self.type).."; end end"
+      return [[  always @ (posedge CLK) begin if(]]..resetValid..") begin "..instance.name.." <= "..systolic.valueToVerilog(self.resetValue,self.type).."; end else if ("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") begin "..instance.name.." <= "..setData.."; end end"
+    else
+      return "  always @ (posedge CLK) begin if ("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") begin "..instance.name.." <= "..setData.."; end end"
     end
 
-    return decl
   elseif self.resetValue~=nil then
     return "  always @ (posedge CLK) begin "..instance.name.." <= ("..resetValid..")?"..systolic.valueToVerilog(self.resetValue,self.type)..":"..setData.."; end"
   else

@@ -1,0 +1,26 @@
+ZYNQ_100_WRITE_PATH=/tmp
+ZYNQ_100_ADDR=192.168.1.10
+
+out/%.zynq100.raw: out/%.zynq100.bit.bin out/%.axi.metadata.lua
+	$(eval $@_IMG := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputImage))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputHeight))
+	$(eval $@_BPP_IN := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua inputBitsPerPixel))
+	$(eval $@_BPP_OUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.axi.metadata.lua outputHeight))
+	lockfile /tmp/zynq100lock
+	# kill the DMA test that runs in the background and takes up 100% cpu (!?)
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "chmod a+w /sys/module/dmatest/parameters/iterations"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "echo 1 > /sys/module/dmatest/parameters/iterations"
+	printf "cd /tmp\n put ../platform/axi/processimage\n put out/$*.zynq100.bit.bin\n put $($@_IMG)" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm -f /dev/xdevcfg"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "mknod /dev/xdevcfg c 259 0"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "cat $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin > /dev/xdevcfg"
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "$(ZYNQ_100_WRITE_PATH)/processimage 805339136 $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $($@_INW) $($@_INH) $($@_BPP_IN) $($@_OUTW) $($@_OUTH) $($@_BPP_OUT) "
+	printf "cd /tmp\n get out.raw $@" | sshpass -p 'root' sftp root@$(ZYNQ_100_ADDR)
+	sshpass -p 'root' ssh root@$(ZYNQ_100_ADDR) "rm $(ZYNQ_100_WRITE_PATH)/processimage $(ZYNQ_100_WRITE_PATH)/$($@_IMG) $(ZYNQ_100_WRITE_PATH)/out.raw $(ZYNQ_100_WRITE_PATH)/$*.zynq100.bit.bin"
+	rm -f /tmp/zynq100lock
+	$(TERRA) ../misc/extractCycles.t out/$*.zynq100.raw > out/$*.zynq100.cycles.txt
+	# keep copy for future reference
+	cp out/$*.zynq100.cycles.txt out/$*_zynq100

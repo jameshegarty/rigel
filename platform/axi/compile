@@ -1,0 +1,10 @@
+#!/bin/bash
+
+VERILOG_FILE=$1
+METADATA_FILE=$2
+BUILDDIR=$3
+OUTFILE=$4
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+make -f $DIR/makefile.ise OUTFILE=$OUTFILE INPUT=$VERILOG_FILE BUILD_DIR=$BUILDDIR $OUTFILE

@@ -340,7 +340,7 @@ function harnessTop(t)
   if backend==nil then backend = arg[1] end
   if backend==nil then backend = "verilog" end
   
-  if backend=="verilog" then
+  if backend=="verilog" or backend=="verilator" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif(backend=="axi") then
     H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
@@ -353,7 +353,7 @@ function harnessTop(t)
     assert(false)
   end
 
-  if backend=="verilog" or backend=="terra" or backend=="axi" then
+  if backend=="verilog" or backend=="terra" or backend=="axi" or backend=="verilator" then
     local tapValueString = "x"
     local tapBits = 0
     if t.tapType~=nil then
