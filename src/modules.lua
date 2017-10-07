@@ -93,7 +93,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   res.stateful=false
-  res.name = "SoAtoAoS_"..verilogSanitize(tostring(typelist))
+  res.name = verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray))
 
   if terralib~=nil then res.terraModule = MT.SoAtoAoS(res,W,H,typelist,asArray) end
 
