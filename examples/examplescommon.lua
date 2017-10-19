@@ -46,7 +46,7 @@ end)
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
-    local partial = RM.lift( J.sanitize("partial_mult_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, 1,
+    local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end,
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
