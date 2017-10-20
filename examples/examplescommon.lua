@@ -233,7 +233,7 @@ end)
 C.shiftAndCast = memoize(function(from, to, shift)
   err( types.isType(from), "C.shiftAndCast: from type must be type")
   err( types.isType(to), "C.shiftAndCast: to type must be type")
-  err( type(shift)=="number, "C.shiftAndCast: shift must be number")
+  err( type(shift)=="number", "C.shiftAndCast: shift must be number")
 
   if shift >= 0 then
     local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 1,
@@ -253,7 +253,7 @@ end)
 C.shiftAndCastSaturate = memoize(function(from, to, shift)
   err( types.isType(from), "C.shiftAndCastSaturate: from type must be type")
   err( types.isType(to), "C.shiftAndCastSaturate: to type must be type")
-  err( type(shift)=="number, "C.shiftAndCastSaturate: shift must be number")
+  err( type(shift)=="number", "C.shiftAndCastSaturate: shift must be number")
 
   local touint8 = RM.lift( J.sanitize("shiftAndCastSaturate_"..tostring(from).."_to_"..tostring(to).."_shift_"..tostring(shift)), from, to, 1,
     function(touint8inp)
@@ -955,10 +955,10 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
 -- if index==true, then we return a value, not an array
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
-  err(type(idxLow)=="number", "slice idxLow must be number")
-  err(type(idxHigh)=="number", "slice idxHigh must be number")
-  err(index==nil or type(index)=="boolean", "index must be bool")
-  assert(X==nil)
+  err( type(idxLow)=="number", "slice idxLow must be number")
+  err( type(idxHigh)=="number", "slice idxHigh must be number")
+  err( index==nil or type(index)=="boolean", "index must be bool")
+  err( X==nil, "C.slice: too many arguments")
 
   if inputType:isTuple() then
     assert( idxLow < #inputType.list )
@@ -967,7 +967,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    return modules.lift( "index_"..tostring(inputType).."_"..idxLow, inputType, OT, 0,
+    return modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType, OT, 0,
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
@@ -991,7 +991,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
     end
 
-    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0,
+    return modules.lift( J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index)), inputType, OT, 0,
       function(systolicInput)
         local systolicOutput = S.tuple( J.map( J.range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
         systolicOutput = S.cast( systolicOutput, OT )
@@ -1052,7 +1052,7 @@ end
 C.plusConst = memoize(function(ty, value)
   err(types.isType(ty),"plus100: expected type input")
   err(type(value)=="number","plusConst expected numeric input")
-  local plus100mod = RM.lift( "plus"..tostring(value), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
   return plus100mod
 end)
 
