@@ -348,7 +348,7 @@ C.SAD = memoize(function( A, reduceType, Width, X )
   local conv = R.apply( "partial", RM.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
 
-  local convolve = RM.lambda( J.sanitize("SAD_"..tostring(A).."_reduceType"..tostring(reduceType).."_Width"..tostring(Width)), inp, conv, nil, nil, "C.SAD" )
+  local convolve = RM.lambda( J.sanitize("SAD_"..tostring(A).."_reduceType"..tostring(reduceType).."_Width"..tostring(Width)), inp, conv, nil, "C.SAD" )
   return convolve
 end)
 
@@ -377,7 +377,7 @@ C.SADFixed = memoize(function( A, reduceType, Width, X )
   local conv = R.apply( "partial", RM.map( ABS:toRigelModule("absoluteDiff"), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( SUM:toRigelModule("ABS_SUM"), Width, Width ), conv )
 
-  local convolve = RM.lambda( "SAD", inp, conv, nil, nil, "C.SADFixed" )
+  local convolve = RM.lambda( "SAD", inp, conv, nil, "C.SADFixed" )
   return convolve
 end)
 
@@ -429,7 +429,7 @@ C.stencilKernel = memoize(function( A, T, imageW, imageH, stencilW, stencilH, f)
   local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ), convLB )
   local convpipe = R.apply( "conv", RM.map( f, T ), convstencils )
 
-  local convpipe = RM.lambda( "convpipe_"..f.name.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe, nil, nil, "C.stencilKernel" )
+  local convpipe = RM.lambda( "convpipe_"..f.name.."_W"..tostring(stencilW).."_H"..tostring(stencilH), inp, convpipe, nil,"C.stencilKernel" )
   return convpipe
 end)
 
@@ -766,7 +766,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  return modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), inp, out,nil,nil,"C.downsampleSeq")
+  return modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), inp, out,nil,"C.downsampleSeq")
 end)
 
 
@@ -794,7 +794,7 @@ C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
     inner = modules.upsampleXSeq( A, T, scaleX )
   else
     local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = C.compose( J.sanitize("upsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,nil,"C.upsampleSeq")
+    inner = C.compose( J.sanitize("upsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,"C.upsampleSeq")
   end
 
     return inner

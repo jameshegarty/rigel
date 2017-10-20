@@ -60,7 +60,7 @@ modules.compose = memoize(function( name, f, g, generatorStr )
 
   local inp = rigel.input( g.inputType, g.sdfInput )
   local gvalue = rigel.apply(name.."_g",g,inp)
-  return modules.lambda( name, inp, rigel.apply(name.."_f",f,gvalue), nil, nil, generatorStr )
+  return modules.lambda( name, inp, rigel.apply(name.."_f",f,gvalue), nil, generatorStr )
 end)
 
 
@@ -1658,7 +1658,7 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, X )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
 
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
-  return modules.lambda( "liftXYSeq_"..name, inp, out,nil,nil,generatorStr )
+  return modules.lambda( "liftXYSeq_"..name, inp, out,nil,generatorStr )
 end)
 
 -- this takes a function f : {{uint16,uint16},inputType} -> outputType
@@ -2880,7 +2880,7 @@ end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instances, pipelines, generatorStr, X )
+function modules.lambda( name, input, output, instances, generatorStr, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -2890,15 +2890,13 @@ function modules.lambda( name, input, output, instances, pipelines, generatorStr
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
   err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
   if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
-  err( pipelines==nil or type(pipelines)=="table", "lambda: pipelines must be nil or a table" )
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
-  if pipelines~=nil then J.map( pipelines, function(n) err( rigel.isIR(n), "lambda: pipelines must be a table of rigel values") end ) end
 
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, pipelines=pipelines, generator=generatorStr }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr }
 
   if input==nil then
     res.inputType = types.null()
