@@ -31,11 +31,12 @@ end)
 
 C.tupleToArray = memoize(function(A,N)
   err(types.isType(A),"tupleToArray: A should be type")
+  err(type(N)=="number","tupleToArray: N must be number")
 
   local atup = types.tuple(J.broadcast(A,N))
   local B = types.array2d(A,N)
 
-  local docast = RM.lift( "tupleToArray_"..J.verilogSanitize(tostring(A)).."_"..tostring(N), atup, B, 0,
+  local docast = RM.lift( J.sanitize("tupleToArray_"..tostring(A).."_"..tostring(N)), atup, B, 0,
     function(sinp) return S.cast(sinp,B) end,
     function() return CT.tupleToArray(A,N,atup,B) end, "C.tupleToArray")
 
@@ -46,10 +47,15 @@ end)
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
-    local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
+  err( types.isType(A), "C.multiply: A must be type")
+  err( types.isType(B), "C.multiply: B must be type")
+  err( types.isType(outputType), "C.multiply: outputType must be type")
+
+  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end,
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
+
   return partial
 end)
 
@@ -57,7 +63,13 @@ end)
 -- return A+B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.sum = memoize(function( A, B, outputType, async )
-  if async==nil then async=false end
+  err( types.isType(A), "C.sum: A must be type")
+  err( types.isType(B), "C.sum: B must be type")
+  err( types.isType(outputType), "C.sum: outputType must be type")
+
+  if async==nil then return C.sum(A,B,outputType,false) end
+
+  err(type(async)=="boolean","C.sum: async must be boolean")
 
   local delay
   if async then delay = 0 else delay = 1 end
@@ -81,7 +93,11 @@ end)
 -- return A-B as a darkroom FN. A,B are types
 -- returns something of type outputType
 C.sub = memoize(function( A, B, outputType, async )
-  if async==nil then async=false end
+  err( types.isType(A), "C.sub: A must be type")
+  err( types.isType(B), "C.sub: B must be type")
+  err( types.isType(outputType), "C.sub: outputType must be type")
+
+  if async==nil then return C.sub(A,B,outputType,false) end
 
   local delay
   if async then delay = 0 else delay = 1 end
@@ -102,7 +118,7 @@ C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
 
-  local selm = RM.lift("C_select", ITYPE, ty, 1,
+  local selm = RM.lift( J.sanitize("C_select_"..tostring(ty)), ITYPE, ty, 1,
     function(sinp) return S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2)) end,nil,
     "C.select" )
 
@@ -113,7 +129,7 @@ C.eq = memoize(function(ty)
   err(types.isType(ty), "C.eq error: input must be type")
   local ITYPE = types.tuple{ty,ty}
 
-  local selm = RM.lift("C_eq", ITYPE, types.bool(), 1,
+  local selm = RM.lift( J.sanitize("C_eq_"..tostring(ty)), ITYPE, types.bool(), 1,
     function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end, nil,
     "C.eq" )
 
@@ -134,7 +150,6 @@ C.argmin = memoize(function(idxType,vType, async, domax)
   local ITYPE = types.tuple{ATYPE,ATYPE}
   local sinp = S.parameter( "inp", ITYPE )
 
-
   local delay
 
   if async==true then
@@ -149,7 +164,7 @@ C.argmin = memoize(function(idxType,vType, async, domax)
   name = name.."_"..J.verilogSanitize(tostring(idxType))
   name = name.."_"..J.verilogSanitize(tostring(vType))
 
-  local partial = RM.lift( name, ITYPE, ATYPE, delay,
+  local partial = RM.lift( J.sanitize(name), ITYPE, ATYPE, delay,
     function(sinp)
       local a0 = S.index(sinp,0)
       local a0v = S.index(a0,1)
@@ -181,9 +196,9 @@ end)
 -- The largest absolute difference possible is the max value of A - min value, so returning type A is always fine.
 -- we fuse this with a cast to 'outputType' just for convenience.
 C.absoluteDifference = memoize(function(A,outputType,X)
-  assert(types.isType(A))
-  assert(types.isType(outputType))
-  assert(X==nil)
+  err(types.isType(A), "C.absoluteDifference: A must be type")
+  err(types.isType(outputType), "C.absoluteDifference: outputType must be type")
+  err(X==nil, "C.absoluteDifference: too many arguments")
 
   local TY = types.array2d(A,2)
 
@@ -199,7 +214,7 @@ C.absoluteDifference = memoize(function(A,outputType,X)
     assert(false)
   end
 
-  local partial = RM.lift( "absoluteDifference_"..tostring(A).."_"..tostring(outputType), TY, outputType, 1,
+  local partial = RM.lift( J.sanitize("absoluteDifference_"..tostring(A).."_"..tostring(outputType)), TY, outputType, 1,
     function(sinp)
       local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
       local out = S.cast(subabs, internalType_uint)
@@ -216,14 +231,18 @@ end)
 -- returns a darkroom FN that casts type 'from' to type 'to'
 -- performs [to](from >> shift)
 C.shiftAndCast = memoize(function(from, to, shift)
+  err( types.isType(from), "C.shiftAndCast: from type must be type")
+  err( types.isType(to), "C.shiftAndCast: to type must be type")
+  err( type(shift)=="number", "C.shiftAndCast: shift must be number")
+
   if shift >= 0 then
-    local touint8 = RM.lift( "shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift), from, to, 1,
+    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 1,
       function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
     return touint8
   else
-    local touint8 = RM.lift( "shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift), from, to, 1,
+    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 1,
       function(touint8inp) return S.cast(S.lshift(touint8inp,S.constant(-shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
@@ -232,7 +251,11 @@ C.shiftAndCast = memoize(function(from, to, shift)
 end)
 
 C.shiftAndCastSaturate = memoize(function(from, to, shift)
-  local touint8 = RM.lift( "touint8", from, to, 1,
+  err( types.isType(from), "C.shiftAndCastSaturate: from type must be type")
+  err( types.isType(to), "C.shiftAndCastSaturate: to type must be type")
+  err( type(shift)=="number", "C.shiftAndCastSaturate: shift must be number")
+
+  local touint8 = RM.lift( J.sanitize("shiftAndCastSaturate_"..tostring(from).."_to_"..tostring(to).."_shift_"..tostring(shift)), from, to, 1,
     function(touint8inp)
       local OT = S.rshift(touint8inp,S.constant(shift,from))
       return S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to))
@@ -325,7 +348,7 @@ C.SAD = memoize(function( A, reduceType, Width, X )
   local conv = R.apply( "partial", RM.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
 
-  local convolve = RM.lambda( "SAD", inp, conv, nil, nil, "C.SAD" )
+  local convolve = RM.lambda( J.sanitize("SAD_"..tostring(A).."_reduceType"..tostring(reduceType).."_Width"..tostring(Width)), inp, conv, nil, nil, "C.SAD" )
   return convolve
 end)
 
@@ -644,7 +667,7 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   out = R.apply("slice", RM.makeHandshake(C.slice(types.array2d(A,ST_W,-ymin+1), 0, stride+overlap-1, 0,-ymin)), out)
 
   return RM.lambda("stencilLinebufferPartialOverlap",inp,out)
-                                                  end)
+end)
 
 -------------
 function C.fifo(fifos,statements,A,inp,size,name, csimOnly, X)
@@ -669,7 +692,7 @@ C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
   f = modules.makeHandshake(f)
 
   return C.compose( J.sanitize("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..tostring(typelist)), f, modules.packTuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) ) )
-                                     end)
+end)
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
 function C.border(A,W,H,L,R,B,T,value)
@@ -690,9 +713,10 @@ function C.RVPassthrough(f)
   return modules.RPassthrough(modules.liftDecimate(modules.liftBasic(f)))
 end
 
+-- fully parallel up/down scale
 -- if scaleX,Y > 1 then this is upsample
 -- if scaleX,Y < 1 then this is downsample
-function C.scale( A, w, h, scaleX, scaleY )
+C.scale = memoize(function( A, w, h, scaleX, scaleY )
   assert(types.isType(A))
   assert(type(w)=="number")
   assert(type(h)=="number")
@@ -707,11 +731,20 @@ function C.scale( A, w, h, scaleX, scaleY )
   if terralib~=nil then res.terraModule = CT.scale(res, A, w, h, scaleX, scaleY ) end
 
   return rigel.newFunction(res)
-end
+end)
 
 
 -- V -> RV
-C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
+C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
+  err( types.isType(A), "C.downsampleSeq: A must be type")
+  err( type(W)=="number", "C.downsampleSeq: W must be number")
+  err( type(H)=="number", "C.downsampleSeq: H must be number")
+  err( type(T)=="number", "C.downsampleSeq: T must be number")
+  err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
+  err( type(scaleY)=="number", "C.downsampleSeq: scaleY must be number")
+  err( scaleX>=1, "C.downsampleSeq: scaleX must be >=1")
+  err( scaleY>=1, "C.downsampleSeq: scaleY must be >=1")
+  err( X==nil, "C.downsampleSeq: too many arguments" )
 
   if scaleX==1 and scaleY==1 then
     return C.identity(A)
@@ -733,17 +766,25 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  return modules.lambda("downsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), inp, out,nil,nil,"C.downsampleSeq")
+  return modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), inp, out,nil,nil,"C.downsampleSeq")
 end)
 
 
 -- this is always Handshake
-C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
-  assert(scaleX>=1)
-  assert(scaleY>=1)
+-- always has type A[T]->A[T]
+C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
+  err( types.isType(A), "C.upsampleSeq: A must be type")
+  err( type(W)=="number", "C.upsampleSeq: W must be number")
+  err( type(H)=="number", "C.upsampleSeq: H must be number")
+  err( type(T)=="number", "C.upsampleSeq: T must be number")
+  err( type(scaleX)=="number", "C.upsampleSeq: scaleX must be number")
+  err( type(scaleY)=="number", "C.upsampleSeq: scaleY must be number")
+  err( scaleX>=1, "C.upsampleSeq: scaleX must be >=1")
+  err( scaleY>=1, "C.upsampleSeq: scaleY must be >=1")
+  err( X==nil, "C.upsampleSeq: too many arguments" )
 
   if scaleX==1 and scaleY==1 then
-    return C.identity(A)
+    return C.identity(types.array2d(A,T))
   end
 
   local inner
@@ -753,7 +794,7 @@ C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY )
     inner = modules.upsampleXSeq( A, T, scaleX )
   else
     local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = C.compose("upsampleSeq_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,nil,"C.upsampleSeq")
+    inner = C.compose( J.sanitize("upsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,nil,"C.upsampleSeq")
   end
 
     return inner
@@ -762,14 +803,15 @@ end)
 
 -- takes A to A[T] by duplicating the input
 C.broadcast = memoize(function(A,W,H)
+  err( types.isType(A), "C.broadcast: A must be type A")
   rigel.expectBasic(A)
   err( type(W)=="number", "broadcast: W should be number")
-  if H==nil then H=1 end
+  if H==nil then return C.broadcast(A,W,1) end
   err( type(H)=="number", "broadcast: H should be number")
 
   local OT = types.array2d(A, W, H)
 
-  return modules.lift("Broadcast_"..J.verilogSanitize(tostring(A)).."_W"..tostring(W).."_H"..tostring(H),A,OT,0,
+  return modules.lift( J.sanitize("Broadcast_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H)),A,OT,0,
     function(sinp) return S.cast(S.tuple(J.broadcast(sinp,W*H)),OT) end,
     function() return CT.broadcast(A,W,H,OT) end,
     "C.broadcast")
@@ -794,7 +836,7 @@ C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.name = "Stencil_"..J.verilogSanitize(tostring(A)).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax)
+  res.name = J.sanitize("Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax))
   res.stateful=false
 
   if terralib~=nil then res.terraModule = CT.stencil(res, A, w, h, xmin, xmax, ymin, ymax ) end
@@ -925,16 +967,16 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return rigel.newFunction(res)
-                                 end)
+end)
 
 
 -- if index==true, then we return a value, not an array
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
-  err(type(idxLow)=="number", "slice idxLow must be number")
-  err(type(idxHigh)=="number", "slice idxHigh must be number")
-  err(index==nil or type(index)=="boolean", "index must be bool")
-  assert(X==nil)
+  err( type(idxLow)=="number", "slice idxLow must be number")
+  err( type(idxHigh)=="number", "slice idxHigh must be number")
+  err( index==nil or type(index)=="boolean", "index must be bool")
+  err( X==nil, "C.slice: too many arguments")
 
   if inputType:isTuple() then
     assert( idxLow < #inputType.list )
@@ -943,7 +985,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    return modules.lift( "index_"..tostring(inputType).."_"..idxLow, inputType, OT, 0,
+    return modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType, OT, 0,
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
@@ -967,7 +1009,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
     end
 
-    return modules.lift( "slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh, inputType, OT, 0,
+    return modules.lift( J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index)), inputType, OT, 0,
       function(systolicInput)
         local systolicOutput = S.tuple( J.map( J.range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
         systolicOutput = S.cast( systolicOutput, OT )
@@ -1028,7 +1070,7 @@ end
 C.plusConst = memoize(function(ty, value)
   err(types.isType(ty),"plus100: expected type input")
   err(type(value)=="number","plusConst expected numeric input")
-  local plus100mod = RM.lift( "plus"..tostring(value), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
   return plus100mod
 end)
 
