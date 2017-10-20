@@ -565,9 +565,11 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     local resetPipelines = {}
     resetPipelines[1] = SR:reset( nil, rst )
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
-
-    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst ), prefix.."reset_out", resetPipelines, rst ) )
     
+    if systolicModule.functions[prefix.."reset"]~=nil then -- stateless modules do not have reset
+      res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst ), prefix.."reset_out", resetPipelines, rst ) )
+    end
+
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
     
     res:addFunction( S.lambda(prefix.."ready", downstreamReady, readyOut, prefix.."ready" ) )
@@ -647,8 +649,12 @@ end)
 modules.map = memoize(function( f, W, H )
   err( rigel.isFunction(f), "first argument to map must be Rigel module, but is "..tostring(f) )
   err( type(W)=="number", "width must be number")
-  err( type(H)=="number" or H==nil, "map: H must be number of nil" )
-  if H==nil then H=1 end
+
+  if H==nil then 
+    return modules.map(f,W,1)
+  end
+
+  err( type(H)=="number", "map: H must be number" )
 
   local res = { kind="map", fn = f, W=W, H=H }
 
@@ -892,7 +898,7 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = "DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T)
+  local modname = J.sanitize("DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..tostring(A).."_T"..tostring(T))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -946,7 +952,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local modname = "DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale)
+  local modname = J.sanitize("DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -1046,7 +1052,7 @@ end)
 broadcastWide = memoize(function( A, T, scale )
   local ITYPE, OTYPE = types.array2d(A,T), types.array2d(A,T*scale)
 
-  return modules.lift("broadcastWide_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), ITYPE, OTYPE, 0,
+  return modules.lift( J.sanitize("broadcastWide_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale)), ITYPE, OTYPE, 0,
     function(sinp)
       local out = {}
       for t=0,T-1 do
