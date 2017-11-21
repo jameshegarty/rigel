@@ -3050,6 +3050,13 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
 
           local input
 
+          -- why do we need to support multiple readers of a HS stream? (ie ANDing the ready bits?)
+          -- A stream may be read by multi selectStreams, which is OK.
+          -- However: why can't we just special-case expect all multiple readers to be selectStreams? It seems like this should work.
+          -- Note: one issue is that it's very important that this function returns a systolic value of the correct type for
+          --       every intermediate! We can return/examine any intermediate, and it must have the right type!
+          --       don't try to special case by having this function return intermediates as lua arrays of bools or something.
+          
           for k,i in pairs(args) do
             local parentKey = i[2]
             local value = i[1]
