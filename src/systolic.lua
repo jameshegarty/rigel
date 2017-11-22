@@ -228,14 +228,14 @@ function systolic.lambdaTab( tab )
   return systolic.lambda(tab.name, tab.input, tab.output, tab.outputName, tab.pipelines, tab.valid, tab.CE )
 end
 
-function systolic.lambda( name, inputParameter, output, outputName, pipelines, valid, CE, X )
+function systolic.lambda( name, inputParameter, output, outputName, pipelines, validParameter, CEParameter, X )
   err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
-  err( systolicAST.isSystolicAST(valid) or valid==nil, "valid must be a systolic AST or nil" )
-  if valid~=nil then err(valid.kind=="parameter","valid must be parameter") end
+  err( systolicAST.isSystolicAST(validParameter) or validParameter==nil, "valid parameter must be a systolic AST or nil" )
+  if validParameter~=nil then err(validParameter.kind=="parameter","valid parameter must be parameter") end
   err( inputParameter.kind=="parameter", "input must be a parameter" )
   err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given, but is "..type(outputName))
-  err( CE==nil or (systolicAST.isSystolicAST(CE) and CE.kind=="parameter" and CE.type==types.bool(true)), "CE must be nil or CE parameter")
+  err( CEParameter==nil or (systolicAST.isSystolicAST(CEParameter) and CEParameter.kind=="parameter" and CEParameter.type==types.bool(true)), "CE Parameter must be nil or parameter")
   assert(X==nil)
 
   if pipelines==nil then pipelines={} end
@@ -248,10 +248,10 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   assert(J.keycount(pipelines)==#pipelines)
 
   local implicitValid = false
-  if valid==nil then implicitValid=true;valid = systolic.parameter(name.."_valid", types.bool()) end
+  if validParameter==nil then implicitValid=true; validParameter = systolic.parameter(name.."_valid", types.bool()) end
   
   if type(outputName)=="string" then outputName = sanitize(outputName) end
-  local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=valid, implicitValid=implicitValid, CE=CE }
+  local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=validParameter, implicitValid=implicitValid, CE=CEParameter }
 
   return setmetatable(t,systolicFunctionMT)
 end

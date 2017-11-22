@@ -293,9 +293,9 @@ Similar to the array of Handshakes above, but allows for different types.
 
 Rigel also has provisional support for the ability to pack multiple streams onto one shared bus. Compared to the aggregates above (which have N streams on N data lines), multiplexed busses have N streams on 1 data line. This allows for supporting time-multiplexed hardware (hardware that operates on different streams in different cycles), or serializing multiple streams into one stream.
 
-### HandshakeArray(A,N) ###
+### HandshakeArrayOneHot(A,N) ###
 
-Unlike an array of *Handshakes* (above), a *HandshakeArray* can only have 1 of the *N* streams active per cycle. HandshakeArray's downstream ready bit identifies the stream that should be written on the data bus in the current cycle.
+Unlike an array of *Handshakes* (above), a *HandshakeArrayOneHot* can only have 1 of the *N* streams active per cycle. HandshakeArrayOneHot's downstream ready bit identifies the stream that should be written on the data bus in the current cycle.
 
 ### HandshakeTmuxed(A,N) ###
 
@@ -714,7 +714,7 @@ Because FIFOs have multiple ports, they must be instantiated differently than ot
 `W`, `H`, `T` are used to calculate the number of input items the FIFO expects to see total. Then the Verilog simulator uses this to print out usage statistics at the end of the frame (specifically, max fifo size seen). This debug information is optional. TODO: could probably simplify this.
 
 ### serialize ###
-    type: HandshakeArray(A,N)->HandshakeTmuxed(A,N)
+    type: HandshakeArrayOneHot(A,N)->HandshakeTmuxed(A,N)
     modules.serialize( A:Type, inputRates:SDFRate[N], schedule:Module )
     fields: {..., kind="serialize", A=A, inputRates=inputRates, schedule=schedule }
 
@@ -746,12 +746,12 @@ This module is a compromise between human readability and FIFO size. Likely, the
 
 TODO: in the future, we would like to extend *serialize* to support ordering modules that make a dynamic decision on which stream to run. These modules would have type *{bool,bool,...}->uint8* (bools indicating valid data on each stream) or *{uint8,uint8,...}->uint8* (numbers indicating fifo sizes on each stream). This would allow for dynamically-scheduled time-multiplexed hardware modules.
 
-### toHandshakeArray ###
-    type: Handshake(A)[N] -> HandshakeArray(A,N)
-    modules.toHandshakeArray( A:Type, inputRates:SDFRate[N] )
-    fields: {..., kind="toHandshakeArray", A=A, inputRates=inputRates }
+### toHandshakeArrayOneHot ###
+    type: Handshake(A)[N] -> HandshakeArrayOneHot(A,N)
+    modules.toHandshakeArrayOneHot( A:Type, inputRates:SDFRate[N] )
+    fields: {..., kind="toHandshakeArrayOneHot", A=A, inputRates=inputRates }
 
-`toHandshakeArray` converts N streams onto a shared bus (N streams transported over 1 data line). Only one stream can be active each cycle, and this is chosen by the downstream ready id. `inputRates` is a list of SDF rates for each input stream. 
+`toHandshakeArrayOneHot` converts N streams onto a shared bus (N streams transported over 1 data line). Only one stream can be active each cycle, and this is chosen by the downstream ready id. `inputRates` is a list of SDF rates for each input stream. 
 
 ### demux ###
     type: HandshakeTmuxed(A,N)->Handshake(A)[N]
@@ -1106,3 +1106,101 @@ A library of helper Rigel modules that are used for multiple examples.
 Code for generating the test harness for Terra (`harness.terraOnly`), Verilog simulator + Terra (`harness.sim`) and AXI+Terra+Sim (`harness.axi`).
 
 TODO: These functions are a giant mess of arguments and spaghetti - refactor this to be cleaner.
+
+Lowering to Systolic
+======================
+
+Given a Rigel module `module` with input type *I* and output type *O*, we lower it to a systolic module `smodule` using the following rules.
+
+definitions:
+HS = Handshake, HandshakeArray, HandshakeTuple, HandshakeArrayOneHot, HandshakeTmuxed, HandshakeTrigger
+A = one of the basic types (uint, bool, array)
+
+### smodule:process(SI) : SO ###
+smodule:process() always exists, except for modules with multiple functions (FIFOs), in which case, this method is the same as the name of the function (e.g. 'load' or 'store'), but follows the same lowering rules.
+
+we map from I->O to SI->SO as follows:
+
+I->O: SIdataSlot,SIvalidSlot,SICESlot->SOdataSlot,SOvalidSlot,SOCESlot
+       A->B:            A,bool,bool -> B,null,null
+    A->V(B):            A,bool,bool -> {B,bool},null,null
+A->Vtrigger:            A,bool,bool -> bool,null,null
+V(A)->RV(B):     {A,bool},bool,bool -> {B,bool},null,null
+(note that for the above cases, there are sometimes two valid bits! The valids get ANDed together at runtime - one is controlled by the system, the other is controlled by the user)
+(the following can appear as inputs or outputs, and these are the lowering rules respectively)
+Handshake(A)       :        A,bool,null
+HandshakeArray(A)  :  A[N],bool[N],null
+HandshakeTuple(A)  :     A,bool[N],null
+HandshakeTrigger   :     null,bool,null
+
+
+### smodule:ready(SI) : SO ###
+smodule:ready() exists if *O*==RV, or *O*==HS, or *I*==HS
+
+for the HS cases, if the input or output type is T, SI/SO gets the value:
+
+T: ST
+null: null
+Handshake: bool
+HandshakeArray: bool[N]
+HandshakeTuple: bool[N]
+HandshakeArrayOneHot: uint8
+HandshakeTmuxed: bool
+HandshakeTrigger: bool
+
+Note that it is perfectly valid for one of the ready input or output to be null! This is for sources/sinks.
+
+For the *O*==RV case, or *O*==RVTrigger case, smodule:ready() must have type nil->bool
+
+### smodule:reset() ###
+smodule:reset() exists iff module.stateful is true.
+
+Lowering To Terra
+=====================
+
+Given a Rigel module `module` with input type *I* and output type *O*, we lower it to a terra class `tmodule` with the following methods.
+
+### tmodule:process( TI, TO ) ###
+tmodule:process() always exists, except for modules with multiple functions (FIFOs), in which case, this method is the same as the name of the function (e.g. 'load' or 'store'), but follows the same lowering rules.
+
+If the module is either a source or a sink, either TI or TO may not exist (the module will just take 1 argument).
+
+Types are lowered as follows. Valid bits are packed into the function arguments.
+A                       : A (transcription of rigel type to terra type)
+V(A)                    : {A,bool}
+RV(A)                   : {A,bool}
+Handshake(A)            : {A,bool}
+HandshakeArray(A,N)     : {A[N],bool[N]}
+HandshakeTuple(A)       : {A,bool[N]}
+HandshakeArrayOneHot(A) :
+
+### tmodule:calculateReady( DS ) : void ###
+tmodule:calculateReady() computes and stores the ready bit for the module based on the downstream ready. The ready bit (upstream output) of this module is stored in `tmodule.ready`. Note that this function does not return a value (the result is stored into `tmodule.ready`. This should be called _before_ tmodule:process(), within each iteration of the inner simulation loop.
+
+Separating out ready bit calculation from `process` allows us to approximate the real behavior of the hardware. First, we do the ready bit calculation (in reverse), and store this off to the side temporarily (in tmodule.ready). Modules often also buffer the downstream ready in `tmodule.readyDownstream`. Then, we run `process`, and actually step the pipes, but only if `tmodule.readyDownstream` was true. `tmodule.readyDownstream` is not required by the system, but `tmodule.ready` is.
+
+The types of DS, tmodule.ready are as follows:
+A->B              : DNE, DNE
+A->V(B)           : DNE, DNE
+V(A)->RV(B)       : void, bool
+(the following can appear as inputs or outputs, and these are the lowering rules respectively)
+VTrigger          : bool
+Handshake(A)      : bool
+HandshakeArray(A) : bool[N]
+HandshakeTuple(A) : bool[N]
+HandshakeTrigger  : bool
+
+### tmodule:reset() ###
+Provides similar behavior to the hardware reset, and puts the modules into their default state (at the start of time, or possibly between frames). Note that this should be called _after_ tmodule:init().
+
+For simplicity, tmodule:reset() always exists.
+
+### tmodule:init() ###
+Allocates any memory on the heap that the module needs for simulation.
+
+For simplicity, tmodule:init() always exists.
+
+### tmodule:free() ###
+Frees any memory on the heap that the module allocated (but note, this does not free the module itself!).
+
+For simplicity, tmodule:free() always exists.

@@ -118,7 +118,7 @@ local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 --print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
   SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
-  out = R.apply("toHandshakeArray", RM.toHandshakeArray( RW_TYPE, SDF), R.concatArray2d( "sa", L, TARGET_DEPTH, 1))
+  out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot( RW_TYPE, SDF), R.concatArray2d( "sa", L, TARGET_DEPTH, 1))
   out = R.apply("ser", SER, out )
 
   out = R.apply("flatten", RM.flattenStreams(RW_TYPE, SDF), out )

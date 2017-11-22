@@ -47,11 +47,11 @@ function darkroom.Handshake(A)
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
-function darkroom.HandshakeArray(A,N)
-  err(types.isType(A),"HandshakeArray: first argument should be type")
-  err(darkroom.isBasic(A),"HandshakeArray: first argument should be basic type")
-  err(type(N)=="number","HandshakeArray: second argument should be number")
-  return types.named("HandshakeArray("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArray", {A=A,N=N} )
+function darkroom.HandshakeArrayOneHot(A,N)
+  err(types.isType(A),"HandshakeArrayOneHot: first argument should be type")
+  err(darkroom.isBasic(A),"HandshakeArrayOneHot: first argument should be basic type")
+  err(type(N)=="number","HandshakeArrayOneHot: second argument should be number")
+  return types.named("HandshakeArrayOneHot("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArrayOneHot", {A=A,N=N} )
 end
 
 function darkroom.HandshakeTmuxed(A,N)
@@ -62,9 +62,9 @@ function darkroom.HandshakeTmuxed(A,N)
 end
 function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
 
-function darkroom.isHandshakeArray(a)
-  err(types.isType(a),"isHandshakeArray: argument must be a type")
-  return a:isNamed() and a.generator=="HandshakeArray"
+function darkroom.isHandshakeArrayOneHot(a)
+  err(types.isType(a),"isHandshakeArrayOneHot: argument must be a type")
+  return a:isNamed() and a.generator=="HandshakeArrayOneHot"
 end
 function darkroom.isHandshakeTmuxed(a)
   return a:isNamed() and a.generator=="HandshakeTmuxed"
@@ -77,7 +77,7 @@ function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
 function darkroom.isBasic(A)
   if A:isArray() and darkroom.isHandshake(A:arrayOver()) then return false end
   if A:isTuple() and darkroom.isHandshake(A.list[1]) then return false end
-  return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTmuxed(A)==false
+  return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArrayOneHot(A)==false and darkroom.isHandshakeTmuxed(A)==false
 end
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
@@ -95,7 +95,7 @@ function darkroom.lower( a, loc )
     return types.array2d( darkroom.lower(a:arrayOver()), (a:arrayLength())[1], (a:arrayLength())[2] )
   elseif a:isTuple() and darkroom.isBasic(a.list[1])==false then
     return types.tuple(J.map(a.list, function(t) return darkroom.lower(t) end ))
-  elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a)then
+  elseif darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a)then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -119,7 +119,7 @@ function darkroom.hasReady(a)
     return true
   elseif a:isArray() and darkroom.isHandshake(a:arrayOver()) then
     return true
-  elseif darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) then
+  elseif darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
@@ -136,7 +136,7 @@ function darkroom.extractReady(a)
   elseif a:isTuple() and darkroom.isHandshake(a.list[1]) then
     J.map(a.list,function(i) assert(darkroom.isHandshake(i)); end )
     return types.array2d(types.bool(),#a.list) -- we always use arrays for ready bits. no reason not to.
-  elseif darkroom.isHandshakeArray(a) then
+  elseif darkroom.isHandshakeArrayOneHot(a) then
     return types.uint(8)
   else 
     print("COULD NOT EXTRACT READY",a)
@@ -160,7 +160,7 @@ function darkroom.streamCount(A)
     return A:channels()
   elseif A:isTuple() and darkroom.isHandshake(A.list[1]) then
     return #A.list
-  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) then
+  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
     return A.params.N
   else
     err(false, "NYI streamCount "..tostring(A))
@@ -175,7 +175,7 @@ function darkroom.isStreaming(A)
     return true
   elseif A:isTuple() and darkroom.isHandshake(A.list[1]) then
     return true
-  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) then
+  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
     return true
   end
 
@@ -580,7 +580,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil) )
 
         if darkroom.isHandshake( n.fn.inputType ) or
-          darkroom.isHandshakeArray( n.fn.inputType ) or
+          darkroom.isHandshakeArrayOneHot( n.fn.inputType ) or
           darkroom.isHandshakeTmuxed( n.fn.inputType ) or
           darkroom.isHandshake(n.fn.outputType) or
           (n.fn.inputType:isTuple() and darkroom.isHandshake(n.fn.inputType.list[1])) then

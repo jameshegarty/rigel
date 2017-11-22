@@ -480,13 +480,13 @@ function MT.pyramidSchedule( depth, wtop, T )
   return PyramidSchedule
 end
 
-function MT.toHandshakeArray( res,A, inputRates )
-  local struct ToHandshakeArray {ready:bool[#inputRates], readyDownstream:uint8}
-  terra ToHandshakeArray:reset()  end
-  terra ToHandshakeArray:init() end
-  terra ToHandshakeArray:free() end
-  terra ToHandshakeArray:stats( name: &int8 ) end
-  terra ToHandshakeArray:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+function MT.toHandshakeArrayOneHot( res,A, inputRates )
+  local struct ToHandshakeArrayOneHot {ready:bool[#inputRates], readyDownstream:uint8}
+  terra ToHandshakeArrayOneHot:reset()  end
+  terra ToHandshakeArrayOneHot:init() end
+  terra ToHandshakeArrayOneHot:free() end
+  terra ToHandshakeArrayOneHot:stats( name: &int8 ) end
+  terra ToHandshakeArrayOneHot:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     if self.readyDownstream < [#inputRates] then -- is ready bit true?
       if valid((@inp)[self.readyDownstream]) then
         valid(out) = true
@@ -503,7 +503,7 @@ function MT.toHandshakeArray( res,A, inputRates )
       if DARKROOM_VERBOSE then cstdio.printf("TOHANDSHAKE FAIL: not ready downstream\n") end
     end
   end
-  terra ToHandshakeArray:calculateReady( readyDownstream : uint8 )
+  terra ToHandshakeArrayOneHot:calculateReady( readyDownstream : uint8 )
     self.readyDownstream = readyDownstream
     for i=0,[#inputRates] do 
       self.ready[i] = (i == readyDownstream ) 
@@ -511,7 +511,7 @@ function MT.toHandshakeArray( res,A, inputRates )
     end
   end
 
-  return ToHandshakeArray
+  return ToHandshakeArrayOneHot
 end
 
 function MT.serialize( res, A, inputRates, Schedule)

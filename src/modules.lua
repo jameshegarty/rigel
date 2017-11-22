@@ -1266,26 +1266,26 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
 end)
 
 -- WARNING: validOut depends on readyDownstream
-modules.toHandshakeArray = memoize(function( A, inputRates )
+modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
   err( types.isType(A), "A must be type" )
   rigel.expectBasic(A)
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates))
 
-  local res = {kind="toHandshakeArray", A=A, inputRates = inputRates}
+  local res = {kind="toHandshakeArrayOneHot", A=A, inputRates = inputRates}
   res.inputType = types.array2d( rigel.Handshake(A), #inputRates )
-  res.outputType = rigel.HandshakeArray( A, #inputRates )
+  res.outputType = rigel.HandshakeArrayOneHot( A, #inputRates )
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
   res.stateful = false
-  res.name = sanitize("ToHandshakeArray_"..tostring(A).."_"..#inputRates)
+  res.name = sanitize("ToHandshakeArrayOneHot_"..tostring(A).."_"..#inputRates)
 
   function res:sdfTransfer( I, loc ) 
-    err(#I[1]==#inputRates, "toHandshakeArray: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
+    err(#I[1]==#inputRates, "toHandshakeArrayOneHot: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
     return I 
   end
   
-  if terralib~=nil then res.terraModule = MT.toHandshakeArray( res,A, inputRates ) end
+  if terralib~=nil then res.terraModule = MT.toHandshakeArrayOneHot( res,A, inputRates ) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
@@ -1343,7 +1343,7 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   assert(X==nil)
 
   local res = {kind="serialize", A=A, inputRates=inputRates, schedule=Schedule}
-  res.inputType = rigel.HandshakeArray( A, #inputRates )
+  res.inputType = rigel.HandshakeArrayOneHot( A, #inputRates )
   res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
   err( type(Schedule.stateful)=="boolean", "Schedule missing stateful annotation")
   res.stateful = Schedule.stateful
@@ -3053,10 +3053,11 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
           -- why do we need to support multiple readers of a HS stream? (ie ANDing the ready bits?)
           -- A stream may be read by multi selectStreams, which is OK.
           -- However: why can't we just special-case expect all multiple readers to be selectStreams? It seems like this should work.
-          -- Note: one issue is that it's very important that this function returns a systolic value of the correct type for
-          --       every intermediate! We can return/examine any intermediate, and it must have the right type!
-          --       don't try to special case by having this function return intermediates as lua arrays of bools or something.
-          
+          -- Note 1: Take a look at modulesTerra.lambda... it basically implements this that way
+          -- Note 2: one issue is that it's very important that this function returns a systolic value of the correct type for
+          --         every intermediate! We can return/examine any intermediate, and it must have the right type!
+          --         don't try to special case by having this function return intermediates as lua arrays of bools or something.
+         
           for k,i in pairs(args) do
             local parentKey = i[2]
             local value = i[1]
@@ -3074,7 +3075,7 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
             elseif n:outputStreams()>1 or (n.type:isArray() and rigel.isHandshake(n.type:arrayOver())) then
               assert(systolicAST.isSystolicAST(thisi))
 
-              if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArray(n.type) then
+              if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArrayOneHot(n.type) then
                 assert(J.keycount(args)==1) -- NYI
                 input = thisi
               else
@@ -3192,7 +3193,7 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               if(rigel.isHandshakeTmuxed(i.type)) then
                 err( res[k].type:isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
-              elseif rigel.isHandshakeArray(i.type) then
+              elseif rigel.isHandshakeArrayOneHot(i.type) then
                 err( res[k].type==types.uint(8),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
               else
                 err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)

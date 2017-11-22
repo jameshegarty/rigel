@@ -31,7 +31,7 @@ B = R.apply( "plus100", RM.makeHandshake(RM.map(C.plus100(types.uint(8)),8)), Ai
 
 local AinFifo2 = R.applyMethod("L2", fifos[2],"load")
 
-local out = R.apply("toHandshakeArray", RM.toHandshakeArray(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{AinFifo2,B},2,1))
+local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{AinFifo2,B},2,1))
 
 local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )
