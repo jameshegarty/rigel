@@ -125,7 +125,7 @@ modules.packTuple = memoize(function( typelist, X )
   local res = {kind="packTuple"}
   
   J.map(typelist, function(t) rigel.expectBasic(t) end )
-  res.inputType = types.tuple( J.map(typelist, function(t) return rigel.Handshake(t) end) )
+  res.inputType = rigel.HandshakeTuple(typelist)
   res.outputType = rigel.Handshake( types.tuple(typelist) )
   res.stateful = false
   res.sdfOutput = {{1,1}}
@@ -837,9 +837,9 @@ modules.readMemory = memoize(function(ty)
 
   local addrType = types.uint(32)
   -- idx 0: address, idx 1: data
-  res.inputType = types.tuple{ rigel.Handshake(addrType), rigel.Handshake(ty) }
+  res.inputType = rigel.HandshakeTuple{addrType,ty}
   -- idx 0: output data, idx 1: addr to ram
-  res.outputType = types.tuple{ rigel.Handshake(ty), rigel.Handshake(addrType) }
+  res.outputType = rigel.HandshakeTuple{ty,addrType}
   res.stateful = true
   res.sdfOutput={ {1,1}, 'x' }
   res.sdfInput={ {1,1},'x'}
@@ -1273,7 +1273,7 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
   assert( SDFRate.isSDFRate(inputRates))
 
   local res = {kind="toHandshakeArrayOneHot", A=A, inputRates = inputRates}
-  res.inputType = types.array2d( rigel.Handshake(A), #inputRates )
+  res.inputType = rigel.HandshakeArray(A, #inputRates)
   res.outputType = rigel.HandshakeArrayOneHot( A, #inputRates )
   res.sdfInput = inputRates
   res.sdfOutput = inputRates
@@ -1415,7 +1415,7 @@ modules.demux = memoize(function( A, rates, X )
   local res = {kind="demux", A=A, rates=rates}
 
   res.inputType = rigel.HandshakeTmuxed( A, #rates )
-  res.outputType = types.array2d(rigel.Handshake(A), #rates)
+  res.outputType = rigel.HandshakeArray(A, #rates)
   res.stateful = false
   res.name = sanitize("Demux_"..tostring(A).."_"..#rates)
 
@@ -1537,7 +1537,7 @@ modules.broadcastStream = memoize(function(A,N,X)
   err( type(N)=="number", "N must be number")
   assert(X==nil)
 
-  local res = {kind="broadcastStream", A=A, N=N, inputType = rigel.Handshake(A), outputType = types.array2d( rigel.Handshake(A), N), stateful=false}
+  local res = {kind="broadcastStream", A=A, N=N, inputType = rigel.Handshake(A), outputType = rigel.HandshakeArray(A, N), stateful=false}
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = J.broadcast({1,1},N)
@@ -2992,9 +2992,7 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
   end
 
   local function makeSystolic( fn )
-    local onlyWire = rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType)
-    if fn.inputType:isTuple() and rigel.isHandshake(fn.inputType.list[1]) then onlyWire = true end
-    if fn.inputType:isArray() and rigel.isHandshake(fn.inputType:arrayOver()) then onlyWire = true end
+    local onlyWire = rigel.isHandshake(fn.inputType) or rigel.isHandshake(fn.outputType) or rigel.isHandshakeTuple(fn.inputType) or rigel.isHandshakeArray(fn.inputType)
     
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire(onlyWire)
 
@@ -3072,7 +3070,7 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
               else
                 input = S.__and(input,thisi)
               end
-            elseif n:outputStreams()>1 or (n.type:isArray() and rigel.isHandshake(n.type:arrayOver())) then
+            elseif n:outputStreams()>1 or darkroom.isHandshakeArray(n.type) then
               assert(systolicAST.isSystolicAST(thisi))
 
               if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArrayOneHot(n.type) then
@@ -3188,7 +3186,7 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
             if rigel.isHandshake(i.type) then
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." (type "..tostring(i.type)..", name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
-            elseif i:outputStreams()>1 or (i.type:isArray() and rigel.isHandshake(i.type:arrayOver())) then
+            elseif i:outputStreams()>1 or rigel.isHandshakeArray(i.type) then
 
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               if(rigel.isHandshakeTmuxed(i.type)) then

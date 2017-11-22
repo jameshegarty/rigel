@@ -62,6 +62,8 @@ function types.named( name, structure, generator, params, const, X )
     if c==false then assert(structure:const()==false) end
     local ty = {kind="named",name=name, structure=structure, generator=generator,params=params, constant=c}
     types._named[c][name] = setmetatable(ty,TypeMT)
+  else
+    err( types._named[c][name].structure==structure,"types.named: attempted to make new type with same name, but different structure" )
   end
   
   return types._named[c][name]

@@ -20,7 +20,7 @@ T = 8
 ITYPE = types.uint(8)
 
 -- {image input, ram read return}
-inp = R.input( types.tuple{RS.HS(ITYPE),RS.HS(ITYPE)}, {{1,1},'x'} )
+inp = R.input( R.HandshakeTuple{ITYPE,ITYPE}, {{1,1},'x'} )
 
 posseq = RS.connect{ toModule=RS.HS(RM.posSeq(W,H,1)), name="posseqinst" }
 

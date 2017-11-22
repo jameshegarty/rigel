@@ -191,8 +191,8 @@ end
 
 local readMemoryTab = {fn=RS.modules.readMemory,settings={}}
 readMemoryTab.wireFn = function(arg)
-  err( arg.type:isTuple() and #arg.type.list==2 and R.isHandshake(arg.type.list[1]) and R.isHandshake(arg.type.list[2]), "readMemory wrapper: input must be two handshake streams but is "..tostring(arg.type))
-  return {type=R.extractData(arg.type.list[2])}
+  err( R.isHandshakeTuple(arg.type) and #arg.type.params.list==2, "readMemory wrapper: input must be two handshake streams but is "..tostring(arg.type))
+  return {type=R.extractData(arg.type.params.list[2])}
 end
 
 setmetatable( readMemoryTab, SimpleModuleWrapperMT )
