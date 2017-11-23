@@ -1120,23 +1120,24 @@ Given a Rigel module `module` with input type **I** and output type **O**, we lo
 
 definitions:
 
-    **HS** = Handshake, HandshakeArray, HandshakeTuple, HandshakeArrayOneHot, HandshakeTmuxed, HandshakeTrigger
-    **A** = one of the basic types (uint, bool, array)
+    HS = Handshake, HandshakeArray, HandshakeTuple, HandshakeArrayOneHot, HandshakeTmuxed, HandshakeTrigger
+    A = one of the basic types (uint, bool, array)
 
 ### smodule:process(SI) : SO ###
 smodule:process() always exists, except for modules with multiple functions (FIFOs), in which case, this method is the same as the name of the function (e.g. 'load' or 'store'), but follows the same lowering rules.
 
 we map from **I**->**O** to **SI**->**SO** as follows:
 
-    I->O: SIdataSlot,SIvalidSlot,SICESlot->SOdataSlot,SOvalidSlot,SOCESlot
-           A->B:            A,bool,bool -> B,null,null
-        A->V(B):            A,bool,bool -> {B,bool},null,null
-    A->Vtrigger:            A,bool,bool -> bool,null,null
-    V(A)->RV(B):     {A,bool},bool,bool -> {B,bool},null,null
+           I->O: SIdataSlot,SIvalidSlot,SICESlot->SOdataSlot,SOvalidSlot,SOCESlot
+           A->B:                    A,bool,bool -> B,null,null
+        A->V(B):                    A,bool,bool -> {B,bool},null,null
+    A->Vtrigger:                    A,bool,bool -> bool,null,null
+    V(A)->RV(B):             {A,bool},bool,bool -> {B,bool},null,null
 
 Note that for the above cases, there are sometimes two valid bits! The valids get ANDed together at runtime - one is controlled by the system, the other is controlled by the user.
 
 The following can appear as either inputs or outputs, and these are the lowering rules respectively:
+
     Handshake(A)       :        A,bool,null
     HandshakeArray(A)  :  A[N],bool[N],null
     HandshakeTuple(A)  :     A,bool[N],null
@@ -1176,7 +1177,7 @@ If the module is either a source or a sink, either **TI** or **TO** may not exis
 
 Types are lowered as follows. Valid bits are packed into the function arguments.
 
-A                       : A (transcription of rigel type to terra type)
+    A                       : A (transcription of rigel type to terra type)
     V(A)                    : {A,bool}
     RV(A)                   : {A,bool}
     Handshake(A)            : {A,bool}
