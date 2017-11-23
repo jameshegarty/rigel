@@ -69,12 +69,18 @@ Our makefile supports the following options:
 * **make verilator:** Simulator Verilog using Verilator. Outputs at `examples/out/[testname].verilator.bmp`
 * **make terra:** Run compiler and Terra x86 simulator on all tests. Sim outputs at `examples/out/[testname].terra.bmp`.
 * **make isim:** Run Xilinx ISIM simulator on all tests. Outputs at `examples/out/[testname].isim.bmp`
-* **make axibits:** Builds all 7020 bitstreams. Verilog outputs at `examples/out/[testname].axi.v`. Bitstream outputs at `examples/out/[testname].axi.bit`
-* **make axi:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].axi.bmp`
-* **make axibits100:** Builds all 7100 bitstreams. Outputs at `examples/out/[testname].axi100.bit`
-* **make axi100:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].axi100.bmp`
+
+On Xilinx, we support three FPGAs, the Zynq 7010, 7020 (most common, used in the Zedboard), and 7100. We also support both ISE and Vivado.
+* **make zynq20isebits:** Builds all 7020 bitstreams using ISE. Outputs at `examples/out/[testname].zynq20ise.bit`
+* **make zynq20ise:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].zynq20ise.bmp`
+* **make zynq100vivadobits:** Builds all 7100 bitstreams using Vivado. Outputs at `examples/out/[testname].zynq20vivado.bit`
+* **make zynq100vivado:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].zynq20vivado.bmp`
+* etc
+
+For Ross Daly's camera test rig:
 * **make camerabits:** Build all bitstreams for the camera rig. Outputs at `examples/out/[testname].camera.bit`
 * **make [testname].camera.run:** Run bitstream on camera rig (over ethernet)
+
 * **make:** build and run all simulations and bitstreams on both boards
 * **make clean:** delete all built files from `examples/out/`
 
@@ -1113,25 +1119,25 @@ Lowering to Systolic
 Given a Rigel module `module` with input type *I* and output type *O*, we lower it to a systolic module `smodule` using the following rules.
 
 definitions:
-HS = Handshake, HandshakeArray, HandshakeTuple, HandshakeArrayOneHot, HandshakeTmuxed, HandshakeTrigger
-A = one of the basic types (uint, bool, array)
+    HS = Handshake, HandshakeArray, HandshakeTuple, HandshakeArrayOneHot, HandshakeTmuxed, HandshakeTrigger
+    A = one of the basic types (uint, bool, array)
 
 ### smodule:process(SI) : SO ###
 smodule:process() always exists, except for modules with multiple functions (FIFOs), in which case, this method is the same as the name of the function (e.g. 'load' or 'store'), but follows the same lowering rules.
 
 we map from I->O to SI->SO as follows:
 
-I->O: SIdataSlot,SIvalidSlot,SICESlot->SOdataSlot,SOvalidSlot,SOCESlot
-       A->B:            A,bool,bool -> B,null,null
-    A->V(B):            A,bool,bool -> {B,bool},null,null
-A->Vtrigger:            A,bool,bool -> bool,null,null
-V(A)->RV(B):     {A,bool},bool,bool -> {B,bool},null,null
-(note that for the above cases, there are sometimes two valid bits! The valids get ANDed together at runtime - one is controlled by the system, the other is controlled by the user)
-(the following can appear as inputs or outputs, and these are the lowering rules respectively)
-Handshake(A)       :        A,bool,null
-HandshakeArray(A)  :  A[N],bool[N],null
-HandshakeTuple(A)  :     A,bool[N],null
-HandshakeTrigger   :     null,bool,null
+    I->O: SIdataSlot,SIvalidSlot,SICESlot->SOdataSlot,SOvalidSlot,SOCESlot
+           A->B:            A,bool,bool -> B,null,null
+        A->V(B):            A,bool,bool -> {B,bool},null,null
+    A->Vtrigger:            A,bool,bool -> bool,null,null
+    V(A)->RV(B):     {A,bool},bool,bool -> {B,bool},null,null
+    (note that for the above cases, there are sometimes two valid bits! The valids get ANDed together at runtime - one is controlled by the system, the other is controlled by the user)
+    (the following can appear as inputs or outputs, and these are the lowering rules respectively)
+    Handshake(A)       :        A,bool,null
+    HandshakeArray(A)  :  A[N],bool[N],null
+    HandshakeTuple(A)  :     A,bool[N],null
+    HandshakeTrigger   :     null,bool,null
 
 
 ### smodule:ready(SI) : SO ###
@@ -1139,14 +1145,14 @@ smodule:ready() exists if *O*==RV, or *O*==HS, or *I*==HS
 
 for the HS cases, if the input or output type is T, SI/SO gets the value:
 
-T: ST
-null: null
-Handshake: bool
-HandshakeArray: bool[N]
-HandshakeTuple: bool[N]
-HandshakeArrayOneHot: uint8
-HandshakeTmuxed: bool
-HandshakeTrigger: bool
+    T: ST
+    null: null
+    Handshake: bool
+    HandshakeArray: bool[N]
+    HandshakeTuple: bool[N]
+    HandshakeArrayOneHot: uint8
+    HandshakeTmuxed: bool
+    HandshakeTrigger: bool
 
 Note that it is perfectly valid for one of the ready input or output to be null! This is for sources/sinks.
 
@@ -1166,13 +1172,13 @@ tmodule:process() always exists, except for modules with multiple functions (FIF
 If the module is either a source or a sink, either TI or TO may not exist (the module will just take 1 argument).
 
 Types are lowered as follows. Valid bits are packed into the function arguments.
-A                       : A (transcription of rigel type to terra type)
-V(A)                    : {A,bool}
-RV(A)                   : {A,bool}
-Handshake(A)            : {A,bool}
-HandshakeArray(A,N)     : {A[N],bool[N]}
-HandshakeTuple(A)       : {A,bool[N]}
-HandshakeArrayOneHot(A) :
+    A                       : A (transcription of rigel type to terra type)
+    V(A)                    : {A,bool}
+    RV(A)                   : {A,bool}
+    Handshake(A)            : {A,bool}
+    HandshakeArray(A,N)     : {A[N],bool[N]}
+    HandshakeTuple(A)       : {A,bool[N]}
+    HandshakeArrayOneHot(A) :
 
 ### tmodule:calculateReady( DS ) : void ###
 tmodule:calculateReady() computes and stores the ready bit for the module based on the downstream ready. The ready bit (upstream output) of this module is stored in `tmodule.ready`. Note that this function does not return a value (the result is stored into `tmodule.ready`. This should be called _before_ tmodule:process(), within each iteration of the inner simulation loop.
@@ -1180,15 +1186,16 @@ tmodule:calculateReady() computes and stores the ready bit for the module based 
 Separating out ready bit calculation from `process` allows us to approximate the real behavior of the hardware. First, we do the ready bit calculation (in reverse), and store this off to the side temporarily (in tmodule.ready). Modules often also buffer the downstream ready in `tmodule.readyDownstream`. Then, we run `process`, and actually step the pipes, but only if `tmodule.readyDownstream` was true. `tmodule.readyDownstream` is not required by the system, but `tmodule.ready` is.
 
 The types of DS, tmodule.ready are as follows:
-A->B              : DNE, DNE
-A->V(B)           : DNE, DNE
-V(A)->RV(B)       : void, bool
-(the following can appear as inputs or outputs, and these are the lowering rules respectively)
-VTrigger          : bool
-Handshake(A)      : bool
-HandshakeArray(A) : bool[N]
-HandshakeTuple(A) : bool[N]
-HandshakeTrigger  : bool
+    A->B              : DNE, DNE
+    A->V(B)           : DNE, DNE
+    V(A)->RV(B)       : void, bool
+
+    (the following can appear as inputs or outputs, and these are the lowering rules respectively)
+    VTrigger          : bool
+    Handshake(A)      : bool
+    HandshakeArray(A) : bool[N]
+    HandshakeTuple(A) : bool[N]
+    HandshakeTrigger  : bool
 
 ### tmodule:reset() ###
 Provides similar behavior to the hardware reset, and puts the modules into their default state (at the start of time, or possibly between frames). Note that this should be called _after_ tmodule:init().
