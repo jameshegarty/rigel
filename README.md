@@ -68,7 +68,6 @@ Our makefile supports the following options:
 * **make verilog:** Build all (generic, platform-independent) Verilog files. Outputs at `examples/out/[testname].v`
 * **make verilator:** Simulator Verilog using Verilator. Outputs at `examples/out/[testname].verilator.bmp`
 * **make terra:** Run compiler and Terra x86 simulator on all tests. Sim outputs at `examples/out/[testname].terra.bmp`.
-* **make isim:** Run Xilinx ISIM simulator on all tests. Outputs at `examples/out/[testname].isim.bmp`
 * **make:** build and run all simulations and bitstreams on both boards
 * **make clean:** delete all built files from `examples/out/`
 
@@ -77,6 +76,7 @@ On Xilinx, we support three FPGAs, the Zynq 7010, 7020 (most common, used in the
 * **make zynq20ise:** Run all 7020 bitstream on board. Outputs at `examples/out/[testname].zynq20ise.bmp`
 * **make zynq100vivadobits:** Builds all 7100 bitstreams using Vivado. Outputs at `examples/out/[testname].zynq20vivado.bit`
 * **make zynq100vivado:** Run all 7100 bitstream on board. Outputs at `examples/out/[testname].zynq20vivado.bmp`
+* **make isim:** Run Xilinx ISIM simulator on all tests. Outputs at `examples/out/[testname].isim.bmp`
 * etc
 
 For Ross Daly's camera test rig:
