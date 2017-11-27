@@ -308,7 +308,7 @@ out/%.$(1).correct.txt : out/%.$(1).bmp
 	diff out/$$*.$(1).bmp gold/$$*.bmp > out/$$*.$(1).diff
 	test ! -s out/$$*.$(1).diff && touch $$@
 
-out/%.$(1).raw: out/%.$(1).bit
+out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
 	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
 
 out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua

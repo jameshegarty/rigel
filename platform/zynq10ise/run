@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/bin/bash -x
+# -x shows all commands
 
 ZYNQ_WRITE_PATH=/tmp
 ZYNQ_ADDR=192.168.1.10
