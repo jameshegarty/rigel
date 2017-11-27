@@ -8,14 +8,14 @@ function common.table_print (tt, indent, done)
     local first = true
     for key, value in pairs (tt) do
       table.insert(sb, string.rep (" ", indent)) -- indent it
-      if type (value) == "table" and not done [value] then
+      if type (value) == "table" then
         done [value] = true
 	table.insert(sb, key);
 	table.insert(sb, "=");
 --        table.insert(sb, "{"..tostring(value).."\n");
 --        if first then comma="";first=false end
         table.insert(sb, "{\n");
-        table.insert(sb, table_print (value, indent + 2, done))
+        table.insert(sb, common.table_print (value, indent + 2, done))
         table.insert(sb, string.rep (" ", indent)) -- indent it
         local comma = ","
         table.insert(sb, "}");
@@ -642,6 +642,22 @@ common.sanitize = common.verilogSanitize
 function common.fileExists(name)
    local f=io.open(name,"r")
    if f~=nil then io.close(f) return true else return false end
+end
+
+-- uniquify a table
+local __uniqCache = {}
+function common.uniq(t)
+  if type(t)=="number" or type(t)=="string" then
+    return t
+  elseif type(t)=="table" then
+    local out = {}
+    assert(#t==common.keycount(t))
+    for _,v in ipairs(t) do table.insert(out,common.uniq(v)) end
+    if __uniqCache[#t]==nil then __uniqCache[#t]={} end
+    return common.deepsetweak(__uniqCache[#t],out,out)
+  else
+    assert(false)
+  end
 end
 
 return common
