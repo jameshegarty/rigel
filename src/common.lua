@@ -38,7 +38,7 @@ function common.to_string( tbl )
     if  "nil"       == type( tbl ) then
         return tostring(nil)
     elseif  "table" == type( tbl ) then
-        return tostring(tbl).." "..table_print(tbl)
+        return common.table_print(tbl)
     elseif  "string" == type( tbl ) then
         return tbl
     else
@@ -610,7 +610,7 @@ function common.verilogCheckReserved(k)
   end
 end
 
-function common.verilogSanitize(s)
+function common.verilogSanitizeInner(s)
   --local s = s:gsub('%W','_')
   local s = s:gsub("%[","_OB_")
   s = s:gsub("%]","_CB_")
@@ -625,6 +625,18 @@ function common.verilogSanitize(s)
 
   return s
 end
+
+-- hack: running only one round of sanitize may leave unsanitized stuff
+function common.verilogSanitize(s)
+  local a = common.verilogSanitizeInner(s)
+
+  while(true) do
+    local b = common.verilogSanitizeInner(a)
+    if(a==b) then return b end
+    a=b
+  end
+end
+
 common.sanitize = common.verilogSanitize
 
 function common.fileExists(name)

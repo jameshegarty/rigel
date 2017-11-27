@@ -3321,7 +3321,8 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   res.stateful = false
   --if T==1 then res.stateful=false end
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
-  res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h)
+  local vh = J.to_string(value)
+  res.name = verilogSanitize("constSeq_"..vh.."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
