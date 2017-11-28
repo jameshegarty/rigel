@@ -8,14 +8,14 @@ function common.table_print (tt, indent, done)
     local first = true
     for key, value in pairs (tt) do
       table.insert(sb, string.rep (" ", indent)) -- indent it
-      if type (value) == "table" and not done [value] then
+      if type (value) == "table" then
         done [value] = true
 	table.insert(sb, key);
 	table.insert(sb, "=");
 --        table.insert(sb, "{"..tostring(value).."\n");
 --        if first then comma="";first=false end
         table.insert(sb, "{\n");
-        table.insert(sb, table_print (value, indent + 2, done))
+        table.insert(sb, common.table_print (value, indent + 2, done))
         table.insert(sb, string.rep (" ", indent)) -- indent it
         local comma = ","
         table.insert(sb, "}");
@@ -38,7 +38,7 @@ function common.to_string( tbl )
     if  "nil"       == type( tbl ) then
         return tostring(nil)
     elseif  "table" == type( tbl ) then
-        return tostring(tbl).." "..table_print(tbl)
+        return common.table_print(tbl)
     elseif  "string" == type( tbl ) then
         return tbl
     else
@@ -610,7 +610,7 @@ function common.verilogCheckReserved(k)
   end
 end
 
-function common.verilogSanitize(s)
+function common.verilogSanitizeInner(s)
   --local s = s:gsub('%W','_')
   local s = s:gsub("%[","_OB_")
   s = s:gsub("%]","_CB_")
@@ -625,11 +625,39 @@ function common.verilogSanitize(s)
 
   return s
 end
+
+-- hack: running only one round of sanitize may leave unsanitized stuff
+function common.verilogSanitize(s)
+  local a = common.verilogSanitizeInner(s)
+
+  while(true) do
+    local b = common.verilogSanitizeInner(a)
+    if(a==b) then return b end
+    a=b
+  end
+end
+
 common.sanitize = common.verilogSanitize
 
 function common.fileExists(name)
    local f=io.open(name,"r")
    if f~=nil then io.close(f) return true else return false end
+end
+
+-- uniquify a table
+local __uniqCache = {}
+function common.uniq(t)
+  if type(t)=="number" or type(t)=="string" then
+    return t
+  elseif type(t)=="table" then
+    local out = {}
+    assert(#t==common.keycount(t))
+    for _,v in ipairs(t) do table.insert(out,common.uniq(v)) end
+    if __uniqCache[#t]==nil then __uniqCache[#t]={} end
+    return common.deepsetweak(__uniqCache[#t],out,out)
+  else
+    assert(false)
+  end
 end
 
 return common

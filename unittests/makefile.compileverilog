@@ -15,36 +15,36 @@ LUA = ../rigelLuajit
 all: $(TARGETS)
 	touch out/verilogcorrect.txt
 
-out/%.terra.bmp: out/%.terra.raw out/%.terra.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.terra.metadata.lua 0
+out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.terra.bmp out/build_$*
 
-out/%.verilator: out/%.v out/%.verilog.metadata.lua
-	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua topModule))
-	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua harness))
-	$(eval $@_INBPP := $(shell luajit ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputBitsPerPixel))
+out/%.verilator: out/%.v out/%.metadata.lua
+	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
+	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua harness))
+	$(eval $@_INBPP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
 	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module "$($@_TOP)"
-#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.verilog.metadata.lua $* > out/$*.verilator.cpp
+#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
 	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DHARNESS=$($@_HARNESS) -DINBPP=$($@_INBPP) -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
 
-out/%.verilator.raw: out/%.verilator out/%.verilog.metadata.lua
-	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputImage))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputHeight))
-	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua outputP))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputHeight))
-	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputBitsPerPixel))
-	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua inputP))
-	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapBits))
-	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilog.metadata.lua tapValue))
+out/%.verilator.raw: out/%.verilator out/%.metadata.lua
+	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
+	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
+	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
 	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
 
-out/%.verilator.bmp: out/%.verilator.raw out/%.verilog.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.verilog.metadata.lua 0
+out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*.verilator.bmp out/build_$*

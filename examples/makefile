@@ -1,6 +1,7 @@
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua,$(SRCS))
 
+METADATA = $(patsubst %.lua,out/%.metadata.lua,$(SRCS))
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
@@ -175,6 +176,8 @@ all: $(RES)
 
 dups: $(DUPS)
 
+metadata: $(METADATA)
+
 verilog: $(VERILOG)
 	touch out/verilog_done.txt
 
@@ -208,13 +211,19 @@ asic: $(ASIC)
 clean:
 	rm -Rf out/*
 
-out/%.v out/%.verilator.metadata.lua: %.lua
+out/%.metadata.lua: %.lua
+	$(LUA) $< metadata
+	# keep copy for future reference
+	mkdir -p out/build_$*
+	- cp out/$*.metadata.lua out/build_$*
+
+out/%.v: %.lua
 	$(LUA) $< verilator
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
 
-out/%.terra.raw out/%_half.terra.raw out/%.terra.metadata.lua: %.lua
+out/%.terra.raw out/%_half.terra.raw: %.lua
 	$(TERRA) $< terra
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -226,7 +235,7 @@ out/%.isim.v out/%_half.isim.v: %.lua
 	mkdir -p out/build_$*
 	- cp out/$*.isim.v out/build_$*
 
-out/%.axi.v out/%.axi.metadata.lua: %.lua
+out/%.axi.v: %.lua
 	$(LUA) $< axi
 	# keep copy for future reference
 	mkdir -p out/build_$*
@@ -236,29 +245,29 @@ out/%.axi.v out/%.axi.metadata.lua: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir out/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v out/$*.verilator.v
-out/%.verilator: out/%.v out/%.verilator.metadata.lua ../platform/verilator/harness.cpp
-	../platform/verilator/compile out/$*.v out/$*.verilator.metadata.lua out/$*_verilator $@
+out/%.verilator: out/%.v out/%.metadata.lua ../platform/verilator/harness.cpp
+	../platform/verilator/compile out/$*.v out/$*.metadata.lua out/$*_verilator $@
 
 out/%.verilator.raw: out/%.verilator
-	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputImage))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputHeight))
-	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua outputP))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputHeight))
-	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputBitsPerPixel))
-	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua inputP))
-	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua tapBits))
-	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.verilator.metadata.lua tapValue))
+	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
+	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
+	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
+	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
+	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
+	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
+	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
+	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
+	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
+	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
+	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
 	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
 
 out/%.hz.txt: out/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum out/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > out/$*.hz.txt
 
-out/%_half.terra.bmp: out/%_half.terra.raw out/%.terra.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.terra.metadata.lua 0
+out/%_half.terra.bmp: out/%_half.terra.raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$*_half.terra.raw out/$*_half.terra.bmp out/$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	cp out/$*_half.terra.bmp out/build_$*
@@ -299,11 +308,11 @@ out/%.$(1).correct.txt : out/%.$(1).bmp
 	diff out/$$*.$(1).bmp gold/$$*.bmp > out/$$*.$(1).diff
 	test ! -s out/$$*.$(1).diff && touch $$@
 
-out/%.$(1).raw: out/%.$(1).bit
-	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw
+out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
+	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
 
-out/%.$(1).bmp: out/%.$(1).raw out/%.$(1).metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.$(1).metadata.lua 0
+out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p out/$$*_$(1)
 	cp out/$$*.$(1).bmp out/$$*_$(1)

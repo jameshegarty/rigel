@@ -348,12 +348,7 @@ function harnessTop(t)
     H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
   elseif backend=="terra" then
     H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
-  else
-    print("unknown build target "..arg[1])
-    assert(false)
-  end
-
-  if backend=="verilog" or backend=="terra" or backend=="axi" or backend=="verilator" then
+  elseif backend=="metadata" then
     local tapValueString = "x"
     local tapBits = 0
     if t.tapType~=nil then
@@ -368,7 +363,10 @@ function harnessTop(t)
     local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile}
     if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
     
-    writeMetadata("out/"..t.outFile.."."..backend..".metadata.lua", MD)
+    writeMetadata("out/"..t.outFile..".metadata.lua", MD)
+  else
+    print("unknown build target "..arg[1])
+    assert(false)
   end
 
 end

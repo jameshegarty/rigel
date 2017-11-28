@@ -3299,7 +3299,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.constSeq = memoize(function( value, A, w, h, T, X )
+modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
   err( J.keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
   err( #value==w*h, "constSeq: value array has wrong number of values")
@@ -3321,7 +3321,13 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
   res.stateful = false
   --if T==1 then res.stateful=false end
   res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
-  res.name = "constSeq_"..verilogSanitize(tostring(value)).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h)
+
+  -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
+  local vh = J.to_string(value)
+  if #vh>100 then vh = string.sub(vh,0,100) end
+  
+  -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
+  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..vh.."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
@@ -3356,6 +3362,13 @@ modules.constSeq = memoize(function( value, A, w, h, T, X )
 
   return rigel.newFunction( res )
 end)
+
+function modules.constSeq(value,A,w,h,T,X)
+  err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
+  local UV = J.uniq(value)
+  local I = modules.constSeqInner(UV,A,w,h,T,X)
+  return I
+end
 
 modules.freadSeq = memoize(function( filename, ty )
   err( type(filename)=="string", "filename must be a string")

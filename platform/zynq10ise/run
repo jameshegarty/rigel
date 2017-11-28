@@ -1,0 +1,41 @@
+#!/bin/bash -x
+# -x shows all commands
+
+ZYNQ_WRITE_PATH=/tmp
+ZYNQ_ADDR=192.168.1.10
+
+BITFILE=$1
+BITFILE_BASE=$(basename $1)
+METAFILE=$2
+OUTFILE=$3
+OUTPATH=$4
+
+
+LUA=../rigelLuajit
+
+#out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
+IMG=$($LUA ../misc/extractMetadata.lua $METAFILE inputImage)
+INW=$($LUA ../misc/extractMetadata.lua $METAFILE inputWidth)
+INH=$($LUA ../misc/extractMetadata.lua $METAFILE inputHeight)
+BPP_IN=$($LUA ../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
+BPP_OUT=$($LUA ../misc/extractMetadata.lua $METAFILE outputBitsPerPixel)
+OUTW=$($LUA ../misc/extractMetadata.lua $METAFILE outputWidth)
+OUTH=$($LUA ../misc/extractMetadata.lua $METAFILE outputHeight)
+###### SET THE CLOCK	
+#HZ=$(cat $OUTPATH.hz.txt)
+#lockfile /tmp/zynq10lock
+# (* second time around we can't write to fclk_export, so surpress error)
+#sshpass -p 'root' ssh root@$ZYNQ_ADDR "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
+#	sshpass -p 'root' ssh root@$ZYNQ_ADDR "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
+#	sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
+###### CLOCK STUFF END
+
+sshpass -p 'root' scp ../platform/axi/processimage $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat $ZYNQ_WRITE_PATH/$BITFILE_BASE > /dev/xdevcfg"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage 805339136 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT "
+sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $ZYNQ_WRITE_PATH/$BITFILE_BASE"
+#rm -f /tmp/zynq10lock
+#	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+#	# keep copy for future reference
+#	cp out/$*.axi.cycles.txt out/build_$*
