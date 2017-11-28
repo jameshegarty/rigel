@@ -15,9 +15,9 @@ local function toTerra(self)
       if n.kind=="parameter" then
         inp = symbol(&n.type:toTerraType(), n.name)
         res = `@inp
-        if fixed.isFixedType(n.type) then
-          res = `res._0
-        end
+--        if fixed.isFixedType(n.type) then
+--          res = `res._0
+--        end
       elseif n.kind=="binop" then
         if n.op==">" then
           res = `[args[1]]>[args[2]]
@@ -148,9 +148,9 @@ local function toTerra(self)
           assert(false)
         end
 
-        if fixed.isFixedType(n.type) then
-          res = `res._0
-        end
+--        if fixed.isFixedType(n.type) then
+--          res = `res._0
+--        end
       elseif n.kind=="toSigned" then
         res = `[fixed.extract(n.type):toTerraType()]([args[1]])
       elseif n.kind=="abs" then
@@ -176,11 +176,11 @@ local function toTerra(self)
         res = `{args}
       elseif n.kind=="array2d" then
         local inp = args
-        if fixed.isFixedType(n.inputs[1].type) then
-          for k,v in pairs(args) do
-            inp[k] = `{v,nil}
-          end
-        end
+--        if fixed.isFixedType(n.inputs[1].type) then
+--          for k,v in pairs(args) do
+--            inp[k] = `{v,nil}
+--          end
+--        end
 
         res = `arrayof([n.type:arrayOver():toTerraType()], inp)
       elseif n.kind=="msb" then
@@ -253,9 +253,9 @@ local function toTerra(self)
       return res
     end)
 
-  if fixed.isFixedType(self.type) then
-    res = `{res,nil}
-  end
+--  if fixed.isFixedType(self.type) then
+--    res = `{res,nil}
+--  end
 
   return res, inp
 end

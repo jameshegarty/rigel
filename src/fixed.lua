@@ -22,10 +22,7 @@ end
 
 function fixed.isFixedType(ty)
   assert(types.isType(ty))
-  if ty:isTuple()==false or ty.list[2]:isOpaque()==false then return false end
-  local str = ty.list[2].str:sub(1,5)
-  if str=="fixed" then return true end
-  return false
+  return ty:isNamed() and ty.generator=="fixed"
 end
 
 function fixed.expectFixed(ty)
@@ -34,38 +31,42 @@ end
 
 function fixed.extract(ty)
   if fixed.isFixedType(ty) then
-    return ty.list[1]
+    return ty.structure
   end
   return ty
 end
 
 function fixed.extractExp(ty)
   fixed.expectFixed(ty)
-  local str = ty.list[2].str:sub(6)
-  return tonumber(str)
+  return ty.params.exp
 end
 
 function fixed.extractPrecision(ty)
   fixed.expectFixed(ty)
-  return ty.list[1].precision
+  return ty.params.precision
 end
 
 function fixed.extractSigned(ty)
   fixed.expectFixed(ty)
-  return ty.list[1]:isInt()
+  return ty.params.signed
 end
 
-function fixed.type( signed, precision, exp )
+fixed.type = J.memoize(function( signed, precision, exp )
   assert(type(signed)=="boolean")
   assert(type(precision)=="number")
   assert(type(exp)=="number")
-  local name = "fixed"..tonumber(exp)
+  err(precision>=0, "precision should be >=0")
+
+  local params = {signed=signed, precision=precision,exp=exp}
+  local name = "uint"..tostring(precision).."_"..tostring(exp)
+  local struct = types.uint(precision)
   if signed then
-    return types.tuple{types.int(precision),types.opaque(name)}
-  else
-    return types.tuple{types.uint(precision),types.opaque(name)}
+    name = "int"..tostring(precision).."_"..tostring(exp)
+    struct = types.int(precision)
   end
-end
+  
+  return types.named( name, struct, "fixed", params )
+end)
 
 local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
@@ -509,18 +510,17 @@ end
 
 function fixedASTFunctions:isSigned()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  return self.type.list[1]:isInt()
+  return self.type.params.signed
 end
 
 function fixedASTFunctions:exp()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  local op = self.type.list[2]
-  return tonumber(op.str:sub(6))
+  return self.type.params.exp
 end
 
 function fixedASTFunctions:precision()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  return self.type.list[1].precision
+  return self.type.params.precision
 end
 
 function fixedASTFunctions:cost()
@@ -565,7 +565,8 @@ function fixedASTFunctions:toSystolic(inp)
         res = inp
         if fixed.isFixedType(n.type) then
           -- remove wrapper
-          res = S.index(res,0)
+          --res = S.index(res,0)
+          res = S.cast(res,n.type.structure)
         end
       elseif n.kind=="binop" then
 
@@ -641,7 +642,8 @@ function fixedASTFunctions:toSystolic(inp)
         res = S.index( args[1], n.ix, n.iy)
         if fixed.isFixedType(n.type) then
           -- remove wrapper
-          res = S.index(res,0)
+          --res = S.index(res,0)
+          res = S.cast(res,n.type.structure)
         end
       elseif n.kind=="toSigned" then
         res = S.cast( args[1], fixed.extract(n.type) )
@@ -660,7 +662,8 @@ function fixedASTFunctions:toSystolic(inp)
         local inp = args
         if fixed.isFixedType(n.inputs[1].type) then
           for k,v in pairs(args) do
-            inp[k] = S.tuple{v,S.constant(0, self.inputs[1].type.list[2])}
+            --inp[k] = S.tuple{v,S.constant(0, self.inputs[1].type.list[2])}
+            inp[k] = S.cast(v,self.inputs[1].type)
           end
         end
 
@@ -716,8 +719,9 @@ function fixedASTFunctions:toSystolic(inp)
     end)
 
   if fixed.isFixedType(self.type) then
-    local c = S.constant(0, self.type.list[2])
-    res = S.tuple{res,c}
+    --local c = S.constant(0, self.type.list[2])
+    --res = S.tuple{res,c}
+    res = S.cast(res,self.type)
   end
 
   return res, instances

@@ -23,8 +23,6 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     return tostring(ty.over).."["..table.concat(ty.size,",").."]"
   elseif ty.kind=="tuple" then
     return "{"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",").."}"
-  elseif ty.kind=="opaque" then
-    return "opaque_"..ty.str
   elseif ty.kind=="named" then
     return ty.name..const
   end
@@ -40,13 +38,6 @@ function types.bool(const) if const==true then return types._boolconst else retu
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
 
-types._opaque={}
-function types.opaque( str, X )
-  assert(X==nil)
-  types._opaque[str] = types._opaque[str] or setmetatable({kind="opaque",str=str},TypeMT)
-  return types._opaque[str]
-end
-
 types._named={[true]={},[false]={}}
 function types.named( name, structure, generator, params, const, X )
   err( type(name)=="string","types.named: name must be string")
@@ -57,13 +48,17 @@ function types.named( name, structure, generator, params, const, X )
 
   local c = (const==true)
 
+  assert(c==structure:const())
+  
   if types._named[c][name]==nil then
-    if c==true then assert(structure:const()) end
-    if c==false then assert(structure:const()==false) end
+    --if c==true then assert(structure:const()) end
+    --if c==false then assert(structure:const()==false) end
+
+    
     local ty = {kind="named",name=name, structure=structure, generator=generator,params=params, constant=c}
     types._named[c][name] = setmetatable(ty,TypeMT)
   else
-    err( types._named[c][name].structure==structure,"types.named: attempted to make new type with same name, but different structure" )
+    err( types._named[c][name].structure==structure,"types.named: attempted to make new type with same name ("..name.."), but different structure ("..tostring(structure).." vs old: "..tostring(types._named[c][name].structure)..")"..tostring(c) )
   end
   
   return types._named[c][name]
@@ -111,6 +106,7 @@ function types.array2d( _type, w, h )
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
   err(w==math.floor(w), "non integer array width "..tostring(w))
   assert(h==math.floor(h))
+  err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
 
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
@@ -485,8 +481,6 @@ end
 function TypeFunctions:const()
   if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
     return self.constant
-  elseif self:isOpaque() then
-    return true -- why not?
   elseif self:isArray() then
     return self:arrayOver():const()
   elseif self:isTuple() then
@@ -520,8 +514,6 @@ function TypeFunctions:constSubtypeOf(A)
   elseif self:isArray() then
     local lenmatch = (self:arrayLength())[1]==(A:arrayLength())[1] and (self:arrayLength())[2]==(A:arrayLength())[2]
     return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
-  elseif self:isOpaque() then
-    return self.str==A.str
   elseif self:isNamed() then
     return self:const() and A:makeConst()==self
   else
@@ -541,8 +533,6 @@ function TypeFunctions:makeConst()
     return types.bits( self.precision, true )
   elseif self:isFloat() then
     return types.float( self.precision, true )
-  elseif self:isOpaque() then
-    return self -- doesn't matter
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
@@ -567,8 +557,6 @@ function TypeFunctions:stripConst()
     return types.float( self.precision, false )
   elseif self:isBits() then
     return types.bits( self.precision, false )
-  elseif self:isOpaque() then
-    return self -- doesn't matter
   elseif self:isArray() then
     local L = self:arrayLength()
     return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
@@ -578,7 +566,7 @@ function TypeFunctions:stripConst()
   elseif self:isBool() then
     return types.bool(false)
   elseif self:isNamed() then
-    return types.named( self.name, self.structure, self.generator, self.params, false)
+    return types.named( self.name, self.structure:stripConst(), self.generator, self.params, false)
   else
     print(":stripConst",self)
     assert(false)
@@ -654,8 +642,6 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isFloat() then
     return self.precision
-  elseif self:isOpaque() then
-    return 0
   elseif self:isNamed() then
     return self.structure:verilogBits()
   else
@@ -670,7 +656,6 @@ function TypeFunctions:isInt() return self.kind=="int" end
 function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
 function TypeFunctions:isNull() return self.kind=="null" end
-function TypeFunctions:isOpaque() return self.kind=="opaque" end
 function TypeFunctions:isNamed() return self.kind=="named" end
 
 function TypeFunctions:isNumber()
@@ -723,8 +708,6 @@ function TypeFunctions:checkLuaValue(v)
     err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
   elseif self:isBool() then
     err( type(v)=="boolean", "bool must be lua bool")
-  elseif self:isOpaque() then
-    err( v==0, "opaque must be 0 but is "..tostring(v))
   elseif self:isNamed() then
     return self.structure:checkLuaValue(v)
   else
