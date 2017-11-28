@@ -189,7 +189,7 @@ function harris.harrisWithStencil(t)
   -------------------------------
   -- right branch: make the harris bool
   local right = R.selectStream("d1",dxdyBroad,1)
-  right = C.fifo( fifos, statements, DXDY_PAIR, right, 128, "rightFIFO")
+  right = C.fifoLoop( fifos, statements, DXDY_PAIR, right, 128, "rightFIFO")
 
   local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
   local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
@@ -213,7 +213,7 @@ function harris.harrisWithStencil(t)
     --print("GRAD_INT=false")
   end
   
-  left = C.fifo( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
+  left = C.fifoLoop( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
   local left = R.apply( "stlb", RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)

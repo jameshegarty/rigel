@@ -222,6 +222,10 @@ function RS.modules.filterSeq(t)
   return RM.filterSeq( t.type, t.size[1], t.size[2], rate, t.fifoSize, t.coerce )
 end
 
+function RS.modules.fifo(t)
+  return C.fifo( t.type, t.size )
+end
+
 function RS.connect(t)
   err( R.isFunction(t.toModule), "RigelSimple.connect: toModule must be rigel module")
   
@@ -266,7 +270,7 @@ function RS.selectStream(t)
   return R.selectStream( "v"..tostring(ccnt), t.input, t.index )
 end
 
-function RS.fifo(t)
+function RS.fifoLoop(t)
   local ty = t.input.type
   assert( R.isHandshake(ty))
   ty = R.extractData(ty)
@@ -275,7 +279,7 @@ function RS.fifo(t)
   t.fifoList.statements = t.fifoList.statements or {}
 
   ccnt = ccnt + 1
-  return C.fifo( t.fifoList.fifos, t.fifoList.statements, ty, t.input, t.depth, "v"..tostring(ccnt), false )
+  return C.fifoLoop( t.fifoList.fifos, t.fifoList.statements, ty, t.input, t.depth, "v"..tostring(ccnt), false )
 end
 
 function RS.index(t)

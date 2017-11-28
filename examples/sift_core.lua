@@ -256,17 +256,17 @@ local function siftKernel(dxdyType)
   local inp = R.input(R.Handshake(ITYPE))
   local inp_broad = R.apply("inp_broad", RM.broadcastStream(ITYPE,2), inp)
 
-  local inp_pos = C.fifo( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
+  local inp_pos = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
-  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "posfifo")
+  local pos = C.fifoLoop( fifos, statements, PTYPE, pos, 1024, "posfifo")
   local posL, posR = RS.fanOut{input=pos,branches=2}
 --  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
   local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),posL)
-  local posX = C.fifo( fifos, statements, posType, posX, 1024, "pxfifo" )
+  local posX = C.fifoLoop( fifos, statements, posType, posX, 1024, "pxfifo" )
   local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),posR)
-  local posY = C.fifo( fifos, statements, posType, posY, 1024, "pyfifo" )
+  local posY = C.fifoLoop( fifos, statements, posType, posY, 1024, "pyfifo" )
 
-  local inp_dxdy = C.fifo( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true)
+  local inp_dxdy = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true)
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
   local dxdyTile = R.apply("TLE",RM.makeHandshake(tile(16,16,4,dxdyPair)),dxdy)
   local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,16,1)), dxdyTile )
@@ -281,7 +281,7 @@ local function siftKernel(dxdyType)
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
   -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
-  local desc = C.fifo(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
+  local desc = C.fifoLoop(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
 
   local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1),"CR"),desc)
   local desc = R.apply("upidx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc)
@@ -290,10 +290,10 @@ local function siftKernel(dxdyType)
   local desc_broad = R.apply("desc_broad", RM.broadcastStream(descType,2), desc)
 
   local desc0 = R.selectStream("d0",desc_broad,0)
-  local desc0 = C.fifo( fifos, statements, descType, desc0, 256, "d0")
+  local desc0 = C.fifoLoop( fifos, statements, descType, desc0, 256, "d0")
 
   local desc1 = R.selectStream("d1",desc_broad,1)
-  local desc1 = C.fifo( fifos, statements, descType, desc1, 256, "d1")
+  local desc1 = C.fifoLoop( fifos, statements, descType, desc1, 256, "d1")
 
   local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType),1/128))),desc1)
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
@@ -448,7 +448,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local filterFn = RM.filterSeq(FILTER_TYPE,W,H,{1,FILTER_RATE},FILTER_FIFO)
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
-  local out = C.fifo( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
+  local out = C.fifoLoop( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
 
   local siftFn, descType = siftKernel(dxdyType)
   local out = R.apply("sft", siftFn, out)

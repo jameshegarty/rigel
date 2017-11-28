@@ -21,7 +21,7 @@ FILTER_TYPE = R.tuple{ R.array2d( DXDY_TYPE, TILES_X*4, TILES_Y*4 ), POS_TYPE }
 filterSeqOut = R.connect{ input = harrisOut, toModule = R.HS(R.modules.filterSeq{ 
   type=FILTER_TYPE, size={W,H}, rate=FILTER_RATE, fifoSize=FILTER_FIFO }) }
 
-filterSeqOut = R.fifo{ input = filterSeqOut, depth = 512, fifoList = fifoList }
+filterSeqOut = R.fifoLoop{ input = filterSeqOut, depth = 512, fifoList = fifoList }
 
 -----------------------------------
 -- fan out filterSeq result to store position along a side branch
@@ -30,7 +30,7 @@ branch0, branch1 = R.fanOut{ input = filterSeqOut, branches = 2 }
 -----------------------------------
 -- branch 0: hold pixel position of feature until we need it later
 branch0_pos = R.index{ input = branch0, key = 1 }
-branch0_pos = R.fifo{ input = branch0_pos, depth = 1024, fifoList = fifoList }
+branch0_pos = R.fifoLoop{ input = branch0_pos, depth = 1024, fifoList = fifoList }
 
 -----------------------------------
 -- branch 1: calculate feature descriptor
@@ -55,7 +55,7 @@ branch1_desc = R.connect{ input=branch1_pixels, toModule=R.HS(descriptor.descrip
 branch1_hist = R.connect{ input = branch1_desc, toModule = 
   R.HS( R.modules.reduceSeq{ fn = descriptor.histogramReduce, V=16}) }
 
-branch1_hist = R.fifo{ input = branch1_hist, depth = 128, fifoList = fifoList }
+branch1_hist = R.fifoLoop{ input = branch1_hist, depth = 128, fifoList = fifoList }
 
 -- Devectorize 8 histogram buckets into individual values to sum them
 branch1_histbucket = R.connect{ input = branch1_hist, toModule = 
@@ -67,7 +67,7 @@ branch2, branch3 = R.fanOut{ input = branch1_histbucket, branches = 2 }
 
 -----------------------------------
 -- branch 2: sum of squares
-branch2 = R.fifo{ input = branch2, depth = 256, fifoList = fifoList }
+branch2 = R.fifoLoop{ input = branch2, depth = 256, fifoList = fifoList }
 
 -- sum all 128 histogram buckets
 branch2_sum = R.connect{ input = branch2, toModule = 
@@ -84,7 +84,7 @@ branch2_sum = R.connect{ input = branch2_sumsqrt, toModule =
 
 -----------------------------------
 -- branch 3: Normalize the descriptor values (depends on branch 2)
-branch3 = R.fifo{ input = branch3, depth = 256, fifoList = fifoList }
+branch3 = R.fifoLoop{ input = branch3, depth = 256, fifoList = fifoList }
 
 -- divide each 128 histogram bucket value by the sum of the buckets
 branch3 = R.connect{input=R.fanIn{branch3,branch2_sum},toModule=descriptor.normalize}

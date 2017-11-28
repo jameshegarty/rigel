@@ -670,7 +670,18 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 end)
 
 -------------
-function C.fifo(fifos,statements,A,inp,size,name, csimOnly, X)
+C.fifo = memoize(function(ty,size)
+  err( types.isType(ty), "C.fifo: type must be a type" )
+  err( R.isBasic(ty), "C.fifo: type must be basic type" )
+  err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
+  local inp = R.input(R.Handshake(ty))
+  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size))}
+  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{R.applyMethod("l1",regs[1],"load"),R.applyMethod("s1",regs[1],"store",inp)}, regs, "C.fifo", {size=size} )
+end)
+
+-------------
+-- FIFO with loop support
+function C.fifoLoop(fifos,statements,A,inp,size,name, csimOnly, X)
   assert(type(name)=="string")
   assert(X==nil)
 

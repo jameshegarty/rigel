@@ -2880,7 +2880,7 @@ end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instances, generatorStr, X )
+function modules.lambda( name, input, output, instances, generatorStr, generatorParams, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -2891,12 +2891,13 @@ function modules.lambda( name, input, output, instances, generatorStr, X )
   err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
   if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
+  err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
 
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams }
 
   if input==nil then
     res.inputType = types.null()

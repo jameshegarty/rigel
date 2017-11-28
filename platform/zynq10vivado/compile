@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 VERILOG_FILE=$1
 METADATA_FILE=$2
@@ -19,5 +19,6 @@ echo "write_bitstream system.bit" >> system.tcl
 echo "report_timing" >> system.tcl
 echo "report_timing_summary" >> system.tcl
 vivado -mode batch -source 'system.tcl' -nojournal -log 'vivado.log' > /dev/null
-cp system.bit $OUTFILE
+bootgen -image ../../../platform/axi/boot.bif -w -process_bitstream bin
+cp system.bit.bin $OUTFILE
                                           
