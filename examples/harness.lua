@@ -10,7 +10,7 @@ local err = J.err
 local function writeMetadata(filename, tab)
   err(type(filename)=="string")
   err(type(tab)=="table")
-  
+
   io.output(filename)
 
   local res = {}
@@ -21,7 +21,7 @@ local function writeMetadata(filename, tab)
       table.insert(res,k.."='"..tostring(v).."'")
     end
   end
-      
+
   io.write( "return {"..table.concat(res,",").."}" )
   -- io.close()
 end
@@ -48,7 +48,7 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
 
   err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts")
   err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
-  
+
   local ITYPE = inputType
   if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
 
@@ -76,9 +76,9 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   end
 
   -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
-  -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port 
-  -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect). 
-  -- The problem is intermittent. 
+  -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port
+  -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect).
+  -- The problem is intermittent.
   local regs, out
   local stats = {}
   local EXTRA_FIFO = false
@@ -114,9 +114,9 @@ end
 local H = {}
 
 
-if terralib~=nil then 
+if terralib~=nil then
   --harnessWrapperFn = underoverWrapper
-  H.terraOnly = require("harnessTerra") 
+  H.terraOnly = require("harnessTerra")
 end
 
 function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, X)
@@ -149,7 +149,7 @@ function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
     io.write(f:toVerilog())
     io.output():close()
   end
-  
+
 end
 
 function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,simCycles,harnessOption,X)
@@ -164,7 +164,7 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   assert(type(inputFilename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   --assert(earlyOverride==nil or type(earlyOverride)=="number")
-  
+
 ------------------------
 -- verilator just uses the top module directly
   io.output("out/"..filename..".v")
@@ -177,9 +177,9 @@ local function axiRateWrapper(fn, tapType)
   err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
 
   R.expectHandshake(fn.inputType)
-  
+
   local iover = R.extractData(fn.inputType)
-  
+
   if tapType~=nil then
     -- taps have tap value packed into argument
     assert(iover.list[2]==tapType)
@@ -192,7 +192,7 @@ local function axiRateWrapper(fn, tapType)
   if iover:verilogBits()==64 and oover:verilogBits()==64 then
 return fn
   end
-  
+
   local inputP
   if iover:isArray() then
     inputP = iover:channels()
@@ -200,7 +200,7 @@ return fn
   else
     inputP = 1 -- just assume pointwise...
   end
-  
+
 
   local outputP
   if oover:isArray() then
@@ -212,10 +212,10 @@ return fn
 
   local targetInputP = (64/iover:verilogBits())
   err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP).." tapType:"..tostring(tapType))
-  
+
   local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
   local out = inp
-  
+
   if fn.inputType:verilogBits()~=64 then
     out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
   end
@@ -223,19 +223,19 @@ return fn
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
   if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
-  
+
   local targetOutputP = (64/oover:verilogBits())
   err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
-  
+
   if fn.outputType:verilogBits()~=64 then
     out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
   end
-  
+
   local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
 
   err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
   err( R.extractData(outFn.outputType):verilogBits()==64, "axi rate wrapper: failed to make output type 64 bit")
-  
+
   return outFn
 end
 
@@ -274,7 +274,7 @@ end
 
 function guessP(ty, tapType)
   err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
-  
+
   -- if user didn't pass us type, try to guess it
   -- if array: then it is an array with P=array size
   -- if not array: then it is P=1
@@ -287,7 +287,7 @@ function guessP(ty, tapType)
   end
 
   local iover, inputP
-  
+
   if ty:isArray() then
       iover = ty
       inputP = ty:channels()
@@ -303,7 +303,11 @@ function harnessTop(t)
   err(type(t.inFile)=="string", "expected input filename to be string")
   err(type(t.outFile)=="string", "expected output filename to be string")
 
-  if(arg[1]=="axi") then
+  local backend = t.backend
+  if backend==nil then backend = arg[1] end
+  if backend==nil then backend = "verilog" end
+
+  if(backend=="axi") then
     t.fn = axiRateWrapper(t.fn, t.tapType)
   end
 
@@ -323,7 +327,7 @@ function harnessTop(t)
 
   err( R.isBasic(iover), "Harness error: iover ended up being handshake?")
   err( R.isBasic(oover), "Harness error: oover ended up being handshake?")
-  
+
   err( (t.inSize[1]*t.inSize[2]) % inputP == 0, "Error, # of input tokens is non-integer, inSize={"..tostring(t.inSize[1])..","..tostring(t.inSize[2]).."}, inputP="..tostring(inputP))
   local inputCount = (t.inSize[1]*t.inSize[2])/inputP
   err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
@@ -336,10 +340,6 @@ function harnessTop(t)
     err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
   end
 
-  local backend = t.backend
-  if backend==nil then backend = arg[1] end
-  if backend==nil then backend = "verilog" end
-  
   if backend=="verilog" or backend=="verilator" then
     H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif(backend=="axi") then
@@ -356,13 +356,13 @@ function harnessTop(t)
       tapValueString = t.tapType:valueToHex(t.tapValue)
       tapBits = t.tapType:verilogBits()
     end
-    
+
     local harnessOption = t.harness
     if harnessOption==nil then harnessOption=1 end
 
     local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile}
     if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
-    
+
     writeMetadata("out/"..t.outFile..".metadata.lua", MD)
   else
     print("unknown build target "..arg[1])
