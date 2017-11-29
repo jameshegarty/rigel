@@ -126,11 +126,11 @@ function RS.modules.map(t)
 end
 
 function RS.modules.sum(t)
-  return C.sum(t.inType, t.inType, t.outType)
+  return C.sum(t.inType, t.inType, t.outType, t.async)
 end
 
 function RS.modules.sub(t)
-  return C.sub(t.inType, t.inType, t.outType)
+  return C.sub(t.inType, t.inType, t.outType, t.async)
 end
 
 function RS.modules.rcp(t)
