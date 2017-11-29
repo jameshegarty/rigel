@@ -65,9 +65,9 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
 
   local EC
   if type(earlyOverride)=="number" then
-    EC=earlyOverride
+    EC = earlyOverride
   else
-    expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
+    EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   end
 
   local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
