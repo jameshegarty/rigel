@@ -28,6 +28,8 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
+darkroom.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+darkroom.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
 
 function darkroom.V(A) 
   err(types.isType(A),"V: argument should be type"); 
@@ -586,7 +588,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         local I = module:lookupInstance(n.inst.name)
         if n.fnname=="load" then 
           module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:load(S.tuple{S.null(),S.constant(true,types.bool())})}
+          return {I:load()}
         elseif n.fnname=="store" then
           module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
           return {I:store(inputs[1][1])}

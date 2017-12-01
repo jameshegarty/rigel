@@ -447,6 +447,11 @@ function systolic.tuple( tab )
   err( #tab==J.keycount(tab), "tab must be array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
+
+  for _,v in ipairs(tab) do
+    err(v.type:verilogBits()>0,"tuple input size must be >0")
+  end
+  
   return typecheck(res)
 end
 

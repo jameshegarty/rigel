@@ -120,6 +120,10 @@ function types.tuple( list )
   err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
+  for _,v in ipairs(list) do
+    err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
+  end
+  
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
   --if #list==1 and types.isType(list[1]) then return list[1] end

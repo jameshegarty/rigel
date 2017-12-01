@@ -255,20 +255,32 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
 
     err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
 
-    local sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn:getInput().type)) )
+    local sinp
 
+    if srcFn:getInput().type==types.null() then
+      sinp = S.parameter(fnname.."_input", types.null() )
+    else
+      sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn:getInput().type)) )
+    end
+    
     local svalid = S.parameter(fnname.."_valid", types.bool())
     local runable = S.__and(inner[prefix.."ready"](inner), S.index(sinp,1) ):disablePipelining()
 
     local out = inner[fnname]( inner, S.index(sinp,0), runable )
 
+    if out.type==types.null() then
+      
+    else
+      out = S.tuple{ out, S.__and( runable,svalid ):disablePipelining() }
+    end
+    
     local RST = S.parameter(prefix.."reset",types.bool())
     if systolicModule:lookupFunction(prefix.."reset"):isPure() then RST=S.constant(false,types.bool()) end
 
     local pipelines = {}
 
     local CE = S.CE("CE")
-    res:addFunction( S.lambda(fnname, sinp, S.tuple{ out, S.__and( runable,svalid ):disablePipelining() }, fnname.."_output", pipelines, svalid, CE ) )
+    res:addFunction( S.lambda(fnname, sinp, out, fnname.."_output", pipelines, svalid, CE ) )
     res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST) )
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
   end
@@ -397,13 +409,29 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     local prefix = fnname.."_"
     if fnname=="process" then prefix="" end
 
-    local sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn.inputParameter.type)) )
-    local pout = inner[fnname]( inner, S.index(sinp,0), S.index(sinp,1) )
+    local sinp
+    local datai
+    local validi
+    if srcFn.inputParameter.type==types.null() then
+      sinp = S.parameter(fnname.."_input", types.null() )
+    else
+      sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn.inputParameter.type)) )
+      datai = S.index(sinp,0)
+      validi = S.index(sinp,1)
+    end
+
+    local pout = inner[fnname]( inner, datai, validi )
     local pout_data = S.index(pout,0)
     local pout_valid = S.index(pout,1)
+
+    local validout = pout_valid
+
+    if srcFn.inputParameter.type~=types.null() then
+      validout = S.__and(pout_valid,validi)
+    end
     
     local CE = S.CE(prefix.."CE")
-    res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, S.__and(pout_valid,S.index(sinp,1))}, fnname.."_output",nil,nil,CE ) )
+    res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, validout}, fnname.."_output",nil,nil,CE ) )
     if systolicModule:lookupFunction(prefix.."reset")~=nil then
       -- stateless modules don't have a reset
       res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool())) )
@@ -422,7 +450,13 @@ modules.liftDecimate = memoize(function(f)
 
   local res = {kind="liftDecimate", fn = f}
   rigel.expectBasic(f.inputType)
-  res.inputType = rigel.V(f.inputType)
+
+  if f.inputType==types.null() then
+    res.inputType = rigel.VTrigger
+  else
+    res.inputType = rigel.V(f.inputType)
+  end
+  
   res.name = "LiftDecimate_"..f.name
 
   if rigel.isV(f.outputType) then
@@ -535,13 +569,19 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     
     -- the point of the shift register: systolic doesn't have an output valid bit, so we have to explicitly calculate it.
     -- basically, for the first N cycles the pipeline is executed, it will have garbage in the pipe (valid was false at the time those cycles occured). So we need to gate the output by the delayed valid bits. This is a little big goofy here, since process_valid is always true, except for resets! It's not true for the first few cycles after resets! And if we ignore that the first few outputs will be garbage!
-    local SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
+
+    local SR, out
+    if pout.type~=types.null() then
+      SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
     
-    local srvalue = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
-    local outvalid = S.__and(S.index(pout,1), srvalue )
-    local outvalidRaw = outvalid
-    --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
-    local out = S.tuple{ S.index(pout,0), outvalid }
+      local srvalue = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
+      local outvalid = S.__and(S.index(pout,1), srvalue )
+      local outvalidRaw = outvalid
+      --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
+      out = S.tuple{ S.index(pout,0), outvalid }
+    else
+      out = pout
+    end
     
     local readyOut
     if hasReadyInput[K] then
@@ -563,7 +603,11 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     res:addFunction( S.lambda(fnname, pinp, out, fnname.."_output", pipelines ) ) 
     
     local resetPipelines = {}
-    resetPipelines[1] = SR:reset( nil, rst )
+
+    if pout.type~=types.null() then
+      resetPipelines[1] = SR:reset( nil, rst )
+    end
+    
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
     
     if systolicModule.functions[prefix.."reset"]~=nil then -- stateless modules do not have reset
