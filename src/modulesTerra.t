@@ -13,17 +13,9 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
 
---local data = rigel.data
---local valid = rigel.valid
---local ready = rigel.ready
-
-darkroom.data = macro(function(i) return `i._0 end)
-local data = darkroom.data
-darkroom.valid = macro(function(i) return `i._1 end)
-local valid = darkroom.valid
-darkroom.ready = macro(function(i) return `i._2 end)
-local ready = darkroom.ready
-
+local data = macro(function(i) return `i._0 end)
+local valid = macro(function(i) return `i._1 end)
+local ready = macro(function(i) return `i._2 end)
 
 local MT = {}
 

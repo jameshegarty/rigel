@@ -53,8 +53,8 @@ end
 -- f(g())
 modules.compose = memoize(function( name, f, g, generatorStr )
   err( type(name)=="string", "first argument to compose must be name of function")
-  err( darkroom.isFunction(f), "compose: second argument should be rigel module")
-  err( darkroom.isFunction(g), "compose: third argument should be rigel module")
+  err( rigel.isFunction(f), "compose: second argument should be rigel module")
+  err( rigel.isFunction(g), "compose: third argument should be rigel module")
 
   name = J.verilogSanitize(name)
 
@@ -1115,8 +1115,9 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
   err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
   err( type(scale)=="number","upsampleXSeq: scale must be number")
+  err( scale<65536, "upsampleXSeq: NYI - scale>=65536")
   err(X==nil, "upsampleXSeq: too many arguments")
-
+  
   if T==1 then
     -- special case the EZ case of taking one value and writing it out N times
     local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}, stateful=true, A=A, T=T, scale=scale}
@@ -1134,15 +1135,15 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
       local systolicModule = Ssugar.moduleConstructor(res.name)
       local sinp = S.parameter( "inp", ITYPE )
 
-      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.sumwrap(types.uint(8),scale-1) ):CE(true):setReset(0):instantiate("phase") )
+      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),scale-1) ):CE(true):setReset(0):instantiate("phase") )
       local reg = systolicModule:add( S.module.reg( ITYPE,true ):instantiate("buffer") )
 
-      local reading = S.eq(sPhase:get(),S.constant(0,types.uint(8))):disablePipelining()
+      local reading = S.eq(sPhase:get(),S.constant(0,types.uint(16))):disablePipelining()
       local out = S.select( reading, sinp, reg:get() ) 
 
       local pipelines = {}
       table.insert(pipelines, reg:set( sinp, reading ) )
-      table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(8)) ) )
+      table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(16)) ) )
 
       local CE = S.CE("CE")
       systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
@@ -1167,6 +1168,7 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
   err( type(T)=="number", "upsampleYSeq: T must be number")
   err( type(scale)=="number", "upsampleYSeq: scale must be number")
   err( scale>1, "upsampleYSeq: scale must be > 1 ")
+  err( (W/T)*scale<65536, "upsampleXSeq: NYI - (W/T)*scale>=65536")
   err( W%T==0,"W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
   err( J.isPowerOf2(W), "W must be power of 2")
@@ -2680,8 +2682,8 @@ modules.reduceSeq = memoize(function( f, T, X )
 modules.overflow = memoize(function( A, count )
   rigel.expectBasic(A)
 
-  assert(count<2^32-1)
-
+  err( count<2^32-1, "overflow: outputCount must not overflow")
+  
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=A, outputType=rigel.V(A), stateful=true, count=count, sdfInput={{1,1}}, sdfOutput={{1,1}}, delay=0}
@@ -2709,10 +2711,10 @@ end)
 -- if thing thing is done before tooSoonCycles, throw an assert
 modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles )
   rigel.expectBasic(A)
-  assert(type(count)=="number")
-  assert(type(cycles)=="number")
-  err(cycles==math.floor(cycles),"cycles must be an integer")
-  assert(type(upstream)=="boolean")
+  err( type(count)=="number", "underflow: count must be number" )
+  err( type(cycles)=="number", "underflow: cycles must be number" )
+  err( cycles==math.floor(cycles),"cycles must be an integer")
+  err( type(upstream)=="boolean", "underflow: upstream must be bool" )
   err( tooSoonCycles==nil or type(tooSoonCycles)=="number", "tooSoonCycles must be nil or number" )
 
   assert(count<2^32-1)
@@ -3122,7 +3124,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               else
                 input = S.__and(input,thisi)
               end
-            elseif n:outputStreams()>1 or darkroom.isHandshakeArray(n.type) then
+            elseif n:outputStreams()>1 or rigel.isHandshakeArray(n.type) then
               assert(systolicAST.isSystolicAST(thisi))
 
               if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArrayOneHot(n.type) then

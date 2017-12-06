@@ -14,6 +14,8 @@ function systolicASTFunctions:toTerra( symbols )
       
       if n.kind=="parameter" then
         res = symbols[n.name]
+      elseif n.kind=="constant" then
+        res = self.type:valueToTerra(n.value)
       elseif n.kind=="binop" then
         if n.op=="and" then
           res = `[args[1]] and [args[2]]
