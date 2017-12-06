@@ -3546,7 +3546,7 @@ local function readAll(file)
 end
 
 function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles, X )
-  err( darkroom.isFunction(f), "fn must be a function")
+  err( rigel.isFunction(f), "fn must be a function")
   err( types.isType(inputType), "inputType must be a type")
   err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
   if tapInputType~=nil then tapInputType:checkLuaValue(tapValue) end
@@ -3557,8 +3557,8 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
   err( type(axi)=="boolean", "axi should be a bool")
   err( X==nil, "seqMapHandshake: too many arguments" )
 
-  err( f.inputType==types.null() or darkroom.isHandshake(f.inputType), "seqMapHandshake: input must be handshook or null")
-  darkroom.expectHandshake(f.outputType)
+  err( f.inputType==types.null() or rigel.isHandshake(f.inputType), "seqMapHandshake: input must be handshook or null")
+  rigel.expectHandshake(f.outputType)
 
   if f.inputType~=types.null() and rigel.SDF then
     local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
@@ -3580,7 +3580,7 @@ function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCou
 
     if axi then
       local baseTypeI = inputType
-      local baseTypeO = darkroom.extractData(f.outputType)
+      local baseTypeO = rigel.extractData(f.outputType)
       err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
       err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
 
@@ -3634,7 +3634,7 @@ reg [15:0] doneCnt = 0;
 wire ready;
 reg [31:0] totalClocks = 0;
 ]]..tapreg..[[
-]]..S.declareWire( darkroom.lower(f.outputType), "process_output" )..[[
+]]..S.declareWire( rigel.lower(f.outputType), "process_output" )..[[
 
 ]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..J.sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
    initial begin
@@ -3663,7 +3663,7 @@ reg [31:0] totalClocks = 0;
     if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
     
     // ignore the output when we're in reset mode - output is probably bogus
-    if(]]..readybit..[[ && process_output[]]..(darkroom.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
+    if(]]..readybit..[[ && process_output[]]..(rigel.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
     ready_downstream <= ready_downstream + 1;
     totalClocks <= totalClocks + 1;
   end
@@ -3677,7 +3677,7 @@ endmodule
     return systolicModule
   end
 
-  return darkroom.newFunction(res)
+  return rigel.newFunction(res)
 end
 
 -- this is a Handshake triggered counter.
