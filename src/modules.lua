@@ -2302,6 +2302,9 @@ end)
 -- (nilhandshake also applies the same way to the output type)
 modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   assert( rigel.isFunction(f) )
+  if nilhandshake==nil then nilhandshake=false end
+  err( type(nilhandshake)=="boolean", "makeHandshake: nilhandshake must be nil or boolean")
+  
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
   if tmuxRates~=nil then
@@ -2321,13 +2324,17 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     rigel.expectBasic(f.inputType)
     rigel.expectBasic(f.outputType)
 
-    if f.inputType~=types.null() or nilhandshake==true then
+    if f.inputType==types.null() and nilhandshake==true then
+      res.inputType = rigel.HandshakeTrigger
+    elseif f.inputType~=types.null() then
       res.inputType = rigel.Handshake(f.inputType)
     else
       res.inputType = types.null()
     end
 
-    if f.outputType~=types.null() or nilhandshake==true then
+    if f.outputType==types.null() and nilhandshake==true then
+      res.outputType = rigel.HandshakeTrigger
+    elseif f.outputType~=types.null() then
       res.outputType = rigel.Handshake(f.outputType)
     else
       res.outputType = types.null()
@@ -3443,22 +3450,25 @@ modules.freadSeq = memoize(function( filename, ty )
   return rigel.newFunction(res)
 end)
 
-modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog )
+-- passthrough: write out the input?
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
-  --local filenameVerilog=filename
+  if passthrough==nil then passthrough=true end
+  err( type(passthrough)=="boolean","fwriteSeq: passthrough must be bool" )
+  err(X==nil,"fwriteSeq: too many arguments")
 
   if filenameVerilog==nil then filenameVerilog=filename end
   
-  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=ty, stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
-  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty) end
+  local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=J.sel(passthrough,ty,types.null()), stateful=true, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}} }
+  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough) end
   res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("fwritefile") )
+    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough ):instantiate("fwritefile") )
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
