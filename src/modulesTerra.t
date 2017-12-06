@@ -63,9 +63,7 @@ end
 
 function MT.packTuple(res,typelist)
   local struct PackTuple { ready:bool[#typelist], readyDownstream:bool, outputCount:uint32}
-    
-  terra PackTuple:stats(name:&int8) self.outputCount=0 end
-  
+
   -- ignore the valid bit on const stuff: it is always considered valid
   local activePorts = {}
   for k,v in ipairs(typelist) do
@@ -75,6 +73,8 @@ function MT.packTuple(res,typelist)
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
   J.map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
+  
+  terra PackTuple:stats(name:&int8) self.outputCount=0 end
   terra PackTuple:reset() [J.map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
   terra PackTuple:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     [J.map(activePorts, function(i) return quote 
@@ -1489,10 +1489,23 @@ function MT.lambdaCompile(fn)
     table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
   end
 
+  fn.output:visitEach(
+    function(n, inputs)
+      if n==fn.output then
+      elseif n.kind=="applyRegStore" then
+      elseif n.kind~="input" then
+        table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
+      end
+
+      if n.kind=="apply" then
+        table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
+      end
+    end)
+  
   local readyOutput
     
     -- build ready calculation
-  if rigel.isBasic(fn.output.type)==false or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 then
+  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1618,7 +1631,7 @@ print("MAKENOINP",fn.inputType,fn.outputType)
         out = outputSymbol
       elseif n.kind=="applyRegStore" then
       elseif n.kind~="input" then
-        table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
+--        table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
         out = `&mself.["simstateoutput_"..n.name]
       end
 
@@ -1626,7 +1639,7 @@ print("MAKENOINP",fn.inputType,fn.outputType)
         if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
         return inputSymbol
       elseif n.kind=="apply" then
-        table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
+--        table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
         table.insert( resetStats, quote mself.[n.name]:reset() end )
         table.insert( initStats, quote mself.[n.name]:init() end )
         table.insert( freeStats, quote mself.[n.name]:free() end )

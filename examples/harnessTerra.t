@@ -69,23 +69,42 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
     local Module = f:compile()
 
+    local m = symbol(&Module)
+    local valid_in = symbol(bool)
+    local valid_out = symbol(bool)
+    local incnt = symbol(int)
+    
+    local callQ, incQ
+    if inputType==types.null() then
+      callQ = quote m:process(&[valid_out]) end
+      incQ = quote end
+    else
+      callQ = quote m:process(&[valid_in],&[valid_out]) end
+      incQ = quote if m.ready then incnt = incnt+1 end end
+    end
+       
+
     local terra dosim() 
        if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); 
+       var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
        m:init()
        m:reset();
 
-       var incnt = 0
+       var [incnt] = 0
        var cnt = 0
        var cycles = 0
+
        while(cnt<outputCount) do
          m:calculateReady(true)
-         var inValid : bool = (incnt < inputCount)
-         [J.sel(inputType==types.null(),quote end, quote if m.ready then incnt = incnt+1 end end)]
-         var outValid : bool = false
-         [J.sel(inputType==types.null(), quote m:process(&outValid) end, quote m:process(&inValid,&outValid) end)]
-         if outValid then cnt=cnt+1 end
---         cstdio.printf("SIM %d %d %d %d\n",inValid,outValid,incnt,cnt)
+         var [valid_in] = (incnt < inputCount)
+         --[J.sel(inputType==types.null(),quote end, quote if m.ready then incnt = incnt+1 end end)]
+         incQ
+         var [valid_out]= false
+--         [if inputType==types.null() then return quote m:process(&outValid) end else return quote m:process(&inValid,&outValid) end end]
+         --         m:process(&inValid,&outValid)
+         callQ
+         if valid_out then cnt=cnt+1 end
+         --cstdio.printf("SIM %d %d %d %d\n",valid_in,valid_out,incnt,cnt)
 --         if inValid then cstdio.printf("IN_VALID\n") end
          cycles = cycles+1
        end
