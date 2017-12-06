@@ -447,6 +447,11 @@ function systolic.tuple( tab )
   err( #tab==J.keycount(tab), "tab must be array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
+
+  for _,v in ipairs(tab) do
+    err(v.type:verilogBits()>0,"tuple input size must be >0")
+  end
+  
   return typecheck(res)
 end
 
@@ -2229,15 +2234,15 @@ function fileModuleFunctions:getDelay(fnname)
   end
 end
 
-function systolic.module.file( filename, ty, CE, X)
+function systolic.module.file( filename, ty, CE, passthrough, X)
   assert(X==nil)
   assert(type(CE)=="boolean")
 
-  local res = {kind="file",filename=filename, type=ty, CE=CE }
+  local res = {kind="file",filename=filename, type=ty, CE=CE, passthrough }
   res.functions={}
   res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="readOut",valid={name="read_valid"},CE=systolic.CE("CE")}
   res.functions.read.isPure = function() return false end
-  res.functions.write={name="write",output={type=ty},inputParameter={name="input",type=ty},outputName="writeOut",valid={name="write_valid"},CE=systolic.CE("CE")}
+  res.functions.write={name="write",output={type=J.sel(passthrough,ty,types.null())},inputParameter={name="input",type=ty},outputName="writeOut",valid={name="write_valid"},CE=systolic.CE("CE")}
   res.functions.write.isPure = function() return false end
   res.functions.reset = {name="reset",output={type=types.null()},inputParameter={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
   res.functions.reset.isPure = function() return false end

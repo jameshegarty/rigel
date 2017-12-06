@@ -28,6 +28,8 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
+darkroom.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+darkroom.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
 
 function darkroom.V(A) 
   err(types.isType(A),"V: argument should be type"); 
@@ -94,6 +96,7 @@ function darkroom.isHandshakeTmuxed(a)
 end
 
 function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+function darkroom.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
 function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
@@ -103,7 +106,12 @@ function darkroom.isBasic(A)
   assert(types.isType(A))
   if A:isArray() then return darkroom.isBasic(A:arrayOver()) end
   if A:isTuple() then for _,v in ipairs(A.list) do if darkroom.isBasic(v)==false then return false end end return true end
-  return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArrayOneHot(A)==false and darkroom.isHandshakeTmuxed(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTuple(A)==false
+    
+  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) then
+    return false
+  end
+
+  return true
 end
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
@@ -117,11 +125,12 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
   end
+  print("rigel.lower: unknown type? ",a)
   assert(false)
 end
 
@@ -136,7 +145,7 @@ function darkroom.extractData(a)
 end
 
 function darkroom.hasReady(a)
-  if darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
@@ -147,7 +156,7 @@ function darkroom.hasReady(a)
 end
 
 function darkroom.extractReady(a)
-  if darkroom.isHandshake(a) then return types.bool()
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) then return types.bool()
   elseif darkroom.isV(a) then return types.bool()
   elseif darkroom.isRV(a) then return types.bool()
   elseif darkroom.isHandshakeTuple(a) then
@@ -170,7 +179,7 @@ end
 function darkroom.streamCount(A)
   if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) then
     return 0
-  elseif darkroom.isHandshake(A) then
+  elseif darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) then
     return 1
   elseif darkroom.isHandshakeArray(A) then
     return A.params.W*A.params.H
@@ -185,7 +194,7 @@ end
 
 -- is this type any type of handshake type?
 function darkroom.isStreaming(A)
-  if darkroom.isHandshake(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
+  if darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
     return true
   end
   return false
@@ -586,7 +595,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         local I = module:lookupInstance(n.inst.name)
         if n.fnname=="load" then 
           module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:load(S.tuple{S.null(),S.constant(true,types.bool())})}
+          return {I:load()}
         elseif n.fnname=="store" then
           module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
           return {I:store(inputs[1][1])}

@@ -13,9 +13,12 @@ before_install:
 
 
   #terra
-  - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
-  - unzip terra-Linux-x86_64-2fa8d0a.zip
-  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
+#  - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
+#  - unzip terra-Linux-x86_64-2fa8d0a.zip
+#  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
+  - wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
+  - unzip terra-Linux-x86_64-332a506.zip
+  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
 
   # this installs correct version of glibc for terra binary
   - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test

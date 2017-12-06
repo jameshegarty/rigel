@@ -6,45 +6,29 @@ local fixed = require "fixed"
 local types = require("types")
 local J = require "common"
 
-local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outputFilename,outputType,id,harnessoption,ramFile)
-
+local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapValue,outputFilename,outputType,id,harnessoption,ramFile)
   local out
   local inpSymb
   local instances = {}
   local dram, dramAddr
   
   if inputType~=types.null() then
-    local fixedTapInputType = tapType
-    if tapType==nil then fixedTapInputType = types.null() end
+    inpSymb = R.input(R.HandshakeTrigger)
     
-    local ITYPE = types.tuple{types.null(),fixedTapInputType}
-    inpSymb = R.input( R.Handshake(ITYPE) )
-
-    local inpL, inpR = inpSymb, inpSymb
-
-    if tapType~=nil then
-      local O = R.apply("bstream",RM.broadcastStream(ITYPE,2),inpSymb)
-      inpL = R.selectStream("b0",O,0)
-      inpR = R.selectStream("b1",O,1)
-    end
-    
-    local inpdata = R.apply("inpdata", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},0),nil,true), inpL)
-    local inptaps = R.apply("inptaps", RM.makeHandshake(C.index(types.tuple{types.null(),fixedTapInputType},1)), inpR)
-    
-    out = R.apply("fread",RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true),inpdata)
+    out = R.apply( "fread", RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true), inpSymb )
     local hsfninp = out
   
     if tapType~=nil then
-      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,inptaps}))
+      local tapv = R.apply("tap",RM.makeHandshake(RM.constSeq({tapValue},tapType,1,1,1)))
+      tapv = R.apply("tapidx",RM.makeHandshake(C.index(types.array2d(tapType,1,1),0)),tapv)
+      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,tapv}))
     end
-
 
     if harnessoption==2 then
       dram = R.instantiateRegistered("dram", RM.dram( R.extractData(fn.inputType.list[2]),10,ramFile))
       table.insert(instances,dram)
       local dramData = R.applyMethod("dramData", dram, "load" )
       hsfninp = R.concat("hsfninp2",{out,dramData})
-      --
     end
     
     out = R.apply("HARNESS_inner", fn, hsfninp )
@@ -58,13 +42,15 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,outpu
     out = R.apply("HARNESS_inner", fn )
   end
 
-  out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType),nil,true), out )
+  out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType,nil,false),nil,true), out )
 
   if harnessoption==2 then
     out = R.statements{out,dramAddr}
   end
   
-  return RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out, instances )
+  local res = RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out, instances )
+
+  return res
 end)
 
 return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, harnessoption, ramFile, X)
@@ -80,19 +66,50 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    --local f = harnessWrapperFn( hsfn, inputFilename, inputType, tapType, "out/"..filename, "out/"..filename..ext..".terra.raw", outputType, i, inputCount, outputCount, 1, underflowTest, earlyOverride, true )
-    --local f = terraWrapper{fn=hsfn, inputFilename=inputFilename, outputFilename="out/"..filename..ext..".terra.raw",tapType=tapType, inputType=inputType, outputType=outputType,id=i}
-    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
-    f = RM.seqMapHandshake( f, inputType, tapType, tapValue, inputCount, outputCount, false, i, simCycles )
+    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
     local Module = f:compile()
+
+    local m = symbol(&Module)
+    local valid_in = symbol(bool)
+    local valid_out = symbol(bool)
+    local incnt = symbol(int)
+    
+    local callQ, incQ
+    if inputType==types.null() then
+      callQ = quote m:process(&[valid_out]) end
+      incQ = quote end
+    else
+      callQ = quote m:process(&[valid_in],&[valid_out]) end
+      incQ = quote if m.ready then incnt = incnt+1 end end
+    end
+       
 
     local terra dosim() 
        if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
-       var m:&Module = [&Module](cstdlib.malloc(sizeof(Module))); 
+       var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
        m:init()
-       m:reset(); 
-       m:process(nil,nil); 
-       if DARKROOM_VERBOSE then m:stats();  end
+       m:reset();
+
+       var [incnt] = 0
+       var cnt = 0
+       var cycles = 0
+
+       while(cnt<outputCount) do
+         m:calculateReady(true)
+         var [valid_in] = (incnt < inputCount)
+         --[J.sel(inputType==types.null(),quote end, quote if m.ready then incnt = incnt+1 end end)]
+         incQ
+         var [valid_out]= false
+--         [if inputType==types.null() then return quote m:process(&outValid) end else return quote m:process(&inValid,&outValid) end end]
+         --         m:process(&inValid,&outValid)
+         callQ
+         if valid_out then cnt=cnt+1 end
+         --cstdio.printf("SIM %d %d %d %d\n",valid_in,valid_out,incnt,cnt)
+--         if inValid then cstdio.printf("IN_VALID\n") end
+         cycles = cycles+1
+       end
+       
+       if DARKROOM_VERBOSE then m:stats("TOP");  end
        m:free()
        cstdlib.free(m) 
      end
