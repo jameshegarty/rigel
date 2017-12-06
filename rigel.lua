@@ -14,7 +14,7 @@ STREAMING = false
 darkroom = {}
 
 -- enable SDF checking? (true:enable, false:disable)
-darkroom.SDF = false
+darkroom.SDF = true
 
 DEFAULT_FIFO_SIZE = 2048*16*16
 
