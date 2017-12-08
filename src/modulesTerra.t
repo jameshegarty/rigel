@@ -17,6 +17,23 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
+
+function rigelGlobalFunctions:terraValue()
+  if self.terraValueVar==nil then
+    local v
+    --if self.direction=="output" then v=self.type:valueToTerra(self.initValue) end
+    self.terraValueVar = global( self.type:toTerraType(), v, self.name )
+  end
+  return self.terraValueVar
+end
+
+function rigelGlobalFunctions:terraReady()
+  if self.terraReadyVar==nil then
+    self.terraReadyVar = global( bool, false, self.name )
+  end
+  return self.terraReadyVar
+end
+
 local MT = {}
 
 function MT.new(Module)
@@ -980,6 +997,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         var tout : rigel.lower(res.outputType):toTerraType()
         
         valid(tout) = @inp;
+
         if (@inp~=validFalse) or innerconst then self.inner:process(&data(tout)) end -- don't bother if invalid
 
         self.delaysr:pushBack(&tout)
@@ -1004,6 +1022,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         var tout : bool
         
         tout = valid(inp);
+
         if (valid(inp)~=validFalse) then self.inner:process(&data(inp)) end -- don't bother if invalid
 
         self.delaysr:pushBack(&tout)
@@ -1281,15 +1300,28 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
     local symbs = {}
     symbs[systolicInput.name] = inpS
     local terraOut = systolicOutput:toTerra(symbs)
-    terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType())
-      var [inpS] = @inp
-      @out = [terraOut]
+
+    if inputType==types.null() then
+      terra LiftModule:process(out:&rigel.lower(outputType):toTerraType())
+        @out = [terraOut]
+      end
+    else
+      terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType())
+        var [inpS] = @inp
+        @out = [terraOut]
+      end
     end
   else
     err(types.isType(outputType),"modules terra lift: output type must be type")
     assert(inputType~=types.null())
-    assert(outputType~=types.null())
-    terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
+    --assert(outputType~=types.null())
+    if outputType==types.null() and terraFunction==nil then
+      terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) end
+    elseif outputType==types.null() then
+      terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) terraFunction(inp) end
+    else
+      terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
+    end
   end
 
   return MT.new(LiftModule)
@@ -1662,10 +1694,10 @@ print("MAKENOINP",fn.inputType,fn.outputType)
               local readyThis = `mself.[n.name].ready
 
               table.insert( stats, quote 
-                cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d ready %d readydownstream %d\n",n.name, valid([inputs[1]]), valid(out), mself.[n.name.."CNT"],mself.[n.name.."ICNT"] , readyThis, readyDownstream);
+--                cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d ready %d readydownstream %d\n",n.name, valid([inputs[1]]), valid(out), mself.[n.name.."CNT"],mself.[n.name.."ICNT"] , readyThis, readyDownstream);
 
-                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
-                if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end
+--                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
+--                if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end
               end )
             elseif  rigel.isHandshake(n.type) then
               -- input is not stateful handshake (some type of aggregate)... so we know less stuff
@@ -1734,6 +1766,8 @@ print("MAKENOINP",fn.inputType,fn.outputType)
           else
             return `&((@[inputs[1]])[n.i])
           end
+        elseif n.kind=="readGlobal" then
+          return `&[n.global:terraValue()]
         else
           print(n.kind)
           assert(false)

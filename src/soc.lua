@@ -7,14 +7,14 @@ local SOC = {}
 
 local PORTS = 4
 
-SOC.frameStart = R.newGlobal("frameStart","input", R.Handshake(types.null()),{nil,false})
+--SOC.frameStart = R.newGlobal("frameStart","input", R.HandshakeTrigger,{nil,false})
 
-SOC.readAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("readAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
+--SOC.readAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("readAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
 
-SOC.readData = J.map(J.range(PORTS),function(i) return R.newGlobal("readData"..tostring(i),"input",R.Handshake(types.bits(64))) end)
+--SOC.readData = J.map(J.range(PORTS),function(i) return R.newGlobal("readData"..tostring(i),"input",R.Handshake(types.bits(64))) end)
 
-SOC.writeAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("writeAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
-SOC.writeData = J.map(J.range(PORTS),function(i) return R.newGlobal("writeData"..tostring(i),"output",R.Handshake(types.bits(64)),{0,false}) end)
+--SOC.writeAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("writeAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
+--SOC.writeData = J.map(J.range(PORTS),function(i) return R.newGlobal("writeData"..tostring(i),"output",R.Handshake(types.bits(64)),{0,false}) end)
   
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)

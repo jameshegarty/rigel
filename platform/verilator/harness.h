@@ -115,7 +115,7 @@ return;
 template<int N>
 void setDataBuf(WData (*signal)[N], unsigned int databits, unsigned int startPos, unsigned char* data){
   assert(databits%8==0);
-  assert(startPos+databits < N*32);
+  //  assert(startPos+databits < N*32);
   assert(sizeof(WData)==4);
   
   if(databits==0){

@@ -281,10 +281,10 @@ function guessP(ty, tapType)
   local ty = R.extractData(ty)
 
 
-  if tapType~=nil then
-      assert(ty.list[2]==tapType)
-      ty = ty.list[1]
-  end
+--  if tapType~=nil then
+--      assert(ty.list[2]==tapType)
+--      ty = ty.list[1]
+--  end
 
   local iover, inputP
   

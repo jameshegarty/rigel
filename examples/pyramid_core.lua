@@ -76,7 +76,8 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   assert(X==nil)
   
   local DATA_TYPE = types.array2d(A,internalT)
-  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()
+---  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()  XXX
+  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth)
   local INP_TYPE = types.tuple{DATA_TYPE,TAP_TYPE}
   local inp = R.input( R.Handshake(INP_TYPE) )
   local inpL, inpR = RS.fanOut{input=inp, branches=2}
@@ -87,6 +88,10 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
 
   local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inpL)
   local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inpR)
+
+  -- TAPS REGRESSION
+  out = R.apply("out0fifo",C.fifo(DATA_TYPE,128),out)
+  tapinp = R.apply("out1fifo",C.fifo(TAP_TYPE,128),tapinp)
 
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end

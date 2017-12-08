@@ -23,7 +23,7 @@ local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
-  err(#tab.inputs==J.keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array")
+  err(#tab.inputs==J.keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array ("..tostring(tab.kind)..")")
   if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
@@ -102,7 +102,7 @@ function systolic.wireIfNecessary( inputIsWire, declarations, ty, name, str, com
 end
 
 function declarePort( ty, name, isInput )
-  assert(type(name)=="string")
+  err( type(name)=="string","declarePort: name should be string but is "..tostring(name))
 
   local t = "input "
   if isInput==false then t = "output " end
@@ -196,15 +196,32 @@ function systolic.valueToVerilog( value, ty )
   end
 end
 
-function systolicModuleFunctions:instantiate( name, parameters, X )
+function systolicModuleFunctions:instantiate( name, parameters, sideChannels, X )
   err( type(name)=="string", "instantiation name must be a string")
   err( X==nil,"instantiate: too many arguments" )
   err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
+  local A,B=0,0
+  if sideChannels~=nil then A=J.keycount(sideChannels) end
+  if self.sideChannels~=nil then B=J.keycount(self.sideChannels) end
+  err( A==B, "instantiate ("..name.."): # of input sideChannels ("..tostring(A)..","..tostring(sideChannels)..") must match expected # ("..tostring(B)..")")
+
+  local SC = {}
+
+  if self.sideChannels~=nil then
+    for k,_ in pairs(self.sideChannels) do
+--      if sideChannels~=nil then
+        err( systolic.isSideChannel(sideChannels[k]), "instantiate: NYI - instantiate currently expects list of side channels, but is "..tostring(sideChannels[k]))
+              
+        SC[k] = sideChannels[k]
+--      end
+    end
+  end
+  
   -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
-  return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
+  return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc(), sideChannels=SC })
 end
 
 function systolicModuleFunctions:lookupFunction( fnname )
@@ -442,14 +459,19 @@ function systolic.constant( v, ty )
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
 
+function systolic.readSideChannel( sc )
+  err( systolic.isSideChannel(sc), "systolic.readSideChannel: input must be a side channel" )
+  return typecheck({ kind="readSideChannel", sideChannel=sc, type = sc.type, loc=getloc(), inputs={} })
+end
+
 function systolic.tuple( tab )
   err( type(tab)=="table", "input to tuple should be a table")
   err( #tab==J.keycount(tab), "tab must be array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
 
-  for _,v in ipairs(tab) do
-    err(v.type:verilogBits()>0,"tuple input size must be >0")
+  for k,v in ipairs(tab) do
+    err(v.type:verilogBits()>0,"tuple input "..tostring(k-1).." size must be >0")
   end
   
   return typecheck(res)
@@ -635,7 +657,7 @@ function systolicASTFunctions:internalDelay()
     else
       return 0,0
     end
-  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -1230,6 +1252,8 @@ function systolicASTFunctions:toVerilog( module )
         end
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
+      elseif n.kind=="readSideChannel" then
+        finalResult = n.sideChannel.name
       else
         print(n.kind)
         assert(false)
@@ -1272,6 +1296,22 @@ end
 function systolic.CE( name )
   return systolic.parameter( name, types.bool(true) )
 end
+
+systolicSideChannelFunctions = {}
+systolicSideChannelMT={__index=systolicSideChannelFunctions}
+
+function systolic.newSideChannel( name, direction, ty, global, X )
+  err( type(name)=="string", "systolic.sideParameter: name must be string" )
+  checkReserved(name)
+  err( direction=="input" or direction=="output","systolic.sideParameter: direction must be 'input' or 'output'" )
+  err( types.isType(ty), "systolic.sideParameter: type must be type but is "..tostring(ty) )
+  err( global~=nil,"systolic.newSideChannel: missing global")
+  err( X==nil, "systolic.sideParameter: too many arguments")
+
+  return setmetatable({name=name,direction=direction,type=ty,key={},inputs={},loc=getloc(),global=global},systolicSideChannelMT)
+end
+
+function systolic.isSideChannel(t) return getmetatable(t)==systolicSideChannelMT end
 
 --------------------------------------------------------------------
 -- Module Definitions
@@ -1375,6 +1415,20 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
 
   end
 
+  for scSink,_ in pairs(self.sideChannels) do
+--    if instance.sideChannels~=nil then -- hack
+--      local scSource = instance.sideChannels[scSink]
+    --      err( systolic.isSideChannel(scSource),"NYI - side channels being driven by something other than a side channel")
+    if instance.sideChannels~=nil then
+      local scSource = instance.sideChannels[scSink]
+      table.insert(arglist,", ."..scSink.name.."("..scSource.name..")")
+    else
+      table.insert(arglist,", ."..scSink.name.."()")
+    end
+--    end
+    
+  end
+  
   local params = ""
   if type(instance.parameters)=="table" then
     for k,v in pairs(instance.parameters) do
@@ -1433,6 +1487,10 @@ function userModuleFunctions:toVerilog()
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
+    for sc,_ in pairs(self.sideChannels) do
+      table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
+    end
+    
     table.insert(t,table.concat(J.map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
     table.insert(t,");\n")
 
@@ -1507,7 +1565,7 @@ function userModuleFunctions:getDelay( fnname )
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
-function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, X )
+function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, sideChannels, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
@@ -1528,6 +1586,14 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   -- not actually true: verilogDelay can be missing if this module is never used by a module with onlyWire==false
   --if onlyWire then err(type(verilogDelay)=="table", "if onlyWire is true, verilogDelay must be passed") end
 
+  local SC = {}
+  if sideChannels~=nil then
+    for k,_ in pairs(sideChannels) do
+      err(systolic.isSideChannel(k),"systolic.module.new: element is side channel set is not a side channel")
+      SC[k]=1
+    end
+  end
+  
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -1547,6 +1613,11 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     _usedPname[v.valid.name]="valid for fn '"..k.."'"
   end
 
+  for k,_ in pairs(SC) do
+    err( _usedPname[k.name]==nil,"side channel name '"..k.name.."' is used somewhere else in module")
+    _usedPname[k.name]="side channel"
+  end
+  
   -- check for dangling params
   if onlyWire==false then
     for k,v in pairs(fns) do
@@ -1567,7 +1638,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog}
+  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, sideChannels=SC}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
