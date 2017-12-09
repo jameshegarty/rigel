@@ -6,6 +6,7 @@ local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
 local J = require "common"
+local soc = require "soc"
 
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p,NOSTALL)
@@ -40,7 +41,8 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local outputW = inputW
   local outputH = inputH
   
-  local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
+  local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
+  soc.taps = R.newGlobal("taps","input",TAP_TYPE,J.range(ConvWidth*ConvWidth))
   -------------
   -------------
   local convKernel = C.convolveTaps( types.uint(8), ConvWidth, J.sel(ConvWidth==4,7,11))
@@ -48,12 +50,12 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   -------------
   local BASE_TYPE = types.array2d( types.uint(8), T )
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
-  local HST = types.tuple{RW_TYPE,TAP_TYPE}
-  local hsfninp_raw = R.input( R.Handshake(HST) )
-  local inp0, inp1 = RS.fanOut{input=hsfninp_raw,branches=2}
-  local hsfninp = R.apply( "idx0", RM.makeHandshake(C.index(HST,0)), inp0 )
-  local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), inp1 )
-  local out = hsfninp
+  --local HST = types.tuple{RW_TYPE,TAP_TYPE}
+  local hsfninp_raw = R.input( R.Handshake(RW_TYPE) )
+  --local inp0, inp1 = RS.fanOut{input=hsfninp_raw,branches=2}
+  --local hsfninp = R.apply( "idx0", RM.makeHandshake(C.index(HST,0)), inp0 )
+  --local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), inp1 )
+  local out = hsfninp_raw
   
   local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,T)), out )
 
@@ -64,8 +66,16 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
 --    table.insert( statements, R.applyMethod( "s_clk", fifos[#fifos], "store", out ) )
 --    out = R.applyMethod("r_clk",fifos[#fifos],"load")
 --  end
+
+  -- TAPS REGRESSION
+  local out0, out1 = RS.fanOut{input=out,branches=2}
+  out0 = R.apply("out0fifo",C.fifo(BASE_TYPE,128),out0)
+  out1 = R.apply("out1fifo",C.fifo(BASE_TYPE,128),out1)
+
+  local trig = R.apply("trig", RM.makeHandshake(C.valueToTrigger(BASE_TYPE),nil,true), out0)
+  local tapinp = R.apply("RT", RM.makeHandshake(C.readTap(soc.taps),nil,true), trig)
   
-  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.concat("CONVPIPEINP",{out,hsfn_taps}))
+  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.concat("CONVPIPEINP",{out1,tapinp}))
 
   local out = R.apply("HH",RM.makeHandshake(kernel), convpipeinp)
   

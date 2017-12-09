@@ -44,16 +44,12 @@ local DATA_TYPE = types.array2d(A,8)
 local HST = DATA_TYPE
 
 local inp = R.input( R.Handshake(HST) )
---local inpList = J.pack(RS.fanOut{input=inp,branches=1+TARGET_DEPTH})
---local out = R.apply("idx0",RM.makeHandshake(C.index(HST,0)),inpList[1])
---out = inpList[1]
 local out = inp
 
 if internalT<8 then
   out = R.apply("CRtop",RM.liftHandshake(RM.changeRate(A,1,8,internalT)), out)
 end
 
---curT = internalT
 curW = inputW
 curH = inputH
 local L = {}
@@ -70,27 +66,22 @@ for depth=1,TARGET_DEPTH do
 
   local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO, true )
 
-  local out0, out1 = RS.fanOut{input=out,branches=2}
+--  local out0, out1 = RS.fanOut{input=out,branches=2}
 
   -- TAPS REGRESSION
-  --print("TAP REG",internalT)
-  --assert(false)
-  out0 = R.apply("out0fifo",C.fifo(types.array2d(A,internalT),128),out0)
-  out1 = R.apply("out1fifo",C.fifo(types.array2d(A,internalT),128),out1)
-  --out0 = P.FIFO(fifos, statements, types.array2d(A,internalT), out0,nil,"out0fifo"..depth)
-  --out1 = P.FIFO(fifos, statements, types.array2d(A,internalT), out1,nil,"out1fifo"..depth)
+--  out0 = R.apply("out0fifo"..tostring(depth),C.fifo(types.array2d(A,internalT),64),out0)
+--  out1 = R.apply("out1fifo"..tostring(depth),C.fifo(types.array2d(A,internalT),256),out1)
 
-  --local tapinp =  R.apply("idx1_"..tostring(depth),RM.makeHandshake(C.index(HST,1)),inpList[1+depth])
-  --local tapinp = R.readGlobal("tr"..tostring(depth),soc.taps)
-  local trig = R.apply("trig"..tostring(depth), RM.makeHandshake(C.valueToTrigger(types.array2d(A,internalT)),nil,true), out0)
-  local tapinp = R.apply("RT"..tostring(depth), RM.makeHandshake(C.readTap(soc.taps),nil,true), trig)
+--  local trig = R.apply("trig"..tostring(depth), RM.makeHandshake(C.valueToTrigger(types.array2d(A,internalT)),nil,true), out0)
+--  local tapinp = R.apply("RT"..tostring(depth), RM.makeHandshake(C.readTap(soc.taps),nil,true), trig)
 
---  tapinp = R.apply("out0fifo",C.fifo(types.array2d(A,internalT),128),tapinp)
---  out1 = R.apply("out1fifo",C.fifo(types.array2d(A,internalT),128),out1)
-  
-  local CCT = R.concat("CONVPIPEINP"..depth,{out1,tapinp})
-  local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,internalT),TAP_TYPE}), CCT)
-  out = R.apply("p"..depth, PI, piinp)
+  -- TAPS REGRESSION
+--  tapinp = R.apply("otut0fifo"..tostring(depth),C.fifo(TAP_TYPE,128),tapinp)
+
+--  local CCT = R.concat("CONVPIPEINP"..depth,{out1,tapinp})
+  --  local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,internalT),TAP_TYPE}), CCT)
+  --out = R.apply("PT"..depth, RM.makeHandshake(C.packTap(types.array2d(A,internalT),TAP_TYPE,soc.taps)), out)
+  out = R.apply("p"..depth, PI, out)
 
   local thisW = inputW*inputH/math.pow(4,depth-1)
   --print("thisW",thisW,thisW/outputH)

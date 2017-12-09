@@ -152,6 +152,21 @@ C.valueToTrigger = memoize(function(ty)
 end)
 
 -----------------------------
+C.packTap = memoize(function(A,ty,global)
+  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,ty}, 0,
+    function(sinp) return S.tuple{sinp,S.readSideChannel(global.systolicValue)} end, nil,"C.packTap")
+end)
+
+-----------------------------
+C.packTapBroad = memoize(function(A,ty,global,N)
+  local tt = types.array2d(ty,N)
+  local G = {}
+  G[global]=1
+  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,types.array2d(ty,N)}, 0,
+    function(sinp) return S.tuple{sinp,S.cast(S.tuple(J.broadcast(S.readSideChannel(global.systolicValue),N)),tt)} end, nil,"C.packTap",nil,G)
+end)
+
+-----------------------------
 C.rcp = memoize(function(ty)
   err(types.isType(ty), "C.rcp error: input must be type")
   return f.parameter("finp",ty):rcp():toRigelModule("rcp_"..tostring(ty))
