@@ -85,7 +85,7 @@ local function typecheck_inner( ast, newNodeFn )
     local thistype, lhscast, rhscast = types.meet( lhs.type, rhs.type, ast.op, ast.loc )
     
     if thistype==nil then
-      darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
+      J.err(false, "Type error, meet error "..tostring(lhs.type).." "..tostring(rhs.type) )
     end
     
     if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast,loc=debug.traceback()}) end

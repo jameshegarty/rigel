@@ -334,10 +334,10 @@ function types.meet( a, b, op, loc)
     return thistype, thistype, thistype
   elseif a:isArray() and b:isArray()==false then
     -- we take scalar constants and duplicate them out to meet the other arguments array length
-    local thistype, lhstype, rhstype = types.meet( a, types.array( b,a :arrayLength() ), op, loc )
+    local thistype, lhstype, rhstype = types.meet( a, types.array2d( b, a:arrayLength()[1], a:arrayLength()[2]), op, loc )
     return thistype, lhstype, rhstype
   elseif a:isArray()==false and b:isArray() then
-    local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, loc )
+    local thistype, lhstype, rhstype = types.meet( types.array2d(a, b:arrayLength()[1], b:arrayLength()[2] ), b, op, loc )
     return thistype, lhstype, rhstype
   elseif a:isNamed() and b:isNamed() then
     if op=="select" and a==b then

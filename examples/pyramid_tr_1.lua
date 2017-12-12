@@ -7,6 +7,7 @@ local C = require "examplescommon"
 local P = require "pyramid_core"
 local SDFRate = require "sdfrate"
 local J = require "common"
+local soc = require "soc"
 
 T = 4 -- throughput
 outputT = 8
@@ -32,14 +33,18 @@ if LARGE then
   inputW, inputH = 384, 384
 end
 
-local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst()
+local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
+soc.taps = R.newGlobal("taps","input",TAP_TYPE,P.G)
+
 local DATA_TYPE = types.array2d(A,8)
-local HST = types.tuple{DATA_TYPE,TAP_TYPE}
+--local HST = types.tuple{DATA_TYPE,TAP_TYPE}
+local HST = DATA_TYPE
 
 local inp = R.input( R.Handshake(HST) )
-local inp0, inp1 = RS.fanOut{input=inp,branches=2}
+--local inp0, inp1 = RS.fanOut{input=inp,branches=2}
 
-local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp0)
+--local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp0)
+local out = inp
 if T<8 then
   out = R.apply("CRtop", RM.liftHandshake( RM.changeRate(A,1,8,T)), out)
 end
@@ -51,9 +56,9 @@ for depth=1,TARGET_DEPTH do
   if depth>1 then totTT=totTT/4; end
 end
 
-local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp1)
+--local tapinp =  R.apply("idx1", RM.makeHandshake( C.index(HST,1)),inp1)
 --print("TOT",totT)
-local tapinpL = J.pack(RS.fanOut{input=tapinp, branches=totT})
+--local tapinpL = J.pack(RS.fanOut{input=tapinp, branches=totT})
   
 curT = T
 --vecT = T
@@ -73,8 +78,8 @@ for depth=1,TARGET_DEPTH do
 
   if curT>1 then
     PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false)
-    local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,{out,tapinpL[depth]}))
-    out = R.apply("p"..depth, PI, piinp)
+    --local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,out))
+    out = R.apply("p"..depth, PI, out)
   else
     PI = P.pyramidIterTR(depth,curT,curW,curH,ConvWidth,NOFIFO)
     out = R.apply("p"..depth, PI, out)

@@ -159,6 +159,11 @@ end)
 
 -----------------------------
 C.packTapBroad = memoize(function(A,ty,global,N)
+  assert(types.isType(A))
+  assert(types.isType(ty))
+  assert(type(N)=="number")
+  assert(rigel.isGlobal(global))
+  
   local tt = types.array2d(ty,N)
   local G = {}
   G[global]=1

@@ -8,6 +8,8 @@ local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
 local f = require "fixed"
+local soc = require "soc"
+
 
 local edgeTerra={}
 if terralib~=nil then edgeTerra=require("edge_terra") end
@@ -18,7 +20,10 @@ T = 2
 
 ITYPE = types.array2d( types.uint(8), 8 )
 OTYPE = types.array2d( types.array2d(types.uint(8),4), 2 )
-local TTYPE = types.array2d( types.uint(32), 4 ):makeConst()
+--local TTYPE = types.array2d( types.uint(32), 4 ):makeConst()
+local TTYPE = types.uint(32)
+local TAPVALUE =10
+soc.taps = R.newGlobal("taps","input",TTYPE,TAPVALUE)
 
 TAPS = false
 
@@ -56,7 +61,7 @@ local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,
 
 --------------
 local function makeThresh()
-  local inptype = types.tuple{types.uint(8),types.uint(32):makeConst()}
+  local inptype = types.tuple{types.uint(8),types.uint(32)}
 
   local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,
     function(inp)
@@ -66,7 +71,7 @@ local function makeThresh()
       local c_zero = S.constant({0,0,0,0},types.array2d(types.uint(8),4))
       return S.select(S.gt(inpData,inpTap), c_one, c_zero )
     end,
-    function() return edgeTerra.thresh end)
+   function() return edgeTerra.thresh end)
 
   if TAPS==false then
     local THRESH=10
@@ -88,38 +93,22 @@ local edgefn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,edge,false
 local nmsfn = C.stencilKernelPadcrop( types.uint(8), W,H,T,1,1,1,1,0,nms,false)
 
 local FNTYPE
-if TAPS then
-  FNTYPE = types.tuple{ITYPE,TTYPE}
-else
-  FNTYPE = ITYPE
-end
+FNTYPE = ITYPE
 
 local inp = R.input(R.Handshake(FNTYPE))
-local inpB = R.apply("inpB", RM.broadcastStream(FNTYPE,2), inp)
-local inp0 = R.selectStream("inp0",inpB,0)
-local inp1 = R.selectStream("inp1",inpB,1)
---local inp0, inp1 = RS.fanOut{input=inp, branches=2}
 
 local out
 local inptaps
 
-if TAPS then
-  out = R.apply( "i0", RM.makeHandshake(C.index(FNTYPE,0)), inp0)
-  inptaps = R.apply("idx1",RM.makeHandshake(C.index(FNTYPE,1)), inp1)
-  inptaps = R.apply("idx11",RM.makeHandshake(C.index(TTYPE,0)), inptaps)
-  inptaps = R.apply("IIT", RM.makeHandshake(C.broadcast(types.uint(32):makeConst(),2)), inptaps)
-else
-  out = inp
---  inptaps = R.constant( "idx1", 10, types.uint(32) )
---  inptaps = R.apply("IIT", C.broadcast(types.uint(32),2), inptaps)
-end
+out = inp
 
 local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,2)), out )
 local out = R.apply("bf",blurfn,out)
 local out = R.apply("ef",edgefn,out)
 
 if TAPS then
-  out = R.apply("oack",C.SoAtoAoSHandshake(2,1,{types.uint(8),types.uint(32):makeConst()}),R.concat("RT",{out,inptaps}))
+  out = R.apply("oack",RM.makeHandshake(C.packTapBroad(types.array2d(types.uint(8),T),TTYPE,soc.taps,T)),out)
+  out = R.apply("SOS",RM.makeHandshake(RM.SoAtoAoS(2,1,{types.uint(8),TTYPE})),out)
 end
 
 local out = R.apply("nf",thfn,out)
@@ -127,7 +116,7 @@ local out = R.apply("nf",thfn,out)
 local hsfn = RM.lambda("hsfn",inp,out)
 
 if TAPS then
-  harness{ outFile="edge_taps", fn=hsfn, inFile="ov7660_1chan.raw", tapType=TTYPE, tapValue={10,0,0,0}, inSize={W,H}, outSize={W,H} }
+  harness{ outFile="edge_taps", fn=hsfn, inFile="ov7660_1chan.raw", tapType=TTYPE, tapValue=TAPVALUE, inSize={W,H}, outSize={W,H} }
 else
   harness{ outFile="edge", fn=hsfn, inFile="ov7660_1chan.raw", inSize={W,H}, outSize={W,H} }
 end

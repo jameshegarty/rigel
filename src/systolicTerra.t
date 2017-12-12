@@ -33,6 +33,12 @@ function systolicASTFunctions:toTerra( symbols )
           res = `[args[1]] << [args[2]]
         elseif n.op=="<" then
           res = `[args[1]] < [args[2]]
+        elseif n.op==">" then
+          res = `[args[1]] > [args[2]]
+        elseif n.op==">=" then
+          res = `[args[1]] >= [args[2]]
+        elseif n.op=="<=" then
+          res = `[args[1]] <= [args[2]]
         else
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
         end
@@ -91,7 +97,7 @@ function systolicASTFunctions:toTerra( symbols )
           -- cast tuple to array of same size
 	  -- ie {A,A,A} to A[3]
           local s = symbol(n.type:toTerraType())
-	  print("TARGET",s,n.type:toTerraType(),n.type,n.inputs[1].type)
+
           table.insert(stats,quote var [s] end)
           for k=0,n.type:channels()-1 do
             table.insert(stats, quote s[k] = [args[1]].["_"..k] end)
