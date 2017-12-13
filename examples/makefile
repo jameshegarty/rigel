@@ -311,6 +311,9 @@ out/%.$(1).correct.txt : out/%.$(1).bmp
 out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
 	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
 
+out/%.$(1).cycles.txt: out/%.$(1).raw
+	../rigelLuajit ../misc/extractCycles.lua out/$$*.$(1).raw > out/$$*.$(1).cycles.txt
+
 out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua
 	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.metadata.lua 0
 	# keep copy for future reference

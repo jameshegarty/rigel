@@ -32,8 +32,8 @@ local outputCount = (metadata.outputWidth*metadata.outputHeight)/metadata.output
 local inputBytes = J.upToNearest(128,inputCount*8)
 local outputBytes = J.upToNearest(128,outputCount*8)
 axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
--- extra 128 is for the extra AXI burst that contains metadata
-axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
+-- extra 128 bytes is for the extra AXI burst that contains cycle count
+axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes+128)
 
 local maxUtilization = 1
 
