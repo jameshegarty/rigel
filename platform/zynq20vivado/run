@@ -1,0 +1,41 @@
+#!/bin/bash
+# shows all commands
+
+LUA=../rigelLuajit
+ZYNQ_WRITE_PATH=/var/volatile
+ZYNQ_ADDR=192.168.2.2
+
+fname=$(basename $3)
+target="${fname%%.*}"
+
+IMG=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua inputImage)
+INW=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua inputWidth)
+INH=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua inputHeight)
+BPP_IN=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua inputBitsPerPixel)
+BPP_OUT=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua outputBitsPerPixel)
+OUTW=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua outputWidth)
+OUTH=$($LUA ../misc/extractMetadata.lua out/$target.metadata.lua outputHeight)
+
+# ###### SET THE CLOCK	
+# HZ=$(cat out/$target.hz.txt)
+# lockfile /tmp/zynq20lock
+
+# # Write to fclk0 if we haven't already
+# sshpass -p 'root' ssh root@$ZYNQ_ADDR "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then \
+#         echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
+# sshpass -p 'root' ssh root@$ZYNQ_ADDR "echo '$HZ' > /sys/class/fclk/fclk0/set_rate"
+# sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$target.realhz.txt
+# ###### CLOCK STUFF END
+
+
+sshpass -p 'root' scp ../platform/axi/processimage out/$target.zynq20vivado.bit $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat $ZYNQ_WRITE_PATH/$target.zynq20vivado.bit > /dev/xdevcfg"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage 805339136 $ZYNQ_WRITE_PATH/$IMG \
+        $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT"
+sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw out/$target.zynq20vivado.raw
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage $ZYNQ_WRITE_PATH/$IMG \
+        $ZYNQ_WRITE_PATH/out.raw $ZYNQ_WRITE_PATH/$target.zynq20vivado.bit"
+rm -f /tmp/zynq20lock
+$LUA ../misc/extractCycles.lua out/$target.zynq20vivado.raw > out/$target.zynq20vivado.cycles.txt
+# keep copy for future reference
+cp out/$target.zynq20vivado.cycles.txt out/build_$target
