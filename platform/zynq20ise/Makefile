@@ -1,0 +1,1 @@
+../platform/zynq20ise/run
