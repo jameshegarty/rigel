@@ -29,6 +29,10 @@ before_install:
 #  - make out/pointwise_wide_handshake.terra.correct.txt
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
+  - sudo luarocks install luacov-coveralls
+  
+
+
 script:
 # early out on errors
   - set -e
@@ -45,3 +49,6 @@ env:
   - TARGET=terra
   - TARGET=unit
   - TARGET=axiverilog
+
+after_success:
+  - luacov-coveralls
