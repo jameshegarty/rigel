@@ -31,9 +31,10 @@ before_install:
 
   #- sudo apt-get install luarocks
   - sudo pip install hererocks
-  - hererocks lj -rlatest -jlatest
+  - hererocks here -rlatest -jlatest
   #- source lj/bin/activate
   - export PATH=$PATH:$PWD/here/bin
+  - echo $PATH
   - luarocks install luacov-coveralls
   - luajit examples/pointwise_wise_handshake.lua
 
