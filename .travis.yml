@@ -29,7 +29,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.terra.correct.txt
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
-   - sudo apt-get install luarocks
+  - sudo apt-get install luarocks
   - sudo luarocks install luacov-coveralls
   
 
