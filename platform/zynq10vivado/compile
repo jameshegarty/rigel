@@ -19,6 +19,8 @@ echo "route_design" >> system.tcl
 echo "write_bitstream system.bit" >> system.tcl
 echo "report_timing" >> system.tcl
 echo "report_timing_summary" >> system.tcl
+echo "report_utilization -hierarchical -file utilization_h.txt" >> system.tcl
+echo "report_utilization -file utilization.txt" >> system.tcl
 vivado -mode batch -source 'system.tcl' -nojournal -log 'vivado.log' > /dev/null
 bootgen -image ../../../platform/axi/boot.bif -w -process_bitstream bin
 cp system.bit.bin $OUTFILE
