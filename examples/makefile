@@ -301,7 +301,7 @@ PLATFORMDIRS = $(wildcard ../platform/*)
 AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
 
 define MyRule
-out/%.$(1).bit: out/%.axi.v
+out/%.$(1).bit: out/%.axi.v out/%.metadata.lua
 	../platform/$(1)/compile $(shell pwd)/out/$$*.axi.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
 
 out/%.$(1).correct.txt : out/%.$(1).bmp

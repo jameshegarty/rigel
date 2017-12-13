@@ -270,9 +270,9 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   local inputCount = (inputW*inputH)/inputT
   local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
-local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
+--local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
-io.write(fnaxi:toVerilog())
+io.write(axifn:toVerilog())
 io.close()
 --------
 end

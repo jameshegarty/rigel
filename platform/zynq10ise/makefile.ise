@@ -1,4 +1,7 @@
-$(BUILD_DIR)/system.ngc: $(INPUT)
+$(INPUT).wrapper.v: $(INPUT)
+	../rigelLuajit ../platform/axi/wrapper.lua $^ $(METADATA_FILE) $@ ../../platform/
+
+$(BUILD_DIR)/system.ngc: $(INPUT).wrapper.v
 	mkdir -p $(BUILD_DIR)
 	# run xst, then 'help -arch zynq -command run' to get list of options
 	cd $(BUILD_DIR); echo "run -ifn $^ -ifmt Verilog -p xc7z010-clg400-1 -top stage -use_dsp48 No -ofn system" | xst > OUT_xst.txt
