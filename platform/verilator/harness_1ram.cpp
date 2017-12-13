@@ -52,6 +52,11 @@ int main(int argc, char** argv) {
     top->CLK = CLK;
     top->reset = true;
     top->ready_downstream = 1;
+
+#if TAPBITS>0
+    setDataBuf(&(top->taps),tapBits,0,tapValue);
+#endif
+    
     top->eval();
   }
 
@@ -84,11 +89,10 @@ int main(int argc, char** argv) {
 #if INBPP>0
       if(top->ready){
         if(validInCnt>=inPackets){
-          setValid(&(top->process_input),inbpp*inP+tapBits,false);
+          setValid(&(top->process_input),inbpp*inP,false);
         }else{
           setData(&(top->process_input),inbpp*inP,infile);
-          setDataBuf(&(top->process_input),tapBits,inbpp*inP,tapValue);
-          setValid(&(top->process_input),inbpp*inP+tapBits,true);
+          setValid(&(top->process_input),inbpp*inP,true);
           validInCnt++;
         }
       }

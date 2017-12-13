@@ -11,7 +11,7 @@ local err = J.err
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
 STREAMING = false
 
-darkroom = {}
+local darkroom = {}
 
 -- enable SDF checking? (true:enable, false:disable)
 darkroom.SDF = true
@@ -28,6 +28,8 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
+darkroom.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+darkroom.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
 
 function darkroom.V(A) 
   err(types.isType(A),"V: argument should be type"); 
@@ -94,6 +96,7 @@ function darkroom.isHandshakeTmuxed(a)
 end
 
 function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+function darkroom.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
 function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
@@ -103,7 +106,12 @@ function darkroom.isBasic(A)
   assert(types.isType(A))
   if A:isArray() then return darkroom.isBasic(A:arrayOver()) end
   if A:isTuple() then for _,v in ipairs(A.list) do if darkroom.isBasic(v)==false then return false end end return true end
-  return darkroom.isV(A)==false and darkroom.isRV(A)==false and darkroom.isHandshake(A)==false and darkroom.isHandshakeArrayOneHot(A)==false and darkroom.isHandshakeTmuxed(A)==false and darkroom.isHandshakeArray(A)==false and darkroom.isHandshakeTuple(A)==false
+    
+  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) then
+    return false
+  end
+
+  return true
 end
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
@@ -117,11 +125,12 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
   end
+  print("rigel.lower: unknown type? ",a)
   assert(false)
 end
 
@@ -136,7 +145,7 @@ function darkroom.extractData(a)
 end
 
 function darkroom.hasReady(a)
-  if darkroom.isHandshake(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
@@ -147,7 +156,7 @@ function darkroom.hasReady(a)
 end
 
 function darkroom.extractReady(a)
-  if darkroom.isHandshake(a) then return types.bool()
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) then return types.bool()
   elseif darkroom.isV(a) then return types.bool()
   elseif darkroom.isRV(a) then return types.bool()
   elseif darkroom.isHandshakeTuple(a) then
@@ -170,7 +179,7 @@ end
 function darkroom.streamCount(A)
   if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) then
     return 0
-  elseif darkroom.isHandshake(A) then
+  elseif darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) then
     return 1
   elseif darkroom.isHandshakeArray(A) then
     return A.params.W*A.params.H
@@ -185,11 +194,40 @@ end
 
 -- is this type any type of handshake type?
 function darkroom.isStreaming(A)
-  if darkroom.isHandshake(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
+  if darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
     return true
   end
   return false
 end
+
+
+rigelGlobalFunctions = {}
+rigelGlobalMT = {__index=rigelGlobalFunctions}
+
+-- direction is the direction of this signal on the top module:
+-- 'output' means this is an output of the top module. 'input' means its an input to the top module.
+-- we can't write to an 'output' global twice!
+function darkroom.newGlobal( name, direction, typeof, initValue )
+  err( type(name)=="string", "newGlobal: name must be string" )
+  err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
+  err( types.isType(typeof), "newGlobal: type must be rigel type" )
+  err( direction=="input" or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
+
+  err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
+
+  local t = {name=name,direction=direction,type=typeof,initValue=initValue}
+
+  t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof),t )
+
+  if darkroom.isHandshake(typeof) then
+    assert(false)
+--    t.systolicReady = S.newGlobal( name.."_ready", J.sel(direction=="input","output","input"), types.bool(), false)
+  end
+
+  return setmetatable(t,rigelGlobalMT)
+end
+
+function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
 
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={__index=function(tab,key)
@@ -203,6 +241,21 @@ darkroomFunctionMT={__index=function(tab,key)
     assert( rawget(tab, "makeSystolic")~=nil )
     local sm = rawget(tab,"makeSystolic")()
     assert(S.isModule(sm))
+
+    -- self check module matches format we expect
+    local A,B=0,0
+    if tab.globals~=nil then A=J.keycount(tab.globals) end
+    if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
+    err(A==B,"makeSystolic: side channels doesn't match globals")
+
+    if tab.registered==false then
+      err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
+          
+      if tab.outputType~=types.null() then
+        err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
+      end
+    end
+    
     rawset(tab,"systolicModule", sm )
     return sm
   end
@@ -279,9 +332,15 @@ function darkroom.newFunction(tab)
   err( darkroom.SDF==false or (tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1), "rigel.newFunction: sdf input rate is not <=1" )
   err( darkroom.SDF==false or (tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1), "rigel.newFunction: sdf output rate is not <=1" )
 
+  err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
+  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type ("..tab.kind..")" )
+ 
   if tab.inputType:isArray() or tab.inputType:isTuple() then assert(darkroom.isBasic(tab.inputType)) end
   if tab.outputType:isArray() or tab.outputType:isTuple() then assert(darkroom.isBasic(tab.outputType)) end
-    
+
+  if tab.globals==nil then tab.globals={} end
+  if tab.globalMetadata==nil then tab.globalMetadata={} end
+  
   return setmetatable( tab, darkroomFunctionMT )
 end
 
@@ -293,6 +352,8 @@ darkroomInstanceMT = {}
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
+  err( type(tab.name)=="string", "IR node "..tab.kind.." is missing name" )
+  err( type(tab.loc)=="string", "IR node "..tab.kind.." is missing loc" )
   IR.new( tab )
   local r = setmetatable( tab, darkroomIRMT )
   r:typecheck()
@@ -501,76 +562,70 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
 end
 
 function darkroomIRFunctions:typecheck()
---  return self:process(
-  --    function(n)
   local n = self
-      if n.kind=="apply" then
-        err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
-        if #n.inputs==0 then
-          err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
-        else
-          assert( types.isType( n.inputs[1].type ) )
-          err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
-        end
-        n.type = n.fn.outputType
-        --return darkroom.newIR( n )
-      elseif n.kind=="applyMethod" then
-        err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
+  if n.kind=="apply" then
+    err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
+    if #n.inputs==0 then
+      err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
+    else
+      assert( types.isType( n.inputs[1].type ) )
+      err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+    end
+    n.type = n.fn.outputType
+  elseif n.kind=="applyMethod" then
+    err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
+    
+    if n.fnname=="load" then
+      n.type = n.inst.fn.outputType
+    elseif n.fnname=="store" then
+      if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
+      n.type = types.null()
+    else
+      err(false,"Unknown method "..n.fnname)
+    end
 
-        if n.fnname=="load" then
-          n.type = n.inst.fn.outputType
-        elseif n.fnname=="store" then
-          if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
-          n.type = types.null()
-        else
-          err(false,"Unknown method "..n.fnname)
-        end
-
-        --return darkroom.newIR( n )
-      elseif n.kind=="input" then
-      elseif n.kind=="constant" then
-      elseif n.kind=="concat" then
-        if darkroom.isHandshake(n.inputs[1].type) then
-          n.type = darkroom.HandshakeTuple( J.map(n.inputs, function(v,k) err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type)); return darkroom.extractData(v.type) end) )
-        elseif darkroom.isBasic(n.inputs[1].type) then
-          n.type = types.tuple( J.map(n.inputs, function(v) err(darkroom.isBasic(v.type),"concat: if one input is basic, all inputs must be basic"); return v.type end) )
-        else
-          err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
-        end
-       -- return darkroom.newIR(n)
-      elseif n.kind=="concatArray2d" then
-        J.map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
-
-        if darkroom.isHandshake(n.inputs[1].type) then
-          n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
-        elseif darkroom.isBasic(n.inputs[1].type) then
-          n.type = types.array2d( n.inputs[1].type, n.W, n.H )
-        else
-          err(false,"concatArray2d: unsupported input type "..tostring(n.inputs[1].type))
-        end
-      
-        --return darkroom.newIR(n)
-      elseif n.kind=="statements" then
-        n.type = n.inputs[1].type
-       -- return darkroom.newIR(n)
-      elseif n.kind=="selectStream" then
-        if darkroom.isHandshakeArray(n.inputs[1].type) then
-          err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
-          err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
-          n.type = darkroom.Handshake(n.inputs[1].type.params.A)
-        elseif darkroom.isHandshakeTuple(n.inputs[1].type) then
-          err( n.i < #n.inputs[1].type.params.list, "selectStream index out of bounds")
-          n.type = darkroom.Handshake(n.inputs[1].type.params.list[n.i+1])
-        else
-          err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
-        end
-        
-        --return darkroom.newIR(n)
-      else
-        print("Rigel Typecheck NYI ",n.kind)
-        assert(false)
-      end
---    end)
+  elseif n.kind=="input" then
+  elseif n.kind=="constant" then
+  elseif n.kind=="concat" then
+    if darkroom.isHandshake(n.inputs[1].type) then
+      n.type = darkroom.HandshakeTuple( J.map(n.inputs, function(v,k) err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type)); return darkroom.extractData(v.type) end) )
+    elseif darkroom.isBasic(n.inputs[1].type) then
+      n.type = types.tuple( J.map(n.inputs, function(v) err(darkroom.isBasic(v.type),"concat: if one input is basic, all inputs must be basic"); return v.type end) )
+    else
+      err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
+    end
+  elseif n.kind=="concatArray2d" then
+    J.map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
+    
+    if darkroom.isHandshake(n.inputs[1].type) then
+      n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
+    elseif darkroom.isBasic(n.inputs[1].type) then
+      n.type = types.array2d( n.inputs[1].type, n.W, n.H )
+    else
+      err(false,"concatArray2d: unsupported input type "..tostring(n.inputs[1].type))
+    end
+  elseif n.kind=="statements" then
+    n.type = n.inputs[1].type
+  elseif n.kind=="selectStream" then
+    if darkroom.isHandshakeArray(n.inputs[1].type) then
+      err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
+      err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
+      n.type = darkroom.Handshake(n.inputs[1].type.params.A)
+    elseif darkroom.isHandshakeTuple(n.inputs[1].type) then
+      err( n.i < #n.inputs[1].type.params.list, "selectStream index out of bounds")
+      n.type = darkroom.Handshake(n.inputs[1].type.params.list[n.i+1])
+    else
+      err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
+    end
+  elseif n.kind=="readGlobal" then
+    err( n.global.direction=="input", "Error, attempted to read a global output ("..n.global.name..")" )
+  elseif n.kind=="writeGlobal" then
+    err( n.global.direction=="output", "Error, attempted to write a global input ("..n.global.name..")" )
+    err( n.inputs[1].type==n.global.type, "Error, input to writeGlobal is incorrect type. is "..tostring(n.inputs[1].type).." but should be "..tostring(n.global.type)..", "..n.loc )
+  else
+    print("Rigel Typecheck NYI ",n.kind)
+    assert(false)
+  end
 end
 
 function darkroomIRFunctions:codegenSystolic( module )
@@ -586,7 +641,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         local I = module:lookupInstance(n.inst.name)
         if n.fnname=="load" then 
           module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:load(S.tuple{S.null(),S.constant(true,types.bool())})}
+          return {I:load()}
         elseif n.fnname=="store" then
           module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
           return {I:store(inputs[1][1])}
@@ -596,11 +651,21 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
-        err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+
+        if n.fn.outputType==types.null() then
+          err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+        else
+          err(n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+        end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil) )
+        local SC = {}
+        for g,_ in pairs(n.fn.globals) do
+          SC[g.systolicValue] = g.systolicValue
+        end
+        
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
 
         if darkroom.isHandshake( n.fn.inputType ) or
           darkroom.isHandshakeArrayOneHot( n.fn.inputType ) or
@@ -643,6 +708,8 @@ function darkroomIRFunctions:codegenSystolic( module )
         return inputs[1]
       elseif n.kind=="selectStream" then
         return {S.index(inputs[1][1],n.i)}
+      elseif n.kind=="readGlobal" then
+        return {S.readSideChannel(n.global.systolicValue)}
       else
         print(n.kind)
         assert(false)
@@ -668,14 +735,20 @@ function darkroom.input( ty, sdfRate )
   return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
 end
 
---[=[
-function callOnEntries( T, fnname )
-  local TS = symbol(&T,"self")
-  local ssStats = {}
-  for k,v in pairs( T.entries ) do if v.type:isstruct() then table.insert( ssStats, quote TS.[v.field]:[fnname]() end) end end
-  T.methods[fnname] = terra([TS]) [ssStats] end
+function darkroom.readGlobal( name, g, X )
+  err( type(name)=="string", "rigel.readGlobal: name must be string" )
+  err( darkroom.isGlobal(g),"readGlobal: input must be rigel global" )
+  err(X==nil,"readGlobal: too many arguments")
+  return darkroom.newIR{kind="readGlobal",name=name,global=g,type=g.type,loc=getloc(),inputs={}}
 end
-]=]
+
+function darkroom.writeGlobal( name, g, input, X )
+  err( type(name)=="string", "rigel.writeGlobal: name must be string" )
+  err( darkroom.isGlobal(g),"writeGlobal: first argument must be rigel global" )
+  err( darkroom.isIR(input),"writeGlobal: second argument must be rigel value" )
+  err(X==nil,"writeGlobal: too many arguments")
+  return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
+end
 
 function darkroom.instantiateRegistered( name, fn )
   err( type(name)=="string", "name must be string")
@@ -709,7 +782,7 @@ function darkroom.constant( name, value, ty )
   err( types.isType(ty), "constant type must be rigel type" )
   ty:checkLuaValue(value)
 
-  return darkroom.newIR( {kind="constant", name=name, value=value, type=ty, inputs = {}} )
+  return darkroom.newIR( {kind="constant", name=name, loc=getloc(), value=value, type=ty, inputs = {}} )
 end
 
 -- packStreams: do we consider the output of this to be 1 SDF stream, or N?
@@ -748,7 +821,7 @@ function darkroom.statements( t )
   err( type(t)=="table", "statements: argument should be table" )
   err( #t>0 and J.keycount(t)==#t, "statements: argument should be lua array")
   J.map(t, function(i) err(darkroom.isIR(i), "statements: argument should be rigel value") end )
-  return darkroom.newIR{kind="statements",inputs=t,loc=getloc()}
+  return darkroom.newIR{kind="statements",inputs=t,loc=getloc(),name="__&STATEMENTS"}
 end
 
 

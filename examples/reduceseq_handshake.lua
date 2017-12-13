@@ -25,7 +25,7 @@ local touint8 = C.shiftAndCast(types.int(32), types.uint(8),2)
 --local reduceSumInt32_0cyc = RM.lift( "reduceSumInt32_0cyc", types.tuple { types.int(32), types.int(32) }, types.int(32), 0, terra( inp : &tuple(int32,int32), out : &int32 ) @out = inp._0 + inp._1 end, rsinp, (S.index(rsinp,0)+S.index(rsinp,1)):disablePipelining() )
 local reduceSumInt32_0cyc = C.sum( types.int(32), types.int(32),  types.int(32), true)
 
-local inp = R.input( darkroom.Handshake( types.uint(8) ) )
+local inp = R.input( R.Handshake( types.uint(8) ) )
 local out = R.apply("toint32", RM.makeHandshake(toint32), inp)
 local out = R.apply("rseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(reduceSumInt32_0cyc,1/DOWNSAMP)) ), out )
 local out = R.apply("touint8", RM.makeHandshake(touint8), out)

@@ -50,35 +50,35 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
   err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
 
   local ITYPE = inputType
-  if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
+  --if tapType~=nil then ITYPE = types.tuple{inputType,tapType} end
 
   local inpSymb = R.input( R.Handshake(ITYPE) )
   local inpdata
   local inptaps
 
-  if tapType==nil then
+--  if tapType==nil then
     inpdata = inpSymb
-  else
-    inpdata = R.apply("inpdata", RM.makeHandshake(C.index(ITYPE,0)), inpSymb)
-    inptaps = R.apply("inptaps", RM.makeHandshake(C.index(ITYPE,1)), inpSymb)
-  end
+--  else
+--    inpdata = R.apply("inpdata", RM.makeHandshake(C.index(ITYPE,0)), inpSymb)
+--    inptaps = R.apply("inptaps", RM.makeHandshake(C.index(ITYPE,1)), inpSymb)
+--  end
 
   local EC
   if type(earlyOverride)=="number" then
-    EC = earlyOverride
+    EC=earlyOverride
   else
     EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
   end
-
+  
   local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
 
   local hsfninp
 
-  if tapType==nil then
+--  if tapType==nil then
     hsfninp = inpdata
-  else
-    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{inpdata,inptaps}))
-  end
+--  else
+--    hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{inpdata,inptaps}))
+--  end
 
   -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
   -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port
@@ -178,18 +178,18 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
 
 end
 
-local function axiRateWrapper(fn, tapType)
-  err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
+local function axiRateWrapper(fn)
+  --err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
 
   R.expectHandshake(fn.inputType)
 
   local iover = R.extractData(fn.inputType)
-
-  if tapType~=nil then
-    -- taps have tap value packed into argument
-    assert(iover.list[2]==tapType)
-    iover = iover.list[1]
-  end
+  
+--  if tapType~=nil then
+--    -- taps have tap value packed into argument
+--    assert(iover.list[2]==tapType)
+--    iover = iover.list[1]
+--  end
 
   R.expectHandshake(fn.outputType)
   oover = R.extractData(fn.outputType)
@@ -216,8 +216,8 @@ return fn
   end
 
   local targetInputP = (64/iover:verilogBits())
-  err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP).." tapType:"..tostring(tapType))
-
+  err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP))
+  
   local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
   local out = inp
 
@@ -270,9 +270,9 @@ function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inpu
   local inputCount = (inputW*inputH)/inputT
   local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
 local cycleCountPixels = 128/8
-local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
+--local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
 io.output("out/"..filename..".axi.v")
-io.write(fnaxi:toVerilog())
+io.write(axifn:toVerilog())
 io.close()
 --------
 end
@@ -286,10 +286,10 @@ function guessP(ty, tapType)
   local ty = R.extractData(ty)
 
 
-  if tapType~=nil then
-      assert(ty.list[2]==tapType)
-      ty = ty.list[1]
-  end
+--  if tapType~=nil then
+--      assert(ty.list[2]==tapType)
+--      ty = ty.list[1]
+--  end
 
   local iover, inputP
 

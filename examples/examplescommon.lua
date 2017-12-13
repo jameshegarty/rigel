@@ -137,6 +137,41 @@ C.eq = memoize(function(ty)
 end)
 
 -----------------------------
+C.readTap = memoize(function(global)
+  local G = {}
+  G[global]=1
+  local out = RM.lift( "ReadTap_"..global.name, types.null(), global.type, 0,
+    function(sinp) return S.readSideChannel(global.systolicValue) end, nil, "C.readTap",nil,G)
+  return out
+end)
+
+-----------------------------
+C.valueToTrigger = memoize(function(ty)
+  return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
+    function(sinp) end, nil,"C.valueToTrigger")
+end)
+
+-----------------------------
+C.packTap = memoize(function(A,ty,global)
+  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,ty}, 0,
+    function(sinp) return S.tuple{sinp,S.readSideChannel(global.systolicValue)} end, nil,"C.packTap")
+end)
+
+-----------------------------
+C.packTapBroad = memoize(function(A,ty,global,N)
+  assert(types.isType(A))
+  assert(types.isType(ty))
+  assert(type(N)=="number")
+  assert(rigel.isGlobal(global))
+  
+  local tt = types.array2d(ty,N)
+  local G = {}
+  G[global]=1
+  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,types.array2d(ty,N)}, 0,
+    function(sinp) return S.tuple{sinp,S.cast(S.tuple(J.broadcast(S.readSideChannel(global.systolicValue),N)),tt)} end, nil,"C.packTap",nil,G)
+end)
+
+-----------------------------
 C.rcp = memoize(function(ty)
   err(types.isType(ty), "C.rcp error: input must be type")
   return f.parameter("finp",ty):rcp():toRigelModule("rcp_"..tostring(ty))
@@ -273,13 +308,16 @@ C.convolveTaps = memoize(function( A, ConvWidth, shift )
   if shift==nil then shift=7 end
 
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
-  local TAP_TYPE_CONST = TAP_TYPE:makeConst()
+---  local TAP_TYPE_CONST = TAP_TYPE:makeConst() XXX
+  local TAP_TYPE_CONST = TAP_TYPE
 
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
   local inp = R.input( INP_TYPE )
 
-  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp )
-  local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed )
+---  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp ) XXX
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), inp )
+---  local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed ) XXX
+  local conv = R.apply( "partial", RM.map( C.multiply(A,A, types.uint(32)), ConvWidth, ConvWidth ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
 
@@ -678,7 +716,9 @@ C.fifo = memoize(function(ty,size,X)
   
   local inp = R.input(R.Handshake(ty))
   local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size))}
-  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{R.applyMethod("l1",regs[1],"load"),R.applyMethod("s1",regs[1],"store",inp)}, regs, "C.fifo", {size=size} )
+  local st = R.applyMethod("s1",regs[1],"store",inp)
+  local ld = R.applyMethod("l1",regs[1],"load")
+  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 end)
 
 -------------

@@ -24,7 +24,7 @@ Rigel has two optional dependencies: Verilator and Terra. Verilator can be insta
 
 Which runs the pointwise example verilog through Verilator and produces an output image.
 
-Optionally installing terra enables our fast Terra simulator. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-02-26) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly. The terra simulator can then be run similarly to Verilator:
+Optionally installing terra enables our fast Terra simulator. You can download the Terra binary files on https://github.com/zdevito/terra/releases (tested with release-2016-03-25) or build it. You can clone the repository and build Terra using the instructions in the [Terra Readme](https://github.com/zdevito/terra). Run the REPL and make sure it installed correctly. The terra simulator can then be run similarly to Verilator:
 
     cd [rigel root]/examples
     make out/pointwise_wide_handshake.terra.bmp

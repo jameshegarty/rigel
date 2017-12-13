@@ -120,6 +120,10 @@ function types.tuple( list )
   err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
+  for _,v in ipairs(list) do
+    err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
+  end
+  
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
   --if #list==1 and types.isType(list[1]) then return list[1] end
@@ -330,10 +334,10 @@ function types.meet( a, b, op, loc)
     return thistype, thistype, thistype
   elseif a:isArray() and b:isArray()==false then
     -- we take scalar constants and duplicate them out to meet the other arguments array length
-    local thistype, lhstype, rhstype = types.meet( a, types.array( b,a :arrayLength() ), op, loc )
+    local thistype, lhstype, rhstype = types.meet( a, types.array2d( b, a:arrayLength()[1], a:arrayLength()[2]), op, loc )
     return thistype, lhstype, rhstype
   elseif a:isArray()==false and b:isArray() then
-    local thistype, lhstype, rhstype = types.meet( types.array(a, b:arrayLength() ), b, op, loc )
+    local thistype, lhstype, rhstype = types.meet( types.array2d(a, b:arrayLength()[1], b:arrayLength()[2] ), b, op, loc )
     return thistype, lhstype, rhstype
   elseif a:isNamed() and b:isNamed() then
     if op=="select" and a==b then

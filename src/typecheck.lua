@@ -85,7 +85,7 @@ local function typecheck_inner( ast, newNodeFn )
     local thistype, lhscast, rhscast = types.meet( lhs.type, rhs.type, ast.op, ast.loc )
     
     if thistype==nil then
-      darkroom.error("Type error, inputs to "..ast.op,origast:linenumber(), origast:offset(), origast:filename())
+      J.err(false, "Type error, meet error "..tostring(lhs.type).." "..tostring(rhs.type) )
     end
     
     if lhs.type~=lhscast then lhs = newNodeFn({kind="cast",inputs={lhs},type=lhscast,loc=debug.traceback()}) end
@@ -228,6 +228,8 @@ local function typecheck_inner( ast, newNodeFn )
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
       error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! "..ast.loc)
     end
+  elseif ast.kind=="readSideChannel" then
+    -- noop
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! "..ast.loc)
     return nil
@@ -256,7 +258,7 @@ return function( ast, newNodeFn )
     end
   end
 
-  if (ast.type:const()==false and allConstInput) then
+  if (ast.type:const()==false and allConstInput and #ast.inputs>0) then
     if ast.kind~="cast" then
       print("Lost constness?",ast.kind)
       assert(false)

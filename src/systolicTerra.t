@@ -14,6 +14,8 @@ function systolicASTFunctions:toTerra( symbols )
       
       if n.kind=="parameter" then
         res = symbols[n.name]
+      elseif n.kind=="constant" then
+        res = self.type:valueToTerra(n.value)
       elseif n.kind=="binop" then
         if n.op=="and" then
           res = `[args[1]] and [args[2]]
@@ -31,6 +33,12 @@ function systolicASTFunctions:toTerra( symbols )
           res = `[args[1]] << [args[2]]
         elseif n.op=="<" then
           res = `[args[1]] < [args[2]]
+        elseif n.op==">" then
+          res = `[args[1]] > [args[2]]
+        elseif n.op==">=" then
+          res = `[args[1]] >= [args[2]]
+        elseif n.op=="<=" then
+          res = `[args[1]] <= [args[2]]
         else
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
         end
@@ -89,7 +97,7 @@ function systolicASTFunctions:toTerra( symbols )
           -- cast tuple to array of same size
 	  -- ie {A,A,A} to A[3]
           local s = symbol(n.type:toTerraType())
-	  print("TARGET",s,n.type:toTerraType(),n.type,n.inputs[1].type)
+
           table.insert(stats,quote var [s] end)
           for k=0,n.type:channels()-1 do
             table.insert(stats, quote s[k] = [args[1]].["_"..k] end)
@@ -129,6 +137,8 @@ function systolicASTFunctions:toTerra( symbols )
         end
         table.insert(stats,q)
         res = s
+      elseif n.kind=="readSideChannel" then
+        res = `[n.sideChannel.global:terraValue()]
       else
         err(false,"Error, systolicAST:toTerra NYI:"..n.kind)
       end
