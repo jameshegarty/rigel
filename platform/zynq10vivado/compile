@@ -6,7 +6,6 @@ BUILDDIR=$3
 OUTFILE=$4
 
 mkdir -p $BUILDDIR
-pwd
 ../rigelLuajit ../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.wrapper.v ../../platform/
 cd $BUILDDIR
 echo "read_verilog $VERILOG_FILE.wrapper.v" > system.tcl
