@@ -712,14 +712,30 @@ modules.map = memoize(function( f, W, H )
 
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
+  res.globals={}
+  for k,_ in pairs(f.globals) do
+    err( k.direction=="input", "modules.map: mapped modules not allowed to write output globals")
+    res.globals[k] = 1
+  end
+  
   function res.makeSystolic()
-    local systolicModule= Ssugar.moduleConstructor(res.name)
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+
+    local SC = {}
+    for k,_ in pairs(f.globals) do
+      systolicModule:addSideChannel(k.systolicValue)
+      SC[k.systolicValue]=k.systolicValue
+      assert(S.isSideChannel(k.systolicValue))
+    end
+
+    assert(J.keycount(SC)==J.keycount(f.globals))
+    
     local inp = S.parameter("process_input", res.inputType )
     local out = {}
     local resetPipelines={}
     for y=0,H-1 do
       for x=0,W-1 do 
-        local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
+        local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y,nil,SC))
         table.insert( out, inst:process( S.index( inp, x, y ) ) )
         if f.stateful then
           table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
@@ -2348,19 +2364,28 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   res.stateful = f.stateful
   res.name = "MakeHandshake_"..f.name
 
+  res.globals={}
+  for k,_ in pairs(f.globals) do res.globals[k]=1 end
+  
   if terralib~=nil then res.terraModule = MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end
 
   function res.makeSystolic()
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
     local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
+    local SC = {}
+    for k,_ in pairs(f.globals) do
+      systolicModule:addSideChannel(k.systolicValue)
+      SC[k.systolicValue]=k.systolicValue
+    end
+    
     local outputCount
     if DARKROOM_VERBOSE then outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount") ) end
     
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
     local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name) )
-    local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
+    local inner = systolicModule:add(f.systolicModule:instantiate("inner",nil,SC))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())
     
@@ -2371,12 +2396,24 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     
     local outvalid
     local out
-    if res.inputType~=types.null() or nilhandshake==true then
+    if f.inputType==types.null() and f.outputType==types.null() and nilhandshake==true then
+      assert(false) -- NYI
+    elseif f.inputType==types.null() and nilhandshake==true then
+      outvalid = SR:pushPop( pinp, S.constant(true,types.bool()), CE)
+      out = S.tuple({inner:process(nil,pinp,CE), outvalid})
+    elseif f.inputType==types.null() and nilhandshake==false then
+      outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
+      --table.insert(pipelines,inner:process(nil,pinp,CE))
+      out = S.tuple({inner:process(nil,S.constant(true,types.bool()),CE), outvalid})
+    elseif f.outputType==types.null() and nilhandshake==true then
+      outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
+      out = outvalid
+      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), CE))
+    elseif f.outputType==types.null() and nilhandshake==false then
+      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), CE))
+    else
       outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), CE), outvalid})
-    else
-      outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
-      out = S.tuple({inner:process(nil, S.constant(true,types.bool()), CE), outvalid})
     end
     
     if DARKROOM_VERBOSE then
@@ -2411,9 +2448,9 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
     
-    if res.inputType==types.null() and nilhandshake~=true then
+    if res.inputType==types.null() and nilhandshake==false then
       systolicModule:addFunction( S.lambda("ready", pready, nil, "ready" ) )
-    elseif res.outputType==types.null() and nilhandshake~=true then
+    elseif res.outputType==types.null() and nilhandshake==false then
       systolicModule:addFunction( S.lambda("ready", S.parameter("r",types.null()), S.constant(true,types.bool()), "ready" ) )
     else
       systolicModule:addFunction( S.lambda("ready", pready, pready, "ready" ) )
@@ -2422,8 +2459,9 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     return systolicModule
   end
 
-  return rigel.newFunction(res)
-                                 end)
+  local out = rigel.newFunction(res)
+  return out
+end)
 
 
 -- promotes FIFO systolic module to handshake type.
@@ -2990,7 +3028,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if input~=nil and rigel.isStreaming(input.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
-        if n.kind=="input" or n.kind=="constant" then
+        if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
           return 0
         elseif n.kind=="concat" or n.kind=="concatArray2d" then
           return math.max(unpack(inputs))
@@ -3004,6 +3042,28 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end)
   end
 
+  -- collect the globals
+  res.globals = {}
+  res.globalMetadata = {}
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+          for g,_ in pairs(n.fn.globals) do
+            if g.direction=="output" then
+              err(res.globals[g]==false,"Error: wrote to an output global twice (apply)!")
+            end
+            res.globals[g] = 1
+          end
+
+          for k,v in pairs(n.fn.globalMetadata) do
+            err(res.globalMetadata[k]==nil,"Error: write to global metadata twice!")
+            res.globalMetadata[k] = v
+          end
+      elseif n.kind=="readGlobal" then
+        res.globals[n.global]=1
+      end
+    end)
+  
   if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
 
   if rigel.SDF then
@@ -3050,6 +3110,10 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire(onlyWire)
 
+    for g,_ in pairs(fn.globals) do
+      module:addSideChannel(g.systolicValue)
+    end
+    
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
@@ -3115,7 +3179,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             local value = i[1]
             local thisi = value[parentKey]
 
-            if rigel.isHandshake(n.type) then
+            if rigel.isHandshake(n.type) or rigel.isHandshakeTrigger(n.type) then
               assert(systolicAST.isSystolicAST(thisi))
               assert(thisi.type:isBool())
               
@@ -3126,7 +3190,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               end
             elseif n:outputStreams()>1 or rigel.isHandshakeArray(n.type) then
               assert(systolicAST.isSystolicAST(thisi))
-
+              
               if rigel.isHandshakeTmuxed(n.type) or rigel.isHandshakeArrayOneHot(n.type) then
                 assert(J.keycount(args)==1) -- NYI
                 input = thisi
@@ -3142,7 +3206,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
                   end
                   input = S.cast(S.tuple(r),types.array2d(types.bool(),n:outputStreams()))
                 end
-              end
+                end
             else
               --err(false,"no output streams? why is this getting a ready bit? "..n.loc)
               -- this is OK - fifo:store() for example has nil output
@@ -3152,6 +3216,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           if J.keycount(args)==0 then
             -- this is the output of the pipeline
             assert(readyinp==nil)
+            assert(n:parentCount(fn.output)==0)
             
             if n:outputStreams()==1 then
               readyinp = S.parameter( "ready_downstream", types.bool() )
@@ -3162,7 +3227,25 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             else
               print("Input to function had streams, but output has none? type: "..tostring(n.type))
               assert(false)
-            end            
+            end
+          else
+            -- if any downstream nodes are selectStream, they'd better all be selectStream, and the count had better match
+            local anySS = false
+            local allSS = true
+            for dsNode,_ in n:parents(fn.output) do
+              if dsNode.kind=="selectStream" then
+                anySS = true
+              else
+                allSS = false
+              end
+            end
+--            print("anySS",anySS,"allSS",allSS,n:parentCount(fn.output))
+            err( anySS==allSS,"If any consumers are selectStream, all consumers must be selectStream "..n.loc )
+            err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects "..tostring(n:outputStreams()).." stream readers, but only "..tostring(J.keycount(args)).." were found. "..n.loc )
+
+            if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
+              err(allSS,"Error, a multi-stream, multi-reader node is being consumed by something other than a selectStream? "..n.loc)
+            end
           end
           
           local res
@@ -3240,6 +3323,9 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             if rigel.isHandshake(i.type) then
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." (type "..tostring(i.type)..", name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
+            elseif rigel.isHandshakeTrigger(i.type) then
+              assert(#res==1)
+              assert(res[1].type:isBool())
             elseif i:outputStreams()>1 or rigel.isHandshakeArray(i.type) then
 
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
@@ -3286,7 +3372,7 @@ end
 -- makeSystolic: a lua function that returns the systolic implementation. 
 --      Input argument: systolic input value. Output: systolic output value, systolic instances table
 -- outputType, delay are optional, but will cause systolic to be built if they are missing!
-function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, X )
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, globals, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type" )
@@ -3295,23 +3381,37 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
   err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
   err( generatorStr==nil or type(generatorStr)=="string", "generatorStr must be nil or string")
+  err( globals==nil or type(globals)=="table","modules.lift: globals must be table")
   assert(X==nil)
 
   if sdfOutput==nil then sdfOutput = {{1,1}} end
 
   name = J.verilogSanitize(name)
 
-  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false, generator=generatorStr }
+  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput={{1,1}}, sdfOutput=sdfOutput, stateful=false, generator=generatorStr,globals={} }
 
+  if globals~=nil then
+    for g,_ in pairs(globals) do
+      assert(rigel.isGlobal(g))
+      res.globals[g]=1
+    end
+  end
+  
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
 
+    for g,_ in pairs(res.globals) do
+      systolicModule:addSideChannel(g.systolicValue)
+    end
+    
     local systolicInput = S.parameter( "inp", inputType )
 
-    local systolicOutput, systolicInstances = makeSystolic(systolicInput)
-    err( systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
+    local systolicOutput, systolicInstances
+    systolicOutput, systolicInstances = makeSystolic(systolicInput)
+    
+    err( (outputType==types.null() and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
 
-    if outputType~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
+    if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
       err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
     end
     

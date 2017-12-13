@@ -204,20 +204,24 @@ end
 rigelGlobalFunctions = {}
 rigelGlobalMT = {__index=rigelGlobalFunctions}
 
+-- direction is the direction of this signal on the top module:
+-- 'output' means this is an output of the top module. 'input' means its an input to the top module.
+-- we can't write to an 'output' global twice!
 function darkroom.newGlobal( name, direction, typeof, initValue )
   err( type(name)=="string", "newGlobal: name must be string" )
   err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
   err( types.isType(typeof), "newGlobal: type must be rigel type" )
   err( direction=="input" or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
 
-  err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof), "NYI - globals must be basic type or handshake")
+  err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
 
   local t = {name=name,direction=direction,type=typeof,initValue=initValue}
 
-  t.systolicValue = S.newGlobal( name, direction, darkroom.lower(typeof), initValue )
+  t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof),t )
 
   if darkroom.isHandshake(typeof) then
-    t.systolicReady = S.newGlobal( name.."_ready", J.sel(direction=="input","output","input"), types.bool(), false)
+    assert(false)
+--    t.systolicReady = S.newGlobal( name.."_ready", J.sel(direction=="input","output","input"), types.bool(), false)
   end
 
   return setmetatable(t,rigelGlobalMT)
@@ -237,6 +241,21 @@ darkroomFunctionMT={__index=function(tab,key)
     assert( rawget(tab, "makeSystolic")~=nil )
     local sm = rawget(tab,"makeSystolic")()
     assert(S.isModule(sm))
+
+    -- self check module matches format we expect
+    local A,B=0,0
+    if tab.globals~=nil then A=J.keycount(tab.globals) end
+    if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
+    err(A==B,"makeSystolic: side channels doesn't match globals")
+
+    if tab.registered==false then
+      err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
+          
+      if tab.outputType~=types.null() then
+        err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
+      end
+    end
+    
     rawset(tab,"systolicModule", sm )
     return sm
   end
@@ -318,7 +337,10 @@ function darkroom.newFunction(tab)
  
   if tab.inputType:isArray() or tab.inputType:isTuple() then assert(darkroom.isBasic(tab.inputType)) end
   if tab.outputType:isArray() or tab.outputType:isTuple() then assert(darkroom.isBasic(tab.outputType)) end
-    
+
+  if tab.globals==nil then tab.globals={} end
+  if tab.globalMetadata==nil then tab.globalMetadata={} end
+  
   return setmetatable( tab, darkroomFunctionMT )
 end
 
@@ -629,11 +651,21 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
-        err( n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+
+        if n.fn.outputType==types.null() then
+          err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+        else
+          err(n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+        end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
 
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,nil,nil) )
+        local SC = {}
+        for g,_ in pairs(n.fn.globals) do
+          SC[g.systolicValue] = g.systolicValue
+        end
+        
+        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
 
         if darkroom.isHandshake( n.fn.inputType ) or
           darkroom.isHandshakeArrayOneHot( n.fn.inputType ) or
@@ -676,6 +708,8 @@ function darkroomIRFunctions:codegenSystolic( module )
         return inputs[1]
       elseif n.kind=="selectStream" then
         return {S.index(inputs[1][1],n.i)}
+      elseif n.kind=="readGlobal" then
+        return {S.readSideChannel(n.global.systolicValue)}
       else
         print(n.kind)
         assert(false)

@@ -6,8 +6,9 @@ BUILDDIR=$3
 OUTFILE=$4
 
 mkdir -p $BUILDDIR
+../rigelLuajit ../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.wrapper.v ../../platform/
 cd $BUILDDIR
-echo "read_verilog $VERILOG_FILE" > system.tcl
+echo "read_verilog $VERILOG_FILE.wrapper.v" > system.tcl
 echo "read_xdc ../../../platform/vivado/zedboard_master_XDC_RevC_D_v3.xdc" >> system.tcl
 echo "read_xdc ../../../platform/vivado/ps7_constraints.xdc" >> system.tcl
 echo "synth_design -top stage -part xc7z020clg484-1" >> system.tcl
@@ -18,6 +19,8 @@ echo "route_design" >> system.tcl
 echo "write_bitstream -force system.bit" >> system.tcl
 echo "report_timing" >> system.tcl
 echo "report_timing_summary" >> system.tcl
+echo "report_utilization -hierarchical -file utilization_h.txt" >> system.tcl
+echo "report_utilization -file utilization.txt" >> system.tcl
 vivado -mode batch -source 'system.tcl' -nojournal -log 'vivado.log' > /dev/null
 cp system.bit $OUTFILE
                                           

@@ -4,6 +4,7 @@ local RS = require "rigelSimple"
 local types = require "types"
 local C = require "examplescommon"
 local P = {}
+local soc = require "soc"
 
 local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
   local id = #fifos
@@ -76,18 +77,24 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   assert(X==nil)
   
   local DATA_TYPE = types.array2d(A,internalT)
-  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()
-  local INP_TYPE = types.tuple{DATA_TYPE,TAP_TYPE}
+---  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth):makeConst()  XXX
+  local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth)
+  local INP_TYPE = DATA_TYPE
   local inp = R.input( R.Handshake(INP_TYPE) )
-  local inpL, inpR = RS.fanOut{input=inp, branches=2}
+  --local inpL, inpR = RS.fanOut{input=inp, branches=2}
   local borderValue = 0
 
   local fifos = {}
   local statements = {}
 
-  local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inpL)
-  local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inpR)
+  --local out = R.apply("idx0",RM.makeHandshake(C.index(INP_TYPE,0)),inpL)
+  --local tapinp = R.apply("idx1",RM.makeHandshake(C.index(INP_TYPE,1)),inpR)
 
+  -- TAPS REGRESSION
+  --out = R.apply("out0fifo",C.fifo(DATA_TYPE,2048),out)
+  --tapinp = R.apply("out1fifo",C.fifo(TAP_TYPE,2048),tapinp)
+
+  local out = inp
   local PadWidth = ConvWidth/2
   if PadWidth < internalT then PadWidth = internalT end
   local PadExtra = PadWidth-(ConvWidth/2)
@@ -123,11 +130,13 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
     end
   end
 
-  local st_tap_inp = R.apply( "broad", RM.makeHandshake(C.broadcast(TAP_TYPE,convT)), tapinp )
-  st_tap_inp = R.concat("sttapinp",{out,st_tap_inp})
-  st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
-  out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), st_tap_inp)
-
+  --local st_tap_inp = R.apply( "broad", RM.makeHandshake(C.broadcast(TAP_TYPE,convT)), tapinp )
+  --st_tap_inp = R.concat("sttapinp",{out,st_tap_inp})
+  --st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
+  out = R.apply("PT", RM.makeHandshake(C.packTapBroad(types.array2d(st_type,convT),TAP_TYPE,soc.taps,convT)), out)
+  out = R.apply("SOA",RM.makeHandshake(RM.SoAtoAoS(convT,1,{st_type,TAP_TYPE})),out)
+  out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), out)
+  
   if #statements>0 then
     table.insert(statements,1,out)
     return RM.lambda("pyramid"..i, inp, R.statements(statements), fifos )

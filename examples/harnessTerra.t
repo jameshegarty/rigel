@@ -5,6 +5,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local fixed = require "fixed"
 local types = require("types")
 local J = require "common"
+local soc = require "soc"
 
 local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapValue,outputFilename,outputType,id,harnessoption,ramFile)
   local out
@@ -18,11 +19,11 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
     out = R.apply( "fread", RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true), inpSymb )
     local hsfninp = out
   
-    if tapType~=nil then
-      local tapv = R.apply("tap",RM.makeHandshake(RM.constSeq({tapValue},tapType,1,1,1)))
-      tapv = R.apply("tapidx",RM.makeHandshake(C.index(types.array2d(tapType,1,1),0)),tapv)
-      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,tapv}))
-    end
+--    if tapType~=nil then
+--      local tapv = R.apply("tap",RM.makeHandshake(RM.constSeq({tapValue},tapType,1,1,1)))
+--      tapv = R.apply("tapidx",RM.makeHandshake(C.index(types.array2d(tapType,1,1),0)),tapv)
+--      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,tapv}))
+--    end
 
     if harnessoption==2 then
       dram = R.instantiateRegistered("dram", RM.dram( R.extractData(fn.inputType.list[2]),10,ramFile))
@@ -82,11 +83,16 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       callQ = quote m:process(&[valid_in],&[valid_out]) end
       incQ = quote if m.ready then incnt = incnt+1 end end
     end
-       
+
+    local setTap = quote end
+    if tapType~=nil then setTap = quote [soc.taps:terraValue()] = [tapType:valueToTerra(tapValue)] end end
 
     local terra dosim() 
-       if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
-       var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
+      if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end
+
+      setTap
+
+      var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
        m:init()
        m:reset();
 
@@ -97,15 +103,13 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
        while(cnt<outputCount) do
          m:calculateReady(true)
          var [valid_in] = (incnt < inputCount)
-         --[J.sel(inputType==types.null(),quote end, quote if m.ready then incnt = incnt+1 end end)]
+
          incQ
          var [valid_out]= false
---         [if inputType==types.null() then return quote m:process(&outValid) end else return quote m:process(&inValid,&outValid) end end]
-         --         m:process(&inValid,&outValid)
+
          callQ
          if valid_out then cnt=cnt+1 end
-         --cstdio.printf("SIM %d %d %d %d\n",valid_in,valid_out,incnt,cnt)
---         if inValid then cstdio.printf("IN_VALID\n") end
+
          cycles = cycles+1
        end
        
