@@ -30,7 +30,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
   #- sudo apt-get install luarocks
-  - pip install hererocks
+  - sudo pip install hererocks
   - hererocks lj -rlatest --luajit
   - source lj/bin/activate
   - sudo luarocks install luacov-coveralls
