@@ -34,7 +34,7 @@ before_install:
   - hererocks lj -rlatest -jlatest
   - source lj/bin/activate
   - luarocks install luacov-coveralls
-  
+  - luajit examples/pointwise_wise_handshake.lua
 
 
 script:
