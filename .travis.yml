@@ -31,7 +31,7 @@ before_install:
 
   #- sudo apt-get install luarocks
   - sudo pip install hererocks
-  - hererocks lj -rlatest --luajit
+  - hererocks lj -rlatest -jlatest
   - source lj/bin/activate
   - sudo luarocks install luacov-coveralls
   
