@@ -31,10 +31,9 @@ before_install:
 
   #- sudo apt-get install luarocks
   - sudo pip install hererocks
-  - hererocks here -rlatest -jlatest
-  #- source lj/bin/activate
+  - hererocks here -rlatest --$LUA
   - export PATH=$PATH:$PWD/here/bin
-  - echo $PATH
+  - eval `luarocks path --bin`
   - luarocks install luacov-coveralls
   - luajit examples/pointwise_wise_handshake.lua
 
@@ -55,6 +54,8 @@ env:
   - TARGET=terra
   - TARGET=unit
   - TARGET=axiverilog
+  - LUA="luajit @"
+  
 
 after_success:
   - luacov-coveralls
