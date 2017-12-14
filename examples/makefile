@@ -219,6 +219,7 @@ out/%.metadata.lua: %.lua
 
 out/%.v: %.lua
 	$(LUA) $< verilator
+	luacov-coveralls -v
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
