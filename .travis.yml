@@ -36,7 +36,7 @@ before_install:
   - export PATH=$PATH:$PWD/here/bin
   - eval `luarocks path --bin`
   - luarocks install luacov-coveralls
-  - luajit examples/pointwise_wise_handshake.lua
+  - $(LUA) examples/pointwise_wise_handshake.lua
 
 
 script:
