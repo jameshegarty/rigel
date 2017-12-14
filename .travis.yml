@@ -30,6 +30,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
   #- sudo apt-get install luarocks
+  - export LUA="luajit @"
   - sudo pip install hererocks
   - hererocks here -rlatest --$LUA
   - export PATH=$PATH:$PWD/here/bin
@@ -54,7 +55,6 @@ env:
   - TARGET=terra
   - TARGET=unit
   - TARGET=axiverilog
-  - LUA="luajit @"
   
 
 after_success:
