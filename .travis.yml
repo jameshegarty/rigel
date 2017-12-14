@@ -30,7 +30,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
   - sudo apt-get install luarocks
-  - luarocks install luacov-coveralls
+  - sudo luarocks install luacov-coveralls
   - eval `luarocks path --bin`
 
 script:
