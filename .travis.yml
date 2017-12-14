@@ -4,7 +4,7 @@ before_install:
   - sudo apt-get -qq update
 
   # luajit
-  #- sudo apt-get install luajit
+  - sudo apt-get install luajit
   #- sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
 
   # verilator
@@ -29,15 +29,9 @@ before_install:
 #  - make out/pointwise_wide_handshake.terra.correct.txt
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
-  #- sudo apt-get install luarocks
-  - export LUA="luajit @"
-  - sudo pip install hererocks
-  - hererocks here -rlatest --$LUA
-  - export PATH=$PATH:$PWD/here/bin
-  - eval `luarocks path --bin`
+  - sudo apt-get install luarocks
   - luarocks install luacov-coveralls
-  - $LUA examples/pointwise_wise_handshake.lua
-
+  - eval `luarocks path --bin`
 
 script:
 # early out on errors
@@ -55,7 +49,8 @@ env:
   - TARGET=terra
   - TARGET=unit
   - TARGET=axiverilog
-  
+
 
 after_success:
-  - luacov-coveralls
+  - luacov-coveralls -v
+  
