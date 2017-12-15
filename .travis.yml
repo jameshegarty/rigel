@@ -5,17 +5,12 @@ before_install:
 
   # luajit
   - sudo apt-get install luajit
-  #- sudo ln -s /usr/bin/luajit-2.0.0-beta9 /usr/bin/luajit
 
   # verilator
   - sudo apt-get install verilator
   - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
 
-
   #terra
-#  - wget https://github.com/zdevito/terra/releases/download/release-2016-02-26/terra-Linux-x86_64-2fa8d0a.zip
-#  - unzip terra-Linux-x86_64-2fa8d0a.zip
-#  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-2fa8d0a/bin/terra /usr/bin/terra
   - wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
   - unzip terra-Linux-x86_64-332a506.zip
   - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
@@ -25,23 +20,26 @@ before_install:
   - sudo apt-get -y update
   - sudo apt-get -y install libstdc++6-4.7-dev
 
-#  - cd examples
-#  - make out/pointwise_wide_handshake.terra.correct.txt
-#  - make out/pointwise_wide_handshake.verilator.correct.txt
+#for coveralls
+  - if [[ $TARGET = "unit" ]] || [[ $TARGET = "coverage" ]]; then sudo apt-get install luarocks; fi
+  - if [[ $TARGET = "unit" ]] || [[ $TARGET = "coverage" ]]; then sudo luarocks install luacov-coveralls; fi
+  - if [[ $TARGET = "unit" ]] || [[ $TARGET = "coverage" ]]; then eval `luarocks path --bin`; fi
 
 script:
-# early out on errors
+  # early out on errors
   - set -e
+  - if [[ $TARGET = "unit" ]]; then export LUA="../rigelLuajit -lluacov"; fi
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
-# check that make actually 100% completed, just to be really sure (?)
+  # check that make actually 100% completed, just to be really sure (?)
   - pwd
   - echo out/${TARGET}_done.txt
-#  - test -e out/{$TARGET}_done.txt
   - if [[ $TARGET != "unit" ]]; then test -e out/${TARGET}_done.txt || exit; fi
-
+  - if [[ $TARGET = "unit" ]]; then luacov-coveralls -v; fi
+  
 env:
   - TARGET=verilog
   - TARGET=verilator
   - TARGET=terra
   - TARGET=unit
   - TARGET=axiverilog
+  - TARGET=coverage
