@@ -17,6 +17,70 @@ local function readAll(file)
     return content
 end
 
+local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, earlyOverride)
+  local outputBytes = J.upToNearest(128,outputCount*8) -- round to axi burst
+  local inputBytes = J.upToNearest(128,inputCount*8) -- round to axi burst
+
+  err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts")
+  err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
+
+  local ITYPE = inputType
+
+  local inpSymb = R.input( R.Handshake(ITYPE) )
+  local inpdata
+  local inptaps
+
+  inpdata = inpSymb
+
+  local EC
+  if type(earlyOverride)=="number" then
+    EC=earlyOverride
+  else
+    EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
+  end
+  
+  local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+
+  local hsfninp
+
+  hsfninp = inpdata
+
+  -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
+  -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port
+  -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect).
+  -- The problem is intermittent.
+  local regs, out
+  local stats = {}
+  local EXTRA_FIFO = false
+
+  if EXTRA_FIFO then
+      regs = {R.instantiateRegistered("f1",RM.fifo(R.extractData(hsfn.inputType),256))}
+      stats[2] = R.applyMethod("s1",regs[1],"store",hsfninp)
+      hsfninp = R.applyMethod("l1",regs[1],"load")
+  end
+
+  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+
+  if EXTRA_FIFO then
+     regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
+     out = R.applyMethod("l2",regs[2],"load")
+     stats[3] = R.applyMethod("s2",regs[2],"store",pipelineOut)
+  else
+     out = pipelineOut
+  end
+
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
+  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
+  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/8 ), out)
+
+  if EXTRA_FIFO then
+     stats[1] = out
+     out = R.statements(stats)
+  end
+
+  return RM.lambda( "harnessaxi", inpSymb, out, regs )
+end
+
 --local baseTypeI = inputType
 --local baseTypeO = rigel.extractData(f.outputType)
 J.err(metadata.inputBitsPerPixel*metadata.inputP==64, "axi input must be 64 bits")
