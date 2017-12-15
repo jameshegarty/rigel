@@ -159,6 +159,9 @@ SRCS_ASIC = $(SRCS_VERILATOR)
 
 ASIC = $(patsubst %.lua, out/%.32nm.txt, $(SRCS_ASIC))
 
+COVERAGE_SRCS = pointwise_wide_handshake.lua convpadcrop_wide_handshake_4_1.lua conv_tr_handshake_4_4.lua campipe_128.lua downsample_2.lua filterseq.lua
+COVERAGE = $(patsubst %.lut,out/%.coverage.txt,$(COVERAGE_SRCS))
+
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
 RES += $(ISIM)
@@ -208,6 +211,8 @@ zynq100bits: $(AXIBITS100)
 
 asic: $(ASIC)
 
+coverage: $(COVERAGE)
+
 clean:
 	rm -Rf out/*
 
@@ -219,10 +224,14 @@ out/%.metadata.lua: %.lua
 
 out/%.v: %.lua
 	$(LUA) $< verilator
-	luacov-coveralls -v
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
+
+out/%.coverage.txt: %.lua
+	$(LUA) $< verilator
+	luacov-coveralls -v
+	touch $@
 
 out/%.terra.raw out/%_half.terra.raw: %.lua
 	$(TERRA) $< terra
