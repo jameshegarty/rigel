@@ -37,7 +37,7 @@ before_install:
 script:
 # early out on errors
   - set -e
-  - if [[ $TARGET = "unit" ]]; then export RIGEL="../luacovRigel -lluacov"; fi
+  - if [[ $TARGET = "unit" ]]; then export LUA="../rigelLuajit -lluacov"; fi
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
 # check that make actually 100% completed, just to be really sure (?)
   - pwd

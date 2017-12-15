@@ -13,7 +13,7 @@ TARGETS += $(patsubst %.lua,out/%.correct.txt,$(SRCS))
 
 CORES ?= 2
 
-RIGEL ?= ../rigelLuajit
+LUA ?= ../rigelLuajit
 
 all: $(TARGETS)
 
@@ -54,8 +54,8 @@ out/fixedtest.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terra
-	$(RIGEL) fwriteseq.lua verilog
-	$(RIGEL) fwriteseq.lua metadata
+	$(LUA) fwriteseq.lua verilog
+	$(LUA) fwriteseq.lua metadata
 
 out/fwriteseq.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseqtest.raw out/fwriteseqtestVerilog.raw > out/fwriteseqtest.diff
@@ -63,8 +63,8 @@ out/fwriteseq.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq16.compiles.txt: fwriteseq16.lua
 	../rigelTerra fwriteseq16.lua terra
-	$(RIGEL) fwriteseq16.lua verilog
-	$(RIGEL) fwriteseq16.lua metadata
+	$(LUA) fwriteseq16.lua verilog
+	$(LUA) fwriteseq16.lua metadata
 
 out/fwriteseq16.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/fwriteseq16testVerilog.raw > out/fwriteseq16test.diff
@@ -72,8 +72,8 @@ out/fwriteseq16.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq12.compiles.txt: fwriteseq12.lua
 	../rigelTerra fwriteseq12.lua terra
-	$(RIGEL) fwriteseq12.lua verilog
-	$(RIGEL) fwriteseq12.lua metadata
+	$(LUA) fwriteseq12.lua verilog
+	$(LUA) fwriteseq12.lua metadata
 
 out/fwriteseq12.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/dbg_terra_fwriteseq12.raw > out/fwriteseq12test.diff
@@ -82,8 +82,8 @@ out/fwriteseq12.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq18.compiles.txt: fwriteseq18.lua
 	../rigelTerra fwriteseq18.lua terra
-	$(RIGEL) fwriteseq18.lua verilog
-	$(RIGEL) fwriteseq18.lua metadata
+	$(LUA) fwriteseq18.lua verilog
+	$(LUA) fwriteseq18.lua metadata
 
 out/fwriteseq18.correct.txt: out/verilogcorrect.txt
 	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilog_fwriteseq18.raw > out/fwriteseq18test.diff
@@ -91,8 +91,8 @@ out/fwriteseq18.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq24.compiles.txt: fwriteseq24.lua
 	../rigelTerra fwriteseq24.lua terra
-	$(RIGEL) fwriteseq24.lua verilog
-	$(RIGEL) fwriteseq24.lua metadata
+	$(LUA) fwriteseq24.lua verilog
+	$(LUA) fwriteseq24.lua metadata
 
 out/fwriteseq24.correct.txt: out/verilogcorrect.txt
 	diff out/dbg_terra_fwriteseq24.raw out/dbg_verilog_fwriteseq24.raw > out/fwriteseq24test.diff
@@ -102,8 +102,8 @@ out/fwriteseq24.correct.txt: out/verilogcorrect.txt
 ###################
 out/fwriteseq37.compiles.txt: fwriteseq37.lua
 	../rigelTerra fwriteseq37.lua terra
-	$(RIGEL) fwriteseq37.lua verilog
-	$(RIGEL) fwriteseq37.lua metadata
+	$(LUA) fwriteseq37.lua verilog
+	$(LUA) fwriteseq37.lua metadata
 
 out/fwriteseq37.correct.txt: out/verilogcorrect.txt
 	diff out/dbg_terra_fwriteseq37.raw out/dbg_verilog_fwriteseq37.raw > out/fwriteseq37test.diff
