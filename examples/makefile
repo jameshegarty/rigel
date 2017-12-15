@@ -159,7 +159,7 @@ SRCS_ASIC = $(SRCS_VERILATOR)
 
 ASIC = $(patsubst %.lua, out/%.32nm.txt, $(SRCS_ASIC))
 
-COVERAGE_SRCS = pointwise_wide_handshake.lua convpadcrop_wide_handshake_4_1.lua conv_tr_handshake_4_4.lua campipe_128.lua downsamplex_wide_handshake_2.lua filterseq.lua downsampley_wide_handshake.lua padcrop_wide_handshake.lua shifty_wide_handshake.lua reduceseq_handshake.lua tmux_wide_handshake.lua upsample_wide_handshake_2.lua
+COVERAGE_SRCS = pointwise_wide_handshake.lua convpadcrop_wide_handshake_4_1.lua conv_tr_handshake_4_4.lua campipe_128.lua downsamplex_wide_handshake_2.lua filterseq.lua downsampley_wide_handshake.lua padcrop_wide_handshake.lua shifty_wide_handshake.lua reduceseq_handshake.lua tmux_wide_handshake.lua upsample_wide_handshake_2.lua 4bpp.lua 12bpp.lua fifo_wide_handshake_2.lua  fifo_wide_handshake_2_noloop.lua pad_wide_handshake.lua fifo_wide_handshake_bram.lua pyramid_tr_1.lua stereo_wide_handshake_tiny.lua
 COVERAGE = $(patsubst %.lua,out/%.coverage.txt,$(COVERAGE_SRCS))
 
 RES = $(TERRAOUT)
