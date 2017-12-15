@@ -229,7 +229,7 @@ out/%.v: %.lua
 	- cp out/$*.v out/build_$*
 
 out/%.coverage.txt: %.lua
-	../luacovRigel $< verilator
+	$(LUA) -lluacov $< verilator
 	luacov-coveralls -v
 	touch $@
 
