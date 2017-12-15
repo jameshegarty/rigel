@@ -21,7 +21,7 @@ out/verilogcorrect.txt: $(COMPILE_TARGETS)
 
 #################
 out/moduleparams.compiles.txt: moduleparams.lua
-	../rigelTerra moduleparams.lua
+	../rigelTerra $(COV) moduleparams.lua
 
 out/moduleparams.correct.txt: out/verilogcorrect.txt
 	# no extra checks

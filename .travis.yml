@@ -29,6 +29,7 @@ before_install:
 #  - make out/pointwise_wide_handshake.terra.correct.txt
 #  - make out/pointwise_wide_handshake.verilator.correct.txt
 
+#for coveralls
   - sudo apt-get install luarocks
   - sudo luarocks install luacov-coveralls
   - eval `luarocks path --bin`
@@ -36,6 +37,7 @@ before_install:
 script:
 # early out on errors
   - set -e
+  - if [[ $TARGET = "unit" ]]; then export COV=--lluacov; fi
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
 # check that make actually 100% completed, just to be really sure (?)
   - pwd
