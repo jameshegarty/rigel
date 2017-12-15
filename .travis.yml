@@ -44,7 +44,8 @@ script:
   - echo out/${TARGET}_done.txt
 #  - test -e out/{$TARGET}_done.txt
   - if [[ $TARGET != "unit" ]]; then test -e out/${TARGET}_done.txt || exit; fi
-
+  - if [[ $TARGET = "unit" ]]; then luacov-coveralls -v; fi
+  
 env:
   - TARGET=verilog
   - TARGET=verilator
@@ -53,6 +54,6 @@ env:
   - TARGET=axiverilog
 
 
-after_success:
-  - luacov-coveralls -v
+#after_success:
+#  - 
   
