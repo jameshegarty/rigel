@@ -1,6 +1,6 @@
 return {
   include = {
       "/home/travis/build/jameshegarty/rigel/src/.+$",
-      "/home/travis/build/jameshegarty/rigel/examplescommon.lua"
+      "/home/travis/build/jameshegarty/rigel/examples/examplescommon.lua"
   }
 }
