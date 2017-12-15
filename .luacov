@@ -1,5 +1,5 @@
 return {
   include = {
-      "/src$"
+      "/home/travis/build/jameshegarty/rigel/src/.+$"
   }
 }

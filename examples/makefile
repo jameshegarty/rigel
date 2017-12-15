@@ -212,6 +212,7 @@ zynq100bits: $(AXIBITS100)
 asic: $(ASIC)
 
 coverage: $(COVERAGE)
+	touch out/coverage_done.txt
 
 clean:
 	rm -Rf out/*
