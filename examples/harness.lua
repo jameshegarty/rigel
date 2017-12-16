@@ -227,13 +227,18 @@ function harnessTop(t)
 
     local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile}
 
-    assert(#fn.sdfInput==1)
-    assert(#fn.sdfOutput==1)
-    MD.sdfInputN = fn.sdfInput[1][1]
-    MD.sdfInputD = fn.sdfInput[1][2]
-    MD.sdfOutputN = fn.sdfOutput[1][1]
-    MD.sdfOutputD = fn.sdfOutput[1][2]
+    if fn.sdfInput~=nil then
+      assert(#fn.sdfInput==1)
+      MD.sdfInputN = fn.sdfInput[1][1]
+      MD.sdfInputD = fn.sdfInput[1][2]
+    end
 
+    if fn.sdfOutput~=nil then
+      assert(#fn.sdfOutput==1)
+      MD.sdfOutputN = fn.sdfOutput[1][1]
+      MD.sdfOutputD = fn.sdfOutput[1][2]
+    end
+    
     MD.earlyOverride=t.earlyOverride
     MD.underflowTest = t.underflowTest
     
