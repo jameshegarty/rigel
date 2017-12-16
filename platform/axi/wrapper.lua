@@ -1,5 +1,9 @@
 local rigel = require "rigel"
+local R = rigel
+local RM = require "modules"
 local J = require "common"
+local types = require "types"
+local C = require "examplescommon"
 
 local VERILOGFILE = arg[1]
 local METADATAFILE = arg[2]
@@ -17,20 +21,181 @@ local function readAll(file)
     return content
 end
 
+local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPercent)
+  assert(type(outputCount)=="number")
+  assert(type(slackPercent)=="number")
+
+  local EC_RAW = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
+  EC_RAW = math.ceil(EC_RAW)
+
+  if DARKROOM_VERBOSE then print("Expected cycles:",EC_RAW,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
+
+  local EC = math.floor(EC_RAW*slackPercent) -- slack
+  if underflowTest then EC = 1 end
+  return EC, EC_RAW
+end
+
+local function axiRateWrapper(fn)
+  R.expectHandshake(fn.inputType)
+
+  local iover = R.extractData(fn.inputType)
+
+  R.expectHandshake(fn.outputType)
+  oover = R.extractData(fn.outputType)
+
+  if iover:verilogBits()==64 and oover:verilogBits()==64 then
+return fn
+  end
+
+  local inputP
+  if iover:isArray() then
+    inputP = iover:channels()
+    iover = iover:arrayOver()
+  else
+    inputP = 1 -- just assume pointwise...
+  end
+
+
+  local outputP
+  if oover:isArray() then
+    outputP = oover:channels()
+    oover = oover:arrayOver()
+  else
+    outputP = 1
+  end
+
+  local targetInputP = (64/iover:verilogBits())
+  J.err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP))
+  
+  local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
+  local out = inp
+
+  if fn.inputType:verilogBits()~=64 then
+    out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
+  end
+
+  if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
+  out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
+  if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+
+  local targetOutputP = (64/oover:verilogBits())
+  J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
+
+  if fn.outputType:verilogBits()~=64 then
+    out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+  end
+
+  local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
+
+  J.err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
+  J.err( R.extractData(outFn.outputType):verilogBits()==64, "axi rate wrapper: failed to make output type 64 bit")
+
+  return outFn
+end
+
+local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, earlyOverride)
+  local outputBytes = J.upToNearest(128,outputCount*8) -- round to axi burst
+  local inputBytes = J.upToNearest(128,inputCount*8) -- round to axi burst
+
+  J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
+  J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
+
+  local ITYPE = inputType
+
+  local inpSymb = R.input( R.Handshake(R.extractData(ITYPE)) )
+  local inpdata
+  local inptaps
+
+  inpdata = inpSymb
+
+  local EC
+  if type(earlyOverride)=="number" then
+    EC=earlyOverride
+  else
+    EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
+  end
+  
+  local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+
+  local hsfninp
+
+  hsfninp = inpdata
+
+  -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
+  -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port
+  -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect).
+  -- The problem is intermittent.
+  local regs, out
+  local stats = {}
+  local EXTRA_FIFO = false
+
+  if EXTRA_FIFO then
+      regs = {R.instantiateRegistered("f1",RM.fifo(R.extractData(hsfn.inputType),256))}
+      stats[2] = R.applyMethod("s1",regs[1],"store",hsfninp)
+      hsfninp = R.applyMethod("l1",regs[1],"load")
+  end
+
+  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+
+  if EXTRA_FIFO then
+     regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
+     out = R.applyMethod("l2",regs[2],"load")
+     stats[3] = R.applyMethod("s2",regs[2],"store",pipelineOut)
+  else
+     out = pipelineOut
+  end
+
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
+  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
+  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/8 ), out)
+
+  if EXTRA_FIFO then
+     stats[1] = out
+     out = R.statements(stats)
+  end
+
+  return RM.lambda( "harnessaxi", inpSymb, out, regs ), inputBytes, outputBytes
+end
+
+
+------------------------------
+-- add axi harness
+local globals = {}
+if metadata.tapBits>0 then
+  globals[R.newGlobal("taps","input",types.uint(metadata.tapBits),0)] = 1
+end
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.uint(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.uint(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
+local hsfn = axiRateWrapper(hsfnorig)
+local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
+--print("IRATIO",iRatio,oRatio,metadata.inputP,metadata.outputP)
+local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputP)
+local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputP)
+local inputBytes, outputBytes
+hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
+------------------------------
+
 --local baseTypeI = inputType
 --local baseTypeO = rigel.extractData(f.outputType)
-J.err(metadata.inputBitsPerPixel*metadata.inputP==64, "axi input must be 64 bits")
-J.err(metadata.outputBitsPerPixel*metadata.outputP==64, "axi output must be 64 bits")
+--J.err(metadata.inputBitsPerPixel*metadata.inputP==64, "axi input must be 64 bits")
+--J.err(metadata.outputBitsPerPixel*metadata.outputP==64, "axi output must be 64 bits")
+
+J.err(R.extractData(hsfn.inputType):verilogBits()==64, "axi input must be 64 bits")
+J.err(R.extractData(hsfn.outputType):verilogBits()==64, "axi output must be 64 bits")
 
 local axiv = readAll("../platform/axi/axi.v")
 axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME","harnessaxi")
 
-local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
-local outputCount = (metadata.outputWidth*metadata.outputHeight)/metadata.outputP
+--local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
+--local outputCount = (metadata.outputWidth*metadata.outputHeight)/metadata.outputP
   
 -- input/output tokens are one axi bus transaction => they are 8 bytes
-local inputBytes = J.upToNearest(128,inputCount*8)
-local outputBytes = J.upToNearest(128,outputCount*8)
+--local inputBytes = J.upToNearest(128,inputCount*8)
+--local outputBytes = J.upToNearest(128,outputCount*8)
+assert(inputBytes%128==0)
+assert(outputBytes%128==0)
+--local inputBytes = inputCount*8
+--local outputBytes = outputCount*8
+
 axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
 -- extra 128 bytes is for the extra AXI burst that contains cycle count
 axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes+128)
@@ -50,7 +215,7 @@ else
   axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
 end
 
-verilogStr = readAll(VERILOGFILE)..readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
+verilogStr = (hsfn:toVerilog())..readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
 
 io.output(OUTFILE)
 io.write(verilogStr)

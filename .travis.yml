@@ -41,5 +41,5 @@ env:
   - TARGET=verilator
   - TARGET=terra
   - TARGET=unit
-  - TARGET=axiverilog
   - TARGET=coverage
+#  - TARGET=axiverilog

@@ -53,6 +53,8 @@ SRCS_VERILATOR := $(filter-out stereo_wide_handshake_medi.lua stereo_wide_handsh
 # NYI
 SRCS_VERILATOR := $(filter-out pad.lua crop.lua  stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS_VERILATOR))
 
+SRCS_VERILATOR := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_VERILATOR))
+
 VERILATOR = $(patsubst %.lua,out/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,out/%.verilator.raw,$(SRCS_VERILATOR))
 #VERILATOR += $(patsubst %.lua,out/%_half.raw,$(SRCS_VERILATOR))
@@ -312,8 +314,8 @@ PLATFORMDIRS = $(wildcard ../platform/*)
 AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
 
 define MyRule
-out/%.$(1).bit: out/%.axi.v out/%.metadata.lua
-	../platform/$(1)/compile $(shell pwd)/out/$$*.axi.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
+out/%.$(1).bit: out/%.v out/%.metadata.lua
+	../platform/$(1)/compile $(shell pwd)/out/$$*.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
 
 out/%.$(1).correct.txt : out/%.$(1).bmp
 	diff out/$$*.$(1).bmp gold/$$*.bmp > out/$$*.$(1).diff

@@ -3453,6 +3453,48 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, sdfInput, sdfOutput )
+  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
+  res.stateful = true
+  res.sdfInput=sdfInput
+  res.sdfOutput=sdfOutput
+
+  if globals~=nil then
+    res.globals = {}
+    for g,_ in pairs(globals) do
+      assert(rigel.isGlobal(g))
+      res.globals[g]=1
+    end
+  end
+  
+  function res.makeSystolic()
+    local fns = {}
+    local inp = S.parameter("process_input",rigel.lower(inputType))
+    local outv = rigel.lower(outputType):fakeValue()
+    fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
+
+    if rigel.isHandshake(inputType) and rigel.isHandshake(outputType) then
+      local rinp = S.parameter("ready_downstream",types.bool())
+      fns.ready = S.lambda( "ready", rinp, S.constant(false,types.bool()), "ready")
+    else
+      assert(false)
+    end
+
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
+
+    local SC = {}
+    if globals~=nil then
+      for g,_ in pairs(res.globals) do
+        SC[g.systolicValue] = 1
+      end
+    end
+    
+    return S.module.new(name,fns,{},true,nil,vstr,{process=0,ready=0},SC)
+  end
+  
+  return rigel.newFunction(res)
+end)
+
 modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
   err( J.keycount(value)==#value, "constSeq: value should be a lua array of values to shift through")
