@@ -3453,11 +3453,11 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, sdfInput, sdfOutput )
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
   res.stateful = true
-  res.sdfInput={{1,1}}
-  res.sdfOutput={{1,1}}
+  res.sdfInput=sdfInput
+  res.sdfOutput=sdfOutput
 
   if globals~=nil then
     res.globals = {}

@@ -226,6 +226,17 @@ function harnessTop(t)
     if harnessOption==nil then harnessOption=1 end
 
     local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputP=inputP, outputP=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile}
+
+    assert(#fn.sdfInput==1)
+    assert(#fn.sdfOutput==1)
+    MD.sdfInputN = fn.sdfInput[1][1]
+    MD.sdfInputD = fn.sdfInput[1][2]
+    MD.sdfOutputN = fn.sdfOutput[1][1]
+    MD.sdfOutputD = fn.sdfOutput[1][2]
+
+    MD.earlyOverride=t.earlyOverride
+    MD.underflowTest = t.underflowTest
+    
     if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
 
     writeMetadata("out/"..t.outFile..".metadata.lua", MD)

@@ -164,7 +164,7 @@ local globals = {}
 if metadata.tapBits>0 then
   globals[R.newGlobal("taps","input",types.uint(metadata.tapBits),0)] = 1
 end
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.uint(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.uint(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals)
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.uint(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.uint(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 --print("IRATIO",iRatio,oRatio,metadata.inputP,metadata.outputP)
