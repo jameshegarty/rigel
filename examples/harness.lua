@@ -103,71 +103,6 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
 
 end
 
-local function axiRateWrapper(fn)
-  --err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
-
-  R.expectHandshake(fn.inputType)
-
-  local iover = R.extractData(fn.inputType)
-  
---  if tapType~=nil then
---    -- taps have tap value packed into argument
---    assert(iover.list[2]==tapType)
---    iover = iover.list[1]
---  end
-
-  R.expectHandshake(fn.outputType)
-  oover = R.extractData(fn.outputType)
-
-  if iover:verilogBits()==64 and oover:verilogBits()==64 then
-return fn
-  end
-
-  local inputP
-  if iover:isArray() then
-    inputP = iover:channels()
-    iover = iover:arrayOver()
-  else
-    inputP = 1 -- just assume pointwise...
-  end
-
-
-  local outputP
-  if oover:isArray() then
-    outputP = oover:channels()
-    oover = oover:arrayOver()
-  else
-    outputP = 1
-  end
-
-  local targetInputP = (64/iover:verilogBits())
-  err( targetInputP==math.floor(targetInputP), "axiRateWrapper error: input type does not divide evenly into axi bus size ("..tostring(fn.inputType)..") iover:"..tostring(iover).." inputP:"..tostring(inputP))
-  
-  local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
-  local out = inp
-
-  if fn.inputType:verilogBits()~=64 then
-    out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
-  end
-
-  if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
-  out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-  if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
-
-  local targetOutputP = (64/oover:verilogBits())
-  err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
-
-  if fn.outputType:verilogBits()~=64 then
-    out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
-  end
-
-  local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
-
-  err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
-  err( R.extractData(outFn.outputType):verilogBits()==64, "axi rate wrapper: failed to make output type 64 bit")
-
-  return outFn
-end
 
 -- AXI must have T=8
 function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
@@ -237,9 +172,9 @@ function harnessTop(t)
   if backend==nil then backend = arg[1] end
   if backend==nil then backend = "verilog" end
 
-  if(backend=="axi") then
-    t.fn = axiRateWrapper(t.fn, t.tapType)
-  end
+--  if(backend=="axi") then
+--    t.fn = axiRateWrapper(t.fn, t.tapType)
+--  end
 
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
