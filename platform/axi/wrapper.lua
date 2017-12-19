@@ -79,7 +79,7 @@ return fn
   if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
 
   local targetOutputP = (64/oover:verilogBits())
-  J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
+  J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
 
   if fn.outputType:verilogBits()~=64 then
     out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
@@ -93,13 +93,16 @@ return fn
   return outFn
 end
 
-local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, earlyOverride)
-  local outputBytes = J.upToNearest(128,outputCount*8) -- round to axi burst
-  local inputBytes = J.upToNearest(128,inputCount*8) -- round to axi burst
+local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, inputType, earlyOverride)
+  local outputBytes = J.upToNearest(128,outputCountArg*8) -- round to axi burst
+  local inputBytes = J.upToNearest(128,inputCountArg*8) -- round to axi burst
 
-  J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
-  J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
+  --J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
+  --J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts, "..tostring(inputCount))
 
+  local inputCount = inputBytes/8
+  local outputCount = outputBytes/8
+  
   local ITYPE = inputType
 
   local inpSymb = R.input( R.Handshake(R.extractData(ITYPE)) )
@@ -135,8 +138,20 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
       hsfninp = R.applyMethod("l1",regs[1],"load")
   end
 
-  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+  out = hsfninp
 
+  -- crop down to correct size (from burst size)
+  if inputCount~=inputCountArg then
+    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount,1,R.extractData(hsfn.inputType):channels(),0,inputCount-inputCountArg,0,0))), out)
+  end
+  
+  local pipelineOut = R.apply("hsfna",hsfn,out)
+
+  -- pad up to burst size
+  if outputCount~=outputCountArg then
+    out = R.apply("burstpad", RM.liftHandshake((RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg,1,R.extractData(hsfn.inputType):channels(),0,outputCount-outputCountArg,0,0))), out)
+  end
+  
   if EXTRA_FIFO then
      regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
      out = R.applyMethod("l2",regs[2],"load")
@@ -182,7 +197,7 @@ hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metad
 J.err(R.extractData(hsfn.inputType):verilogBits()==64, "axi input must be 64 bits")
 J.err(R.extractData(hsfn.outputType):verilogBits()==64, "axi output must be 64 bits")
 
-local axiv = readAll("../platform/axi/axi.v")
+local axiv = readAll(PLATFORMDIR.."/axi/axi.v")
 axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME","harnessaxi")
 
 --local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
@@ -215,7 +230,7 @@ else
   axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
 end
 
-verilogStr = (hsfn:toVerilog())..readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
+verilogStr = (hsfn:toVerilog())..readAll(PLATFORMDIR.."/axi/ict106_axilite_conv.v")..readAll(PLATFORMDIR.."/axi/conf.v")..readAll(PLATFORMDIR.."/axi/dramreader.v")..readAll(PLATFORMDIR.."/axi/dramwriter.v")..axiv
 
 io.output(OUTFILE)
 io.write(verilogStr)

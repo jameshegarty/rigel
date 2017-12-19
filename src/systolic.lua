@@ -2309,6 +2309,8 @@ function systolic.module.file( filename, ty, CE, passthrough, X)
   assert(X==nil)
   assert(type(CE)=="boolean")
 
+  err(ty:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(ty)..") is not byte aligned. NYI. Use a cast!")
+  
   local res = {kind="file",filename=filename, type=ty, CE=CE, passthrough }
   res.functions={}
   res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="readOut",valid={name="read_valid"},CE=systolic.CE("CE")}

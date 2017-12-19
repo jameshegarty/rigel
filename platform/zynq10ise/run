@@ -10,17 +10,18 @@ METAFILE=$2
 OUTFILE=$3
 OUTPATH=$4
 
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-LUA=../rigelLuajit
+LUA=$DIR/../../rigelLuajit
 
 #out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
-IMG=$($LUA ../misc/extractMetadata.lua $METAFILE inputImage)
-INW=$($LUA ../misc/extractMetadata.lua $METAFILE inputWidth)
-INH=$($LUA ../misc/extractMetadata.lua $METAFILE inputHeight)
-BPP_IN=$($LUA ../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
-BPP_OUT=$($LUA ../misc/extractMetadata.lua $METAFILE outputBitsPerPixel)
-OUTW=$($LUA ../misc/extractMetadata.lua $METAFILE outputWidth)
-OUTH=$($LUA ../misc/extractMetadata.lua $METAFILE outputHeight)
+IMG=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputImage)
+INW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputWidth)
+INH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputHeight)
+BPP_IN=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
+BPP_OUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputBitsPerPixel)
+OUTW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputWidth)
+OUTH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputHeight)
 ###### SET THE CLOCK	
 #HZ=$(cat $OUTPATH.hz.txt)
 #lockfile /tmp/zynq10lock
@@ -30,7 +31,7 @@ OUTH=$($LUA ../misc/extractMetadata.lua $METAFILE outputHeight)
 #	sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
 ###### CLOCK STUFF END
 
-sshpass -p 'root' scp ../platform/axi/processimage $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
+sshpass -p 'root' scp $DIR/../axi/processimage $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat $ZYNQ_WRITE_PATH/$BITFILE_BASE > /dev/xdevcfg"
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage 805339136 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT "
 sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw $OUTFILE

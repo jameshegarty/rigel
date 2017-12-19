@@ -1,0 +1,25 @@
+#!/bin/bash
+
+BITFILE=$1
+BITFILE_BASE=$(basename $1)
+METAFILE=$2
+OUTFILE=$3
+OUTPATH=$4
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+LUA=$DIR/../../rigelLuajit
+
+INPUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputImage)
+OUTW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputWidth)
+OUTH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputHeight)
+OUTBPP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputBitsPerPixel)
+OUTP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputP)
+INW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputWidth)
+INH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputHeight)
+INBPP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
+INP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputP)
+TAPBITS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE tapBits)
+TAPVALUE=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE tapValue)
+
+$BITFILE $INPUT $OUTFILE $INW $INH $INBPP $INP $OUTW $OUTH $OUTBPP $OUTP $TAPBITS $TAPVALUE

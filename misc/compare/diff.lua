@@ -1,3 +1,4 @@
+local ffi = require "ffi"
 require "comparecommon"
 
 if type(arg[4])~="string" then

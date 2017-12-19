@@ -379,6 +379,8 @@ end
 function RS.harness(t) return harness(t) end
 
 function RS.modules.fwriteSeq(t)
+  err( R.isBasic(t.type),"fwriteSeq: type should be basic")
+  
   -- file write only support byte aligned, so make a wrapper that casts up
   if t.type:isBool() then
       -- special case: write out bools as 255 or 0 to make it easy to look @ the file
@@ -388,6 +390,8 @@ function RS.modules.fwriteSeq(t)
       local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
       return RS.defineModule{input=inp,output=out}
   elseif t.type:toCPUType()~=t.type then
+    err( t.type:isArray()==false and t.type:isTuple()==false,"fwriteSeq: NYI - aggregate types ("..tostring(t.type).."). use a cast")
+
     local inp = RS.input(t.type)
 
     local out, fwritetype

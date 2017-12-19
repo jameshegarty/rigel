@@ -777,7 +777,7 @@ function TypeFunctions:toCPUType()
     end
   elseif self:isArray() then
     local sz = self:arrayLength()
-    return types.array2d(self:arrayOver(),sz[1],sz[2])
+    return types.array2d(self:arrayOver():toCPUType(),sz[1],sz[2])
   elseif self:isTuple() then
     local l = {}
     for _,v in pairs(self.list) do table.insert(l, v:toCPUType()) end

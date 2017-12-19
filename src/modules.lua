@@ -461,9 +461,9 @@ modules.liftDecimate = memoize(function(f)
 
   if rigel.isV(f.outputType) then
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
-  elseif f.outputType:isTuple() and #f.outputType.list==2 and f.outputType.list[2]==types.bool() then
+--  elseif f.outputType:isTuple() and #f.outputType.list==2 and f.outputType.list[2]==types.bool() then
     -- "looks like" a V
-    res.outputType = rigel.RV(f.outputType.list[1])
+--    res.outputType = rigel.RV(f.outputType.list[1])
   else
     err(false, "expected V output type")
   end
@@ -954,7 +954,7 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
   local sbits = math.log(scale)/math.log(2)
 
   local inputType = types.array2d(A,T)
-  local outputType = types.tuple{inputType,types.bool()}
+  local outputType = rigel.V(inputType)
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
@@ -998,7 +998,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
   else err(false,"T%scale~=0 and scale<T") end
 
   local inputType = types.array2d(A,T)
-  local outputType = types.tuple{types.array2d(A,outputT),types.bool()}
+  local outputType = rigel.V(types.array2d(A,outputT))
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
@@ -1751,6 +1751,7 @@ end
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( types.isType(A), "cropSeq: type must be rigel type ")
+  err( rigel.isBasic(A),"cropSeq: expects basic type")
   err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
   err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
   err( type(T)=="number", "cropSeq: T must be number"); err(T>=0, "cropSeq: T must be >=0")
@@ -1769,8 +1770,11 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
+  err( W<math.pow(2,16), "cropSeq: width too large!")
+  err( H<math.pow(2,16), "cropSeq: height too large!")
+  
   local inputType = types.array2d(A,T)
-  local outputType = types.tuple{inputType,types.bool()}
+  local outputType = rigel.V(inputType)
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
@@ -3412,7 +3416,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     err( (outputType==types.null() and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
 
     if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
-      err( systolicOutput.type:constSubtypeOf(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+      err( systolicOutput.type:constSubtypeOf(rigel.lower(outputType)), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
     end
     
     if systolicInstances~=nil then
