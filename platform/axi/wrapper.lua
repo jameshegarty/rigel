@@ -142,14 +142,16 @@ local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, i
 
   -- crop down to correct size (from burst size)
   if inputCount~=inputCountArg then
-    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount,1,R.extractData(hsfn.inputType):channels(),0,inputCount-inputCountArg,0,0))), out)
+    local T = R.extractData(hsfn.inputType):channels()
+    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount*T,1,T,0,(inputCount-inputCountArg)*T,0,0))), out)
   end
   
   local pipelineOut = R.apply("hsfna",hsfn,out)
 
   -- pad up to burst size
   if outputCount~=outputCountArg then
-    out = R.apply("burstpad", RM.liftHandshake((RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg,1,R.extractData(hsfn.inputType):channels(),0,outputCount-outputCountArg,0,0))), out)
+    local T = R.extractData(hsfn.outputType):channels()
+    out = R.apply("burstpad", RM.liftHandshake((RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg*T,1,T,0,(outputCount-outputCountArg)*T,0,0))), out)
   end
   
   if EXTRA_FIFO then

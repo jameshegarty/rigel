@@ -1645,17 +1645,20 @@ modules.broadcastStream = memoize(function(A,N,X)
 end)
 
 -- output type: {uint16,uint16}[T]
-modules.posSeq = memoize(function( W, H, T )
+modules.posSeq = memoize(function( W, H, T, bits, X )
   err(type(W)=="number","posSeq: W must be number")
   err(type(H)=="number","posSeq: H must be number")
   err(type(T)=="number","posSeq: T must be number")
   err(W>0, "posSeq: W must be >0");
   err(H>0, "posSeq: H must be >0");
   err(T>=1, "posSeq: T must be >=1");
-                           
+  if bits==nil then bits=16 end
+  err( type(bits)=="number", "posSeq: bits should be number")
+  err(X==nil, "posSeq: too many arguments")
+
   local res = {kind="posSeq", T=T, W=W, H=H }
   res.inputType = types.null()
-  res.outputType = types.array2d(types.tuple({types.uint(16),types.uint(16)}),T)
+  res.outputType = types.array2d(types.tuple({types.uint(bits),types.uint(bits)}),T)
   res.stateful = true
   res.sdfInput, res.sdfOutput = {},{{1,1}}
   res.delay = 0
@@ -1665,20 +1668,20 @@ modules.posSeq = memoize(function( W, H, T )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), W-T, T ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
-    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-T, T ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
+    local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
 
     local printInst
 
     if DARKROOM_VERBOSE then 
-      printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16)}, "x %d y %d", true):instantiate("printInst") ) 
+      printInst = systolicModule:add( S.module.print( types.tuple{types.uint(bits),types.uint(bits)}, "x %d y %d", true):instantiate("printInst") ) 
     end
     
-    local incY = S.eq( posX:get(), S.constant(W-T,types.uint(16))  ):disablePipelining()
+    local incY = S.eq( posX:get(), S.constant(W-T,types.uint(bits))  ):disablePipelining()
     
     local out = {S.tuple{posX:get(),posY:get()}}
     for i=1,T-1 do
-      table.insert(out, S.tuple{posX:get()+S.constant(i,types.uint(16)),posY:get()})
+      table.insert(out, S.tuple{posX:get()+S.constant(i,types.uint(bits)),posY:get()})
     end
     
     local CE = S.CE("CE")
@@ -1687,7 +1690,7 @@ modules.posSeq = memoize(function( W, H, T )
     table.insert( pipelines, posY:setBy( incY ) )
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{posX:get(),posY:get()}) ) end
 
-    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(16),types.uint(16)},T)), "process_output", pipelines, nil, CE ) )
+    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(bits),types.uint(bits)},T)), "process_output", pipelines, nil, CE ) )
 
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:reset(), posY:reset()}, S.parameter("reset",types.bool())) )
 
@@ -1703,22 +1706,20 @@ end)
 -- and drives the first tuple with (x,y) coord
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
-modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, X )
+modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, bits, X )
   err( type(name)=="string", "liftXYSeq: name must be string" )
   err( type(generatorStr)=="string", "liftXYSeq: generatorStr must be string" )
   err( rigel.isFunction(f), "liftXYSeq: f must be function")
   err( type(W)=="number", "liftXYSeq: W must be number")
   err( type(H)=="number", "liftXYSeq: H must be number")
   err( type(T)=="number", "liftXYSeq: T must be number")
+  if bits==nil then bits=16 end
+  err( type(bits)=="number", "liftXYSeq: bits must be number or nil")
   err( X==nil, "liftXYSeq: too many arguments")
 
   local inputType = f.inputType.list[2]
-
   local inp = rigel.input( inputType )
-
-  local p = rigel.apply("p", modules.posSeq(W,H,T) )
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
-
+  local p = rigel.apply("p", modules.posSeq(W,H,T,bits) )
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
   return modules.lambda( "liftXYSeq_"..name, inp, out,nil,generatorStr )
 end)
@@ -1770,12 +1771,14 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
-  err( W<math.pow(2,16), "cropSeq: width too large!")
-  err( H<math.pow(2,16), "cropSeq: height too large!")
+  local BITS = 32
+
+  err( W<math.pow(2,BITS), "cropSeq: width too large!")
+  err( H<math.pow(2,BITS), "cropSeq: height too large!")
   
   local inputType = types.array2d(A,T)
   local outputType = rigel.V(inputType)
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local xyType = types.array2d(types.tuple{types.uint(BITS),types.uint(BITS)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
   local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top))
@@ -1784,8 +1787,8 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
     function(sinp)
       local sdata = S.index(sinp,1)
       local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
-      local sL,sB = S.constant(L,types.uint(16)),S.constant(B,types.uint(16))
-      local sWmR,sHmTop = S.constant(W-R,types.uint(16)),S.constant(H-Top,types.uint(16))
+      local sL,sB = S.constant(L,types.uint(BITS)),S.constant(B,types.uint(BITS))
+      local sWmR,sHmTop = S.constant(W-R,types.uint(BITS)),S.constant(H-Top,types.uint(BITS))
       
       -- verilator lint workaround
       local lbcheck
@@ -1810,7 +1813,7 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
     end, nil,
     {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
-  return modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T  )
+  return modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T, BITS )
 end)
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
