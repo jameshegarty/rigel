@@ -625,7 +625,8 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 end
 
 -- takes V->RV to Handshake->Handshake
-modules.liftHandshake = memoize(function(f)
+modules.liftHandshake = memoize(function( f, X )
+  err( X==nil, "liftHandshake: too many arguments" )
   local res = {kind="liftHandshake", fn=f}
   rigel.expectV(f.inputType)
   rigel.expectRV(f.outputType)
@@ -1662,7 +1663,7 @@ modules.posSeq = memoize(function( W, H, T, bits, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = {},{{1,1}}
   res.delay = 0
-  res.name = "PosSeq_W"..W.."_H"..H.."_T"..T
+  res.name = sanitize("PosSeq_W"..W.."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T) end
 
@@ -1853,7 +1854,7 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
+modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
   err( types.isType(A), "A must be a type")
 
   err( A~=nil, "padSeq A==nil" )
@@ -1865,6 +1866,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value )
   err( B~=nil, "padSeq B==nil" )
   err( Top~=nil, "padSeq Top==nil" )
   err( Value~=nil, "padSeq Value==nil" )
+  err( X==nil, "padSeq: too many arguments" )
   
   J.map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k)
         err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 

@@ -151,7 +151,7 @@ local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, i
   -- pad up to burst size
   if outputCount~=outputCountArg then
     local T = R.extractData(hsfn.outputType):channels()
-    out = R.apply("burstpad", RM.liftHandshake((RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg*T,1,T,0,(outputCount-outputCountArg)*T,0,0))), out)
+    pipelineOut = R.apply("burstpad", RM.liftHandshake(RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg*T,1,T,0,(outputCount-outputCountArg)*T,0,0, R.extractData(hsfn.outputType):arrayOver():fakeValue() )), pipelineOut)
   end
   
   if EXTRA_FIFO then
