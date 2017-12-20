@@ -135,19 +135,34 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
       hsfninp = R.applyMethod("l1",regs[1],"load")
   end
 
-  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+  -- crop down to correct size (from burst size)
+  if inputCount~=inputCountArg then
+    local T = R.extractData(hsfn.inputType):channels()
+    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount*T,1,T,0,(inputCount-inputCountArg)*T,0,0))), out)
+  end
+  
+  out = R.apply("hsfna",hsfn,out)
 
+  assert( R.extractData(hsfn.outputType):verilogBits()==64 )
+
+  local CYCLES_BURST = 16
+  print("OUTTYPE",hsfn.outputType)
+  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputCountArg ), out)
+
+  -- pad up to burst size
+  if outputCount~=outputCountArg then
+    local T = R.extractData(hsfn.outputType):channels()
+    out = R.apply("burstpad", RM.liftHandshake(RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), (outputCountArg+CYCLES_BURST)*T,1,T,0,(outputCount-outputCountArg)*T,0,0, R.extractData(hsfn.outputType):arrayOver():fakeValue() )), out)
+  end
+  
   if EXTRA_FIFO then
      regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
      out = R.applyMethod("l2",regs[2],"load")
-     stats[3] = R.applyMethod("s2",regs[2],"store",pipelineOut)
-  else
-     out = pipelineOut
+     stats[3] = R.applyMethod("s2",regs[2],"store",out)
   end
 
-  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
-  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), outputBytes/8, EC, false ), out)
-  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputBytes/8 ), out)
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount+CYCLES_BURST))), out)
+  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), (outputBytes/8)+CYCLES_BURST, EC, false ), out)
 
   if EXTRA_FIFO then
      stats[1] = out

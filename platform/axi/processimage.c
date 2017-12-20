@@ -120,16 +120,19 @@ int main(int argc, char *argv[]) {
   printf("file LEN %d\n",lenInRaw);
   
   unsigned int lenIn = lenInRaw;
-  unsigned int lenOut = outputW*outputH*outputBytesPerPixel;
+  // include extra axi burst of cycle count
+  unsigned int lenOutRaw = outputW*outputH*outputBytesPerPixel+128;
+  unsigned int lenOut = lenOutRaw;
 
   if (lenIn%(8*16)!=0){
     lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
   }
 
-  // extra axi burst of metadata
-  lenOut = lenOut + 128;
+  if (lenOutRaw%(8*16)!=0){
+    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+  }
 
-  printf("LENOUT %d\n", lenOut);
+  printf("LENOUT %d, LENOUTRAW:%d\n", lenOut,lenOutRaw);
   assert(lenIn % (8*16) == 0);
   printf("LENIN %d\n",lenIn);
   assert(lenOut % (8*16) == 0);

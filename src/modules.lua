@@ -2842,6 +2842,8 @@ end)
 
 
 -- record the # of cycles needed to complete the computation, and write it into the last axi burst
+-- Note that this module _does_not_ wait until it sees the first token to start counting. It
+--    starts counting immediately after reset. This is so that it includes startup latency in cycle count.
 modules.cycleCounter = memoize(function( A, count )
   rigel.expectBasic(A)
   assert(type(count)=="number")
