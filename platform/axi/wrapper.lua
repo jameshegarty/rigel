@@ -76,15 +76,27 @@ return fn
 
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-  if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
 
-  local targetOutputP = (64/oover:verilogBits())
-  J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
+  if outputP==1 and oover:verilogBits()>64 then
+    -- we're writing a huge sized output
+    J.err( oover:verilogBits()%64==0, "output bitwidth is not divisible by bus width (64)")
+    local divs = oover:verilogBits() / 64
 
-  if fn.outputType:verilogBits()~=64 then
-    out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+--    out = R.apply("cast1",RM.makeHandshake(C.cast(oover,types.bits(oover:verilogBits()))), out)
+    out = R.apply("cast",RM.makeHandshake(C.cast(types.bits(oover:verilogBits()),types.array2d(types.bits(64),divs))), out)
+    out = R.apply("down",RM.liftHandshake(RM.changeRate(types.bits(64),1,divs,1)),out)
+  else
+    if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+    
+    local targetOutputP = (64/oover:verilogBits())
+    J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
+    
+    if fn.outputType:verilogBits()~=64 then
+      out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+    end
+
   end
-
+  
   local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
 
   J.err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
@@ -179,9 +191,9 @@ end
 -- add axi harness
 local globals = {}
 if metadata.tapBits>0 then
-  globals[R.newGlobal("taps","input",types.uint(metadata.tapBits),0)] = 1
+  globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
 end
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.uint(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.uint(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 --print("IRATIO",iRatio,oRatio,metadata.inputP,metadata.outputP)
