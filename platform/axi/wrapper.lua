@@ -76,15 +76,27 @@ return fn
 
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
-  if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
 
-  local targetOutputP = (64/oover:verilogBits())
-  J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type does not divide evenly into axi bus size")
+  if outputP==1 and oover:verilogBits()>64 then
+    -- we're writing a huge sized output
+    J.err( oover:verilogBits()%64==0, "output bitwidth is not divisible by bus width (64)")
+    local divs = oover:verilogBits() / 64
 
-  if fn.outputType:verilogBits()~=64 then
-    out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+--    out = R.apply("cast1",RM.makeHandshake(C.cast(oover,types.bits(oover:verilogBits()))), out)
+    out = R.apply("cast",RM.makeHandshake(C.cast(types.bits(oover:verilogBits()),types.array2d(types.bits(64),divs))), out)
+    out = R.apply("down",RM.liftHandshake(RM.changeRate(types.bits(64),1,divs,1)),out)
+  else
+    if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+    
+    local targetOutputP = (64/oover:verilogBits())
+    J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
+    
+    if fn.outputType:verilogBits()~=64 then
+      out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+    end
+
   end
-
+  
   local outFn =  RM.lambda("hsfnAxiRateWrapper",inp,out)
 
   J.err( R.extractData(outFn.inputType):verilogBits()==64, "axi rate wrapper: failed to make input type 64 bit (originally "..tostring(fn.inputType)..")")
@@ -93,13 +105,16 @@ return fn
   return outFn
 end
 
-local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputType, earlyOverride)
-  local outputBytes = J.upToNearest(128,outputCount*8) -- round to axi burst
-  local inputBytes = J.upToNearest(128,inputCount*8) -- round to axi burst
+local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, inputType, earlyOverride)
+  local outputBytes = J.upToNearest(128,outputCountArg*8) -- round to axi burst
+  local inputBytes = J.upToNearest(128,inputCountArg*8) -- round to axi burst
 
-  J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
-  J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts")
+  --J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
+  --J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts, "..tostring(inputCount))
 
+  local inputCount = inputBytes/8
+  local outputCount = outputBytes/8
+  
   local ITYPE = inputType
 
   local inpSymb = R.input( R.Handshake(R.extractData(ITYPE)) )
@@ -135,8 +150,22 @@ local function harnessAxi( hsfn, inputCount, outputCount, underflowTest, inputTy
       hsfninp = R.applyMethod("l1",regs[1],"load")
   end
 
-  local pipelineOut = R.apply("hsfna",hsfn,hsfninp)
+  out = hsfninp
 
+  -- crop down to correct size (from burst size)
+  if inputCount~=inputCountArg then
+    local T = R.extractData(hsfn.inputType):channels()
+    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount*T,1,T,0,(inputCount-inputCountArg)*T,0,0))), out)
+  end
+  
+  local pipelineOut = R.apply("hsfna",hsfn,out)
+
+  -- pad up to burst size
+  if outputCount~=outputCountArg then
+    local T = R.extractData(hsfn.outputType):channels()
+    pipelineOut = R.apply("burstpad", RM.liftHandshake(RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), outputCountArg*T,1,T,0,(outputCount-outputCountArg)*T,0,0, R.extractData(hsfn.outputType):arrayOver():fakeValue() )), pipelineOut)
+  end
+  
   if EXTRA_FIFO then
      regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
      out = R.applyMethod("l2",regs[2],"load")
@@ -162,9 +191,9 @@ end
 -- add axi harness
 local globals = {}
 if metadata.tapBits>0 then
-  globals[R.newGlobal("taps","input",types.uint(metadata.tapBits),0)] = 1
+  globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
 end
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.uint(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.uint(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 --print("IRATIO",iRatio,oRatio,metadata.inputP,metadata.outputP)
@@ -182,7 +211,7 @@ hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metad
 J.err(R.extractData(hsfn.inputType):verilogBits()==64, "axi input must be 64 bits")
 J.err(R.extractData(hsfn.outputType):verilogBits()==64, "axi output must be 64 bits")
 
-local axiv = readAll("../platform/axi/axi.v")
+local axiv = readAll(PLATFORMDIR.."/axi/axi.v")
 axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME","harnessaxi")
 
 --local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
@@ -215,7 +244,7 @@ else
   axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
 end
 
-verilogStr = (hsfn:toVerilog())..readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
+verilogStr = (hsfn:toVerilog())..readAll(PLATFORMDIR.."/axi/ict106_axilite_conv.v")..readAll(PLATFORMDIR.."/axi/conf.v")..readAll(PLATFORMDIR.."/axi/dramreader.v")..readAll(PLATFORMDIR.."/axi/dramwriter.v")..axiv
 
 io.output(OUTFILE)
 io.write(verilogStr)

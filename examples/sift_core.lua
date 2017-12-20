@@ -276,14 +276,14 @@ local function siftKernel(dxdyType)
   local descFn, descType = siftDescriptor(dxdyType)
   local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
-  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),1/16)),"BUCKET"),desc)
+  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),1/16))),desc)
 
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
   -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
   local desc = C.fifoLoop(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
 
-  local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1),"CR"),desc)
+  local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1)),desc)
   local desc = R.apply("upidx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc)
 
   -- sum and normalize the descriptors
