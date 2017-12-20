@@ -132,22 +132,20 @@ local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, i
   
   local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
 
-  local hsfninp
-
-  hsfninp = inpdata
+  local out = inpdata
 
   -- add a FIFO to all pipelines. Some user's pipeline may not have any FIFOs in them.
   -- you would think it would be OK to have no FIFOs, but for some reason, sometimes wiring the AXI read port and write port
   -- directly won't work. The write port ready seizes up (& the underflow_US is needed to prevent deadlock, but then the image is incorrect).
   -- The problem is intermittent.
-  local regs, out
+  local regs
   local stats = {}
   local EXTRA_FIFO = false
 
   if EXTRA_FIFO then
       regs = {R.instantiateRegistered("f1",RM.fifo(R.extractData(hsfn.inputType),256))}
-      stats[2] = R.applyMethod("s1",regs[1],"store",hsfninp)
-      hsfninp = R.applyMethod("l1",regs[1],"load")
+      stats[2] = R.applyMethod("s1",regs[1],"store",out)
+      out = R.applyMethod("l1",regs[1],"load")
   end
 
   -- crop down to correct size (from burst size)
