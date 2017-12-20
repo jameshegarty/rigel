@@ -124,6 +124,7 @@ int main(int argc, char *argv[]) {
   unsigned int lenOutRaw = outputW*outputH*outputBytesPerPixel+128;
   unsigned int lenOut = lenOutRaw;
 
+  // HW pads to next largest axi burst size (128 bytes)
   if (lenIn%(8*16)!=0){
     lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
   }
@@ -175,7 +176,7 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
-  saveImage(argv[3],ptr+lenIn,lenOut);
+  saveImage(argv[3],ptr+lenIn,lenOutRaw);
 
   munmap( gpioptr, page_size );
   munmap( ptr, lenIn+lenOut );

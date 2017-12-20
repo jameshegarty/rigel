@@ -345,6 +345,13 @@ function types.meet( a, b, op, loc)
     else
       err(false,"NYI - meet of two named types "..tostring(a).." "..tostring(b))
     end
+  elseif a:isBits() and b:isBits() then
+    if op=="select" then
+      err(a==b,"Select with bits must match precision")
+      return a,a,a
+    else
+      error("NYI - bit meet "..op)
+    end
   else
     error("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op..", "..loc)
   end
@@ -667,7 +674,7 @@ function TypeFunctions:isNumber()
 end
 
 function TypeFunctions:fakeValue()
-  if self:isInt() or self:isUint() or self:isFloat() then
+  if self:isInt() or self:isUint() or self:isFloat() or self:isBits() then
     return 0
   elseif self:isArray() then
     local t = {}
@@ -777,7 +784,7 @@ function TypeFunctions:toCPUType()
     end
   elseif self:isArray() then
     local sz = self:arrayLength()
-    return types.array2d(self:arrayOver(),sz[1],sz[2])
+    return types.array2d(self:arrayOver():toCPUType(),sz[1],sz[2])
   elseif self:isTuple() then
     local l = {}
     for _,v in pairs(self.list) do table.insert(l, v:toCPUType()) end

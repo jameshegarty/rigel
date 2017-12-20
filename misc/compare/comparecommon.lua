@@ -1,5 +1,5 @@
-ffi = require "ffi"
-require "common"
+local ffi = require "ffi"
+local J = require "common"
 
 ffi.cdef[[
 typedef struct {} FILE;
@@ -44,7 +44,7 @@ function loadRigelImage(rawfile, metafile)
 
     if string.find(metadata.type,"_")~=nil then
       -- this is a fixed type
-      bitstring = explode("_",bitstring)
+      bitstring = J.explode("_",bitstring)
       bits = tonumber(bitstring[1])
       shift = tonumber(bitstring[2])
     else
@@ -53,16 +53,16 @@ function loadRigelImage(rawfile, metafile)
     
     if bits<=8 then
       bytes = 1
-      FFIDATATYPE = sel(signed,"char","unsigned char")
+      FFIDATATYPE = J.sel(signed,"char","unsigned char")
     elseif bits <=16 then
       bytes = 2
-      FFIDATATYPE = sel(signed,"short","unsigned short")
+      FFIDATATYPE = J.sel(signed,"short","unsigned short")
     elseif bits <=32 then
       bytes = 4
-      FFIDATATYPE = sel(signed,"int","unsigned int")
+      FFIDATATYPE = J.sel(signed,"int","unsigned int")
     elseif bits <=64 then
       bytes = 8
-      FFIDATATYPE = sel(signed,"long","unsigned long")
+      FFIDATATYPE = J.sel(signed,"long","unsigned long")
     else
       assert(false)
     end
