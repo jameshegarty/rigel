@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # print all commands
-#set -x
+# set -x
 
 # early exit on errors (so that verilator warnings are errors)
 set -e
@@ -34,4 +34,5 @@ TAPBITS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE tapBits
 
 #-Wno-UNOPTFLAT surpresses circular loop errors... we should probably work to not have to enable this
 verilator -Wno-UNOPTFLAT -cc -Mdir $BUILDDIR $VERILOG_FILE $DIR/RAM128X1D.v $DIR/RAMB16_S36_S36.v $DIR/RAMB16_S18_S18.v $DIR/RAMB16_S9_S9.v $DIR/RAMB16_RIGEL.v --top-module $TOP
-g++ ${VERILATOR_CFLAGS} -I. -DHARNESS=$HARNESS -DINBPP=$INBPP -DRAMBITS=$RAMBITS -DRAMFILE="\"$RAMFILE\"" -DTAPBITS=$TAPBITS -DVERILATORCLASS="V${TOP}" -DVERILATORFILE="\"${BUILDDIR}/V${TOP}.h\"" $BUILDDIR/V${TOP}.cpp $BUILDDIR/V${TOP}__Syms.cpp ${VERILATOR_INCLUDE}/verilated.cpp $DIR/harness.cpp -o $OUTFILE
+make -C $BUILDDIR -f V$TOP.mk
+g++ ${VERILATOR_CFLAGS} -I. -DHARNESS=$HARNESS -DINBPP=$INBPP -DRAMBITS=$RAMBITS -DRAMFILE="\"$RAMFILE\"" -DTAPBITS=$TAPBITS -DVERILATORCLASS="V${TOP}" -DVERILATORFILE="\"${BUILDDIR}/V${TOP}.h\"" ${VERILATOR_INCLUDE}/verilated.cpp $DIR/harness.cpp $BUILDDIR/V${TOP}__ALL.a -o $OUTFILE
