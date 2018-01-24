@@ -6,7 +6,10 @@ module stage
   wire [3:0] fclk;
   wire [3:0] fclkresetn;
   wire FCLK0;
-  BUFG bufg(.I(fclk[0]),.O(FCLK0));
+  //AA change here: removed buffer for now
+  //BUFG bufg(.I(fclk[0]),.O(FCLK0)); 
+  assign FCLK0 = fclk[0];  
+
   assign ARESETN = fclkresetn[0];
   
   

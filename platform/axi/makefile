@@ -1,7 +1,7 @@
 all: processimage
 
 %:  %.c
-	arm-linux-gnueabi-gcc -std=c99  $< -o $@
+	aarch64-linux-gnu-gcc -std=c99  $< -o $@
 
 clean:
 	rm processimage
