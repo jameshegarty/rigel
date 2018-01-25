@@ -6,8 +6,13 @@ module stage
   wire [3:0] fclk;
   wire [3:0] fclkresetn;
   wire FCLK0;
-  BUFG bufg(.I(fclk[0]),.O(FCLK0));
-  assign ARESETN = fclkresetn[0];
+  wire ARESETN;
+
+  //AA change here: removed buffer for now
+  BUFG_PS bufg(.I(fclk[0]),.O(FCLK0));
+  //assign FCLK0 = fclk[0];  
+
+  assign ARESETN = 1'b1; //fclkresetn[0];
   
   
     wire [31:0] PS7_ARADDR;

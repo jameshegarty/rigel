@@ -76,13 +76,15 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
 }
 
 int main(int argc, char *argv[]) {
-	unsigned gpio_addr = 0x70000000;
+	unsigned gpio_addr = 0xA0000000;
 	unsigned copy_addr = atoi(argv[1]);
 
   if(argc!=10){
     printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
     exit(1);
   }
+
+
 
   unsigned int inputW = atoi(argv[4]);
   unsigned int inputH = atoi(argv[5]);

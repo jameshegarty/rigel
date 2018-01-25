@@ -113,7 +113,7 @@ reg [31:0] counter;
 reg r_state;
 wire [1:0] r_select;
 assign r_select  = LITE_ARADDR[3:2];
-assign ar_good = {LITE_ARADDR[31:4], 2'b00, LITE_ARADDR[1:0]} == 32'h70000000;
+assign ar_good = {LITE_ARADDR[31:4], 2'b00, LITE_ARADDR[1:0]} == 32'hA0000000;
 assign LITE_ARREADY = (r_state == IDLE);
 assign LITE_RVALID = (r_state == RWAIT);
 always @(posedge ACLK) begin
@@ -142,7 +142,7 @@ reg w_wroteresp;
 
 wire [1:0] w_select;
 assign w_select  = LITE_AWADDR[3:2];
-assign aw_good = {LITE_AWADDR[31:4], 2'b00, LITE_AWADDR[1:0]} == 32'h70000000;
+assign aw_good = {LITE_AWADDR[31:4], 2'b00, LITE_AWADDR[1:0]} == 32'hA0000000;
 
 assign LITE_AWREADY = (w_state == IDLE);
 assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
