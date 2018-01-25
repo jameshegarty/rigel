@@ -9,7 +9,7 @@ module stage
   wire ARESETN;
 
   //AA change here: removed buffer for now
-  BUFG bufg(.I(fclk[0]),.O(FCLK0)); 
+  BUFG_PS bufg(.I(fclk[0]),.O(FCLK0));
   //assign FCLK0 = fclk[0];  
 
   assign ARESETN = 1'b1; //fclkresetn[0];
