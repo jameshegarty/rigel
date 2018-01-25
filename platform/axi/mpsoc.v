@@ -121,7 +121,7 @@ module stage
 
    reg [31:0]  clkcnt = 0;
 //   assign LED = clkcnt[20:13];
-   assign  LED = clkcnt[28:21];
+   assign  LED = CONFIG_SRC[15:8];//clkcnt[28:21];
    
   always @(posedge FCLK0) begin
 //    if(ARESETN == 0)

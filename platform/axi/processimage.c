@@ -76,23 +76,26 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
 }
 
 int main(int argc, char *argv[]) {
-	unsigned gpio_addr = 0xA0000000;
-	unsigned copy_addr = atoi(argv[1]);
+	unsigned gpio_addr = strtol(argv[1],NULL,16);
+	unsigned copy_addr = strtol(argv[2],NULL,16);
 
-  if(argc!=10){
-    printf("ERROR< insufficient args. Should be: addr inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
+  printf("start processimage\n");
+  fflush(stdout);
+    
+  if(argc!=11){
+    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
     exit(1);
   }
 
 
 
-  unsigned int inputW = atoi(argv[4]);
-  unsigned int inputH = atoi(argv[5]);
-  unsigned int inputBitsPerPixel = atoi(argv[6]);
+  unsigned int inputW = atoi(argv[5]);
+  unsigned int inputH = atoi(argv[6]);
+  unsigned int inputBitsPerPixel = atoi(argv[7]);
 
-  unsigned int outputW = atoi(argv[7]);
-  unsigned int outputH = atoi(argv[8]);
-  unsigned int outputBitsPerPixel = atoi(argv[9]);
+  unsigned int outputW = atoi(argv[8]);
+  unsigned int outputH = atoi(argv[9]);
+  unsigned int outputBitsPerPixel = atoi(argv[10]);
 
   if(outputBitsPerPixel%8!=0){
     printf("Error, NYI - non-byte aligned output bits per pixel not supported!\n");
@@ -103,8 +106,9 @@ int main(int argc, char *argv[]) {
 
 	unsigned page_size = sysconf(_SC_PAGESIZE);
 
-	printf("GPIO access through /dev/mem. %d\n", page_size);
-
+	printf("GPIO access through /dev/mem. addr:%08x page_size:%d\n", gpio_addr, page_size);
+  fflush(stdout);
+  
 	if (gpio_addr == 0) {
 		printf("GPIO physical address is required.\n");
 		usage();
@@ -118,9 +122,10 @@ int main(int argc, char *argv[]) {
   }
 
   unsigned lenInRaw;
-  FILE* imfile = openImage(argv[2], &lenInRaw);
+  FILE* imfile = openImage(argv[3], &lenInRaw);
   printf("file LEN %d\n",lenInRaw);
-  
+  fflush(stdout);
+    
   unsigned int lenIn = lenInRaw;
   // include extra axi burst of cycle count
   unsigned int lenOutRaw = outputW*outputH*outputBytesPerPixel+128;
@@ -140,7 +145,9 @@ int main(int argc, char *argv[]) {
   printf("LENIN %d\n",lenIn);
   assert(lenOut % (8*16) == 0);
 
-  printf("mapping %08x\n",copy_addr);
+  printf("mapping image addr %08x\n",copy_addr);
+  fflush(stdout);
+    
   void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
   if(ptr==(void *) -1){
     printf("Error mmaping\n");
@@ -167,6 +174,11 @@ int main(int argc, char *argv[]) {
 
   volatile Conf * conf = (Conf*) gpioptr;
 
+  printf("setting gpio\n");
+  fflush(stdout);
+  printf("conf: cmd: %d, src: %d, dest: %d, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  fflush(stdout);
+  
   conf->src = copy_addr;
   conf->dest = copy_addr + lenIn;
   conf->len = lenIn;
@@ -178,7 +190,7 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
-  saveImage(argv[3],ptr+lenIn,lenOutRaw);
+  saveImage(argv[4],ptr+lenIn,lenOutRaw);
 
   munmap( gpioptr, page_size );
   munmap( ptr, lenIn+lenOut );
