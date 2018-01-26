@@ -34,11 +34,11 @@ OUTH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputHeight)
 ###### CLOCK STUFF END
 
 sshpass -p 'root' scp $DIR/../axi/processimage_mpsoc $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
-sshpass -p 'root' ssh root@$ZYNQ_ADDR "cp $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc A0000000 30008000 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT "
 sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
-#sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $ZYNQ_WRITE_PATH/$BITFILE_BASE"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
 #rm -f /tmp/zynq10lock
 #	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
 #	# keep copy for future reference
