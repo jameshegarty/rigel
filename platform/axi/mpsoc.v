@@ -80,7 +80,7 @@ module stage
     
     assign CONFIG_READY = READER_READY && WRITER_READY;
     
-    Conf conf(
+    Conf #(.ADDR_BASE(32'hA0000000))  conf(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),
     .S_AXI_ARADDR(PS7_ARADDR), 
