@@ -78,6 +78,9 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
 int main(int argc, char *argv[]) {
 	unsigned gpio_addr = strtol(argv[1],NULL,16);
 	unsigned copy_addr = strtol(argv[2],NULL,16);
+  
+
+
 
   printf("start processimage\n");
   fflush(stdout);
@@ -120,6 +123,14 @@ int main(int argc, char *argv[]) {
 		perror(argv[0]);
 		return -1;
   }
+
+  void * ptr_axi = mmap(NULL, 0x6000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD610000);
+  printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
+  fflush(stdout);
+  *((unsigned int*)(ptr_axi)+(0x5000/4)) = 0;
+
+  printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
+  fflush(stdout);
 
   unsigned lenInRaw;
   FILE* imfile = openImage(argv[3], &lenInRaw);
