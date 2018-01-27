@@ -124,6 +124,32 @@ int main(int argc, char *argv[]) {
 		return -1;
   }
 
+  void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD360000);
+  if(CTRL==(void *) -1){
+    printf("Error mmaping CTRL\n");
+    exit(1);
+  }
+
+  printf("@RDCTRL: %08x\n", *(unsigned int*)(CTRL));
+  *(unsigned int*)CTRL = 1;
+  printf("@RDCTRL: %08x\n", *(unsigned int*)(CTRL));
+  //  printf("@CTRL: %08x\n", *(unsigned int*)(CTRL));
+  fflush(stdout);
+  
+  //  void * WRCTRL = mmap(NULL, 4, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD360014);
+  //  if(WRCTRL==(void *) -1){
+  //    printf("Error mmaping WRCTRL\n");
+  //    exit(1);
+  //  }
+
+  printf("@WRCTRL: %08x\n", *((unsigned int*)(CTRL)+(0x14/4)));
+  *((unsigned int*)(CTRL)+(0x14/4)) = 0x3b1;
+  printf("@WRCTRL: %08x\n", *((unsigned int*)(CTRL)+(0x14/4)));
+  
+  //  *(unsigned int*)WRCTRL = 1;
+  //  printf("@WRCTRL: %08x\n", *(unsigned int*)(WRCTRL));
+  fflush(stdout);
+      
   void * ptr_axi = mmap(NULL, 0x6000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD610000);
   printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
   fflush(stdout);
@@ -187,7 +213,7 @@ int main(int argc, char *argv[]) {
 
   printf("setting gpio\n");
   fflush(stdout);
-  printf("conf: cmd: %d, src: %d, dest: %d, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
   fflush(stdout);
   
   conf->src = copy_addr;
@@ -197,11 +223,17 @@ int main(int argc, char *argv[]) {
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
   sleep(2);
   conf->cmd = 3;
+  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  fflush(stdout);
 
   //usleep(10000);
   sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
   saveImage(argv[4],ptr+lenIn,lenOutRaw);
+  //  saveImage(argv[4],ptr,lenOutRaw);
+
+  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  fflush(stdout);
 
   munmap( gpioptr, page_size );
   munmap( ptr, lenIn+lenOut );
