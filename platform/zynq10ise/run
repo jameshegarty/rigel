@@ -38,7 +38,7 @@ OUTH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputHeight)
 
 sshpass -p 'root' scp $DIR/../axi/processimage $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat $ZYNQ_WRITE_PATH/$BITFILE_BASE > /dev/xdevcfg"
-sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage 70000000 30008000 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT "
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage 805339136 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT "
 sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $ZYNQ_WRITE_PATH/$BITFILE_BASE"
 #rm -f /tmp/zynq10lock
