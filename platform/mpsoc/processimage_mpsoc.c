@@ -124,6 +124,9 @@ int main(int argc, char *argv[]) {
 		return -1;
   }
 
+  // set RDCTRL (AFIFM) register bits 1:0 to 1, to set HPC0 (aka SAXIGP0 on PS8) to 64 bit mode
+  // See "Xilinx register map"
+  // https://www.xilinx.com/html_docs/registers/ug1087/ug1087-zynq-ultrascale-registers.html
   void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD360000);
   if(CTRL==(void *) -1){
     printf("Error mmaping CTRL\n");
@@ -142,6 +145,7 @@ int main(int argc, char *argv[]) {
   //    exit(1);
   //  }
 
+  // set WRCTRL (AFIFM) register bits [1:0] to 1, to set HPC0 (aka SAXIGP0 on PS8) to 64 bit mode
   printf("@WRCTRL: %08x\n", *((unsigned int*)(CTRL)+(0x14/4)));
   *((unsigned int*)(CTRL)+(0x14/4)) = 0x3b1;
   printf("@WRCTRL: %08x\n", *((unsigned int*)(CTRL)+(0x14/4)));
@@ -149,7 +153,8 @@ int main(int argc, char *argv[]) {
   //  *(unsigned int*)WRCTRL = 1;
   //  printf("@WRCTRL: %08x\n", *(unsigned int*)(WRCTRL));
   fflush(stdout);
-      
+
+  // set afi_fs (FPD_SLCR) register bits [9:8] to 0, to set HPM0 (aka MAXIGP0 on PS8) to 32 bit mode
   void * ptr_axi = mmap(NULL, 0x6000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD610000);
   printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
   fflush(stdout);
