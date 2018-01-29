@@ -2,7 +2,7 @@ SRCS = $(wildcard out/*.terra.raw)
 SRCS := $(patsubst out/%_half.terra.raw,,$(SRCS))
 
 TARGETS = $(patsubst out/%.terra.raw,out/%.terra.bmp,$(SRCS))
-TARGETS += $(patsubst out/%.terra.raw,out/%.verilator,$(SRCS))
+TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.bit,$(SRCS))
 TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.raw,$(SRCS))
 TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.bmp,$(SRCS))
 TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.correct.txt,$(SRCS))
@@ -21,34 +21,30 @@ out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
 	mkdir -p out/build_$*
 	cp out/$*.terra.bmp out/build_$*
 
-out/%.verilator: out/%.v out/%.metadata.lua
-	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua topModule))
-	$(eval $@_HARNESS := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua harness))
-	$(eval $@_INBPP := $(shell luajit ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
-	verilator -cc -Mdir out/$*_verilator out/$*.v ../platform/verilator/RAM128X1D.v ../platform/verilator/RAMB16_S36_S36.v ../platform/verilator/RAMB16_S18_S18.v ../platform/verilator/RAMB16_S9_S9.v ../platform/verilator/RAMB16_RIGEL.v --top-module "$($@_TOP)"
-#	$(LUA) ../platform/verilator/makeHarness.lua out/$*.metadata.lua $* > out/$*.verilator.cpp
-	g++ ${RIGEL_VERILATOR_CFLAGS} -I. -DHARNESS=$($@_HARNESS) -DINBPP=$($@_INBPP) -DVERILATORCLASS="V$($@_TOP)" -DVERILATORFILE="\"out/$*_verilator/V$($@_TOP).h\"" out/$*_verilator/V$($@_TOP).cpp out/$*_verilator/V$($@_TOP)__Syms.cpp ${RIGEL_VERILATOR_INCLUDE}/verilated.cpp ../platform/verilator/harness.cpp -o $@
+PLATFORMDIRS = $(wildcard ../platform/*)
+PLATFORMDIRS := $(filter-out ../platform/terra,$(PLATFORMDIRS))
 
-out/%.verilator.raw: out/%.verilator out/%.metadata.lua
-	$(eval $@_INPUT := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputImage))
-	$(eval $@_OUTW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputWidth))
-	$(eval $@_OUTH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputHeight))
-	$(eval $@_OUTBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputBitsPerPixel))
-	$(eval $@_OUTP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua outputP))
-	$(eval $@_INW := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputWidth))
-	$(eval $@_INH := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputHeight))
-	$(eval $@_INBPP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputBitsPerPixel))
-	$(eval $@_INP := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua inputP))
-	$(eval $@_TAPBITS := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapBits))
-	$(eval $@_TAPVALUE := $(shell $(LUA) ../misc/extractMetadata.lua out/$*.metadata.lua tapValue))
-	./out/$*.verilator $($@_INPUT) $@ $($@_INW) $($@_INH)  $($@_INBPP) $($@_INP) $($@_OUTW) $($@_OUTH) $($@_OUTBPP) $($@_OUTP) $($@_TAPBITS) $($@_TAPVALUE)
+AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
 
-out/%.verilator.bmp: out/%.verilator.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.verilator.raw out/$*.verilator.bmp out/$*.metadata.lua 0
+define MyRule
+out/%.$(1).bit: out/%.v out/%.metadata.lua
+	../platform/$(1)/compile $(shell pwd)/out/$$*.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
+
+out/%.$(1).correct.txt : out/%.$(1).bmp
+	diff out/$$*.$(1).bmp out/$$*.terra.bmp > out/$$*.$(1).diff
+	test ! -s out/$$*.$(1).diff && touch $$@
+
+out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
+	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
+
+out/%.$(1).cycles.txt: out/%.$(1).raw
+	../rigelLuajit ../misc/extractCycles.lua out/$$*.$(1).raw > out/$$*.$(1).cycles.txt
+
+out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua
+	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.metadata.lua 0
 	# keep copy for future reference
-	mkdir -p out/build_$*
-	cp out/$*.verilator.bmp out/build_$*
+	mkdir -p out/$$*_$(1)
+	cp out/$$*.$(1).bmp out/$$*_$(1)
+endef
 
-out/%.verilator.correct.txt : out/%.verilator.bmp out/%.terra.bmp
-	diff out/$*.verilator.bmp out/$*.terra.bmp > out/$*.verilator.diff
-	test ! -s out/$*.verilator.diff && touch $@
+$(foreach a,$(AA),$(eval $(call MyRule,$(a))))
