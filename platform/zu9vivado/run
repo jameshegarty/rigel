@@ -2,7 +2,7 @@
 # -x shows all commands
 
 ZYNQ_WRITE_PATH=/home/root
-ZYNQ_ADDR=192.168.0.151
+ZYNQ_ADDR=${4:192.168.0.151}
 ZYNQ_BIN_FILE_PATH=/lib/firmware/
 ZYNQ_FIRMWARE_PATH=/sys/class/fpga_manager/fpga0/firmware
 
@@ -10,7 +10,7 @@ BITFILE=$1
 BITFILE_BASE=$(basename $1)
 METAFILE=$2
 OUTFILE=$3
-OUTPATH=$4
+#OUTPATH=$4
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 

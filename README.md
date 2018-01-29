@@ -118,7 +118,7 @@ For FPGA platforms, this logs in to the FPGA, programs the fabric, runs the test
 * *BITFILE*: Compiled FPGA bitfile to run (returned from the compile script). For simulator platforms, this is the compiled executable.
 * *METADATA_FILE*: path to the metadata file describing the Verilog module in the bitfile (see description below).
 * *OUTFILE*: Path where the final output file of the script should be written. This will be the output of the streaming module, written to a file as raw binary data.
-* *PLATFORM_SPECIFIC*: A platform dependent option. For FPGA platforms, this is the IP address of the FPGA board (e.g. 192.168.1.10).
+* *PLATFORM_SPECIFIC*: (optional) platform dependent data field. For FPGA platforms, this is the IP address of the FPGA board (e.g. 192.168.1.10).
 
 Each script will expect all paths to be relative to the working directory from which they are called. 
 
