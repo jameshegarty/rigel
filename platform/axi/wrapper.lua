@@ -209,12 +209,12 @@ if metadata.sdfInputN==nil and metadata.earlyOverride==nil then
   metadata.earlyOverride = 16*1024*1024*100
 end
 
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, hsfnSdfInput, hsfnSdfOutput)
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), readAll(VERILOGFILE), globals, hsfnSdfInput, hsfnSdfOutput)
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 
 local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputV)
-local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputP)
+local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputV)
 local inputBytes, outputBytes
 hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
 ------------------------------
