@@ -131,11 +131,11 @@ The module metadata file describes the IO interface of your verilog module, and 
             outputHeight=[Number]}
 
 With the following definition:
-* *topModule*: Name of verilog module to run as top
-* *tapBits*: Total size in bits of runtime configurable GPIO constants
+* *topModule*: Name of verilog module to run as top.
+* *tapBits*: Total size in bits of runtime configurable GPIO constants.
 * *tapValue*: GPIO constants to use for test, in hex.
-* *inputImage*: Path to input data (in raw binary format), relative to the working directory where the build scripts are run from.
-* *bitsPerPixel*: Number of bits per pixel
+* *inputImage*: Path to test input data file (stored in raw binary format). Path should be relative to the working directory where the build scripts are run from.
+* *bitsPerPixel*: Number of bits per pixel.
 * *V*: Number of pixels your module expects per cycle. Width of your verilog module should be *V*bitsPerPixel*.
 * *width*: image width in pixels.
 * *height*: image height in pixels.
@@ -145,7 +145,21 @@ The options 'bitsPerPixel', 'V', 'width', and 'height' behave the same for input
 *Note:* the metadata file format contains redundant information so that the output of your module can be interpreted as an image. However, this is not a strict requirement, and the script works for raw binary data as well. If IO is not an image, simply set 'width=# of tokens', 'height=1', 'bitsPerPixel=bitwidth of module interface', and 'V=1'. 
 
 ## Expected Verilog Module interface ##
+The scripts expect the Verilog top module being tested to have the following format:
 
+    module Top( input CLK, input reset, input [tapBits-1:0] taps,
+      input [inputBitsPerPixel*inputV:0] process_input, output ready,
+      output [outputBitsPerPixel*outputV:0] process_output, input ready_downstream );
+
+With the following definition:
+* *CLK*: module clock
+* *reset*: synchronous module reset, resets when high.
+* *taps*: Packed GPIO pins.
+* *process_input*: Input data token. Valid bit is packed in top bit of this value.
+* *ready*: upstream ready (for the module input)
+* *process_output*: Output data token. Valid bit is packed in top bit of this value.
+* *ready_downstream* downstream ready (for the module output)
+    
 If your Verilog module does not conform to this interface, we suggest adding a small wrapper module to translate the interfaces, and marking that as top.
 
 ### Caveats ###
