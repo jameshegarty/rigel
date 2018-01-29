@@ -94,7 +94,7 @@ Rigel hosts build scripts that automatically test streaming modules (e.g. those 
 
 Each supported SoC platform has a folder in the *platform/* directory. Each platform is identified by a name in the format *CHIPCOMPILER*. Currently support CHIP options are **zynq10** (Zynq 7010, such as the Zybo board), **zynq20** (Zynq 7020, such as the Zedboard), **zynq100** (Zynq 7100, such as the AES-MINI-ITX-7z100-G), and **zu9** (Zynq Ultrascale+ MPSOC XCZU9EG, such as the ZCU102 board). Currently supported COMPILER options are **ise** and **vivado**. For example, compiling for the Zedboard (which uses the 7020 chip) on Vivado would use the scripts in *platform/zynq20vivado*.
 
-As the scripts only use internal wiring on the FPGA (no external IO), they should be robust to working on different FPGA board with the same chip. Different SKUs in the same chip series can typically be supported by simply changing the Xilinx 'part' option in the compile script. Pull requests for more boards would be appreciated.
+As the scripts only use internal wiring on the FPGA (no external IO), they should be robust to working on different FPGA board with the same chip. Different SKUs in the same chip series can typically be supported by simply changing the Xilinx 'part' option in the compile script. Pull requests for more parts would be appreciated.
 
 Simulator platforms are also supported: *platform/verilator* contains scripts to test the target block using the open source verilator simulator.
 
