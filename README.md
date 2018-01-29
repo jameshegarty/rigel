@@ -125,14 +125,22 @@ Each script will expect all paths to be relative to the working directory from w
 ### Module Metadata File ###
 The module metadata file describes the IO interface of your verilog module, and the test data to run. Module metadata is provided in lua table format:
 
-    return {topModule=[String], tapBits=[Number], tapValue=[String], inputBitsPerPixel=[Number],
-            inputV=[Number], inputWidth=[Number], inputHeight=[Number], inputV=[Number],
-            outputBitsPerPixel=[Number], outputV=[Number], outputWidth=[Number], outputHeigh=[Number]}
+    return {topModule=[String], tapBits=[Number], tapValue=[String], inputImage=[String],
+            inputBitsPerPixel=[Number], inputV=[Number], inputWidth=[Number], inputHeight=[Number],
+            inputV=[Number], outputBitsPerPixel=[Number], outputV=[Number], outputWidth=[Number],
+            outputHeight=[Number]}
 
 With the following definition:
 * *topModule*: Name of verilog module to run as top
 * *tapBits*: Total size in bits of runtime configurable GPIO constants
-* *tapValue*:
+* *tapValue*: GPIO constants to use for test, in hex.
+* *inputImage*: Path to input data (in raw binary format), relative to the working directory where the build scripts are run from.
+* *bitsPerPixel*: Number of bits per pixel
+* *V*: Number of pixels your module expects per cycle. Width of your verilog module should be *V*bitsPerPixel*.
+* *width*: image width in pixels.
+* *height*: image height in pixels.
+
+The options 'bitsPerPixel', 'V', 'width', and 'height' behave the same for input and output.
 
 *Note:* the metadata file format contains redundant information so that the output of your module can be interpreted as an image. However, this is not a strict requirement, and the script works for raw binary data as well. If IO is not an image, simply set 'width=# of tokens', 'height=1', 'bitsPerPixel=bitwidth of module interface', and 'V=1'. 
 
