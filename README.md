@@ -98,43 +98,49 @@ As the scripts only use internal wiring on the FPGA (no external IO), they shoul
 
 Simulator platforms are also supported: *platform/verilator* contains scripts to test the target block using the open source verilator simulator.
 
+### Scripts ###
+
 Within each platform directory, two scripts are provided:
 
 **compile** VERILOG_FILE METADATA_FILE BUILDDIR OUTFILE
+
 Wrap the input Verilog file with a test harness, and compile it to either a bitstream or executable (for simulators).
 
-*VERILOG_FILE*: path to the verilog file input (see description below for expected module interface).
-*METADATA_FILE*: path to the metadata file describing the Verilog module in VERILOG_FILE (see description below).
-*BUILDDIR*: Path to a folder where build temporaries, logs, and stats can be written. Each script will expect the directory *BUILDDIR* to exist in the working directory from which they are called. 
-*OUTFILE*: Path where the final output file of the script should be written. For Zynq plaforms this is a bitfile, for Verilator it is an executable.
+* *VERILOG_FILE*: path to the verilog file input (see description below for expected module interface).
+* *METADATA_FILE*: path to the metadata file describing the Verilog module in VERILOG_FILE (see description below).
+* *BUILDDIR*: Path to a folder where build temporaries, logs, and stats can be written. Each script will expect the directory *BUILDDIR* to exist in the working directory from which they are called. 
+* *OUTFILE*: Path where the final output file of the script should be written. For Zynq plaforms this is a bitfile, for Verilator it is an executable.
 
 **run** BITFILE METADATA_FILE OUTFILE PLATFORM_SPECIFIC
+
 For FPGA platforms, this logs in to the FPGA, programs the fabric, runs the tests, and transfers it back to the host. For simulator platforms, this runs the simulator.
 
-*BITFILE*: Compiled FPGA bitfile to run (returned from the compile script). For simulator platforms, this is the compiled executable.
-*METADATA_FILE*: path to the metadata file describing the Verilog module in the bitfile (see description below).
-*OUTFILE*: Path where the final output file of the script should be written. This will be the output of the streaming module, written to a file as raw binary data.
-*PLATFORM_SPECIFIC*: A platform dependent option. For FPGA platforms, this is the IP address of the FPGA board (e.g. 192.168.1.10).
+* *BITFILE*: Compiled FPGA bitfile to run (returned from the compile script). For simulator platforms, this is the compiled executable.
+* *METADATA_FILE*: path to the metadata file describing the Verilog module in the bitfile (see description below).
+* *OUTFILE*: Path where the final output file of the script should be written. This will be the output of the streaming module, written to a file as raw binary data.
+* *PLATFORM_SPECIFIC*: A platform dependent option. For FPGA platforms, this is the IP address of the FPGA board (e.g. 192.168.1.10).
 
 Each script will expect all paths to be relative to the working directory from which they are called. 
 
-** Module Metadata File **
+### Module Metadata File ###
 The module metadata file describes the IO interface of your verilog module, and the test data to run. Module metadata is provided in lua table format:
 
-    return {topModule=[String], tapBits=[Number], tapValue=[String], inputBitsPerPixel=[Number], inputV=[Number], inputWidth=[Number], inputHeight=[Number], inputV=[Number], outputBitsPerPixel=[Number], outputV=[Number], outputWidth=[Number], outputHeigh=[Number]}
+    return {topModule=[String], tapBits=[Number], tapValue=[String], inputBitsPerPixel=[Number],
+            inputV=[Number], inputWidth=[Number], inputHeight=[Number], inputV=[Number],
+            outputBitsPerPixel=[Number], outputV=[Number], outputWidth=[Number], outputHeigh=[Number]}
 
 With the following definition:
-*topModule*: Name of verilog module to run as top
-*tapBits*: Total size in bits of runtime configurable GPIO constants
-*tapValue*:
+* *topModule*: Name of verilog module to run as top
+* *tapBits*: Total size in bits of runtime configurable GPIO constants
+* *tapValue*:
 
 *Note:* the metadata file format contains redundant information so that the output of your module can be interpreted as an image. However, this is not a strict requirement, and the script works for raw binary data as well. If IO is not an image, simply set 'width=# of tokens', 'height=1', 'bitsPerPixel=bitwidth of module interface', and 'V=1'. 
 
-** Verilog Module interface **
+## Expected Verilog Module interface ##
 
 If your Verilog module does not conform to this interface, we suggest adding a small wrapper module to translate the interfaces, and marking that as top.
 
-**Caveats:**
+### Caveats ###
 
 While the scripts should be able to build bitstreams successfully for most boards, Zynq SoCs also contain a large software stack that is more variable. Non-standard Linux configurations can cause our scripts to need to vary significantly. For most run scripts, we tested it with the default binaries from the [Xilinx binary releases](http://www.wiki.xilinx.com/Zynq+Releases). 
 
