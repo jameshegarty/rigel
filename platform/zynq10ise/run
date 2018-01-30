@@ -2,13 +2,18 @@
 # -x shows all commands
 
 ZYNQ_WRITE_PATH=/tmp
-ZYNQ_ADDR=192.168.1.10
+ZYNQ_ADDR=$4
+
+if [ -n $ZYNQ_ADDR ]
+then
+  ZYNQ_ADDR=192.168.1.10
+fi
 
 BITFILE=$1
 BITFILE_BASE=$(basename $1)
 METAFILE=$2
 OUTFILE=$3
-OUTPATH=$4
+#OUTPATH=$4
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 

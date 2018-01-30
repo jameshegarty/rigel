@@ -88,8 +88,83 @@ A verbose debug mode can be activated by setting the environment variable `v`, i
 
     v=1 make terra
 
-Camera Test Rig
+Build Scripts
 ---------------
+Rigel hosts build scripts that automatically test streaming modules (e.g. those produced with Rigel) on multiple Xilinx Zynq SoC platforms. The scripts are not tied to Rigel however, and can be used with any verilog block that implements a streaming (Handshake) interface, similar to AXI-stream, and provides valid configuration options.
+
+Each supported SoC platform has a folder in the *platform/* directory. Each platform is identified by a name in the format *CHIPCOMPILER*. Currently support CHIP options are **zynq10** (Zynq 7010, such as the Zybo board), **zynq20** (Zynq 7020, such as the Zedboard), **zynq100** (Zynq 7100, such as the AES-MINI-ITX-7z100-G), and **zu9** (Zynq Ultrascale+ MPSOC XCZU9EG, such as the ZCU102 board). Currently supported COMPILER options are **ise** and **vivado**. For example, compiling for the Zedboard (which uses the 7020 chip) on Vivado would use the scripts in *platform/zynq20vivado*.
+
+As the scripts only use internal wiring on the FPGA (no external IO), they should be robust to working on different FPGA board with the same chip. Different SKUs in the same chip series can typically be supported by simply changing the Xilinx 'part' option in the compile script. Pull requests for more parts would be appreciated.
+
+Simulator platforms are also supported: *platform/verilator* contains scripts to test the target block using the open source verilator simulator.
+
+### Scripts ###
+
+Within each platform directory, two scripts are provided:
+
+**compile** VERILOG_FILE METADATA_FILE BUILDDIR OUTFILE
+
+Wrap the input Verilog file with a test harness, and compile it to either a bitstream or executable (for simulators).
+
+* *VERILOG_FILE*: path to the verilog file input (see description below for expected module interface).
+* *METADATA_FILE*: path to the metadata file describing the Verilog module in VERILOG_FILE (see description below).
+* *BUILDDIR*: Path to a folder where build temporaries, logs, and stats can be written. Each script will expect the directory *BUILDDIR* to exist in the working directory from which they are called. 
+* *OUTFILE*: Path where the final output file of the script should be written. For Zynq plaforms this is a bitfile, for Verilator it is an executable.
+
+**run** BITFILE METADATA_FILE OUTFILE PLATFORM_SPECIFIC
+
+For FPGA platforms, this logs in to the FPGA, programs the fabric, runs the tests, and transfers it back to the host. For simulator platforms, this runs the simulator.
+
+* *BITFILE*: Compiled FPGA bitfile to run (returned from the compile script). For simulator platforms, this is the compiled executable.
+* *METADATA_FILE*: path to the metadata file describing the Verilog module in the bitfile (see description below).
+* *OUTFILE*: Path where the final output file of the script should be written. This will be the output of the streaming module, written to a file as raw binary data.
+* *PLATFORM_SPECIFIC*: (optional) platform dependent data field. For FPGA platforms, this is the IP address of the FPGA board (e.g. 192.168.1.10).
+
+Each script will expect all paths to be relative to the working directory from which they are called. 
+
+### Module Metadata File ###
+The module metadata file describes the IO interface of your verilog module, and the test data to run. Module metadata is provided in lua table format:
+
+    return {topModule=[String], tapBits=[Number], tapValue=[String], inputImage=[String],
+            inputBitsPerPixel=[Number], inputV=[Number], inputWidth=[Number], inputHeight=[Number],
+            inputV=[Number], outputBitsPerPixel=[Number], outputV=[Number], outputWidth=[Number],
+            outputHeight=[Number]}
+
+With the following definition:
+* *topModule*: Name of verilog module to run as top.
+* *tapBits*: Total size in bits of runtime configurable GPIO constants.
+* *tapValue*: GPIO constants to use for test, in hex.
+* *inputImage*: Path to test input data file (stored in raw binary format). Path should be relative to the working directory where the build scripts are run from.
+* *bitsPerPixel*: Number of bits per pixel.
+* *V*: Number of pixels your module expects per cycle. Width of your verilog module should be *V*bitsPerPixel*.
+* *width*: image width in pixels.
+* *height*: image height in pixels.
+
+The options 'bitsPerPixel', 'V', 'width', and 'height' behave the same for input and output.
+
+*Note:* the metadata file format contains redundant information so that the output of your module can be interpreted as an image. However, this is not a strict requirement, and the script works for raw binary data as well. If IO is not an image, simply set 'width=# of tokens', 'height=1', 'bitsPerPixel=bitwidth of module interface', and 'V=1'. 
+
+## Expected Verilog Module interface ##
+The scripts expect the Verilog top module being tested to have the following format:
+
+    module Top( input CLK, input reset, input [tapBits-1:0] taps,
+      input [inputBitsPerPixel*inputV:0] process_input, output ready,
+      output [outputBitsPerPixel*outputV:0] process_output, input ready_downstream );
+
+With the following definition:
+* *CLK*: module clock
+* *reset*: synchronous module reset, resets when high.
+* *taps*: Packed GPIO pins.
+* *process_input*: Input data token. Valid bit is packed in top bit of this value.
+* *ready*: upstream ready (for the module input)
+* *process_output*: Output data token. Valid bit is packed in top bit of this value.
+* *ready_downstream* downstream ready (for the module output)
+    
+If your Verilog module does not conform to this interface, we suggest adding a small wrapper module to translate the interfaces, and marking that as top.
+
+### Caveats ###
+
+While the scripts should be able to build bitstreams successfully for most boards, Zynq SoCs also contain a large software stack that is more variable. Non-standard Linux configurations can cause our scripts to need to vary significantly. For most run scripts, we tested it with the default binaries from the [Xilinx binary releases](http://www.wiki.xilinx.com/Zynq+Releases). 
 
 Overview
 ========

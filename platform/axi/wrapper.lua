@@ -194,12 +194,27 @@ local globals = {}
 if metadata.tapBits>0 then
   globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
 end
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputP)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputP)), readAll(VERILOGFILE), globals, {{metadata.sdfInputN,metadata.sdfInputD}}, {{metadata.sdfOutputN,metadata.sdfOutputD}})
+
+local hsfnSdfInput = {{1,1}}
+local hsfnSdfOutput = {{1,1}}
+
+if metadata.sdfInputN~=nil then
+  hsfnSdfInput = {{metadata.sdfInputN,metadata.sdfInputD}}
+  hsfnSdfOutput = {{metadata.sdfOutputN,metadata.sdfOutputD}}
+end
+
+-- hack: if user passed us now extected cycles info, just set expected cycles to a billion,
+-- which should work for almost all pipelines, but still protect the bus (maybe?)
+if metadata.sdfInputN==nil and metadata.earlyOverride==nil then
+  metadata.earlyOverride = 16*1024*1024*100
+end
+
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), readAll(VERILOGFILE), globals, hsfnSdfInput, hsfnSdfOutput)
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
---print("IRATIO",iRatio,oRatio,metadata.inputP,metadata.outputP)
-local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputP)
-local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputP)
+
+local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputV)
+local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputV)
 local inputBytes, outputBytes
 hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
 ------------------------------

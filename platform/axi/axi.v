@@ -1,38 +1,3 @@
-//-----------------------------------------------------------------------------
-// system.v
-//-----------------------------------------------------------------------------
-
-// The axi bus expects the number of valid data items to exactly match the # of addresses we send.
-// This module checks for underflow (too few valid data items). If there are too few, it inserts DEADBEEFs to make it correct.
-// lengthOutput is in bytes
-module UnderflowShim(input CLK, input RST, input [31:0] lengthOutput, input [63:0] inp, input inp_valid, output [63:0] out, output out_valid);
-   parameter WAIT_CYCLES = 2048;
-   
-   reg [31:0] outCnt;
-   reg [31:0] outLen;
-
-   reg        fixupMode;
-   reg [31:0]  outClks = 0;
-   
-   
-   always@(posedge CLK) begin
-     if (RST) begin 
-        outCnt <= 32'd0;
-        outLen <= lengthOutput;
-        fixupMode <= 1'b0;
-        outClks <= 32'd0;
-     end else begin
-        outClks <= outClks + 32'd1;
-        
-        if(inp_valid || fixupMode) begin outCnt <= outCnt+32'd8; end // AXI does 8 bytes per clock
-        if(outClks > WAIT_CYCLES) begin fixupMode <= 1'b1; end
-     end
-   end
-
-   assign out = (fixupMode)?(64'hDEAD):(inp);
-   assign out_valid = (RST)?(1'b0):((fixupMode)?(outCnt<outLen):(inp_valid));
-endmodule
-
 module stage
   (
     inout [53:0] MIO,
@@ -131,7 +96,7 @@ module stage
     
     assign CONFIG_READY = READER_READY && WRITER_READY;
     
-    Conf conf(
+    Conf #(.ADDR_BASE(32'h70000000)) conf(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),
     .S_AXI_ARADDR(PS7_ARADDR), 
