@@ -1,4 +1,4 @@
 #!/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-LUA_PATH="$LUA_PATH;./?.lua;$DIR/?.lua;$DIR/src/?.lua;$DIR/misc/?.lua;$DIR/examples/?.lua" luajit "$@"
+LUA_PATH="$LUA_PATH;./?.lua;$DIR/?.lua;$DIR/src/?.lua;$DIR/misc/?.lua;$DIR/misc/compare/?.lua;$DIR/examples/?.lua" luajit "$@"

@@ -3436,13 +3436,14 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     return systolicModule
   end
 
-  local res = rigel.newFunction( res )
-
   if res.outputType==nil then
-    err( S.isModule(res.systolicModule), "modules.lift: outputType is missing, and so is the systolic module?")
+    --err( S.isModule(res.systolicModule), "modules.lift: outputType is missing, and so is the systolic module?")
+    res.systolicModule = res.makeSystolic()
     res.outputType = res.systolicModule.functions.process.output.type
     err( types.isType(res.outputType), "modules.lift: systolic module did not return a valid type")
   end
+
+  local res = rigel.newFunction( res )
 
   if res.delay==nil then
     res.delay = res.systolicModule:getDelay("process")

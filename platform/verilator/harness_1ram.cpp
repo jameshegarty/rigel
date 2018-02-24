@@ -63,8 +63,8 @@ int main(int argc, char** argv) {
   FILE* infile = fopen(argv[1],"rb");
   FILE* outfile = fopen(argv[2],"wb");
 
-  if(infile==NULL){printf("could not open input\n");}
-  if(outfile==NULL){printf("could not open output\n");}
+  if(infile==NULL){printf("could not open input '%s'\n", argv[1]);}
+  if(outfile==NULL){printf("could not open output '%s'\n", argv[2]);}
 
   fseek(infile, 0L, SEEK_END);
   unsigned long insize = ftell(infile);

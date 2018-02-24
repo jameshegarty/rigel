@@ -333,7 +333,7 @@ function darkroom.newFunction(tab)
   err( darkroom.SDF==false or (tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1), "rigel.newFunction: sdf output rate is not <=1" )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
-  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type ("..tab.kind..")" )
+  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.kind..")" )
  
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType)) end
