@@ -26,7 +26,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
 --    end
 
     if harnessoption==2 then
-      dram = R.instantiateRegistered("dram", RM.dram( R.extractData(fn.inputType.list[2]),10,ramFile))
+      dram = R.instantiateRegistered("dram", RM.dram( fn.inputType.params.list[2],10,ramFile))
       table.insert(instances,dram)
       local dramData = R.applyMethod("dramData", dram, "load" )
       hsfninp = R.concat("hsfninp2",{out,dramData})
