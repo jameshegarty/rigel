@@ -402,9 +402,11 @@ function RS.modules.fwriteSeq(t)
   end
 end
 
-function RS.writePixels(input,id,imageSize,V)
+function RS.writePixels(input,id,imageSize,V,DIR)
   err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
 
+  if DIR==nil then DIR="out" end
+  
   local TY
   if R.isHandshake(input.type) then
     TY = R.extractData(input.type)
@@ -412,14 +414,14 @@ function RS.writePixels(input,id,imageSize,V)
     TY = input.type
   end
 
-  local mod = RS.modules.fwriteSeq{type=TY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilator_"..id..".raw"}
+  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilator_"..id..".raw"}
 
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)
   end
 
   --
-  local filename = "out/dbg_"..id..".metadata.lua"
+  local filename = DIR.."/dbg_"..id..".metadata.lua"
   local file = io.open(filename,"w")
   if file==nil then print("writePixels: Error, could not open file for writing '"..filename.."'") end
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TY).."'}")

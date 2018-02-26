@@ -67,7 +67,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
+    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
     local Module = f:compile()
 
     local m = symbol(&Module)

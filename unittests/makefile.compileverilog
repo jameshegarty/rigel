@@ -10,41 +10,16 @@ TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.correct.txt,$(SRCS))
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
 
-LUA = ../rigelLuajit
+LUA ?= ../rigelLuajit
+TERRA ?= ../rigelTerra
 
 all: $(TARGETS)
 	touch out/verilogcorrect.txt
 
-out/%.terra.bmp: out/%.terra.raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$*.terra.raw out/$*.terra.bmp out/$*.metadata.lua 0
-	# keep copy for future reference
+out/%.terra.raw: %.lua
+	$(TERRA) $< terra
 	mkdir -p out/build_$*
-	cp out/$*.terra.bmp out/build_$*
 
-PLATFORMDIRS = $(wildcard ../platform/*)
-PLATFORMDIRS := $(filter-out ../platform/terra,$(PLATFORMDIRS))
-
-AA = $(patsubst ../platform/%,%,$(PLATFORMDIRS))
-
-define MyRule
-out/%.$(1).bit: out/%.v out/%.metadata.lua
-	../platform/$(1)/compile $(shell pwd)/out/$$*.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
-
-out/%.$(1).correct.txt : out/%.$(1).bmp
-	diff out/$$*.$(1).bmp out/$$*.terra.bmp > out/$$*.$(1).diff
-	test ! -s out/$$*.$(1).diff && touch $$@
-
-out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
-	../platform/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
-
-out/%.$(1).cycles.txt: out/%.$(1).raw
-	../rigelLuajit ../misc/extractCycles.lua out/$$*.$(1).raw > out/$$*.$(1).cycles.txt
-
-out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.metadata.lua 0
-	# keep copy for future reference
-	mkdir -p out/$$*_$(1)
-	cp out/$$*.$(1).bmp out/$$*_$(1)
-endef
-
-$(foreach a,$(AA),$(eval $(call MyRule,$(a))))
+GOLDSTRPRE=out/
+GOLDSTRPOST=.terra.bmp
+include ../platform/platform.mk

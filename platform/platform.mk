@@ -1,26 +1,30 @@
 MKPATH := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 PLATFORMDIRS = $(wildcard $(MKPATH)/*)
 AA = $(patsubst $(MKPATH)/%,%,$(PLATFORMDIRS))
+BUILDDIR ?= out
 
 define MyRule
-out/%.$(1).bit: out/%.v out/%.metadata.lua
-	$(MKPATH)/$(1)/compile $(shell pwd)/out/$$*.v out/$$*.metadata.lua $(shell pwd)/out/$$*_$(1) $(shell pwd)/out/$$*.$(1).bit
+$(BUILDDIR)/%.$(1).bit: $(BUILDDIR)/%.v $(BUILDDIR)/%.metadata.lua
+	$(MKPATH)/$(1)/compile $(shell pwd)/$(BUILDDIR)/$$*.v $(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*_$(1) $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit
 
-out/%.$(1).correct.txt : out/%.$(1).bmp
-	diff out/$$*.$(1).bmp gold/$$*.bmp > out/$$*.$(1).diff
-	test ! -s out/$$*.$(1).diff && touch $$@
+# hack to allow users of this include to override gold dir
+GOLDSTRPRE ?= gold/
+GOLDSTRPOST ?= .bmp
+$(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp
+	diff $(BUILDDIR)/$$*.$(1).bmp $(GOLDSTRPRE)$$*$(GOLDSTRPOST) > $(BUILDDIR)/$$*.$(1).diff
+	test ! -s $(BUILDDIR)/$$*.$(1).diff && touch $$@
 
-out/%.$(1).raw: out/%.$(1).bit out/%.metadata.lua
-	$(MKPATH)/$(1)/run $(shell pwd)/out/$$*.$(1).bit $(shell pwd)/out/$$*.metadata.lua $(shell pwd)/out/$$*.$(1).raw $(shell pwd)/out/$$*.$(!)
+$(BUILDDIR)/%.$(1).raw: $(BUILDDIR)/%.$(1).bit $(BUILDDIR)/%.metadata.lua
+	$(MKPATH)/$(1)/run $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $(shell pwd)/$(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*.$(1).raw $(shell pwd)/$(BUILDDIR)/$$*.$(!)
 
-out/%.$(1).cycles.txt: out/%.$(1).raw
-	../rigelLuajit $(MKPATH)/../misc/extractCycles.lua out/$$*.$(1).raw > out/$$*.$(1).cycles.txt
+$(BUILDDIR)/%.$(1).cycles.txt: $(BUILDDIR)/%.$(1).raw
+	../rigelLuajit $(MKPATH)/../misc/extractCycles.lua $(BUILDDIR)/$$*.$(1).raw > $(BUILDDIR)/$$*.$(1).cycles.txt
 
-out/%.$(1).bmp: out/%.$(1).raw out/%.metadata.lua
-	$(LUA) $(MKPATH)/../misc/raw2bmp.lua out/$$*.$(1).raw out/$$*.$(1).bmp out/$$*.metadata.lua 0
+$(BUILDDIR)/%.$(1).bmp: $(BUILDDIR)/%.$(1).raw $(BUILDDIR)/%.metadata.lua
+	$(LUA) $(MKPATH)/../misc/raw2bmp.lua $(BUILDDIR)/$$*.$(1).raw $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*.metadata.lua 0
 	# keep copy for future reference
-	mkdir -p out/$$*_$(1)
-	cp out/$$*.$(1).bmp out/$$*_$(1)
+	mkdir -p $(BUILDDIR)/$$*_$(1)
+	cp $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*_$(1)
 endef
 
 $(foreach a,$(AA),$(eval $(call MyRule,$(a))))

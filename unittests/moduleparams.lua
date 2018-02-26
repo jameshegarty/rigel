@@ -119,7 +119,7 @@ for k,v in pairs(configs) do
     -- TODO: hack to get around axi burst nonsense
     local valid = true
     
-    local targets = {"verilog","metadata"}
+    local targets = {"metadata","verilog"}
     if valid then 
       table.insert(targets,"terra") 
     else
