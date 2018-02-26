@@ -7,6 +7,13 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
 
+local H = {}
+
+if terralib~=nil then
+  --harnessWrapperFn = underoverWrapper
+  H.terraOnly = require("harnessTerra")
+end
+
 local function writeMetadata(filename, tab)
   err(type(filename)=="string")
   err(type(tab)=="table")
