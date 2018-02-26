@@ -601,7 +601,7 @@ function fixedNewASTFunctions:writePixel(id,imageSize)
   -- nasty hack to get around require circular dependencies
   local RS = require("rigelSimple")
 
-  return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}, self.type)
+  return self:applyUnaryLiftRigel(RS.modules.fwriteSeq{type=stripType, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilator_"..id..".raw"}, self.type)
 end
 
 function fixedNewASTFunctions:isSigned()
