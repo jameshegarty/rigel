@@ -1761,7 +1761,7 @@ print("MAKENOINP",fn.inputType,fn.outputType)
           table.insert( stats, quote @out = @[inputs[1]] end)
           return inputs[1]
         elseif n.kind=="selectStream" then
-          if n.inputs[1].type:isTuple() then
+          if rigel.isHandshakeTuple(n.inputs[1].type) then
             return `&((@[inputs[1]]).["_"..tostring(n.i)])
           else
             return `&((@[inputs[1]])[n.i])

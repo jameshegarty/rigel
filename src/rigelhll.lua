@@ -287,7 +287,7 @@ function RHLL.harness(t)
     -- HACK
     err( R.isBasic(t.ramType), "RHLL.harness 2ram hack: ramType should be basic" )
     err( R.isBasic(t.type), "RHLL.harness 2ram hack: type should be basic" )
-    inpty = types.tuple{RS.HS(inpty),RS.HS(t.ramType)}
+    inpty = R.HandshakeTuple{inpty,t.ramType}
 
     t.inType=t.type
     t.inP=1
@@ -302,13 +302,14 @@ function RHLL.harness(t)
 
   if t.harness==2 then
     -- HACK
-    assert( t.fn.outputType:isTuple() )
-    assert( R.isHandshake(t.fn.outputType.list[1]) )
-    err( R.isHandshake(t.fn.outputType.list[2]),"RHLL.harness 2ram hack expected second tup to be handshake but was:"..tostring(t.fn.outputType) )
-    err( R.extractData(t.fn.outputType.list[2]) == types.uint(32), "RHLL.harness 2ram hack: output addr type should be uint32")
+    --assert( t.fn.outputType:isTuple() )
+    --assert( R.isHandshake(t.fn.outputType.list[1]) )
+    assert(R.isHandshakeTuple(t.fn.outputType))
+    --err( R.isHandshake(t.fn.outputType.list[2]),"RHLL.harness 2ram hack expected second tup to be handshake but was:"..tostring(t.fn.outputType) )
+    err( R.extractData(t.fn.outputType.params.list[2]) == types.uint(32), "RHLL.harness 2ram hack: output addr type should be uint32")
     
     t.outP=1
-    t.outType = R.extractData(t.fn.outputType.list[1])
+    t.outType = R.extractData(t.fn.outputType.params.list[1])
   end
     
   print("RHLLHARNESS",t.inType)

@@ -26,7 +26,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
 --    end
 
     if harnessoption==2 then
-      dram = R.instantiateRegistered("dram", RM.dram( R.extractData(fn.inputType.list[2]),10,ramFile))
+      dram = R.instantiateRegistered("dram", RM.dram( fn.inputType.params.list[2],10,ramFile))
       table.insert(instances,dram)
       local dramData = R.applyMethod("dramData", dram, "load" )
       hsfninp = R.concat("hsfninp2",{out,dramData})
@@ -67,7 +67,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
   for i=1,bound do
     local ext=""
     if i==2 then ext="_half" end
-    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,"out/"..filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
+    local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
     local Module = f:compile()
 
     local m = symbol(&Module)

@@ -7,11 +7,18 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
 
+local H = {}
+
+if terralib~=nil then
+  --harnessWrapperFn = underoverWrapper
+  H.terraOnly = require("harnessTerra")
+end
+
 local function writeMetadata(filename, tab)
   err(type(filename)=="string")
   err(type(tab)=="table")
 
-  io.output(filename)
+  local f = io.open(filename,"w")
 
   local res = {}
   for k,v in pairs(tab) do
@@ -22,64 +29,8 @@ local function writeMetadata(filename, tab)
     end
   end
 
-  io.write( "return {"..table.concat(res,",").."}" )
-  -- io.close()
-end
-
-local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPercent)
-  assert(type(outputCount)=="number")
-  assert(type(slackPercent)=="number")
-
-  local EC_RAW = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
-  EC_RAW = math.ceil(EC_RAW)
-
-  if DARKROOM_VERBOSE then print("Expected cycles:",EC_RAW,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end
-
-  local EC = math.floor(EC_RAW*slackPercent) -- slack
-  if underflowTest then EC = 1 end
-  return EC, EC_RAW
-end
-
-
-local H = {}
-
-
-if terralib~=nil then
-  --harnessWrapperFn = underoverWrapper
-  H.terraOnly = require("harnessTerra")
-end
-
-function H.sim(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, X)
-  assert(X==nil)
-  assert( tapType==nil or types.isType(tapType) )
-  assert( types.isType(inputType) )
-  assert( types.isType(outputType) )
-  assert(type(outputH)=="number")
-  assert(type(inputFilename)=="string")
-
-
-  local inputCount = (inputW*inputH)/inputT
-  local outputCount = (outputW*outputH)/outputT
-
---  H.terraOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, X)
-
-  local frames = 2
-  local simInputH = inputH*frames
-  local simOutputH = outputH*frames
-  local simInputCount = (inputW*simInputH)/inputT
-  local simOutputCount = (outputW*simOutputH)/outputT
-
-  local cycleCountPixels = (128*8)/(outputType:verilogBits())
-  ------
-  for i=1,2 do
-    local ext=""
-    if i==2 then ext="_half" end
-    local f = RM.seqMapHandshake( underoverWrapper(hsfn, "../"..inputFilename..".dup", inputType, tapType, "out/"..filename..ext, filename..ext..".isim.raw",outputType,2+i, simInputCount, simOutputCount, frames, underflowTest, earlyOverride), inputType, tapType, tapValue, simInputCount, simOutputCount+cycleCountPixels*frames, false, i )
-    io.output("out/"..filename..ext..".isim.v")
-    io.write(f:toVerilog())
-    io.output():close()
-  end
-
+  f:write( "return {"..table.concat(res,",").."}" )
+  f:close()
 end
 
 function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,simCycles,harnessOption,X)
@@ -97,44 +48,10 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
 
 ------------------------
 -- verilator just uses the top module directly
-  io.output("out/"..filename..".v")
+  io.output(filename..".v")
   io.write(hsfn:toVerilog())
   io.output():close()
 
-end
-
-
--- AXI must have T=8
-function H.axi(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH,underflowTest,earlyOverride,X)
-
-  assert(X==nil)
-  assert( types.isType(inputType) )
-  assert( tapType==nil or types.isType(tapType) )
-  if tapType~=nil then tapType:checkLuaValue(tapValue) end
-  assert( types.isType(outputType) )
-  assert(type(inputW)=="number")
-  assert(type(outputH)=="number")
-  assert(type(inputFilename)=="string")
-  assert(type(filename)=="string")
-  err(R.isFunction(hsfn), "second argument to harness.axi must be function")
-  assert(earlyOverride==nil or type(earlyOverride)=="number")
-
-  err(inputType:verilogBits()==64, "input type must be 64 bits for AXI bus, but is "..tostring(inputType:verilogBits()))
-  err(outputType:verilogBits()==64, "output type must be 64 bits for AXI bus")
-
-  local inputCount = (inputW*inputH)/inputT
-  local outputCount = (outputW*outputH)/outputT
-
--- axi runs the sim as well
---H.sim(filename, hsfn,inputFilename, tapType,tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest,earlyOverride)
-  local inputCount = (inputW*inputH)/inputT
-  local axifn = harnessAxi(hsfn, inputCount, (outputW*outputH)/outputT, underflowTest, inputType, tapType, earlyOverride)
-local cycleCountPixels = 128/8
---local fnaxi = RM.seqMapHandshake( axifn, inputType, tapType, tapValue, inputCount, outputCount+cycleCountPixels, true )
-io.output("out/"..filename..".axi.v")
-io.write(axifn:toVerilog())
-io.close()
---------
 end
 
 function guessP(ty, tapType)
@@ -144,12 +61,6 @@ function guessP(ty, tapType)
   -- if array: then it is an array with P=array size
   -- if not array: then it is P=1
   local ty = R.extractData(ty)
-
-
---  if tapType~=nil then
---      assert(ty.list[2]==tapType)
---      ty = ty.list[1]
---  end
 
   local iover, inputP
 
@@ -172,10 +83,9 @@ function harnessTop(t)
   if backend==nil then backend = arg[1] end
   if backend==nil then backend = "verilog" end
 
---  if(backend=="axi") then
---    t.fn = axiRateWrapper(t.fn, t.tapType)
---  end
-
+  local outDir = t.outDir
+  if outDir==nil then outDir= "out" end
+  
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
 
@@ -206,13 +116,9 @@ function harnessTop(t)
   end
 
   if backend=="verilog" or backend=="verilator" then
-    H.verilogOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
-  elseif(backend=="axi") then
-    H.axi( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
-  elseif(backend=="isim") then
-    H.sim( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride )
+    H.verilogOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif backend=="terra" then
-    H.terraOnly( t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
+    H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
   elseif backend=="metadata" then
     local tapValueString = "x"
     local tapBits = 0
@@ -244,7 +150,7 @@ function harnessTop(t)
     
     if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
 
-    writeMetadata("out/"..t.outFile..".metadata.lua", MD)
+    writeMetadata(outDir.."/"..t.outFile..".metadata.lua", MD)
   else
     print("unknown build target "..arg[1])
     assert(false)

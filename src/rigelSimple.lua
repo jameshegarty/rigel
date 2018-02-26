@@ -354,18 +354,13 @@ function RS.HS(t)
   if types.isType(t) then
     return R.Handshake(t)
   elseif R.isFunction(t) then
-    --print("LIFT",t.name,t.kind,t.inputType,t.outputType)
     if R.isV(t.inputType) and R.isRV(t.outputType) then
-      --print("LIFTHANDSHAKE")
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
-      --print("ISHANDSHAKE")
       return t
     elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
-      --print("LIFTDECIM")
       return RM.liftHandshake(RM.liftDecimate(t))
     elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then
-      --print("MAKEHANDSHAKE")
       return RM.makeHandshake(t)
     else
       print(t.inputType, t.outputType)
@@ -407,12 +402,11 @@ function RS.modules.fwriteSeq(t)
   end
 end
 
-function RS.writePixels(input,id,imageSize,V)
+function RS.writePixels(input,id,imageSize,V,DIR)
   err(V==nil or V==1, "rigelSimple writePixels NYI: non unit vector widths "..tostring(V))
 
-  --local IT = input:typecheck()
-  --print("WRITEPX",IT.type)
-
+  if DIR==nil then DIR="out" end
+  
   local TY
   if R.isHandshake(input.type) then
     TY = R.extractData(input.type)
@@ -420,23 +414,16 @@ function RS.writePixels(input,id,imageSize,V)
     TY = input.type
   end
 
---  local TYY = TY
---  if TY:isArray() then
---    TYY = TY:arrayOver()
---  end
-
-  local mod = RS.modules.fwriteSeq{type=TY, filename="out/dbg_terra_"..id..".raw", filenameVerilog="out/dbg_verilog_"..id..".raw"}
-
---  if TY:isArray() then
---    mod = C.linearPipeline{C.index(TY,0),mod,C.arrayop(TYY,1)}
---  end
+  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilator_"..id..".raw"}
 
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)
   end
 
   --
-  local file = io.open("out/dbg_"..id..".metadata.lua","w")
+  local filename = DIR.."/dbg_"..id..".metadata.lua"
+  local file = io.open(filename,"w")
+  if file==nil then print("writePixels: Error, could not open file for writing '"..filename.."'") end
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TY).."'}")
   file:close()
   --

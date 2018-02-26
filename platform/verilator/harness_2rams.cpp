@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
   FILE* infile = fopen(argv[1],"rb");
   FILE* outfile = fopen(argv[2],"wb");
 
-  if(infile==NULL){printf("could not open input\n");}
+  if(infile==NULL){printf("could not open input '%s'\n",argv[1]);}
   if(outfile==NULL){printf("could not open output\n");}
 
   fseek(infile, 0L, SEEK_END);

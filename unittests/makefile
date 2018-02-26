@@ -77,7 +77,7 @@ out/fwriteseq12.compiles.txt: fwriteseq12.lua
 
 out/fwriteseq12.correct.txt: out/verilogcorrect.txt
 	diff out/fwriteseq16test.raw out/dbg_terra_fwriteseq12.raw > out/fwriteseq12test.diff
-	diff out/fwriteseq16test.raw out/dbg_verilog_fwriteseq12.raw > out/fwriteseq12testVerilog.diff
+	diff out/fwriteseq16test.raw out/dbg_verilator_fwriteseq12.raw > out/fwriteseq12testVerilog.diff
 	test ! -s out/$*.fwriteseq12testVerilog.diff && touch $@
 ###################
 out/fwriteseq18.compiles.txt: fwriteseq18.lua
@@ -86,7 +86,7 @@ out/fwriteseq18.compiles.txt: fwriteseq18.lua
 	$(LUA) fwriteseq18.lua metadata
 
 out/fwriteseq18.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilog_fwriteseq18.raw > out/fwriteseq18test.diff
+	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilator_fwriteseq18.raw > out/fwriteseq18test.diff
 	test ! -s out/$*.fwriteseq18test.diff && touch $@
 ###################
 out/fwriteseq24.compiles.txt: fwriteseq24.lua
@@ -95,9 +95,9 @@ out/fwriteseq24.compiles.txt: fwriteseq24.lua
 	$(LUA) fwriteseq24.lua metadata
 
 out/fwriteseq24.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq24.raw out/dbg_verilog_fwriteseq24.raw > out/fwriteseq24test.diff
+	diff out/dbg_terra_fwriteseq24.raw out/dbg_verilator_fwriteseq24.raw > out/fwriteseq24test.diff
 	diff out/fwriteseq24.terra.raw out/dbg_terra_fwriteseq24.raw > out/fwriteseq24test2.diff
-	diff out/fwriteseq24.terra.raw out/dbg_verilog_fwriteseq24.raw > out/fwriteseq24testVerilog.diff
+	diff out/fwriteseq24.terra.raw out/dbg_verilator_fwriteseq24.raw > out/fwriteseq24testVerilog.diff
 	test ! -s out/$*.fwriteseq24test.diff && touch $@
 ###################
 out/fwriteseq37.compiles.txt: fwriteseq37.lua
@@ -106,7 +106,7 @@ out/fwriteseq37.compiles.txt: fwriteseq37.lua
 	$(LUA) fwriteseq37.lua metadata
 
 out/fwriteseq37.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq37.raw out/dbg_verilog_fwriteseq37.raw > out/fwriteseq37test.diff
+	diff out/dbg_terra_fwriteseq37.raw out/dbg_verilator_fwriteseq37.raw > out/fwriteseq37test.diff
 	test ! -s out/$*.fwriteseq37test.diff && touch $@
 ###################
 
