@@ -109,8 +109,8 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     local ob = rigel.apply("ob", modules.SoAtoAoS((W*H)/2,1,typelist,asArray), IB)
 
     local out = rigel.concat("conc", {oa,ob})
-    local T = types.array2d( types.tuple(typelist), (W*H)/2 )
-    out = rigel.apply( "cflat", C.cast( types.tuple{T,T}, types.array2d( types.tuple(typelist), W*H ) ), out)
+    --local T = types.array2d( types.tuple(typelist), (W*H)/2 )
+    out = rigel.apply( "cflat", C.flatten2( types.tuple(typelist), W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( types.tuple(typelist), W*H ), types.array2d( types.tuple(typelist), W,H ) ), out)
 
     res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray)), I, out)
@@ -756,8 +756,8 @@ modules.map = memoize(function( f, W, H )
     local b = rigel.apply("b", modules.map(f,(W*H)/2), icb)
 
     local out = rigel.concat("conc", {a,b})
-    local T = types.array2d( f.outputType, (W*H)/2 )
-    out = rigel.apply( "cflat", C.cast( types.tuple{T,T}, types.array2d( f.outputType, W*H ) ), out)
+    --local T = types.array2d( f.outputType, (W*H)/2 )
+    out = rigel.apply( "cflat", C.flatten2( f.outputType, W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( f.outputType, W*H ), types.array2d( f.outputType, W,H ) ), out)
 
     res = modules.lambda("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)

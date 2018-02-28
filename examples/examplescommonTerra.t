@@ -21,6 +21,17 @@ function CT.cast(A,B)
                   end
 end
 
+function CT.flatten2(T,N)
+  local A = types.tuple{types.array2d(T,N/2),types.array2d(T,N/2)}
+  local B = types.array2d(T,N)
+  return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+    for i=0,N do
+      (@out)[i]._0 = (@a)._0[i]
+      (@out)[i]._1 = (@a)._1[i]
+    end
+  end
+end
+
 function CT.tupleToArray(A,N,atup,B)
   return terra( a : &atup:toTerraType(), out : &B:toTerraType() )
                             escape
