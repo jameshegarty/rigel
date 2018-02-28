@@ -24,7 +24,7 @@ C.cast = memoize(function(A,B)
   err(types.isType(B),"cast: B should be type")
   err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
   err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
-  assert(A:isTuple()==false)
+--  assert(A:isTuple()==false)
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
@@ -1048,10 +1048,10 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     local H = (inputType:arrayLength())[2]
     err(idxLow<W,"slice: idxLow>=W")
     err(idxHigh<W, "slice: idxHigh>=W")
-    assert(type(idyLow)=="number")
-    assert(type(idyHigh)=="number")
-    assert(idyLow<H)
-    err(idyHigh<H, "idyHigh>=H")
+    err(type(idyLow)=="number", "slice:idyLow must be number")
+    err(type(idyHigh)=="number","slice:idyHigh must be number")
+    err(idyLow<H, "slice: idyLow must be <H")
+    err(idyHigh<H, "slice: idyHigh must be <H")
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT

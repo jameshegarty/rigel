@@ -1,6 +1,6 @@
 local IR = require("ir")
 local types = require("types")
-local ffi = require("ffi")
+--local ffi = require("ffi")
 local S = require("systolic")
 local Ssugar = require("systolicsugar")
 local SDFRate = require "sdfrate"
