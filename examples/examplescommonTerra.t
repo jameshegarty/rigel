@@ -24,10 +24,11 @@ end
 function CT.flatten2(T,N)
   local A = types.tuple{types.array2d(T,N/2),types.array2d(T,N/2)}
   local B = types.array2d(T,N)
+
   return terra( a : &A:toTerraType(), out : &B:toTerraType() )
-    for i=0,N do
-      (@out)[i]._0 = (@a)._0[i]
-      (@out)[i]._1 = (@a)._1[i]
+    for i=0,N/2 do
+      (@out)[i] = ((@a)._0)[i]
+      (@out)[i+(N/2)] = ((@a)._1)[i]
     end
   end
 end
