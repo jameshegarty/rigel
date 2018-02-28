@@ -1553,11 +1553,11 @@ function MT.lambdaCompile(fn)
 
           if n.kind=="input" then
             readyOutput = `array(list)
+return {readyOutput}
           else
             table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+return {`mself.[n.name].ready}
           end
-  
-    return {`mself.[n.name].ready}
         end
 
         local arg
