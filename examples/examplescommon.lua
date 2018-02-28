@@ -24,8 +24,17 @@ C.cast = memoize(function(A,B)
   err(types.isType(B),"cast: B should be type")
   err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
   err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
-  assert(A:isTuple()==false)
+  assert(A:isTuple()==false) -- not supported by terra
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
+  return docast
+end)
+
+-- takes {T[N/2],T[N/2]} to T[N]
+C.flatten2 = memoize(function(T,N)
+  err(types.isType(T),"cast: T should be type")
+  --assert(T:isTuple()==false) -- not supported by terra
+  local AI = types.array2d(T,N/2)
+  local docast = RM.lift( J.sanitize("flatten2_"..tostring(T).."_"..tostring(N)), types.tuple{AI,AI}, types.array2d(T,N), 0, function(sinp) return S.cast(sinp,types.array2d(T,N)) end, function() return CT.flatten2(T,N) end, "C.flatten2" )
   return docast
 end)
 
@@ -1048,10 +1057,10 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     local H = (inputType:arrayLength())[2]
     err(idxLow<W,"slice: idxLow>=W")
     err(idxHigh<W, "slice: idxHigh>=W")
-    assert(type(idyLow)=="number")
-    assert(type(idyHigh)=="number")
-    assert(idyLow<H)
-    err(idyHigh<H, "idyHigh>=H")
+    err(type(idyLow)=="number", "slice:idyLow must be number")
+    err(type(idyHigh)=="number","slice:idyHigh must be number")
+    err(idyLow<H, "slice: idyLow must be <H")
+    err(idyHigh<H, "slice: idyHigh must be <H")
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT

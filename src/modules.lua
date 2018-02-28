@@ -80,39 +80,77 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     err(types.isType(v),"SoAtoAoS: typelist index "..tostring(k).." must be rigel type")
   end
 
-  local res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
+  local res
+  if (W*H)%2==0 and asArray==false then
+    -- codesize optimization (make codesize log(n) instead of linear)
+ 
+    local C = require "examplescommon"
 
-  res.inputType = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
-  if asArray then
-    J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
-    res.outputType = types.array2d(types.array2d(typelist[1],#typelist),W,H)
+    local itype = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
+    local I = rigel.input( itype )
+
+    local IA = {}
+    local IB = {}
+    for k,t in ipairs(typelist) do
+      local i = rigel.apply("II"..tostring(k-1), C.index(itype,k-1), I)
+      
+      local ic = rigel.apply( "cc"..tostring(k-1), C.cast( types.array2d( t, W, H ), types.array2d( t, W*H ) ), i)
+
+      local ica = rigel.apply("ica"..tostring(k-1), C.slice(types.array2d( t, W*H ),0,(W*H)/2-1,0,0), ic)
+      local icb = rigel.apply("icb"..tostring(k-1), C.slice(types.array2d( t, W*H ),(W*H)/2,(W*H)-1,0,0), ic)
+      table.insert(IA,ica)
+      table.insert(IB,icb)
+    end
+
+    IA = rigel.concat("IA",IA)
+    IB = rigel.concat("IB",IB)
+
+    local oa = rigel.apply("oa", modules.SoAtoAoS((W*H)/2,1,typelist,asArray), IA)
+    local ob = rigel.apply("ob", modules.SoAtoAoS((W*H)/2,1,typelist,asArray), IB)
+
+    local out = rigel.concat("conc", {oa,ob})
+    --local T = types.array2d( types.tuple(typelist), (W*H)/2 )
+    out = rigel.apply( "cflat", C.flatten2( types.tuple(typelist), W*H ), out)
+    out = rigel.apply( "cflatar", C.cast( types.array2d( types.tuple(typelist), W*H ), types.array2d( types.tuple(typelist), W,H ) ), out)
+
+    res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray)), I, out)
   else
-    res.outputType = types.array2d(types.tuple(typelist),W,H)
+    res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
+    
+    res.inputType = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
+    if asArray then
+      J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
+      res.outputType = types.array2d(types.array2d(typelist[1],#typelist),W,H)
+    else
+      res.outputType = types.array2d(types.tuple(typelist),W,H)
+    end
+    
+    res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+    res.delay = 0
+    res.stateful=false
+    res.name = verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray))
+    
+    function res.makeSystolic()
+      local systolicModule = Ssugar.moduleConstructor(res.name)
+      local sinp = S.parameter("process_input", res.inputType )
+      local arrList = {}
+      for y=0,H-1 do
+        for x=0,W-1 do
+          local r = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
+          if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
+          table.insert( arrList, r )
+        end
+      end
+      systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
+      return systolicModule
+    end
+
+    res = rigel.newFunction(res)
   end
-
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.delay = 0
-  res.stateful=false
-  res.name = verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray))
-
+  
   if terralib~=nil then res.terraModule = MT.SoAtoAoS(res,W,H,typelist,asArray) end
 
-  function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor(res.name)
-    local sinp = S.parameter("process_input", res.inputType )
-    local arrList = {}
-    for y=0,H-1 do
-      for x=0,W-1 do
-        local r = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),x,y) end))
-        if asArray then r = S.cast(r, types.array2d(typelist[1],#typelist) ) end
-        table.insert( arrList, r )
-      end
-    end
-    systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
-    return systolicModule
-  end
-
-  return rigel.newFunction(res)
+  return res
 end)
 
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
@@ -701,59 +739,85 @@ modules.map = memoize(function( f, W, H )
 
   err( type(H)=="number", "map: H must be number" )
 
-  local res = { kind="map", fn = f, W=W, H=H }
+  local res
+  
+  if (W*H)%2==0 then
+    -- special case: this is a power of 2, so we can easily split it, to save compile time 
+    -- (produces log(n) sized code instead of linear)
+    
+    local C = require "examplescommon"
+    local I = rigel.input( types.array2d( f.inputType, W, H ) )
+    local ic = rigel.apply( "cc", C.cast( types.array2d( f.inputType, W, H ), types.array2d( f.inputType, W*H ) ), I)
 
-  res.inputType = types.array2d( f.inputType, W, H )
-  res.outputType = types.array2d( f.outputType, W, H )
-  err(type(f.stateful)=="boolean", "Missing stateful annotation "..f.kind)
-  res.stateful = f.stateful
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.delay = f.delay
-  res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
+    local ica = rigel.apply("ica", C.slice(types.array2d( f.inputType, W*H ),0,(W*H)/2-1,0,0), ic)
+    local a = rigel.apply("a", modules.map(f,(W*H)/2), ica)
+
+    local icb = rigel.apply("icb", C.slice(types.array2d( f.inputType, W*H ),(W*H)/2,(W*H)-1,0,0), ic)
+    local b = rigel.apply("b", modules.map(f,(W*H)/2), icb)
+
+    local out = rigel.concat("conc", {a,b})
+    --local T = types.array2d( f.outputType, (W*H)/2 )
+    out = rigel.apply( "cflat", C.flatten2( f.outputType, W*H ), out)
+    out = rigel.apply( "cflatar", C.cast( types.array2d( f.outputType, W*H ), types.array2d( f.outputType, W,H ) ), out)
+
+    res = modules.lambda("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)
+  else
+    res = { kind="map", fn = f, W=W, H=H }
+
+    res.inputType = types.array2d( f.inputType, W, H )
+    res.outputType = types.array2d( f.outputType, W, H )
+    err(type(f.stateful)=="boolean", "Missing stateful annotation "..f.kind)
+    res.stateful = f.stateful
+    res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+    res.delay = f.delay
+    res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
+    
+    res.globals={}
+    for k,_ in pairs(f.globals) do
+      err( k.direction=="input", "modules.map: mapped modules not allowed to write output globals")
+      res.globals[k] = 1
+    end
+    
+    function res.makeSystolic()
+      local systolicModule = Ssugar.moduleConstructor(res.name)
+      
+      local SC = {}
+      for k,_ in pairs(f.globals) do
+        systolicModule:addSideChannel(k.systolicValue)
+        SC[k.systolicValue]=k.systolicValue
+        assert(S.isSideChannel(k.systolicValue))
+      end
+      
+      assert(J.keycount(SC)==J.keycount(f.globals))
+      
+      local inp = S.parameter("process_input", res.inputType )
+      local out = {}
+      local resetPipelines={}
+      for y=0,H-1 do
+        for x=0,W-1 do 
+          local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y,nil,SC))
+          table.insert( out, inst:process( S.index( inp, x, y ) ) )
+          if f.stateful then
+            table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
+          end
+        end 
+      end
+      
+      local CE = S.CE("process_CE")
+      
+      systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
+      if f.stateful then
+        systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
+      end
+      return systolicModule
+    end
+    
+    res = rigel.newFunction(res)
+  end
 
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
-  res.globals={}
-  for k,_ in pairs(f.globals) do
-    err( k.direction=="input", "modules.map: mapped modules not allowed to write output globals")
-    res.globals[k] = 1
-  end
-  
-  function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor(res.name)
-
-    local SC = {}
-    for k,_ in pairs(f.globals) do
-      systolicModule:addSideChannel(k.systolicValue)
-      SC[k.systolicValue]=k.systolicValue
-      assert(S.isSideChannel(k.systolicValue))
-    end
-
-    assert(J.keycount(SC)==J.keycount(f.globals))
-    
-    local inp = S.parameter("process_input", res.inputType )
-    local out = {}
-    local resetPipelines={}
-    for y=0,H-1 do
-      for x=0,W-1 do 
-        local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y,nil,SC))
-        table.insert( out, inst:process( S.index( inp, x, y ) ) )
-        if f.stateful then
-          table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
-        end
-      end 
-    end
-
-    local CE = S.CE("process_CE")
-
-    systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
-    if f.stateful then
-      systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
-    end
-    return systolicModule
-  end
-  
-  return rigel.newFunction(res)
+  return res
 end)
 
 -- type {A,bool}->A
@@ -2624,42 +2688,63 @@ modules.reduce = memoize(function( f, W, H )
   err(type(W)=="number", "reduce W must be number")
   err(type(H)=="number", "reduce H must be number")
 
-  local res = {kind="reduce", fn = f, W=W, H=H}
-  rigel.expectBasic(f.inputType)
-  rigel.expectBasic(f.outputType)
-  if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
-    err("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
-  end
-  res.inputType = types.array2d( f.outputType, W, H )
-  res.outputType = f.outputType
-  res.stateful = f.stateful
-  if f.stateful then print("WARNING: reducing with a stateful function - are you sure this is what you want to do?") end
+  local res
+  if (W*H)%2==0 then
+    -- codesize reduction optimization
+    local C = require "examplescommon"
+    local I = rigel.input( types.array2d( f.outputType, W, H ) )
+    local ic = rigel.apply( "cc", C.cast( types.array2d( f.outputType, W, H ), types.array2d( f.outputType, W*H ) ), I)
 
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
-  res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
-  res.name = sanitize("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
+    local ica = rigel.apply("ica", C.slice(types.array2d( f.outputType, W*H ),0,(W*H)/2-1,0,0), ic)
+    local a = rigel.apply("a", modules.reduce(f,(W*H)/2,1), ica)
+
+    local icb = rigel.apply("icb", C.slice(types.array2d( f.outputType, W*H ),(W*H)/2,(W*H)-1,0,0), ic)
+    local b = rigel.apply("b", modules.reduce(f,(W*H)/2,1), icb)
+
+    local fin = rigel.concat("conc", {a,b})
+    local out = rigel.apply("out", f, fin)
+    res = modules.lambda("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)
+  else
+    res = {kind="reduce", fn = f, W=W, H=H}
+    rigel.expectBasic(f.inputType)
+    rigel.expectBasic(f.outputType)
+    if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
+      err("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
+    end
+    res.inputType = types.array2d( f.outputType, W, H )
+    res.outputType = f.outputType
+    res.stateful = f.stateful
+    if f.stateful then print("WARNING: reducing with a stateful function - are you sure this is what you want to do?") end
+    
+    res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+    res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
+    res.name = sanitize("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
+    
+    
+    function res.makeSystolic()
+      local systolicModule = Ssugar.moduleConstructor(res.name)
+      
+      local resetPipelines = {}
+      local sinp = S.parameter("process_input", res.inputType )
+      local t = J.map( J.range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
+      
+      local i=0
+      local expr = J.foldt(t, function(a,b) 
+                             local I = systolicModule:add(f.systolicModule:instantiate("inner"..i))
+                             i = i + 1
+                             return I:process(S.tuple{a,b}) end, nil )
+      
+      systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, S.CE("process_CE") ) )
+      
+      return systolicModule
+    end
+
+    res = rigel.newFunction( res )
+  end
 
   if terralib~=nil then res.terraModule = MT.reduce(res,f,W,H) end
 
-  function res.makeSystolic()
-    local systolicModule = Ssugar.moduleConstructor(res.name)
-
-    local resetPipelines = {}
-    local sinp = S.parameter("process_input", res.inputType )
-    local t = J.map( J.range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
-
-    local i=0
-    local expr = J.foldt(t, function(a,b) 
-                         local I = systolicModule:add(f.systolicModule:instantiate("inner"..i))
-                         i = i + 1
-                         return I:process(S.tuple{a,b}) end, nil )
-
-    systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, S.CE("process_CE") ) )
-
-    return systolicModule
-  end
-
-  return rigel.newFunction( res )
+  return res
 end)
 
 
@@ -3015,9 +3100,9 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       if n.name~=nil then
         assert(type(n.name)=="string")
         if usedNames[n.name]~=nil then
-          print("NAME USED TWICE")
           print("FIRST: "..usedNames[n.name])
           print("SECOND: "..n.loc)
+          print("NAME USED TWICE:",n.name)
           assert(false)
         end
         usedNames[n.name] = n.loc
@@ -3375,7 +3460,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     print("lambda done '"..name.."'")
     if terralib~=nil then print("lambda terra module size:"..terralib.sizeof(res.terraModule)) end
   end
-  
+
   return rigel.newFunction( res )
 end
 

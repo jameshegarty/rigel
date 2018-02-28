@@ -2,7 +2,6 @@ local IR = require("ir")
 local types = require("types")
 local typecheckAST = require("typecheck")
 local systolic={}
-local ffi = require("ffi")
 local J = require "common"
 local err = J.err
 local memoize = J.memoize
@@ -183,9 +182,10 @@ function systolic.valueToVerilog( value, ty )
     assert(#value==#ty.list)
     return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
   elseif ty:stripConst()==types.float(32) then
-     local a = ffi.new("float[1]",value)
-     local b = ffi.cast("unsigned int*",a)
-     return "32'd"..tostring(b[0])
+    local ffi = require("ffi")
+    local a = ffi.new("float[1]",value)
+    local b = ffi.cast("unsigned int*",a)
+    return "32'd"..tostring(b[0])
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   elseif ty:isNamed() then
@@ -444,11 +444,12 @@ function systolic.index( expr, idx, idy )
 end
 
 -- low,high are inclusive
-function systolic.bitSlice( expr, low, high )
+function systolic.bitSlice( expr, low, high, X )
   err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast")
   err( type(low)=="number", "bitSlice: low must be number")
   err( type(high)=="number", "bitSlice: high must be number")
   err( high>=low, "bitSlice: high<low, (low="..tostring(low)..",high="..tostring(high)..")" )
+  err( X==nil, "systolic.bitSlice: too many arguments")
   return typecheck({kind="bitSlice",inputs={expr},low=low,high=high,loc=getloc()})
 end
 
@@ -465,8 +466,8 @@ function systolic.readSideChannel( sc )
 end
 
 function systolic.tuple( tab )
-  err( type(tab)=="table", "input to tuple should be a table")
-  err( #tab==J.keycount(tab), "tab must be array")
+  err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
+  err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array")
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
 
@@ -1501,15 +1502,6 @@ function userModuleFunctions:toVerilog()
       end
     end
 
-    for fnname,fn in pairs(self.functions) do
---      if fn:isPure()==false and (self.onlyWire and fn.implicitValid)==false then 
-      if fn:isPure()==false and self.onlyWire~=true then
-
-        --table.insert(t, [[always @(posedge CLK) begin if(]]..fn.valid.name..[[===1'bx) begin $display("Valid bit can't be x! Module '%s' function ']]..fnname..[['", INSTANCE_NAME);  end end
---]])
-      end
-    end
-
     for k,v in pairs(self.instances) do
       if v.module.instanceToVerilogStart~=nil then
         v.module:instanceToVerilogStart( v, self )
@@ -1680,7 +1672,6 @@ function regModuleFunctions:instanceToVerilogStart( instance, module )
   assert(instance.verilogCompilerState[module]==nil)
   instance.verilogCompilerState[module] = {decl=false}
 end
-
 
 function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar, CEVar )
   local decl = nil

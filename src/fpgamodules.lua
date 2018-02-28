@@ -138,6 +138,42 @@ modules.ram128 = function(ty, init)
   return ram128
 end
 
+-- build a bits-width ram out of slices.
+-- Saves compile times with large # of bits... always makes constant size modules, even with 10000s of bits
+-- module interface looks the same as systolic.module.ram128()
+local sliceRamCache = {}
+local function sliceRamGen(bits)
+
+    if bits==1 then
+return systolic.module.ram128()
+  end
+
+  if sliceRamCache[bits]~=nil then
+return sliceRamCache[bits]
+  end
+
+  err( bits%2==0, "NYI - sliceRamGen with non-power of 2 number of bits "..tostring(bits))
+  
+  local m = sliceRamGen(bits/2)
+
+  local ram = Ssugar.moduleConstructor( J.sanitize("sliceRamGen_"..tostring(bits)) )
+  local ai, bi = ram:add(m:instantiate("a")), ram:add(m:instantiate("b"))
+
+  local readFn = ram:addFunction( Ssugar.lambdaConstructor("read",types.uint(7),"readAddr") )
+  readFn:setCE(S.CE("RE"))
+  readFn:setOutput( S.cast(S.tuple{ai:read(readFn:getInput()),bi:read(readFn:getInput())},types.bits(bits)),"readOut")
+
+  local writeFn = ram:addFunction( Ssugar.lambdaConstructor("write",types.tuple{types.uint(7),types.bits(bits)},"readAddrDat") )
+  writeFn:setCE(S.CE("WE"))
+  local lowbits = S.bitSlice(S.index(writeFn:getInput(),1),0,bits/2-1)
+  local highbits = S.bitSlice(S.index(writeFn:getInput(),1),bits/2,bits-1)
+  local addr = S.index(writeFn:getInput(),0)
+  writeFn:addPipeline( ai:write(S.tuple{addr,lowbits}) )
+  writeFn:addPipeline( bi:write(S.tuple{addr,highbits}) )
+
+  sliceRamCache[bits] = ram
+  return ram
+end
 
 modules.fifo = memoize(function(ty,items,verbose)
   err(types.isType(ty),"fifo type must be type")
@@ -152,12 +188,12 @@ modules.fifo = memoize(function(ty,items,verbose)
   local bits = ty:verilogBits()
   local bytes = bits/8
 
-  local rams, ram
-  if items <= 128 then
-    --err(items==128,"fifo NYI, items <128")
+  local ram, rams
+  if items <= 128 and J.isPowerOf2(bits) then
+    ram = fifo:add( sliceRamGen(bits):instantiate("ram") )
+  elseif items <= 128 then
     rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
-    --print("FIFO BRAMS",ty,"bytes",bytes,"items",items)
     ram = fifo:add(modules.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
   end
 
@@ -182,10 +218,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   -- has data
   local hasDataFn = fifo:addFunction( Ssugar.lambdaConstructor("hasData") )
   local hasData = S.__not( S.eq( writeAddr:get(), readAddr:get()) ):disablePipelining()
---  local hasData = S.gt(fsize,S.constant(16,types.uint(addrBits))):disablePipelining()
---  local hasData = S.gt( modules.modSub(writeAddr:get(),readAddr:get(), 128 ), S.constant(1,types.uint(8)) ):disablePipelining()
   hasDataFn:setOutput( hasData, "hasData" )
-
 
   -- pushBack
   local pushCE = S.CE("CE_push")
@@ -196,7 +229,9 @@ modules.fifo = memoize(function(ty,items,verbose)
   pushBack:addPipeline( pushBackAssert:process( hasSpace )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
 
-  if items<=128 then
+  if items<=128 and J.isPowerOf2(bits) then
+    pushBack:addPipeline( ram:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.cast(pushBack:getInput(),types.bits(bits))} )  )
+  elseif items<=128 then
     for b=1,bits do
       pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
     end
@@ -222,9 +257,13 @@ modules.fifo = memoize(function(ty,items,verbose)
   popFront:addPipeline( readAddr:setBy( S.constant(true, types.bool() ) ) )
 
   local popOutput
-  if items<=128 then
+  if items<=128 and J.isPowerOf2(bits) then
+    local bitfield = ram:read(S.cast( readAddr:get(), types.uint(7)))
+    popOutput = systolic.cast( bitfield, ty)
+    popFront:setOutput( popOutput, "popFront" )
+  elseif items<=128 then
     local bitfield = J.map( J.range(bits), function(b) return rams[b]:read( S.cast( readAddr:get(), types.uint(7)) ) end)
-    popOutput = systolic.cast( S.tuple(bitfield), ty)
+    popOutput = systolic.cast( systolic.tuple(bitfield), ty)
     popFront:setOutput( popOutput, "popFront" )
   else
     popOutput = S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),ty)
