@@ -297,7 +297,7 @@ function common.index(t,idx)
   local T = t
   for k,v in ipairs(idx) do
     T = T[v]
-    if type(T)~="table" then return nil end
+    if type(T)~="table" and k<#idx then return nil end
   end
   return T
 end
@@ -445,6 +445,8 @@ end
 
 function common.andop(a,b) return a and b end
 function common.orop(a,b) return a or b end
+function common.mulop(a,b) return a*b end
+function common.addop(a,b) return a+b end
 
 -- returns first i elements of the list t
 function common.take(t,i)
