@@ -267,6 +267,7 @@ if TOPLEVEL=="axi" then
 
 else
   J.err(metadata.tapBits%32==0,"NYI - tapBits must be in chunks of 32 bits")
+  J.err(metadata.tapBits<1024*32,"NYI - hw module only supports <4KB of taps")
   axiv = string.gsub(axiv,"___CONF_NREG",tostring(4+(metadata.tapBits/32)))
   verilogStr = verilogStr..readAll(PLATFORMDIR.."/axi/conf_nports.v")
 
