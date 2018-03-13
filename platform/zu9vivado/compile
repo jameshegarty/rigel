@@ -8,9 +8,9 @@ OUTFILE=$4
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 mkdir -p $BUILDDIR
-$DIR/../../rigelLuajit $DIR/../../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.mpsocwrapper.v $DIR/../../platform/ mpsoc
+$DIR/../../rigelLuajit $DIR/../../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.mpsocwrapper.sv $DIR/../../platform/ mpsoc
 cd $BUILDDIR
-echo "read_verilog $VERILOG_FILE.mpsocwrapper.v" > system.tcl
+echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
 echo "synth_design -top stage -part xczu9eg-ffvb1156-2-e" >> system.tcl
 echo "read_xdc $DIR/../zu9vivado/zu9.xdc" >> system.tcl
 echo "opt_design" >> system.tcl

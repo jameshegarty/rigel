@@ -85,8 +85,8 @@ int main(int argc, char *argv[]) {
   printf("start processimage\n");
   fflush(stdout);
     
-  if(argc!=11){
-    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
+  if(argc!=11 && argc!=12){
+    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel [tapHex]\n");
     exit(1);
   }
 
@@ -100,6 +100,15 @@ int main(int argc, char *argv[]) {
   unsigned int outputH = atoi(argv[9]);
   unsigned int outputBitsPerPixel = atoi(argv[10]);
 
+  if(argc==12){
+    int l = strlen(argv[11]);
+    printf("# of tap bits %d\n",l*4);
+    if(l%8!=0){
+      printf("Error, tap bits must be a factor of 32\n");
+      exit(1);
+    }
+  }
+  
   if(outputBitsPerPixel%8!=0){
     printf("Error, NYI - non-byte aligned output bits per pixel not supported!\n");
     exit(1);
@@ -215,7 +224,8 @@ int main(int argc, char *argv[]) {
   sleep(2);
 
   volatile Conf * conf = (Conf*) gpioptr;
-
+  volatile unsigned int* taps = ((unsigned int*) gpioptr)+(sizeof(Conf)/sizeof(unsigned int));
+  
   printf("setting gpio\n");
   fflush(stdout);
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
@@ -225,6 +235,24 @@ int main(int argc, char *argv[]) {
   conf->dest = copy_addr + lenIn;
   conf->len = lenIn;
 
+  // flip order
+  int cnt = strlen(argv[11])/8;
+  //  char* tmp = (char*)malloc(cnt+1);
+  //  for(int i=0; i<cnt; i++){tmp[cnt-i-1]=argv[11][i];}
+  //  tmp[cnt]=0;
+  //  printf("FLIP %s\n",tmp);
+
+  for(int u=0; u<cnt; u++){
+    char* st = &(argv[11][0])+u*8;
+    char tmp[9];
+    tmp[8]=0;
+    strncpy(tmp,st,8);
+    printf("TAPST: %s\n",tmp);
+    unsigned int v = strtoul(tmp,NULL,16);
+    printf("TAP: %u\n",v);
+    taps[cnt-u-1] = v;
+  }
+  
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
   sleep(2);
   conf->cmd = 3;

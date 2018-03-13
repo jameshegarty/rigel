@@ -69,10 +69,18 @@ module stage
     wire [1:0] M_AXI_AWBURST;
     
     wire CONFIG_VALID;
+   wire [___CONF_NREG*32-1:0] CONFIG_DATA;
+   
     wire [31:0] CONFIG_CMD;
     wire [31:0] CONFIG_SRC;
     wire [31:0] CONFIG_DEST;
     wire [31:0] CONFIG_LEN;
+
+   assign CONFIG_CMD = CONFIG_DATA[31:0];
+   assign CONFIG_SRC = CONFIG_DATA[63:32];
+   assign CONFIG_DEST = CONFIG_DATA[95:64];
+   assign CONFIG_LEN = CONFIG_DATA[127:96];
+   
     wire CONFIG_IRQ;
   
     wire READER_READY;
@@ -80,7 +88,7 @@ module stage
     
     assign CONFIG_READY = READER_READY && WRITER_READY;
     
-    Conf #(.ADDR_BASE(32'hA0000000))  conf(
+    Conf #(.ADDR_BASE(32'hA0000000),.NREG(___CONF_NREG))  conf(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),
     .S_AXI_ARADDR(PS7_ARADDR), 
@@ -107,10 +115,7 @@ module stage
     .S_AXI_WVALID(PS7_WVALID),
     .CONFIG_VALID(CONFIG_VALID),
     .CONFIG_READY(CONFIG_READY),
-    .CONFIG_CMD(CONFIG_CMD),
-    .CONFIG_SRC(CONFIG_SRC),
-    .CONFIG_DEST(CONFIG_DEST),
-    .CONFIG_LEN(CONFIG_LEN),
+    .CONFIG_DATA(CONFIG_DATA),                                           
     .CONFIG_IRQ(CONFIG_IRQ));
 
    // lengthInput/lengthOutput are in bytes
@@ -124,12 +129,7 @@ module stage
    assign  LED = CONFIG_SRC[15:8];//clkcnt[28:21];
    
   always @(posedge FCLK0) begin
-//    if(ARESETN == 0)
-//        LED <= 0;
-//    else if(CONFIG_VALID)
-//        LED <= {CONFIG_CMD[1:0],CONFIG_SRC[2:0],CONFIG_DEST[2:0]};
      clkcnt <= clkcnt+1;
-
   end
 
   wire [63:0] pipelineInput;
@@ -144,12 +144,8 @@ module stage
   wire       pipelineReady;
   wire      downstreamReady;
 
-  ___PIPELINE_TAPS
-    
   ___PIPELINE_MODULE_NAME pipeline(.CLK(FCLK0),.reset(CONFIG_READY),.ready(pipelineReady),.ready_downstream(downstreamReady),.process_input({pipelineInputValid,pipelineInput}),.process_output(pipelineOutputPacked) ___PIPELINE_TAPINPUT );
 
-//   UnderflowShim #(.WAIT_CYCLES(___PIPELINE_WAIT_CYCLES)) OS(.CLK(FCLK0),.RST(CONFIG_READY),.lengthOutput(lengthOutput),.inp(pipelineOutputPacked[63:0]),.inp_valid(pipelineOutputPacked[64]),.out(pipelineOutput),.out_valid(pipelineOutputValid));
-   
   DRAMReader reader(
     .ACLK(FCLK0),
     .ARESETN(ARESETN),

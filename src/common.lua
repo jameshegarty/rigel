@@ -559,11 +559,10 @@ function common.cartesian(t)
 
   local tmpt = common.shallowCopy(t)
   local k = common.choose(t)
-  print("CHOOSE",k)
+
   local v = t[k]
   tmpt[k] = nil
   local list = common.cartesian(tmpt)
-  print("LIST",#list)
 
   -- form product
   local out = {}
@@ -660,6 +659,21 @@ function common.uniq(t)
   else
     assert(false)
   end
+end
+
+-- takes an array of tables {{},{},{}}, and flattens it into a single table
+-- keys must not collide!
+function common.flattenTables(arr)
+  common.err( #arr==common.keycount(arr),"flattenTables: input must be array")
+
+  local t = {}
+  for _,v in ipairs(arr) do
+    for k,vv in pairs(v) do
+      common.err( t[k]==nil, "flattenTables: key collision on "..k )
+      t[k]=vv
+    end
+  end
+  return t
 end
 
 return common
