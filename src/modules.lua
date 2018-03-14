@@ -1832,7 +1832,7 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( R>=0, "cropSeq, R must be <0")
   err( W%T==0, "cropSeq, W%T must be 0")
   err( L%T==0, "cropSeq, L%T must be 0")
-  err( R%T==0, "cropSeq, R%T must be 0")
+  err( R%T==0, "cropSeq, R%T must be 0, R="..tostring(R)..", T="..tostring(T))
   err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
