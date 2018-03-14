@@ -209,7 +209,11 @@ if metadata.sdfInputN==nil and metadata.earlyOverride==nil then
   metadata.earlyOverride = 16*1024*1024*100
 end
 
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), readAll(VERILOGFILE), globals, hsfnSdfInput, hsfnSdfOutput)
+-- hack: if verilogFile is 'none', don't concat it
+local HSFN_VERILOG = ""
+if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
+
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), HSFN_VERILOG, globals, hsfnSdfInput, hsfnSdfOutput)
 local hsfn = axiRateWrapper(hsfnorig)
 local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 
