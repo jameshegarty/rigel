@@ -78,19 +78,14 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
 int main(int argc, char *argv[]) {
 	unsigned gpio_addr = strtol(argv[1],NULL,16);
 	unsigned copy_addr = strtol(argv[2],NULL,16);
-  
-
-
 
   printf("start processimage\n");
   fflush(stdout);
     
-  if(argc!=11){
-    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel\n");
+  if(argc!=11 && argc!=12){
+    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename inputW inputH inputBitsPerPixel outputW outH outputBitsPerPixel [tapHex]\n");
     exit(1);
   }
-
-
 
   unsigned int inputW = atoi(argv[5]);
   unsigned int inputH = atoi(argv[6]);
@@ -100,6 +95,26 @@ int main(int argc, char *argv[]) {
   unsigned int outputH = atoi(argv[9]);
   unsigned int outputBitsPerPixel = atoi(argv[10]);
 
+  unsigned int gpioBytes = 0;
+  unsigned int gpioCount = 0;
+    
+  if(argc==12){
+    int l = strlen(argv[11]);
+
+    if(l==1 && argv[11][0]=='x'){
+      // empty taps string
+    }else{
+      printf("# of tap bits %d\n",l*4);
+      if(l%8!=0){
+        printf("Error, tap bits must be a factor of 32\n");
+        exit(1);
+      }
+
+      gpioCount = l/8;
+      gpioBytes= gpioCount*4;
+    }
+  }
+  
   if(outputBitsPerPixel%8!=0){
     printf("Error, NYI - non-byte aligned output bits per pixel not supported!\n");
     exit(1);
@@ -205,7 +220,8 @@ int main(int argc, char *argv[]) {
   // mmap the device into memory 
   // This mmaps the control region (the MMIO for the control registers).
   // Image data is located at addr 'copy_addr'
-  void * gpioptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
+  void * gpioptr = mmap(NULL, sizeof(Conf)+gpioBytes, PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
+  
   if(gpioptr==(void *) -1){
     printf("Error mmaping gpio\n");
     exit(1);
@@ -215,7 +231,8 @@ int main(int argc, char *argv[]) {
   sleep(2);
 
   volatile Conf * conf = (Conf*) gpioptr;
-
+  volatile unsigned int* taps = ((unsigned int*) gpioptr)+(sizeof(Conf)/sizeof(unsigned int));
+  
   printf("setting gpio\n");
   fflush(stdout);
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
@@ -225,6 +242,17 @@ int main(int argc, char *argv[]) {
   conf->dest = copy_addr + lenIn;
   conf->len = lenIn;
 
+  for(int u=0; u<gpioCount; u++){
+    char* st = &(argv[11][0])+u*8;
+    char tmp[9];
+    tmp[8]=0;
+    strncpy(tmp,st,8);
+    printf("TAPST: %s\n",tmp);
+    unsigned int v = strtoul(tmp,NULL,16);
+    printf("TAP: %u\n",v);
+    taps[gpioCount-u-1] = v;
+  }
+  
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
   sleep(2);
   conf->cmd = 3;

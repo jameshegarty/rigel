@@ -249,18 +249,35 @@ local maxUtilization = 1
 
 --axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
 
-if metadata.tapBits>0 then
-  local tv = J.map( J.range(metadata.tapBits),function(i) return J.sel(math.random()>0.5,"1","0") end )
-  local tapreg = "reg ["..(metadata.tapBits-1)..":0] taps = "..tostring(metadata.tapBits).."'b"..table.concat(tv,"")..";\n"
-  
-  axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..tostring(metadata.tapBits).."'h"..metadata.tapValue.."; end\n")
-  axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT",",.taps(taps)")
-else
-  axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
-  axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
-end
 
-verilogStr = (hsfn:toVerilog())..readAll(PLATFORMDIR.."/axi/ict106_axilite_conv.v")..readAll(PLATFORMDIR.."/axi/conf.v")..readAll(PLATFORMDIR.."/axi/dramreader.v")..readAll(PLATFORMDIR.."/axi/dramwriter.v")..axiv
+verilogStr = (hsfn:toVerilog())..readAll(PLATFORMDIR.."/axi/ict106_axilite_conv.v")
+if TOPLEVEL=="axi" then
+  verilogStr = verilogStr..readAll(PLATFORMDIR.."/axi/conf.v")
+
+  if metadata.tapBits>0 then
+    local tv = J.map( J.range(metadata.tapBits),function(i) return J.sel(math.random()>0.5,"1","0") end )
+    local tapreg = "reg ["..(metadata.tapBits-1)..":0] taps = "..tostring(metadata.tapBits).."'b"..table.concat(tv,"")..";\n"
+    
+    axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..tostring(metadata.tapBits).."'h"..metadata.tapValue.."; end\n")
+    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT",",.taps(taps)")
+  else
+    axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
+    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
+  end
+
+else
+  J.err(metadata.tapBits%32==0,"NYI - tapBits must be in chunks of 32 bits")
+  J.err(metadata.tapBits<1024*32,"NYI - hw module only supports <4KB of taps")
+  axiv = string.gsub(axiv,"___CONF_NREG",tostring(4+(metadata.tapBits/32)))
+  verilogStr = verilogStr..readAll(PLATFORMDIR.."/axi/conf_nports.v")
+
+  if metadata.tapBits>0 then
+    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT",",.taps(CONFIG_DATA["..(128+metadata.tapBits-1)..":128])")
+  else
+    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
+  end
+end
+verilogStr = verilogStr..readAll(PLATFORMDIR.."/axi/dramreader.v")..readAll(PLATFORMDIR.."/axi/dramwriter.v")..axiv
 
 io.output(OUTFILE)
 io.write(verilogStr)
