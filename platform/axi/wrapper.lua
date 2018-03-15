@@ -37,7 +37,7 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   return EC, EC_RAW
 end
 
-local function axiRateWrapper(fn)
+local function axiRateWrapper( fn, metadata )
   R.expectHandshake(fn.inputType)
 
   local iover = R.extractData(fn.inputType)
@@ -77,6 +77,8 @@ return fn
   end
 
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
+
+  -- NOTE: should probably pad/crop here!!!
   out = R.apply("HarnessHSFN",fn,out) --{input=out, toModule=fn}
 
   if outputP==1 and oover:verilogBits()>64 then
@@ -107,32 +109,35 @@ return fn
   return outFn
 end
 
-local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, inputType, earlyOverride)
-  local outputBytes = J.upToNearest(128,outputCountArg*8) -- round to axi burst
-  local inputBytes = J.upToNearest(128,inputCountArg*8) -- round to axi burst
-
-  --J.err(outputBytes==outputCount*8, "NYI - non-burst-aligned output counts, "..tostring(outputCount))
-  --J.err(inputBytes==inputCount*8, "NYI - non-burst-aligned input counts, "..tostring(inputCount))
-
+local function harnessAxi( hsfn, metadata) --inputCountArg, outputCountArg, underflowTest, inputType, earlyOverride)
+  local inputBitsArg = metadata.inputWidth*metadata.inputHeight*metadata.inputBitsPerPixel
+  local outputBitsArg = metadata.outputWidth*metadata.outputHeight*metadata.outputBitsPerPixel
+  J.err( inputBitsArg%8==0, "NYI - non byte aligned inputs")
+  J.err( outputBitsArg%8==0, "NYI - non byte aligned outputs")
+  local inputBytesArg = inputBitsArg/8
+  local outputBytesArg = outputBitsArg/8
+  local inputBytes = J.upToNearest(128,inputBytesArg) -- round to axi burst
+  local outputBytes = J.upToNearest(128,outputBytesArg) -- round to axi burst
+  
   local inputCount = inputBytes/8
   local outputCount = outputBytes/8
-  
-  local ITYPE = inputType
 
-  local inpSymb = R.input( R.Handshake(R.extractData(ITYPE)) )
+  J.err( R.extractData(hsfn.inputType):verilogBits()==64,"harnessAxi: hsfn should have 64 bit input!")
+  
+  local inpSymb = R.input( R.Handshake(R.extractData(hsfn.inputType)) )
   local inpdata
   local inptaps
 
   inpdata = inpSymb
 
   local EC
-  if type(earlyOverride)=="number" then
-    EC=earlyOverride
+  if type(metadata.earlyOverride)=="number" then
+    EC = metadata.earlyOverride
   else
-    EC = expectedCycles(hsfn,inputCount,outputCount,underflowTest,1.85)
+    EC = expectedCycles( hsfn, inputCount, outputCount, metadata.underflowTest, 1.85 )
   end
   
-  local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(inputType), inputBytes/8, EC, true ), inpdata)
+  local inpdata = R.apply("underflow_US", RM.underflow( R.extractData(hsfn.inputType), inputBytes/8, EC, true ), inpdata)
 
   local out = inpdata
 
@@ -151,24 +156,24 @@ local function harnessAxi( hsfn, inputCountArg, outputCountArg, underflowTest, i
   end
 
   -- crop down to correct size (from burst size)
-  if inputCount~=inputCountArg then
-    local T = R.extractData(hsfn.inputType):channels()
-    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount*T,1,T,0,(inputCount-inputCountArg)*T,0,0))), out)
-  end
+--  if inputCount~=inputCountArg then
+--    local T = R.extractData(hsfn.inputType):channels()
+--    out = R.apply("burstcrop", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( R.extractData(hsfn.inputType):arrayOver(), inputCount*T,1,T,0,(inputCount-inputCountArg)*T,0,0))), out)
+--  end
   
   out = R.apply("hsfna",hsfn,out)
 
-  assert( R.extractData(hsfn.outputType):verilogBits()==64 )
+  J.err( R.extractData(hsfn.outputType):verilogBits()==64, "harnessAxi: expected 64 bit output" )
 
   local CYCLES_BURST = 16
-  print("OUTTYPE",hsfn.outputType)
-  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), outputCountArg ), out)
+  --print("OUTTYPE",hsfn.outputType)
+  out = R.apply("cycleCounter", RM.cycleCounter( R.extractData(hsfn.outputType), outputCount ), out)
 
   -- pad up to burst size
-  if outputCount~=outputCountArg then
-    local T = R.extractData(hsfn.outputType):channels()
-    out = R.apply("burstpad", RM.liftHandshake(RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), (outputCountArg+CYCLES_BURST)*T,1,T,0,(outputCount-outputCountArg)*T,0,0, R.extractData(hsfn.outputType):arrayOver():fakeValue() )), out)
-  end
+--  if outputCount~=outputCountArg then
+--    local T = R.extractData(hsfn.outputType):channels()
+--    out = R.apply("burstpad", RM.liftHandshake(RM.padSeq( R.extractData(hsfn.outputType):arrayOver(), (outputCountArg+CYCLES_BURST)*T,1,T,0,(outputCount-outputCountArg)*T,0,0, R.extractData(hsfn.outputType):arrayOver():fakeValue() )), out)
+--  end
   
   if EXTRA_FIFO then
      regs[2] = R.instantiateRegistered("f2",RM.fifo(R.extractData(hsfn.outputType),256))
@@ -214,13 +219,13 @@ local HSFN_VERILOG = ""
 if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
 
 local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), HSFN_VERILOG, globals, hsfnSdfInput, hsfnSdfOutput)
-local hsfn = axiRateWrapper(hsfnorig)
-local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
+local hsfn = axiRateWrapper(hsfnorig,metadata)
+--local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 
-local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputV)
-local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputV)
+--local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputV)
+--local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputV)
 local inputBytes, outputBytes
-hsfn, inputBytes, outputBytes = harnessAxi( hsfn, inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
+hsfn, inputBytes, outputBytes = harnessAxi( hsfn, metadata) --inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
 ------------------------------
 
 --local baseTypeI = inputType

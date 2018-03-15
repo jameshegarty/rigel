@@ -30,6 +30,7 @@ script:
   - set -e
   - if [[ $TARGET = "unit" ]]; then export LUA="../rigelLuajit -lluacov"; fi
   - if [[ $TARGET = "unit" ]]; then cd unittests;  make;  else cd examples;  make -j2 $TARGET; fi
+  - if [[ $TARGET = "verilog" ]]; then make -j2 wrapper; fi
   # check that make actually 100% completed, just to be really sure (?)
   - pwd
   - echo out/${TARGET}_done.txt

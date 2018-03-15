@@ -14,6 +14,8 @@ DUPS = $(patsubst %.raw,out/%.raw.dup,$(RAWS))
 SRCS_VERILOG := $(filter-out pad.lua crop.lua stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS))
 
 VERILOG = $(patsubst %.lua,out/%.v,$(SRCS_VERILOG))
+SRCS_WRAPPER = $(filter-out readmemory.lua readmemory_flip.lua 12bpp.lua 18bpp.lua nullary.lua,$(SRCS_VERILOG)) ## NYI
+WRAPPER = $(patsubst %.lua,out/%.v.mpsocwrapper.v,$(SRCS_WRAPPER))
 
 # too slow
 SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
@@ -185,6 +187,9 @@ metadata: $(METADATA)
 verilog: $(VERILOG)
 	touch out/verilog_done.txt
 
+wrapper: $(WRAPPER)
+	touch out/wrapper_done.txt
+
 terra: $(TERRAOUT)
 	touch out/terra_done.txt
 
@@ -229,6 +234,9 @@ out/%.v: %.lua
 	# keep copy for future reference
 	mkdir -p out/build_$*
 	- cp out/$*.v out/build_$*
+
+out/%.v.mpsocwrapper.v: out/%.v out/%.metadata.lua
+	$(LUA) ../platform/axi/wrapper.lua out/$*.v out/$*.metadata.lua $@ ../platform/ mpsoc
 
 out/%.coverage.txt: %.lua
 	$(LUA) -lluacov $< verilator
