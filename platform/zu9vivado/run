@@ -23,7 +23,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LUA=$DIR/../../rigelLuajit
 
 #out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
-IMG=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputImage)
+IMGPATH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputImage)
+IMGFILE=$(basename $IMGPATH)
 INW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputWidth)
 INH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputHeight)
 BPP_IN=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
@@ -40,12 +41,12 @@ TAPVALUE=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE tapValue)
 #	sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
 ###### CLOCK STUFF END
 
-sshpass -p 'root' scp $DIR/../mpsoc/processimage_mpsoc $BITFILE $IMG root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
+sshpass -p 'root' scp $DIR/../mpsoc/processimage_mpsoc $BITFILE $IMGPATH root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
 sshpass -p 'root' ssh root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
-sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc A0000000 30008000 $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT $TAPVALUE"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc A0000000 30008000 $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw $INW $INH $BPP_IN $OUTW $OUTH $BPP_OUT $TAPVALUE"
 sshpass -p 'root' scp root@$ZYNQ_ADDR:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
-sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc $ZYNQ_WRITE_PATH/$IMG $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
+sshpass -p 'root' ssh root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
 #rm -f /tmp/zynq10lock
 #	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
 #	# keep copy for future reference
