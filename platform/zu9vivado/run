@@ -2,13 +2,8 @@
 # -x shows all commands
 
 ZYNQ_WRITE_PATH=/home/root
-ZYNQ_ADDR=$4
+ZYNQ_ADDR=${4:-192.168.1.151} # arg 4, or default 192.168.1.151
 
-if [ -n $ZYNQ_ADDR ]
-then
-  ZYNQ_ADDR=192.168.0.151
-fi
-   
 ZYNQ_BIN_FILE_PATH=/lib/firmware/
 ZYNQ_FIRMWARE_PATH=/sys/class/fpga_manager/fpga0/firmware
 
