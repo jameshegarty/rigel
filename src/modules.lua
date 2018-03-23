@@ -2895,7 +2895,9 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     if A:verilogBits()==0 then
       outData = pdata
     else
-      outData = S.select(fixupMode,S.cast(S.constant(math.min(3735928559,math.pow(2,A:verilogBits())-1),types.bits(A:verilogBits())),A),pdata)
+      local DEADBEEF = 4022250974 -- deadbeef
+      if upstream then DEADBEEF = 3737169374 end -- deadc0de
+      outData = S.select(fixupMode,S.cast(S.constant(math.min(DEADBEEF,math.pow(2,A:verilogBits())-1),types.bits(A:verilogBits())),A),pdata)
     end
     
     local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))

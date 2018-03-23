@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
   loadImage( imfile, ptr, lenInRaw );
 
   // zero out the output region
-  for(int i=0; i<lenOut; i++){ *(unsigned char*)(ptr+lenIn+i)=0; }
+  for(int i=0; i<lenOut; i+=4){ *(unsigned int*)(ptr+lenIn+i)=0x0df0adba; }
 
 
   // mmap the device into memory 
