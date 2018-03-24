@@ -236,7 +236,13 @@ hsfn, inputBytes, outputBytes = harnessAxi( hsfn, metadata) --inputCount, output
 J.err(R.extractData(hsfn.inputType):verilogBits()==64, "axi input must be 64 bits")
 J.err(R.extractData(hsfn.outputType):verilogBits()==64, "axi output must be 64 bits")
 
-local axiv = readAll(PLATFORMDIR.."/axi/"..TOPLEVEL..".v")
+local axiv
+if TOPLEVEL=="axi" then
+  axiv = readAll(PLATFORMDIR.."/axi/axi.v")
+else
+  axiv = readAll(PLATFORMDIR.."/mpsoc/mpsoc_iptop.sv")..readAll(PLATFORMDIR.."/mpsoc/mpsoc_top.sv")
+end
+
 axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME","harnessaxi")
 
 --local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
