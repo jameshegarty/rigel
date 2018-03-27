@@ -798,4 +798,15 @@ end
 
 if terralib~=nil then require("typesTerra") end
 
+function types.export(t)
+  if t==nil then t=_G end
+
+  rawset(t,"u",types.uint)
+  rawset(t,"i",types.int)
+  rawset(t,"b",types.bits)
+  rawset(t,"bool",types.bool(false))
+  rawset(t,"ar",types.array)
+  rawset(t,"tup",types.tuple)
+end
+
 return types

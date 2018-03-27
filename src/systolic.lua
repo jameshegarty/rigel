@@ -852,8 +852,10 @@ function systolicASTFunctions:mergeCallsites()
     end)
 end
 
-function systolicASTFunctions:addValid( validbit )
+function systolicASTFunctions:addValid( validbit, module )
   assert( systolicAST.isSystolicAST(validbit) )
+  err( systolic.isModule(module), ":addValid missing module") -- for debugging use only
+       
   return self:process(
     function(n)
       if n.kind=="call" and n.func:isPure()==false then
@@ -866,7 +868,7 @@ function systolicASTFunctions:addValid( validbit )
             if nn.kind=="call" then
               -- don't recurse into other calls, they may include the valid bit, but that's OK!
             elseif nn.kind=="parameter" and nn.key==validbit.key then 
-              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
+              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name.." in module "..module.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
             else
               J.map(nn.inputs, function(i) checkValidBit(i) end)
             end
@@ -1445,12 +1447,12 @@ function userModuleFunctions:lower()
 
   for _,fn in pairs(self.functions) do
     local O = fn.output
-    if O~=nil and self.onlyWire~=true then O = O:addValid(fn.valid) end
+    if O~=nil and self.onlyWire~=true then O = O:addValid(fn.valid,self) end
     if O~=nil and self.onlyWire~=true and fn.CE~=nil then O = O:addCE(fn.CE) end
     local node = { kind="fndefn", fn=fn, type=types.null(), valid=fn.valid, inputs={O},loc="userModuleFUnctions:lower()" }
     for k,pipe in pairs(fn.pipelines) do
       local P = pipe
-      if self.onlyWire~=true then P = P:addValid(fn.valid) end
+      if self.onlyWire~=true then P = P:addValid(fn.valid,self) end
       if self.onlyWire~=true and fn.CE~=nil then P = P:addCE(fn.CE) end
       table.insert( node.inputs, P )
     end

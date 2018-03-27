@@ -218,7 +218,7 @@ end
 local HSFN_VERILOG = ""
 if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
 
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), HSFN_VERILOG, globals, hsfnSdfInput, hsfnSdfOutput)
+local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), HSFN_VERILOG, globals, {}, hsfnSdfInput, hsfnSdfOutput)
 local hsfn = axiRateWrapper(hsfnorig,metadata)
 --local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 

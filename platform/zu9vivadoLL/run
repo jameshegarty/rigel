@@ -1,0 +1,54 @@
+#!/bin/bash -x
+# -x shows all commands
+
+ZYNQ_WRITE_PATH=/home/root
+ZYNQ_ETH=${ZYNQ_ETH:-enp10s0}    
+ZYNQ_BIN_FILE_PATH=/lib/firmware/
+ZYNQ_FIRMWARE_PATH=/sys/class/fpga_manager/fpga0/firmware
+
+BITFILE=$1
+BITFILE_BASE=$(basename $1)
+METAFILE=$2
+OUTFILE=$3
+#OUTPATH=$4
+
+while [[ -z `ip -6 neigh show | grep $ZYNQ_ETH | cut -d " " -f1` ]]
+do
+    echo "Finding IP..."
+    ping6 -c 5 -I enp10s0 FF02:0:0:0:0:0:0:1
+    sleep 1
+done
+
+IPT=$(ip -6 neigh show | grep enp10s0 | cut -d " " -f1)
+ZYNQ_ADDR=$IPT%$ZYNQ_ETH
+echo $ZYNQ_ADDR
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+LUA=$DIR/../../rigelLuajit
+
+#out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
+IMGPATH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputFiles)
+IMGFILE=$(basename $IMGPATH)
+
+###### SET THE CLOCK	
+#HZ=$(cat $OUTPATH.hz.txt)
+#lockfile /tmp/zynq10lock
+# (* second time around we can't write to fclk_export, so surpress error)
+#sshpass -p 'root' ssh root@$ZYNQ_ADDR "if [[ ! -a /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk/fclk0 ]]; then echo 'fclk0' > /sys/devices/amba.0/f8007000.ps7-dev-cfg/fclk_export; fi"
+#	sshpass -p 'root' ssh root@$ZYNQ_ADDR "echo '$($@_HZ)' > /sys/class/fclk/fclk0/set_rate"
+#	sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
+###### CLOCK STUFF END
+
+#ssh-keygen -f ~/.ssh/known_hosts -R $ZYNQ_ADDR
+sshpass -p 'root' scp -6 $DIR/processimage_mpsoc_LL $BITFILE $IMGPATH root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH
+sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
+sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
+sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc_LL A0000000 30008000 $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw"
+sshpass -p 'root' scp -6 root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
+sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc_LL $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
+
+#rm -f /tmp/zynq10lock
+#	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt
+#	# keep copy for future reference
+#	cp out/$*.axi.cycles.txt out/build_$*

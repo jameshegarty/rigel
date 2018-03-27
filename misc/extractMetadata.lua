@@ -9,5 +9,9 @@ if arg[2]=="INPUT_FILES" then
   end
   print(str)
 else
-  print(metadata[arg[2]])
+  if type(metadata[arg[2]])=="table" then
+    print(table.concat(metadata[arg[2]]," "))
+  else
+    print(metadata[arg[2]])
+  end
 end
