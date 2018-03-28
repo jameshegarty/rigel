@@ -610,7 +610,7 @@ function systolicASTFunctions:removeDelays( )
   local nilCE = {}
   local function getDelayed( node, delay, validbit, cebit )
     -- if node is a constant, we don't need to put it in a register.
-    if node.type:const() then return node end
+    if node.kind=="null" or node.type:verilogBits()<=0 or node.kind=="constant" or node==cebit then return node end
     
     delayCache[node] = delayCache[node] or {}
     delayCache[node][validbit] = delayCache[node][validbit] or {}
