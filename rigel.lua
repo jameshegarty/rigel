@@ -101,7 +101,7 @@ function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="Han
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
 -- is this any of the handshaked types?
-function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) end
+function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) end
 
 function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
 function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
@@ -686,7 +686,8 @@ function darkroomIRFunctions:codegenSystolic( module )
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
 
         if darkroom.isHandshakeAny( n.fn.inputType ) or
-          darkroom.isHandshakeAny(n.fn.outputType) then
+        darkroom.isHandshakeAny(n.fn.outputType) then
+          err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
         elseif n.fn.stateful then
           module:lookupFunction("reset"):addPipeline( I:reset() )

@@ -1451,6 +1451,8 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
     local readyOut = J.map(J.range(#inputRates), function(i) return S.eq(S.constant(i-1,types.uint(8)), readyDownstream) end )
     systolicModule:addFunction( S.lambda("ready", readyDownstream, S.cast(S.tuple(readyOut),types.array2d(types.bool(),#inputRates)), "ready" ) )
 
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,S.parameter("reset",types.bool())) )
+    
     return systolicModule
   end
 
