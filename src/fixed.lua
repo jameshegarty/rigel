@@ -571,8 +571,7 @@ function fixedASTFunctions:toSystolic(inp)
       elseif n.kind=="binop" then
 
         if fixed.DEEP_MULTIPLY and fixed.isFixedType(n.type) and n:precision()>=20 and n.op=="*" and 
-          n.inputs[1].type:const()==false and
-          n.inputs[2].type:const()==false then
+        (n.inputs[1].type:verilogBits()~=40 and n.inputs[2].type:verilogBits()~=7) then -- hack
           local I = fpgamodules.multiply(fixed.extract(n.inputs[1].type),fixed.extract(n.inputs[2].type),fixed.extract(n.type)):instantiate("UNNAMEDINST"..tostring(#instances))
           table.insert(instances,I)
           res = I:process(S.tuple{args[1],args[2]})

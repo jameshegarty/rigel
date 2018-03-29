@@ -697,6 +697,7 @@ function readAll(file)
   local fn = script_path().."misc/"..file
   --print("LOAD FILE "..fn)
   local f = io.open(fn, "rb")
+  err(f~=nil, "could not open file '"..file.."'")
   local content = f:read("*all")
   f:close()
   return content
