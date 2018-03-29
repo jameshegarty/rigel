@@ -84,6 +84,7 @@ function harnessTop(t)
   if backend==nil then backend = "verilog" end
 
   local outDir = t.outDir
+  if outDir==nil then outDir=os.getenv("BUILDDIR") end
   if outDir==nil then outDir= "out" end
   
   -- if user explicitly passes us the the info, just trust them...
