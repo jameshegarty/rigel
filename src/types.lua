@@ -151,7 +151,7 @@ function types.meet( a, b, op, loc)
   local treatedAsBinops = {["select"]=1, ["vectorSelect"]=1,["array"]=1, ["mapreducevar"]=1, ["dot"]=1, ["min"]=1, ["max"]=1}
 
   if a:isTuple() and b:isTuple() then
-    err(a:stripConst()==b:stripConst(),"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
+    err(a==b,"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
     return a,a,a
   elseif a:isArray() and b:isArray() then
     if a:arrayLength() ~= b:arrayLength() then
@@ -357,8 +357,6 @@ function types.checkExplicitCast(from, to, ast)
   if from==to then
     -- obvously can return true...
     return true
-  elseif from:constSubtypeOf(to) then
-    return true
   elseif to.kind=="bits" and from.kind=="bits" and to:verilogBits()>from:verilogBits() then
     return true -- allow padding
   elseif to.kind=="bits" or from.kind=="bits" then
@@ -384,7 +382,7 @@ function types.checkExplicitCast(from, to, ast)
       return true
     elseif to:isArray() then
       local allSubtype = true
-      for k,v in pairs(from.list) do if v:constSubtypeOf(to:arrayOver())==false then allSubtype=false end end
+      for k,v in pairs(from.list) do if v~=to:arrayOver() then allSubtype=false end end
 
       if allSubtype and #from.list == to:channels() then
         -- casting {A,A,A,A} to A[4]
@@ -477,23 +475,10 @@ function types.isType(ty)
   return getmetatable(ty)==TypeMT
 end
 
--- is the type const?
-function TypeFunctions:const()
-  return false
-end
-
 -- if self is a subtype of A, this means self can be used in place of A
 -- eg 'bool_const' is a subtype of 'bool'
 function TypeFunctions:constSubtypeOf(A)
   return A==self
-end
-
-function TypeFunctions:makeConst()
-  return self
-end
-
-function TypeFunctions:stripConst()
-  return self
 end
 
 -- convert all named types in this type to their equivalent structural type

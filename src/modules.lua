@@ -167,7 +167,7 @@ modules.packTuple = memoize(function( typelist, X )
   res.outputType = rigel.Handshake( types.tuple(typelist) )
   res.stateful = false
   res.sdfOutput = {{1,1}}
-  res.sdfInput = J.map(typelist, function(n) if n:const() then return "x" else return {1,1} end end)
+  res.sdfInput = J.map(typelist, function(n)  return {1,1} end)
   res.name = "packTuple_"..verilogSanitize(tostring(typelist))
 
   res.delay = 0
@@ -187,7 +187,7 @@ modules.packTuple = memoize(function( typelist, X )
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple(J.broadcast(types.bool(),(#typelist)*2+2)), printStr):instantiate("printInst") ) end
     
     local activePorts={}
-    for k,v in pairs(typelist) do if v:const()==false then table.insert(activePorts,k) end end
+    for k,v in pairs(typelist) do  table.insert(activePorts,k) end
       
     local outv = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
       
@@ -204,13 +204,9 @@ modules.packTuple = memoize(function( typelist, X )
     -- WARNING: this makes ready depend on ValidIn
     local readyOutList = {}
     for i=1,#typelist do
-      if typelist[i]:const() then
-        table.insert( readyOutList, S.constant(true, types.bool()) )
-      else
-        -- if this stream doesn't have data, let it run regardless.
-        local valid_i = S.index(S.index(sinp,i-1),1)
-        table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
-      end
+      -- if this stream doesn't have data, let it run regardless.
+      local valid_i = S.index(S.index(sinp,i-1),1)
+      table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
     end
   
     local readyOut = S.cast(S.tuple(readyOutList), types.array2d(types.bool(),#typelist) )
@@ -3663,11 +3659,6 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
     end
 
     local shiftOut, shiftPipelines = fpgamodules.addShifterSimple( systolicModule, J.map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
-    
-    if shiftOut.type:const() then
-      -- this happens if we have an array of size 1, for example (becomes a passthrough). Strip the const-ness so that the module returns a consistant type with different parameters.
-      shiftOut = S.cast(shiftOut, shiftOut.type:stripConst())
-    end
     
     local inp = S.parameter("process_input", types.null() )
 

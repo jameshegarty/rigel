@@ -115,7 +115,7 @@ local function typecheck_inner( ast, newNodeFn )
         return nil            
       end
     else
-      err( cond.type:stripConst() == types.bool(), "Error, condition of select must be scalar boolean but is "..tostring(cond.type)..". Use vectorSelect" )
+      err( cond.type == types.bool(), "Error, condition of select must be scalar boolean but is "..tostring(cond.type)..". Use vectorSelect" )
       err( a.type:isArray()==b.type:isArray(), "Error, if any results of select are arrays, all results must be arrays")
       err( a.type:isArray()==false or (a.type:arrayLength()==b.type:arrayLength()), "Error, array arguments to select must be the same length")
     end
@@ -244,26 +244,5 @@ end
 
 return function( ast, newNodeFn )
   local out = typecheck_inner( ast, newNodeFn )
-
-  local allConstInput = true
-
-  for k,v in pairs(ast.inputs) do if v.type:const()==false then allConstInput=false end end
-
-  -- sanity check: out is const <=> inputs are all const
-  if (ast.type:const() and allConstInput==false) then
-    if ast.kind~="slice" and ast.kind~="select" then
-      -- select: cond can be non-const, but values are const
-      print("Inputs aren't const, but output is!",ast.kind)
-      assert(false)
-    end
-  end
-
-  if (ast.type:const()==false and allConstInput and #ast.inputs>0) then
-    if ast.kind~="cast" then
-      print("Lost constness?",ast.kind)
-      assert(false)
-    end
-  end
-
   return out
 end

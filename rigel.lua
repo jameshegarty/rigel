@@ -436,14 +436,10 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
             local isdf = args[key][1][1]
             local iconverged = args[key][2][1]
 
-            if darkroom.extractData( i.type ):const() then
-              -- we don't care about SDF rates on constants
-            else
-              if IR==nil then IR=isdf; allConverged = iconverged; ratesMatch=true end
-              if isdf[1]~=IR[1] or isdf[2]~=IR[2] then
-                ratesMatch=false
-                print("SDF "..n.kind.." rate mismatch "..n.loc)
-              end
+            if IR==nil then IR=isdf; allConverged = iconverged; ratesMatch=true end
+            if isdf[1]~=IR[1] or isdf[2]~=IR[2] then
+              ratesMatch=false
+              print("SDF "..n.kind.." rate mismatch "..n.loc)
             end
           end
           res = {{IR},{allConverged and ratesMatch}}

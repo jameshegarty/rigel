@@ -183,7 +183,7 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==#ty.list)
     return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
-  elseif ty:stripConst()==types.float(32) then
+  elseif ty==types.float(32) then
     local ffi = require("ffi")
     local a = ffi.new("float[1]",value)
     local b = ffi.cast("unsigned int*",a)
@@ -457,7 +457,6 @@ end
 
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
-  ty = ty:makeConst()
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
@@ -793,7 +792,7 @@ function systolicASTFunctions:calculateStallDomains()
             -- notice: it's OK if something constant ends up under multiple stall domains, just surpress the error.
             -- if somehow something constant has a unconstant input (can happen with slice), and that ends up having 
             -- multiple stall domains, then that's an error. So we keep going to make sure that doesn't happen.
-            if seen~=v and n.type:const()==false then 
+            if seen~=v then 
               print("multiple stall LOC",n.loc) 
               if type(seen)=="string" then
                 print("Domain 1:"..seen)
@@ -1112,7 +1111,7 @@ function systolicASTFunctions:toVerilog( module )
           elseif fromType:isArray() and fromType:arrayOver()==toType and fromType:channels()==1 then
             -- A[1] to A. Noop
             return expr
-          elseif fromType:constSubtypeOf(toType) then
+          elseif fromType==toType then
             return expr -- casting const to non-const. Verilog doesn't care.
           elseif fromType:isNamed() and toType:isNamed()==false and fromType.structure==toType then
             -- noop, explicit cast of named type to its structural type
@@ -1748,7 +1747,6 @@ end
 function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
-  ty = ty:stripConst() -- output of register obviously can't be const
   err( ty:verilogBits()>0, "0 bit size register?")
   err(type(hasCE)=="boolean", "hasCE must be bool")
   if initial~=nil then ty:checkLuaValue(initial) end
