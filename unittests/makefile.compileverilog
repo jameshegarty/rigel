@@ -1,11 +1,13 @@
-SRCS = $(wildcard out/*.terra.raw)
-SRCS := $(patsubst out/%_half.terra.raw,,$(SRCS))
+BUILDDIR ?= out
 
-TARGETS = $(patsubst out/%.terra.raw,out/%.terra.bmp,$(SRCS))
-TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.bit,$(SRCS))
-TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.raw,$(SRCS))
-TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.bmp,$(SRCS))
-TARGETS += $(patsubst out/%.terra.raw,out/%.verilator.correct.txt,$(SRCS))
+SRCS = $(wildcard $(BUILDDIR)/*.terra.raw)
+SRCS := $(patsubst $(BUILDDIR)/%_half.terra.raw,,$(SRCS))
+
+TARGETS = $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.terra.bmp,$(SRCS))
+TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bit,$(SRCS))
+TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.raw,$(SRCS))
+TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bmp,$(SRCS))
+TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS))
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
@@ -14,12 +16,12 @@ LUA ?= ../rigelLuajit
 TERRA ?= ../rigelTerra
 
 all: $(TARGETS)
-	touch out/verilogcorrect.txt
+	touch $(BUILDDIR)/verilogcorrect.txt
 
-out/%.terra.raw: %.lua
+$(BUILDDIR)/%.terra.raw: %.lua
 	$(TERRA) $< terra
-	mkdir -p out/build_$*
+	mkdir -p $(BUILDDIR)/build_$*
 
-GOLDSTRPRE=out/
+GOLDSTRPRE=$(BUILDDIR)/
 GOLDSTRPOST=.terra.bmp
 include ../platform/platform.mk
