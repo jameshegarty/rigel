@@ -93,10 +93,12 @@ function systolic.declareWire( ty, name, str, comment )
 end
 declareWire = systolic.declareWire
 
-function systolic.wireIfNecessary( inputIsWire, declarations, ty, name, str, comment )
-  if inputIsWire then return str end
+function systolic.wireIfNecessary( alreadyWiredSet, declarations, ty, name, str, comment )
+  assert(type(alreadyWiredSet)=="table")
+  if alreadyWiredSet[name]~=nil then return str end
   local decl = systolic.declareWire( ty, name, str, comment)
   table.insert(declarations, decl)
+  alreadyWiredSet[name] = 1
   return name
 end
 
@@ -181,7 +183,7 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==#ty.list)
     return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
-  elseif ty:stripConst()==types.float(32) then
+  elseif ty==types.float(32) then
     local ffi = require("ffi")
     local a = ffi.new("float[1]",value)
     local b = ffi.cast("unsigned int*",a)
@@ -365,7 +367,7 @@ __index = function(tab,key)
 
         if inp.type==fn.inputParameter.type then
           
-        elseif inp.type:constSubtypeOf(fn.inputParameter.type) then
+        elseif inp.type==fn.inputParameter.type then
           --  stripping the Const-ness will cause problems when we CSE with multiple stall domains
           -- We don't actually need to insert an explicit cast, it doesn't matter. Cast would be a noop
 --          inp = systolic.cast( inp, fn.inputParameter.type )
@@ -455,7 +457,6 @@ end
 
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
-  ty = ty:makeConst()
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
@@ -610,7 +611,7 @@ function systolicASTFunctions:removeDelays( )
   local nilCE = {}
   local function getDelayed( node, delay, validbit, cebit )
     -- if node is a constant, we don't need to put it in a register.
-    if node.type:const() then return node end
+    if node.kind=="null" or node.type:verilogBits()<=0 or node.kind=="constant" or node==cebit then return node end
     
     delayCache[node] = delayCache[node] or {}
     delayCache[node][validbit] = delayCache[node][validbit] or {}
@@ -791,7 +792,7 @@ function systolicASTFunctions:calculateStallDomains()
             -- notice: it's OK if something constant ends up under multiple stall domains, just surpress the error.
             -- if somehow something constant has a unconstant input (can happen with slice), and that ends up having 
             -- multiple stall domains, then that's an error. So we keep going to make sure that doesn't happen.
-            if seen~=v and n.type:const()==false then 
+            if seen~=v then 
               print("multiple stall LOC",n.loc) 
               if type(seen)=="string" then
                 print("Domain 1:"..seen)
@@ -852,8 +853,10 @@ function systolicASTFunctions:mergeCallsites()
     end)
 end
 
-function systolicASTFunctions:addValid( validbit )
+function systolicASTFunctions:addValid( validbit, module )
   assert( systolicAST.isSystolicAST(validbit) )
+  err( systolic.isModule(module), ":addValid missing module") -- for debugging use only
+       
   return self:process(
     function(n)
       if n.kind=="call" and n.func:isPure()==false then
@@ -866,7 +869,7 @@ function systolicASTFunctions:addValid( validbit )
             if nn.kind=="call" then
               -- don't recurse into other calls, they may include the valid bit, but that's OK!
             elseif nn.kind=="parameter" and nn.key==validbit.key then 
-              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
+              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name.." in module "..module.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
             else
               J.map(nn.inputs, function(i) checkValidBit(i) end)
             end
@@ -962,7 +965,8 @@ function systolicASTFunctions:toVerilog( module )
   assert( systolic.isModule(module))
   --local clockedLogic = {}
   local declarations = {}
-
+  local wired = {} -- set of variable names that have been put in decls (wires) already
+  
   local finalOut = self:visitEach(
     function(n, args)
       local finalResult
@@ -1005,7 +1009,7 @@ function systolicASTFunctions:toVerilog( module )
         finalResult = "__ERR_NULL_MODULE"
       elseif n.kind=="bitSlice" then
         -- verilog doesn't have expressions - we can only bitslice on a wire. So coerce input into a wire.
-        local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for bitslice" )
+        local inp = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for bitslice" )
 
         if n.high==0 and n.low==0 and n.inputs[1].type:verilogBits()==1 then
           finalResult = inp
@@ -1014,7 +1018,7 @@ function systolicASTFunctions:toVerilog( module )
         end
       elseif n.kind=="slice" then
         if n.inputs[1].type:isArray() then
-          local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
+          local inp = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
           local sz = n.inputs[1].type:arrayOver():verilogBits()
           local W = (n.inputs[1].type:arrayLength())[1]
 
@@ -1045,7 +1049,7 @@ function systolicASTFunctions:toVerilog( module )
             -- no index necessary. either we sliced whole tuple, or other types were null.
             finalResult = args[1]
           elseif n.inputs[1].type:verilogBits()>=1 then
-            local inp = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
+            local inp = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
             if highbit~=lowbit then
               finalResult = "("..inp.."["..highbit..":"..lowbit.."])"
             else
@@ -1107,7 +1111,7 @@ function systolicASTFunctions:toVerilog( module )
           elseif fromType:isArray() and fromType:arrayOver()==toType and fromType:channels()==1 then
             -- A[1] to A. Noop
             return expr
-          elseif fromType:constSubtypeOf(toType) then
+          elseif fromType==toType then
             return expr -- casting const to non-const. Verilog doesn't care.
           elseif fromType:isNamed() and toType:isNamed()==false and fromType.structure==toType then
             -- noop, explicit cast of named type to its structural type
@@ -1134,11 +1138,11 @@ function systolicASTFunctions:toVerilog( module )
             end
           elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
             -- casting smaller int to larger int. must sign extend
-            expr = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )
+            expr = systolic.wireIfNecessary( wired, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )
             return "{ {"..(toType:verilogBits() - fromType:verilogBits()).."{"..expr.."["..(fromType:verilogBits()-1).."]}},"..expr.."["..(fromType:verilogBits()-1)..":0]}"
           elseif (fromType:isUint() or fromType:isInt()) and (toType:isInt() or toType:isUint()) and fromType.precision>toType.precision then
             -- truncation. I don't know how this works
-            local exp = systolic.wireIfNecessary( inputIsWire, declarations, fromType, inputName, expr, " // wire for truncation")
+            local exp = systolic.wireIfNecessary( wired, declarations, fromType, inputName, expr, " // wire for truncation")
             return exp.."["..(toType.precision-1)..":0]"
           elseif fromType:isInt() and toType:isUint() and fromType.precision == toType.precision then
             -- int to uint with same precision. I don't know how this works
@@ -1204,8 +1208,8 @@ function systolicASTFunctions:toVerilog( module )
           local lhs = n.inputs[1]
           local rhs = n.inputs[2]
           if n.type:baseType():isBool() and lhs.type:baseType():isInt() and rhs.type:baseType():isInt() then
-            local lhsv = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for $signed")
-            local rhsv = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, args[2], "// wire for $signed")
+            local lhsv = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for $signed")
+            local rhsv = systolic.wireIfNecessary( wired, declarations, n.inputs[2].type, n.inputs[2].name, args[2], "// wire for $signed")
             finalResult = "($signed("..lhsv..")"..n.op.."$signed("..rhsv.."))"
           elseif n.type:baseType():isBool() and lhs.type:baseType():isUint() and rhs.type:baseType():isUint() then
             finalResult = "(("..args[1]..")"..n.op.."("..args[2].."))"
@@ -1222,12 +1226,12 @@ function systolicASTFunctions:toVerilog( module )
           if type(op)~="string" then print("OP",n.op); assert(false) end
           local lhs = args[1]
           if n.inputs[1].type:baseType():isInt() then 
-            lhs = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, lhs, "// wire for $signed")
+            lhs = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, lhs, "// wire for $signed")
             lhs = "$signed("..lhs..")" 
           end
           local rhs = args[2]
           if n.inputs[2].type:baseType():isInt() then 
-            rhs = systolic.wireIfNecessary( argwire[2], declarations, n.inputs[2].type, n.inputs[2].name, rhs, "// wire for $signed")
+            rhs = systolic.wireIfNecessary( wired, declarations, n.inputs[2].type, n.inputs[2].name, rhs, "// wire for $signed")
             rhs = "$signed("..rhs..")" 
           end
           finalResult = "("..lhs..op..rhs..")"
@@ -1236,7 +1240,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="unary" then
         if n.op=="abs" then
           if n.type:isInt() then
-            finalResult = systolic.wireIfNecessary( argwire[1], declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for abs")
+            finalResult = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], "// wire for abs")
             finalResult = "(("..finalResult.."["..(n.type:verilogBits()-1).."])?(-"..finalResult.."):("..finalResult.."))"
           else
             err(false,"NYI - abs on type "..tostring(n.type))
@@ -1260,13 +1264,17 @@ function systolicASTFunctions:toVerilog( module )
         assert(false)
       end
 
+      if wire then wired[n.name]=1 end
+      
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false and const==false then
         if n.type==types.null() then
           -- null outputs with multiple consumers are strange, but OK. Example: A coherent call with null output that is used in two different functions. (they will both share the same node, with null output)
         else
-          table.insert( declarations, declareWire( n.type, n.name.."USEDMULTIPLE"..n.kind, finalResult ) )
-          return {n.name.."USEDMULTIPLE"..n.kind,true}
+          local newName = n.name.."USEDMULTIPLE"..n.kind
+          table.insert( declarations, declareWire( n.type, newName, finalResult ) )
+          wired[newName] = 1
+          return {newName,true}
         end
       else
         err(type(finalResult)=="string","finalResult is not string? "..n.kind)
@@ -1445,12 +1453,12 @@ function userModuleFunctions:lower()
 
   for _,fn in pairs(self.functions) do
     local O = fn.output
-    if O~=nil and self.onlyWire~=true then O = O:addValid(fn.valid) end
+    if O~=nil and self.onlyWire~=true then O = O:addValid(fn.valid,self) end
     if O~=nil and self.onlyWire~=true and fn.CE~=nil then O = O:addCE(fn.CE) end
     local node = { kind="fndefn", fn=fn, type=types.null(), valid=fn.valid, inputs={O},loc="userModuleFUnctions:lower()" }
     for k,pipe in pairs(fn.pipelines) do
       local P = pipe
-      if self.onlyWire~=true then P = P:addValid(fn.valid) end
+      if self.onlyWire~=true then P = P:addValid(fn.valid,self) end
       if self.onlyWire~=true and fn.CE~=nil then P = P:addCE(fn.CE) end
       table.insert( node.inputs, P )
     end
@@ -1739,7 +1747,7 @@ end
 function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
-  ty = ty:stripConst() -- output of register obviously can't be const
+  err( ty:verilogBits()>0, "0 bit size register?")
   err(type(hasCE)=="boolean", "hasCE must be bool")
   if initial~=nil then ty:checkLuaValue(initial) end
   assert(hasValid==nil or type(hasValid)=="boolean")

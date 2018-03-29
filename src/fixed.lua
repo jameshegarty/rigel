@@ -76,7 +76,7 @@ __add=function(l,r)
   if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
     local ty
     if l.type==r.type then ty=l.type -- keep constness
-    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    elseif l.type==r.type then ty=l.type
     else assert(false) end
     return fixed.new({kind="binop",op="+",inputs={l,r}, type=ty, loc=getloc()})
   else
@@ -98,7 +98,7 @@ __sub=function(l,r)
   if l.type:isInt() and r.type:isInt() then
     local ty
     if l.type==r.type then ty=l.type -- keep constness
-    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    elseif l.type==r.type then ty=l.type
     else assert(false) end
 
     return fixed.new({kind="binop",op="-",inputs={l,r}, type=ty, loc=getloc()})
@@ -158,15 +158,15 @@ end
 
 function fixed.select( cond,a,b )
   err( cond.type==types.bool(), "cond should be bool")
-  assert(a.type:stripConst()==b.type:stripConst())
-  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type:stripConst(), loc=getloc()}
+  assert(a.type==b.type)
+  return fixed.new{kind="select", inputs={cond,a,b}, type=a.type, loc=getloc()}
 end
 
 function fixed.array2d( tab, w, h )
   local inps = {}
   for k,v in pairs(tab) do 
     table.insert(inps,v) 
-    err(v.type:stripConst()==tab[1].type:stripConst(),"array2d: types don't match, "..tostring(v.type).." and "..tostring(tab[1].type))
+    err(v.type==tab[1].type,"array2d: types don't match, "..tostring(v.type).." and "..tostring(tab[1].type))
   end
   return fixed.new{kind="array2d", inputs=inps, type=types.array2d(tab[1].type,w,h), loc=getloc()}
 end
@@ -188,12 +188,12 @@ function fixed.constant( value, signed, precision, exp )
 
   err(value < math.pow(2,precision-J.sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
-  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
+  return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp),inputs={},loc=getloc()}
 end
 
 function fixed.plainconstant( value, ty )
   err(types.isType(ty), "second argument to plainconstant must be a type")
-  return fixed.new{kind="plainconstant", value=value, type=ty:makeConst(),inputs={},loc=getloc()}
+  return fixed.new{kind="plainconstant", value=value, type=ty,inputs={},loc=getloc()}
 end
 
 function fixedASTFunctions:lift(exponant)
@@ -384,7 +384,7 @@ local function boolbinop(op,l,r)
   if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
     local ty
     if l.type==r.type then ty=l.type -- keep constness
-    elseif l.type:stripConst()==r.type:stripConst() then ty=l.type:stripConst() 
+    elseif l.type==r.type then ty=l.type
     else assert(false) end
     return fixed.new({kind="binop",op=op,inputs={l,r}, type=types.bool(), loc=getloc()})
   else
@@ -571,8 +571,7 @@ function fixedASTFunctions:toSystolic(inp)
       elseif n.kind=="binop" then
 
         if fixed.DEEP_MULTIPLY and fixed.isFixedType(n.type) and n:precision()>=20 and n.op=="*" and 
-          n.inputs[1].type:const()==false and
-          n.inputs[2].type:const()==false then
+        (n.inputs[1].type:verilogBits()~=40 and n.inputs[2].type:verilogBits()~=7) then -- hack
           local I = fpgamodules.multiply(fixed.extract(n.inputs[1].type),fixed.extract(n.inputs[2].type),fixed.extract(n.type)):instantiate("UNNAMEDINST"..tostring(#instances))
           table.insert(instances,I)
           res = I:process(S.tuple{args[1],args[2]})

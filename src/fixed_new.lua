@@ -123,7 +123,7 @@ function fixed.constant( value )
   err(type(value)=="number" or type(value)=="boolean","fixed.constant must be number or bool")
 
   if type(value)=="boolean" then
-    return fixed.new{kind="constant", value=value, type=types.bool():makeConst(), inputs={},loc=getloc()}
+    return fixed.new{kind="constant", value=value, type=types.bool(), inputs={},loc=getloc()}
   else
     err(value==math.floor(value),"fixed.constant: non integer value!")
   
@@ -141,7 +141,7 @@ function fixed.constant( value )
 
     --err(value < math.pow(2,precision-sel(signed,1,0)), "const value out of range, "..tostring(value).." in precision "..tostring(precision).." signed:"..tostring(signed))
 
-    return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp):makeConst(),inputs={},loc=getloc()}
+    return fixed.new{kind="constant", value=value, type=fixed.type(signed,precision,exp),inputs={},loc=getloc()}
   end
 end
 

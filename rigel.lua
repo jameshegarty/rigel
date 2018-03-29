@@ -100,6 +100,9 @@ function darkroom.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="H
 function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
+-- is this any of the handshaked types?
+function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) end
+
 function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
 function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
 function darkroom.isBasic(A)
@@ -211,17 +214,21 @@ function darkroom.newGlobal( name, direction, typeof, initValue )
   err( type(name)=="string", "newGlobal: name must be string" )
   err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
   err( types.isType(typeof), "newGlobal: type must be rigel type" )
-  err( direction=="input" or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
+  err( initValue==nil or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
 
   err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
 
   local t = {name=name,direction=direction,type=typeof,initValue=initValue}
 
-  t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof),t )
 
-  if darkroom.isHandshake(typeof) then
-    assert(false)
---    t.systolicReady = S.newGlobal( name.."_ready", J.sel(direction=="input","output","input"), types.bool(), false)
+
+  if darkroom.isHandshakeAny(typeof) then
+    t.systolicValue = S.newSideChannel( name, direction, darkroom.lower(typeof), t )
+    local flip = "input"
+    if direction=="input" then flip="output" end
+    t.systolicValueReady = S.newSideChannel( name.."_ready", flip, darkroom.extractReady(typeof), t )
+  else
+    t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof), t )
   end
 
   return setmetatable(t,rigelGlobalMT)
@@ -243,11 +250,19 @@ darkroomFunctionMT={__index=function(tab,key)
     assert(S.isModule(sm))
 
     -- self check module matches format we expect
-    local A,B=0,0
-    if tab.globals~=nil then A=J.keycount(tab.globals) end
-    if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
-    err(A==B,"makeSystolic: side channels doesn't match globals")
+    --local A,B=0,0
+    --if tab.globals~=nil then A=J.keycount(tab.globals) end
+    --if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
+    --err(A==B,"makeSystolic: side channels doesn't match globals")
+    for k,_ in pairs(tab.globals) do
+      err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module lacks side channel for global "..k.name )
+      err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module lacks side channel for global ready "..k.name )
+    end
 
+    for k,_ in pairs(sm.sideChannels) do
+      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module lacks global for side channel "..k.name )
+    end
+      
     if tab.registered==false then
       err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
           
@@ -275,8 +290,8 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   -- (1) inputs are converged, but ratio is inconsistant. Return unconverged
   -- (2) ratio is consistant, but some inputs are unconverged. Return unconverged.
 
-  err( SDFRate.isSDFRate(self.sdfInput), "Missing SDF rate for fn "..self.kind)
-  err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.kind)
+  err( SDFRate.isSDFRate(self.sdfInput), "Missing SDF rate for fn "..self.name)
+  err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.name)
 
   -- if we're going from N->N, we don't know how stuff maps so we can't do it automatically
   if #self.sdfInput~=1 and #self.sdfOutput~=1 then
@@ -323,17 +338,18 @@ end
 function darkroomFunctionFunctions:compile() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
-function darkroom.newFunction(tab)
-  assert( type(tab) == "table" )
+function darkroom.newFunction(tab,X)
+  err( type(tab) == "table", "rigel.newFunction: input must be table" )
+  err(X==nil, "rigel.newFunction: too many arguments")
 
-  err( type(tab.name)=="string", "rigel.newFunction: name must be string ("..tab.kind..")" )
+  err( type(tab.name)=="string", "rigel.newFunction: name must be string" )
   err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or (tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1), "rigel.newFunction: sdf input rate is not <=1" )
   err( darkroom.SDF==false or (tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1), "rigel.newFunction: sdf output rate is not <=1" )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
-  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.kind..")" )
+  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
  
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType)) end
@@ -420,14 +436,10 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
             local isdf = args[key][1][1]
             local iconverged = args[key][2][1]
 
-            if darkroom.extractData( i.type ):const() then
-              -- we don't care about SDF rates on constants
-            else
-              if IR==nil then IR=isdf; allConverged = iconverged; ratesMatch=true end
-              if isdf[1]~=IR[1] or isdf[2]~=IR[2] then
-                ratesMatch=false
-                print("SDF "..n.kind.." rate mismatch "..n.loc)
-              end
+            if IR==nil then IR=isdf; allConverged = iconverged; ratesMatch=true end
+            if isdf[1]~=IR[1] or isdf[2]~=IR[2] then
+              ratesMatch=false
+              print("SDF "..n.kind.." rate mismatch "..n.loc)
             end
           end
           res = {{IR},{allConverged and ratesMatch}}
@@ -564,12 +576,12 @@ end
 function darkroomIRFunctions:typecheck()
   local n = self
   if n.kind=="apply" then
-    err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.kind)
+    err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.name)
     if #n.inputs==0 then
       err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
-      err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+      err( n.inputs[1].type==n.fn.inputType, "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
     end
     n.type = n.fn.outputType
   elseif n.kind=="applyMethod" then
@@ -649,29 +661,29 @@ function darkroomIRFunctions:codegenSystolic( module )
           assert(false)
         end
       elseif n.kind=="apply" then
-        err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.kind)
-        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
+        err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.name)
+        err( n.fn.systolicModule:lookupFunction("process")~=nil, "Error, missing process fn? "..n.fn.name)
+        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
 
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
-          err(n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err(n.fn.systolicModule.functions.process.output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
         
-        err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.kind)
+        err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)
 
         local SC = {}
         for g,_ in pairs(n.fn.globals) do
           SC[g.systolicValue] = g.systolicValue
+          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
         end
         
         local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
 
-        if darkroom.isHandshake( n.fn.inputType ) or
-          darkroom.isHandshakeArrayOneHot( n.fn.inputType ) or
-          darkroom.isHandshakeTmuxed( n.fn.inputType ) or
-          darkroom.isHandshake(n.fn.outputType) or
-          darkroom.isHandshakeTuple(n.fn.inputType) then
+        if darkroom.isHandshakeAny( n.fn.inputType ) or
+        darkroom.isHandshakeAny(n.fn.outputType) then
+          err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
           module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
         elseif n.fn.stateful then
           module:lookupFunction("reset"):addPipeline( I:reset() )

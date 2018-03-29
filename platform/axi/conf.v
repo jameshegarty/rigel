@@ -112,7 +112,7 @@ parameter OK = 2'b00, SLVERR = 2'b10;
 reg [31:0] counter;
 
 //READS
-reg r_state;
+reg r_state = IDLE;
 wire [1:0] r_select;
 assign r_select  = LITE_ARADDR[3:2];
 assign ar_good = {LITE_ARADDR[31:4], 2'b00, LITE_ARADDR[1:0]} == ADDR_BASE;
@@ -137,10 +137,10 @@ always @(posedge ACLK) begin
 end 
 
 //WRITES
-reg w_state;
+reg w_state = IDLE;
 reg [1:0] w_select_r;
-reg w_wrotedata;
-reg w_wroteresp;
+reg w_wrotedata = 0;
+reg w_wroteresp = 0;
 
 wire [1:0] w_select;
 assign w_select  = LITE_AWADDR[3:2];
@@ -180,7 +180,7 @@ always @(posedge ACLK) begin
     endcase
 end
 
-reg v_state;
+reg v_state = IDLE;
 assign CONFIG_VALID = (v_state == RWAIT);
 always @(posedge ACLK) begin
     if (ARESETN == 0)
@@ -211,8 +211,8 @@ always @(posedge ACLK) begin
         counter <= counter + 1;
 end
 
-reg busy;
-reg busy_last;
+reg busy = 0;
+reg busy_last = 0;
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
         busy <= 0;

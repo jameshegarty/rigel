@@ -77,7 +77,7 @@ function MT.packTuple(res,typelist)
   local activePorts = {}
   for k,v in ipairs(typelist) do
     assert(types.isType(v))
-    if v:const()==false then table.insert(activePorts, k) end
+    table.insert(activePorts, k)
   end
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
@@ -96,14 +96,14 @@ function MT.packTuple(res,typelist)
         var hasData = [J.foldt(J.map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), J.andopterra, true )]
 
         escape if DARKROOM_VERBOSE then J.map( typelist, function(t,k) 
-                      if t:const() then emit quote cstdio.printf("PackTuple FIFO %d valid:%d (const)\n",k-1,1) end 
-               else emit quote cstdio.printf("PackTuple FIFO %d valid:%d (size %d)\n", k-1, self.["FIFO"..k]:hasData(),self.["FIFO"..k]:size()) end end end) end end
+--                      if t:const() then emit quote cstdio.printf("PackTuple FIFO %d valid:%d (const)\n",k-1,1) end 
+               emit quote cstdio.printf("PackTuple FIFO %d valid:%d (size %d)\n", k-1, self.["FIFO"..k]:hasData(),self.["FIFO"..k]:size()) end end) end end
 
         if hasData then
           -- terra doesn't like us copying large structs by value
           escape J.map( typelist, function(t,k) 
-                        if t:const() then emit quote cstring.memcpy( &data(out).["_"..(k-1)], &data(inp.["_"..(k-1)]), [t:sizeof()] ) end 
-        else emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:sizeof()] ) end end
+--                        if t:const() then emit quote cstring.memcpy( &data(out).["_"..(k-1)], &data(inp.["_"..(k-1)]), [t:sizeof()] ) end 
+        emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:sizeof()] ) end
         end ) end
           valid(out) = true
           
@@ -122,11 +122,11 @@ function MT.packTuple(res,typelist)
 
       escape
         for i=1,#typelist do 
-          if typelist[i]:const() then
-            emit quote self.ready[i-1] = true end 
-          else
+--          if typelist[i]:const() then
+--            emit quote self.ready[i-1] = true end 
+--          else
             emit quote self.ready[i-1] = (self.["FIFO"..i]:full()==false) end 
-          end
+--          end
         end
       end
   end
@@ -960,7 +960,6 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   
   -- if inner function is const, consider input to always be valid
   local innerconst = false
-  if tmuxRates==nil then innerconst = f.outputType:const() end
 
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end

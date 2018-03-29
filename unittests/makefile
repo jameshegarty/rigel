@@ -1,15 +1,17 @@
 SRCS = $(wildcard *.lua)
 
+BUILDDIR := out
+
 # we do 3 phases
 # 1) compile to .v and writes terra .bmp (test dependent)
 # 2) run all .v files in verilator, and checks that results match terra (when both files exists)
 # 3) extra test dependant correctness checks
 
-COMPILE_TARGETS = $(patsubst %.lua,out/%.compiles.txt,$(SRCS))
+COMPILE_TARGETS = $(patsubst %.lua,$(BUILDDIR)/%.compiles.txt,$(SRCS))
 
 TARGETS = $(COMPILE_TARGETS)
-TARGETS += out/verilogcorrect.txt
-TARGETS += $(patsubst %.lua,out/%.correct.txt,$(SRCS))
+TARGETS += $(BUILDDIR)/verilogcorrect.txt
+TARGETS += $(patsubst %.lua,$(BUILDDIR)/%.correct.txt,$(SRCS))
 
 CORES ?= 2
 
@@ -18,97 +20,97 @@ LUA ?= ../rigelLuajit
 all: $(TARGETS)
 
 # build all .v files
-out/verilogcorrect.txt: $(COMPILE_TARGETS)
+$(BUILDDIR)/verilogcorrect.txt: $(COMPILE_TARGETS)
 	make -j $(CORES) -f makefile.compileverilog
 
 #################
-out/moduleparams.compiles.txt: moduleparams.lua
+$(BUILDDIR)/moduleparams.compiles.txt: moduleparams.lua
 	../rigelTerra moduleparams.lua
 
-out/moduleparams.correct.txt: out/verilogcorrect.txt
+$(BUILDDIR)/moduleparams.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	# no extra checks
-	touch out/moduleparams.correct.txt
+	touch $(BUILDDIR)/moduleparams.correct.txt
 
 #################
-out/fixedtest.compiles.txt: fixedtest.lua
+$(BUILDDIR)/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 
-out/fixedtest.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_tt.diff
-	diff out/dbg_verilator_writePixelTest.raw out/fixed_testwritepx.terra.raw > out/fixed_testwritepx_vv.diff
+$(BUILDDIR)/fixedtest.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/dbg_terra_writePixelTest.raw $(BUILDDIR)/fixed_testwritepx.terra.raw > $(BUILDDIR)/fixed_testwritepx_tt.diff
+	diff $(BUILDDIR)/dbg_verilator_writePixelTest.raw $(BUILDDIR)/fixed_testwritepx.terra.raw > $(BUILDDIR)/fixed_testwritepx_vv.diff
 
-	diff gold/dbg_terra_gt.raw out/dbg_terra_gt.raw > out/dbg_fixedtest_gt.diff
-	diff gold/dbg_terra_gt.raw out/dbg_verilator_gt.raw > out/dbg_fixedtest_gt.diff
-	diff gold/dbg_gt.metadata.lua out/dbg_gt.metadata.lua > out/dbg_fixedtest_gt.metadata.diff
+	diff gold/dbg_terra_gt.raw $(BUILDDIR)/dbg_terra_gt.raw > $(BUILDDIR)/dbg_fixedtest_gt.diff
+	diff gold/dbg_terra_gt.raw $(BUILDDIR)/dbg_verilator_gt.raw > $(BUILDDIR)/dbg_fixedtest_gt.diff
+	diff gold/dbg_gt.metadata.lua $(BUILDDIR)/dbg_gt.metadata.lua > $(BUILDDIR)/dbg_fixedtest_gt.metadata.diff
 
-	diff gold/dbg_verilator_removelsbs.raw out/dbg_terra_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
-	diff gold/dbg_verilator_removelsbs.raw out/dbg_verilator_removelsbs.raw > out/dbg_fixedtest_removelsbs.diff
-	diff gold/dbg_removelsbs.metadata.lua out/dbg_removelsbs.metadata.lua > out/dbg_fixedtest_removelsbs.metadata.diff
+	diff gold/dbg_verilator_removelsbs.raw $(BUILDDIR)/dbg_terra_removelsbs.raw > $(BUILDDIR)/dbg_fixedtest_removelsbs.diff
+	diff gold/dbg_verilator_removelsbs.raw $(BUILDDIR)/dbg_verilator_removelsbs.raw > $(BUILDDIR)/dbg_fixedtest_removelsbs.diff
+	diff gold/dbg_removelsbs.metadata.lua $(BUILDDIR)/dbg_removelsbs.metadata.lua > $(BUILDDIR)/dbg_fixedtest_removelsbs.metadata.diff
 
-	diff gold/dbg_verilator_removemsbs.raw out/dbg_terra_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
-	diff gold/dbg_verilator_removemsbs.raw out/dbg_verilator_removemsbs.raw > out/dbg_fixedtest_removemsbs.diff
-	diff gold/dbg_removemsbs.metadata.lua out/dbg_removemsbs.metadata.lua > out/dbg_fixedtest_removemsbs.metadata.diff
+	diff gold/dbg_verilator_removemsbs.raw $(BUILDDIR)/dbg_terra_removemsbs.raw > $(BUILDDIR)/dbg_fixedtest_removemsbs.diff
+	diff gold/dbg_verilator_removemsbs.raw $(BUILDDIR)/dbg_verilator_removemsbs.raw > $(BUILDDIR)/dbg_fixedtest_removemsbs.diff
+	diff gold/dbg_removemsbs.metadata.lua $(BUILDDIR)/dbg_removemsbs.metadata.lua > $(BUILDDIR)/dbg_fixedtest_removemsbs.metadata.diff
 
-	touch out/fixedtest.correct.txt
+	touch $(BUILDDIR)/fixedtest.correct.txt
 
 ###################
-out/fwriteseq.compiles.txt: fwriteseq.lua
+$(BUILDDIR)/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terra
 	$(LUA) fwriteseq.lua verilog
 	$(LUA) fwriteseq.lua metadata
 
-out/fwriteseq.correct.txt: out/verilogcorrect.txt
-	diff out/fwriteseqtest.raw out/fwriteseqtestVerilog.raw > out/fwriteseqtest.diff
-	test ! -s out/$*.fwriteseqtest.diff && touch $@
+$(BUILDDIR)/fwriteseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/fwriteseqtest.raw $(BUILDDIR)/fwriteseqtestVerilog.raw > $(BUILDDIR)/fwriteseqtest.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseqtest.diff && touch $@
 ###################
-out/fwriteseq16.compiles.txt: fwriteseq16.lua
+$(BUILDDIR)/fwriteseq16.compiles.txt: fwriteseq16.lua
 	../rigelTerra fwriteseq16.lua terra
 	$(LUA) fwriteseq16.lua verilog
 	$(LUA) fwriteseq16.lua metadata
 
-out/fwriteseq16.correct.txt: out/verilogcorrect.txt
-	diff out/fwriteseq16test.raw out/fwriteseq16testVerilog.raw > out/fwriteseq16test.diff
-	test ! -s out/$*.fwriteseq16test.diff && touch $@
+$(BUILDDIR)/fwriteseq16.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/fwriteseq16testVerilog.raw > $(BUILDDIR)/fwriteseq16test.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseq16test.diff && touch $@
 ###################
-out/fwriteseq12.compiles.txt: fwriteseq12.lua
+$(BUILDDIR)/fwriteseq12.compiles.txt: fwriteseq12.lua
 	../rigelTerra fwriteseq12.lua terra
 	$(LUA) fwriteseq12.lua verilog
 	$(LUA) fwriteseq12.lua metadata
 
-out/fwriteseq12.correct.txt: out/verilogcorrect.txt
-	diff out/fwriteseq16test.raw out/dbg_terra_fwriteseq12.raw > out/fwriteseq12test.diff
-	diff out/fwriteseq16test.raw out/dbg_verilator_fwriteseq12.raw > out/fwriteseq12testVerilog.diff
-	test ! -s out/$*.fwriteseq12testVerilog.diff && touch $@
+$(BUILDDIR)/fwriteseq12.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/dbg_terra_fwriteseq12.raw > $(BUILDDIR)/fwriteseq12test.diff
+	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/dbg_verilator_fwriteseq12.raw > $(BUILDDIR)/fwriteseq12testVerilog.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseq12testVerilog.diff && touch $@
 ###################
-out/fwriteseq18.compiles.txt: fwriteseq18.lua
+$(BUILDDIR)/fwriteseq18.compiles.txt: fwriteseq18.lua
 	../rigelTerra fwriteseq18.lua terra
 	$(LUA) fwriteseq18.lua verilog
 	$(LUA) fwriteseq18.lua metadata
 
-out/fwriteseq18.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq18.raw out/dbg_verilator_fwriteseq18.raw > out/fwriteseq18test.diff
-	test ! -s out/$*.fwriteseq18test.diff && touch $@
+$(BUILDDIR)/fwriteseq18.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/dbg_terra_fwriteseq18.raw $(BUILDDIR)/dbg_verilator_fwriteseq18.raw > $(BUILDDIR)/fwriteseq18test.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseq18test.diff && touch $@
 ###################
-out/fwriteseq24.compiles.txt: fwriteseq24.lua
+$(BUILDDIR)/fwriteseq24.compiles.txt: fwriteseq24.lua
 	../rigelTerra fwriteseq24.lua terra
 	$(LUA) fwriteseq24.lua verilog
 	$(LUA) fwriteseq24.lua metadata
 
-out/fwriteseq24.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq24.raw out/dbg_verilator_fwriteseq24.raw > out/fwriteseq24test.diff
-	diff out/fwriteseq24.terra.raw out/dbg_terra_fwriteseq24.raw > out/fwriteseq24test2.diff
-	diff out/fwriteseq24.terra.raw out/dbg_verilator_fwriteseq24.raw > out/fwriteseq24testVerilog.diff
-	test ! -s out/$*.fwriteseq24test.diff && touch $@
+$(BUILDDIR)/fwriteseq24.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/dbg_terra_fwriteseq24.raw $(BUILDDIR)/dbg_verilator_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24test.diff
+	diff $(BUILDDIR)/fwriteseq24.terra.raw $(BUILDDIR)/dbg_terra_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24test2.diff
+	diff $(BUILDDIR)/fwriteseq24.terra.raw $(BUILDDIR)/dbg_verilator_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24testVerilog.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseq24test.diff && touch $@
 ###################
-out/fwriteseq37.compiles.txt: fwriteseq37.lua
+$(BUILDDIR)/fwriteseq37.compiles.txt: fwriteseq37.lua
 	../rigelTerra fwriteseq37.lua terra
 	$(LUA) fwriteseq37.lua verilog
 	$(LUA) fwriteseq37.lua metadata
 
-out/fwriteseq37.correct.txt: out/verilogcorrect.txt
-	diff out/dbg_terra_fwriteseq37.raw out/dbg_verilator_fwriteseq37.raw > out/fwriteseq37test.diff
-	test ! -s out/$*.fwriteseq37test.diff && touch $@
+$(BUILDDIR)/fwriteseq37.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	diff $(BUILDDIR)/dbg_terra_fwriteseq37.raw $(BUILDDIR)/dbg_verilator_fwriteseq37.raw > $(BUILDDIR)/fwriteseq37test.diff
+	test ! -s $(BUILDDIR)/$*.fwriteseq37test.diff && touch $@
 ###################
 
 clean:
-	echo out/* | xargs -n 100 rm -Rf
+	echo $(BUILDDIR)/* | xargs -n 100 rm -Rf

@@ -1149,6 +1149,9 @@ function C.linearPipeline(t,modulename)
     __linearpipelinecnt = __linearpipelinecnt+1
   end
 
+  err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
+  for _,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules") end
+
   local inp = R.input(t[1].inputType)
   local out = inp
 

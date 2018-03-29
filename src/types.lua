@@ -6,95 +6,84 @@ local types = {}
 
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
-            local const = J.sel(ty.constant,"_const","")
   if ty.kind=="bool" then
-    return "bool"..const
+    return "bool"
   elseif ty.kind=="null" then
     return "null"
   elseif ty.kind=="int" then
-    return "int"..ty.precision..const
+    return "int"..ty.precision
   elseif ty.kind=="uint" then
-    return "uint"..ty.precision..const
+    return "uint"..ty.precision
   elseif ty.kind=="bits" then
-    return "bits"..ty.precision..const
+    return "bits"..ty.precision
   elseif ty.kind=="float" then
-    return "float"..ty.precision..const
+    return "float"..ty.precision
   elseif ty.kind=="array" then
     return tostring(ty.over).."["..table.concat(ty.size,",").."]"
   elseif ty.kind=="tuple" then
     return "{"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",").."}"
   elseif ty.kind=="named" then
-    return ty.name..const
+    return ty.name
   end
 
   print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
   assert(false)
 end}
 
-types._bool=setmetatable({kind="bool",constant=false}, TypeMT)
-types._boolconst=setmetatable({kind="bool",constant=true}, TypeMT)
-function types.bool(const) if const==true then return types._boolconst else return types._bool end end
+types._bool=setmetatable({kind="bool"}, TypeMT)
+function types.bool() return types._bool end
 
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
 
-types._named={[true]={},[false]={}}
-function types.named( name, structure, generator, params, const, X )
+types._named={}
+function types.named( name, structure, generator, params, X )
   err( type(name)=="string","types.named: name must be string")
   err( types.isType(structure),"types.named: structure must be rigel type")
   err( type(generator)=="string","types.named: generator must be string")
   err( type(params)=="table","types.named: params must be table")
-  err( const==nil or type(const)=="boolean", "types.named: const must be nil or bool")
-
-  local c = (const==true)
-
-  assert(c==structure:const())
   
-  if types._named[c][name]==nil then
-    --if c==true then assert(structure:const()) end
-    --if c==false then assert(structure:const()==false) end
-
-    
-    local ty = {kind="named",name=name, structure=structure, generator=generator,params=params, constant=c}
-    types._named[c][name] = setmetatable(ty,TypeMT)
+  if types._named[name]==nil then
+    local ty = {kind="named",name=name, structure=structure, generator=generator,params=params}
+    types._named[name] = setmetatable(ty,TypeMT)
   else
-    err( types._named[c][name].structure==structure,"types.named: attempted to make new type with same name ("..name.."), but different structure ("..tostring(structure).." vs old: "..tostring(types._named[c][name].structure)..")"..tostring(c) )
+    err( types._named[name].structure==structure,"types.named: attempted to make new type with same name ("..name.."), but different structure ("..tostring(structure).." vs old: "..tostring(types._named[name].structure)..")" )
   end
   
-  return types._named[c][name]
+  return types._named[name]
 end
 
-types._bits={[true]={},[false]={}}
-function types.bits( prec, const )
+types._bits={}
+function types.bits( prec, X )
+  err( X==nil, "types.bits: too many arguments" )
   assert(prec==math.floor(prec))
-  local c = (const==true)
-  types._bits[c][prec] = types._bits[c][prec] or setmetatable({kind="bits",precision=prec,constant=c},TypeMT)
-  return types._bits[c][prec]
+  types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
+  return types._bits[prec]
 end
 
-types._uint={[true]={},[false]={}}
-function types.uint(prec,const)
+types._uint={}
+function types.uint( prec, X )
   err(type(prec)=="number", "precision argument to types.uint must be number")
   err(prec==math.floor(prec), "uint precision should be integer, but is "..tostring(prec) )
-  local c = (const==true)
-  types._uint[c][prec] = types._uint[c][prec] or setmetatable({kind="uint",precision=prec,constant=c},TypeMT)
-  return types._uint[c][prec]
+  err( X==nil, "types.uint: too many arguments" )
+  types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
+  return types._uint[prec]
 end
 
-types._int={[true]={},[false]={}}
-function types.int(prec,const)
+types._int={}
+function types.int( prec, X )
   assert(prec==math.floor(prec))
-  local c = (const==true)
-  types._int[c][prec] = types._int[c][prec] or setmetatable({kind="int",precision=prec,constant=c},TypeMT)
-  return types._int[c][prec]
+  err( X==nil, "types.int: too many arguments" )
+  types._int[prec] = types._int[prec] or setmetatable({kind="int",precision=prec},TypeMT)
+  return types._int[prec]
 end
 
-types._float={[true]={},[false]={}}
-function types.float(prec,const)
+types._float={}
+function types.float( prec, X )
   assert(prec==math.floor(prec))
-  local c = (const==true)
-  types._float[c][prec] = types._float[c][prec] or setmetatable({kind="float",precision=prec,constant=c},TypeMT)
-  return types._float[c][prec]
+  err( X==nil, "types.float: too many arguments" )
+  types._float[prec] = types._float[prec] or setmetatable({kind="float",precision=prec},TypeMT)
+  return types._float[prec]
 end
 
 types._array={}
@@ -162,7 +151,7 @@ function types.meet( a, b, op, loc)
   local treatedAsBinops = {["select"]=1, ["vectorSelect"]=1,["array"]=1, ["mapreducevar"]=1, ["dot"]=1, ["min"]=1, ["max"]=1}
 
   if a:isTuple() and b:isTuple() then
-    err(a:stripConst()==b:stripConst(),"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
+    err(a==b,"NYI - type meet tuple "..tostring(a).." and "..tostring(b).." op:"..op)
     return a,a,a
   elseif a:isArray() and b:isArray() then
     if a:arrayLength() ~= b:arrayLength() then
@@ -368,8 +357,6 @@ function types.checkExplicitCast(from, to, ast)
   if from==to then
     -- obvously can return true...
     return true
-  elseif from:constSubtypeOf(to) then
-    return true
   elseif to.kind=="bits" and from.kind=="bits" and to:verilogBits()>from:verilogBits() then
     return true -- allow padding
   elseif to.kind=="bits" or from.kind=="bits" then
@@ -395,7 +382,7 @@ function types.checkExplicitCast(from, to, ast)
       return true
     elseif to:isArray() then
       local allSubtype = true
-      for k,v in pairs(from.list) do if v:constSubtypeOf(to:arrayOver())==false then allSubtype=false end end
+      for k,v in pairs(from.list) do if v~=to:arrayOver() then allSubtype=false end end
 
       if allSubtype and #from.list == to:channels() then
         -- casting {A,A,A,A} to A[4]
@@ -486,102 +473,6 @@ end
 
 function types.isType(ty)
   return getmetatable(ty)==TypeMT
-end
-
--- is the type const?
-function TypeFunctions:const()
-  if self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
-    return self.constant
-  elseif self:isArray() then
-    return self:arrayOver():const()
-  elseif self:isTuple() then
-    return J.foldl(J.andop,true, J.map(self.list, function(v) return v:const() end ) )
-  elseif self:isNull() then
-    return true
-  elseif self:isNamed() then
-    return self.constant
-  else
-    print(":const",self)
-    assert(false)
-  end
-end
-
--- if self is a subtype of A, this means self can be used in place of A
--- eg 'bool_const' is a subtype of 'bool'
-function TypeFunctions:constSubtypeOf(A)
-  if A==self then
-    return true
-  elseif A.kind~=self.kind then
-    return false
-  elseif self:isUint() or self:isInt() or self:isFloat() or self:isBool() or self:isBits() then
-    if self:const() and A:makeConst()==self then
-      return true
-    else
-      return false
-    end
-  elseif self:isTuple() then
-    if #A.list~=#self.list then return false end
-    return J.foldl( J.andop, true, J.map(self.list, function(t,k) return t:constSubtypeOf(A.list[k]) end) )
-  elseif self:isArray() then
-    local lenmatch = (self:arrayLength())[1]==(A:arrayLength())[1] and (self:arrayLength())[2]==(A:arrayLength())[2]
-    return self:arrayOver():constSubtypeOf(A:arrayOver()) and lenmatch
-  elseif self:isNamed() then
-    return self:const() and A:makeConst()==self
-  else
-    print(":constSubtypeOf",self,A)
-    assert(false)
-  end
-end
-
-function TypeFunctions:makeConst()
-  if self:const() then return self end
-
-  if self:isUint() then
-    return types.uint( self.precision, true )
-  elseif self:isInt() then
-    return types.int( self.precision, true )
-  elseif self:isBits() then
-    return types.bits( self.precision, true )
-  elseif self:isFloat() then
-    return types.float( self.precision, true )
-  elseif self:isArray() then
-    local L = self:arrayLength()
-    return types.array2d( self:arrayOver():makeConst(),L[1],L[2])
-  elseif self:isTuple() then
-    return types.tuple(J.map(self.list,function(t) return t:makeConst() end ) )
-  elseif self:isBool() then
-    return types.bool(true)
-  elseif self:isNamed() then
-    return types.named( self.name, self.structure:makeConst(), self.generator, self.params, true )
-  else
-    print(":makeConst",self)
-    assert(false)
-  end
-end
-
-function TypeFunctions:stripConst()
-  if self:isUint() then
-    return types.uint( self.precision, false )
-  elseif self:isInt() then
-    return types.int( self.precision, false )
-  elseif self:isFloat() then
-    return types.float( self.precision, false )
-  elseif self:isBits() then
-    return types.bits( self.precision, false )
-  elseif self:isArray() then
-    local L = self:arrayLength()
-    return types.array2d( self:arrayOver():stripConst(),L[1],L[2])
-  elseif self:isTuple() then
-    local typelist = J.map(self.list, function(t) return t:stripConst() end)
-    return types.tuple(typelist)
-  elseif self:isBool() then
-    return types.bool(false)
-  elseif self:isNamed() then
-    return types.named( self.name, self.structure:stripConst(), self.generator, self.params, false)
-  else
-    print(":stripConst",self)
-    assert(false)
-  end
 end
 
 -- convert all named types in this type to their equivalent structural type
@@ -797,5 +688,16 @@ function TypeFunctions:toCPUType()
 end
 
 if terralib~=nil then require("typesTerra") end
+
+function types.export(t)
+  if t==nil then t=_G end
+
+  rawset(t,"u",types.uint)
+  rawset(t,"i",types.int)
+  rawset(t,"b",types.bits)
+  rawset(t,"bool",types.bool(false))
+  rawset(t,"ar",types.array)
+  rawset(t,"tup",types.tuple)
+end
 
 return types

@@ -76,7 +76,7 @@ local function makeThresh()
   if TAPS==false then
     local THRESH=10
     local inp = R.input( types.uint(8) )
-    local out = R.apply("rr", thfn, R.concat("rof",{inp,R.constant("Rt",THRESH,types.uint(32):makeConst())}))
+    local out = R.apply("rr", thfn, R.concat("rof",{inp,R.constant("Rt",THRESH,types.uint(32))}))
     thfn = RM.lambda("EWR",inp,out)
   end
 
