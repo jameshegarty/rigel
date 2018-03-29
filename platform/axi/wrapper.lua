@@ -211,7 +211,8 @@ end
 -- hack: if user passed us now extected cycles info, just set expected cycles to a billion,
 -- which should work for almost all pipelines, but still protect the bus (maybe?)
 if metadata.sdfInputN==nil and metadata.earlyOverride==nil then
-  metadata.earlyOverride = 16*1024*1024*100
+  local MHZ = 1000000
+  metadata.earlyOverride = 25*MHZ -- 1 sec at 25MHZ
 end
 
 -- hack: if verilogFile is 'none', don't concat it
