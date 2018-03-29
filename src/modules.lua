@@ -3230,7 +3230,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
     assert(systolic.isAST(out[1]))
 
-    err( out[1].type:constSubtypeOf(rigel.lower(res.outputType)), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
+    err( out[1].type==rigel.lower(res.outputType), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
 
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
@@ -3509,7 +3509,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     err( (outputType==types.null() and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
 
     if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
-      err( systolicOutput.type:constSubtypeOf(rigel.lower(outputType)), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+      err( systolicOutput.type==rigel.lower(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
     end
     
     if systolicInstances~=nil then

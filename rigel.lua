@@ -581,7 +581,7 @@ function darkroomIRFunctions:typecheck()
       err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
-      err( n.inputs[1].type:constSubtypeOf(n.fn.inputType), "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+      err( n.inputs[1].type==n.fn.inputType, "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
     end
     n.type = n.fn.outputType
   elseif n.kind=="applyMethod" then
@@ -668,7 +668,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
-          err(n.fn.systolicModule.functions.process.output.type:constSubtypeOf(darkroom.lower(n.fn.outputType)), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err(n.fn.systolicModule.functions.process.output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)

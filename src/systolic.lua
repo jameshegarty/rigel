@@ -367,7 +367,7 @@ __index = function(tab,key)
 
         if inp.type==fn.inputParameter.type then
           
-        elseif inp.type:constSubtypeOf(fn.inputParameter.type) then
+        elseif inp.type==fn.inputParameter.type then
           --  stripping the Const-ness will cause problems when we CSE with multiple stall domains
           -- We don't actually need to insert an explicit cast, it doesn't matter. Cast would be a noop
 --          inp = systolic.cast( inp, fn.inputParameter.type )

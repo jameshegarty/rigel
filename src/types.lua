@@ -475,12 +475,6 @@ function types.isType(ty)
   return getmetatable(ty)==TypeMT
 end
 
--- if self is a subtype of A, this means self can be used in place of A
--- eg 'bool_const' is a subtype of 'bool'
-function TypeFunctions:constSubtypeOf(A)
-  return A==self
-end
-
 -- convert all named types in this type to their equivalent structural type
 function TypeFunctions:stripNamed()
   if self:isNamed() then
