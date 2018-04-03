@@ -71,6 +71,8 @@ end
 //WRITE logic
 reg [31:0] b_count;
 reg w_state;
+reg [3:0] last_count;
+
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
         w_state <= IDLE;
@@ -96,7 +98,6 @@ always @(posedge ACLK) begin
     endcase
 end
 
-reg [3:0] last_count;
 assign M_AXI_WLAST = last_count == 4'b0000;
 
 assign M_AXI_WVALID = (w_state == RWAIT) && DATA_VALID;

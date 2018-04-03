@@ -1,5 +1,8 @@
 
-module Conf(
+module Conf #(parameter ADDR_BASE = 32'd0,
+              parameter NREG = 4,
+              parameter W = 32
+)(
     input ACLK,
     input ARESETN,
     //AXI Inputs
@@ -45,7 +48,7 @@ module Conf(
     wire LITE_AWVALID;
     wire LITE_BREADY;
     reg [1:0] LITE_BRESP;
-    wire LITE_BVALID;
+    reg LITE_BVALID;
     reg [31:0] LITE_RDATA;
     wire LITE_RREADY;
     reg [1:0] LITE_RRESP;
@@ -100,14 +103,10 @@ module Conf(
     .M_AXI_WVALID(LITE_WVALID)
   );
 
-   parameter ADDR_BASE = 32'd0;
-   
-parameter NREG = 4;
-parameter W = 32;
 
 reg [W-1:0] data[NREG-1:0];
 
-parameter IDLE = 0, RWAIT = 1;
+parameter IDLE = 0, RWAIT = 1, RWAIT2 = 2;
 parameter OK = 2'b00, SLVERR = 2'b10;
 
 reg [31:0] counter;
@@ -140,7 +139,7 @@ always @(posedge ACLK) begin
 end 
 
 //WRITES
-reg w_state;
+reg [1:0] w_state;
 reg [9:0] w_select_r;
 reg w_wrotedata;
 reg w_wroteresp;
@@ -153,15 +152,17 @@ assign aw_good = {LITE_AWADDR[31:12], 10'b00, LITE_AWADDR[1:0]} == ADDR_BASE;
 
 assign LITE_AWREADY = (w_state == IDLE);
 assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
-assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
+//assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
 
 always @(posedge ACLK) begin
     if(ARESETN == 0) begin
         w_state <= IDLE;
         w_wrotedata <= 0;
         w_wroteresp <= 0;
+        LITE_BVALID <= 1'b0;
     end else case(w_state)
         IDLE: begin
+            LITE_BVALID <= 1'b0;
             if(LITE_AWVALID) begin
                 LITE_BRESP <= aw_good ? OK : SLVERR;
                 w_select_r <= w_select;
@@ -171,17 +172,27 @@ always @(posedge ACLK) begin
             end
         end
         RWAIT: begin
-            if (LITE_WREADY)
-                data[w_select_r] <= LITE_WDATA;
-            if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
-                w_wrotedata <= 0;
-                w_wroteresp <= 0;
-                w_state <= IDLE;
-            end else if (LITE_WVALID)
-                w_wrotedata <= 1;
-            else if (LITE_BREADY)
-                w_wroteresp <= 1;
+           if (LITE_WREADY) begin
+              data[w_select_r] <= LITE_WDATA;
+           end
+           
+           if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
+              w_wrotedata <= 0;
+              w_wroteresp <= 0;
+           end else if (LITE_WVALID) begin
+             w_wrotedata <= 1;
+           end else if (LITE_BREADY) begin
+             w_wroteresp <= 1;
+           end
+
+           if (LITE_WVALID &&  LITE_WREADY) begin
+              w_state <= RWAIT2;
+           end
         end
+        RWAIT2: begin
+           LITE_BVALID <= 1'b1;
+           w_state <= IDLE;
+        end   
     endcase
 end
 
