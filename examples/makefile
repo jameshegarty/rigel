@@ -158,6 +158,11 @@ AXI100 += $(patsubst %.lua,$(BUILDDIR)/%.zynq100.raw,$(SRCS_AXI100))
 AXI100 += $(patsubst %.lua,$(BUILDDIR)/%.zynq100.bmp,$(SRCS_AXI100))
 AXI100 += $(AXIBITS100)
 
+ZU9VIVADO = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.raw,$(SRCS_AXI20))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bmp,$(SRCS_AXI20))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.correct.txt,$(SRCS_AXI20))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SRCS_AXI20))
+
 STATS = $(patsubst %.lua,$(BUILDDIR)/%.stats.txt,$(AXISRCS))
 
 STATS100 = $(patsubst %.lua,$(BUILDDIR)/%.stats100.txt,$(SRCS_AXI100))
@@ -219,6 +224,8 @@ zynq20: $(AXI)
 camerabits: $(CAMERABITS)
 
 zynq100: $(AXI100)
+
+zu9vivado: $(ZU9VIVADO)
 
 axiverilog: $(AXIVERILOG)
 	touch $(BUILDDIR)/axiverilog_done.txt

@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
     
   unsigned int lenIn = lenInRaw;
   // include extra axi burst of cycle count
-  unsigned int lenOutRaw = outputW*outputH*outputBytesPerPixel+128;
+  unsigned int lenOutRaw = outputW*outputH*outputBytesPerPixel;
   unsigned int lenOut = lenOutRaw;
 
   // HW pads to next largest axi burst size (128 bytes)

@@ -90,11 +90,23 @@ return fn
     out = R.apply("cast",RM.makeHandshake(C.cast(types.bits(oover:verilogBits()),types.array2d(types.bits(64),divs))), out)
     out = R.apply("down",RM.liftHandshake(RM.changeRate(types.bits(64),1,divs,1)),out)
   else
-    if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
-    
     local targetOutputP = (64/oover:verilogBits())
     J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
-    
+
+    if R.extractData(fn.outputType):isArray()==false then out = R.apply("harnessPW0",RM.makeHandshake(C.arrayop(oover,1)),out) end
+
+    -- pad up to nearest burst size. NOTE: must happen BEFORE CHANGERATE! (what if we write out a smaller # of pixels than a single changerate?)
+    local nOutputBytes = (metadata.outputWidth*metadata.outputHeight*oover:verilogBits())/8
+    local targetOutputBytes = J.upToNearest(128,nOutputBytes)
+
+    if nOutputBytes~=targetOutputBytes then
+      local nPx = nOutputBytes/(oover:verilogBits()/8)
+      local targetPx = targetOutputBytes/(oover:verilogBits()/8) - nPx
+      out = R.apply("endpad", RM.liftHandshake(RM.padSeq(oover,nPx,1,outputP,0,targetPx,0,0, oover:fakeValue())), out)
+    end
+
+    assert( targetOutputBytes%(oover:verilogBits()/8)==0)
+      
     if fn.outputType:verilogBits()~=64 then
       out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
     end
@@ -167,7 +179,7 @@ local function harnessAxi( hsfn, metadata) --inputCountArg, outputCountArg, unde
 
   local CYCLES_BURST = 16
   --print("OUTTYPE",hsfn.outputType)
-  out = R.apply("cycleCounter", RM.cycleCounter( R.extractData(hsfn.outputType), outputCount ), out)
+--  out = R.apply("cycleCounter", RM.cycleCounter( R.extractData(hsfn.outputType), outputCount ), out)
 
   -- pad up to burst size
 --  if outputCount~=outputCountArg then
@@ -181,8 +193,8 @@ local function harnessAxi( hsfn, metadata) --inputCountArg, outputCountArg, unde
      stats[3] = R.applyMethod("s2",regs[2],"store",out)
   end
 
-  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount+CYCLES_BURST))), out)
-  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), (outputBytes/8)+CYCLES_BURST, EC, false ), out)
+  out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), out)
+  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), (outputBytes/8), EC, false ), out)
 
   if EXTRA_FIFO then
      stats[1] = out
@@ -259,7 +271,7 @@ assert(outputBytes%128==0)
 
 axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
 -- extra 128 bytes is for the extra AXI burst that contains cycle count
-axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes+128)
+axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
 
 local maxUtilization = 1
 
