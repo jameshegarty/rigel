@@ -15,11 +15,11 @@ OUTFILE=$3
 while [[ -z `ip -6 neigh show | grep $ZYNQ_ETH | cut -d " " -f1` ]]
 do
     echo "Finding IP..."
-    ping6 -c 5 -I enp10s0 FF02:0:0:0:0:0:0:1
+    ping6 -c 5 -I $ZYNQ_ETH FF02:0:0:0:0:0:0:1
     sleep 1
 done
 
-IPT=$(ip -6 neigh show | grep enp10s0 | cut -d " " -f1)
+IPT=$(ip -6 neigh show | grep $ZYNQ_ETH | cut -d " " -f1)
 ZYNQ_ADDR=$IPT%$ZYNQ_ETH
 echo $ZYNQ_ADDR
 
