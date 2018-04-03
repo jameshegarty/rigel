@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # 00 00 * * * /home/jhegarty/misc/crontop.sh
 
