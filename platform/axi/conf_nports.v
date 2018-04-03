@@ -188,11 +188,13 @@ always @(posedge ACLK) begin
            if (LITE_WVALID &&  LITE_WREADY) begin
               w_state <= RWAIT2;
            end
-        end
+        end // case: RWAIT
         RWAIT2: begin
            LITE_BVALID <= 1'b1;
-           w_state <= IDLE;
-        end   
+           if (LITE_BREADY) begin
+              w_state <= IDLE;
+           end
+        end
     endcase
 end
 
