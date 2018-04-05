@@ -70,7 +70,7 @@ assign M_AXI_ARBURST = 2'b01;
 parameter IDLE = 0, RWAIT = 1;
     
 //ADDR logic
-reg [31:0] a_count;
+reg [24:0] a_count;
 reg a_state;  
 assign M_AXI_ARVALID = (a_state == RWAIT);
 always @(posedge ACLK) begin
@@ -260,7 +260,7 @@ assign M_AXI_WSTRB = 8'b11111111;
 parameter IDLE = 0, RWAIT = 1;
     
 //ADDR logic
-reg [31:0] a_count;
+reg [24:0] a_count;
 reg a_state;  
 assign M_AXI_AWVALID = (a_state == RWAIT);
 always @(posedge ACLK) begin
@@ -367,6 +367,8 @@ parameter INSTANCE_NAME="inst";
 
 assign process_output=1'b0;
 
+wire CONFIG_READY;
+
 DRAMWriterInner inner(
     //AXI port
     .ACLK(CLK),
@@ -392,7 +394,7 @@ DRAMWriterInner inner(
     
     //Control config
     .CONFIG_VALID(~reset),
-    //output CONFIG_READY,
+    .CONFIG_READY(CONFIG_READY),
     .CONFIG_START_ADDR(32'h3000A000),
     .CONFIG_NBYTES(32'd8192),
     

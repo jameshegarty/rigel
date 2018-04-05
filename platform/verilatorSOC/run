@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -x
+
+BITFILE=$1
+BITFILE_BASE=$(basename $1)
+METAFILE=$2
+OUTFILE=$3
+OUTPATH=$4
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+LUA=$DIR/../../rigelLuajit
+
+INPUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputFiles)
+OUTPUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputFiles)
+
+$BITFILE $INPUT $OUTPUT.verilatorSOC.raw 1100
