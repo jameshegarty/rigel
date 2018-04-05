@@ -158,10 +158,18 @@ AXI100 += $(patsubst %.lua,$(BUILDDIR)/%.zynq100.raw,$(SRCS_AXI100))
 AXI100 += $(patsubst %.lua,$(BUILDDIR)/%.zynq100.bmp,$(SRCS_AXI100))
 AXI100 += $(AXIBITS100)
 
-ZU9VIVADO = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.raw,$(SRCS_AXI20))
-ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bmp,$(SRCS_AXI20))
-ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.correct.txt,$(SRCS_AXI20))
-ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SRCS_AXI20))
+SRCS_ZU9 = $(SRCS_AXI20)
+
+#combination loop race condition DRC error
+SRCS_AXI20 := $(filter-out lk_tr_handshake_6_2_axi.lua lk_tr_handshake_6_6_axi.lua lk_tr_handshake_12_12_axi.lua lk_tr_handshake_6_3_axi.lua lk_tr_handshake_4_4_axi.lua,$(SRCS_AXI20))
+
+# broken?
+SRCS_AXI20 := $(filter-out underflow.lua,$(SRCS_AXI20))
+
+ZU9VIVADO = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.raw,$(SRCS_ZU9))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bmp,$(SRCS_ZU9))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.correct.txt,$(SRCS_ZU9))
+ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SRCS_ZU9))
 
 STATS = $(patsubst %.lua,$(BUILDDIR)/%.stats.txt,$(AXISRCS))
 
