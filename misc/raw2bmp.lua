@@ -5,6 +5,12 @@ ffi = require "ffi"
 
 local metadata = dofile(arg[3])
 
+if type(metadata.outputs)=="table" then
+  -- special case: SOC
+  metadata.outputBitsPerPixel = metadata.outputs[1].bitsPerPixel
+  metadata.outputWidth = metadata.outputs[1].W
+  metadata.outputHeight = metadata.outputs[1].H
+end
 
 ffi.cdef[[
 typedef struct {} FILE;

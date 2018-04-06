@@ -236,8 +236,11 @@ end
 
 function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
 
+darkroom.__unnamedID = 0
+
 darkroomFunctionFunctions = {}
-darkroomFunctionMT={__index=function(tab,key)
+darkroomFunctionMT={
+__index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
   v = darkroomFunctionFunctions[key]
@@ -274,8 +277,13 @@ darkroomFunctionMT={__index=function(tab,key)
     rawset(tab,"systolicModule", sm )
     return sm
   end
-  end
-  }
+end,
+__call=function(tab,arg)
+  local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
+  darkroom.__unnamedID = darkroom.__unnamedID+1
+  return res
+end
+}
 
 
 -- takes SDF input rate I and returns output rate after I is processed by this function

@@ -6,7 +6,7 @@
 
 typedef struct{unsigned int addr; unsigned int burst;} Transaction;
 
-const unsigned int MEMBASE = 0x30008000;
+unsigned int MEMBASE = 0x30008000;
 unsigned int MEMSIZE = 8192*2;
 unsigned char* memory;
 
@@ -220,29 +220,45 @@ void step(VERILATORCLASS* top){
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=4){
-    printf("Usage: XXX.verilator infile outfile simCycles");
-    exit(1);
+  printf("Usage: XXX.verilator simCycles memStart memEnd --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
+
+  int simCycles = atoi(argv[1]);
+  MEMBASE = atoi(argv[2]);
+  MEMSIZE = atoi(argv[3])-MEMBASE;
+
+  std::cout << "SimCycles: " << simCycles << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
+  
+  if(strcmp(argv[4],"--inputs")!=0){
+    std::cout << "fourth argument should be '--inputs' but is " << argv[4] << std::endl;
   }
 
+  int inputCount = 0;
+
+  memory = (unsigned char*)malloc(MEMSIZE);
+    
+  int i = 5;
+  while(strcmp(argv[i],"--outputs")!=0){
+    unsigned int addr = atoi(argv[i+1]);
+    unsigned int addrOffset = addr-MEMBASE;
+    
+    FILE* infile = fopen(argv[i],"rb");
+    if(infile==NULL){printf("could not open input '%s'\n", argv[1]);}
+    fseek(infile, 0L, SEEK_END);
+    unsigned long insize = ftell(infile);
+    fseek(infile, 0L, SEEK_SET);
+    fread( memory+addrOffset, insize, 1, infile );
+    fclose( infile );
+    
+    std::cout << "Input File " << inputCount << ": filename=" << argv[i] << " address=0x" << std::hex << addr << " addressOffset=0x" << addrOffset << std::dec << " bytes=" << insize <<std::endl;
+    inputCount++;
+    i+=2;
+  }
+  
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
-
-  int simCycles = atoi(argv[3]);
   
-  FILE* infile = fopen(argv[1],"rb");
 
-
-  if(infile==NULL){printf("could not open input '%s'\n", argv[1]);}
-
-  fseek(infile, 0L, SEEK_END);
-  unsigned long insize = ftell(infile);
-  fseek(infile, 0L, SEEK_SET);
-  
-  memory = (unsigned char*)malloc(MEMSIZE);
-  fread( memory, insize, 1, infile );
-  fclose( infile );
   
   unsigned long totalCycles = 0;
 
@@ -381,10 +397,38 @@ int main(int argc, char** argv) {
 
   printf("Cycles: %d\n", (int)totalCycles);
 
-  FILE* outfile = fopen(argv[2],"wb");
-  if(outfile==NULL){printf("could not open output '%s'\n", argv[2]);}
-  fwrite( memory+8192, 8192, 1, outfile);
-  fclose(outfile);
+  i = 6+inputCount*2;
+  unsigned int outputCount = 0;
+  while(i<argc){
+    unsigned int addr = atoi(argv[i+1]);
+    unsigned int addrOffset = addr-MEMBASE;
+
+    unsigned int w = atoi(argv[i+2]);
+    unsigned int h = atoi(argv[i+3]);
+    unsigned int bitsPerPixel = atoi(argv[i+4]);
+
+    if( bitsPerPixel%8!=0 ){
+      std::cout << "Error, bits per pixel not byte aligned!" << std::endl;
+      exit(1);
+    }
+
+    unsigned int bytes = w*h*(bitsPerPixel/8);
+
+    std::string outFilename = std::string(argv[i])+std::string(".verilatorSOC.raw");
+    
+    std::cout << "Output File " << outputCount << ": filename=" << outFilename << " address=0x" << std::hex << addr << " addressOffset=0x" << addrOffset << std::dec << " W=" << w <<" H="<<h<<" bitsPerPixel="<<bitsPerPixel<<" bytes="<<bytes<<std::endl;
+    
+    FILE* outfile = fopen(outFilename.c_str(),"wb");
+    if(outfile==NULL){printf("could not open output '%s'\n", outFilename.c_str());}
+    fwrite( memory+addrOffset, bytes, 1, outfile);
+    fclose(outfile);
+    
+
+    i+=5;
+    outputCount++;
+  }
+
+    
   
   if(readQ.size()>0){
     std::cout << "Error, outstanding read requests at end of time! cnt:" << readQ.size() << std::endl;
@@ -393,6 +437,6 @@ int main(int argc, char** argv) {
 
   if(writeQ.size()>0){
     std::cout << "Error, outstanding write requests at end of time! cnt:" << writeQ.size() << std::endl;
-    exit(1);
+    //    exit(1);
   }
 }
