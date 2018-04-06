@@ -17,4 +17,6 @@ MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
 INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS)
 OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS)
 
-$BITFILE 1100 $MEMSTART $MEMEND --inputs $INPUTS --outputs $OUTPUTS
+#VERBOSE=--verbose
+
+$BITFILE 1100 $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --outputs $OUTPUTS

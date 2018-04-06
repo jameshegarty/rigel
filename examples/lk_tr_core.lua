@@ -158,15 +158,17 @@ function makeA( T, dType, window, bits )
   local input1 = R.selectStream("input1",inputB,1)
   
   local Fdx = R.apply("fdx", RM.makeHandshake(C.index(inpt,0)), input0)
-  local FdxB = R.apply("fdxB", RM.broadcastStream(stt,2),Fdx)
+  local FdxB = R.apply("fdxB", RM.broadcastStream(stt,3),Fdx)
   local Fdx0 = R.selectStream("fdx0",FdxB,0)
   local Fdx1 = R.selectStream("fdx1",FdxB,1)
+  local Fdx2 = R.selectStream("fdx2",FdxB,2)
   
   local Fdy = R.apply("fdy", RM.makeHandshake(C.index(inpt,1)), input1)
   --local Fdy0, Fdy1 = RS.fanOut{input=Fdy, branches=2}
-  local FdyB = R.apply("fdyB", RM.broadcastStream(stt,2),Fdy)
+  local FdyB = R.apply("fdyB", RM.broadcastStream(stt,3),Fdy)
   local Fdy0 = R.selectStream("fdy0",FdyB,0)
   local Fdy1 = R.selectStream("fdy1",FdyB,1)
+  local Fdy2 = R.selectStream("fdy2",FdyB,2)
 
   local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
   bits.Apartial[3] = partial[3]
@@ -177,7 +179,7 @@ function makeA( T, dType, window, bits )
   local rsumfn = makeSumReduce(partial_type,false)
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
-  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o0",{Fdx0,Fdx0}) )
+  local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o0",{Fdx0,Fdx2}) )
   local out0 = R.apply("out0", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp0 )
   local out0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out0 )
   local out0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out0 )
@@ -187,9 +189,11 @@ function makeA( T, dType, window, bits )
   local out1 = R.apply("out1red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out1 )
   local out1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out1 )
 
-  local out2 = out1
+  local out1B = R.apply("out1B", RM.broadcastStream(R.extractData(out1.type),2),out1)
+  out1 = R.selectStream("out1B1",out1B,0)
+  local out2 = R.selectStream("out1B2",out1B,1)
 
-  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o3",{Fdy1,Fdy1}) )
+  local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window*T,window,{dType,dType}), R.concat("o3",{Fdy1,Fdy2}) )
   local out3 = R.apply("out3", RM.makeHandshake(RM.map(partialfn, window*T, window)), inp3 )
   local out3 = R.apply("out3red", RM.makeHandshake(RM.reduce(rsumfn, window*T, window)), out3 )
   local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )

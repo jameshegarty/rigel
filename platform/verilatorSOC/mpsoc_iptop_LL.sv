@@ -25,49 +25,48 @@ module IP_Top(
   input         IP_SAXI0_WVALID,
 
               ///////////////////////////////////////
-  //output [31:0] IP_MAXI0_ARADDR,
-  //input         IP_MAXI0_ARREADY,
-  //output        IP_MAXI0_ARVALID,
   output [32:0] IP_MAXI0_ARADDR,
   input         IP_MAXI0_ARADDR_ready,
-              
-  //input [63:0]  IP_MAXI0_RDATA,
-  //output        IP_MAXI0_RREADY,
-  //input         IP_MAXI0_RVALID,
   input [64:0]  IP_MAXI0_RDATA,
   output        IP_MAXI0_RDATA_ready,
-              
   input [1:0]   IP_MAXI0_RRESP,
-
   input         IP_MAXI0_RLAST,
   output [3:0]  IP_MAXI0_ARLEN,
   output [1:0]  IP_MAXI0_ARSIZE,
   output [1:0]  IP_MAXI0_ARBURST,
-              
-  //output [31:0] IP_MAXI0_AWADDR,
-  //input         IP_MAXI0_AWREADY,
-  //output        IP_MAXI0_AWVALID,
   output [32:0] IP_MAXI0_AWADDR,
   input         IP_MAXI0_AWADDR_ready,
-              
-  //output [63:0] IP_MAXI0_WDATA,
-  //input         IP_MAXI0_WREADY,
-  //output        IP_MAXI0_WVALID,
   output [64:0] IP_MAXI0_WDATA,
   input         IP_MAXI0_WDATA_ready,
-              
   output [7:0]  IP_MAXI0_WSTRB,
   output        IP_MAXI0_WLAST,
-              
-  //input [1:0]   IP_MAXI0_BRESP,
-  //input         IP_MAXI0_BVALID,
-  //output        IP_MAXI0_BREADY,
   input [2:0]   IP_MAXI0_BRESP,
   output        IP_MAXI0_BRESP_ready,
-              
   output [3:0]  IP_MAXI0_AWLEN,
   output [1:0]  IP_MAXI0_AWSIZE,
-  output [1:0]  IP_MAXI0_AWBURST
+  output [1:0]  IP_MAXI0_AWBURST,
+
+              ///////////////////////////////////////
+  output [32:0] IP_MAXI1_ARADDR,
+  input         IP_MAXI1_ARADDR_ready,
+  input [64:0]  IP_MAXI1_RDATA,
+  output        IP_MAXI1_RDATA_ready,
+  input [1:0]   IP_MAXI1_RRESP,
+  input         IP_MAXI1_RLAST,
+  output [3:0]  IP_MAXI1_ARLEN,
+  output [1:0]  IP_MAXI1_ARSIZE,
+  output [1:0]  IP_MAXI1_ARBURST,
+  output [32:0] IP_MAXI1_AWADDR,
+  input         IP_MAXI1_AWADDR_ready,
+  output [64:0] IP_MAXI1_WDATA,
+  input         IP_MAXI1_WDATA_ready,
+  output [7:0]  IP_MAXI1_WSTRB,
+  output        IP_MAXI1_WLAST,
+  input [2:0]   IP_MAXI1_BRESP,
+  output        IP_MAXI1_BRESP_ready,
+  output [3:0]  IP_MAXI1_AWLEN,
+  output [1:0]  IP_MAXI1_AWSIZE,
+  output [1:0]  IP_MAXI1_AWBURST
 );
 
     wire CONFIG_VALID;

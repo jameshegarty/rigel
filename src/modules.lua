@@ -3348,8 +3348,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             err( anySS==allSS,"If any consumers are selectStream, all consumers must be selectStream "..n.loc )
             err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects "..tostring(n:outputStreams()).." stream readers, but only "..tostring(J.keycount(args)).." were found. "..n.loc )
 
-            if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
-              err(allSS,"Error, a multi-stream, multi-reader node is being consumed by something other than a selectStream? "..n.loc)
+            if n:outputStreams()>=1 and n:parentCount(fn.output)>1 then
+              err(allSS,"Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Handshaked nodes with multiple consumers should use broadcastStream. "..n.loc)
             end
           end
           

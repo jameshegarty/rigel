@@ -194,7 +194,7 @@ parameter INSTANCE_NAME="inst";
     //Control config
     .CONFIG_VALID(process_input),
     .CONFIG_READY(ready),
-    .CONFIG_START_ADDR(32'h30008000),
+    .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
     .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
     
     //RAM port
@@ -208,10 +208,11 @@ endmodule
   
 end)
 
-SOC.axiBurstWriteN = J.memoize(function(filename,Ntokens,port,address,X)
+SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
   J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstWriteN: port out of range" )
+  J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number")
   J.err( type(address)=="number","axiBurstWriteN: missing address")
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
   
@@ -407,8 +408,8 @@ DRAMWriterInner inner(
     //Control config
     .CONFIG_VALID(~reset),
     .CONFIG_READY(CONFIG_READY),
-    .CONFIG_START_ADDR(32'h3000A000),
-    .CONFIG_NBYTES(32'd8192),
+    .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
+    .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
     
     //RAM port
     .DATA(process_input[63:0]),
