@@ -1662,7 +1662,15 @@ modules.broadcastStream = memoize(function(A,N,X)
   err( type(N)=="number", "N must be number")
   assert(X==nil)
 
-  local res = {kind="broadcastStream", A=A, N=N, inputType = rigel.Handshake(A), outputType = rigel.HandshakeArray(A, N), stateful=false}
+  local res = {kind="broadcastStream", A=A, N=N,  stateful=false}
+
+  if A==types.null() then
+    res.inputType = rigel.HandshakeTrigger
+    res.outputType = rigel.HandshakeTriggerArray(N)
+  else
+    res.inputType = rigel.Handshake(A)
+    res.outputType = rigel.HandshakeArray(A, N)
+  end
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = J.broadcast({1,1},N)
@@ -1680,14 +1688,30 @@ modules.broadcastStream = memoize(function(A,N,X)
     end
 
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
-    local inpData = S.index(inp,0)
-    local inpValid = S.index(inp,1)
+    local inpData, inpValid
+
+    if A==types.null() then -- HandshakeTrigger
+      inpValid = inp
+    else
+      inpData = S.index(inp,0)
+      inpValid = S.index(inp,1)
+    end
+
     local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),N) )
     local readyDownstreamList = J.map(J.range(N), function(i) return S.index(readyDownstream,i-1) end )
     
     local allReady = J.foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
     local validOut = S.__and(inpValid,allReady)
-    local out = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
+
+    local out
+
+    if inpData==nil then
+      -- HandshakeTrigger
+      out  = S.tuple( J.broadcast(validOut, N))
+      out = S.cast(out, types.array2d(types.bool(),N) )
+    else
+      out  = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
+    end
     out = S.cast(out, rigel.lower(res.outputType) )
     
     local pipelines = {}

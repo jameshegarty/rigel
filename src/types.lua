@@ -696,7 +696,7 @@ function types.export(t)
   rawset(t,"i",types.int)
   rawset(t,"b",types.bits)
 --  rawset(t,"bool",types.bool(false)) -- used in terra!!
-  rawset(t,"ar",types.array)
+  rawset(t,"ar",types.array2d)
   rawset(t,"tup",types.tuple)
 end
 
