@@ -118,7 +118,7 @@ function darkroom.isBasic(A)
   if A:isArray() then return darkroom.isBasic(A:arrayOver()) end
   if A:isTuple() then for _,v in ipairs(A.list) do if darkroom.isBasic(v)==false then return false end end return true end
     
-  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or A:isNamed() then
+  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or darkroom.isHandshakeTriggerArray(A) then
     return false
   end
 
@@ -136,7 +136,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or a:isNamed() then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
