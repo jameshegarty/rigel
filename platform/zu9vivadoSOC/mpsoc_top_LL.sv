@@ -45,46 +45,23 @@ module MPSOC_Top
     wire [3:0] IP_SAXI0_WSTRB;
     wire IP_SAXI0_WVALID;
 
-   //wire [31:0] IP_MAXI0_ARADDR;
-   //wire        IP_MAXI0_ARREADY;
-   //wire        IP_MAXI0_ARVALID;
    wire [32:0] IP_MAXI0_ARADDR;
    wire        IP_MAXI0_ARADDR_ready;
-   
-   //wire [31:0] IP_MAXI0_AWADDR;
-   //wire        IP_MAXI0_AWREADY;
-   //wire        IP_MAXI0_AWVALID;
    wire [32:0] IP_MAXI0_AWADDR;
    wire        IP_MAXI0_AWADDR_ready;
-   
-   //wire        IP_MAXI0_BREADY;
-   //wire [1:0]  IP_MAXI0_BRESP;
-   //wire        IP_MAXI0_BVALID;
    wire [2:0]  IP_MAXI0_BRESP;
    wire        IP_MAXI0_BRESP_ready;
-   
-   //wire [63:0] IP_MAXI0_RDATA;
-   //wire        IP_MAXI0_RREADY;
-   //wire        IP_MAXI0_RVALID;
    wire [64:0] IP_MAXI0_RDATA;
    wire        IP_MAXI0_RDATA_ready;
-   
    wire [1:0]  IP_MAXI0_RRESP;
-
-   //wire [63:0] IP_MAXI0_WDATA;
-   //wire        IP_MAXI0_WREADY;
-   //wire        IP_MAXI0_WVALID;
    wire [64:0] IP_MAXI0_WDATA;
    wire        IP_MAXI0_WDATA_ready;
-   
    wire [7:0]  IP_MAXI0_WSTRB;
    wire        IP_MAXI0_RLAST;
    wire        IP_MAXI0_WLAST;
-   
    wire [3:0]  IP_MAXI0_ARLEN;
    wire [1:0]  IP_MAXI0_ARSIZE;
    wire [1:0]  IP_MAXI0_ARBURST;
-   
    wire [3:0]  IP_MAXI0_AWLEN;
    wire [1:0]  IP_MAXI0_AWSIZE;
    wire [1:0]  IP_MAXI0_AWBURST;

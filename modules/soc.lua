@@ -382,6 +382,16 @@ assign process_output=1'b0;
 
 wire CONFIG_READY;
 
+reg HACK = 1'b1;
+
+// HACK: to drive CONFIG_VALID, wait until we are not in reset, and DRAMWriterInner has accepted CONFIG_VALID
+// (this will happen once it sets ready=true). Then set CONFIG_VALID to false to keep it from writing multiple times
+always @(posedge CLK) begin
+  if(reset==1'b0 && ready) begin
+    HACK=1'b0;
+  end
+end
+
 DRAMWriterInner inner(
     //AXI port
     .ACLK(CLK),
@@ -406,7 +416,7 @@ DRAMWriterInner inner(
     .M_AXI_AWBURST(IP_MAXI]=]..port..[=[_AWBURST),
     
     //Control config
-    .CONFIG_VALID(~reset),
+    .CONFIG_VALID(HACK),
     .CONFIG_READY(CONFIG_READY),
     .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
     .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),

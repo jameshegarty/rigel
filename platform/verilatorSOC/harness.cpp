@@ -254,8 +254,8 @@ int main(int argc, char** argv) {
   printf("Usage: XXX.verilator simCycles memStart memEnd [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
-  MEMBASE = atoi(argv[2]);
-  MEMSIZE = atoi(argv[3])-MEMBASE;
+  MEMBASE = strtol(argv[2],NULL,16);
+  MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
   std::cout << "SimCycles: " << simCycles << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
 
@@ -278,7 +278,7 @@ int main(int argc, char** argv) {
   memory = (unsigned char*)malloc(MEMSIZE);
     
   while(strcmp(argv[curArg],"--outputs")!=0){
-    unsigned int addr = atoi(argv[curArg+1]);
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;
     
     FILE* infile = fopen(argv[curArg],"rb");
@@ -399,7 +399,7 @@ int main(int argc, char** argv) {
   curArg++; // for "--outputs"
   unsigned int outputCount = 0;
   while(curArg<argc){
-    unsigned int addr = atoi(argv[curArg+1]);
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;
 
     unsigned int w = atoi(argv[curArg+2]);
@@ -429,12 +429,12 @@ int main(int argc, char** argv) {
   for(int port=0; port<PORTS; port++){
     if(readQ[port].size()>0){
       std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << std::endl;
-      //   exit(1);
+      exit(1);
     }
     
     if(writeQ[port].size()>0){
       std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << std::endl;
-      //    exit(1);
+      exit(1);
     }
   }
 }
