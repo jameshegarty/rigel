@@ -44,7 +44,29 @@ module IP_Top(
   output        IP_MAXI0_BRESP_ready,
   output [3:0]  IP_MAXI0_AWLEN,
   output [1:0]  IP_MAXI0_AWSIZE,
-  output [1:0]  IP_MAXI0_AWBURST
+  output [1:0]  IP_MAXI0_AWBURST,
+
+              ///////////////////////////////////////
+  output [32:0] IP_MAXI1_ARADDR,
+  input         IP_MAXI1_ARADDR_ready,
+  input [64:0]  IP_MAXI1_RDATA,
+  output        IP_MAXI1_RDATA_ready,
+  input [1:0]   IP_MAXI1_RRESP,
+  input         IP_MAXI1_RLAST,
+  output [3:0]  IP_MAXI1_ARLEN,
+  output [1:0]  IP_MAXI1_ARSIZE,
+  output [1:0]  IP_MAXI1_ARBURST,
+  output [32:0] IP_MAXI1_AWADDR,
+  input         IP_MAXI1_AWADDR_ready,
+  output [64:0] IP_MAXI1_WDATA,
+  input         IP_MAXI1_WDATA_ready,
+  output [7:0]  IP_MAXI1_WSTRB,
+  output        IP_MAXI1_WLAST,
+  input [2:0]   IP_MAXI1_BRESP,
+  output        IP_MAXI1_BRESP_ready,
+  output [3:0]  IP_MAXI1_AWLEN,
+  output [1:0]  IP_MAXI1_AWSIZE,
+  output [1:0]  IP_MAXI1_AWBURST
 );
 
     wire CONFIG_VALID;

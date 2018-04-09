@@ -75,11 +75,11 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
   fclose(outfile);
 }
 
-void configureBusses(int fd){
+void configureHPC64bit(int fd, off_t offset){
   // set RDCTRL (AFIFM) register bits 1:0 to 1, to set HPC0 (aka SAXIGP0 on PS8) to 64 bit mode
   // See "Xilinx register map"
   // https://www.xilinx.com/html_docs/registers/ug1087/ug1087-zynq-ultrascale-registers.html
-  void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD360000);
+  void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, offset);
   if(CTRL==(void *) -1){
     printf("Error mmaping CTRL\n");
     exit(1);
@@ -106,6 +106,14 @@ void configureBusses(int fd){
   //  printf("@WRCTRL: %08x\n", *(unsigned int*)(WRCTRL));
   fflush(stdout);
 
+  munmap(CTRL,32);
+}
+
+void configureBusses(int fd){
+  configureHPC64bit( fd, 0xFD360000 ); // HPC0 aka SAXIGP0
+  configureHPC64bit( fd, 0xFD370000 ); // HPC1 aka SAXIGP1
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////
   // set afi_fs (FPD_SLCR) register bits [9:8] to 0, to set HPM0 (aka MAXIGP0 on PS8) to 32 bit mode
   void * ptr_axi = mmap(NULL, 0x6000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD610000);
   printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));

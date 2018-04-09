@@ -6,6 +6,8 @@
 
 typedef struct{unsigned int addr; unsigned int burst;} Transaction;
 
+float randf(){ return (float)rand()/(float)(RAND_MAX); }
+
 unsigned int MEMBASE = 0x30008000;
 unsigned int MEMSIZE = 8192*2;
 unsigned char* memory;
@@ -89,20 +91,24 @@ void masterReadData(
   unsigned char& ARBURST){
 
   if(readQ[port].size()>0 && RREADY){
-    Transaction& t = readQ[port].front();
-    
-    RDATA = *(unsigned long*)(&memory[t.addr]);
-    RVALID = true;
-
-    if(verbose){
-      std::cout << "MAXI" << port << " Service Read Addr: " << t.addr << " data: " << RDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << readQ[port].size() << std::endl;
-    }
-    
-    t.burst--;
-    t.addr+=8;
-    
-    if(t.burst==0){
-      readQ[port].pop();
+    if(false && randf()>0.2f){
+      RVALID = false;
+    }else{
+      Transaction& t = readQ[port].front();
+      
+      RDATA = *(unsigned long*)(&memory[t.addr]);
+      RVALID = true;
+      
+      if(verbose){
+        std::cout << "MAXI" << port << " Service Read Addr: " << t.addr << " data: " << RDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << readQ[port].size() << std::endl;
+      }
+      
+      t.burst--;
+      t.addr+=8;
+      
+      if(t.burst==0){
+        readQ[port].pop();
+      }
     }
   }else if(readQ[port].size()>0 && RREADY){
     std::cout << readQ[port].size() << " outstanding read requests, but IP isn't ready" << std::endl;
