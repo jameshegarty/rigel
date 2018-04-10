@@ -1662,7 +1662,15 @@ modules.broadcastStream = memoize(function(A,N,X)
   err( type(N)=="number", "N must be number")
   assert(X==nil)
 
-  local res = {kind="broadcastStream", A=A, N=N, inputType = rigel.Handshake(A), outputType = rigel.HandshakeArray(A, N), stateful=false}
+  local res = {kind="broadcastStream", A=A, N=N,  stateful=false}
+
+  if A==types.null() then
+    res.inputType = rigel.HandshakeTrigger
+    res.outputType = rigel.HandshakeTriggerArray(N)
+  else
+    res.inputType = rigel.Handshake(A)
+    res.outputType = rigel.HandshakeArray(A, N)
+  end
 
   res.sdfInput = {{1,1}}
   res.sdfOutput = J.broadcast({1,1},N)
@@ -1680,14 +1688,30 @@ modules.broadcastStream = memoize(function(A,N,X)
     end
 
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
-    local inpData = S.index(inp,0)
-    local inpValid = S.index(inp,1)
+    local inpData, inpValid
+
+    if A==types.null() then -- HandshakeTrigger
+      inpValid = inp
+    else
+      inpData = S.index(inp,0)
+      inpValid = S.index(inp,1)
+    end
+
     local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),N) )
     local readyDownstreamList = J.map(J.range(N), function(i) return S.index(readyDownstream,i-1) end )
     
     local allReady = J.foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
     local validOut = S.__and(inpValid,allReady)
-    local out = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
+
+    local out
+
+    if inpData==nil then
+      -- HandshakeTrigger
+      out  = S.tuple( J.broadcast(validOut, N))
+      out = S.cast(out, types.array2d(types.bool(),N) )
+    else
+      out  = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
+    end
     out = S.cast(out, rigel.lower(res.outputType) )
     
     local pipelines = {}
@@ -3068,7 +3092,7 @@ end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instances, generatorStr, generatorParams, X )
+function modules.lambda( name, input, output, instances, generatorStr, generatorParams, globalMetadata, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -3080,7 +3104,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
-
+  err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
+  
   if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
 
   name = J.verilogSanitize(name)
@@ -3143,6 +3168,13 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   res.globals = {}
   res.globalMetadata = {}
 
+  if globalMetadata~=nil then
+    for k,v in pairs(globalMetadata) do
+      J.err(type(k)=="string","global metadata key must be string")
+      res.globalMetadata[k]=v
+    end
+  end
+  
   output:visitEach(
     function(n)
       if n.kind=="apply" then
@@ -3340,8 +3372,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             err( anySS==allSS,"If any consumers are selectStream, all consumers must be selectStream "..n.loc )
             err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects "..tostring(n:outputStreams()).." stream readers, but only "..tostring(J.keycount(args)).." were found. "..n.loc )
 
-            if n:outputStreams()>1 and n:parentCount(fn.output)>1 then
-              err(allSS,"Error, a multi-stream, multi-reader node is being consumed by something other than a selectStream? "..n.loc)
+            if n:outputStreams()>=1 and n:parentCount(fn.output)>1 then
+              err(allSS,"Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Handshaked nodes with multiple consumers should use broadcastStream. "..n.loc)
             end
           end
           

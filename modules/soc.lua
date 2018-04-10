@@ -6,7 +6,10 @@ local J = require "common"
 local types = require "types"
 local SOC = {}
 
-local PORTS = 4
+SOC.ports = 4
+SOC.currentMAXIReadPort = 0
+SOC.currentMAXIWritePort = 0
+SOC.currentAddr = 0x30008000
 
 --SOC.frameStart = R.newGlobal("frameStart","input", R.HandshakeTrigger,{nil,false})
 
@@ -19,9 +22,13 @@ local PORTS = 4
   
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
-SOC.axiBurstReadN = J.memoize(function(filename,Ntokens,port,X)
-  J.err( type(port)=="number", "bulkRamRead: port must be number" )
-  J.err( port>=0 and port<=PORTS,"bulkRamRead: port out of range" )
+SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
+  J.err( type(port)=="number", "axiBurstReadN: port must be number" )
+  J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
+  J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
+  J.err( Nbytes % 128 == 0, "AxiBurstReadN: Nbytes must have 128 as a factor" )
+  J.err( type(address)=="number","axiBurstReadN: missing address")
+  J.err( X==nil, "axiBurstReadN: too many arguments" )
 
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_ARADDR","output",R.Handshake(types.bits(32)))] = 1
@@ -34,9 +41,11 @@ SOC.axiBurstReadN = J.memoize(function(filename,Ntokens,port,X)
 
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
+
+  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes).."_"..tostring(port).."_"..tostring(address))
   
-  return RM.liftVerilog( "DRAMReader", R.HandshakeTrigger, R.Handshake(types.bits(64)),
-[=[module DRAMReaderInner(
+  return RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
+[=[module ]=]..ModuleName..[=[_inner(
     //AXI port
     input ACLK,
     input ARESETN,
@@ -129,23 +138,23 @@ assign CONFIG_READY = (r_state == IDLE) && (a_state == IDLE);
 
 endmodule // DRAMReaderInner
 
-module DRAMReader(
+module ]=]..ModuleName..[=[(
     //AXI port
     input CLK,
     input reset,
 
-    output [32:0] IP_MAXI0_ARADDR,
-    input IP_MAXI0_ARADDR_ready,
+    output [32:0] IP_MAXI]=]..port..[=[_ARADDR,
+    input IP_MAXI]=]..port..[=[_ARADDR_ready,
 
-    input [64:0] IP_MAXI0_RDATA,
-    output IP_MAXI0_RDATA_ready,
+    input [64:0] IP_MAXI]=]..port..[=[_RDATA,
+    output IP_MAXI]=]..port..[=[_RDATA_ready,
 
-    input [1:0] IP_MAXI0_RRESP,
+    input [1:0] IP_MAXI]=]..port..[=[_RRESP,
 
-    input IP_MAXI0_RLAST,
-    output [3:0] IP_MAXI0_ARLEN,
-    output [1:0] IP_MAXI0_ARSIZE,
-    output [1:0] IP_MAXI0_ARBURST,
+    input IP_MAXI]=]..port..[=[_RLAST,
+    output [3:0] IP_MAXI]=]..port..[=[_ARLEN,
+    output [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
+    output [1:0] IP_MAXI]=]..port..[=[_ARBURST,
     
     //Control config
     input process_input,
@@ -162,31 +171,31 @@ module DRAMReader(
 parameter INSTANCE_NAME="inst";
 
 
-DRAMReaderInner inner(
+]=]..ModuleName..[=[_inner inner(
     //AXI port
     .ACLK(CLK),
     .ARESETN(~reset),
 
-    .M_AXI_ARADDR(IP_MAXI0_ARADDR[31:0]),
-    .M_AXI_ARREADY(IP_MAXI0_ARADDR_ready),
-    .M_AXI_ARVALID(IP_MAXI0_ARADDR[32]),
+    .M_AXI_ARADDR(IP_MAXI]=]..port..[=[_ARADDR[31:0]),
+    .M_AXI_ARREADY(IP_MAXI]=]..port..[=[_ARADDR_ready),
+    .M_AXI_ARVALID(IP_MAXI]=]..port..[=[_ARADDR[32]),
 
-    .M_AXI_RDATA(IP_MAXI0_RDATA[63:0]),
-    .M_AXI_RREADY(IP_MAXI0_RDATA_ready),
-    .M_AXI_RVALID(IP_MAXI0_RDATA[64]),
+    .M_AXI_RDATA(IP_MAXI]=]..port..[=[_RDATA[63:0]),
+    .M_AXI_RREADY(IP_MAXI]=]..port..[=[_RDATA_ready),
+    .M_AXI_RVALID(IP_MAXI]=]..port..[=[_RDATA[64]),
 
-    .M_AXI_RRESP(IP_MAXI0_RRESP),
+    .M_AXI_RRESP(IP_MAXI]=]..port..[=[_RRESP),
 
-    .M_AXI_RLAST(IP_MAXI0_RLAST),
-    .M_AXI_ARLEN(IP_MAXI0_ARLEN),
-    .M_AXI_ARSIZE(IP_MAXI0_ARSIZE),
-    .M_AXI_ARBURST(IP_MAXI0_ARBURST),
+    .M_AXI_RLAST(IP_MAXI]=]..port..[=[_RLAST),
+    .M_AXI_ARLEN(IP_MAXI]=]..port..[=[_ARLEN),
+    .M_AXI_ARSIZE(IP_MAXI]=]..port..[=[_ARSIZE),
+    .M_AXI_ARBURST(IP_MAXI]=]..port..[=[_ARBURST),
     
     //Control config
     .CONFIG_VALID(process_input),
     .CONFIG_READY(ready),
-    .CONFIG_START_ADDR(32'h30008000),
-    .CONFIG_NBYTES(32'd8192),
+    .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
+    .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
     
     //RAM port
     .DATA_READY_DOWNSTREAM(ready_downstream),
@@ -199,10 +208,14 @@ endmodule
   
 end)
 
-SOC.axiBurstWriteN = J.memoize(function(filename,Ntokens,port,X)
-  J.err( type(port)=="number", "bulkRamRead: port must be number" )
-  J.err( port>=0 and port<=PORTS,"bulkRamRead: port out of range" )
-
+SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
+  J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
+  J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
+  J.err( port>=0 and port<=SOC.ports,"axiBurstWriteN: port out of range" )
+  J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number")
+  J.err( type(address)=="number","axiBurstWriteN: missing address")
+  J.err( X==nil, "axiBurstWriteN: too many arguments" )
+  
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_WDATA","output",R.Handshake(types.bits(64)))] = 1
@@ -334,21 +347,21 @@ module DRAMWriter(
     //AXI port
     input CLK,
     input reset,
-    output reg [32:0] IP_MAXI0_AWADDR,
-    input IP_MAXI0_AWADDR_ready,
+    output reg [32:0] IP_MAXI]=]..port..[=[_AWADDR,
+    input IP_MAXI]=]..port..[=[_AWADDR_ready,
     
-    output [64:0] IP_MAXI0_WDATA,
-    input IP_MAXI0_WDATA_ready,
+    output [64:0] IP_MAXI]=]..port..[=[_WDATA,
+    input IP_MAXI]=]..port..[=[_WDATA_ready,
 
-    output [7:0] IP_MAXI0_WSTRB,
-    output IP_MAXI0_WLAST,
+    output [7:0] IP_MAXI]=]..port..[=[_WSTRB,
+    output IP_MAXI]=]..port..[=[_WLAST,
     
-    input [2:0] IP_MAXI0_BRESP,
-    output IP_MAXI0_BRESP_ready,
+    input [2:0] IP_MAXI]=]..port..[=[_BRESP,
+    output IP_MAXI]=]..port..[=[_BRESP_ready,
     
-    output [3:0] IP_MAXI0_AWLEN,
-    output [1:0] IP_MAXI0_AWSIZE,
-    output [1:0] IP_MAXI0_AWBURST,
+    output [3:0] IP_MAXI]=]..port..[=[_AWLEN,
+    output [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
+    output [1:0] IP_MAXI]=]..port..[=[_AWBURST,
     
     //Control config
 //    input CONFIG_VALID,
@@ -369,34 +382,44 @@ assign process_output=1'b0;
 
 wire CONFIG_READY;
 
+reg HACK = 1'b1;
+
+// HACK: to drive CONFIG_VALID, wait until we are not in reset, and DRAMWriterInner has accepted CONFIG_VALID
+// (this will happen once it sets ready=true). Then set CONFIG_VALID to false to keep it from writing multiple times
+always @(posedge CLK) begin
+  if(reset==1'b0 && ready) begin
+    HACK=1'b0;
+  end
+end
+
 DRAMWriterInner inner(
     //AXI port
     .ACLK(CLK),
     .ARESETN(~reset),
 
-    .M_AXI_AWADDR(IP_MAXI0_AWADDR[31:0]),
-    .M_AXI_AWREADY(IP_MAXI0_AWADDR_ready),
-    .M_AXI_AWVALID(IP_MAXI0_AWADDR[32]),
+    .M_AXI_AWADDR(IP_MAXI]=]..port..[=[_AWADDR[31:0]),
+    .M_AXI_AWREADY(IP_MAXI]=]..port..[=[_AWADDR_ready),
+    .M_AXI_AWVALID(IP_MAXI]=]..port..[=[_AWADDR[32]),
     
-    .M_AXI_WDATA(IP_MAXI0_WDATA[63:0]),
-    .M_AXI_WREADY(IP_MAXI0_WDATA_ready),
-    .M_AXI_WVALID(IP_MAXI0_WDATA[64]),
+    .M_AXI_WDATA(IP_MAXI]=]..port..[=[_WDATA[63:0]),
+    .M_AXI_WREADY(IP_MAXI]=]..port..[=[_WDATA_ready),
+    .M_AXI_WVALID(IP_MAXI]=]..port..[=[_WDATA[64]),
 
-    .M_AXI_BRESP(IP_MAXI0_BRESP[1:0]),
-    .M_AXI_BVALID(IP_MAXI0_BRESP[2]),
-    .M_AXI_BREADY(IP_MAXI0_BRESP_ready),
+    .M_AXI_BRESP(IP_MAXI]=]..port..[=[_BRESP[1:0]),
+    .M_AXI_BVALID(IP_MAXI]=]..port..[=[_BRESP[2]),
+    .M_AXI_BREADY(IP_MAXI]=]..port..[=[_BRESP_ready),
 
-    .M_AXI_WSTRB(IP_MAXI0_WSTRB),
-    .M_AXI_WLAST(IP_MAXI0_WLAST),
-    .M_AXI_AWLEN(IP_MAXI0_AWLEN),
-    .M_AXI_AWSIZE(IP_MAXI0_AWSIZE),
-    .M_AXI_AWBURST(IP_MAXI0_AWBURST),
+    .M_AXI_WSTRB(IP_MAXI]=]..port..[=[_WSTRB),
+    .M_AXI_WLAST(IP_MAXI]=]..port..[=[_WLAST),
+    .M_AXI_AWLEN(IP_MAXI]=]..port..[=[_AWLEN),
+    .M_AXI_AWSIZE(IP_MAXI]=]..port..[=[_AWSIZE),
+    .M_AXI_AWBURST(IP_MAXI]=]..port..[=[_AWBURST),
     
     //Control config
-    .CONFIG_VALID(~reset),
+    .CONFIG_VALID(HACK),
     .CONFIG_READY(CONFIG_READY),
-    .CONFIG_START_ADDR(32'h3000A000),
-    .CONFIG_NBYTES(32'd8192),
+    .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
+    .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
     
     //RAM port
     .DATA(process_input[63:0]),
@@ -429,53 +452,64 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
-SOC.readScanline = J.memoize(function(filename,W,H,ty)
-  local fs = R.readGlobal("framestartread",SOC.frameStart)
-
-  local totalBytes = W*H*ty:verilogBits()/8
-  err( totalBytes % 128 == 0,"NYI - non burst aligned reads")
-
-  local addr = R.apply("addr",RM.counter(types.uint(25),totalBytes/128),fs)
-  local out = R.apply("ramRead", SOC.bulkRamRead(1), addr )
-
-  local EC = 1024*16
-  out = R.apply("underflow_US", RM.underflow( types.bits(64), totalBytes/8, EC, true ), out)
-
-  local HLL = require "rigelhll"
-  out = HLL.cast(ty)(out)
+SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
+  J.err( type(filename)=="string","readBurst: filename must be string")
+  J.err( type(W)=="number", "readBurst: W must be number")
+  J.err( type(H)=="number", "readBurst: H must be number")
+  J.err( types.isType(ty), "readBurst: type must be type")
+  J.err(ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data")
+  local nbytes = W*H*(ty:verilogBits()/8)
+  J.err( nbytes%128==0,"NYI - readBurst requires 128 aligned size" )
+  J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
+  if V==nil then V=1 end
+  J.err(X==nil, "readBurst: too many arguments")
   
-  return RM.lambda("readScanline",nil,out)
+  local globalMetadata={}
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_W"] = W
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_H"] = H
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_V"] = V
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_type"] = tostring(ty)
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_bitsPerPixel"] = ty:verilogBits()
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
+  
+  local inp = R.input(R.HandshakeTrigger)
+  local res = RM.lambda("ReadBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,SOC.axiBurstReadN(filename,nbytes,SOC.currentMAXIReadPort,SOC.currentAddr)(inp),nil,nil,nil,globalMetadata)
+
+  SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
+  SOC.currentAddr = SOC.currentAddr+nbytes
+
+  return res
 end)
 
-SOC.writeScanline = J.memoize(function(filename,W,H,ty)
-  local I = R.input(R.Handshake(ty))
-
-  local totalBytes = W*H*ty:verilogBits()/8
-  err( totalBytes % 128 == 0,"NYI - non burst aligned reads")
-  local outputCount = totalBytes/8
-
-  local EC = 1024*16
-  ----------------
-  local out = R.apply("overflow", RM.liftHandshake(RM.liftDecimate(RM.overflow(R.extractData(hsfn.outputType), outputCount))), I)
-  out = R.apply("underflow", RM.underflow(R.extractData(hsfn.outputType), totalBytes/8, EC, false ), out)
-  out = R.apply("cycleCounter", RM.cycleCounter(R.extractData(hsfn.outputType), totalBytes/8 ), out)
-
-  local HLL = require "rigelhll"
-  out = HLL.cast(types.bits(64))(out)
+SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
+  J.err( type(filename)=="string","writeBurst: filename must be string")
+  J.err( type(W)=="number", "writeBurst: W must be number")
+  J.err( type(H)=="number", "writeBurst: H must be number")
+  J.err( types.isType(ty), "writeBurst: type must be type")
+  J.err(ty:verilogBits()%8==0,"NYI - writeBurst currently required byte-aligned data")
+  local nbytes = W*H*(ty:verilogBits()/8)
+  J.err( nbytes%128==0,"NYI - writeBurst requires 128 aligned size" )
+  J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
+  if V==nil then V=1 end
+  J.err(X==nil, "writeBurst: too many arguments")
   
-  ---------------
-  local fs = R.readGlobal("framestartread",SOC.frameStart)
-
-  local totalBytes = W*H*ty:verilogBits()/8
-  err( totalBytes % 128 == 0,"NYI - non burst aligned write")
-
-  local addr = R.apply("addr",RM.counter(types.uint(25),totalBytes/128),fs)
-  ---------------
+  local globalMetadata={}
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_V"] = V
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(ty)
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = ty:verilogBits()
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = SOC.currentAddr
   
-  out = R.apply("write", SOC.bulkRamWrite(1), R.concat("w",{addr,out}) )
-  
-  return RM.lambda("writeScanline",I,out)
+  local inp = R.input(R.Handshake(types.bits(64)))
+  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(inp),nil,nil,nil,globalMetadata)
+
+  SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
+  SOC.currentAddr = SOC.currentAddr+nbytes
+
+  return res
 end)
+
 
 function SOC.export(t)
   if t==nil then t=_G end

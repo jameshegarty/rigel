@@ -12,7 +12,11 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 LUA=$DIR/../../rigelLuajit
 
-INPUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputFiles)
-OUTPUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputFiles)
+MEMSTART=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryStart)
+MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
+INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS)
+OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS)
 
-$BITFILE $INPUT $OUTPUT.verilatorSOC.raw 1100
+#VERBOSE=--verbose
+
+$BITFILE 1100 $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --outputs $OUTPUTS

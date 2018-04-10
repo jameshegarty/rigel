@@ -27,9 +27,14 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 LUA=$DIR/../../rigelLuajit
 
-#out/%.axi.raw: out/%.axi.bit out/%.hz.txt out/%.axi.metadata.lua
-IMGPATH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputFiles)
-IMGFILE=$(basename $IMGPATH)
+MEMSTART=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryStart)
+MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
+INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS_ZYNQ)
+OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS_ZYNQ)
+
+INPUT_FILES_ON_HOST=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUT_HOST_FILES)
+INPUT_FILES_ON_DEVICE=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUT_DEVICE_FILES)
+
 
 ###### SET THE CLOCK	
 #HZ=$(cat $OUTPATH.hz.txt)
@@ -40,13 +45,15 @@ IMGFILE=$(basename $IMGPATH)
 #	sshpass -p 'root' ssh root@$ZYNQ_ADDR "cat /sys/class/fclk/fclk0/set_rate" > out/$*.realhz.txt
 ###### CLOCK STUFF END
 
+SSHOPT="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -6"
+
 #ssh-keygen -f ~/.ssh/known_hosts -R $ZYNQ_ADDR
-sshpass -p 'root' scp -6 $DIR/processimage_mpsoc_LL $BITFILE $IMGPATH root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH
-sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
-sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
-sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc_LL A0000000 30008000 $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw"
-sshpass -p 'root' scp -6 root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
-sshpass -p 'root' ssh -6 root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc_LL $ZYNQ_WRITE_PATH/$IMGFILE $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
+sshpass -p 'root' scp $SSHOPT $DIR/processimage_mpsoc_SOC $BITFILE $INPUT_FILES_ON_HOST root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH
+sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
+sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
+sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc_SOC 0xA0000000 $MEMSTART $MEMEND --inputs $INPUTS --outputs $OUTPUTS"
+sshpass -p 'root' scp $SSHOPT root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
+sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc_SOC $INPUT_FILES_ON_DEVICE $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
 
 #rm -f /tmp/zynq10lock
 #	$(TERRA) ../misc/extractCycles.t out/$*.axi.raw > out/$*.axi.cycles.txt

@@ -75,39 +75,11 @@ int saveImage(char* filename,  volatile void* address, int numbytes){
   fclose(outfile);
 }
 
-int main(int argc, char *argv[]) {
-	unsigned gpio_addr = strtol(argv[1],NULL,16);
-	unsigned copy_addr = strtol(argv[2],NULL,16);
-
-  printf("start processimage\n");
-  fflush(stdout);
-    
-  if(argc!=5){
-    printf("ERROR: insufficient args. Should be: gpio_addr_hex src_addr_hex inputFilename outputFilename\n");
-    exit(1);
-  }
-
-	unsigned page_size = sysconf(_SC_PAGESIZE);
-
-	printf("GPIO access through /dev/mem. addr:%08x page_size:%d\n", gpio_addr, page_size);
-  fflush(stdout);
-  
-	if (gpio_addr == 0) {
-		printf("GPIO physical address is required.\n");
-		usage();
-		return -1;
-	}
-	
-	int fd = open ("/dev/mem", O_RDWR | O_SYNC );
-	if (fd < 1) {
-		perror(argv[0]);
-		return -1;
-  }
-
+void configureHPC64bit(int fd, off_t offset){
   // set RDCTRL (AFIFM) register bits 1:0 to 1, to set HPC0 (aka SAXIGP0 on PS8) to 64 bit mode
   // See "Xilinx register map"
   // https://www.xilinx.com/html_docs/registers/ug1087/ug1087-zynq-ultrascale-registers.html
-  void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD360000);
+  void * CTRL = mmap(NULL, 32, PROT_READ|PROT_WRITE, MAP_SHARED, fd, offset);
   if(CTRL==(void *) -1){
     printf("Error mmaping CTRL\n");
     exit(1);
@@ -134,6 +106,14 @@ int main(int argc, char *argv[]) {
   //  printf("@WRCTRL: %08x\n", *(unsigned int*)(WRCTRL));
   fflush(stdout);
 
+  munmap(CTRL,32);
+}
+
+void configureBusses(int fd){
+  configureHPC64bit( fd, 0xFD360000 ); // HPC0 aka SAXIGP0
+  configureHPC64bit( fd, 0xFD370000 ); // HPC1 aka SAXIGP1
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////
   // set afi_fs (FPD_SLCR) register bits [9:8] to 0, to set HPM0 (aka MAXIGP0 on PS8) to 32 bit mode
   void * ptr_axi = mmap(NULL, 0x6000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0xFD610000);
   printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
@@ -143,44 +123,145 @@ int main(int argc, char *argv[]) {
   printf("@ptr: %08x\n", *((unsigned int*)(ptr_axi)+(0x5000/4)));
   fflush(stdout);
 
-  unsigned lenInRaw;
-  FILE* imfile = openImage(argv[3], &lenInRaw);
-  printf("file LEN %d\n",lenInRaw);
+}
+
+int loadInputs(int fd, char *argv[], void* ptr){
+  printf("Load Inputs\n");
   fflush(stdout);
     
-  unsigned int lenIn = lenInRaw;
-  // include extra axi burst of cycle count
-  unsigned int lenOutRaw = 8192;
-  unsigned int lenOut = 8192;
-
-  // HW pads to next largest axi burst size (128 bytes)
-  if (lenIn%(8*16)!=0){
-    lenIn = lenInRaw + (8*16-(lenInRaw % (8*16)));
+  int MEMBASE = strtol(argv[2],NULL,16);
+  int curArg = 4;
+  
+  if(strcmp(argv[curArg],"--inputs")!=0){
+    //std::cout << "fourth argument should be '--inputs' but is " <<  << std::endl;
+    printf("fourth argument should be '--inputs' but is %s\n",argv[curArg]);
+    fflush(stdout);
+    exit(1);
+  }else{
+    curArg++;
   }
 
-  if (lenOutRaw%(8*16)!=0){
-    lenOut = lenOutRaw + (8*16-(lenOutRaw % (8*16)));
+  int inputCount=1;
+  while(strcmp(argv[curArg],"--outputs")!=0){
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+    unsigned int addrOffset = addr-MEMBASE;
+    
+    FILE* infile = fopen(argv[curArg],"rb");
+    if(infile==NULL){
+      printf("could not open input '%s'\n", argv[curArg]);
+      fflush(stdout);
+      exit(1);
+    }
+    fseek(infile, 0L, SEEK_END);
+    unsigned long insize = ftell(infile);
+    fseek(infile, 0L, SEEK_SET);
+    fread( ptr+addrOffset, insize, 1, infile );
+    fclose( infile );
+    
+    //std::cout << "Input File " << inputCount << ": filename=" << argv[curArg] << " address=0x" << std::hex << addr << " addressOffset=0x" << addrOffset << std::dec << " bytes=" << insize <<std::endl;
+    printf("Input File %d: filename=%s address=0x%x addressOffset=0x%x bytes=%d\n",inputCount, argv[curArg],addr,addrOffset,insize);
+    fflush(stdout);
+      
+    inputCount++;
+    curArg+=2;
   }
 
-  printf("LENOUT %d, LENOUTRAW:%d\n", lenOut,lenOutRaw);
-  assert(lenIn % (8*16) == 0);
-  printf("LENIN %d\n",lenIn);
-  assert(lenOut % (8*16) == 0);
+  return curArg;
+}
 
-  printf("mapping image addr %08x\n",copy_addr);
+int writeOutputs(int curArg, int argc, char *argv[], void* ptr){
+  printf("Write Outputs %d %d \n",curArg,argc);
+  fflush(stdout);
+      
+  int MEMBASE = strtol(argv[2],NULL,16);
+  
+  curArg++; // for "--outputs"
+  unsigned int outputCount = 0;
+  while(curArg<argc){
+    printf("HERE\n");
+    fflush(stdout);
+          
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+    unsigned int addrOffset = addr-MEMBASE;
+
+    unsigned int w = atoi(argv[curArg+2]);
+    unsigned int h = atoi(argv[curArg+3]);
+    unsigned int bitsPerPixel = atoi(argv[curArg+4]);
+
+    if( bitsPerPixel%8!=0 ){
+      printf("Error, bits per pixel not byte aligned!\n");
+      fflush(stdout);
+      exit(1);
+    }
+
+    unsigned int bytes = w*h*(bitsPerPixel/8);
+
+    //char outFilename[100];
+    //sprintf(outFilename,"%s.verilatorSOC.raw",argv[curArg]);
+    char *outFilename = "out.raw";
+
+    //addrOffset=0;
+    //bytes=8192*3;
+    
+    //std::cout << "Output File " << outputCount << ": filename=" << outFilename << " address=0x" << std::hex << addr << " addressOffset=0x" << addrOffset << std::dec << " W=" << w <<" H="<<h<<" bitsPerPixel="<<bitsPerPixel<<" bytes="<<bytes<<std::endl;
+    printf("Output File %d: filename=%s address=0x%x addressOffset=0x%x bytes=%d\n",outputCount,outFilename,addr,addrOffset,bytes);
+    fflush(stdout);
+      
+    FILE* outfile = fopen(outFilename,"wb");
+    if(outfile==NULL){
+      printf("could not open output '%s'\n", outFilename);
+      fflush(stdout);
+      exit(1);
+    }
+    fwrite( ptr+addrOffset, bytes, 1, outfile);
+    fclose(outfile);
+
+    curArg+=5;
+    outputCount++;
+  }
+
+}
+
+int main(int argc, char *argv[]) {
+	unsigned gpio_addr = strtol(argv[1],NULL,16);
+
+  printf("start processimage SOC\n");
   fflush(stdout);
     
-  void * ptr = mmap(NULL, lenIn+lenOut, PROT_READ|PROT_WRITE, MAP_SHARED, fd, copy_addr);
+	unsigned page_size = sysconf(_SC_PAGESIZE);
+
+	printf("GPIO access through /dev/mem. addr:%08x page_size:%d\n", gpio_addr, page_size);
+  fflush(stdout);
+  
+	if (gpio_addr == 0) {
+		printf("GPIO physical address is required.\n");
+		usage();
+		return -1;
+	}
+	
+	int fd = open ("/dev/mem", O_RDWR | O_SYNC );
+	if (fd < 1) {
+    printf("Error opening /dev/mem\n");
+		perror(argv[0]);
+		return -1;
+  }
+
+  configureBusses(fd);
+
+  int MEMBASE = strtol(argv[2],NULL,16);
+  int MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
+
+  printf("MEMBASE: %x MEMSIZE: %x\n", MEMBASE, MEMSIZE);
+  
+  void * ptr = mmap(NULL, MEMSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, fd, MEMBASE);
   if(ptr==(void *) -1){
     printf("Error mmaping\n");
     exit(1);
   }
 
-  loadImage( imfile, ptr, lenInRaw );
+  for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(ptr+i)=0x0df0adba; }
 
-  // zero out the output region
-  for(int i=0; i<lenOut; i+=4){ *(unsigned int*)(ptr+lenIn+i)=0x0df0adba; }
-
+  int curArg = loadInputs( fd, argv, ptr );
 
   // mmap the device into memory 
   // This mmaps the control region (the MMIO for the control registers).
@@ -203,9 +284,9 @@ int main(int argc, char *argv[]) {
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
   fflush(stdout);
   
-  conf->src = copy_addr;
-  conf->dest = copy_addr + lenIn;
-  conf->len = lenIn;
+  conf->src = 0;
+  conf->dest = 0;
+  conf->len = 0;
   conf->cmd = 0;
   
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
@@ -217,14 +298,15 @@ int main(int argc, char *argv[]) {
   //usleep(10000);
   sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
 
-  saveImage(argv[4],ptr+lenIn,lenOutRaw);
+  writeOutputs(curArg,argc,argv,ptr);
+  //saveImage(argv[4],ptr+lenIn,lenOutRaw);
   //  saveImage(argv[4],ptr,lenOutRaw);
 
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
   fflush(stdout);
 
   munmap( gpioptr, page_size );
-  munmap( ptr, lenIn+lenOut );
+  munmap( ptr, MEMSIZE );
 
   return 0;
 }

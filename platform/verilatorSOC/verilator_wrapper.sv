@@ -51,9 +51,37 @@ module VerilatorWrapper(
     output        MAXI0_WLAST,
     output [3:0]  MAXI0_AWLEN,
     output [1:0]  MAXI0_AWSIZE,
-    output [1:0]  MAXI0_AWBURST
+    output [1:0]  MAXI0_AWBURST,
+
+    output [31:0] MAXI1_ARADDR,
+    output        MAXI1_ARVALID,
+    input         MAXI1_ARREADY,
+    input [63:0]  MAXI1_RDATA,
+    input         MAXI1_RVALID,
+    output        MAXI1_RREADY,
+    input [1:0]   MAXI1_RRESP,
+    input         MAXI1_RLAST,
+    output [3:0]  MAXI1_ARLEN,
+    output [1:0]  MAXI1_ARSIZE,
+    output [1:0]  MAXI1_ARBURST,
+
+    output [31:0] MAXI1_AWADDR,
+    output        MAXI1_AWVALID,
+    input         MAXI1_AWREADY,
+    output [63:0] MAXI1_WDATA,
+    output        MAXI1_WVALID,
+    input         MAXI1_WREADY,
+    input [1:0]   MAXI1_BRESP,
+    input         MAXI1_BVALID,
+    output        MAXI1_BREADY,
+    output [7:0]  MAXI1_WSTRB,
+    output        MAXI1_WLAST,
+    output [3:0]  MAXI1_AWLEN,
+    output [1:0]  MAXI1_AWSIZE,
+    output [1:0]  MAXI1_AWBURST
 );
 
+   ///////////////////////////
    wire [31:0]   IP_SAXI0_ARADDR;
    assign IP_SAXI0_ARADDR = SAXI0_ARADDR;
    wire          IP_SAXI0_ARREADY;
@@ -99,9 +127,8 @@ module VerilatorWrapper(
    wire          IP_SAXI0_WVALID;
    assign IP_SAXI0_WVALID = SAXI0_WVALID;
 
-
    wire [32:0] IP_MAXI0_ARADDR;
-   wire IP_MAXI0_ARADDR_ready;
+   wire        IP_MAXI0_ARADDR_ready;
    assign     MAXI0_ARADDR = IP_MAXI0_ARADDR[31:0];
    assign     MAXI0_ARVALID = IP_MAXI0_ARADDR[32];
    assign IP_MAXI0_ARADDR_ready = MAXI0_ARREADY;
@@ -111,54 +138,98 @@ module VerilatorWrapper(
    assign IP_MAXI0_RDATA = {MAXI0_RVALID,MAXI0_RDATA};
    assign MAXI0_RREADY = IP_MAXI0_RDATA_ready;
    
-   wire [1:0]    IP_MAXI0_RRESP;
+   wire [1:0]  IP_MAXI0_RRESP;
    assign IP_MAXI0_RRESP = MAXI0_RRESP;
-   wire          IP_MAXI0_RLAST;
+   wire        IP_MAXI0_RLAST;
    assign IP_MAXI0_RLAST = MAXI0_RLAST;
-   wire [3:0]    IP_MAXI0_ARLEN;
+   wire [3:0]  IP_MAXI0_ARLEN;
    assign MAXI0_ARLEN = IP_MAXI0_ARLEN;
-   wire [1:0]    IP_MAXI0_ARSIZE;
+   wire [1:0]  IP_MAXI0_ARSIZE;
    assign MAXI0_ARSIZE = IP_MAXI0_ARSIZE;
-   wire [1:0]    IP_MAXI0_ARBURST;
+   wire [1:0]  IP_MAXI0_ARBURST;
    assign MAXI0_ARBURST = IP_MAXI0_ARBURST;
-
-   wire [32:0]   IP_MAXI0_AWADDR;
-   wire          IP_MAXI0_AWADDR_ready;
-   //input         IP_MAXI0_AWREADY;
-   //output        IP_MAXI0_AWVALID;
+   
+   wire [32:0] IP_MAXI0_AWADDR;
+   wire        IP_MAXI0_AWADDR_ready;
    assign MAXI0_AWADDR = IP_MAXI0_AWADDR[31:0];
    assign MAXI0_AWVALID = IP_MAXI0_AWADDR[32];
    assign IP_MAXI0_AWADDR_ready =MAXI0_AWREADY;
-  
-   wire [64:0]   IP_MAXI0_WDATA;
-   wire          IP_MAXI0_WDATA_ready;
-    //input         IP_MAXI0_WREADY;
-    //output        IP_MAXI0_WVALID;
+   
+   wire [64:0] IP_MAXI0_WDATA;
+   wire        IP_MAXI0_WDATA_ready;
    assign MAXI0_WDATA = IP_MAXI0_WDATA[63:0];
    assign MAXI0_WVALID = IP_MAXI0_WDATA[64];
    assign IP_MAXI0_WDATA_ready = MAXI0_WREADY;
    
-    wire [7:0]  IP_MAXI0_WSTRB;
+   wire [7:0]  IP_MAXI0_WSTRB;
    assign MAXI0_WSTRB = IP_MAXI0_WSTRB;
-    wire        IP_MAXI0_WLAST;
+   wire        IP_MAXI0_WLAST;
    assign MAXI0_WLAST = IP_MAXI0_WLAST;
    
-    wire [2:0]   IP_MAXI0_BRESP;
-    //input         IP_MAXI0_BVALID;
-    //output        IP_MAXI0_BREADY;
-   wire IP_MAXI0_BRESP_ready;
+   wire [2:0]  IP_MAXI0_BRESP;
+   wire        IP_MAXI0_BRESP_ready;
    assign IP_MAXI0_BRESP = {MAXI0_BVALID,MAXI0_BRESP};
    assign MAXI0_BREADY = IP_MAXI0_BRESP_ready;
    
-    wire [3:0]  IP_MAXI0_AWLEN;
+   wire [3:0]  IP_MAXI0_AWLEN;
    assign MAXI0_AWLEN = IP_MAXI0_AWLEN;
-    wire [1:0]  IP_MAXI0_AWSIZE;
+   wire [1:0]  IP_MAXI0_AWSIZE;
    assign MAXI0_AWSIZE = IP_MAXI0_AWSIZE;
-    wire [1:0]  IP_MAXI0_AWBURST;
+   wire [1:0]  IP_MAXI0_AWBURST;
    assign MAXI0_AWBURST = IP_MAXI0_AWBURST;
 
-//IP_Top ipTop(.IP_MAXI0_ARADDR_ready(IP_MAXI0_ARREADY); .IP_MAXI0_ARADDR({IP_MAXI0_ARVALID,IP_MAXI0_ARADDR}), .IP_MAXI0_RDATA_ready(IP_MAXI0_RREADY), .IP_MAXI0_RDATA({IP_MAXI0_RVALID,IP_MAXI0_RDATA}), .IP_MAXI0_AWADDR_ready(IP_MAXI0_AWREADY), .IP_MAXI0_AWADDR({IP_MAXI0_AWVALID,IP_MAXI0_AWADDR}), .IP_MAXI0_WDATA_ready(IP_MAXI0_WREADY), .IP_MAXI0_WDATA({IP_MAXI0_WVALID,IP_MAXI0_WDATA}), .IP_MAXI0_BRESP_ready(IP_MAXI0_BREADY), .IP_MAXI0_BRESP({IP_MAXI0_BVALID,IP_MAXI0_BRESP}), .*);
-
+   ///////////////////////////
+   wire [32:0] IP_MAXI1_ARADDR;
+   wire        IP_MAXI1_ARADDR_ready;
+   assign     MAXI1_ARADDR = IP_MAXI1_ARADDR[31:0];
+   assign     MAXI1_ARVALID = IP_MAXI1_ARADDR[32];
+   assign IP_MAXI1_ARADDR_ready = MAXI1_ARREADY;
+   
+   wire [64:0] IP_MAXI1_RDATA;
+   wire        IP_MAXI1_RDATA_ready;
+   assign IP_MAXI1_RDATA = {MAXI1_RVALID,MAXI1_RDATA};
+   assign MAXI1_RREADY = IP_MAXI1_RDATA_ready;
+   
+   wire [1:0]  IP_MAXI1_RRESP;
+   assign IP_MAXI1_RRESP = MAXI1_RRESP;
+   wire        IP_MAXI1_RLAST;
+   assign IP_MAXI1_RLAST = MAXI1_RLAST;
+   wire [3:0]  IP_MAXI1_ARLEN;
+   assign MAXI1_ARLEN = IP_MAXI1_ARLEN;
+   wire [1:0]  IP_MAXI1_ARSIZE;
+   assign MAXI1_ARSIZE = IP_MAXI1_ARSIZE;
+   wire [1:0]  IP_MAXI1_ARBURST;
+   assign MAXI1_ARBURST = IP_MAXI1_ARBURST;
+   
+   wire [32:0] IP_MAXI1_AWADDR;
+   wire        IP_MAXI1_AWADDR_ready;
+   assign MAXI1_AWADDR = IP_MAXI1_AWADDR[31:0];
+   assign MAXI1_AWVALID = IP_MAXI1_AWADDR[32];
+   assign IP_MAXI1_AWADDR_ready =MAXI1_AWREADY;
+   
+   wire [64:0] IP_MAXI1_WDATA;
+   wire        IP_MAXI1_WDATA_ready;
+   assign MAXI1_WDATA = IP_MAXI1_WDATA[63:0];
+   assign MAXI1_WVALID = IP_MAXI1_WDATA[64];
+   assign IP_MAXI1_WDATA_ready = MAXI1_WREADY;
+   
+   wire [7:0]  IP_MAXI1_WSTRB;
+   assign MAXI1_WSTRB = IP_MAXI1_WSTRB;
+   wire        IP_MAXI1_WLAST;
+   assign MAXI1_WLAST = IP_MAXI1_WLAST;
+   
+   wire [2:0]  IP_MAXI1_BRESP;
+   wire        IP_MAXI1_BRESP_ready;
+   assign IP_MAXI1_BRESP = {MAXI1_BVALID,MAXI1_BRESP};
+   assign MAXI1_BREADY = IP_MAXI1_BRESP_ready;
+   
+   wire [3:0]  IP_MAXI1_AWLEN;
+   assign MAXI1_AWLEN = IP_MAXI1_AWLEN;
+   wire [1:0]  IP_MAXI1_AWSIZE;
+   assign MAXI1_AWSIZE = IP_MAXI1_AWSIZE;
+   wire [1:0]  IP_MAXI1_AWBURST;
+   assign MAXI1_AWBURST = IP_MAXI1_AWBURST;
+   
    IP_Top ipTop(.*);
    
 endmodule

@@ -40,6 +40,7 @@ script:
 env:
   - TARGET=verilog
   - TARGET=verilator
+  - TARGET=verilatorSOC
   - TARGET=terra
   - TARGET=unit
   - TARGET=coverage

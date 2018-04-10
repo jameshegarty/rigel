@@ -58,6 +58,13 @@ function darkroom.HandshakeArray(A,W,H)
   return types.named("HandshakeArray("..tostring(A)..","..tostring(W)..","..tostring(H)..")", types.array2d(types.tuple{A,types.bool()},W,H), "HandshakeArray", {A=A,W=W,H=H} )
 end
 
+function darkroom.HandshakeTriggerArray(W,H)
+  err(type(W)=="number" and W>0,"HandshakeTriggerArray: W should be number > 0")
+  if H==nil then H=1 end
+  err(type(H)=="number" and H>0,"HandshakeTriggerArray: H should be number > 0")
+  return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
+end
+
 function darkroom.HandshakeTuple(tab)
   err( type(tab)=="table" and J.keycount(tab)==#tab,"HandshakeTuple: argument should be table of types")
 
@@ -98,6 +105,7 @@ end
 function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
 function darkroom.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
 function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
+function darkroom.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
 -- is this any of the handshaked types?
@@ -110,7 +118,7 @@ function darkroom.isBasic(A)
   if A:isArray() then return darkroom.isBasic(A:arrayOver()) end
   if A:isTuple() then for _,v in ipairs(A.list) do if darkroom.isBasic(v)==false then return false end end return true end
     
-  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) then
+  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or darkroom.isHandshakeTriggerArray(A) then
     return false
   end
 
@@ -128,7 +136,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -143,6 +151,7 @@ end
 -- Handshake(A) => A
 function darkroom.extractData(a)
   if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) then return a.params.A end
+  if darkroom.isHandshakeTrigger(a) then return types.null() end
   if darkroom.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
   return a -- pure
 end
@@ -184,7 +193,7 @@ function darkroom.streamCount(A)
     return 0
   elseif darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) then
     return 1
-  elseif darkroom.isHandshakeArray(A) then
+  elseif darkroom.isHandshakeArray(A) or darkroom.isHandshakeTriggerArray(A) then
     return A.params.W*A.params.H
   elseif darkroom.isHandshakeTuple(A) then
     return #A.params.list
@@ -236,8 +245,11 @@ end
 
 function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
 
+darkroom.__unnamedID = 0
+
 darkroomFunctionFunctions = {}
-darkroomFunctionMT={__index=function(tab,key)
+darkroomFunctionMT={
+__index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
   v = darkroomFunctionFunctions[key]
@@ -274,8 +286,13 @@ darkroomFunctionMT={__index=function(tab,key)
     rawset(tab,"systolicModule", sm )
     return sm
   end
-  end
-  }
+end,
+__call=function(tab,arg)
+  local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
+  darkroom.__unnamedID = darkroom.__unnamedID+1
+  return res
+end
+}
 
 
 -- takes SDF input rate I and returns output rate after I is processed by this function
@@ -623,6 +640,10 @@ function darkroomIRFunctions:typecheck()
       err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
       err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
       n.type = darkroom.Handshake(n.inputs[1].type.params.A)
+    elseif darkroom.isHandshakeTriggerArray(n.inputs[1].type) then
+      err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
+      err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
+      n.type = darkroom.HandshakeTrigger
     elseif darkroom.isHandshakeTuple(n.inputs[1].type) then
       err( n.i < #n.inputs[1].type.params.list, "selectStream index out of bounds")
       n.type = darkroom.Handshake(n.inputs[1].type.params.list[n.i+1])
