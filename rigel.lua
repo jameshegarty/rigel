@@ -245,6 +245,29 @@ end
 
 function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
 
+local function discoverName(x)
+  local y = 1
+  while true do
+    local name, value = debug.getlocal(3,y)
+    if not name then break end
+    --print(name,value)
+
+    if value==x then
+      return name
+    end
+    
+    y = y + 1
+  end
+
+  for k,v in pairs(_G) do
+    if v==x then
+      --print("FOUND_G")
+      return k
+    end
+  end
+--  return {input=x}    
+end
+
 darkroom.__unnamedID = 0
 
 darkroomFunctionFunctions = {}
@@ -288,7 +311,19 @@ __index=function(tab,key)
   end
 end,
 __call=function(tab,arg)
+
+  -- discover variable name from lua
+  if arg.defaultName then
+    local n = discoverName(arg)
+    if n~=nil then
+      arg.name=n.."_"..darkroom.__unnamedID
+      darkroom.__unnamedID = darkroom.__unnamedID+1
+      arg.defaultname=false
+    end
+  end
+  
   local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
+  res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
 end
