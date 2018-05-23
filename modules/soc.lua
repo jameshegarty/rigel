@@ -4,6 +4,7 @@ local S = require "systolic"
 local types = require "types"
 local J = require "common"
 local types = require "types"
+local C = require "examplescommon"
 local SOC = {}
 
 SOC.ports = 4
@@ -461,7 +462,7 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   local nbytes = W*H*(ty:verilogBits()/8)
   J.err( nbytes%128==0,"NYI - readBurst requires 128 aligned size" )
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
-  if V==nil then V=1 end
+  if V==nil then V=0 end
   J.err(X==nil, "readBurst: too many arguments")
   
   local globalMetadata={}
@@ -473,7 +474,31 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
   
   local inp = R.input(R.HandshakeTrigger)
-  local res = RM.lambda("ReadBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,SOC.axiBurstReadN(filename,nbytes,SOC.currentMAXIReadPort,SOC.currentAddr)(inp),nil,nil,nil,globalMetadata)
+  local out = SOC.axiBurstReadN(filename,nbytes,SOC.currentMAXIReadPort,SOC.currentAddr)(inp)
+  
+  local outBits = ty:verilogBits()*math.max(V,1)
+
+  local outType = ty
+  if outBits<64 then
+    local N = 64/ty:verilogBits()
+    J.err(math.floor(N)==N,"ReadBurst: type bits must divide 64")
+    out = RM.makeHandshake(C.cast(types.bits(64),types.array2d(ty,N)))(out)
+    out = RM.liftHandshake(RM.changeRate(ty,1,N,math.max(V,1)))(out)
+
+    if V==0 then
+      out = RM.makeHandshake(C.index(types.array2d(ty,1),0))(out)
+    end
+  elseif outBits>64 then
+    local N = ty:verilogBits()/64
+    J.err(math.floor(N)==N,"ReadBurst: 64 must divide type bits")
+    --out = RM.liftHandshake(RM.changeRate(ty,1,N,V))(out)
+    assert(false) --NYI
+  else
+    if V>0 then outType=types.array2d(outType,V) end
+    out = RM.makeHandshake(C.cast(types.bits(64),outType))(out)
+  end
+
+  local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+nbytes
@@ -500,9 +525,32 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(ty)
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = ty:verilogBits()
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = SOC.currentAddr
+
+  local itype = ty
+  if V>0 then itype = types.array2d(itype,V) end
   
-  local inp = R.input(R.Handshake(types.bits(64)))
-  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(inp),nil,nil,nil,globalMetadata)
+  local inp = R.input(R.Handshake(itype))
+  local out = inp
+  
+  if itype:verilogBits()<64 then
+    local N = 64/ty:verilogBits()
+    J.err(math.floor(N)==N,"SOC.writeBurst: type bits must divide 64")
+
+    if V==0 then
+      out = RM.makeHandshake(C.arrayop(ty,1))(out)
+    end
+
+    out = RM.liftHandshake(RM.changeRate(ty,1,math.max(V,1),N))(out)
+    out = RM.makeHandshake(C.cast(types.array2d(ty,N),types.bits(64)))(out)
+  elseif itype:verilogBits()>64 then
+    assert(false) -- NYI
+  else
+    out = RM.makeHandshake(C.cast(itype,types.bits(64)))(out)
+  end
+  
+  out = SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
+  
+  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+nbytes

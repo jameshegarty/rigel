@@ -270,6 +270,149 @@ end
 
 darkroom.__unnamedID = 0
 
+local function typeToKey(t)
+  local res = {}
+  for k,v in pairs(t) do
+    if type(k)=="number" then
+      local outk
+      if type(v)=="number" then
+        outk="number"
+      elseif type(v)=="function" then
+        outk="luaFunction"
+      elseif types.isType(v) then
+        outk="type"
+      elseif darkroom.isFunction(v) then
+        outk="rigelFunction"
+      elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
+        outk="size"
+      elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
+             and type(v[3])=="number" and type(v[4])=="number" then
+        outk="bounds"
+      else
+        J.err(false,"unknown type to key? "..tostring(v))
+      end
+      
+      J.err( res[outk]==nil, "Generator key '"..outk.."' is set twice?" )
+      res[outk] = v
+    else
+      J.err( res[k]==nil, "Generator key '"..k.."' is set twice?" )
+      res[k] = v
+    end
+  end
+  return res
+end
+
+local generatorFunctions = {}
+local generatorMT={}
+
+generatorMT.__call=function(tab,...)
+  local rawarg = {...}
+  if darkroom.isIR(rawarg[1]) then
+    print("CALLGEN WITH RIGEL VALUE")
+
+    local arg
+    if #rawarg>1 then
+      -- collapse multi args into tuple
+      arg = darkroom.concat(nil, rawarg)
+    else
+      arg = rawarg[1]
+    end
+    
+    local arglist = {}
+    for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+    if arglist.type==nil then arglist.type = arg.type end
+    return tab:complete(arglist)(arg)
+  elseif type(rawarg[1])=="table" and #rawarg==1 then
+    local arg = rawarg[1]
+    err( J.keycount(arg)>0, "Calling a generator with an empty parameter list?" )
+
+    print("CALL ",tab.namespace,tab.name,J.keycount(tab.curriedArgs))
+    for k,v in pairs(arg) do print("ARGLIST",k,v) end
+            
+    arg = typeToKey(arg)
+    for k,v in pairs(arg) do print("ARGLIST",k,v) end
+    local arglist = {}
+    for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+    for k,v in pairs(arg) do
+      J.err( arglist[k]==nil, "Argument '"..k.."' was already passed to generator" )
+      arglist[k] = v
+    end
+    
+    if tab:checkArgs(arglist) then
+      print("Module complete")
+      return tab:complete(arglist)
+    else
+      for k,v in pairs(arglist) do
+        print("Curried",tab.name,k,v)
+      end
+      for k,v in pairs(tab.requiredArgs) do
+        print("CurriedRequired",tab.name,k)
+      end
+      -- not done yet, return curried generator
+      --local res = setmetatable( {name=tab.name, requiredArgs=tab.requiredArgs, optArgs=tab.optArgs, completeFn=tab.completeFn, curriedArgs=arglist }, generatorMT )
+      local res = darkroom.newGenerator( tab.namespace, tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn )
+      res.curriedArgs = arglist
+      return res
+    end
+  else
+    print("ARG",arg.n)
+    J.err(false, "Called a generator with something other than a Rigel value or table?")
+  end
+end
+generatorMT.__index = generatorFunctions
+
+
+-- return true if done, false if not done
+function generatorFunctions:checkArgs(arglist)
+  local reqArgs = {}
+
+  for k,v in pairs(self.requiredArgs) do
+    print("CHECKARGS",self.name,k)
+  end
+  
+  for k,v in pairs(arglist) do
+    if self.requiredArgs[k]==nil and self.optArgs[k]==nil then
+      print("Error, generator arg '"..k.."' is not in list of required or optional args on generator '"..self.namespace.."."..self.name.."'!" )
+      print("Required Args: ")
+      for k,v in pairs(self.requiredArgs) do print(k..",") end
+      assert(false)
+    end
+    if self.requiredArgs[k]~=nil then reqArgs[k]=1 end
+  end
+
+  return J.keycount(reqArgs)==J.keycount(self.requiredArgs)
+end
+
+function generatorFunctions:listArgs()
+  local s = ""
+  for k,v in pairs(self.requiredArgs) do s = k..","..s end
+  return s
+end
+
+function generatorFunctions:complete(arglist)
+  self:checkArgs(arglist)
+  local mod = self.completeFn(arglist)
+  J.err( darkroom.isModule(mod), "generator returned something other than a rigel module?" )
+  mod.generator = self
+  mod.generatorArgs = arglist
+  return mod
+end
+
+function darkroom.newGenerator( namespace, name, requiredArgs, optArgs, completeFn )
+  err( type(namespace)=="string", "newGenerator: namespace must be string" )
+  err( type(name)=="string", "newGenerator: name must be table" )
+  err( type(requiredArgs)=="table", "newGenerator: requiredArgs must be table" )
+  if J.keycount(requiredArgs)==#requiredArgs then requiredArgs = J.invertTable(requiredArgs) end -- convert array of names to set
+  for k,v in pairs(requiredArgs) do J.err( type(k)=="string", "newGenerator: requiredArgs must be set of strings" ) end
+  err( type(optArgs)=="table", "newGenerator: requiredArgs must be table" )
+  if J.keycount(optArgs)==#optArgs then optArgs = J.invertTable(optArgs) end -- convert array of names to set
+  for k,v in pairs(optArgs) do J.err( type(k)=="string", "newGenerator: optArgs must be set of strings" ) end
+  err( type(completeFn)=="function", "newGenerator: completeFn must be lua function" )
+  
+  return setmetatable( {namespace=namespace, name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={} }, generatorMT )
+end
+function darkroom.isGenerator(t) return getmetatable(t)==generatorMT end
+
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={
 __index=function(tab,key)
@@ -311,6 +454,7 @@ __index=function(tab,key)
   end
 end,
 __call=function(tab,arg)
+  J.err( darkroom.isIR(arg),"applying a module to something other than a rigel value?")
 
   -- discover variable name from lua
   if arg.defaultName then
@@ -321,7 +465,7 @@ __call=function(tab,arg)
       arg.defaultname=false
     end
   end
-  
+
   local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
@@ -786,7 +930,8 @@ function darkroomIRFunctions:codegenSystolic( module )
 end
 
 
-function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
+function darkroom.isModule(t) return getmetatable(t)==darkroomFunctionMT end
+function darkroom.isFunction(t) return darkroom.isModule(t) or darkroom.isGenerator(t) end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
@@ -832,6 +977,16 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
   err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )
+
+  if darkroom.isGenerator(fn) then
+    fn = fn{input.type}
+  end
+
+  if darkroom.isModule(fn)==false then
+    print("Generator '"..table.concat(fn.name,".").."' could not be resolved into a module?")
+    print("Unbounded args: "..fn:listArgs())
+    assert(false)
+  end
   
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input}, sdfRateOverride=sdfRateOverride } )
 end
@@ -855,11 +1010,19 @@ end
 
 -- packStreams: do we consider the output of this to be 1 SDF stream, or N?
 function darkroom.concat( name, t, X )
-  err( type(name)=="string", "first tuple input should be name")
+  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
+  
+  if name==nil then
+    r.defaultName=true
+    r.name="concat"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+  else
+    err( type(name)=="string", "first tuple input should be name")
+  end
+    
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
-
-  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
+  
   J.map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
@@ -893,5 +1056,28 @@ function darkroom.statements( t )
 end
 
 
+function darkroom.export(t)
+  if t==nil then t=_G end
+
+  function t.c(arg)
+    J.err( type(arg)=="table", "c: argument should be table" )
+    J.err( #arg==2, "c: should have 2 args" )
+
+    local ty, val
+    if types.isType(arg[1]) then
+      ty = arg[1]
+      val = arg[2]
+    else
+      ty = arg[2]
+      val = arg[1]
+    end
+
+    local res = darkroom.constant("const"..darkroom.__unnamedID,val,ty)
+    res.defaultName = true
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+
+    return res
+  end
+end
 
 return darkroom

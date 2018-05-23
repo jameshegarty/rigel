@@ -2,6 +2,7 @@ local R = require "rigel"
 local C = require "examplescommon"
 local SOC = require "soc"
 local J = require "common"
+local SDF = require "sdfrate"
 
 return function(fn,t)
   if R.isFunction(fn)==false then
@@ -10,6 +11,8 @@ return function(fn,t)
     J.err(fn.name=="Top","Top module must be called 'Top', but is "..fn.name)
   end
 
+  print("SDF: ", SDF.tostring(fn.sdfInput), SDF.tostring(fn.sdfOutput))
+  
   local backend
   if t~=nil then backend = t.backend end
   if backend==nil then backend = arg[1] end

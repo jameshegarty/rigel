@@ -123,6 +123,22 @@ C.sub = memoize(function( A, B, outputType, async )
 end)
 
 -----------------------------
+C.rshift = memoize(function(A,const)
+  err( types.isType(A),"C.rshift: type should be rigel type")
+  err( type(const)=="number" or const==nil,"C.rshift: const should be number or value")
+  
+  if const~=nil then
+    -- shift by a const
+    J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,nil,nil,
+                        function(inp) return S.rshift(inp,S.constant(const,A)) end)
+    return mod
+  else
+    assert(false)
+  end
+end)
+
+-----------------------------
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
@@ -1150,7 +1166,7 @@ function C.linearPipeline(t,modulename)
   end
 
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
-  for _,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules") end
+  for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
   local inp = R.input(t[1].inputType)
   local out = inp
