@@ -42,7 +42,7 @@ return function(fn,t)
       end
     end
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr).."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..(fn.sdfInput[1][2]/fn.sdfInput[1][1]).."}" )
     f:close()
   else
     print("backend",backend)

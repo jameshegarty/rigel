@@ -12,6 +12,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 LUA=$DIR/../../rigelLuajit
 
+CYCLES=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE cycles)
 MEMSTART=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryStart)
 MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
 INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS)
@@ -19,4 +20,4 @@ OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS)
 
 #VERBOSE=--verbose
 
-$BITFILE 1100 $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --outputs $OUTPUTS
+$BITFILE $CYCLES $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --outputs $OUTPUTS

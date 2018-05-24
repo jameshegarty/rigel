@@ -13,6 +13,8 @@ local generators = {}
 generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"},{},function(args) return C.broadcast(args.type,args.number) end)
 
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
+generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
+generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
 
 generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
 function(args)
@@ -74,6 +76,20 @@ function(args)
   end
 
   return mod
+end)
+
+generators.Pad = R.newGenerator("generators","Pad",{"type","size","number","bounds"},{},
+function(args)
+  J.err(args.number>0,"NYI - V<=0")
+  local A = args.type:arrayOver()
+  return RM.padSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],0)
+end)
+
+generators.Crop = R.newGenerator("generators","Crop",{"type","size","number","bounds"},{},
+function(args)
+  J.err(args.number>0,"NYI - V<=0")
+  local A = args.type:arrayOver()
+  return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
 generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction"},{},

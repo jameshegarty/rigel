@@ -260,10 +260,11 @@ int main(int argc, char** argv) {
   printf("Usage: XXX.verilator simCycles memStart memEnd [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
+  int simCyclesSlack = 128;
   MEMBASE = strtol(argv[2],NULL,16);
   MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
-  std::cout << "SimCycles: " << simCycles << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
+  std::cout << "SimCycles: " << simCycles << " SimCyclesSlack: " << simCyclesSlack << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
 
   bool verbose = false;
   int curArg = 4;
@@ -365,7 +366,7 @@ int main(int argc, char** argv) {
   top->SAXI0_AWVALID = false;
   step(top);
     
-  while (!Verilated::gotFinish() && totalCycles<simCycles ) {
+  while (!Verilated::gotFinish() && totalCycles<(simCycles+simCyclesSlack) ) {
     if(CLK){
       // feed data in
       masterReadData(verbose,M0READLIST);

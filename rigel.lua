@@ -308,7 +308,6 @@ local generatorMT={}
 generatorMT.__call=function(tab,...)
   local rawarg = {...}
   if darkroom.isIR(rawarg[1]) then
-    print("CALLGEN WITH RIGEL VALUE")
 
     local arg
     if #rawarg>1 then
@@ -325,12 +324,9 @@ generatorMT.__call=function(tab,...)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
     local arg = rawarg[1]
     err( J.keycount(arg)>0, "Calling a generator with an empty parameter list?" )
-
-    print("CALL ",tab.namespace,tab.name,J.keycount(tab.curriedArgs))
-    for k,v in pairs(arg) do print("ARGLIST",k,v) end
             
     arg = typeToKey(arg)
-    for k,v in pairs(arg) do print("ARGLIST",k,v) end
+
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
     for k,v in pairs(arg) do
@@ -339,15 +335,8 @@ generatorMT.__call=function(tab,...)
     end
     
     if tab:checkArgs(arglist) then
-      print("Module complete")
       return tab:complete(arglist)
     else
-      for k,v in pairs(arglist) do
-        print("Curried",tab.name,k,v)
-      end
-      for k,v in pairs(tab.requiredArgs) do
-        print("CurriedRequired",tab.name,k)
-      end
       -- not done yet, return curried generator
       --local res = setmetatable( {name=tab.name, requiredArgs=tab.requiredArgs, optArgs=tab.optArgs, completeFn=tab.completeFn, curriedArgs=arglist }, generatorMT )
       local res = darkroom.newGenerator( tab.namespace, tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn )
@@ -355,7 +344,6 @@ generatorMT.__call=function(tab,...)
       return res
     end
   else
-    print("ARG",arg.n)
     J.err(false, "Called a generator with something other than a Rigel value or table?")
   end
 end
@@ -366,10 +354,6 @@ generatorMT.__index = generatorFunctions
 function generatorFunctions:checkArgs(arglist)
   local reqArgs = {}
 
-  for k,v in pairs(self.requiredArgs) do
-    print("CHECKARGS",self.name,k)
-  end
-  
   for k,v in pairs(arglist) do
     if self.requiredArgs[k]==nil and self.optArgs[k]==nil then
       print("Error, generator arg '"..k.."' is not in list of required or optional args on generator '"..self.namespace.."."..self.name.."'!" )

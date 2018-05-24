@@ -1,6 +1,6 @@
 BUILDDIR ?= out
 
-SRCS_SOC = soc_simple.lua soc_2in.lua
+SRCS_SOC = soc_simple.lua soc_2in.lua convgen.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))

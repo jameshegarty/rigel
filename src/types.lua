@@ -57,6 +57,7 @@ types._bits={}
 function types.bits( prec, X )
   err( X==nil, "types.bits: too many arguments" )
   assert(prec==math.floor(prec))
+  err(prec>0,"types.bits precision needs to be >0")
   types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
   return types._bits[prec]
 end
@@ -65,6 +66,7 @@ types._uint={}
 function types.uint( prec, X )
   err(type(prec)=="number", "precision argument to types.uint must be number")
   err(prec==math.floor(prec), "uint precision should be integer, but is "..tostring(prec) )
+  err(prec>0,"types.uint precision needs to be >0")
   err( X==nil, "types.uint: too many arguments" )
   types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
   return types._uint[prec]
@@ -74,6 +76,7 @@ types._int={}
 function types.int( prec, X )
   assert(prec==math.floor(prec))
   err( X==nil, "types.int: too many arguments" )
+  err(prec>0,"types.int precision needs to be >0")
   types._int[prec] = types._int[prec] or setmetatable({kind="int",precision=prec},TypeMT)
   return types._int[prec]
 end

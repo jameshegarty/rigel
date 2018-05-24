@@ -205,7 +205,7 @@ parameter INSTANCE_NAME="inst";
 );
 
 endmodule
-]=],globals,globalMetadata,{{1,1}},{{1,1}})
+]=],globals,globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
   
 end)
 
@@ -430,7 +430,7 @@ DRAMWriterInner inner(
 
 endmodule
 
-]=],globals, globalMetadata,{{1,1}},{{1,1}})
+]=],globals, globalMetadata,{{1,1}},{{1,Nbytes/8}})
   
 end)
 

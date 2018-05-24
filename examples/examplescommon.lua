@@ -139,6 +139,46 @@ C.rshift = memoize(function(A,const)
 end)
 
 -----------------------------
+C.addMSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.addMSBs: type should be rigel type")
+  err( type(bits)=="number","C.addMSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    otype = types.uint(A.precision+bits)
+  elseif A:isInt() then
+    otype = types.int(A.precision+bits)
+  else
+    J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(inp,otype) end)
+  return mod
+end)
+
+-----------------------------
+C.removeMSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.removeMSBs: type should be rigel type")
+  err( type(bits)=="number","C.removeMSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.uint(A.precision-bits)
+  elseif A:isInt() then
+    J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.int(A.precision-bits)
+  else
+    J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(inp,otype) end)
+  return mod
+end)
+
+-----------------------------
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
