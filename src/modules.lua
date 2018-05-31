@@ -777,21 +777,21 @@ modules.map = memoize(function( f, W, H )
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
       
-      local SC = {}
+--      local SC = {}
       for k,_ in pairs(f.globals) do
         systolicModule:addSideChannel(k.systolicValue)
-        SC[k.systolicValue]=k.systolicValue
+--        SC[k.systolicValue]=k.systolicValue
         assert(S.isSideChannel(k.systolicValue))
       end
       
-      assert(J.keycount(SC)==J.keycount(f.globals))
+--      assert(J.keycount(SC)==J.keycount(f.globals))
       
       local inp = S.parameter("process_input", res.inputType )
       local out = {}
       local resetPipelines={}
       for y=0,H-1 do
         for x=0,W-1 do 
-          local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y,nil,SC))
+          local inst = systolicModule:add(f.systolicModule:instantiate("inner"..x.."_"..y))
           table.insert( out, inst:process( S.index( inp, x, y ) ) )
           if f.stateful then
             table.insert( resetPipelines, inst:reset() ) -- no reset for pure functions
@@ -2468,10 +2468,10 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
     local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
-    local SC = {}
+--    local SC = {}
     for k,_ in pairs(f.globals) do
       systolicModule:addSideChannel(k.systolicValue)
-      SC[k.systolicValue]=k.systolicValue
+--      SC[k.systolicValue]=k.systolicValue
     end
     
     local outputCount
@@ -2480,7 +2480,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
     local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name) )
-    local inner = systolicModule:add(f.systolicModule:instantiate("inner",nil,SC))
+    local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())
     
@@ -3100,8 +3100,9 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
   err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
-  err( instances==nil or type(instances)=="table", "lambda: instances must be nil or a table")
-  if instances~=nil then J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end ) end
+  if instance==nil then instances={} end
+  err( type(instances)=="table", "lambda: instances must be nil or a table")
+  J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
@@ -3147,7 +3148,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end
     end)
 
-  if input~=nil and rigel.isStreaming(input.type)==false then
+  if input~=nil and input.type~=types.null() and rigel.isStreaming(input.type)==false and rigel.isStreaming(output.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
         if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
@@ -3164,6 +3165,25 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end)
   end
 
+  -- collect instances (user doesn't have to explicitly give all instances)
+  local instanceMap = J.invertTable( res.instances )
+
+  output:visitEach(
+    function(n)
+      if n.kind=="applyMethod" then
+        if instanceMap[n.inst]==nil then
+          table.insert( res.instances, n.inst )
+          instanceMap[n.inst] = "found"
+        else
+          instanceMap[n.inst] = "found"
+        end
+      end
+    end)
+
+  for k,v in pairs(instanceMap) do
+    err( v=="found", "lambda: instance '"..k.name.."' was never used?" )
+  end
+  
   -- collect the globals
   res.globals = {}
   res.globalMetadata = {}
@@ -3186,13 +3206,27 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           end
 
           for k,v in pairs(n.fn.globalMetadata) do
-            err(res.globalMetadata[k]==nil,"Error: write to global metadata twice!")
+            err(res.globalMetadata[k]==nil,"Error: wrote to global metadata twice!")
             res.globalMetadata[k] = v
           end
       elseif n.kind=="readGlobal" then
         res.globals[n.global]=1
       end
     end)
+
+  for k,v in pairs(res.instances) do
+    for g,_ in pairs(v.fn.globals) do
+      if g.direction=="output" then
+        err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ")
+      end
+      res.globals[g] = 1
+    end
+
+    for k,v in pairs(v.fn.globalMetadata) do
+      err(res.globalMetadata[k]==nil,"Error: wrote to global metadata twice!")
+      res.globalMetadata[k] = v
+    end
+  end
   
   if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
 
@@ -3235,8 +3269,22 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
   end
 
+  -- should we compile thie module as handshaked or not?
+  -- For handshaked modules, the input/output type is _not_ necessarily handshaked
+  -- for example, input/output type could be null, but the internal connections may be handshaked
+  -- so, check if we handshake anywhere
+  local HANDSHAKE_MODE = false
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or rigel.isHandshakeAny(n.fn.inputType) or rigel.isHandshakeAny(n.fn.outputType)
+      elseif n.kind=="applyMethod" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or rigel.isHandshakeAny(n.inst.fn.inputType) or rigel.isHandshakeAny(n.inst.fn.outputType)
+      end
+    end)
+  
   local function makeSystolic( fn )
-    local module = Ssugar.moduleConstructor( fn.name ):onlyWire( rigel.isHandshakeAny(fn.inputType) or rigel.isHandshakeAny(fn.outputType) )
+    local module = Ssugar.moduleConstructor( fn.name ):onlyWire( HANDSHAKE_MODE )
 
     for g,_ in pairs(fn.globals) do
       module:addSideChannel(g.systolicValue)
@@ -3246,7 +3294,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
 
-    if rigel.isStreaming(fn.inputType)==false and rigel.isStreaming(fn.outputType)==false then 
+    if HANDSHAKE_MODE==false then 
       local CE = S.CE("CE")
       process:setCE(CE)
     end
@@ -3275,7 +3323,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
     elseif rigel.isRV( fn.outputType ) then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
-    elseif rigel.streamCount(fn.inputType)>0 then
+    elseif HANDSHAKE_MODE then
        
       local readyinp -- = S.parameter( "ready_downstream", types.bool() )
       local readyout
@@ -3354,8 +3402,9 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
               input = readyinp
             else
-              print("Input to function had streams, but output has none? type: "..tostring(n.type))
-              assert(false)
+              -- this is ok: ready bit may be totally internal to the module
+              readyinp = S.parameter( "ready_downstream", types.null() )
+              input = readyinp
             end
           else
             -- if any downstream nodes are selectStream, they'd better all be selectStream, and the count had better match
@@ -3368,7 +3417,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
                 allSS = false
               end
             end
---            print("anySS",anySS,"allSS",allSS,n:parentCount(fn.output))
+
             err( anySS==allSS,"If any consumers are selectStream, all consumers must be selectStream "..n.loc )
             err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects "..tostring(n:outputStreams()).." stream readers, but only "..tostring(J.keycount(args)).." were found. "..n.loc )
 
@@ -3390,17 +3439,16 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             end
             
           elseif n.kind=="applyMethod" then
-            if n.fnname=="load" then
+            if n.fnname=="load" or n.fnname=="start" then
               -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
               local inst = module:lookupInstance(n.inst.name)
               res = {inst[n.fnname.."_ready"](inst, input)}
               table.insert(readyPipelines,res[1])
-
-            elseif n.fnname=="store" then
+            elseif n.fnname=="store" or n.fnname=="done" then
               local inst = module:lookupInstance(n.inst.name)
               res = {inst[n.fnname.."_ready"](inst, input)}
             else
-              assert(false)
+              err(false, "ready bit wiring for applyMethod, unknown function '"..n.fnname.."'")
             end
           elseif n.kind=="concat" or n.kind=="concatArray2d" then
             err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
@@ -3466,7 +3514,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
                 err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
               end
             elseif i:outputStreams()==0 then
-              err(res[k]==nil, "incorrect ready bit output format "..n.kind.." - "..n.loc)
+              err(res[k]==nil or res[k].type==types.null(), "incorrect ready bit output format kind:'"..n.kind.."' - "..n.loc)
             else
               print("NYI "..tostring(i.type))
               assert(false)

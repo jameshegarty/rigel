@@ -431,6 +431,9 @@ __index=function(tab,key)
       if tab.outputType~=types.null() then
         err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
       end
+
+      err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong?" )
+      err( darkroom.lower(tab.inputType)==sm.functions.process.input.type, "module input type wrong?" )
     end
     
     rawset(tab,"systolicModule", sm )
@@ -518,6 +521,46 @@ end
 function darkroomFunctionFunctions:compile() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
+function darkroomFunctionFunctions:instantiate(name)
+  err( self.registered, "Can't instantiate a non-registered module!")
+  if name==nil then
+    name = "UnnamedInstance"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID + 1
+  end
+  local res = darkroom.instantiateRegistered(name, self )
+
+  -- hack
+  res.start = darkroom.newInstanceCallsite(res,"start")
+  res.done = darkroom.newInstanceCallsite(res,"done")
+  res.load = darkroom.newInstanceCallsite(res,"load")
+  res.store = darkroom.newInstanceCallsite(res,"store")
+  
+  return res
+end
+
+
+darkroomInstanceCallsiteMT = {}
+function darkroom.newInstanceCallsite( instance, functionName, X )
+  err( darkroom.isInstance(instance),"newInstanceCallsite: instance should be instance" )
+  err( type(functionName)=="string", "newInstanceCallsite: function name must be string" )
+  err( X==nil, "newInstanceCallsite: too many arguments" )
+
+  local res = { instance=instance, functionName=functionName }
+  if functionName=="load" or functionName=="start" then
+    res.outputType = instance.fn.outputType
+    res.inputType = types.null()
+  elseif functionName=="store" or functionName=="done" then
+    res.inputType = instance.fn.inputType
+    res.outputType = types.null()
+  else
+    err(false,"newInstanceCallsite: unknown function '"..functionName.."'")
+  end
+
+  return setmetatable( res, darkroomInstanceCallsiteMT )
+end
+
+function darkroom.isInstanceCallsite( t ) return getmetatable(t)==darkroomInstanceCallsiteMT end
+
 function darkroom.newFunction(tab,X)
   err( type(tab) == "table", "rigel.newFunction: input must be table" )
   err(X==nil, "rigel.newFunction: too many arguments")
@@ -585,8 +628,11 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert( SDFRate.isSDFRate(args[1][1]))
           assert(type(args[1][2][1])=="boolean")
           res = {args[1][1],args[1][2]}
+        elseif n.fnname=="start" or n.fnname=="done" then
+          -- just pass through
+          res = {args[1][1],args[1][2]}
         else
-          assert(false)
+          err( false, "sdfTotalInner: unknown method '"..n.fnname.."'" )
         end
       elseif n.kind=="apply" then
         if #n.inputs==0 then
@@ -767,9 +813,9 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="applyMethod" then
     err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
     
-    if n.fnname=="load" then
+    if n.fnname=="load" or n.fnname=="start" then
       n.type = n.inst.fn.outputType
-    elseif n.fnname=="store" then
+    elseif n.fnname=="store" or n.fnname=="done" then
       if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
       n.type = types.null()
     else
@@ -835,15 +881,11 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="applyMethod" then
         assert( n.inst.fn.registered )
         local I = module:lookupInstance(n.inst.name)
-        if n.fnname=="load" then 
-          module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:load()}
-        elseif n.fnname=="store" then
-          module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:store(inputs[1][1])}
-        else
-          assert(false)
-        end
+
+        module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        local inp = inputs[1]
+        if inp~=nil then inp=inp[1] end
+        return {I[n.fnname](I,inp)}
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.name)
         err( n.fn.systolicModule:lookupFunction("process")~=nil, "Error, missing process fn? "..n.fn.name)
@@ -857,13 +899,13 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)
 
-        local SC = {}
-        for g,_ in pairs(n.fn.globals) do
-          SC[g.systolicValue] = g.systolicValue
-          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
-        end
+--        local SC = {}
+--        for g,_ in pairs(n.fn.globals) do
+--          SC[g.systolicValue] = g.systolicValue
+--          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
+--        end
         
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
+        local I = module:add( n.fn.systolicModule:instantiate(n.name) )
 
         if darkroom.isHandshakeAny( n.fn.inputType ) or
         darkroom.isHandshakeAny(n.fn.outputType) then
@@ -915,7 +957,7 @@ end
 
 
 function darkroom.isModule(t) return getmetatable(t)==darkroomFunctionMT end
-function darkroom.isFunction(t) return darkroom.isModule(t) or darkroom.isGenerator(t) end
+function darkroom.isFunction(t) return darkroom.isModule(t) or darkroom.isGenerator(t) or darkroom.isInstanceCallsite(t) end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
@@ -964,6 +1006,8 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
 
   if darkroom.isGenerator(fn) then
     fn = fn{input.type}
+  elseif darkroom.isInstanceCallsite(fn) then
+    return darkroom.applyMethod( name, fn.instance, fn.functionName, input )
   end
 
   if darkroom.isModule(fn)==false then

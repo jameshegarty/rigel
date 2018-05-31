@@ -47,7 +47,7 @@ void printSlave(
   std::cout << "S_ARADDR(in): " << ARADDR << std::endl;
   std::cout << "S_ARVALID(in): " << (int)ARVALID << std::endl;
   std::cout << "S_ARREADY(out): " << (int)ARREADY << std::endl;
-  std::cout << "S_AWADDR(in): " << AWADDR << "/" << std::hex << AWADDR  << std::dec<< std::endl;
+  std::cout << "S_AWADDR(in): " << AWADDR << "/" << std::hex << "0x" << AWADDR  << std::dec<< std::endl;
   std::cout << "S_AWVALID(in): " << (int)AWVALID << std::endl;
   std::cout << "S_AWREADY(out): " << (int)AWREADY << std::endl;
   std::cout << "S_RDATA(out): " << RDATA << std::endl;
@@ -69,7 +69,7 @@ void printMasterRead(
   std::cout << "----------------------" << std::endl;
   std::cout << "IP_CLK(in): " << (int)IP_CLK << std::endl;
   std::cout << "IP_ARESET_N(in): " << (int)IP_ARESET_N << std::endl;
-  std::cout << "M" << id << "_ARADDR(out): " << ARADDR << "/" << std::hex << ARADDR  << std::dec<< std::endl;
+  std::cout << "M" << id << "_ARADDR(out): " << ARADDR << "/" << std::hex  << "0x" << ARADDR  << std::dec<< std::endl;
   std::cout << "M" << id << "_ARVALID(out): " << (int)ARVALID << std::endl;
   std::cout << "M" << id << "_ARREADY(in): " << (int)ARREADY << std::endl;
 }
@@ -143,8 +143,8 @@ void masterReadReq(
     t.burst = ARLEN+1;
 
     if(verbose){
-      std::cout << "MAXI" << port << "Read Request addr:" << t.addr << "/" << std::hex << t.addr << std::dec << " burst:" << t.burst << std::endl;
-      std::cout << "MAXI" << port << "Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
+      std::cout << "MAXI" << port << " Read Request addr:" << t.addr << "/" << std::hex << "0x" << t.addr << std::dec << " burst:" << t.burst << std::endl;
+      std::cout << "MAXI" << port << " Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
     }
     
     t.addr -= MEMBASE;
@@ -197,7 +197,7 @@ void masterWriteData(
       writeQ[port].pop();
     }
   }else if( writeQ[port].size()<=0 && WVALID ){
-    std::cout << "Error: attempted to write data, but there was no outstanding write addresses!" << std::endl;
+    std::cout << "Error: attempted to write data, but there was no outstanding write addresses! (master port " << port << ")" << std::endl;
     exit(1);
   }else{
     if(verbose){std::cout << "MAXI" << port << " no write request" << std::endl;}
@@ -232,8 +232,8 @@ void masterWriteReq(
     t.burst = AWLEN+1;
 
     if(verbose){
-      std::cout << "MAXI" << port << " Write Request addr:" << t.addr << "/" << std::hex << t.addr << std::dec << " burst:" << t.burst << std::endl;
-      std::cout << "MAXI" << port << " Write Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
+      std::cout << "MAXI" << port << " Write Request addr:" << t.addr << "/" << std::hex << "0x" << t.addr << std::dec << " burst:" << t.burst << std::endl;
+      std::cout << "MAXI" << port << " Write Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
     }
     
     t.addr -= MEMBASE;
@@ -309,9 +309,6 @@ int main(int argc, char** argv) {
   
   unsigned long totalCycles = 0;
 
-  // NOTE: you'd think we could check for overflows (too many output packets), but actually we can't
-  // some of our modules start producing data immediately for the next frame, which is valid behavior (ie pad)
-
   if(verbose){printSlave(S0LIST);}
   
   for(int i=0; i<100; i++){
@@ -327,17 +324,17 @@ int main(int argc, char** argv) {
     top->SAXI0_RREADY = true;
     //top->SAXI0_WREADY = true;
 
-    top->MAXI0_ARREADY = true;
-    top->MAXI0_RREADY = true;
-    top->MAXI0_AWREADY = true;
-    top->MAXI0_WREADY = true;
-    top->MAXI0_BREADY = true;
+    top->MAXI0_ARREADY = false;
+    top->MAXI0_RREADY = false;
+    top->MAXI0_AWREADY = false;
+    top->MAXI0_WREADY = false;
+    top->MAXI0_BREADY = false;
 
-    top->MAXI1_ARREADY = true;
-    top->MAXI1_RREADY = true;
-    top->MAXI1_AWREADY = true;
-    top->MAXI1_WREADY = true;
-    top->MAXI1_BREADY = true;
+    top->MAXI1_ARREADY = false;
+    top->MAXI1_RREADY = false;
+    top->MAXI1_AWREADY = false;
+    top->MAXI1_WREADY = false;
+    top->MAXI1_BREADY = false;
 
     top->eval();
   }
@@ -365,7 +362,20 @@ int main(int argc, char** argv) {
 
   top->SAXI0_AWVALID = false;
   step(top);
-    
+
+  // now we're ready to service memory requests
+  top->MAXI0_ARREADY = true;
+  top->MAXI0_RREADY = true;
+  top->MAXI0_AWREADY = true;
+  top->MAXI0_WREADY = true;
+  top->MAXI0_BREADY = true;
+  
+  top->MAXI1_ARREADY = true;
+  top->MAXI1_RREADY = true;
+  top->MAXI1_AWREADY = true;
+  top->MAXI1_WREADY = true;
+  top->MAXI1_BREADY = true;
+
   while (!Verilated::gotFinish() && totalCycles<(simCycles+simCyclesSlack) ) {
     if(CLK){
       // feed data in

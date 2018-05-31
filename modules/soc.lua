@@ -12,15 +12,542 @@ SOC.currentMAXIReadPort = 0
 SOC.currentMAXIWritePort = 0
 SOC.currentAddr = 0x30008000
 
---SOC.frameStart = R.newGlobal("frameStart","input", R.HandshakeTrigger,{nil,false})
+SOC.axiRegsN = J.memoize(function(N,port)
 
---SOC.readAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("readAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
-
---SOC.readData = J.map(J.range(PORTS),function(i) return R.newGlobal("readData"..tostring(i),"input",R.Handshake(types.bits(64))) end)
-
---SOC.writeAddrs = J.map(J.range(PORTS),function(i) return R.newGlobal("writeAddr"..tostring(i),"output",R.Handshake(types.uint(32)),{0,false}) end)
---SOC.writeData = J.map(J.range(PORTS),function(i) return R.newGlobal("writeData"..tostring(i),"output",R.Handshake(types.bits(64)),{0,false}) end)
+  local globals = {}
+  globals[R.newGlobal("IP_SAXI"..port.."_ARADDR","input",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_AWADDR","input",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_RDATA","output",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_WDATA","input",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_BRESP","output",R.Handshake(types.bits(2)))] = 1
   
+  globals[R.newGlobal("IP_SAXI"..port.."_ARID","input",types.bits(12))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_AWID","input",types.bits(12))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_BID","output",types.bits(12))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_RID","output",types.bits(12))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_RLAST","output",types.bool())] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_RRESP","output",types.bits(2))] = 1
+  globals[R.newGlobal("IP_SAXI"..port.."_WSTRB","input",types.bits(4))] = 1
+
+  local ModuleName = J.sanitize("Regs_"..tostring(N).."_"..tostring(port))
+
+--  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.HandshakeTrigger,
+local vstring = [=[
+module ict106_axilite_conv #
+  (
+   parameter integer C_AXI_ID_WIDTH              = 12,
+   parameter integer C_AXI_ADDR_WIDTH            = 32,
+   parameter integer C_AXI_DATA_WIDTH            = 32 // CONSTANT
+   )
+  (
+   // System Signals
+   input  wire                          ACLK,
+   input  wire                          ARESETN,
+   input  wire [C_AXI_ID_WIDTH-1:0]     S_AXI_AWID,
+   input  wire [C_AXI_ADDR_WIDTH-1:0]   S_AXI_AWADDR,
+   input  wire                          S_AXI_AWVALID,
+   output wire                          S_AXI_AWREADY,
+   input  wire [C_AXI_DATA_WIDTH-1:0]   S_AXI_WDATA,
+   input  wire [C_AXI_DATA_WIDTH/8-1:0] S_AXI_WSTRB,
+   input  wire                          S_AXI_WVALID,
+   output wire                          S_AXI_WREADY,
+   output wire [C_AXI_ID_WIDTH-1:0]     S_AXI_BID,
+   output wire [2-1:0]                  S_AXI_BRESP,
+   output wire                          S_AXI_BVALID,
+   input  wire                          S_AXI_BREADY,
+   input  wire [C_AXI_ID_WIDTH-1:0]     S_AXI_ARID,
+   input  wire [C_AXI_ADDR_WIDTH-1:0]   S_AXI_ARADDR,
+   input  wire                          S_AXI_ARVALID,
+   output wire                          S_AXI_ARREADY,
+   output wire [C_AXI_ID_WIDTH-1:0]     S_AXI_RID,
+   output wire [C_AXI_DATA_WIDTH-1:0]   S_AXI_RDATA,
+   output wire [2-1:0]                  S_AXI_RRESP,
+   output wire                          S_AXI_RLAST,    // Constant =1
+   output wire                          S_AXI_RVALID,
+   input  wire                          S_AXI_RREADY,
+   output wire [C_AXI_ADDR_WIDTH-1:0]   M_AXI_AWADDR,
+   output wire                          M_AXI_AWVALID,
+   input  wire                          M_AXI_AWREADY,
+   output wire [C_AXI_DATA_WIDTH-1:0]   M_AXI_WDATA,
+   output wire [C_AXI_DATA_WIDTH/8-1:0] M_AXI_WSTRB,
+   output wire                          M_AXI_WVALID,
+   input  wire                          M_AXI_WREADY,
+   input  wire [2-1:0]                  M_AXI_BRESP,
+   input  wire                          M_AXI_BVALID,
+   output wire                          M_AXI_BREADY,
+   output wire [C_AXI_ADDR_WIDTH-1:0]   M_AXI_ARADDR,
+   output wire                          M_AXI_ARVALID,
+   input  wire                          M_AXI_ARREADY,
+   input  wire [C_AXI_DATA_WIDTH-1:0]   M_AXI_RDATA,
+   input  wire [2-1:0]                  M_AXI_RRESP,
+   input  wire                          M_AXI_RVALID,
+   output wire                          M_AXI_RREADY
+  );
+  
+  wire [31:0] m_axaddr;
+
+  // Arbiter
+  reg read_active;
+  reg write_active;
+  reg busy;
+
+  wire read_req;
+  wire write_req;
+  wire read_complete;
+  wire write_complete;
+  
+  reg [1:0] areset_d; // Reset delay register
+  always @(posedge ACLK) begin
+    areset_d <= {areset_d[0], ~ARESETN};
+  end
+  
+  assign read_req  = S_AXI_ARVALID & ~write_active & ~busy & ~|areset_d;
+  assign write_req = (S_AXI_AWVALID & ~read_active & ~busy & ~S_AXI_ARVALID & ~|areset_d) | (write_active & ~busy);
+
+  assign read_complete  = M_AXI_RVALID & S_AXI_RREADY;
+  assign write_complete = M_AXI_BVALID & S_AXI_BREADY;
+
+  always @(posedge ACLK) begin : arbiter_read_ff
+    if (~ARESETN)
+      read_active <= 1'b0;
+    else if (read_complete)
+      read_active <= 1'b0;
+    else if (read_req)
+      read_active <= 1'b1;
+  end
+
+  always @(posedge ACLK) begin : arbiter_write_ff
+    if (~ARESETN)
+      write_active <= 1'b0;
+    else if (write_complete)
+      write_active <= 1'b0;
+    else if (write_req)
+      write_active <= 1'b1;
+  end
+
+  always @(posedge ACLK) begin : arbiter_busy_ff
+    if (~ARESETN)
+      busy <= 1'b0;
+    else if (read_complete | write_complete)
+      busy <= 1'b0;
+    else if ((S_AXI_AWVALID & M_AXI_AWREADY & ~read_req) | (S_AXI_ARVALID & M_AXI_ARREADY & ~write_req))
+      busy <= 1'b1;
+  end
+
+  assign M_AXI_ARVALID = read_req;
+  assign S_AXI_ARREADY = M_AXI_ARREADY & read_req;
+
+  assign M_AXI_AWVALID = write_req;
+  assign S_AXI_AWREADY = M_AXI_AWREADY & write_req;
+
+  assign M_AXI_RREADY  = S_AXI_RREADY & read_active;
+  assign S_AXI_RVALID  = M_AXI_RVALID & read_active;
+
+  assign M_AXI_BREADY  = S_AXI_BREADY & write_active;
+  assign S_AXI_BVALID  = M_AXI_BVALID & write_active;
+
+  // Address multiplexer
+  assign m_axaddr = (read_req) ? S_AXI_ARADDR : S_AXI_AWADDR;
+
+  // Id multiplexer and flip-flop
+  reg [C_AXI_ID_WIDTH-1:0] s_axid;
+
+  always @(posedge ACLK) begin : axid
+    if      (~ARESETN)    s_axid <= {C_AXI_ID_WIDTH{1'b0}};
+    else if (read_req)  s_axid <= S_AXI_ARID;
+    else if (write_req) s_axid <= S_AXI_AWID;
+  end
+
+  assign S_AXI_BID = s_axid;
+  assign S_AXI_RID = s_axid;
+
+  assign M_AXI_AWADDR = m_axaddr;
+  assign M_AXI_ARADDR = m_axaddr;
+
+
+  // Feed-through signals
+  assign S_AXI_WREADY   = M_AXI_WREADY & ~|areset_d;
+  assign S_AXI_BRESP    = M_AXI_BRESP;
+  assign S_AXI_RDATA    = M_AXI_RDATA;
+  assign S_AXI_RRESP    = M_AXI_RRESP;
+  assign S_AXI_RLAST    = 1'b1;
+
+  assign M_AXI_WVALID   = S_AXI_WVALID & ~|areset_d;
+  assign M_AXI_WDATA    = S_AXI_WDATA;
+  assign M_AXI_WSTRB    = S_AXI_WSTRB;
+
+endmodule
+
+module Conf(
+    input ACLK,
+    input ARESETN,
+    //AXI Inputs
+    input [31:0] S_AXI_ARADDR,
+    output S_AXI_ARREADY,
+    input S_AXI_ARVALID,
+
+    input [31:0] S_AXI_AWADDR,
+    output S_AXI_AWREADY,
+    input S_AXI_AWVALID,
+
+    output [31:0] S_AXI_RDATA,
+    input S_AXI_RREADY,
+    output S_AXI_RVALID,
+
+    input [31:0] S_AXI_WDATA,
+    output S_AXI_WREADY,
+    input S_AXI_WVALID,
+
+    output [1:0] S_AXI_BRESP,
+    output S_AXI_BVALID,
+    input S_AXI_BREADY,
+
+    input [11:0] S_AXI_ARID,
+    input [11:0] S_AXI_AWID,
+    output [11:0] S_AXI_BID,
+    output [11:0] S_AXI_RID,
+    output S_AXI_RLAST,
+    output [1:0] S_AXI_RRESP,
+    input [3:0] S_AXI_WSTRB,
+
+    
+    output CONFIG_VALID,
+    input CONFIG_READY,
+    output [31:0] CONFIG_CMD,
+    output [31:0] CONFIG_SRC,
+    output [31:0] CONFIG_DEST,
+    output [31:0] CONFIG_LEN,
+    output CONFIG_IRQ
+    );
+
+    //Convert Input signals to AXI lite, to avoid ID matching
+    wire [31:0] LITE_ARADDR;
+    wire LITE_ARREADY;
+    wire LITE_ARVALID;
+    wire [31:0] LITE_AWADDR;
+    wire LITE_AWREADY;
+    wire LITE_AWVALID;
+    wire LITE_BREADY;
+    reg [1:0] LITE_BRESP;
+    wire LITE_BVALID;
+    reg [31:0] LITE_RDATA;
+    wire LITE_RREADY;
+    reg [1:0] LITE_RRESP;
+    wire LITE_RVALID;
+    wire [31:0] LITE_WDATA;
+    wire LITE_WREADY;
+    wire [3:0] LITE_WSTRB;
+    wire LITE_WVALID;
+    
+    ict106_axilite_conv axilite(
+    .ACLK(ACLK),
+    .ARESETN(ARESETN),
+    .S_AXI_ARADDR(S_AXI_ARADDR), 
+    .S_AXI_ARID(S_AXI_ARID),  
+    .S_AXI_ARREADY(S_AXI_ARREADY), 
+    .S_AXI_ARVALID(S_AXI_ARVALID), 
+    .S_AXI_AWADDR(S_AXI_AWADDR), 
+    .S_AXI_AWID(S_AXI_AWID), 
+    .S_AXI_AWREADY(S_AXI_AWREADY), 
+    .S_AXI_AWVALID(S_AXI_AWVALID), 
+    .S_AXI_BID(S_AXI_BID), 
+    .S_AXI_BREADY(S_AXI_BREADY), 
+    .S_AXI_BRESP(S_AXI_BRESP), 
+    .S_AXI_BVALID(S_AXI_BVALID), 
+    .S_AXI_RDATA(S_AXI_RDATA), 
+    .S_AXI_RID(S_AXI_RID), 
+    .S_AXI_RLAST(S_AXI_RLAST), 
+    .S_AXI_RREADY(S_AXI_RREADY), 
+    .S_AXI_RRESP(S_AXI_RRESP), 
+    .S_AXI_RVALID(S_AXI_RVALID), 
+    .S_AXI_WDATA(S_AXI_WDATA), 
+    .S_AXI_WREADY(S_AXI_WREADY), 
+    .S_AXI_WSTRB(S_AXI_WSTRB), 
+    .S_AXI_WVALID(S_AXI_WVALID),
+       
+    .M_AXI_ARADDR(LITE_ARADDR),
+    .M_AXI_ARREADY(LITE_ARREADY),
+    .M_AXI_ARVALID(LITE_ARVALID),
+    .M_AXI_AWADDR(LITE_AWADDR),
+    .M_AXI_AWREADY(LITE_AWREADY),
+    .M_AXI_AWVALID(LITE_AWVALID),
+    .M_AXI_BREADY(LITE_BREADY),
+    .M_AXI_BRESP(LITE_BRESP),
+    .M_AXI_BVALID(LITE_BVALID),
+    .M_AXI_RDATA(LITE_RDATA),
+    .M_AXI_RREADY(LITE_RREADY),
+    .M_AXI_RRESP(LITE_RRESP),
+    .M_AXI_RVALID(LITE_RVALID),
+    .M_AXI_WDATA(LITE_WDATA),
+    .M_AXI_WREADY(LITE_WREADY),
+    .M_AXI_WSTRB(LITE_WSTRB),
+    .M_AXI_WVALID(LITE_WVALID)
+  );
+
+   parameter ADDR_BASE = 32'd0;
+   
+parameter NREG = 4;
+parameter W = 32;
+
+reg [W-1:0] data[NREG-1:0];
+
+parameter IDLE = 0, RWAIT = 1;
+parameter OK = 2'b00, SLVERR = 2'b10;
+
+reg [31:0] counter;
+
+//READS
+reg r_state = IDLE;
+wire [1:0] r_select;
+assign r_select  = LITE_ARADDR[3:2];
+wire    ar_good;
+assign ar_good = {LITE_ARADDR[31:4], 2'b00, LITE_ARADDR[1:0]} == ADDR_BASE;
+assign LITE_ARREADY = (r_state == IDLE);
+assign LITE_RVALID = (r_state == RWAIT);
+always @(posedge ACLK) begin
+    if(ARESETN == 0) begin
+        r_state <= IDLE;
+    end else case(r_state)
+        IDLE: begin
+            if(LITE_ARVALID) begin
+                LITE_RRESP <= ar_good ? OK : SLVERR;
+                LITE_RDATA <= (r_select == 2'b0) ? counter : data[r_select];
+                r_state <= RWAIT;
+            end
+        end
+        RWAIT: begin
+            if(LITE_RREADY)
+                r_state <= IDLE;
+        end
+    endcase
+end 
+
+//WRITES
+reg w_state = IDLE;
+reg [1:0] w_select_r;
+reg w_wrotedata = 0;
+reg w_wroteresp = 0;
+
+wire [1:0] w_select;
+assign w_select  = LITE_AWADDR[3:2];
+wire    aw_good;
+assign aw_good = {LITE_AWADDR[31:4], 2'b00, LITE_AWADDR[1:0]} == ADDR_BASE;
+
+assign LITE_AWREADY = (w_state == IDLE);
+assign LITE_WREADY = (w_state == RWAIT) && !w_wrotedata;
+assign LITE_BVALID = (w_state == RWAIT) && !w_wroteresp;
+
+always @(posedge ACLK) begin
+    if(ARESETN == 0) begin
+        w_state <= IDLE;
+        w_wrotedata <= 0;
+        w_wroteresp <= 0;
+    end else case(w_state)
+        IDLE: begin
+            if(LITE_AWVALID) begin
+                LITE_BRESP <= aw_good ? OK : SLVERR;
+                w_select_r <= w_select;
+                w_state <= RWAIT; 
+                w_wrotedata <= 0;
+                w_wroteresp <= 0;
+            end
+        end
+        RWAIT: begin
+            if (LITE_WREADY)
+                data[w_select_r] <= LITE_WDATA;
+            if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
+                w_wrotedata <= 0;
+                w_wroteresp <= 0;
+                w_state <= IDLE;
+            end else if (LITE_WVALID)
+                w_wrotedata <= 1;
+            else if (LITE_BREADY)
+                w_wroteresp <= 1;
+        end
+    endcase
+end
+
+reg v_state = IDLE;
+assign CONFIG_VALID = (v_state == RWAIT);
+always @(posedge ACLK) begin
+    if (ARESETN == 0)
+        v_state <= IDLE;
+    else case(v_state)
+        IDLE:
+            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00)
+                v_state <= RWAIT;
+        RWAIT:
+            if (CONFIG_READY)
+                v_state <= IDLE;
+    endcase
+end
+
+assign CONFIG_CMD = data[0];
+assign CONFIG_SRC = data[1];
+assign CONFIG_DEST = data[2];
+assign CONFIG_LEN = data[3];
+
+
+//how many cycles does the operation take?
+always @(posedge ACLK) begin
+    if (ARESETN == 0)
+        counter <= 0;
+    else if (CONFIG_READY && CONFIG_VALID)
+        counter <= 0;
+    else if (!CONFIG_READY)
+        counter <= counter + 1;
+end
+
+reg busy = 0;
+reg busy_last = 0;
+always @(posedge ACLK) begin
+    if (ARESETN == 0) begin
+        busy <= 0;
+        busy_last <= 0;
+    end else begin
+        if (CONFIG_READY) begin
+            busy <= CONFIG_VALID ? 1 : 0;
+        end
+        busy_last <= busy;
+    end
+end
+
+assign CONFIG_IRQ = !busy;
+
+endmodule
+
+module ]=]..ModuleName..[=[(
+  input CLK,
+  input done_reset,
+  input start_reset,
+
+  input [32:0] IP_SAXI]=]..port..[=[_ARADDR,
+  output IP_SAXI]=]..port..[=[_ARADDR_ready,
+//  input IP_SAXI]=]..port..[=[_ARADDR_valid,
+
+  input [32:0] IP_SAXI]=]..port..[=[_AWADDR,
+  output IP_SAXI]=]..port..[=[_AWADDR_ready,
+//  input IP_SAXI]=]..port..[=[_AWADDR_valid,
+
+  output [32:0] IP_SAXI]=]..port..[=[_RDATA,
+  input IP_SAXI]=]..port..[=[_RDATA_ready,
+//  output IP_SAXI]=]..port..[=[_RDATA_valid,
+
+  input [32:0] IP_SAXI]=]..port..[=[_WDATA,
+  output IP_SAXI]=]..port..[=[_WDATA_ready,
+//  input IP_SAXI]=]..port..[=[_WDATA_valid,
+
+  output [2:0] IP_SAXI]=]..port..[=[_BRESP,
+  input IP_SAXI]=]..port..[=[_BRESP_ready,
+//  output IP_SAXI]=]..port..[=[_BRESP_valid,
+
+  input [11:0] IP_SAXI]=]..port..[=[_ARID,
+  input [11:0] IP_SAXI]=]..port..[=[_AWID,
+  output [11:0] IP_SAXI]=]..port..[=[_BID,
+  output [11:0] IP_SAXI]=]..port..[=[_RID,
+  output IP_SAXI]=]..port..[=[_RLAST,
+  output [1:0] IP_SAXI]=]..port..[=[_RRESP,
+  input [3:0] IP_SAXI]=]..port..[=[_WSTRB,
+
+  // done signal
+  input done_input,
+  output done_ready,
+
+  // start signal
+  input start_ready_inp,
+  output start_output
+);
+parameter INSTANCE_NAME="inst";
+
+wire CONFIG_VALID;
+wire [31:0] CONFIG_CMD;
+wire [31:0] CONFIG_SRC;
+wire [31:0] CONFIG_DEST;
+wire [31:0] CONFIG_LEN;
+wire CONFIG_IRQ;
+
+Conf conf(
+.ACLK(CLK),
+.ARESETN(~done_reset),
+
+.CONFIG_READY(1'b1),
+.CONFIG_VALID(CONFIG_VALID),
+.CONFIG_CMD(CONFIG_CMD),
+.CONFIG_SRC(CONFIG_SRC),
+.CONFIG_DEST(CONFIG_DEST),
+.CONFIG_LEN(CONFIG_LEN),
+.CONFIG_IRQ(CONFIG_IRQ),
+
+.S_AXI_ARADDR(IP_SAXI]=]..port..[=[_ARADDR[31:0]),
+.S_AXI_ARVALID(IP_SAXI]=]..port..[=[_ARADDR[32]),
+.S_AXI_ARREADY(IP_SAXI]=]..port..[=[_ARADDR_ready),
+
+.S_AXI_AWADDR(IP_SAXI]=]..port..[=[_AWADDR[31:0]),
+.S_AXI_AWVALID(IP_SAXI]=]..port..[=[_AWADDR[32]),
+.S_AXI_AWREADY(IP_SAXI]=]..port..[=[_AWADDR_ready),
+
+.S_AXI_RDATA(IP_SAXI]=]..port..[=[_RDATA[31:0]),
+.S_AXI_RVALID(IP_SAXI]=]..port..[=[_RDATA[32]),
+.S_AXI_RREADY(IP_SAXI]=]..port..[=[_RDATA_ready),
+
+.S_AXI_WDATA(IP_SAXI]=]..port..[=[_WDATA[31:0]),
+.S_AXI_WVALID(IP_SAXI]=]..port..[=[_WDATA[32]),
+.S_AXI_WREADY(IP_SAXI]=]..port..[=[_WDATA_ready),
+
+.S_AXI_BRESP(IP_SAXI]=]..port..[=[_BRESP[1:0]),
+.S_AXI_BVALID(IP_SAXI]=]..port..[=[_BRESP[2]),
+.S_AXI_BREADY(IP_SAXI]=]..port..[=[_BRESP_ready),
+
+.S_AXI_ARID(IP_SAXI]=]..port..[=[_ARID),
+.S_AXI_AWID(IP_SAXI]=]..port..[=[_AWID),
+.S_AXI_BID(IP_SAXI]=]..port..[=[_BID),
+.S_AXI_RID(IP_SAXI]=]..port..[=[_RID),
+.S_AXI_RLAST(IP_SAXI]=]..port..[=[_RLAST),
+.S_AXI_RRESP(IP_SAXI]=]..port..[=[_RRESP),
+.S_AXI_WSTRB(IP_SAXI]=]..port..[=[_WSTRB)
+);
+
+assign start_output = CONFIG_VALID && CONFIG_CMD==32'd1;
+assign done_ready = 1'b1;
+
+endmodule
+
+]=] --, globals, {}, {{1,1}}, {{1,1}} )
+
+--  res.registered = true
+
+  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}}, registered=true, stateful=true, globals = globals }
+  function res.makeSystolic()
+    local fns = {}
+
+    local inp = S.parameter("start_input",types.null())
+    local outv = R.lower(res.outputType):fakeValue()
+    fns.start = S.lambda("start",inp,S.constant(outv,R.lower(res.outputType)),"start_output")
+
+    local inp = S.parameter("done_input",R.lower(res.inputType))
+    fns.done = S.lambda("done",inp,nil,"done_output")
+
+    local rinp =  S.parameter("done_ready_inp",types.null())
+    fns.done_ready = S.lambda( "done_ready", rinp, S.constant(R.extractReady(res.inputType):fakeValue(),R.extractReady(res.inputType)), "done_ready")
+
+    local rinp =  S.parameter("start_ready_inp", R.extractReady(res.outputType))
+    fns.start_ready = S.lambda( "start_ready", rinp, nil, "start_ready")
+
+    fns.start_reset = S.lambda("start_reset",S.parameter("rnil_start",types.null()),nil,"start_reset_out",{},S.parameter("start_reset",types.bool()))
+    fns.done_reset = S.lambda("done_reset",S.parameter("rnil_done",types.null()),nil,"done_reset_out",{},S.parameter("done_reset",types.bool()))
+
+    local SC = {}
+    for g,_ in pairs(globals) do
+      SC[g.systolicValue] = 1
+      if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
+    end
+    
+    return S.module.new( ModuleName,fns,{},true,nil,vstring,{start=0,done=0,ready=0},SC)
+  end
+
+  return R.newFunction(res)
+end)
+
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
 SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
@@ -98,8 +625,9 @@ always @(posedge ACLK) begin
         end
         RWAIT: begin
             if (M_AXI_ARREADY == 1) begin
-                if(a_count - 1 == 0)
+                if(a_count - 1 == 0) begin
                     a_state <= IDLE;
+                end
                 a_count <= a_count - 1;
                 M_AXI_ARADDR <= M_AXI_ARADDR + 128; // Bursts are 128 bytes long
             end
@@ -125,8 +653,9 @@ always @(posedge ACLK) begin
         RWAIT: begin
             if (M_AXI_RVALID && DATA_READY_DOWNSTREAM) begin
                 //use M_AXI_RDATA
-                if(b_count - 8 == 0)
+                if (b_count - 8 == 0) begin
                     r_state <= IDLE;
+                end
                 b_count <= b_count - 8; // each valid cycle the bus provides 8 bytes
             end
         end
@@ -292,8 +821,9 @@ always @(posedge ACLK) begin
         end
         RWAIT: begin
             if (M_AXI_AWREADY == 1) begin
-                if(a_count - 1 == 0)
+                if(a_count - 1 == 0) begin
                     a_state <= IDLE;
+                end
                 a_count <= a_count - 1;
                 M_AXI_AWADDR <= M_AXI_AWADDR + 128; 
             end
