@@ -108,6 +108,33 @@ void printMasterRead(
   std::cout << "M" << id << "_ARREADY(in): " << (int)ARREADY << std::endl;
 }
 
+void printMasterWrite(
+  int id,
+  unsigned int& AWADDR,
+  unsigned char& AWVALID,
+  unsigned char& AWREADY,
+  unsigned long& WDATA,
+  unsigned char& WVALID,
+  unsigned char& WREADY,
+  unsigned char& BRESP,
+  unsigned char& BVALID,
+  unsigned char& BREADY,
+  unsigned char& WSTRB,
+  unsigned char& WLAST,
+  unsigned char& AWLEN,
+  unsigned char& AWSIZE,
+  unsigned char& AWBURST){
+
+  std::cout << "----------------------" << std::endl;
+  std::cout << "M" << id << "_AWADDR(out): " << AWADDR << "/" << std::hex  << "0x" << AWADDR  << std::dec<< std::endl;
+  std::cout << "M" << id << "_AWVALID(out): " << (int)AWVALID << std::endl;
+  std::cout << "M" << id << "_AWREADY(in): " << (int)AWREADY << std::endl;
+
+  std::cout << "M" << id << "_WDATA(out): " << WDATA << "/" << std::hex  << "0x" << WDATA  << std::dec<< std::endl;
+  std::cout << "M" << id << "_WVALID(out): " << (int)WVALID << std::endl;
+  std::cout << "M" << id << "_WREADY(in): " << (int)WREADY << std::endl;
+}
+
 // return data to master
 void masterReadData(
   bool verbose,
@@ -234,7 +261,7 @@ void masterWriteData(
     std::cout << "Error: attempted to write data, but there was no outstanding write addresses! (master port " << port << ")" << std::endl;
     exit(1);
   }else{
-    if(verbose){std::cout << "MAXI" << port << " no write request" << std::endl;}
+    if(verbose){std::cout << "MAXI" << port << " no write data (" << writeQ[port].size() << " outstanding requests)" << std::endl;}
   }
 }
 
@@ -418,18 +445,19 @@ int main(int argc, char** argv) {
 
   while (!Verilated::gotFinish() && totalCycles<(simCycles+simCyclesSlack) ) {
     if(CLK){
+      if(verbose){ std::cout << "------------------------------------ START CYCLE -----------------------" << std::endl;}
       // feed data in
       masterReadData(verbose,M0READLIST);
-      masterWriteData(verbose,M0WRITELIST);
-      
       masterReadData(verbose,M1READLIST);
-      masterWriteData(verbose,M1WRITELIST);
 
-      // it's possible the pipeline has 0 cycle delay. in which case, we need to eval the async stuff here.
+      // it's possible the pipeline has 0 cycle delay (between read & write port). in which case, we need to eval the async stuff here.
       top->eval();
 
       if(verbose){printMasterRead(M0LIST);}
-  
+      if(verbose){printMasterWrite(M0WRITELIST);}
+
+      masterWriteData(verbose,M0WRITELIST);
+      masterWriteData(verbose,M1WRITELIST);
 
       // get data out
       masterReadReq(verbose,M0READLIST);

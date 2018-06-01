@@ -15,18 +15,26 @@ generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"}
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
 generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
 generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
+generators.Index = R.newGenerator("generators","Index",{"type","number"},{}, function(args) return C.index(args.type,args.number) end)
 
 generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.Add: type should be tuple, but is: "..tostring(args.type) )
-  J.err( args.type.list[1]==args.type.list[2], "generators.add: lhs type must match rhs type" )
+  J.err( args.type.list[1]==args.type.list[2], "generators.Add: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
   return C.sum( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+end)
+
+generators.Sub = R.newGenerator("generators","Sub",{"type"},{"bool"},
+function(args)
+  J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
+  J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+  return C.sub( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
 end)
 
 generators.Mul = R.newGenerator("generators","Mul",{"type"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
-  J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type must match rhs type" )
+  J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
   return C.multiply( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
 end)
 
@@ -90,6 +98,12 @@ function(args)
   J.err(args.number>0,"NYI - V<=0")
   local A = args.type:arrayOver()
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
+end)
+
+generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{},
+function(args)
+  J.err(args.number>0,"NYI - V<=0")
+  return RM.posSeq(args.size[1],args.size[2],args.number)
 end)
 
 generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction"},{},

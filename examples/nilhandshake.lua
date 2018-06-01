@@ -16,7 +16,7 @@ ITYPE = types.uint(8)
 
 inp = R.input( RS.HS(ITYPE) )
 
-posseq = RS.connect{ toModule=RS.HS(RM.posSeq(W,H,1)), name="posseqinst" }
+posseq = RS.connect{ toModule=RS.HS(RM.posSeq(W,H,1),false), name="posseqinst" }
 
 local mergeinp = f.parameter( "inp", types.tuple{ITYPE,types.tuple{types.uint(16),types.uint(16)} } )
 mergefn = (mergeinp:index(0):rshift(4):removeLSBs(4):addMSBs(12)+mergeinp:index(1):index(0))+mergeinp:index(1):index(1):addMSBs(1)

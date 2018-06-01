@@ -351,7 +351,7 @@ function RS.defineModule(t)
   return RM.lambda(t.name or "v"..tostring(ccnt), t.input, out, fifoList )
 end
 
-function RS.HS(t)
+function RS.HS(t,handshakeTrigger)
   if types.isType(t) then
     return R.Handshake(t)
   elseif R.isFunction(t) then
@@ -362,7 +362,8 @@ function RS.HS(t)
     elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
       return RM.liftHandshake(RM.liftDecimate(t))
     elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then
-      return RM.makeHandshake(t)
+      if handshakeTrigger==nil then handshakeTrigger = true end
+      return RM.makeHandshake(t,nil,handshakeTrigger)
     else
       print(t.inputType, t.outputType)
       assert(false)

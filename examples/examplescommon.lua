@@ -217,6 +217,17 @@ C.valueToTrigger = memoize(function(ty)
 end)
 
 -----------------------------
+-- take in 1 trigger, and write out N triggers (aka trigger upsample)
+C.triggerUp = memoize(function(N)
+  J.err(type(N)=="number","triggerUp: input must be number")
+  local inp = R.input(R.HandshakeTrigger)
+  local val = RM.makeHandshake( RM.constSeq({0},types.uint(8),1,1,1), nil, true )(inp)
+  val = RM.upsampleXSeq(types.uint(8),1,N)(val)
+  val = RM.makeHandshake(C.valueToTrigger(types.array2d(types.uint(8),1)),nil,true)(val)
+  return RM.lambda("TriggerUp_"..tostring(N), inp,val)
+end)
+
+-----------------------------
 C.packTap = memoize(function(A,ty,global)
   return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,ty}, 0,
     function(sinp) return S.tuple{sinp,S.readSideChannel(global.systolicValue)} end, nil,"C.packTap")

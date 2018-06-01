@@ -31,7 +31,14 @@ return function(fn,t)
     local inputList = {}
     for i=0,SOC.ports do
       if fn.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
-        table.insert(inputList,"{filename='"..fn.globalMetadata["MAXI"..i.."_read_filename"].."',W="..fn.globalMetadata["MAXI"..i.."_read_W"]..",H="..fn.globalMetadata["MAXI"..i.."_read_H"]..",bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]..",V="..fn.globalMetadata["MAXI"..i.."_read_V"]..",address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_read_address"]).."}")
+        local rlist = {}
+        table.insert(rlist,"filename='"..fn.globalMetadata["MAXI"..i.."_read_filename"].."'")
+        if fn.globalMetadata["MAXI"..i.."_read_W"]~=nil then table.insert(rlist,"W="..fn.globalMetadata["MAXI"..i.."_read_W"]) end
+        if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..fn.globalMetadata["MAXI"..i.."_read_H"]) end
+        if fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]~=nil then table.insert(rlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]) end
+        if fn.globalMetadata["MAXI"..i.."_read_V"]~=nil then table.insert(rlist,"V="..fn.globalMetadata["MAXI"..i.."_read_V"]) end
+        table.insert(rlist,"address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_read_address"]))
+        table.insert(inputList, "{"..table.concat(rlist,",").."}")
       end
     end
 

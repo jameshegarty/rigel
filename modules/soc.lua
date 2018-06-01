@@ -507,7 +507,20 @@ Conf #(.ADDR_BASE(32'hA0000000)) conf(
 .S_AXI_WSTRB(IP_SAXI]=]..port..[=[_WSTRB)
 );
 
-assign start_output = CONFIG_VALID && CONFIG_CMD==32'd1;
+wire dostart;
+assign dostart = CONFIG_VALID && CONFIG_CMD==32'd1;
+
+reg dostartReg = 1'b0;
+assign start_output = dostartReg;
+
+always @(posedge CLK) begin
+  if( dostartReg && start_ready_inp ) begin
+    dostartReg <= 1'b0; // reset it
+  end else begin
+    dostartReg <= dostartReg | dostart;
+  end
+end
+
 assign done_ready = 1'b1;
 
 endmodule
@@ -735,6 +748,77 @@ parameter INSTANCE_NAME="inst";
 
 endmodule
 ]=],globals,globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
+  
+end)
+
+SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
+  J.err( type(port)=="number", "axiReadBytes: port must be number" )
+  J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
+  J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
+  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
+  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
+  J.err( X==nil, "axiReadBytes: too many arguments" )
+  J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
+  
+  local globals = {}
+  globals[R.newGlobal("IP_MAXI"..port.."_ARADDR","output",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_RDATA","input",R.Handshake(types.bits(64)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_RRESP","input",types.bits(2))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_RLAST","input",types.bool())] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_ARLEN","output",types.bits(4))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_ARSIZE","output",types.bits(2))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_ARBURST","output",types.bits(2))] = 1
+
+  local globalMetadata = {}
+  globalMetadata["MAXI"..port.."_read_filename"] = filename
+
+  local ModuleName = J.sanitize("AXI_READ_BYTES_"..tostring(Nbytes).."_"..tostring(port))
+
+  local burstCount = Nbytes/8
+
+  J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
+  
+  return RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
+[=[module ]=]..ModuleName..[=[(
+    input CLK,
+    input reset,
+
+    output [32:0] IP_MAXI]=]..port..[=[_ARADDR,
+    input IP_MAXI]=]..port..[=[_ARADDR_ready,
+
+    input [64:0] IP_MAXI]=]..port..[=[_RDATA,
+    output IP_MAXI]=]..port..[=[_RDATA_ready,
+
+    input [1:0] IP_MAXI]=]..port..[=[_RRESP,
+    input IP_MAXI]=]..port..[=[_RLAST,
+    output [3:0] IP_MAXI]=]..port..[=[_ARLEN,
+    output [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
+    output [1:0] IP_MAXI]=]..port..[=[_ARBURST,
+    
+    input [32:0] process_input,
+    output ready,
+
+    output [64:0] process_output,
+    input ready_downstream
+);
+parameter INSTANCE_NAME="inst";
+
+assign IP_MAXI]=]..port..[=[_ARLEN = 4'd]=]..(burstCount-1)..[=[; // length of burst
+assign IP_MAXI]=]..port..[=[_ARSIZE = 2'b11; // number of bytes per transfer
+assign IP_MAXI]=]..port..[=[_ARBURST = 2'b01; // burst mode
+
+assign IP_MAXI]=]..port..[=[_ARADDR = process_input + 32'd]=]..addressBase..[=[;
+assign ready = IP_MAXI]=]..port..[=[_ARADDR_ready;
+
+assign process_output = IP_MAXI]=]..port..[=[_RDATA;
+assign IP_MAXI]=]..port..[=[_RDATA_ready = ready_downstream;
+
+//always @(posedge CLK) begin
+//  $display("piv %d pi %d",process_input[32],process_input[31:0]);
+//end
+
+endmodule
+]=],globals,globalMetadata,{{1,burstCount}},{{1,1}})
   
 end)
 
@@ -1036,6 +1120,26 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   return res
 end)
 
+SOC.read = J.memoize(function(filename,fileBytes,readType,X)
+  J.err( type(filename)=="string","read: filename must be string")
+  J.err( types.isType(readType), "read: type must be type")
+  J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned")
+  
+  local globalMetadata={}
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
+
+  local inp = R.input(R.Handshake(types.uint(32)))
+  local out = SOC.axiReadBytes( filename, readType:verilogBits()/8, SOC.currentMAXIReadPort, SOC.currentAddr )(inp)
+  out = RM.makeHandshake(C.cast(types.bits(readType:verilogBits()),readType))(out)
+
+  local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  
+  SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
+  SOC.currentAddr = SOC.currentAddr+fileBytes
+
+  return res
+end)
+                          
 SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
   J.err( type(W)=="number", "writeBurst: W must be number")

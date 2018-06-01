@@ -585,7 +585,8 @@ end
 
 darkroomIRFunctions = {}
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
-darkroomIRMT = {__index = darkroomIRFunctions }
+darkroomIRMT = {__index = darkroomIRFunctions}
+
 darkroomInstanceMT = {}
 
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end

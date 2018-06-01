@@ -1747,7 +1747,7 @@ modules.posSeq = memoize(function( W, H, T, bits, X )
   res.inputType = types.null()
   res.outputType = types.array2d(types.tuple({types.uint(bits),types.uint(bits)}),T)
   res.stateful = true
-  res.sdfInput, res.sdfOutput = {},{{1,1}}
+  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   res.name = sanitize("PosSeq_W"..W.."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
@@ -2452,12 +2452,20 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     else
       res.outputType = types.null()
     end
+
+    J.err( rigel.SDF==false or f.sdfInput~=nil, "makeHandshake: fn is missing sdfInput? "..f.name )
+    J.err( rigel.SDF==false or f.sdfOutput~=nil, "makeHandshake: fn is missing sdfOutput? "..f.name )
     
+    J.err( rigel.SDF==false or #f.sdfInput==1, "makeHandshake expects SDF input rate of 1")
+    J.err( rigel.SDF==false or f.sdfInput[1][1]==1 and f.sdfInput[1][2]==1, "makeHandshake expects SDF input rate of 1")
+    J.err( rigel.SDF==false or #f.sdfOutput==1, "makeHandshake expects SDF output rate of 1")
+    J.err( rigel.SDF==false or f.sdfOutput[1][1]==1 and f.sdfOutput[1][2]==1, "makeHandshake expects SDF output rate of 1")
+
     res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   end
 
   res.stateful = f.stateful
-  res.name = "MakeHandshake_"..f.name
+  res.name = "MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name
 
   res.globals={}
   for k,_ in pairs(f.globals) do res.globals[k]=1 end
@@ -3713,7 +3721,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   res.outputType = types.array2d(A,W,h)
   res.stateful = false
   --if T==1 then res.stateful=false end
-  res.sdfInput, res.sdfOutput = {}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
+  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}  -- well, technically this produces 1 output for every (nil) input
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
   local vh = J.to_string(value)

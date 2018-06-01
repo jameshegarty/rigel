@@ -94,7 +94,7 @@ local SimpleModuleWrapperMT={__call=function(...)
   err( R.isFunction(mod), "SimpleModuleWrapper: fn must return rigel module")
   
   if tab.forceHandshake or (arg~=nil and R.isHandshake(arg.type)) then
-    mod = RS.HS(mod)
+    mod = RS.HS(mod,tab.handshakeTrigger)
   end
 
   local con = RS.connect{input=arg,toModule=mod}
@@ -316,13 +316,14 @@ function RHLL.harness(t)
   llharness(t)
 end
 
-function RHLL.HS(tab)
+function RHLL.HS(tab,handshakeTrigger)
   if types.isType(tab) then
     return R.Handshake(tab)
   elseif getmetatable(tab)==SimpleModuleWrapperMT then
     tab.forceHandshake = true
     err(tab.wireFn==nil,"NYI wire fn composition")
     tab.wireFn=stripHS
+    tab.handshakeTrigger=handshakeTrigger
     return tab
   else
     err(false,"RHLL.HS unknown type")

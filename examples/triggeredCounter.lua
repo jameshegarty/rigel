@@ -5,7 +5,7 @@ local W,H = 128,64
 function top(inp)
   inp.name="INP"
   local N = 4
-  local pos = HS(posSeq{size={W,H},V=1})()
+  local pos = HS(posSeq{size={W,H},V=1},false)()
   pos.name="POSSEQ"
   pos.sdfRateOverride={{1,1}}
   print("POSDONE")
