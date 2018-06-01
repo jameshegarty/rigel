@@ -3100,7 +3100,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
   err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
   err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
-  if instance==nil then instances={} end
+  if instances==nil then instances={} end
   err( type(instances)=="table", "lambda: instances must be nil or a table")
   J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
