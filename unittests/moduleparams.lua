@@ -113,7 +113,7 @@ for k,v in pairs(configs) do
     local name = k.."_"..configToName(config)
     print("DOCONFIG",name)
 
-    local mod = R.HS(R.modules[k](config))
+    local mod = R.HS(R.modules[k](config),false)
     local met = meta[k][configk]
 
     -- TODO: hack to get around axi burst nonsense
