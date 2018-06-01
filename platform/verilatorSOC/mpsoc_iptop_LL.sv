@@ -65,8 +65,7 @@ module IP_Top(
   output [1:0]  IP_MAXI1_AWSIZE,
   output [1:0]  IP_MAXI1_AWBURST
 );
-
-//   $monitor("ROFL %d",IP_CLK);
   
    Top top(.CLK(IP_CLK), .reset(~IP_ARESET_N), .*);
+
 endmodule

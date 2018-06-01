@@ -9,7 +9,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 mkdir -p $BUILDDIR
 #$DIR/../../rigelLuajit $DIR/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.mpsocwrapper.sv $DIR/../../platform/ mpsoc
-cat $VERILOG_FILE $DIR/../axi/ict106_axilite_conv.v $DIR/../axi/conf_nports.v $DIR/mpsoc_iptop_LL.sv $DIR/mpsoc_top_LL.sv > $VERILOG_FILE.mpsocwrapper.sv
+cat $VERILOG_FILE $DIR/mpsoc_top_LL.sv > $VERILOG_FILE.mpsocwrapper.sv
 cd $BUILDDIR
 echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
 echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e" >> system.tcl

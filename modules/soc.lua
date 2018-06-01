@@ -466,7 +466,7 @@ wire [31:0] CONFIG_DEST;
 wire [31:0] CONFIG_LEN;
 wire CONFIG_IRQ;
 
-Conf conf(
+Conf #(.ADDR_BASE(32'hA0000000)) conf(
 .ACLK(CLK),
 .ARESETN(~done_reset),
 

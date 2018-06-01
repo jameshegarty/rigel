@@ -16,7 +16,7 @@ const unsigned int PORTS = 4;
 std::queue<Transaction> readQ[PORTS];
 std::queue<Transaction> writeQ[PORTS];
 
-#define S0LIST top->IP_CLK,top->IP_ARESET_N,top->SAXI0_ARADDR,top->SAXI0_ARVALID,top->SAXI0_ARREADY,top->SAXI0_AWADDR,top->SAXI0_AWVALID,top->SAXI0_AWREADY,top->SAXI0_RDATA,top->SAXI0_RVALID,top->SAXI0_RREADY
+#define S0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->SAXI0_ARADDR,top->SAXI0_ARVALID,top->SAXI0_ARREADY,top->SAXI0_AWADDR,top->SAXI0_AWVALID,top->SAXI0_AWREADY,top->SAXI0_RDATA,top->SAXI0_RVALID,top->SAXI0_RREADY,top->SAXI0_BRESP,top->SAXI0_BVALID
 
 #define M0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->MAXI0_ARADDR,top->MAXI0_ARVALID,top->MAXI0_ARREADY,top->MAXI0_RDATA,top->MAXI0_RVALID,top->MAXI0_RREADY
 
@@ -29,6 +29,7 @@ std::queue<Transaction> writeQ[PORTS];
 #define M1WRITELIST 1,top->MAXI1_AWADDR,top->MAXI1_AWVALID,top->MAXI1_AWREADY,top->MAXI1_WDATA,top->MAXI1_WVALID,top->MAXI1_WREADY,top->MAXI1_BRESP,top->MAXI1_BVALID,top->MAXI1_BREADY,top->MAXI1_WSTRB,top->MAXI1_WLAST,top->MAXI1_AWLEN,top->MAXI1_AWSIZE,top->MAXI1_AWBURST
 
 void printSlave(
+  int id,
   unsigned char& IP_CLK,
   unsigned char& IP_ARESET_N,
   unsigned int& ARADDR,
@@ -39,7 +40,9 @@ void printSlave(
   unsigned char& AWREADY,
   unsigned int& RDATA,
   unsigned char& RVALID,
-  unsigned char& RREADY){
+  unsigned char& RREADY,
+  unsigned char& BRESP,
+  unsigned char& BVALID){
 
   std::cout << "----------------------" << std::endl;
   std::cout << "IP_CLK(in): " << (int)IP_CLK << std::endl;
@@ -53,6 +56,37 @@ void printSlave(
   std::cout << "S_RDATA(out): " << RDATA << std::endl;
   std::cout << "S_RVALID(out): " << (int)RVALID << std::endl;
   std::cout << "S_RREADY(in): " << (int)RREADY << std::endl;
+  std::cout << "S_BRESP(out): " << (int)BRESP << std::endl;
+  std::cout << "S_BVALID(out): " << (int)BRESP << std::endl;
+}
+
+bool checkSlaveResponse(
+  int id,
+  unsigned char& IP_CLK,
+  unsigned char& IP_ARESET_N,
+  unsigned int& ARADDR,
+  unsigned char& ARVALID,
+  unsigned char& ARREADY,
+  unsigned int& AWADDR,
+  unsigned char& AWVALID,
+  unsigned char& AWREADY,
+  unsigned int& RDATA,
+  unsigned char& RVALID,
+  unsigned char& RREADY,
+  unsigned char& BRESP,
+  unsigned char& BVALID){
+
+  if( BVALID && BRESP==2){
+    std::cout << "Slave " << id << " Error" << std::endl;
+    exit(1);
+  }else if( BVALID && BRESP==0){
+    return true;
+  }else if( BVALID ){
+    std::cout << "Slave " << id << " returned strange respose? " << BRESP << std::endl;
+    exit(1);
+  }
+
+  return false;
 }
 
 void printMasterRead(
@@ -354,15 +388,21 @@ int main(int argc, char** argv) {
   top->SAXI0_AWVALID = true;
   step(top);
   if(verbose){printSlave(S0LIST);}
-
+  bool found = checkSlaveResponse(S0LIST);
+  
   assert(top->SAXI0_WREADY==1);
   top->SAXI0_WDATA = 1;
   top->SAXI0_WVALID = 1;
   step(top);
-
+  found |= checkSlaveResponse(S0LIST);
+  
   top->SAXI0_AWVALID = false;
   step(top);
 
+  while(!found && !checkSlaveResponse(S0LIST)){
+    std::cout << "Waiting for S0 response" << std::endl;
+  }
+  
   // now we're ready to service memory requests
   top->MAXI0_ARREADY = true;
   top->MAXI0_RREADY = true;
