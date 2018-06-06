@@ -19,7 +19,7 @@ function SDFRate.isSDFRate(t)
 end
 
 function SDFRate.tostring(t)
-  assert(SDFRate.isSDFRate(t))
+  err(SDFRate.isSDFRate(t), "SDFRate.tostring: not an SDF rate? "..tostring(t))
   local str = "{"
   for _,v in ipairs(t) do
     if v=='x' then

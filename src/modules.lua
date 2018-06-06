@@ -2044,7 +2044,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   err( type(H)=="number", "H should be number")
   err( type(inputRate)=="number", "inputRate should be number")
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
-  err( type(outputRate)=="number", "outputRate should be number")
+  err( type(outputRate)=="number", "outputRate should be number, but is: "..tostring(outputRate))
   err( outputRate==math.floor(outputRate), "outputRate should be integer")
   err( X==nil, "changeRate: too many arguments")
 
@@ -3560,7 +3560,7 @@ end
 function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, globals, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
-  err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type" )
+  err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
   err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
@@ -4024,11 +4024,13 @@ end
 
 -- this is a Handshake triggered counter.
 -- it accepts an input value V of type TY.
--- Then produces N tokens (from V to V+N-1)
-modules.triggeredCounter = memoize(function(TY, N)
+-- Then produces N tokens (from V to V+(N-1)*stride)
+modules.triggeredCounter = memoize(function(TY, N, stride)
   err( types.isType(TY),"triggeredCounter: TY must be type")
   err( rigel.expectBasic(TY), "triggeredCounter: TY should be basic")
   err( TY:isNumber(), "triggeredCounter: type must be numeric rigel type, but is "..tostring(TY))
+  if stride==nil then stride=1 end
+  err( type(stride)=="number", "triggeredCounter: stride should be number")
   
   err(type(N)=="number", "triggeredCounter: N must be number")
 
@@ -4052,7 +4054,7 @@ modules.triggeredCounter = memoize(function(TY, N)
     local reg = systolicModule:add( S.module.reg( TY,true ):instantiate("buffer") )
     
     local reading = S.eq(sPhase:get(),S.constant(0,TY)):disablePipelining()
-    local out = S.select( reading, sinp, reg:get()+sPhase:get() ) 
+    local out = S.select( reading, sinp, reg:get()+(sPhase:get()*S.constant(stride,TY)) ) 
     
     local pipelines = {}
     table.insert(pipelines, reg:set( sinp, reading ) )

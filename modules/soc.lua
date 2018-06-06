@@ -5,6 +5,7 @@ local types = require "types"
 local J = require "common"
 local types = require "types"
 local C = require "examplescommon"
+local SDF = require "sdfrate"
 local SOC = {}
 
 SOC.ports = 4
@@ -1003,7 +1004,7 @@ reg HACK = 1'b1;
 // (this will happen once it sets ready=true). Then set CONFIG_VALID to false to keep it from writing multiple times
 always @(posedge CLK) begin
   if(reset==1'b0 && ready) begin
-    HACK=1'b0;
+    HACK <= 1'b0;
   end
 end
 
@@ -1041,6 +1042,10 @@ DRAMWriterInner inner(
     .DATA_READY(ready),
     .DATA_VALID(process_input[64])
 );
+
+//always @(posedge CLK) begin
+//  $display("DRAMWRITER ready: %d valid %d",ready,process_input[64]);
+//end
 
 endmodule
 
@@ -1120,23 +1125,54 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   return res
 end)
 
+-- This works like C pointer deallocation:
+-- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   J.err( type(filename)=="string","read: filename must be string")
   J.err( types.isType(readType), "read: type must be type")
   J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned")
+  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned")
   
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
 
   local inp = R.input(R.Handshake(types.uint(32)))
-  local out = SOC.axiReadBytes( filename, readType:verilogBits()/8, SOC.currentMAXIReadPort, SOC.currentAddr )(inp)
+  local out = inp
+
+  local readBytes
+
+  if readType:verilogBits()/8 > 8*16 then
+    -- longer than 1 burst, need to do multiple bursts
+    J.err( (readType:verilogBits()/8) % 8*16 == 0, "SOC.read: NYI - read sizes that aren't 128-byte burst aligned")
+    readBytes = 128
+    local nBursts = (readType:verilogBits()/8) / (8*16)
+    out = RM.triggeredCounter(types.uint(32),nBursts)(out)
+  else
+    readBytes = readType:verilogBits()/8
+  end
+
+  -- scale by type size
+  out = RM.makeHandshake(C.multiplyConst(types.uint(32),readType:verilogBits()/8))(out)
+  
+  out = SOC.axiReadBytes( filename, readBytes, SOC.currentMAXIReadPort, SOC.currentAddr )(out)
+
+  if readType:verilogBits()==64 then
+  elseif readType:verilogBits()>64 then
+    out = RM.makeHandshake(C.arrayop(types.bits(64),1,1))(out)
+    local N = readType:verilogBits()/64
+    out = RM.liftHandshake(RM.changeRate(types.bits(64),1,1,N))(out)
+    out = RM.makeHandshake(C.flattenBits( types.array2d(types.bits(64),N)))(out)
+  else
+    assert(false)
+  end
+  
   out = RM.makeHandshake(C.cast(types.bits(readType:verilogBits()),readType))(out)
 
   local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+fileBytes
-
+  
   return res
 end)
                           
@@ -1147,7 +1183,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   J.err( types.isType(ty), "writeBurst: type must be type")
   J.err(ty:verilogBits()%8==0,"NYI - writeBurst currently required byte-aligned data")
   local nbytes = W*H*(ty:verilogBits()/8)
-  J.err( nbytes%128==0,"NYI - writeBurst requires 128 aligned size" )
+  J.err( nbytes%128==0,"NYI - writeBurst requires 128 byte aligned size (input bytes is: "..nbytes..")" )
   J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
   if V==nil then V=1 end
   J.err(X==nil, "writeBurst: too many arguments")

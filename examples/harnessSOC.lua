@@ -12,6 +12,11 @@ return function(fn,t)
   end
 
   print("SDF: ", SDF.tostring(fn.sdfInput), SDF.tostring(fn.sdfOutput))
+
+  assert(#fn.sdfInput==1)
+  assert(#fn.sdfOutput==1)
+
+  J.err( SDF.fracEq(fn.sdfInput[1],fn.sdfOutput[1]), "HarnessSOC error: total pipeline input and output SDF are not equal? This prob means there's an internal size mismatch.")
   
   local backend
   if t~=nil then backend = t.backend end
@@ -22,11 +27,15 @@ return function(fn,t)
   print("FILENAME",filename)
   
   if backend=="verilog" or backend=="verilator" then
-    io.output("out/"..filename..".v")
+    local outfile = "out/"..filename..".v"
+    if t~=nil and t.filename~=nil then outfile=t.filename..".v" end
+    io.output(outfile)
     io.write(fn:toVerilog())
     io.output():close()
   elseif backend=="metadata" then
-    local f = io.open("out/"..filename..".metadata.lua","w")
+    local outfile = "out/"..filename..".metadata.lua"
+    if t~=nil and t.filename~=nil then outfile=t.filename..".metadata.lua" end
+    local f = io.open(outfile,"w")
 
     local inputList = {}
     for i=0,SOC.ports do

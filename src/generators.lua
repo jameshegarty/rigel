@@ -11,11 +11,13 @@ local __unnamedID = 0
 local generators = {}
 
 generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"},{},function(args) return C.broadcast(args.type,args.number) end)
-
+generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
+generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
 generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
 generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
 generators.Index = R.newGenerator("generators","Index",{"type","number"},{}, function(args) return C.index(args.type,args.number) end)
+generators.ValueToTrigger = R.newGenerator("generators","ValueToTrigger",{"type"},{}, function(args) return C.valueToTrigger(args.type) end)
 
 generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
 function(args)

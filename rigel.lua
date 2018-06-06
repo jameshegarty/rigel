@@ -344,7 +344,7 @@ generatorMT.__call=function(tab,...)
       return res
     end
   else
-    J.err(false, "Called a generator with something other than a Rigel value or table?")
+    J.err(false, "Called a generator with something other than a Rigel value or table? Make sure you call generator with curly brackets {}")
   end
 end
 generatorMT.__index = generatorFunctions
@@ -457,6 +457,16 @@ __call=function(tab,arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
+end,
+__tostring=function(mod)
+  local res = {}
+
+  table.insert(res,"Module "..mod.name)
+  table.insert(res,"  InputType: "..tostring(mod.inputType))
+  table.insert(res,"  OutputType: "..tostring(mod.outputType))
+  table.insert(res,"  InputSDF: "..SDFRate.tostring(mod.sdfInput))
+  table.insert(res,"  OutputSDF: "..SDFRate.tostring(mod.sdfOutput))
+  return table.concat(res,"\n")
 end
 }
 
@@ -540,6 +550,8 @@ end
 
 
 darkroomInstanceCallsiteMT = {}
+darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
+
 function darkroom.newInstanceCallsite( instance, functionName, X )
   err( darkroom.isInstance(instance),"newInstanceCallsite: instance should be instance" )
   err( type(functionName)=="string", "newInstanceCallsite: function name must be string" )
@@ -1088,6 +1100,7 @@ end
 function darkroom.export(t)
   if t==nil then t=_G end
 
+  -- constants
   function t.c(arg)
     J.err( type(arg)=="table", "c: argument should be table" )
     J.err( #arg==2, "c: should have 2 args" )
@@ -1107,6 +1120,7 @@ function darkroom.export(t)
 
     return res
   end
+
 end
 
 return darkroom

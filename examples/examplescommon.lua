@@ -24,9 +24,32 @@ C.cast = memoize(function(A,B)
   err(types.isType(B),"cast: B should be type")
   err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
   err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
-  assert(A:isTuple()==false) -- not supported by terra
+  if terralib~=nil then
+    err(A:isTuple()==false, "C.cast: NYI - terra cast from '"..tostring(A).."' to '"..tostring(B).."'") -- not supported by terra
+  end
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
+end)
+
+-- takes bits(N)[M] to bits(N*M)
+C.flattenBits = memoize(function(ty)
+  if ty:isArray() and ty:arrayOver():isBits() then
+    return RM.lift( J.sanitize("FlattenBits_"..tostring(ty)), ty, types.bits(ty:verilogBits()), 0, function(sinp) return S.cast(sinp,types.bits(ty:verilogBits())) end, function() assert(false) end, "C.flattenBits" )
+  else
+    J.err( "NYI - flattenBits of type "..tostring(ty) )
+  end
+end)
+
+-- takes bits(N*M) to bits(M)[N]
+C.partitionBits = memoize(function(ty, N)
+  J.err( type(N)=="number", "C.partitionBits: N must be number")
+  J.err( ty:verilogBits()%N==0, "C.partitionBits: N must device type bits")
+  if ty:isBits() then
+    local otype = types.array2d(types.bits(ty:verilogBits()/N),N)
+     return RM.lift( J.sanitize("PartitionBits_"..tostring(ty).."_"..tostring(N)), ty, otype, 0, function(sinp) return S.cast(sinp,otype) end, function() assert(false) end, "C.partitionBits" )
+  else
+    J.err( "NYI - partitionBits of type "..tostring(ty) )
+  end
 end)
 
 -- takes {T[N/2],T[N/2]} to T[N]
@@ -64,6 +87,20 @@ C.multiply = memoize(function(A,B,outputType)
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end,
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
+
+  return partial
+end)
+
+------------
+-- return A*B as a darkroom FN. A,B are types
+-- returns something of type outputType
+C.multiplyConst = memoize(function(A,constValue)
+  err( types.isType(A), "C.multiply: A must be type")
+
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
+    function(sinp) return sinp*S.constant(constValue,A) end,
+    function() assert(false) end,
+    "C.multiplyConst" )
 
   return partial
 end)
@@ -214,6 +251,13 @@ end)
 C.valueToTrigger = memoize(function(ty)
   return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
     function(sinp) end, nil,"C.valueToTrigger")
+end)
+
+-----------------------------
+C.triggerToConstant = memoize(function(ty,value)
+  J.err( types.isType(ty), "C.triggerToConstant: type must be type")
+  return RM.lift( "TriggerToConstant_"..tostring(ty), types.null(), ty, 0,
+    function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
 -----------------------------

@@ -16,6 +16,9 @@ const unsigned int PORTS = 4;
 std::queue<Transaction> readQ[PORTS];
 std::queue<Transaction> writeQ[PORTS];
 
+unsigned int masterBytesRead[4];
+unsigned int masterBytesWritten[4];
+
 #define S0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->SAXI0_ARADDR,top->SAXI0_ARVALID,top->SAXI0_ARREADY,top->SAXI0_AWADDR,top->SAXI0_AWVALID,top->SAXI0_AWREADY,top->SAXI0_RDATA,top->SAXI0_RVALID,top->SAXI0_RREADY,top->SAXI0_BRESP,top->SAXI0_BVALID
 
 #define M0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->MAXI0_ARADDR,top->MAXI0_ARVALID,top->MAXI0_ARREADY,top->MAXI0_RDATA,top->MAXI0_RVALID,top->MAXI0_RREADY
@@ -166,6 +169,8 @@ void masterReadData(
       
       t.burst--;
       t.addr+=8;
+
+      masterBytesRead[port] += 8; // for debug
       
       if(t.burst==0){
         readQ[port].pop();
@@ -248,12 +253,14 @@ void masterWriteData(
     *(unsigned long*)(&memory[t.addr]) = WDATA;
 
     if(verbose){
-      std::cout << "MAXI" << port << " Accept Write, Addr: " << t.addr << " data: " << WDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << writeQ[port].size() << std::endl;
+      std::cout << "MAXI" << port << " Accept Write, Addr: " << t.addr << "/" << std::hex << "0x" << std::dec << t.addr << " data: " << WDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << writeQ[port].size() << std::endl;
     }
     
     t.burst--;
     t.addr+=8;
-    
+
+    masterBytesWritten[port] += 8; // for debug
+          
     if(t.burst==0){
       writeQ[port].pop();
     }
@@ -321,7 +328,7 @@ int main(int argc, char** argv) {
   printf("Usage: XXX.verilator simCycles memStart memEnd [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
-  int simCyclesSlack = 128;
+  int simCyclesSlack = 1280000;
   MEMBASE = strtol(argv[2],NULL,16);
   MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
@@ -361,12 +368,17 @@ int main(int argc, char** argv) {
     inputCount++;
     curArg+=2;
   }
+
+  for(int i=0; i<4; i++){
+    masterBytesRead[i]=0;
+    masterBytesWritten[i]=0;
+  }
   
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
   
-
+  
   
   unsigned long totalCycles = 0;
 
@@ -445,7 +457,7 @@ int main(int argc, char** argv) {
 
   while (!Verilated::gotFinish() && totalCycles<(simCycles+simCyclesSlack) ) {
     if(CLK){
-      if(verbose){ std::cout << "------------------------------------ START CYCLE -----------------------" << std::endl;}
+      if(verbose){ std::cout << "------------------------------------ START CYCLE " << totalCycles <<  "(" << ((float)totalCycles/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
       // feed data in
       masterReadData(verbose,M0READLIST);
       masterReadData(verbose,M1READLIST);
@@ -479,10 +491,11 @@ int main(int argc, char** argv) {
   top->final();
   delete top;
 
-  printf("Cycles: %d\n", (int)totalCycles);
+  printf("Executed Cycles: %d\n", (int)totalCycles);
 
   curArg++; // for "--outputs"
   unsigned int outputCount = 0;
+  bool errored = false;
   while(curArg<argc){
     unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;
@@ -513,13 +526,17 @@ int main(int argc, char** argv) {
 
   for(int port=0; port<PORTS; port++){
     if(readQ[port].size()>0){
-      std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << std::endl;
-      exit(1);
+      std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << " bytesRead: " << masterBytesRead[port] << std::endl;
+      errored = true;
     }
     
     if(writeQ[port].size()>0){
-      std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << std::endl;
-      exit(1);
+      std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << " bytesWritten: " << masterBytesWritten[port] << std::endl;
+      errored = true;
     }
+  }
+
+  if(errored){
+    exit(1);
   }
 }
