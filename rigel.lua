@@ -277,6 +277,8 @@ local function typeToKey(t)
       local outk
       if type(v)=="number" then
         outk="number"
+      elseif type(v)=="boolean" then
+        outk="bool"
       elseif type(v)=="function" then
         outk="luaFunction"
       elseif types.isType(v) then
@@ -438,6 +440,13 @@ __index=function(tab,key)
     
     rawset(tab,"systolicModule", sm )
     return sm
+  elseif key=="terraModule" then
+    err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
+    err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
+    local tm = rawget(tab,"makeTerra")()
+
+    rawset(tab,"terraModule", tm )
+    return tm
   end
 end,
 __call=function(tab,arg)
@@ -464,8 +473,18 @@ __tostring=function(mod)
   table.insert(res,"Module "..mod.name)
   table.insert(res,"  InputType: "..tostring(mod.inputType))
   table.insert(res,"  OutputType: "..tostring(mod.outputType))
-  table.insert(res,"  InputSDF: "..SDFRate.tostring(mod.sdfInput))
-  table.insert(res,"  OutputSDF: "..SDFRate.tostring(mod.sdfOutput))
+  if SDFRate.isSDFRate(mod.sdfInput) then
+    table.insert(res,"  InputSDF: "..SDFRate.tostring(mod.sdfInput))
+  else
+    table.insert(res,"  InputSDF: Not an SDF rate?")
+  end
+
+  if SDFRate.isSDFRate(mod.sdfOutput) then
+    table.insert(res,"  OutputSDF: "..SDFRate.tostring(mod.sdfOutput))
+  else
+    table.insert(res,"  OutputSDF: Not an SDF rate?")
+  end
+  
   return table.concat(res,"\n")
 end
 }
@@ -528,7 +547,7 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   return { res, resConverged }
 end
 
-function darkroomFunctionFunctions:compile() return self.terraModule end
+function darkroomFunctionFunctions:toTerra() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
 function darkroomFunctionFunctions:instantiate(name)
@@ -548,6 +567,12 @@ function darkroomFunctionFunctions:instantiate(name)
   return res
 end
 
+function darkroomFunctionFunctions:getGlobal(name)
+  for k,_ in pairs(self.globals) do
+    if k.name==name then return k end
+  end
+  err(false,"Could not find global '"..name.."'")
+end
 
 darkroomInstanceCallsiteMT = {}
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
@@ -585,7 +610,7 @@ function darkroom.newFunction(tab,X)
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
- 
+
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType)) end
 
@@ -1096,6 +1121,19 @@ function darkroom.statements( t )
   return darkroom.newIR{kind="statements",inputs=t,loc=getloc(),name="__&STATEMENTS"}
 end
 
+-- this should go somewhere else
+function darkroom.handshakeMode(output)
+  local HANDSHAKE_MODE = false
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.fn.inputType) or darkroom.isHandshakeAny(n.fn.outputType)
+      elseif n.kind=="applyMethod" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.fn.inputType) or darkroom.isHandshakeAny(n.inst.fn.outputType)
+      end
+    end)
+  return HANDSHAKE_MODE
+end
 
 function darkroom.export(t)
   if t==nil then t=_G end

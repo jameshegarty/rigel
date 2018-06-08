@@ -434,6 +434,8 @@ modules.waitOnInput = memoize(function(f)
                                end)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
+  assert( S.isModule(systolicModule) )
+  
   local res = Ssugar.moduleConstructor("LiftDecimate_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("LiftDecimate") )
 
@@ -495,9 +497,6 @@ modules.liftDecimate = memoize(function(f)
 
   if rigel.isV(f.outputType) then
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
---  elseif f.outputType:isTuple() and #f.outputType.list==2 and f.outputType.list[2]==types.bool() then
-    -- "looks like" a V
---    res.outputType = rigel.RV(f.outputType.list[1])
   else
     err(false, "expected V output type")
   end
@@ -513,7 +512,7 @@ modules.liftDecimate = memoize(function(f)
   if terralib~=nil then res.terraModule = MT.liftDecimate(res,f) end
 
   function res.makeSystolic()
-    err( f.systolicModule~=nil, "Missing systolic for "..f.kind )
+    err( S.isModule(f.systolicModule), "Missing/incorrect systolic for "..f.name )
     return liftDecimateSystolic( f.systolicModule, {"process"},{})
   end
 
@@ -559,8 +558,10 @@ modules.RPassthrough = memoize(function(f)
   return rigel.newFunction(res)
                                 end)
 
-local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput )
+local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput, X )
+  err( S.isModule(systolicModule), "liftHandshakeSystolic: systolicModule not a systolic module?" )
   assert(type(hasReadyInput)=="table")
+  assert(X==nil)
   
   local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
   local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
@@ -679,11 +680,12 @@ modules.liftHandshake = memoize(function( f, X )
   if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,delay) end
 
   function res.makeSystolic()
+    assert( S.isModule(f.systolicModule) )
     return liftHandshakeSystolic( f.systolicModule, {"process"},{},{true} )
   end
 
   return rigel.newFunction(res)
-                                 end)
+end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
@@ -1094,7 +1096,6 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
     sdfOverride)
 
   return modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W, H, T )
-
 end)
 
 -- takes an image of size A[W,H] to size A[W/scaleX,H/scaleY]. Fills the new pixels with value 'Value'
@@ -2470,7 +2471,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   res.globals={}
   for k,_ in pairs(f.globals) do res.globals[k]=1 end
   
-  if terralib~=nil then res.terraModule = MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end
+  if terralib~=nil then res.makeTerra = function() return MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end end
 
   function res.makeSystolic()
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
@@ -2646,7 +2647,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
         loadReset:addPipeline(maxSize:reset())
       end
       --------------
-      
+
       systolicModule = liftDecimateSystolic(systolicModule,{"load"},{"store"})
       systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load"})
       systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{},{true,false})
@@ -3236,7 +3237,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
   end
   
-  if terralib~=nil then res.terraModule = MT.lambdaCompile(res) end
+  if terralib~=nil then res.makeTerra = function() return MT.lambdaCompile(res) end end
 
   if rigel.SDF then
     if input==nil then
@@ -3281,15 +3282,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   -- For handshaked modules, the input/output type is _not_ necessarily handshaked
   -- for example, input/output type could be null, but the internal connections may be handshaked
   -- so, check if we handshake anywhere
-  local HANDSHAKE_MODE = false
-  output:visitEach(
-    function(n)
-      if n.kind=="apply" then
-        HANDSHAKE_MODE = HANDSHAKE_MODE or rigel.isHandshakeAny(n.fn.inputType) or rigel.isHandshakeAny(n.fn.outputType)
-      elseif n.kind=="applyMethod" then
-        HANDSHAKE_MODE = HANDSHAKE_MODE or rigel.isHandshakeAny(n.inst.fn.inputType) or rigel.isHandshakeAny(n.inst.fn.outputType)
-      end
-    end)
+  local HANDSHAKE_MODE = rigel.handshakeMode(output)
   
   local function makeSystolic( fn )
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire( HANDSHAKE_MODE )
@@ -3624,16 +3617,21 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   end
 
   if terralib~=nil then 
-    local terraFunction, systolicInput, systolicOutput
+    local systolicInput, systolicOutput
 
     if makeTerra==nil then
       systolicInput = res.systolicModule.functions.process.inputParameter
       systolicOutput = res.systolicModule.functions.process.output
-    else
-      terraFunction = makeTerra()
     end
 
-    res.terraModule=MT.lift(inputType,outputType,terraFunction,systolicInput,systolicOutput) 
+    local tmod = MT.lift(inputType,outputType,makeTerra,systolicInput,systolicOutput)
+    if type(tmod)=="function" then
+      res.makeTerra = tmod
+    elseif terralib.types.istype(tmod) then
+      res.terraModule = tmod
+    else
+      assert(false)
+    end
   end
 
   return res

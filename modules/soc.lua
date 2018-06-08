@@ -6,6 +6,13 @@ local J = require "common"
 local types = require "types"
 local C = require "examplescommon"
 local SDF = require "sdfrate"
+
+local SOCMT
+
+if terralib~=nil then
+  SOCMT = require("socTerra")
+end
+
 local SOC = {}
 
 SOC.ports = 4
@@ -559,7 +566,15 @@ endmodule
     return S.module.new( ModuleName,fns,{},true,nil,vstring,{start=0,done=0,ready=0},SC)
   end
 
-  return R.newFunction(res)
+  res =  R.newFunction(res)
+
+  -- hack
+  if terralib~=nil then
+    res.makeTerra=nil
+    res.terraModule = SOCMT.axiRegsN(res,port)
+  end
+  
+  return res
 end)
 
 -- does a 128 byte burst
@@ -1119,6 +1134,11 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
 
   local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.readBurst( res, SOC.currentMAXIReadPort, W*H*(ty:verilogBits()/8), R.Handshake(types.array2d(ty,V)) )
+  end
+
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+nbytes
 
@@ -1221,6 +1241,11 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   out = SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
   
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.writeBurst( res, SOC.currentMAXIReadPort, W*H*(ty:verilogBits()/8), R.Handshake(types.array2d(ty,V)) )
+  end
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+nbytes

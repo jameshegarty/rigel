@@ -10,7 +10,16 @@ local __unnamedID = 0
 
 local generators = {}
 
-generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"},{},function(args) return C.broadcast(args.type,args.number) end)
+generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"},{"size"},
+function(args)
+  print("BROADCAST",args.size,args.number)
+  if args.size~=nil then
+    return C.broadcast(args.type,args.size[1], args.size[2])
+  else
+    return C.broadcast(args.type,args.number)
+  end
+end)
+
 generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
@@ -133,6 +142,21 @@ function(args)
   
   return RM.reduce( mod, args.type.size[1], args.type.size[2] )
 end)
+
+generators.ReduceSeq = R.newGenerator("generators","Reduce",{"type","rigelFunction","number"},{},
+function(args)
+
+  local mod
+  if R.isGenerator(args.rigelFunction) then
+    mod = args.rigelFunction{types.tuple{args.type,args.type}}
+    assert( R.isModule(mod) )
+  else
+    assert(false)
+  end
+  
+  return RM.reduceSeq( mod, 1/args.number )
+end)
+
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string"},
 function(args)

@@ -42,7 +42,7 @@ function MT.new(Module)
   if Module.methods.reset==nil then terra Module:reset() end end
   if Module.methods.stats==nil then terra Module:stats(n:&int8) end end
 
-  assert(Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil))
+  err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
   assert(Module.methods.init~=nil)
   assert(Module.methods.stats~=nil)
   assert(Module.methods.free~=nil)
@@ -1310,6 +1310,19 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
         @out = [terraOut]
       end
     end
+  elseif type(terraFunction)=="function" then
+    -- terraFunction is actually a lua function that produces terra Module when called.
+    -- keep the lazyness
+    
+    return function()
+      local tfn = terraFunction()
+      if outputType==types.null() then
+        terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) tfn(inp) end
+      else
+        terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) tfn(inp,out) end
+      end
+      return MT.new(LiftModule)
+    end
   else
     err(types.isType(outputType),"modules terra lift: output type must be type")
     assert(inputType~=types.null())
@@ -1643,7 +1656,10 @@ return {`mself.[n.name].ready}
     -- has a handshake input, but not a handshake output
     assert(fn.outputType==types.null())
     terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
-print("MAKENOINP",fn.inputType,fn.outputType)
+  elseif rigel.handshakeMode(fn.output) then
+    assert(fn.outputType==types.null())
+    assert(fn.inputType==types.null())
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 
   local out = fn.output:visitEach(
@@ -1728,6 +1744,18 @@ print("MAKENOINP",fn.inputType,fn.outputType)
 
             if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
             table.insert(stats, quote  mself.[n.inst.name]:store( [inputs[1]] ) end )
+            return `nil
+          elseif n.fnname=="start" then
+            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+            table.insert( initStats, quote mself.[n.inst.name]:init() end )
+            table.insert( freeStats, quote mself.[n.inst.name]:free() end )
+
+            table.insert( stats, quote mself.[n.inst.name]:start( out ) end)
+
+            return out
+          elseif n.fnname=="done" then
+            table.insert(stats, quote  mself.[n.inst.name]:done( [inputs[1]] ) end )
             return `nil
           else
             assert(false)

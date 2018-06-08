@@ -60,6 +60,9 @@ return function(fn,t)
     
     f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..(fn.sdfInput[1][2]/fn.sdfInput[1][1]).."}" )
     f:close()
+  elseif backend=="terra" then
+    local doTerraSim = require("harnessTerraSOC")
+    doTerraSim(fn)
   else
     print("backend",backend)
     assert(false)

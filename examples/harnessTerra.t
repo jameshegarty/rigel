@@ -49,7 +49,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
     out = R.statements{out,dramAddr}
   end
   
-  local res = RM.lambda( "harness"..id..tostring(fn):gsub('%W','_'), inpSymb, out, instances )
+  local res = RM.lambda( "harness"..id..tostring(fn.name):gsub('%W','_'), inpSymb, out, instances )
 
   return res
 end)
@@ -68,7 +68,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local ext=""
     if i==2 then ext="_half" end
     local f = terraWrapper(hsfn,inputFilename,inputType,tapType,tapValue,filename..ext..".terra.raw",outputType,i, harnessoption, ramFile)
-    local Module = f:compile()
+    local Module = f:toTerra()
 
     local m = symbol(&Module)
     local valid_in = symbol(bool)
