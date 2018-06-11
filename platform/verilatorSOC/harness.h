@@ -1,3 +1,9 @@
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 typedef struct{unsigned int addr; unsigned int burst;} Transaction;
 
 typedef struct{int front; int rear; int itemCount; unsigned char* data; unsigned int dataBytes;} Queue;
@@ -56,9 +62,9 @@ void QInit(Queue* q, unsigned int dataBytes){
   q->data = (unsigned char*)malloc(QUEUE_MAX*dataBytes);
 }
 
-unsigned int MEMBASE = 0x30008000;
-unsigned int MEMSIZE = 8192*2;
-unsigned char* memory;
+//unsigned int MEMBASE = 0x30008000;
+//unsigned int MEMSIZE = 8192*2;
+//unsigned char* memory;
 
 const unsigned int PORTS = 4;
 //std::queue<Transaction> readQ[PORTS];
@@ -71,93 +77,98 @@ unsigned int masterBytesWritten[4];
 
 float randf(){ return (float)rand()/(float)(RAND_MAX); }
 
-void initQueues(){
+void init(){
   for(int i=0; i<PORTS; i++){
     QInit(&readQ[i], sizeof(Transaction));
     QInit(&writeQ[i], sizeof(Transaction));
+  }
+
+  for(int i=0; i<PORTS; i++){
+    masterBytesRead[i]=0;
+    masterBytesWritten[i]=0;
   }
 }
   
 void printSlave(
   int id,
-  unsigned char& IP_CLK,
-  unsigned char& IP_ARESET_N,
-  unsigned int& ARADDR,
-  unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned int& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY){
+  unsigned char* IP_CLK,
+  unsigned char* IP_ARESET_N,
+  unsigned int* ARADDR,
+  unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned int* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY){
 
-  std::cout << "----------------------" << std::endl;
-  std::cout << "IP_CLK(in): " << (int)IP_CLK << std::endl;
-  std::cout << "IP_ARESET_N(in): " << (int)IP_ARESET_N << std::endl;
-  std::cout << "S_ARADDR(in): " << ARADDR << std::endl;
-  std::cout << "S_ARVALID(in): " << (int)ARVALID << std::endl;
-  std::cout << "S_ARREADY(out): " << (int)ARREADY << std::endl;
-  std::cout << "S_AWADDR(in): " << AWADDR << "/" << std::hex << "0x" << AWADDR  << std::dec<< std::endl;
-  std::cout << "S_AWVALID(in): " << (int)AWVALID << std::endl;
-  std::cout << "S_AWREADY(out): " << (int)AWREADY << std::endl;
-  std::cout << "S_RDATA(out): " << RDATA << std::endl;
-  std::cout << "S_RVALID(out): " << (int)RVALID << std::endl;
-  std::cout << "S_RREADY(in): " << (int)RREADY << std::endl;
-  std::cout << "S_BRESP(out): " << (int)BRESP << std::endl;
-  std::cout << "S_BVALID(out): " << (int)BRESP << std::endl;
+  printf("----------------------\n");
+  printf("IP_CLK(in): %d\n",(int)*IP_CLK);
+  printf("IP_ARESET_N(in): %d\n",(int)*IP_ARESET_N);
+  printf("S_ARADDR(in): %d\n",*ARADDR);
+  printf("S_ARVALID(in): %d\n",(int)*ARVALID);
+  printf("S_ARREADY(out): %d\n",(int)*ARREADY);
+  printf("S_AWADDR(in): %d/%#x\n", *AWADDR, *AWADDR );
+  printf("S_AWVALID(in): %d\n",(int)*AWVALID);
+  printf("S_AWREADY(out): %d\n",(int)*AWREADY);
+  printf("S_RDATA(out): %d\n",*RDATA);
+  printf("S_RVALID(out): %d\n",(int)*RVALID);
+  printf("S_RREADY(in): %d\n",(int)*RREADY);
+  printf("S_BRESP(out): %d\n",(int)*BRESP);
+  printf("S_BVALID(out): %d\n",(int)*BRESP);
 }
 
 void resetSlave(
   int id,
-  unsigned char& IP_CLK,
-  unsigned char& IP_ARESET_N,
-  unsigned int& ARADDR,
-  unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned int& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY){
+  unsigned char* IP_CLK,
+  unsigned char* IP_ARESET_N,
+  unsigned int* ARADDR,
+  unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned int* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY){
 
-  AWVALID = false;
-  ARVALID = false;
-  BREADY = true;
-  RREADY = true;
+  *AWVALID = false;
+  *ARVALID = false;
+  *BREADY = true;
+  *RREADY = true;
 }
 
 bool checkSlaveResponse(
   int id,
-  unsigned char& IP_CLK,
-  unsigned char& IP_ARESET_N,
-  unsigned int& ARADDR,
-  unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned int& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY){
+  unsigned char* IP_CLK,
+  unsigned char* IP_ARESET_N,
+  unsigned int* ARADDR,
+  unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned int* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY){
 
-  if( BVALID && BRESP==2){
-    std::cout << "Slave " << id << " Error" << std::endl;
+  if( *BVALID && *BRESP==2){
+    printf("Slave %d Error", id);
     exit(1);
-  }else if( BVALID && BRESP==0){
+  }else if( *BVALID && *BRESP==0){
     return true;
-  }else if( BVALID ){
-    std::cout << "Slave " << id << " returned strange respose? " << BRESP << std::endl;
+  }else if( *BVALID ){
+    printf("Slave %d returned strange respose? ", *BRESP);
     exit(1);
   }
 
@@ -166,160 +177,161 @@ bool checkSlaveResponse(
 
 void activateMasterRead(
   int port,
-  const unsigned int& ARADDR,
-  const unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned long& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& RRESP,
-  unsigned char& RLAST,
-  unsigned char& ARLEN,
-  unsigned char& ARSIZE,
-  unsigned char& ARBURST){
+  const unsigned int* ARADDR,
+  const unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* RRESP,
+  unsigned char* RLAST,
+  unsigned char* ARLEN,
+  unsigned char* ARSIZE,
+  unsigned char* ARBURST){
 
-  ARREADY = true;
-  RREADY = true;
+  *ARREADY = true;
+  *RREADY = true;
 }
 
 void activateMasterWrite(
   int id,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned long& WDATA,
-  unsigned char& WVALID,
-  unsigned char& WREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY,
-  unsigned char& WSTRB,
-  unsigned char& WLAST,
-  unsigned char& AWLEN,
-  unsigned char& AWSIZE,
-  unsigned char& AWBURST){
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned long* WDATA,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* WSTRB,
+  unsigned char* WLAST,
+  unsigned char* AWLEN,
+  unsigned char* AWSIZE,
+  unsigned char* AWBURST){
 
-  AWREADY = true;
-  WREADY = true;
-  BREADY = true;
+  *AWREADY = true;
+  *WREADY = true;
+  *BREADY = true;
 }
 
 void deactivateMasterRead(
   int port,
-  const unsigned int& ARADDR,
-  const unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned long& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& RRESP,
-  unsigned char& RLAST,
-  unsigned char& ARLEN,
-  unsigned char& ARSIZE,
-  unsigned char& ARBURST){
+  const unsigned int* ARADDR,
+  const unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* RRESP,
+  unsigned char* RLAST,
+  unsigned char* ARLEN,
+  unsigned char* ARSIZE,
+  unsigned char* ARBURST){
 
-  ARREADY = false;
-  RREADY = false;
+  *ARREADY = false;
+  *RREADY = false;
 }
 
 void deactivateMasterWrite(
   int id,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned long& WDATA,
-  unsigned char& WVALID,
-  unsigned char& WREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY,
-  unsigned char& WSTRB,
-  unsigned char& WLAST,
-  unsigned char& AWLEN,
-  unsigned char& AWSIZE,
-  unsigned char& AWBURST){
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned long* WDATA,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* WSTRB,
+  unsigned char* WLAST,
+  unsigned char* AWLEN,
+  unsigned char* AWSIZE,
+  unsigned char* AWBURST){
 
-  AWREADY = false;
-  WREADY = false;
-  BREADY = false;
+  *AWREADY = false;
+  *WREADY = false;
+  *BREADY = false;
 }
 
 void printMasterRead(
   int id,
-  const unsigned int& ARADDR,
-  const unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned long& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& RRESP,
-  unsigned char& RLAST,
-  unsigned char& ARLEN,
-  unsigned char& ARSIZE,
-  unsigned char& ARBURST){
+  const unsigned int* ARADDR,
+  const unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* RRESP,
+  unsigned char* RLAST,
+  unsigned char* ARLEN,
+  unsigned char* ARSIZE,
+  unsigned char* ARBURST){
 
-  std::cout << "----------------------" << std::endl;
-  //std::cout << "IP_CLK(in): " << (int)IP_CLK << std::endl;
-  //std::cout << "IP_ARESET_N(in): " << (int)IP_ARESET_N << std::endl;
-  std::cout << "M" << id << "_ARADDR(out): " << ARADDR << "/" << std::hex  << "0x" << ARADDR  << std::dec<< std::endl;
-  std::cout << "M" << id << "_ARVALID(out): " << (int)ARVALID << std::endl;
-  std::cout << "M" << id << "_ARREADY(in): " << (int)ARREADY << std::endl;
+  printf("----------------------\n");
+  //printf("IP_CLK(in): " << (int)IP_CLK);
+  //printf("IP_ARESET_N(in): " << (int)IP_ARESET_N);
+  printf("M%d_ARADDR(out): %d/%#x\n",id,*ARADDR,*ARADDR);
+  printf("M%d_ARVALID(out): %d\n",id, (int)*ARVALID);
+  printf("M%d_ARREADY(in): %d\n",id, (int)*ARREADY);
 }
 
 void printMasterWrite(
   int id,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned long& WDATA,
-  unsigned char& WVALID,
-  unsigned char& WREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY,
-  unsigned char& WSTRB,
-  unsigned char& WLAST,
-  unsigned char& AWLEN,
-  unsigned char& AWSIZE,
-  unsigned char& AWBURST){
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned long* WDATA,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* WSTRB,
+  unsigned char* WLAST,
+  unsigned char* AWLEN,
+  unsigned char* AWSIZE,
+  unsigned char* AWBURST){
 
-  std::cout << "----------------------" << std::endl;
-  std::cout << "M" << id << "_AWADDR(out): " << AWADDR << "/" << std::hex  << "0x" << AWADDR  << std::dec<< std::endl;
-  std::cout << "M" << id << "_AWVALID(out): " << (int)AWVALID << std::endl;
-  std::cout << "M" << id << "_AWREADY(in): " << (int)AWREADY << std::endl;
-
-  std::cout << "M" << id << "_WDATA(out): " << WDATA << "/" << std::hex  << "0x" << WDATA  << std::dec<< std::endl;
-  std::cout << "M" << id << "_WVALID(out): " << (int)WVALID << std::endl;
-  std::cout << "M" << id << "_WREADY(in): " << (int)WREADY << std::endl;
+  printf("----------------------\n");
+  printf("M%d_AWADDR(out): %d/%#x\n",id, *AWADDR, *AWADDR);
+  printf("M%d_AWVALID(out): %d\n",id,(int)*AWVALID);
+  printf("M%d_AWREADY(in): %d\n",id, (int)*AWREADY);
+  
+  printf("M%d_WDATA(out): %d/%#x\n",id, *WDATA, *WDATA);
+  printf("M%d_WVALID(out): %d\n",id, (int)*WVALID);
+  printf("M%d_WREADY(in): %d\n",id, (int)*WREADY);
 }
 
 // return data to master
 void masterReadData(
   bool verbose,
+  unsigned char* memory,
   int port,
-  const unsigned int& ARADDR,
-  const unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned long& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& RRESP,
-  unsigned char& RLAST,
-  unsigned char& ARLEN,
-  unsigned char& ARSIZE,
-  unsigned char& ARBURST){
+  const unsigned int* ARADDR,
+  const unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* RRESP,
+  unsigned char* RLAST,
+  unsigned char* ARLEN,
+  unsigned char* ARSIZE,
+  unsigned char* ARBURST){
 
-  if( QSize(&readQ[port])>0 && RREADY){
+  if( QSize(&readQ[port])>0 && *RREADY){
     if(false && randf()>0.2f){
-      RVALID = false;
+      *RVALID = false;
     }else{
       Transaction* t = (Transaction*)QPeek(&readQ[port]);
       
-      RDATA = *(unsigned long*)(&memory[t->addr]);
-      RVALID = true;
+      *RDATA = *(unsigned long*)(&memory[t->addr]);
+      *RVALID = true;
       
       if(verbose){
-        //std::cout << "MAXI" << port << " Service Read Addr: " << t.addr << " data: " << RDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << readQ[port].size() << std::endl;
+        printf("MAXI%d Service Read Addr:%d data:%d remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *RDATA, t->burst, QSize(&readQ[port]));
       }
       
       t->burst--;
@@ -331,47 +343,49 @@ void masterReadData(
         QPop(&readQ[port]);
       }
     }
-  }else if( QSize(&readQ[port]) >0 && RREADY){
+  }else if( QSize(&readQ[port]) >0 && *RREADY){
     printf("MAXI%d: %d outstanding read requests, but IP isn't ready\n", port, QSize(&readQ[port]) );
   }else{
     //if(verbose){std::cout << "MAXI" << port << " no outstanding read requests" << std::endl;}
-    RVALID = false;
+    *RVALID = false;
   }
 }
 
 // service read requests from master
 void masterReadReq(
   bool verbose,
+  unsigned int MEMBASE,
+  unsigned int MEMSIZE,
   int port,
-  const unsigned int& ARADDR,
-  const unsigned char& ARVALID,
-  unsigned char& ARREADY,
-  unsigned long& RDATA,
-  unsigned char& RVALID,
-  unsigned char& RREADY,
-  unsigned char& RRESP,
-  unsigned char& RLAST,
-  unsigned char& ARLEN,
-  unsigned char& ARSIZE,
-  unsigned char& ARBURST){
+  const unsigned int* ARADDR,
+  const unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* RRESP,
+  unsigned char* RLAST,
+  unsigned char* ARLEN,
+  unsigned char* ARSIZE,
+  unsigned char* ARBURST){
 
-  if(ARVALID){
+  if(*ARVALID){
     // read request
     Transaction t;
-    assert(ARSIZE==3);
-    assert(ARBURST==1);
-    t.addr = ARADDR;
-    t.burst = ARLEN+1;
+    assert(*ARSIZE==3);
+    assert(*ARBURST==1);
+    t.addr = *ARADDR;
+    t.burst = *ARLEN+1;
 
     if(verbose){
-      //std::cout << "MAXI" << port << " Read Request addr:" << t.addr << "/" << std::hex << "0x" << t.addr << std::dec << " burst:" << t.burst << std::endl;
+      printf("MAXI%d Read Request addr:%d/%#x burst:%d\n",port,t.addr,t.addr,t.burst);
       //std::cout << "MAXI" << port << " Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
     }
     
     t.addr -= MEMBASE;
 
     if(t.addr>=MEMSIZE){
-      printf("Segmentation fault on read! Attempted to read address %#x, which is outside of range [%#x,%#x]\n", ARADDR, MEMBASE, MEMBASE+MEMSIZE);
+      printf("Segmentation fault on read! Attempted to read address %#x, which is outside of range [%#x,%#x]\n", *ARADDR, MEMBASE, MEMBASE+MEMSIZE);
       exit(1);
     }
     
@@ -385,28 +399,29 @@ void masterReadReq(
 // return data to master
 void masterWriteData(
   bool verbose,
+  unsigned char* memory,
   int port,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned long& WDATA,
-  unsigned char& WVALID,
-  unsigned char& WREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY,
-  unsigned char& WSTRB,
-  unsigned char& WLAST,
-  unsigned char& AWLEN,
-  unsigned char& AWSIZE,
-  unsigned char& AWBURST){
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned long* WDATA,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* WSTRB,
+  unsigned char* WLAST,
+  unsigned char* AWLEN,
+  unsigned char* AWSIZE,
+  unsigned char* AWBURST){
 
-  assert(WREADY); // we drive this... should always be true
+  assert(*WREADY); // we drive this... should always be true
   
-  if( QSize(&writeQ[port])>0 && WVALID ){
+  if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
 
-    *(unsigned long*)(&memory[t->addr]) = WDATA;
+    *(unsigned long*)(&memory[t->addr]) = *WDATA;
 
     if(verbose){
       //std::cout << "MAXI" << port << " Accept Write, Addr: " << t.addr << "/" << std::hex << "0x" << std::dec << t.addr << " data: " << WDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << writeQ[port].size() << std::endl;
@@ -420,7 +435,7 @@ void masterWriteData(
     if(t->burst==0){
       QPop(&writeQ[port]);
     }
-  }else if( QSize(&writeQ[port])<=0 && WVALID ){
+  }else if( QSize(&writeQ[port])<=0 && *WVALID ){
     printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
     exit(1);
   }else{
@@ -430,40 +445,42 @@ void masterWriteData(
 
 void masterWriteReq(
   bool verbose,
+  unsigned int MEMBASE,
+  unsigned int MEMSIZE,
   int port,
-  unsigned int& AWADDR,
-  unsigned char& AWVALID,
-  unsigned char& AWREADY,
-  unsigned long& WDATA,
-  unsigned char& WVALID,
-  unsigned char& WREADY,
-  unsigned char& BRESP,
-  unsigned char& BVALID,
-  unsigned char& BREADY,
-  unsigned char& WSTRB,
-  unsigned char& WLAST,
-  unsigned char& AWLEN,
-  unsigned char& AWSIZE,
-  unsigned char& AWBURST){
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned long* WDATA,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* WSTRB,
+  unsigned char* WLAST,
+  unsigned char* AWLEN,
+  unsigned char* AWSIZE,
+  unsigned char* AWBURST){
 
-  if(AWVALID){
-    assert(AWSIZE==3);
-    assert(AWBURST==1);
-    assert(WSTRB==255);
+  if(*AWVALID){
+    assert(*AWSIZE==3);
+    assert(*AWBURST==1);
+    assert(*WSTRB==255);
     
     Transaction t;
-    t.addr = AWADDR;
-    t.burst = AWLEN+1;
+    t.addr = *AWADDR;
+    t.burst = *AWLEN+1;
 
     if(verbose){
-      std::cout << "MAXI" << port << " Write Request addr:" << t.addr << "/" << std::hex << "0x" << t.addr << std::dec << " burst:" << t.burst << std::endl;
-      std::cout << "MAXI" << port << " Write Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
+      printf("MAXI%d Write Request addr:%d/%#x burst:%d\n", port, t.addr, t.addr, t.burst);
+      printf("MAXI%d Write Request addr (base rel):%d/%#x burst:%d\n", port, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
     }
     
     t.addr -= MEMBASE;
 
     if(t.addr>=MEMSIZE){
-      std::cout << "MAXI" << port << " Segmentation fault on write!" << std::endl;
+      printf("MAXI%d Segmentation fault on write!\n",port);
       exit(1);
     }
 

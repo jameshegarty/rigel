@@ -601,7 +601,7 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
 
   local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes).."_"..tostring(port).."_"..tostring(address))
   
-  return RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
+  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
 [=[module ]=]..ModuleName..[=[_inner(
     //AXI port
     input ACLK,
@@ -764,7 +764,13 @@ parameter INSTANCE_NAME="inst";
 
 endmodule
 ]=],globals,globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
-  
+
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address )
+  end
+
+  return res
 end)
 
 SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
@@ -859,7 +865,7 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_write_filename"] = filename
 
-  return RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, 
+  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, 
 [=[module DRAMWriterInner(
     //AXI port
     input ACLK,
@@ -1065,7 +1071,13 @@ DRAMWriterInner inner(
 endmodule
 
 ]=],globals, globalMetadata,{{1,1}},{{1,Nbytes/8}})
-  
+
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, port, address )
+  end
+
+  return res
 end)
 
 -- {Handshake(uint25),Handshake(bits(64))}
@@ -1133,11 +1145,6 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   end
 
   local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
-
-  if terralib~=nil then
-    res.makeTerra = nil
-    res.terraModule = SOCMT.readBurst( res, SOC.currentMAXIReadPort, W*H*(ty:verilogBits()/8), R.Handshake(types.array2d(ty,V)) )
-  end
 
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+nbytes
@@ -1241,11 +1248,6 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   out = SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
   
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
-
-  if terralib~=nil then
-    res.makeTerra = nil
-    res.terraModule = SOCMT.writeBurst( res, SOC.currentMAXIReadPort, W*H*(ty:verilogBits()/8), R.Handshake(types.array2d(ty,V)) )
-  end
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+nbytes

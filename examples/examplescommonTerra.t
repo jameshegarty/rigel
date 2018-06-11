@@ -15,10 +15,20 @@ end
 
 function CT.cast(A,B)
   err(types.isType(B), "examples common cast, B must be type")
-  
-  return terra( a : &A:toTerraType(), out : &B:toTerraType() )
-                            @out = [B:toTerraType()](@a)
-                  end
+
+  if A:isBits() and B:isArray() and B:verilogBits()==A:verilogBits() then
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = @[&B:toTerraType()](a)
+    end
+  elseif B:isBits() and A:isArray() and B:verilogBits()==A:verilogBits() then
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = @[&B:toTerraType()](a)
+    end
+  else
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = [B:toTerraType()](@a)
+    end
+  end
 end
 
 function CT.flatten2(T,N)

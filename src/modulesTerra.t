@@ -625,16 +625,31 @@ function MT.broadcastStream(res,A,N)
   terra BroadcastStream:init() end
   terra BroadcastStream:free() end
   terra BroadcastStream:stats( name: &int8) end
-  terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    for i=0,N do
-      if self.ready then -- all of readyDownstream are true
-        data((@out)[i]) = data(inp)
-        valid((@out)[i]) = valid(inp)
-      else
-        valid((@out)[i]) = false
+
+  if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTriggerArray(res.outputType) then
+    terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,N do
+        if self.ready then -- all of readyDownstream are true
+          (@out)[i] = @inp
+        else
+          (@out)[i] = false
+        end
+      end
+    end
+
+  else
+    terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,N do
+        if self.ready then -- all of readyDownstream are true
+          data((@out)[i]) = data(inp)
+          valid((@out)[i]) = valid(inp)
+        else
+          valid((@out)[i]) = false
+        end
       end
     end
   end
+
   terra BroadcastStream:calculateReady( readyDownstream : bool[N] )
     self.ready = true
     for i=0,N do
@@ -1541,7 +1556,7 @@ function MT.lambdaCompile(fn)
   local readyOutput
     
     -- build ready calculation
-  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 then
+  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1615,6 +1630,12 @@ return {`mself.[n.name].ready}
             -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
             table.insert( readyStats, quote mself.[n.inst.name]:calculateStoreReady() end ) 
             res = {`mself.[n.inst.name].ready}
+          elseif n.fnname=="start" then
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateStartReady(arg) end ) 
+            res = {`mself.[n.inst.name].startReady}
+          elseif n.fnname=="done" then
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateDoneReady() end ) 
+            res = {`mself.[n.inst.name].doneReady}
           else
             assert(false)
           end

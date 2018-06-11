@@ -1,69 +1,109 @@
 local SOC = require "soc"
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
+local J = require "common"
 
-local function resetMAXI(top,port)
-  return quote
-  [top:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()] = false
-  [top:getGlobal("IP_MAXI"..port.."_AWADDR"):terraReady()] = false
-  [top:getGlobal("IP_MAXI"..port.."_WDATA"):terraReady()] = false
-  end
-end
+local data = macro(function(i) return `i._0 end)
+local valid = macro(function(i) return `i._1 end)
+local ready = macro(function(i) return `i._2 end)
 
-local chack = terralib.includecstring([[
-#include <stdio.h>
-
-void loadFile( char* filename, unsigned char* memory, unsigned int addrOffset ){
-printf("LOADFILE %s\n",filename);
-    FILE* infile = fopen( filename, "rb" );
-    if(infile==NULL){printf("could not open input '%s'\n", filename);}
-    fseek(infile, 0L, SEEK_END);
-    unsigned long insize = ftell(infile);
-    fseek(infile, 0L, SEEK_SET);
-    fread( memory+addrOffset, insize, 1, infile );
-    fclose( infile );
-}
-
-/*
-void saveFile( char* filename, unsigned char* memory, unsigned int addrOffset, unsigned int bytes ){
-    FILE* outfile = fopen(outFilename.c_str(),"wb");
-    if(outfile==NULL){printf("could not open output '%s'\n", outFilename.c_str());}
-    fwrite( memory+addrOffset, bytes, 1, outfile);
-    fclose(outfile);
-std::queue<int> a;
-a.size();
-}
-*/
-]])
+V = terralib.includec("../platform/verilatorSOC/harness.h")
 
 return function(top, memStart, memEnd)
   local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
+  local extraCycles = 10240
+  
   local Module = top:toTerra()
 
   local memory = symbol(&uint8)
+  local IP_CLK = symbol(uint8)
+  local IP_ARESET_N = symbol(uint8)
   
   local readS = {}
   local writeS = {}
 
   local MEMBASE = 0x30008000
   local MEMSIZE = SOC.currentAddr-MEMBASE
+
+  local verbose = false
+  
+  local S0LIST = {
+    0,
+    `&IP_CLK,
+    `&IP_ARESET_N,
+    `&data([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()]),
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
+    `&data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]),
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]),
+    `&data([top:getGlobal("IP_SAXI0_RDATA"):terraValue()]),
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_RDATA"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
+    `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()])}
+
+  local MREADLIST={}
+  local MWRITELIST={}
+
+  local MAX_READ_PORT = -1
+  local MAX_WRITE_PORT = -1
+  
+  for i=0,SOC.ports do
+    if top:getGlobal("IP_MAXI"..i.."_ARADDR")~=nil then
+      MAX_READ_PORT = i
+      MREADLIST[i] = {
+        i,
+        `&data([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraReady()]),
+        `&data([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RDATA"):terraReady()]),
+        `&[top:getGlobal("IP_MAXI"..i.."_RRESP"):terraValue()],
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RLAST"):terraValue()]),
+        `&[top:getGlobal("IP_MAXI"..i.."_ARLEN"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_ARSIZE"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_ARBURST"):terraValue()]}
+    end
+
+    if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
+      MAX_WRITE_PORT = i
+      MWRITELIST[i] = {
+        i,
+        `&data([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraReady()]),
+        `&data([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_WDATA"):terraReady()]),
+        `&data([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_BRESP"):terraReady()]),
+        `&[top:getGlobal("IP_MAXI"..i.."_WSTRB"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_WLAST"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_AWLEN"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_AWSIZE"):terraValue()],
+        `&[top:getGlobal("IP_MAXI"..i.."_AWBURST"):terraValue()]}
+    end
+  end
   
   for i=0,SOC.ports do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
-      local ll = {top.globalMetadata["MAXI"..i.."_read_filename"], memory, top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE}
-      table.insert(readS,quote chack.loadFile(ll) end )
+      table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE]) end )
     end
 
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
---      fn.globalMetadata["MAXI"..i.."_write_W"]
---      fn.globalMetadata["MAXI"..i.."_write_H"]
---      fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]
-      --      fn.globalMetadata["MAXI"..i.."_write_address"]
---      table.insert(writeS, quote chack.saveFile() end)
+      local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
+      table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE],bytes) end )
     end
   end
   
   local terra dosim()
+    var [IP_CLK]
+    var [IP_ARESET_N]
+    
     var m = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
     m:reset();
@@ -71,13 +111,97 @@ return function(top, memStart, memEnd)
     var [memory] = [&uint8](cstdlib.malloc(MEMSIZE))
 
     readS
-    [resetMAXI(top,0)]
-    
+
+    V.init()
     var cycle = 0
-    
-    while(cycle<simCycles) do
+
+    V.deactivateMasterRead([MREADLIST[0]])
+    V.deactivateMasterWrite([MWRITELIST[0]])
+
+    [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
+    [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+
+    for i=0,100 do
       m:calculateReady()
       m:process(nil,nil)
+    end
+
+    -- send start cmd
+
+    if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
+      cstdio.printf("IP_SAXI0_AWREADY should be true\n");
+      cstdlib.exit(1)
+    end
+
+    data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = 0xA0000000;
+    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
+
+    --------------------------------------------------- step
+    m:calculateReady()
+    m:process(nil,nil)
+
+    if verbose then V.printSlave(S0LIST); end
+    var found = V.checkSlaveResponse(S0LIST);
+  
+    if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
+      cstdio.printf("IP_SAXI0_WREADY should be true\n");
+      cstdlib.exit(1)
+    end
+    
+    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = 1;
+    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
+    
+    --------------------------------------------------- step
+    m:calculateReady()
+    m:process(nil,nil)
+
+    found = found or V.checkSlaveResponse(S0LIST);
+  
+    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
+    
+    --------------------------------------------------- step
+    m:calculateReady()
+    m:process(nil,nil)
+
+    while(found==false and V.checkSlaveResponse(S0LIST)==false) do
+      cstdio.printf("Waiting for S0 response\n");
+      m:calculateReady()
+      m:process(nil,nil)
+    end
+
+    V.activateMasterRead([MREADLIST[0]])
+    V.activateMasterWrite([MWRITELIST[0]])
+
+    [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
+    [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+
+    while(cycle<simCycles+extraCycles) do
+      if verbose then cstdio.printf("--------------------------- START CYCLE %d -----------------------\n",cycle) end
+      
+      m:calculateReady()
+
+      -- feed data in
+      V.masterReadData(verbose,memory,[MREADLIST[0]]);
+      [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadData(verbose,memory,[MREADLIST[1]]) end else return quote end end end)() ];
+
+      m:process(nil,nil)
+
+      if verbose then V.printMasterRead([MREADLIST[0]]); end
+      if verbose then V.printMasterWrite([MWRITELIST[0]]); end
+
+      V.masterWriteData(verbose,memory,[MWRITELIST[0]]);
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,[MWRITELIST[1]]) end else return quote end end end)() ];
+
+      -- get data out
+      V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[0]]);
+      V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[0]]);
+
+      [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[1]]) end else return quote end end end)() ];
+
+      --masterReadReq(verbose,M1READLIST);
+      --masterWriteReq(verbose,M1WRITELIST);
+
       cycle = cycle + 1
     end
     
@@ -85,6 +209,13 @@ return function(top, memStart, memEnd)
     cstdlib.free(m)
 
     writeS
+
+    var errored = V.checkPorts();
+  
+    if(errored) then
+      cstdlib.exit(1);
+    end
+
   end
 
   dosim()

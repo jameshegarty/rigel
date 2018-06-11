@@ -6,17 +6,15 @@
 
 #include "harness.h"
 
-#define S0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->SAXI0_ARADDR,top->SAXI0_ARVALID,top->SAXI0_ARREADY,top->SAXI0_AWADDR,top->SAXI0_AWVALID,top->SAXI0_AWREADY,top->SAXI0_RDATA,top->SAXI0_RVALID,top->SAXI0_RREADY,top->SAXI0_BRESP,top->SAXI0_BVALID,top->SAXI0_BREADY
+#define S0LIST 0,&top->IP_CLK,&top->IP_ARESET_N,&top->SAXI0_ARADDR,&top->SAXI0_ARVALID,&top->SAXI0_ARREADY,&top->SAXI0_AWADDR,&top->SAXI0_AWVALID,&top->SAXI0_AWREADY,&top->SAXI0_RDATA,&top->SAXI0_RVALID,&top->SAXI0_RREADY,&top->SAXI0_BRESP,&top->SAXI0_BVALID,&top->SAXI0_BREADY
 
-//#define M0LIST 0,top->IP_CLK,top->IP_ARESET_N,top->MAXI0_ARADDR,top->MAXI0_ARVALID,top->MAXI0_ARREADY,top->MAXI0_RDATA,top->MAXI0_RVALID,top->MAXI0_RREADY
+#define M0READLIST 0,&top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RREADY,&top->MAXI0_RRESP,&top->MAXI0_RLAST,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST
 
-#define M0READLIST 0,top->MAXI0_ARADDR,top->MAXI0_ARVALID,top->MAXI0_ARREADY,top->MAXI0_RDATA,top->MAXI0_RVALID,top->MAXI0_RREADY,top->MAXI0_RRESP,top->MAXI0_RLAST,top->MAXI0_ARLEN,top->MAXI0_ARSIZE,top->MAXI0_ARBURST
+#define M0WRITELIST 0,&top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_AWREADY,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST
 
-#define M0WRITELIST 0,top->MAXI0_AWADDR,top->MAXI0_AWVALID,top->MAXI0_AWREADY,top->MAXI0_WDATA,top->MAXI0_WVALID,top->MAXI0_WREADY,top->MAXI0_BRESP,top->MAXI0_BVALID,top->MAXI0_BREADY,top->MAXI0_WSTRB,top->MAXI0_WLAST,top->MAXI0_AWLEN,top->MAXI0_AWSIZE,top->MAXI0_AWBURST
+#define M1READLIST 1,&top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RREADY,&top->MAXI1_RRESP,&top->MAXI1_RLAST,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST
 
-#define M1READLIST 1,top->MAXI1_ARADDR,top->MAXI1_ARVALID,top->MAXI1_ARREADY,top->MAXI1_RDATA,top->MAXI1_RVALID,top->MAXI1_RREADY,top->MAXI1_RRESP,top->MAXI1_RLAST,top->MAXI1_ARLEN,top->MAXI1_ARSIZE,top->MAXI1_ARBURST
-
-#define M1WRITELIST 1,top->MAXI1_AWADDR,top->MAXI1_AWVALID,top->MAXI1_AWREADY,top->MAXI1_WDATA,top->MAXI1_WVALID,top->MAXI1_WREADY,top->MAXI1_BRESP,top->MAXI1_BVALID,top->MAXI1_BREADY,top->MAXI1_WSTRB,top->MAXI1_WLAST,top->MAXI1_AWLEN,top->MAXI1_AWSIZE,top->MAXI1_AWBURST
+#define M1WRITELIST 1,&top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_AWREADY,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST
 
 
 void step(VERILATORCLASS* top){
@@ -33,8 +31,8 @@ int main(int argc, char** argv) {
 
   int simCycles = atoi(argv[1]);
   int simCyclesSlack = 1280000;
-  MEMBASE = strtol(argv[2],NULL,16);
-  MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
+  unsigned int MEMBASE = strtol(argv[2],NULL,16);
+  unsigned int MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
   std::cout << "SimCycles: " << simCycles << " SimCyclesSlack: " << simCyclesSlack << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
 
@@ -54,9 +52,9 @@ int main(int argc, char** argv) {
 
   int inputCount = 0;
 
-  memory = (unsigned char*)malloc(MEMSIZE);
+  unsigned char* memory = (unsigned char*)malloc(MEMSIZE);
 
-  initQueues();
+  init();
   
   while(strcmp(argv[curArg],"--outputs")!=0){
     unsigned int addr = strtol(argv[curArg+1],NULL,16);
@@ -67,10 +65,6 @@ int main(int argc, char** argv) {
     curArg+=2;
   }
 
-  for(int i=0; i<4; i++){
-    masterBytesRead[i]=0;
-    masterBytesWritten[i]=0;
-  }
   
   VERILATORCLASS* top = new VERILATORCLASS;
 
@@ -107,6 +101,7 @@ int main(int argc, char** argv) {
   if(verbose){printSlave(S0LIST);}
   
   // send start cmd
+  //assert(top->SAXI0_AWREADY==1);
   top->SAXI0_AWADDR = 0xA0000000;
   top->SAXI0_AWVALID = true;
   step(top);
@@ -136,8 +131,8 @@ int main(int argc, char** argv) {
     if(CLK){
       if(verbose){ std::cout << "------------------------------------ START CYCLE " << totalCycles <<  "(" << ((float)totalCycles/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
       // feed data in
-      masterReadData(verbose,M0READLIST);
-      masterReadData(verbose,M1READLIST);
+      masterReadData(verbose,memory,M0READLIST);
+      masterReadData(verbose,memory,M1READLIST);
 
       // it's possible the pipeline has 0 cycle delay (between read & write port). in which case, we need to eval the async stuff here.
       top->eval();
@@ -145,15 +140,15 @@ int main(int argc, char** argv) {
       if(verbose){printMasterRead(M0READLIST);}
       if(verbose){printMasterWrite(M0WRITELIST);}
 
-      masterWriteData(verbose,M0WRITELIST);
-      masterWriteData(verbose,M1WRITELIST);
+      masterWriteData(verbose,memory,M0WRITELIST);
+      masterWriteData(verbose,memory,M1WRITELIST);
 
       // get data out
-      masterReadReq(verbose,M0READLIST);
-      masterWriteReq(verbose,M0WRITELIST);
+      masterReadReq(verbose,MEMBASE,MEMSIZE,M0READLIST);
+      masterWriteReq(verbose,MEMBASE,MEMSIZE,M0WRITELIST);
 
-      masterReadReq(verbose,M1READLIST);
-      masterWriteReq(verbose,M1WRITELIST);
+      masterReadReq(verbose,MEMBASE,MEMSIZE,M1READLIST);
+      masterWriteReq(verbose,MEMBASE,MEMSIZE,M1WRITELIST);
 
       totalCycles++;
     }

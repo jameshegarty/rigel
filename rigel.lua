@@ -571,7 +571,7 @@ function darkroomFunctionFunctions:getGlobal(name)
   for k,_ in pairs(self.globals) do
     if k.name==name then return k end
   end
-  err(false,"Could not find global '"..name.."'")
+  --print("Could not find global '"..name.."'")
 end
 
 darkroomInstanceCallsiteMT = {}
@@ -1139,7 +1139,7 @@ function darkroom.export(t)
   if t==nil then t=_G end
 
   -- constants
-  function t.c(arg)
+  local t_c = function(arg)
     J.err( type(arg)=="table", "c: argument should be table" )
     J.err( #arg==2, "c: should have 2 args" )
 
@@ -1159,6 +1159,7 @@ function darkroom.export(t)
     return res
   end
 
+  rawset(t,"c",t_c)
 end
 
 return darkroom
