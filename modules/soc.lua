@@ -797,10 +797,9 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   local ModuleName = J.sanitize("AXI_READ_BYTES_"..tostring(Nbytes).."_"..tostring(port))
 
   local burstCount = Nbytes/8
-
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
   
-  return RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
+  local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
 [=[module ]=]..ModuleName..[=[(
     input CLK,
     input reset,
@@ -841,7 +840,13 @@ assign IP_MAXI]=]..port..[=[_RDATA_ready = ready_downstream;
 
 endmodule
 ]=],globals,globalMetadata,{{1,burstCount}},{{1,1}})
-  
+
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase )
+  end
+
+  return res
 end)
 
 SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
@@ -1195,7 +1200,7 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   
   out = RM.makeHandshake(C.cast(types.bits(readType:verilogBits()),readType))(out)
 
-  local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(readType),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+fileBytes

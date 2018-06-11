@@ -99,7 +99,7 @@ C.multiplyConst = memoize(function(A,constValue)
 
   local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
     function(sinp) return sinp*S.constant(constValue,A) end,
-    function() assert(false) end,
+    function() return CT.multiplyConst(A,constValue) end,
     "C.multiplyConst" )
 
   return partial

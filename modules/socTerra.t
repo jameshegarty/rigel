@@ -4,6 +4,7 @@ local types = require "types"
 local cstdio = terralib.includec("stdio.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstring = terralib.includec("string.h")
+local J = require "common"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -91,7 +92,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes, port, baseAddress )
       if [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()] then
         self.nextByteToRead = self.nextByteToRead + 128
       end
-    elseif self.nextByteToRead<totalBytes and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()] then
+    elseif self.nextByteToRead<totalBytes and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()]==false then
       cstdio.printf("readBurst: want to read, but ARREADY is false\n")
     elseif self.nextByteToRead>=totalBytes then
       valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = false
@@ -171,6 +172,60 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
   end
 
   return MT.new(WriteBurst)
+end
+
+function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
+  assert(type(addressBase)=="number")
+
+  --print("AXIBURSTREADN ",totalBytes,port)
+
+  local inputType = R.Handshake(types.uint(32))
+  local outputType = R.Handshake(types.bits(64))
+
+  local struct ReadBytes { ready:bool }
+
+  local burstCount = Nbytes/8
+  J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
+
+  terra ReadBytes:reset()
+    [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = false
+    self.ready = true
+  end
+
+  terra ReadBytes:process( dataIn:&R.lower(inputType):toTerraType(), dataOut:&R.lower(outputType):toTerraType() )
+
+    if valid(dataIn) then
+      var addr = data(dataIn)+[addressBase]
+      --cstdio.printf("readBurst: send address %d port %d ready %d\n",self.nextByteToRead, port, [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()])
+      valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = true
+      data([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = addr
+      [mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
+      [mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
+      [mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
+
+    elseif valid(dataIn) and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()] then
+      cstdio.printf("readBytes: want to read, but ARREADY is false\n")
+    else
+      valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = false
+    end
+
+    if valid([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]) then
+      cstring.memcpy( &data(dataOut), &data([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]), [R.extractData(outputType):sizeof()] )
+      valid(dataOut) = true
+      --cstdio.printf("READDAT %d R %d\n",data(dataOut),[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()])
+    else
+      valid(dataOut) = false
+      --cstdio.printf("READDAT IV %d\n",data(dataOut))
+    end
+  end
+
+  terra ReadBytes:calculateReady(readyDownstream:bool)
+    --cstdio.printf("READBUSRT CALCReADY\n")
+    [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = readyDownstream
+    self.ready = [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()]
+  end
+
+  return MT.new(ReadBytes)
 end
 
 return SOCMT

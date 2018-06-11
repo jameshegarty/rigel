@@ -60,6 +60,12 @@ function CT.multiply(A,B,outputType)
                   end
 end
 
+function CT.multiplyConst(A,constValue)
+  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+    @out = [A:toTerraType()](@a)*[A:toTerraType()](constValue)
+  end
+end
+
 function CT.sum(A,B,outputType,async)
   return terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
