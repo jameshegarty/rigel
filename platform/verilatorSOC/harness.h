@@ -82,6 +82,22 @@ unsigned int cyclesSinceWrite[PORTS];
 
 float randf(){ return (float)rand()/(float)(RAND_MAX); }
 
+unsigned int bytesRead(){
+  unsigned int b = 0;
+  for(int i=0; i<PORTS; i++){
+    b+=masterBytesRead[i];
+  }
+  return b;
+}
+
+unsigned int bytesWritten(){
+  unsigned int b = 0;
+  for(int i=0; i<PORTS; i++){
+    b+=masterBytesWritten[i];
+  }
+  return b;
+}
+
 void init(){
   for(int i=0; i<PORTS; i++){
     QInit(&readQ[i], sizeof(Transaction));

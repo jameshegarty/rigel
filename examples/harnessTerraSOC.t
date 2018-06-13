@@ -8,8 +8,8 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
-V = terralib.includec("/home/jhegarty/rigel/platform/verilatorSOC/harness.h")
-
+--V = terralib.includec("/home/jhegarty/rigel/platform/verilatorSOC/harness.h")
+V = terralib.includec("..//platform/verilatorSOC/harness.h")
 
 local Ctmp = terralib.includecstring [[
                                         #include <stdio.h>
@@ -200,75 +200,72 @@ return function(top, memStart, memEnd)
         m:process(nil,nil)
       end
       
-    V.activateMasterRead([MREADLIST[0]])
-    V.activateMasterWrite([MWRITELIST[0]])
-
-    [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
-    [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITELIST[1]]) end else return quote end end end)() ];
-
-    var totalCycles = simCycles+extraCycles
-
-    var lastPct : int = -1
-
-    var startSec = currentTimeInSeconds()
-    
-    while (cycle<totalCycles) and ([SOCMT.doneHack]==false) do
-      if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
+      V.activateMasterRead([MREADLIST[0]])
+      V.activateMasterWrite([MWRITELIST[0]])
       
-      m:calculateReady()
+      [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITELIST[1]]) end else return quote end end end)() ];
 
-      -- feed data in
-      V.masterReadData(verbose,memory,[MREADLIST[0]]);
-      [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadData(verbose,memory,[MREADLIST[1]]) end else return quote end end end)() ];
+      var totalCycles = simCycles+extraCycles
 
-      m:process(nil,nil)
+      var lastPct : int = -1
 
-      if verbose then V.printMasterRead([MREADLIST[0]]); end
-      if verbose then V.printMasterWrite([MWRITELIST[0]]); end
+      var startSec = currentTimeInSeconds()
+      
+      while (cycle<totalCycles) and ([SOCMT.doneHack]==false) do
+        if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
+        
+        m:calculateReady()
+        
+        -- feed data in
+        V.masterReadData(verbose,memory,[MREADLIST[0]]);
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadData(verbose,memory,[MREADLIST[1]]) end else return quote end end end)() ];
 
-      V.masterWriteData(verbose,memory,[MWRITELIST[0]]);
-      [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,[MWRITELIST[1]]) end else return quote end end end)() ];
+        m:process(nil,nil)
 
-      -- get data out
-      V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[0]]);
-      V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[0]]);
+        if verbose then V.printMasterRead([MREADLIST[0]]); end
+        if verbose then V.printMasterWrite([MWRITELIST[0]]); end
 
-      [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[1]]) end else return quote end end end)() ];
-      [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[1]]) end else return quote end end end)() ];
+        V.masterWriteData(verbose,memory,[MWRITELIST[0]]);
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,[MWRITELIST[1]]) end else return quote end end end)() ];
 
-      --masterReadReq(verbose,M1READLIST);
-      --masterWriteReq(verbose,M1WRITELIST);
+        -- get data out
+        V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[0]]);
+        V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[0]]);
 
-      if((cycle*100)/totalCycles>lastPct) then
-        var t = currentTimeInSeconds() - startSec
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[1]]) end else return quote end end end)() ];
 
-        var pct = (cycle*100)/totalCycles
-        cstdio.printf("Sim %d %% complete! (%d/%d cycles) (%f sec elapsed, %f to go)\n",pct,cycle,totalCycles,t,t*([float](100-pct))/([float](pct)))
-        lastPct = (cycle*100)/totalCycles
+        if((cycle*100)/totalCycles>lastPct) then
+          var t = currentTimeInSeconds() - startSec
+
+          var pct = (cycle*100)/totalCycles
+          cstdio.printf("Sim %d %% complete! (%d/%d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",pct,cycle,totalCycles,t,t*([float](100-pct))/([float](pct)),V.bytesRead(),V.bytesWritten())
+          lastPct = (cycle*100)/totalCycles
+        end
+
+        cycle = cycle + 1
       end
 
-      cycle = cycle + 1
-    end
+      cstdio.printf("Executed cycles: %d\n", cycle)
 
-    cstdio.printf("Executed cycles: %d\n", cycle)
+      if round==ROUNDS-1 then
+        m:free()
+        cstdlib.free(m)
+      end
 
-    if round==ROUNDS-1 then
-      m:free()
-      cstdlib.free(m)
-    end
+      writeS
 
-    writeS
+      var errored = V.checkPorts();
 
-    var errored = V.checkPorts();
-
-    if [SOCMT.doneHack]==false then
-      cstdio.printf("Error: Done bit not set at end of time!\n")
-      errored = true
-    end
+      if [SOCMT.doneHack]==false then
+        cstdio.printf("Error: Done bit not set at end of time!\n")
+        errored = true
+      end
     
-    if(errored) then
-      cstdlib.exit(1);
-    end
+      if(errored) then
+        cstdlib.exit(1);
+      end
 
     end
   end
