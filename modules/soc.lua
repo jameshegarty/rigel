@@ -1171,34 +1171,37 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   local inp = R.input(R.Handshake(types.uint(32)))
   local out = inp
 
-  local readBytes
-
-  if readType:verilogBits()/8 > 8*16 then
-    -- longer than 1 burst, need to do multiple bursts
-    J.err( (readType:verilogBits()/8) % 8*16 == 0, "SOC.read: NYI - read sizes that aren't 128-byte burst aligned")
-    readBytes = 128
-    local nBursts = (readType:verilogBits()/8) / (8*16)
-    out = RM.triggeredCounter(types.uint(32),nBursts)(out)
-  else
-    readBytes = readType:verilogBits()/8
-  end
+  local readBytesPerBurst
 
   -- scale by type size
   out = RM.makeHandshake(C.multiplyConst(types.uint(32),readType:verilogBits()/8))(out)
   
-  out = SOC.axiReadBytes( filename, readBytes, SOC.currentMAXIReadPort, SOC.currentAddr )(out)
+  if readType:verilogBits()/8 > 8*16 then
+    -- longer than 1 burst, need to do multiple bursts
+    J.err( (readType:verilogBits()/8) % 8*16 == 0, "SOC.read: NYI - read sizes that aren't 128-byte burst aligned")
+    readBytesPerBurst = 128
+    local nBursts = (readType:verilogBits()/8) / (8*16)
 
+    out = RM.triggeredCounter(types.uint(32),nBursts,128)(out)
+  else
+    readBytesPerBurst = readType:verilogBits()/8
+  end
+  
+  out = SOC.axiReadBytes( filename, readBytesPerBurst, SOC.currentMAXIReadPort, SOC.currentAddr )(out)
+
+  local N = readType:verilogBits()/64
+  
   if readType:verilogBits()==64 then
+    out = RM.makeHandshake(C.bitcast(types.bits(64),readType))(out)
   elseif readType:verilogBits()>64 then
     out = RM.makeHandshake(C.arrayop(types.bits(64),1,1))(out)
-    local N = readType:verilogBits()/64
+
     out = RM.liftHandshake(RM.changeRate(types.bits(64),1,1,N))(out)
-    out = RM.makeHandshake(C.flattenBits( types.array2d(types.bits(64),N)))(out)
+
+    out = RM.makeHandshake(C.bitcast(types.array2d(types.bits(64),N),readType))(out)
   else
     assert(false)
   end
-  
-  out = RM.makeHandshake(C.cast(types.bits(readType:verilogBits()),readType))(out)
 
   local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(readType),inp,out,nil,nil,nil,globalMetadata)
   

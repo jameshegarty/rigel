@@ -56,6 +56,7 @@ end
 types._bits={}
 function types.bits( prec, X )
   err( X==nil, "types.bits: too many arguments" )
+--  assert(prec<512)
   assert(prec==math.floor(prec))
   err(prec>0,"types.bits precision needs to be >0")
   types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
@@ -663,6 +664,18 @@ function TypeFunctions:toCPUType()
       return types.uint(64)
     else
       err(false, "Type:toCPUType() uint NYI "..tostring(self))
+    end
+  elseif self:isBits() then
+    if self:verilogBits()<=8 then
+      return types.bits(8)
+    elseif self:verilogBits()<=16 then
+      return types.bits(16)
+    elseif self:verilogBits()<=32 then
+      return types.bits(32)
+    elseif self:verilogBits()<=64 then
+      return types.bits(64)
+    else
+      err(false, "Type:toCPUType() bits NYI "..tostring(self))
     end
   elseif self:isInt() then
     if self:verilogBits()<=8 then

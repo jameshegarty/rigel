@@ -19,6 +19,11 @@ C.identity = memoize(function(A)
   return identity
 end)
 
+C.print = memoize(function(A)
+  local identity = RM.lift( "print_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.print(A) end, "C.print")
+  return identity
+end)
+
 C.cast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
   err(types.isType(B),"cast: B should be type")
@@ -28,6 +33,22 @@ C.cast = memoize(function(A,B)
     err(A:isTuple()==false, "C.cast: NYI - terra cast from '"..tostring(A).."' to '"..tostring(B).."'") -- not supported by terra
   end
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
+  return docast
+end)
+
+C.bitcast = memoize(function(A,B)
+  err(types.isType(A),"cast: A should be type")
+  err(types.isType(B),"cast: B should be type")
+  err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
+  err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
+
+  err(A:verilogBits()==B:verilogBits(), "TYPE SIZE NOT EQ: "..tostring(A).."  - "..tostring(B))
+  local docast = RM.lift( J.sanitize("bitcast_"..tostring(A).."_"..tostring(B)), A, B, 0,
+                          function(sinp)
+                            local tmp = S.cast(sinp,types.bits(A:verilogBits()))
+                            return S.cast(tmp,B)
+                          end,
+                          function() return CT.bitcast(A,B) end, "C.cast" )
   return docast
 end)
 
@@ -102,6 +123,19 @@ C.multiplyConst = memoize(function(A,constValue)
     function() return CT.multiplyConst(A,constValue) end,
     "C.multiplyConst" )
 
+  return partial
+end)
+
+
+C.tokenCounter = memoize(function(A)
+  err( types.isType(A), "C.multiply: A must be type")
+
+  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)), A, A, 1,
+                           function(sinp) assert(false) end,
+    function() return CT.tokenCounter(A) end,
+    "C.tokenCounter" )
+
+  partial.terraModule = CT.tokenCounter(A)
   return partial
 end)
 

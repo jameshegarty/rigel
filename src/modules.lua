@@ -4041,7 +4041,7 @@ modules.triggeredCounter = memoize(function(TY, N, stride)
   res.delay=0
   res.name = "TriggeredCounter_"..verilogSanitize(tostring(TY)).."_"..tostring(N)
 
-  if terralib~=nil then res.terraModule = MT.triggeredCounter(res,TY,N) end
+  if terralib~=nil then res.terraModule = MT.triggeredCounter(res,TY,N,stride) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)

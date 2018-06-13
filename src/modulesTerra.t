@@ -365,7 +365,10 @@ function MT.upsampleXSeq(res,A, T, scale, ITYPE )
   return UpsampleXSeq
 end
 
-function MT.triggeredCounter(res,TY,N)
+function MT.triggeredCounter(res,TY,N,stride,X)
+  assert(type(stride)=="number")
+  assert(X==nil)
+  
   local struct TriggeredCounter { buffer : TY:toTerraType(), phase:int, ready:bool }
   terra TriggeredCounter:reset() self.phase=0; end
   terra TriggeredCounter:stats(name:&int8)  end
@@ -377,7 +380,7 @@ function MT.triggeredCounter(res,TY,N)
       self.buffer = @(inp)
       data(out) = @(inp)
     else
-      data(out) = self.buffer+self.phase
+      data(out) = self.buffer+(self.phase*[stride])
     end
 
     self.phase = self.phase + 1
@@ -669,6 +672,7 @@ function MT.posSeq(res,W,H,T)
       (@out)[i] = {self.x,self.y}
       self.x = self.x + 1
       if self.x==W then self.x=0; self.y=self.y+1 end
+      if self.y==H then self.y=0 end
     end
   end
 
@@ -737,6 +741,7 @@ end
 
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
+
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:init() end
@@ -745,11 +750,13 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
+--    cstdio.printf("PADPOS %d %d, %d %d %d %d, %d %d\n",self.posX,self.posY,L,R,B,Top,W,H)
     valid(out) = true
     if interior then
       data(out) = @inp
     else
       data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)])
+--      cstdio.printf("INBORDER\n")
     end
     
     self.posX = self.posX+T;

@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
   printf("Usage: XXX.verilator simCycles memStart memEnd [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
-  int simCyclesSlack = 1280000;
+  int simCyclesSlack = simCycles/10;
   unsigned int MEMBASE = strtol(argv[2],NULL,16);
   unsigned int MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
@@ -53,7 +53,8 @@ int main(int argc, char** argv) {
   int inputCount = 0;
 
   unsigned char* memory = (unsigned char*)malloc(MEMSIZE);
-
+  for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(memory+i)=0x0df0adba; }
+  
   init();
   
   while(strcmp(argv[curArg],"--outputs")!=0){
@@ -69,7 +70,10 @@ int main(int argc, char** argv) {
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
-  
+
+  const int ROUNDS = 1;
+  for(int round=0; round<ROUNDS; round++){
+    
   unsigned long totalCycles = 0;
 
   if(verbose){printSlave(S0LIST);}
@@ -129,7 +133,7 @@ int main(int argc, char** argv) {
 
   while (!Verilated::gotFinish() && totalCycles<(simCycles+simCyclesSlack) ) {
     if(CLK){
-      if(verbose){ std::cout << "------------------------------------ START CYCLE " << totalCycles <<  "(" << ((float)totalCycles/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
+      if(verbose){ std::cout << "------------------------------------ START CYCLE " << totalCycles <<  ", ROUND " << round << " (" << ((float)totalCycles/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
       // feed data in
       masterReadData(verbose,memory,M0READLIST);
       masterReadData(verbose,memory,M1READLIST);
@@ -160,9 +164,11 @@ int main(int argc, char** argv) {
     top->eval();
   }
 
-  top->final();
-  delete top;
-
+  if(round==ROUNDS-1){
+    top->final();
+    delete top;
+  }
+  
   printf("Executed Cycles: %d\n", (int)totalCycles);
 
   curArg++; // for "--outputs"
@@ -194,5 +200,7 @@ int main(int argc, char** argv) {
   
   if(errored){
     exit(1);
+  }
+
   }
 }

@@ -1,4 +1,5 @@
 local SOC = require "soc"
+local SOCMT = require "socTerra"
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local J = require "common"
@@ -7,11 +8,29 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
-V = terralib.includec("../platform/verilatorSOC/harness.h")
+V = terralib.includec("/home/jhegarty/rigel/platform/verilatorSOC/harness.h")
+
+
+local Ctmp = terralib.includecstring [[
+                                        #include <stdio.h>
+                                          #include <stdlib.h>
+                                          #include <sys/time.h>
+                                          #include <assert.h>
+                                          #include <pthread.h>
+                                          #include <stdint.h>
+                                          #include <inttypes.h>
+                                          double CurrentTimeInSecondsHT() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + tv.tv_usec / 1000000.0;
+                                 }
+                                   ]]
+
+local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
 return function(top, memStart, memEnd)
   local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
-  local extraCycles = 10240
+  local extraCycles = 10240000
   
   local Module = top:toTerra()
 
@@ -88,7 +107,8 @@ return function(top, memStart, memEnd)
         `&[top:getGlobal("IP_MAXI"..i.."_AWBURST"):terraValue()]}
     end
   end
-  
+
+  local clearOutputs = {}
   for i=0,SOC.ports do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
       table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE]) end )
@@ -97,6 +117,8 @@ return function(top, memStart, memEnd)
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
       local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
       table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE],bytes) end )
+
+      table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE]+ii)=0x0df0adba; end end )
     end
   end
   
@@ -113,70 +135,85 @@ return function(top, memStart, memEnd)
     readS
 
     V.init()
-    var cycle = 0
 
-    V.deactivateMasterRead([MREADLIST[0]])
-    V.deactivateMasterWrite([MWRITELIST[0]])
+    var ROUNDS = 1
+    for round=0,ROUNDS do
+      if verbose then cstdio.printf("ROUND %d\n",round) end
 
-    [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
-    [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+      clearOutputs
 
-    for i=0,100 do
+      V.deactivateMasterRead([MREADLIST[0]])
+      V.deactivateMasterWrite([MWRITELIST[0]])
+      
+      [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+
+      for i=0,100 do
+        if verbose then cstdio.printf("START CYCLE: RESET\n") end
+        m:calculateReady()
+        m:process(nil,nil)
+      end
+
+      var cycle = 0
+
+      ----------------------------------------------- send start cmd
+      if verbose then cstdio.printf("START CYCLE: SEND START CMD\n") end
+        
+      if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
+        cstdio.printf("IP_SAXI0_AWREADY should be true\n");
+        cstdlib.exit(1)
+      end
+      
+      data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = 0xA0000000;
+      valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
+      
+      --------------------------------------------------- step
       m:calculateReady()
       m:process(nil,nil)
-    end
-
-    -- send start cmd
-
-    if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
-      cstdio.printf("IP_SAXI0_AWREADY should be true\n");
-      cstdlib.exit(1)
-    end
-
-    data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = 0xA0000000;
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
-
-    --------------------------------------------------- step
-    m:calculateReady()
-    m:process(nil,nil)
-
-    if verbose then V.printSlave(S0LIST); end
-    var found = V.checkSlaveResponse(S0LIST);
-  
-    if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
-      cstdio.printf("IP_SAXI0_WREADY should be true\n");
-      cstdlib.exit(1)
-    end
-    
-    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = 1;
-    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
-    
-    --------------------------------------------------- step
-    m:calculateReady()
-    m:process(nil,nil)
-
-    found = found or V.checkSlaveResponse(S0LIST);
-  
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
-    
-    --------------------------------------------------- step
-    m:calculateReady()
-    m:process(nil,nil)
-
-    while(found==false and V.checkSlaveResponse(S0LIST)==false) do
-      cstdio.printf("Waiting for S0 response\n");
+      
+      if verbose then V.printSlave(S0LIST); end
+      var found = V.checkSlaveResponse(S0LIST);
+      
+      if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
+        cstdio.printf("IP_SAXI0_WREADY should be true\n");
+        cstdlib.exit(1)
+      end
+      
+      data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = 1;
+      valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
+      
+      --------------------------------------------------- step
       m:calculateReady()
       m:process(nil,nil)
-    end
-
+      
+      found = found or V.checkSlaveResponse(S0LIST);
+      
+      valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
+      
+      --------------------------------------------------- step
+      m:calculateReady()
+      m:process(nil,nil)
+      
+      while(found==false and V.checkSlaveResponse(S0LIST)==false) do
+        cstdio.printf("Waiting for S0 response\n");
+        m:calculateReady()
+        m:process(nil,nil)
+      end
+      
     V.activateMasterRead([MREADLIST[0]])
     V.activateMasterWrite([MWRITELIST[0]])
 
     [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
     [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITELIST[1]]) end else return quote end end end)() ];
 
-    while(cycle<simCycles+extraCycles) do
-      if verbose then cstdio.printf("--------------------------- START CYCLE %d -----------------------\n",cycle) end
+    var totalCycles = simCycles+extraCycles
+
+    var lastPct : int = -1
+
+    var startSec = currentTimeInSeconds()
+    
+    while (cycle<totalCycles) and ([SOCMT.doneHack]==false) do
+      if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
       
       m:calculateReady()
 
@@ -202,20 +239,38 @@ return function(top, memStart, memEnd)
       --masterReadReq(verbose,M1READLIST);
       --masterWriteReq(verbose,M1WRITELIST);
 
+      if((cycle*100)/totalCycles>lastPct) then
+        var t = currentTimeInSeconds() - startSec
+
+        var pct = (cycle*100)/totalCycles
+        cstdio.printf("Sim %d %% complete! (%d/%d cycles) (%f sec elapsed, %f to go)\n",pct,cycle,totalCycles,t,t*([float](100-pct))/([float](pct)))
+        lastPct = (cycle*100)/totalCycles
+      end
+
       cycle = cycle + 1
     end
-    
-    m:free()
-    cstdlib.free(m)
+
+    cstdio.printf("Executed cycles: %d\n", cycle)
+
+    if round==ROUNDS-1 then
+      m:free()
+      cstdlib.free(m)
+    end
 
     writeS
 
     var errored = V.checkPorts();
-  
+
+    if [SOCMT.doneHack]==false then
+      cstdio.printf("Error: Done bit not set at end of time!\n")
+      errored = true
+    end
+    
     if(errored) then
       cstdlib.exit(1);
     end
 
+    end
   end
 
   dosim()

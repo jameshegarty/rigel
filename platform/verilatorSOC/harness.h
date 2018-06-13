@@ -38,6 +38,9 @@ void QPush(Queue* q, unsigned char* data) {
     q->rear++;
     memcpy(q->data+(q->rear*q->dataBytes), data, q->dataBytes);
     q->itemCount++;
+  }else{
+    printf("Q is full!\n");
+    exit(1);
   }
 }
 
@@ -72,8 +75,10 @@ const unsigned int PORTS = 4;
 Queue readQ[PORTS];
 Queue writeQ[PORTS];
 
-unsigned int masterBytesRead[4];
-unsigned int masterBytesWritten[4];
+unsigned int masterBytesRead[PORTS];
+unsigned int masterBytesWritten[PORTS];
+
+unsigned int cyclesSinceWrite[PORTS];
 
 float randf(){ return (float)rand()/(float)(RAND_MAX); }
 
@@ -86,6 +91,7 @@ void init(){
   for(int i=0; i<PORTS; i++){
     masterBytesRead[i]=0;
     masterBytesWritten[i]=0;
+    cyclesSinceWrite[i]=0;
   }
 }
   
@@ -343,10 +349,10 @@ void masterReadData(
         QPop(&readQ[port]);
       }
     }
-  }else if( QSize(&readQ[port]) >0 && *RREADY){
-    printf("MAXI%d: %d outstanding read requests, but IP isn't ready\n", port, QSize(&readQ[port]) );
+  }else if( QSize(&readQ[port]) >0 && *RREADY==false){
+    if(verbose){printf("MAXI%d: %d outstanding read requests, but IP isn't ready\n", port, QSize(&readQ[port]) );}
   }else{
-    //if(verbose){std::cout << "MAXI" << port << " no outstanding read requests" << std::endl;}
+    if(verbose){printf("MAXI%d no outstanding read requests\n",port);}
     *RVALID = false;
   }
 }
@@ -378,7 +384,7 @@ void masterReadReq(
     t.burst = *ARLEN+1;
 
     if(verbose){
-      printf("MAXI%d Read Request addr:%d/%#x burst:%d\n",port,t.addr,t.addr,t.burst);
+      printf("MAXI%d Read Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst );
       //std::cout << "MAXI" << port << " Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
     }
     
@@ -389,10 +395,9 @@ void masterReadReq(
       exit(1);
     }
     
-    //readQ[port].push(t);
     QPush(&readQ[port],(unsigned char*)&t);
   }else{
-    if(verbose){ printf("MAXI%d no read request!",port);}
+    if(verbose){ printf("MAXI%d no read request!\n",port);}
   }
 }
 
@@ -425,6 +430,7 @@ void masterWriteData(
 
     if(verbose){
       //std::cout << "MAXI" << port << " Accept Write, Addr: " << t.addr << "/" << std::hex << "0x" << std::dec << t.addr << " data: " << WDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << writeQ[port].size() << std::endl;
+      printf("MAXI%d Accept Write, Addr: %d/%#x data: %d remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, t->burst, QSize(&writeQ[port]) );
     }
     
     t->burst--;
@@ -435,11 +441,21 @@ void masterWriteData(
     if(t->burst==0){
       QPop(&writeQ[port]);
     }
+
+    cyclesSinceWrite[port] = 0;
   }else if( QSize(&writeQ[port])<=0 && *WVALID ){
     printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
     exit(1);
   }else{
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
+
+    cyclesSinceWrite[port]++;
+
+    if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
+      Transaction* t = (Transaction*)QPeek(&writeQ[port]);
+      printf("MAXI%d write port is stalled out? No data sent for %d cycles (%d outstanding write requests, top addr %d)\n",port,cyclesSinceWrite[port],QSize(&writeQ[port]),t->addr);
+      exit(1);
+    }
   }
 }
 
@@ -473,8 +489,7 @@ void masterWriteReq(
     t.burst = *AWLEN+1;
 
     if(verbose){
-      printf("MAXI%d Write Request addr:%d/%#x burst:%d\n", port, t.addr, t.addr, t.burst);
-      printf("MAXI%d Write Request addr (base rel):%d/%#x burst:%d\n", port, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
+      printf("MAXI%d Write Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
     }
     
     t.addr -= MEMBASE;
