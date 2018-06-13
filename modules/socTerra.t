@@ -130,6 +130,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes, port, baseAddress )
   terra ReadBurst:calculateReady(readyDownstream:bool)
     --cstdio.printf("READBUSRT CALCReADY\n")
     [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = readyDownstream
+
     --if readyDownstream==false then
     --  cstdio.printf("AXIBURSTREADN not ready DS\n")
     --end

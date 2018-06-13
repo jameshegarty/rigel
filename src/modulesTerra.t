@@ -764,6 +764,10 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
       self.posX=0;
       self.posY = self.posY+1;
     end
+
+    if self.posY==(H+B+Top) then
+      self.posY = 0
+    end
 --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
   end
   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end

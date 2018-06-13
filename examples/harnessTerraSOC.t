@@ -136,7 +136,7 @@ return function(top, memStart, memEnd)
 
     V.init()
 
-    var ROUNDS = 1
+    var ROUNDS = 2
     for round=0,ROUNDS do
       if verbose then cstdio.printf("ROUND %d\n",round) end
 
