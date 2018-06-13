@@ -148,12 +148,16 @@ return function(top, memStart, memEnd)
       [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
 
+--[=[
       for i=0,100 do
         if verbose then cstdio.printf("START CYCLE: RESET\n") end
+        if i<50 then
+          m:reset()
+        end
         m:calculateReady()
         m:process(nil,nil)
       end
-
+]=]
       var cycle = 0
 
       ----------------------------------------------- send start cmd
@@ -211,8 +215,12 @@ return function(top, memStart, memEnd)
       var lastPct : int = -1
 
       var startSec = currentTimeInSeconds()
-      
-      while (cycle<totalCycles) and ([SOCMT.doneHack]==false) do
+
+      var cooldownCycles = 10000
+      var cooldownTime = false
+
+      var cyclesToDoneSignal = -1
+      while (cycle<totalCycles) and (cooldownCycles>0) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
         
         m:calculateReady()
@@ -244,10 +252,20 @@ return function(top, memStart, memEnd)
           lastPct = (cycle*100)/totalCycles
         end
 
+        if [SOCMT.doneHack] and cooldownTime==false then
+          cstdio.printf("Start Cooldown\n")
+          cyclesToDoneSignal = cycle
+          cooldownTime = true
+        end
+
+        if cooldownTime then
+          cooldownCycles = cooldownCycles - 1
+        end
+        
         cycle = cycle + 1
       end
 
-      cstdio.printf("Executed cycles: %d\n", cycle)
+      cstdio.printf("Executed cycles: %d, Cycles to Done:%d\n", cycle, cyclesToDoneSignal)
 
       if round==ROUNDS-1 then
         m:free()

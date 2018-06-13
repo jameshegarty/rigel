@@ -636,8 +636,8 @@ assign M_AXI_ARBURST = 2'b01;
 parameter IDLE = 0, RWAIT = 1;
     
 //ADDR logic
-reg [24:0] a_count;
-reg a_state;  
+reg [24:0] a_count = 0;
+reg a_state = IDLE;
 assign M_AXI_ARVALID = (a_state == RWAIT);
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
@@ -665,8 +665,8 @@ always @(posedge ACLK) begin
 end
     
 //READ logic
-reg [31:0] b_count;
-reg r_state;
+reg [31:0] b_count = 0;
+reg r_state = IDLE;
 assign M_AXI_RREADY = (r_state == RWAIT) && DATA_READY_DOWNSTREAM;
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
@@ -914,8 +914,8 @@ assign M_AXI_WSTRB = 8'b11111111;
 parameter IDLE = 0, RWAIT = 1;
     
 //ADDR logic
-reg [24:0] a_count;
-reg a_state;  
+reg [24:0] a_count = 0;
+reg a_state = IDLE;
 assign M_AXI_AWVALID = (a_state == RWAIT);
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
@@ -943,8 +943,8 @@ always @(posedge ACLK) begin
 end
 
 //WRITE logic
-reg [31:0] b_count;
-reg w_state;
+reg [31:0] b_count = 0;
+reg w_state = IDLE;
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
         w_state <= IDLE;

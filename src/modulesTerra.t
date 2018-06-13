@@ -1058,21 +1058,27 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   else
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                out : &rigel.lower(res.outputType):toTerraType())
-      if self.readyDownstream then
-        --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
-        if self.delaysr:size()==delay then
-          var ot = self.delaysr:popFront()
-          valid(out) = valid(ot)
-          cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
-        else
-          valid(out)=validFalse
-        end
 
+      --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+      if self.delaysr:size()==delay then
+        -- we've waited enough cycles
+        var ot = self.delaysr:peekFront(0)
+        valid(out) = valid(ot)
+        cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+        
+        if self.readyDownstream then
+          self.delaysr:popFront()
+        end
+      else
+        valid(out)=validFalse
+      end
+      
+      if self.readyDownstream then
         var tout : rigel.lower(res.outputType):toTerraType()
         
         valid(tout) = valid(inp);
         if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
-
+        
         self.delaysr:pushBack(&tout)
       end
     end
