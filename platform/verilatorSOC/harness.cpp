@@ -78,8 +78,9 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
-  const int ROUNDS = 1;
+  const int ROUNDS = 2;
   for(int round=0; round<ROUNDS; round++){
+    printf("ROUND %d\n",round);
     
     unsigned long cycle = 0;
     unsigned long totalCycles = simCycles+simCyclesSlack;

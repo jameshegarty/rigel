@@ -973,15 +973,19 @@ end
 reg [3:0] last_count;
 assign M_AXI_WLAST = last_count == 4'b0000;
 
-assign M_AXI_WVALID = (w_state == RWAIT) && DATA_VALID;
+assign M_AXI_WVALID = (w_state == RWAIT) && DATA_VALID && (a_count<CONFIG_NBYTES[31:7]);
 
-assign DATA_READY = (w_state == RWAIT) && M_AXI_WREADY;
+assign DATA_READY = (w_state == RWAIT) && M_AXI_WREADY && (a_count<CONFIG_NBYTES[31:7]);
    
 assign CONFIG_READY = (w_state == IDLE) && (a_state == IDLE);
 
 assign M_AXI_BREADY = 1;
 
 assign M_AXI_WDATA = DATA;
+
+//always @(posedge ACLK) begin
+//  $display("MXI M_AXI_WVALID %d M_AXI_WREADY %d",M_AXI_WVALID, M_AXI_WREADY);
+//end
 
 endmodule // DRAMWriter
 
@@ -1023,14 +1027,31 @@ parameter INSTANCE_NAME="inst";
 assign process_output=1'b0;
 
 wire CONFIG_READY;
+wire DATA_READY;
 
-reg HACK = 1'b1;
+//reg HACK = 1'b1;
 
 // HACK: to drive CONFIG_VALID, wait until we are not in reset, and DRAMWriterInner has accepted CONFIG_VALID
 // (this will happen once it sets ready=true). Then set CONFIG_VALID to false to keep it from writing multiple times
-always @(posedge CLK) begin
-  if(reset==1'b0 && ready) begin
-    HACK <= 1'b0;
+//always @(posedge CLK) begin
+//  if(reset==1'b0 && ready) begin
+//    HACK <= 1'b0;
+//  end
+//end
+
+reg [63:0] firstBuffer;
+reg firstBufferSet = 1'b0;
+
+assign ready = (DATA_READY|CONFIG_READY) && firstBufferSet==1'b0;
+
+always@(posedge CLK) begin
+  if (reset) begin
+    firstBufferSet <= 1'b0;
+  end else if (process_input[64] && CONFIG_READY && firstBufferSet==1'b0 ) begin
+    firstBufferSet <= 1'b1;
+    firstBuffer <= process_input[63:0];
+  end else if (DATA_READY) begin
+    firstBufferSet <= 1'b0;
   end
 end
 
@@ -1058,19 +1079,19 @@ DRAMWriterInner inner(
     .M_AXI_AWBURST(IP_MAXI]=]..port..[=[_AWBURST),
     
     //Control config
-    .CONFIG_VALID(HACK),
+    .CONFIG_VALID(firstBufferSet),
     .CONFIG_READY(CONFIG_READY),
     .CONFIG_START_ADDR(32'h]=]..string.format('%x',address)..[=[),
     .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
     
     //RAM port
-    .DATA(process_input[63:0]),
-    .DATA_READY(ready),
-    .DATA_VALID(process_input[64])
+    .DATA( firstBufferSet? firstBuffer : process_input[63:0] ),
+    .DATA_READY(DATA_READY),
+    .DATA_VALID(process_input[64] || (firstBufferSet && CONFIG_READY==1'b0) )
 );
 
 //always @(posedge CLK) begin
-//  $display("DRAMWRITER ready: %d valid %d",ready,process_input[64]);
+//  $display("DRAMWRITER ready: %d valid %d firstBufferSet:%d DATA_READY:%d CONFIG_READY:%d",ready,process_input[64],firstBufferSet,DATA_READY,CONFIG_READY);
 //end
 
 endmodule
