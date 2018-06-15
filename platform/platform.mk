@@ -22,7 +22,7 @@ $(BUILDDIR)/%.$(1).cycles.txt: $(BUILDDIR)/%.$(1).raw
 	../rigelLuajit $(MKPATH)/../misc/extractCycles.lua $(BUILDDIR)/$$*.$(1).raw > $(BUILDDIR)/$$*.$(1).cycles.txt
 
 $(BUILDDIR)/%.$(1).bmp: $(BUILDDIR)/%.$(1).raw $(BUILDDIR)/%.metadata.lua
-	$(LUA) $(MKPATH)/../misc/raw2bmp.lua $(BUILDDIR)/$$*.$(1).raw $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*.metadata.lua 0
+	$(LUAJIT) $(MKPATH)/../misc/raw2bmp.lua $(BUILDDIR)/$$*.$(1).raw $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*.metadata.lua 0
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$$*_$(1)
 	cp $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*_$(1)
