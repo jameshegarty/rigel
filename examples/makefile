@@ -14,6 +14,7 @@ METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
 LUA = ../rigelLuajit
+LUAJIT = ../rigelLuajit
 TERRA = ../rigelTerra
 
 RAWS = $(wildcard *.raw)
