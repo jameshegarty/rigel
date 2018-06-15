@@ -270,6 +270,135 @@ end
 
 darkroom.__unnamedID = 0
 
+local function typeToKey(t)
+  local res = {}
+  for k,v in pairs(t) do
+    if type(k)=="number" then
+      local outk
+      if type(v)=="number" then
+        outk="number"
+      elseif type(v)=="boolean" then
+        outk="bool"
+      elseif type(v)=="function" then
+        outk="luaFunction"
+      elseif types.isType(v) then
+        outk="type"
+      elseif darkroom.isFunction(v) then
+        outk="rigelFunction"
+      elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
+        outk="size"
+      elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
+             and type(v[3])=="number" and type(v[4])=="number" then
+        outk="bounds"
+      else
+        J.err(false,"unknown type to key? "..tostring(v))
+      end
+      
+      J.err( res[outk]==nil, "Generator key '"..outk.."' is set twice?" )
+      res[outk] = v
+    else
+      J.err( res[k]==nil, "Generator key '"..k.."' is set twice?" )
+      res[k] = v
+    end
+  end
+  return res
+end
+
+local generatorFunctions = {}
+local generatorMT={}
+
+generatorMT.__call=function(tab,...)
+  local rawarg = {...}
+  if darkroom.isIR(rawarg[1]) then
+
+    local arg
+    if #rawarg>1 then
+      -- collapse multi args into tuple
+      arg = darkroom.concat(nil, rawarg)
+    else
+      arg = rawarg[1]
+    end
+    
+    local arglist = {}
+    for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+    if arglist.type==nil then arglist.type = arg.type end
+    return tab:complete(arglist)(arg)
+  elseif type(rawarg[1])=="table" and #rawarg==1 then
+    local arg = rawarg[1]
+    err( J.keycount(arg)>0, "Calling a generator with an empty parameter list?" )
+            
+    arg = typeToKey(arg)
+
+    local arglist = {}
+    for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+    for k,v in pairs(arg) do
+      J.err( arglist[k]==nil, "Argument '"..k.."' was already passed to generator" )
+      arglist[k] = v
+    end
+    
+    if tab:checkArgs(arglist) then
+      return tab:complete(arglist)
+    else
+      -- not done yet, return curried generator
+      --local res = setmetatable( {name=tab.name, requiredArgs=tab.requiredArgs, optArgs=tab.optArgs, completeFn=tab.completeFn, curriedArgs=arglist }, generatorMT )
+      local res = darkroom.newGenerator( tab.namespace, tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn )
+      res.curriedArgs = arglist
+      return res
+    end
+  else
+    J.err(false, "Called a generator with something other than a Rigel value or table? Make sure you call generator with curly brackets {}")
+  end
+end
+generatorMT.__index = generatorFunctions
+
+
+-- return true if done, false if not done
+function generatorFunctions:checkArgs(arglist)
+  local reqArgs = {}
+
+  for k,v in pairs(arglist) do
+    if self.requiredArgs[k]==nil and self.optArgs[k]==nil then
+      print("Error, generator arg '"..k.."' is not in list of required or optional args on generator '"..self.namespace.."."..self.name.."'!" )
+      print("Required Args: ")
+      for k,v in pairs(self.requiredArgs) do print(k..",") end
+      assert(false)
+    end
+    if self.requiredArgs[k]~=nil then reqArgs[k]=1 end
+  end
+
+  return J.keycount(reqArgs)==J.keycount(self.requiredArgs)
+end
+
+function generatorFunctions:listArgs()
+  local s = ""
+  for k,v in pairs(self.requiredArgs) do s = k..","..s end
+  return s
+end
+
+function generatorFunctions:complete(arglist)
+  self:checkArgs(arglist)
+  local mod = self.completeFn(arglist)
+  J.err( darkroom.isModule(mod), "generator returned something other than a rigel module?" )
+  mod.generator = self
+  mod.generatorArgs = arglist
+  return mod
+end
+
+function darkroom.newGenerator( namespace, name, requiredArgs, optArgs, completeFn )
+  err( type(namespace)=="string", "newGenerator: namespace must be string" )
+  err( type(name)=="string", "newGenerator: name must be table" )
+  err( type(requiredArgs)=="table", "newGenerator: requiredArgs must be table" )
+  if J.keycount(requiredArgs)==#requiredArgs then requiredArgs = J.invertTable(requiredArgs) end -- convert array of names to set
+  for k,v in pairs(requiredArgs) do J.err( type(k)=="string", "newGenerator: requiredArgs must be set of strings" ) end
+  err( type(optArgs)=="table", "newGenerator: requiredArgs must be table" )
+  if J.keycount(optArgs)==#optArgs then optArgs = J.invertTable(optArgs) end -- convert array of names to set
+  for k,v in pairs(optArgs) do J.err( type(k)=="string", "newGenerator: optArgs must be set of strings" ) end
+  err( type(completeFn)=="function", "newGenerator: completeFn must be lua function" )
+  
+  return setmetatable( {namespace=namespace, name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={} }, generatorMT )
+end
+function darkroom.isGenerator(t) return getmetatable(t)==generatorMT end
+
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={
 __index=function(tab,key)
@@ -304,13 +433,24 @@ __index=function(tab,key)
       if tab.outputType~=types.null() then
         err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
       end
+
+      err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong?" )
+      err( darkroom.lower(tab.inputType)==sm.functions.process.input.type, "module input type wrong?" )
     end
     
     rawset(tab,"systolicModule", sm )
     return sm
+  elseif key=="terraModule" then
+    err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
+    err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
+    local tm = rawget(tab,"makeTerra")()
+
+    rawset(tab,"terraModule", tm )
+    return tm
   end
 end,
 __call=function(tab,arg)
+  J.err( darkroom.isIR(arg),"applying a module to something other than a rigel value?")
 
   -- discover variable name from lua
   if arg.defaultName then
@@ -321,11 +461,31 @@ __call=function(tab,arg)
       arg.defaultname=false
     end
   end
-  
+
   local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
+end,
+__tostring=function(mod)
+  local res = {}
+
+  table.insert(res,"Module "..mod.name)
+  table.insert(res,"  InputType: "..tostring(mod.inputType))
+  table.insert(res,"  OutputType: "..tostring(mod.outputType))
+  if SDFRate.isSDFRate(mod.sdfInput) then
+    table.insert(res,"  InputSDF: "..SDFRate.tostring(mod.sdfInput))
+  else
+    table.insert(res,"  InputSDF: Not an SDF rate?")
+  end
+
+  if SDFRate.isSDFRate(mod.sdfOutput) then
+    table.insert(res,"  OutputSDF: "..SDFRate.tostring(mod.sdfOutput))
+  else
+    table.insert(res,"  OutputSDF: Not an SDF rate?")
+  end
+  
+  return table.concat(res,"\n")
 end
 }
 
@@ -387,8 +547,56 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
   return { res, resConverged }
 end
 
-function darkroomFunctionFunctions:compile() return self.terraModule end
+function darkroomFunctionFunctions:toTerra() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
+
+function darkroomFunctionFunctions:instantiate(name)
+  err( self.registered, "Can't instantiate a non-registered module!")
+  if name==nil then
+    name = "UnnamedInstance"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID + 1
+  end
+  local res = darkroom.instantiateRegistered(name, self )
+
+  -- hack
+  res.start = darkroom.newInstanceCallsite(res,"start")
+  res.done = darkroom.newInstanceCallsite(res,"done")
+  res.load = darkroom.newInstanceCallsite(res,"load")
+  res.store = darkroom.newInstanceCallsite(res,"store")
+  
+  return res
+end
+
+function darkroomFunctionFunctions:getGlobal(name)
+  for k,_ in pairs(self.globals) do
+    if k.name==name then return k end
+  end
+  --print("Could not find global '"..name.."'")
+end
+
+darkroomInstanceCallsiteMT = {}
+darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
+
+function darkroom.newInstanceCallsite( instance, functionName, X )
+  err( darkroom.isInstance(instance),"newInstanceCallsite: instance should be instance" )
+  err( type(functionName)=="string", "newInstanceCallsite: function name must be string" )
+  err( X==nil, "newInstanceCallsite: too many arguments" )
+
+  local res = { instance=instance, functionName=functionName }
+  if functionName=="load" or functionName=="start" then
+    res.outputType = instance.fn.outputType
+    res.inputType = types.null()
+  elseif functionName=="store" or functionName=="done" then
+    res.inputType = instance.fn.inputType
+    res.outputType = types.null()
+  else
+    err(false,"newInstanceCallsite: unknown function '"..functionName.."'")
+  end
+
+  return setmetatable( res, darkroomInstanceCallsiteMT )
+end
+
+function darkroom.isInstanceCallsite( t ) return getmetatable(t)==darkroomInstanceCallsiteMT end
 
 function darkroom.newFunction(tab,X)
   err( type(tab) == "table", "rigel.newFunction: input must be table" )
@@ -402,7 +610,7 @@ function darkroom.newFunction(tab,X)
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
- 
+
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType)) end
 
@@ -414,7 +622,8 @@ end
 
 darkroomIRFunctions = {}
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
-darkroomIRMT = {__index = darkroomIRFunctions }
+darkroomIRMT = {__index = darkroomIRFunctions}
+
 darkroomInstanceMT = {}
 
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
@@ -457,8 +666,11 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
           assert( SDFRate.isSDFRate(args[1][1]))
           assert(type(args[1][2][1])=="boolean")
           res = {args[1][1],args[1][2]}
+        elseif n.fnname=="start" or n.fnname=="done" then
+          -- just pass through
+          res = {args[1][1],args[1][2]}
         else
-          assert(false)
+          err( false, "sdfTotalInner: unknown method '"..n.fnname.."'" )
         end
       elseif n.kind=="apply" then
         if #n.inputs==0 then
@@ -639,9 +851,9 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="applyMethod" then
     err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
     
-    if n.fnname=="load" then
+    if n.fnname=="load" or n.fnname=="start" then
       n.type = n.inst.fn.outputType
-    elseif n.fnname=="store" then
+    elseif n.fnname=="store" or n.fnname=="done" then
       if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
       n.type = types.null()
     else
@@ -707,15 +919,11 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="applyMethod" then
         assert( n.inst.fn.registered )
         local I = module:lookupInstance(n.inst.name)
-        if n.fnname=="load" then 
-          module:lookupFunction("reset"):addPipeline( I:load_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:load()}
-        elseif n.fnname=="store" then
-          module:lookupFunction("reset"):addPipeline( I:store_reset(nil,module:lookupFunction("reset"):getValid()) )
-          return {I:store(inputs[1][1])}
-        else
-          assert(false)
-        end
+
+        module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        local inp = inputs[1]
+        if inp~=nil then inp=inp[1] end
+        return {I[n.fnname](I,inp)}
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.name)
         err( n.fn.systolicModule:lookupFunction("process")~=nil, "Error, missing process fn? "..n.fn.name)
@@ -729,13 +937,13 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)
 
-        local SC = {}
-        for g,_ in pairs(n.fn.globals) do
-          SC[g.systolicValue] = g.systolicValue
-          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
-        end
+--        local SC = {}
+--        for g,_ in pairs(n.fn.globals) do
+--          SC[g.systolicValue] = g.systolicValue
+--          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
+--        end
         
-        local I = module:add( n.fn.systolicModule:instantiate(n.name,nil,SC) )
+        local I = module:add( n.fn.systolicModule:instantiate(n.name) )
 
         if darkroom.isHandshakeAny( n.fn.inputType ) or
         darkroom.isHandshakeAny(n.fn.outputType) then
@@ -786,7 +994,8 @@ function darkroomIRFunctions:codegenSystolic( module )
 end
 
 
-function darkroom.isFunction(t) return getmetatable(t)==darkroomFunctionMT end
+function darkroom.isModule(t) return getmetatable(t)==darkroomFunctionMT end
+function darkroom.isFunction(t) return darkroom.isModule(t) or darkroom.isGenerator(t) or darkroom.isInstanceCallsite(t) end
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
@@ -832,6 +1041,18 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
   err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )
+
+  if darkroom.isGenerator(fn) then
+    fn = fn{input.type}
+  elseif darkroom.isInstanceCallsite(fn) then
+    return darkroom.applyMethod( name, fn.instance, fn.functionName, input )
+  end
+
+  if darkroom.isModule(fn)==false then
+    print("Generator '"..table.concat(fn.name,".").."' could not be resolved into a module?")
+    print("Unbounded args: "..fn:listArgs())
+    assert(false)
+  end
   
   return darkroom.newIR( {kind = "apply", name = name, loc=getloc(), fn = fn, inputs = {input}, sdfRateOverride=sdfRateOverride } )
 end
@@ -855,11 +1076,19 @@ end
 
 -- packStreams: do we consider the output of this to be 1 SDF stream, or N?
 function darkroom.concat( name, t, X )
-  err( type(name)=="string", "first tuple input should be name")
+  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
+  
+  if name==nil then
+    r.defaultName=true
+    r.name="concat"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+  else
+    err( type(name)=="string", "first tuple input should be name")
+  end
+    
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
-
-  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
+  
   J.map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
@@ -892,6 +1121,45 @@ function darkroom.statements( t )
   return darkroom.newIR{kind="statements",inputs=t,loc=getloc(),name="__&STATEMENTS"}
 end
 
+-- this should go somewhere else
+function darkroom.handshakeMode(output)
+  local HANDSHAKE_MODE = false
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.fn.inputType) or darkroom.isHandshakeAny(n.fn.outputType)
+      elseif n.kind=="applyMethod" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.fn.inputType) or darkroom.isHandshakeAny(n.inst.fn.outputType)
+      end
+    end)
+  return HANDSHAKE_MODE
+end
 
+function darkroom.export(t)
+  if t==nil then t=_G end
+
+  -- constants
+  local t_c = function(arg)
+    J.err( type(arg)=="table", "c: argument should be table" )
+    J.err( #arg==2, "c: should have 2 args" )
+
+    local ty, val
+    if types.isType(arg[1]) then
+      ty = arg[1]
+      val = arg[2]
+    else
+      ty = arg[2]
+      val = arg[1]
+    end
+
+    local res = darkroom.constant("const"..darkroom.__unnamedID,val,ty)
+    res.defaultName = true
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+
+    return res
+  end
+
+  rawset(t,"c",t_c)
+end
 
 return darkroom

@@ -296,7 +296,8 @@ int main(int argc, char *argv[]) {
   fflush(stdout);
 
   //usleep(10000);
-  sleep(2); // this sleep needs to be 2 for the z100, but 1 for the z20
+  printf("Waiting 8 seconds\n");
+  sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
 
   writeOutputs(curArg,argc,argv,ptr);
   //saveImage(argv[4],ptr+lenIn,lenOutRaw);

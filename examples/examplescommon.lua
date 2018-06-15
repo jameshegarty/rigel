@@ -19,14 +19,58 @@ C.identity = memoize(function(A)
   return identity
 end)
 
+C.print = memoize(function(A)
+  local identity = RM.lift( "print_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.print(A) end, "C.print")
+  return identity
+end)
+
 C.cast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
   err(types.isType(B),"cast: B should be type")
   err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
   err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
-  assert(A:isTuple()==false) -- not supported by terra
+  if terralib~=nil then
+    err(A:isTuple()==false, "C.cast: NYI - terra cast from '"..tostring(A).."' to '"..tostring(B).."'") -- not supported by terra
+  end
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
+end)
+
+C.bitcast = memoize(function(A,B)
+  err(types.isType(A),"cast: A should be type")
+  err(types.isType(B),"cast: B should be type")
+  err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
+  err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
+
+  err(A:verilogBits()==B:verilogBits(), "TYPE SIZE NOT EQ: "..tostring(A).."  - "..tostring(B))
+  local docast = RM.lift( J.sanitize("bitcast_"..tostring(A).."_"..tostring(B)), A, B, 0,
+                          function(sinp)
+                            local tmp = S.cast(sinp,types.bits(A:verilogBits()))
+                            return S.cast(tmp,B)
+                          end,
+                          function() return CT.bitcast(A,B) end, "C.cast" )
+  return docast
+end)
+
+-- takes bits(N)[M] to bits(N*M)
+C.flattenBits = memoize(function(ty)
+  if ty:isArray() and ty:arrayOver():isBits() then
+    return RM.lift( J.sanitize("FlattenBits_"..tostring(ty)), ty, types.bits(ty:verilogBits()), 0, function(sinp) return S.cast(sinp,types.bits(ty:verilogBits())) end, function() assert(false) end, "C.flattenBits" )
+  else
+    J.err( "NYI - flattenBits of type "..tostring(ty) )
+  end
+end)
+
+-- takes bits(N*M) to bits(M)[N]
+C.partitionBits = memoize(function(ty, N)
+  J.err( type(N)=="number", "C.partitionBits: N must be number")
+  J.err( ty:verilogBits()%N==0, "C.partitionBits: N must device type bits")
+  if ty:isBits() then
+    local otype = types.array2d(types.bits(ty:verilogBits()/N),N)
+     return RM.lift( J.sanitize("PartitionBits_"..tostring(ty).."_"..tostring(N)), ty, otype, 0, function(sinp) return S.cast(sinp,otype) end, function() assert(false) end, "C.partitionBits" )
+  else
+    J.err( "NYI - partitionBits of type "..tostring(ty) )
+  end
 end)
 
 -- takes {T[N/2],T[N/2]} to T[N]
@@ -65,6 +109,33 @@ C.multiply = memoize(function(A,B,outputType)
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
 
+  return partial
+end)
+
+------------
+-- return A*B as a darkroom FN. A,B are types
+-- returns something of type outputType
+C.multiplyConst = memoize(function(A,constValue)
+  err( types.isType(A), "C.multiply: A must be type")
+
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
+    function(sinp) return sinp*S.constant(constValue,A) end,
+    function() return CT.multiplyConst(A,constValue) end,
+    "C.multiplyConst" )
+
+  return partial
+end)
+
+
+C.tokenCounter = memoize(function(A)
+  err( types.isType(A), "C.multiply: A must be type")
+
+  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)), A, A, 1,
+                           function(sinp) assert(false) end,
+    function() return CT.tokenCounter(A) end,
+    "C.tokenCounter" )
+
+  partial.terraModule = CT.tokenCounter(A)
   return partial
 end)
 
@@ -123,6 +194,62 @@ C.sub = memoize(function( A, B, outputType, async )
 end)
 
 -----------------------------
+C.rshift = memoize(function(A,const)
+  err( types.isType(A),"C.rshift: type should be rigel type")
+  err( type(const)=="number" or const==nil,"C.rshift: const should be number or value")
+  
+  if const~=nil then
+    -- shift by a const
+    J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,nil,nil,
+                        function(inp) return S.rshift(inp,S.constant(const,A)) end)
+    return mod
+  else
+    assert(false)
+  end
+end)
+
+-----------------------------
+C.addMSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.addMSBs: type should be rigel type")
+  err( type(bits)=="number","C.addMSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    otype = types.uint(A.precision+bits)
+  elseif A:isInt() then
+    otype = types.int(A.precision+bits)
+  else
+    J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(inp,otype) end)
+  return mod
+end)
+
+-----------------------------
+C.removeMSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.removeMSBs: type should be rigel type")
+  err( type(bits)=="number","C.removeMSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.uint(A.precision-bits)
+  elseif A:isInt() then
+    J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.int(A.precision-bits)
+  else
+    J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(inp,otype) end)
+  return mod
+end)
+
+-----------------------------
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
@@ -158,6 +285,24 @@ end)
 C.valueToTrigger = memoize(function(ty)
   return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
     function(sinp) end, nil,"C.valueToTrigger")
+end)
+
+-----------------------------
+C.triggerToConstant = memoize(function(ty,value)
+  J.err( types.isType(ty), "C.triggerToConstant: type must be type")
+  return RM.lift( "TriggerToConstant_"..tostring(ty), types.null(), ty, 0,
+    function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
+end)
+
+-----------------------------
+-- take in 1 trigger, and write out N triggers (aka trigger upsample)
+C.triggerUp = memoize(function(N)
+  J.err(type(N)=="number","triggerUp: input must be number")
+  local inp = R.input(R.HandshakeTrigger)
+  local val = RM.makeHandshake( RM.constSeq({0},types.uint(8),1,1,1), nil, true )(inp)
+  val = RM.upsampleXSeq(types.uint(8),1,N)(val)
+  val = RM.makeHandshake(C.valueToTrigger(types.array2d(types.uint(8),1)),nil,true)(val)
+  return RM.lambda("TriggerUp_"..tostring(N), inp,val)
 end)
 
 -----------------------------
@@ -1150,7 +1295,7 @@ function C.linearPipeline(t,modulename)
   end
 
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
-  for _,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules") end
+  for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
   local inp = R.input(t[1].inputType)
   local out = inp

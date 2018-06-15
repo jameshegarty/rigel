@@ -198,32 +198,29 @@ function systolic.valueToVerilog( value, ty )
   end
 end
 
-function systolicModuleFunctions:instantiate( name, parameters, sideChannels, X )
+function systolicModuleFunctions:instantiate( name, parameters, X )
   err( type(name)=="string", "instantiation name must be a string")
   err( X==nil,"instantiate: too many arguments" )
   err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
-  local A,B=0,0
-  if sideChannels~=nil then A=J.keycount(sideChannels) end
-  if self.sideChannels~=nil then B=J.keycount(self.sideChannels) end
-  err( A==B, "instantiate ("..name.."): # of input sideChannels ("..tostring(A)..","..tostring(sideChannels)..") must match expected # ("..tostring(B)..")")
+--  local A,B=0,0
+--  if sideChannels~=nil then A=J.keycount(sideChannels) end
+--  if self.sideChannels~=nil then B=J.keycount(self.sideChannels) end
+--  err( A==B, "instantiate ("..name.."): # of input sideChannels ("..tostring(A)..","..tostring(sideChannels)..") must match expected # ("..tostring(B)..")")
 
-  local SC = {}
+--  local SC = {}
 
-  if self.sideChannels~=nil then
-    for k,_ in pairs(self.sideChannels) do
---      if sideChannels~=nil then
-        err( systolic.isSideChannel(sideChannels[k]), "instantiate: NYI - instantiate currently expects list of side channels, but is "..tostring(sideChannels[k]))
-              
-        SC[k] = sideChannels[k]
---      end
-    end
-  end
+--  if self.sideChannels~=nil then
+--    for k,_ in pairs(self.sideChannels) do
+--        err( systolic.isSideChannel(sideChannels[k]), "instantiate: NYI - instantiate currently expects list of side channels, but is "..tostring(sideChannels[k]))
+--        SC[k] = sideChannels[k]
+--    end
+--  end
   
   -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
-  return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc(), sideChannels=SC })
+  return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
 function systolicModuleFunctions:lookupFunction( fnname )
@@ -246,7 +243,7 @@ function systolic.lambdaTab( tab )
 end
 
 function systolic.lambda( name, inputParameter, output, outputName, pipelines, validParameter, CEParameter, X )
-  err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST" )
+  err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST, but is '"..tostring(inputParameter).."'" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(validParameter) or validParameter==nil, "valid parameter must be a systolic AST or nil" )
   if validParameter~=nil then err(validParameter.kind=="parameter","valid parameter must be parameter") end
@@ -348,13 +345,14 @@ __index = function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
   v = systolicInstanceFunctions[key]
-
+    
   if v==nil and rawget(tab,"kind")=="module" then
     -- try to find key in function tab
     local fn = rawget(tab,"module").functions[key]
     --err( systolic.isFunction(fn), "Function "..key.." is not a function on module "..tab.module.kind.."?")
     if fn~=nil then
       return function(self, inp, valid, ce, X)
+        assert(systolic.isInstance(self))
         err(tab.final==false, "Attempting to modify a finalized instance!")
         if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
@@ -372,7 +370,7 @@ __index = function(tab,key)
           -- We don't actually need to insert an explicit cast, it doesn't matter. Cast would be a noop
 --          inp = systolic.cast( inp, fn.inputParameter.type )
         else
-          err( false, "Error, input type to function '"..fn.name.."' on module '"..tab.name.."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.inputParameter.type).."'" )
+          err( false, "Error, input type to function '"..fn.name.."' on instance '"..tab.name.."' of module '"..tostring(tab.module.name).."' incorrect. Is '"..tostring(inp.type).."' but should be '"..tostring(fn.inputParameter.type).."'" )
         end
 
         return createCallsite( fn, key, tab, inp, valid, ce )
@@ -869,7 +867,7 @@ function systolicASTFunctions:addValid( validbit, module )
             if nn.kind=="call" then
               -- don't recurse into other calls, they may include the valid bit, but that's OK!
             elseif nn.kind=="parameter" and nn.key==validbit.key then 
-              error("Explicit valid bit includes parent scope valid bit (function call to "..n.func.name.." in module "..module.name..")! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc)
+              error("Explicit valid bit includes parent scope valid bit (function call to '"..n.func.name.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' inside module '"..module.name.."')! This is not necessary, it's added automatically. "..n.loc.." \n\n valid bit at loc: "..nn.loc.." \n\n call at loc:"..n.loc)
             else
               J.map(nn.inputs, function(i) checkValidBit(i) end)
             end
@@ -1425,17 +1423,12 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
   end
 
   for scSink,_ in pairs(self.sideChannels) do
---    if instance.sideChannels~=nil then -- hack
---      local scSource = instance.sideChannels[scSink]
-    --      err( systolic.isSideChannel(scSource),"NYI - side channels being driven by something other than a side channel")
-    if instance.sideChannels~=nil then
-      local scSource = instance.sideChannels[scSink]
-      table.insert(arglist,", ."..scSink.name.."("..scSource.name..")")
-    else
-      table.insert(arglist,", ."..scSink.name.."()")
-    end
+--    if instance.module.sideChannels~=nil then
+--      local scSource = instance.module.sideChannels[scSink]
+    table.insert(arglist,", ."..scSink.name.."("..scSink.name..")")
+--    else
+--      table.insert(arglist,", ."..scSink.name.."()")
 --    end
-    
   end
   
   local params = ""
@@ -1589,7 +1582,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   local SC = {}
   if sideChannels~=nil then
     for k,_ in pairs(sideChannels) do
-      err(systolic.isSideChannel(k),"systolic.module.new: element is side channel set is not a side channel")
+      err(systolic.isSideChannel(k),"systolic.module.new: element in side channel set is not a side channel")
       SC[k]=1
     end
   end
@@ -1614,7 +1607,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   end
 
   for k,_ in pairs(SC) do
-    err( _usedPname[k.name]==nil,"side channel name '"..k.name.."' is used somewhere else in module")
+    err( _usedPname[k.name]==nil,"side channel name '"..k.name.."' is used somewhere else in module (as a "..tostring(_usedPname[k.name])..")")
     _usedPname[k.name]="side channel"
   end
   
@@ -1631,6 +1624,15 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
+  -- check for dangling side channels
+  for _,inst in pairs(instances) do
+    if inst.module.sideChannels~=nil then
+      for sc,_ in pairs(inst.module.sideChannels) do
+        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."'")
+      end
+    end
+  end
+  
   -- different functions can have the same stall domains. We consider them identical if they have the same name
   for k,v in pairs(fns) do
     if v.CE~=nil then 

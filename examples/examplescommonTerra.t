@@ -1,9 +1,14 @@
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
 local err = J.err
 local MT = require "modulesTerra"
+
+local data = macro(function(i) return `i._0 end)
+local valid = macro(function(i) return `i._1 end)
+local ready = macro(function(i) return `i._2 end)
 
 CT={}
 
@@ -13,12 +18,68 @@ function CT.identity(A)
                   end
 end
 
+function CT.print(A)
+
+  local function doprint(A,symb)
+    assert(symb~=nil)
+    
+    if A:isArray() then
+      local tab = {}
+      table.insert(tab,quote cstdio.printf("[") end)
+      for i=0,A:channels()-1 do
+        table.insert(tab,doprint(A:arrayOver(),`symb[i]))
+        if i~=A:channels()-1 then table.insert(tab,quote cstdio.printf(",") end) end
+      end
+      table.insert(tab,quote cstdio.printf("]") end)
+      return quote [tab] end
+    elseif A:isTuple() then
+      local tab = {}
+      table.insert(tab,quote cstdio.printf("{") end)
+      for i=1,#A.list do
+        table.insert(tab,doprint(A.list[i],`symb.["_"..(i-1)]))
+        if i~=#A.list then table.insert(tab,quote cstdio.printf(",") end) end
+      end
+      table.insert(tab,quote cstdio.printf("}") end)
+      return quote [tab] end      
+    elseif A:isUint() or A:isInt() or A:isBits() then
+      return quote cstdio.printf("%d",symb) end
+    else
+      print(A)
+      assert(false)
+    end
+  end
+  
+  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+    var aa = @a
+    [doprint(A,aa)]
+    cstdio.printf("\n")
+    @out = @a
+  end
+end
+
 function CT.cast(A,B)
   err(types.isType(B), "examples common cast, B must be type")
-  
+
+  if A:isBits() then
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = @[&B:toTerraType()](a)
+    end
+  elseif B:isBits() and A:isArray() and B:verilogBits()==A:verilogBits() then
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = @[&B:toTerraType()](a)
+    end
+  else
+    return terra( a : &A:toTerraType(), out : &B:toTerraType() )
+      @out = [B:toTerraType()](@a)
+    end
+  end
+end
+
+function CT.bitcast(A,B)
+  assert( terralib.sizeof(A:toTerraType()) == terralib.sizeof(B:toTerraType()) )
   return terra( a : &A:toTerraType(), out : &B:toTerraType() )
-                            @out = [B:toTerraType()](@a)
-                  end
+    @out = @[&B:toTerraType()](a)
+  end
 end
 
 function CT.flatten2(T,N)
@@ -48,6 +109,30 @@ function CT.multiply(A,B,outputType)
   return terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
                             @out = [outputType:toTerraType()](a._0)*[outputType:toTerraType()](a._1)
                   end
+end
+
+function CT.multiplyConst(A,constValue)
+  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+    @out = [A:toTerraType()](@a)*[A:toTerraType()](constValue)
+  end
+end
+
+function CT.tokenCounter(A)
+  local struct TokenCounter { cnt:uint, ready:bool }
+  terra TokenCounter:reset() self.cnt=0 end
+  terra TokenCounter:process( a : &A:toTerraType(), out : &A:toTerraType() )
+    @out = @a
+
+    if valid(a) and self.ready then
+      self.cnt = self.cnt+1
+      cstdio.printf("CNT %d\n",self.cnt)
+    end
+  end
+terra TokenCounter:calculateReady(readyDownstream:bool)
+self.ready = readyDownstream
+end
+
+return MT.new(TokenCounter)
 end
 
 function CT.sum(A,B,outputType,async)

@@ -1,6 +1,6 @@
 BUILDDIR ?= out
 
-SRCS_SOC = soc_simple.lua soc_2in.lua
+SRCS_SOC = soc_simple.lua soc_2in.lua convgen.lua soc_flip.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
@@ -14,6 +14,7 @@ METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
 LUA = ../rigelLuajit
+LUAJIT = ../rigelLuajit
 TERRA = ../rigelTerra
 
 RAWS = $(wildcard *.raw)
@@ -37,13 +38,14 @@ SRCS_TERRA := $(filter-out sift_hw_1080p.lua sift_hw.lua, $(SRCS_TERRA))
 
 # NYI
 SRCS_TERRA := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_TERRA))
+SRCS_TERRA += $(SRCS_SOC)
 
 TERRAOUT = $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.raw,$(SRCS_TERRA))
+#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.bmp,$(SRCS_TERRA))
+#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
-TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.correct.txt,$(SRCS_TERRA))
+#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
 SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua, $(SRCS))

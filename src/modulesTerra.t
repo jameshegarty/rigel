@@ -42,7 +42,7 @@ function MT.new(Module)
   if Module.methods.reset==nil then terra Module:reset() end end
   if Module.methods.stats==nil then terra Module:stats(n:&int8) end end
 
-  assert(Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil))
+  err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
   assert(Module.methods.init~=nil)
   assert(Module.methods.stats~=nil)
   assert(Module.methods.free~=nil)
@@ -365,7 +365,10 @@ function MT.upsampleXSeq(res,A, T, scale, ITYPE )
   return UpsampleXSeq
 end
 
-function MT.triggeredCounter(res,TY,N)
+function MT.triggeredCounter(res,TY,N,stride,X)
+  assert(type(stride)=="number")
+  assert(X==nil)
+  
   local struct TriggeredCounter { buffer : TY:toTerraType(), phase:int, ready:bool }
   terra TriggeredCounter:reset() self.phase=0; end
   terra TriggeredCounter:stats(name:&int8)  end
@@ -377,7 +380,7 @@ function MT.triggeredCounter(res,TY,N)
       self.buffer = @(inp)
       data(out) = @(inp)
     else
-      data(out) = self.buffer+self.phase
+      data(out) = self.buffer+(self.phase*[stride])
     end
 
     self.phase = self.phase + 1
@@ -625,16 +628,31 @@ function MT.broadcastStream(res,A,N)
   terra BroadcastStream:init() end
   terra BroadcastStream:free() end
   terra BroadcastStream:stats( name: &int8) end
-  terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    for i=0,N do
-      if self.ready then -- all of readyDownstream are true
-        data((@out)[i]) = data(inp)
-        valid((@out)[i]) = valid(inp)
-      else
-        valid((@out)[i]) = false
+
+  if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTriggerArray(res.outputType) then
+    terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,N do
+        if self.ready then -- all of readyDownstream are true
+          (@out)[i] = @inp
+        else
+          (@out)[i] = false
+        end
+      end
+    end
+
+  else
+    terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,N do
+        if self.ready then -- all of readyDownstream are true
+          data((@out)[i]) = data(inp)
+          valid((@out)[i]) = valid(inp)
+        else
+          valid((@out)[i]) = false
+        end
       end
     end
   end
+
   terra BroadcastStream:calculateReady( readyDownstream : bool[N] )
     self.ready = true
     for i=0,N do
@@ -654,6 +672,7 @@ function MT.posSeq(res,W,H,T)
       (@out)[i] = {self.x,self.y}
       self.x = self.x + 1
       if self.x==W then self.x=0; self.y=self.y+1 end
+      if self.y==H then self.y=0 end
     end
   end
 
@@ -722,6 +741,7 @@ end
 
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
+
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:init() end
@@ -730,17 +750,23 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
+--    cstdio.printf("PADPOS %d %d, %d %d %d %d, %d %d\n",self.posX,self.posY,L,R,B,Top,W,H)
     valid(out) = true
     if interior then
       data(out) = @inp
     else
       data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)])
+--      cstdio.printf("INBORDER\n")
     end
     
     self.posX = self.posX+T;
     if self.posX==(W+L+R) then
       self.posX=0;
       self.posY = self.posY+1;
+    end
+
+    if self.posY==(H+B+Top) then
+      self.posY = 0
     end
 --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
   end
@@ -1032,21 +1058,27 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   else
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                out : &rigel.lower(res.outputType):toTerraType())
-      if self.readyDownstream then
-        --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
-        if self.delaysr:size()==delay then
-          var ot = self.delaysr:popFront()
-          valid(out) = valid(ot)
-          cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
-        else
-          valid(out)=validFalse
-        end
 
+      --if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
+      if self.delaysr:size()==delay then
+        -- we've waited enough cycles
+        var ot = self.delaysr:peekFront(0)
+        valid(out) = valid(ot)
+        cstring.memcpy( &data(out), &data(ot), [rigel.lower(f.outputType):sizeof()])
+        
+        if self.readyDownstream then
+          self.delaysr:popFront()
+        end
+      else
+        valid(out)=validFalse
+      end
+      
+      if self.readyDownstream then
         var tout : rigel.lower(res.outputType):toTerraType()
         
         valid(tout) = valid(inp);
         if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
-
+        
         self.delaysr:pushBack(&tout)
       end
     end
@@ -1310,6 +1342,19 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
         @out = [terraOut]
       end
     end
+  elseif type(terraFunction)=="function" then
+    -- terraFunction is actually a lua function that produces terra Module when called.
+    -- keep the lazyness
+    
+    return function()
+      local tfn = terraFunction()
+      if outputType==types.null() then
+        terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) tfn(inp) end
+      else
+        terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) tfn(inp,out) end
+      end
+      return MT.new(LiftModule)
+    end
   else
     err(types.isType(outputType),"modules terra lift: output type must be type")
     assert(inputType~=types.null())
@@ -1528,7 +1573,7 @@ function MT.lambdaCompile(fn)
   local readyOutput
     
     -- build ready calculation
-  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 then
+  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1602,6 +1647,12 @@ return {`mself.[n.name].ready}
             -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
             table.insert( readyStats, quote mself.[n.inst.name]:calculateStoreReady() end ) 
             res = {`mself.[n.inst.name].ready}
+          elseif n.fnname=="start" then
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateStartReady(arg) end ) 
+            res = {`mself.[n.inst.name].startReady}
+          elseif n.fnname=="done" then
+            table.insert( readyStats, quote mself.[n.inst.name]:calculateDoneReady() end ) 
+            res = {`mself.[n.inst.name].doneReady}
           else
             assert(false)
           end
@@ -1643,7 +1694,10 @@ return {`mself.[n.name].ready}
     -- has a handshake input, but not a handshake output
     assert(fn.outputType==types.null())
     terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
-print("MAKENOINP",fn.inputType,fn.outputType)
+  elseif rigel.handshakeMode(fn.output) then
+    assert(fn.outputType==types.null())
+    assert(fn.inputType==types.null())
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 
   local out = fn.output:visitEach(
@@ -1728,6 +1782,18 @@ print("MAKENOINP",fn.inputType,fn.outputType)
 
             if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
             table.insert(stats, quote  mself.[n.inst.name]:store( [inputs[1]] ) end )
+            return `nil
+          elseif n.fnname=="start" then
+            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+            table.insert( initStats, quote mself.[n.inst.name]:init() end )
+            table.insert( freeStats, quote mself.[n.inst.name]:free() end )
+
+            table.insert( stats, quote mself.[n.inst.name]:start( out ) end)
+
+            return out
+          elseif n.fnname=="done" then
+            table.insert(stats, quote  mself.[n.inst.name]:done( [inputs[1]] ) end )
             return `nil
           else
             assert(false)

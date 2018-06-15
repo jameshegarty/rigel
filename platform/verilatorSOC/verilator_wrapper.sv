@@ -82,51 +82,55 @@ module VerilatorWrapper(
 );
 
    ///////////////////////////
-   wire [31:0]   IP_SAXI0_ARADDR;
-   assign IP_SAXI0_ARADDR = SAXI0_ARADDR;
-   wire          IP_SAXI0_ARREADY;
-   assign SAXI0_ARREADY = IP_SAXI0_ARREADY;
-   wire          IP_SAXI0_ARVALID;
-   assign IP_SAXI0_ARVALID = SAXI0_ARVALID;
+   wire [32:0]   IP_SAXI0_ARADDR;
+   assign IP_SAXI0_ARADDR = {SAXI0_ARVALID,SAXI0_ARADDR};
+   wire          IP_SAXI0_ARADDR_ready;
+   assign SAXI0_ARREADY = IP_SAXI0_ARADDR_ready;
+//   wire          IP_SAXI0_ARVALID;
+//   assign IP_SAXI0_ARVALID = SAXI0_ARVALID;
    wire [11:0]   IP_SAXI0_ARID;
    assign IP_SAXI0_ARID = SAXI0_ARID;
-   wire [31:0]   IP_SAXI0_AWADDR;
-   assign IP_SAXI0_AWADDR = SAXI0_AWADDR;
-   wire          IP_SAXI0_AWREADY;
-   assign SAXI0_AWREADY = IP_SAXI0_AWREADY;
-   wire          IP_SAXI0_AWVALID;
-   assign IP_SAXI0_AWVALID = SAXI0_AWVALID;
+   wire [32:0]   IP_SAXI0_AWADDR;
+   assign IP_SAXI0_AWADDR = {SAXI0_AWVALID,SAXI0_AWADDR};
+   wire          IP_SAXI0_AWADDR_ready;
+   assign SAXI0_AWREADY = IP_SAXI0_AWADDR_ready;
+//   wire          IP_SAXI0_AWVALID;
+//   assign IP_SAXI0_AWVALID = SAXI0_AWVALID;
    wire [11:0]   IP_SAXI0_AWID;
    assign IP_SAXI0_AWID = SAXI0_AWID;
    wire [11:0]   IP_SAXI0_BID;
    assign SAXI0_BID = IP_SAXI0_BID;
-   wire          IP_SAXI0_BREADY;
-   assign IP_SAXI0_BREADY = SAXI0_BREADY;
-   wire          IP_SAXI0_BVALID;
-   assign SAXI0_BVALID = IP_SAXI0_BVALID;
-   wire [31:0]   IP_SAXI0_RDATA;
-   assign SAXI0_RDATA = IP_SAXI0_RDATA;
-   wire [1:0]    IP_SAXI0_BRESP;
-   assign SAXI0_BRESP = IP_SAXI0_BRESP;
+   
+   wire [32:0]   IP_SAXI0_RDATA;
+   assign SAXI0_RDATA = IP_SAXI0_RDATA[31:0];
+   wire          IP_SAXI0_RDATA_ready;
+   assign IP_SAXI0_RDATA_ready = SAXI0_RREADY;
+   //wire          IP_SAXI0_RVALID;
+   assign SAXI0_RVALID = IP_SAXI0_RDATA[32];
+   
+   wire [2:0]    IP_SAXI0_BRESP;
+   assign SAXI0_BRESP = IP_SAXI0_BRESP[1:0];
+   wire          IP_SAXI0_BRESP_ready;
+   assign IP_SAXI0_BRESP_ready = SAXI0_BREADY;
+   //wire          IP_SAXI0_BVALID;
+   assign SAXI0_BVALID = IP_SAXI0_BRESP[2];
+   
    wire [11:0]   IP_SAXI0_RID;
    assign SAXI0_RID = IP_SAXI0_RID;
    wire          IP_SAXI0_RLAST;
    assign SAXI0_RLAST = IP_SAXI0_RLAST;
-   wire          IP_SAXI0_RREADY;
-   assign IP_SAXI0_RREADY = SAXI0_RREADY;
-   wire          IP_SAXI0_RVALID;
-   assign SAXI0_RVALID = IP_SAXI0_RVALID;
-   wire [31:0]   IP_SAXI0_WDATA;
-   assign IP_SAXI0_WDATA = SAXI0_WDATA;
+
+   wire [32:0]   IP_SAXI0_WDATA;
+   assign IP_SAXI0_WDATA = {SAXI0_WVALID,SAXI0_WDATA};
+   wire          IP_SAXI0_WDATA_ready;
+   assign SAXI0_WREADY = IP_SAXI0_WDATA_ready;
+   //wire          IP_SAXI0_WVALID;
+   //assign IP_SAXI0_WVALID = SAXI0_WVALID;
+   
    wire [1:0]    IP_SAXI0_RRESP;
    assign SAXI0_RRESP = IP_SAXI0_RRESP;
-   wire          IP_SAXI0_WREADY;
-   assign SAXI0_WREADY = IP_SAXI0_WREADY;
    wire [3:0]    IP_SAXI0_WSTRB;
    assign IP_SAXI0_WSTRB = SAXI0_WSTRB;
-   wire          IP_SAXI0_WVALID;
-   assign IP_SAXI0_WVALID = SAXI0_WVALID;
-
    wire [32:0] IP_MAXI0_ARADDR;
    wire        IP_MAXI0_ARADDR_ready;
    assign     MAXI0_ARADDR = IP_MAXI0_ARADDR[31:0];

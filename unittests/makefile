@@ -16,6 +16,7 @@ TARGETS += $(patsubst %.lua,$(BUILDDIR)/%.correct.txt,$(SRCS))
 CORES ?= 2
 
 LUA ?= ../rigelLuajit
+LUAJIT ?= ../rigelLuajit
 
 all: $(TARGETS)
 

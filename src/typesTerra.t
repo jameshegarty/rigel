@@ -61,7 +61,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
 end
 
 function TypeFunctions:valueToTerra(value)
-  if self:isUint() or self:isFloat() or self:isInt() then
+  if self:isUint() or self:isFloat() or self:isInt() or self:isBits() then
     assert(type(value)=="number")
     return `[self:toTerraType()](value)
   elseif self:isBool() then
