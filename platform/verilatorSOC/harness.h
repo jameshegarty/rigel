@@ -126,7 +126,8 @@ void printSlave(
   unsigned char* RREADY,
   unsigned char* BRESP,
   unsigned char* BVALID,
-  unsigned char* BREADY){
+  unsigned char* BREADY,
+  unsigned char* RRESP){
 
   printf("----------------------\n");
   printf("IP_CLK(in): %d\n",(int)*IP_CLK);
@@ -159,7 +160,8 @@ void resetSlave(
   unsigned char* RREADY,
   unsigned char* BRESP,
   unsigned char* BVALID,
-  unsigned char* BREADY){
+  unsigned char* BREADY,
+  unsigned char* RRESP){
 
   *AWVALID = false;
   *ARVALID = false;
@@ -167,7 +169,7 @@ void resetSlave(
   *RREADY = true;
 }
 
-bool checkSlaveResponse(
+bool checkSlaveWriteResponse(
   int id,
   unsigned char* IP_CLK,
   unsigned char* IP_ARESET_N,
@@ -182,7 +184,8 @@ bool checkSlaveResponse(
   unsigned char* RREADY,
   unsigned char* BRESP,
   unsigned char* BVALID,
-  unsigned char* BREADY){
+  unsigned char* BREADY,
+  unsigned char* RRESP){
 
   if( *BVALID && *BRESP==2){
     printf("Slave %d Error", id);
@@ -195,6 +198,67 @@ bool checkSlaveResponse(
   }
 
   return false;
+}
+
+bool checkSlaveReadResponse(
+  int id,
+  unsigned char* IP_CLK,
+  unsigned char* IP_ARESET_N,
+  unsigned int* ARADDR,
+  unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned int* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* RRESP,
+  unsigned int* dataOut){
+
+  if( *RVALID && *RRESP==2){
+    printf("Slave %d read Error", id);
+    exit(1);
+  }else if( *RVALID && *RRESP==0){
+    *dataOut = *RDATA;
+    return true;
+  }else if( *RVALID ){
+    printf("Slave %d returned strange respose? ", *RRESP);
+    exit(1);
+  }
+
+  return false;
+}
+
+void slaveReadReq(
+  unsigned int address,
+  int id,
+  unsigned char* IP_CLK,
+  unsigned char* IP_ARESET_N,
+  unsigned int* ARADDR,
+  unsigned char* ARVALID,
+  unsigned char* ARREADY,
+  unsigned int* AWADDR,
+  unsigned char* AWVALID,
+  unsigned char* AWREADY,
+  unsigned int* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID,
+  unsigned char* BREADY,
+  unsigned char* RRESP){
+
+  if(*ARREADY==false){
+    printf("IP_SAXI0_ARREADY should be true\n");
+    exit(1);
+  }
+  
+  *ARVALID = true;
+  *ARADDR = address;
 }
 
 void activateMasterRead(
