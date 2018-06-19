@@ -119,18 +119,18 @@ int main(int argc, char** argv) {
     top->SAXI0_AWVALID = true;
     step(top);
     if(verbose){printSlave(S0LIST);}
-    bool found = checkSlaveResponse(S0LIST);
+    bool found = checkSlaveWriteResponse(S0LIST);
     
     assert(top->SAXI0_WREADY==1);
     top->SAXI0_WDATA = 1;
     top->SAXI0_WVALID = 1;
     step(top);
-    found |= checkSlaveResponse(S0LIST);
+    found |= checkSlaveWriteResponse(S0LIST);
     
     top->SAXI0_AWVALID = false;
     step(top);
     
-    while(!found && !checkSlaveResponse(S0LIST)){
+    while(!found && !checkSlaveWriteResponse(S0LIST)){
       std::cout << "Waiting for S0 response" << std::endl;
     }
     
