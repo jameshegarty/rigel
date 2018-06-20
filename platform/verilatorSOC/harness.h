@@ -233,7 +233,7 @@ bool checkSlaveReadResponse(
   return false;
 }
 
-void slaveReadReq(
+bool slaveReadReq(
   unsigned int address,
   int id,
   unsigned char* IP_CLK,
@@ -252,13 +252,15 @@ void slaveReadReq(
   unsigned char* BREADY,
   unsigned char* RRESP){
 
-  if(*ARREADY==false){
-    printf("IP_SAXI0_ARREADY should be true\n");
-    exit(1);
-  }
+  //  if(*ARREADY==false){
+  //    printf("IP_SAXI0_ARREADY should be true\n");
+  //    exit(1);
+  //  }
   
   *ARVALID = true;
   *ARADDR = address;
+
+  return *ARREADY;
 }
 
 void activateMasterRead(
@@ -502,6 +504,8 @@ void masterWriteData(
   unsigned char* AWBURST){
 
   assert(*WREADY); // we drive this... should always be true
+
+  *BVALID = 0;
   
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -520,6 +524,13 @@ void masterWriteData(
           
     if(t->burst==0){
       QPop(&writeQ[port]);
+      *BVALID = 1;
+      *BRESP = 0;
+
+      if(*BREADY==0){
+        printf("MAXI%d NYI - BREADY is false\n");
+        exit(1);
+      }
     }
 
     cyclesSinceWrite[port] = 0;

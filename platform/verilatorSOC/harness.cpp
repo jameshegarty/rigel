@@ -31,6 +31,48 @@ void step(VERILATORCLASS* top){
   top->eval();
 }
 
+void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int data){
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    if(verbose){printSlave(S0LIST);}
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    if(verbose){printSlave(S0LIST);}
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    if(verbose){printSlave(S0LIST);}
+    
+    // send start cmd
+    //assert(top->SAXI0_AWREADY==1);
+    top->SAXI0_AWADDR = addr;
+    top->SAXI0_AWVALID = true;
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    if(verbose){printSlave(S0LIST);}
+    bool found = checkSlaveWriteResponse(S0LIST);
+    
+    assert(top->SAXI0_WREADY==1);
+    top->SAXI0_WDATA = data;
+    top->SAXI0_WVALID = 1;
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    found |= checkSlaveWriteResponse(S0LIST);
+    
+    top->SAXI0_AWVALID = false;
+
+    //////////////////////////////////////////////////////////////
+    step(top);
+    
+    while(!found && !checkSlaveWriteResponse(S0LIST)){
+      std::cout << "Waiting for S0 response" << std::endl;
+    }
+}
+
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
@@ -104,35 +146,9 @@ int main(int argc, char** argv) {
     }
     
     top->IP_ARESET_N=true;
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    
-    // send start cmd
-    //assert(top->SAXI0_AWREADY==1);
-    top->SAXI0_AWADDR = 0xA0000000;
-    top->SAXI0_AWVALID = true;
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    bool found = checkSlaveWriteResponse(S0LIST);
-    
-    assert(top->SAXI0_WREADY==1);
-    top->SAXI0_WDATA = 1;
-    top->SAXI0_WVALID = 1;
-    step(top);
-    found |= checkSlaveWriteResponse(S0LIST);
-    
-    top->SAXI0_AWVALID = false;
-    step(top);
-    
-    while(!found && !checkSlaveWriteResponse(S0LIST)){
-      std::cout << "Waiting for S0 response" << std::endl;
-    }
+
+    setReg(top,verbose,0xA0000000+4,0); // clear done bit
+    setReg(top,verbose,0xA0000000,1); // set start bit
     
     // now we're ready to service memory requests
     activateMasterRead(M0READLIST);
@@ -142,8 +158,11 @@ int main(int argc, char** argv) {
     
     int lastPct = -1;
     double startSec = CurrentTimeInSeconds();
+
+    bool doneBitSet = false;
+    unsigned int cyclesToDoneSignal = -1;
     
-    while (!Verilated::gotFinish() && cycle<totalCycles ) {
+    while (!Verilated::gotFinish() && cycle<totalCycles && doneBitSet==false) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in
@@ -165,6 +184,23 @@ int main(int argc, char** argv) {
         
         masterReadReq(verbose,MEMBASE,MEMSIZE,M1READLIST);
         masterWriteReq(verbose,MEMBASE,MEMSIZE,M1WRITELIST);
+
+        if(cycle%100==0){
+          slaveReadReq(0xA0000000+4,S0LIST);
+        }
+
+        unsigned int db;
+        if( checkSlaveReadResponse(S0LIST,&db) ){
+          if(db==1){
+            if(doneBitSet==false){
+              cyclesToDoneSignal=cycle;
+            }
+            
+            doneBitSet=true;
+          }else{
+            doneBitSet=false;
+          }
+        }
         
         int pct = (cycle*100)/totalCycles;
         if(pct>lastPct){
@@ -189,7 +225,7 @@ int main(int argc, char** argv) {
       delete top;
     }
     
-    printf("Executed Cycles: %d\n", (int)cycle);
+    printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);
     
     curArg++; // for "--outputs"
     unsigned int outputCount = 0;
@@ -217,6 +253,11 @@ int main(int argc, char** argv) {
     }
     
     bool errored = checkPorts();
+
+    if(doneBitSet==false){
+      printf("Error: done bit not set at end of time?\n");
+      errored = true;
+    }
     
     if(errored){
       exit(1);

@@ -225,7 +225,11 @@ module Conf(
     output [31:0] CONFIG_SRC,
     output [31:0] CONFIG_DEST,
     output [31:0] CONFIG_LEN,
-    output CONFIG_IRQ
+    output CONFIG_IRQ,
+
+    input WRITE_DATA1_VALID,
+    input [31:0] WRITE_DATA1
+    
     );
 
     //Convert Input signals to AXI lite, to avoid ID matching
@@ -361,18 +365,30 @@ always @(posedge ACLK) begin
             end
         end
         RWAIT: begin
-            if (LITE_WREADY)
+            if (LITE_WREADY) begin
                 data[w_select_r] <= LITE_WDATA;
+            end
+
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
                 w_state <= IDLE;
-            end else if (LITE_WVALID)
+            end else if (LITE_WVALID) begin
                 w_wrotedata <= 1;
-            else if (LITE_BREADY)
+            end else if (LITE_BREADY) begin
                 w_wroteresp <= 1;
+            end
         end
     endcase
+end
+
+always @(posedge ACLK) begin
+  if(ARESETN == 0) begin
+  end else begin
+    if (WRITE_DATA1_VALID) begin
+      data[1] <= WRITE_DATA1;
+    end 
+  end
 end
 
 reg v_state = IDLE;
@@ -382,11 +398,13 @@ always @(posedge ACLK) begin
         v_state <= IDLE;
     else case(v_state)
         IDLE:
-            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00)
+            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00) begin
                 v_state <= RWAIT;
+            end
         RWAIT:
-            if (CONFIG_READY)
+            if (CONFIG_READY) begin
                 v_state <= IDLE;
+            end
     endcase
 end
 
@@ -474,6 +492,12 @@ wire [31:0] CONFIG_DEST;
 wire [31:0] CONFIG_LEN;
 wire CONFIG_IRQ;
 
+//wire WRITE_DATA1_VALID;
+//wire [31:0] WRITE_DATA1;
+
+//assign WRITE_DATA1 = 32'd1;
+//assign WRITE_DATA1_VALID = done_input;
+
 Conf #(.ADDR_BASE(32'hA0000000)) conf(
 .ACLK(CLK),
 .ARESETN(~done_reset),
@@ -485,6 +509,9 @@ Conf #(.ADDR_BASE(32'hA0000000)) conf(
 .CONFIG_DEST(CONFIG_DEST),
 .CONFIG_LEN(CONFIG_LEN),
 .CONFIG_IRQ(CONFIG_IRQ),
+
+.WRITE_DATA1_VALID(done_input),
+.WRITE_DATA1(32'd1),
 
 .S_AXI_ARADDR(IP_SAXI]=]..port..[=[_ARADDR[31:0]),
 .S_AXI_ARVALID(IP_SAXI]=]..port..[=[_ARADDR[32]),
@@ -856,6 +883,10 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number")
   J.err( type(address)=="number","axiBurstWriteN: missing address")
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
+
+  assert(Nbytes%128==0)
+
+  local Nburst = Nbytes/128
   
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
@@ -902,8 +933,10 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
     //RAM port
     input [63:0] DATA,
     output DATA_READY,
-    input DATA_VALID
+    input DATA_VALID,
 
+    input doneReady,
+    output done
 );
 
 assign M_AXI_AWLEN = 4'b1111;
@@ -912,6 +945,9 @@ assign M_AXI_AWBURST = 2'b01;
 assign M_AXI_WSTRB = 8'b11111111;
 
 parameter IDLE = 0, RWAIT = 1;
+
+reg [31:0] BRESP_CNT = 32'd0;
+reg doneBitSent = 1'b0;
     
 //ADDR logic
 reg [24:0] a_count = 0;
@@ -949,6 +985,8 @@ always @(posedge ACLK) begin
     if (ARESETN == 0) begin
         w_state <= IDLE;
         b_count <= 0;
+        BRESP_CNT <= 32'd0;
+        doneBitSent <= 1'b0;
     end else case(w_state)
         IDLE: begin
             if(CONFIG_VALID) begin
@@ -969,6 +1007,19 @@ always @(posedge ACLK) begin
         end
     endcase
 end
+
+always @(posedge ACLK) begin
+  if (M_AXI_BVALID) begin
+    BRESP_CNT <= BRESP_CNT + 32'd1;
+  end
+
+  if (BRESP_CNT==32'd]=]..Nburst..[=[ && doneReady) begin
+    doneBitSent <= 1'b1;
+  end
+
+end
+
+assign done = (BRESP_CNT==32'd]=]..Nburst..[=[) && (doneBitSent==1'b0);
 
 reg [3:0] last_count;
 assign M_AXI_WLAST = last_count == 4'b0000;
@@ -1087,7 +1138,10 @@ DRAMWriterInner inner(
     //RAM port
     .DATA( firstBufferSet? firstBuffer : process_input[63:0] ),
     .DATA_READY(DATA_READY),
-    .DATA_VALID(process_input[64] || (firstBufferSet && CONFIG_READY==1'b0) )
+    .DATA_VALID(process_input[64] || (firstBufferSet && CONFIG_READY==1'b0) ),
+
+    .done(process_output),
+    .doneReady(ready_downstream)
 );
 
 //always @(posedge CLK) begin
