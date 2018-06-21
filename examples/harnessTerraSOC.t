@@ -61,7 +61,8 @@ return function(top, memStart, memEnd)
     `[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
     `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
     `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()])}
+    `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
+    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()]}
 
   local MREADLIST={}
   local MWRITELIST={}
@@ -148,16 +149,6 @@ return function(top, memStart, memEnd)
       [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
 
---[=[
-      for i=0,100 do
-        if verbose then cstdio.printf("START CYCLE: RESET\n") end
-        if i<50 then
-          m:reset()
-        end
-        m:calculateReady()
-        m:process(nil,nil)
-      end
-]=]
       var cycle = 0
 
       ----------------------------------------------- send start cmd
@@ -176,7 +167,7 @@ return function(top, memStart, memEnd)
       m:process(nil,nil)
       
       if verbose then V.printSlave(S0LIST); end
-      var found = V.checkSlaveResponse(S0LIST);
+      var found = V.checkSlaveWriteResponse(S0LIST);
       
       if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
         cstdio.printf("IP_SAXI0_WREADY should be true\n");
@@ -190,7 +181,7 @@ return function(top, memStart, memEnd)
       m:calculateReady()
       m:process(nil,nil)
       
-      found = found or V.checkSlaveResponse(S0LIST);
+      found = found or V.checkSlaveWriteResponse(S0LIST);
       
       valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
       
@@ -198,7 +189,7 @@ return function(top, memStart, memEnd)
       m:calculateReady()
       m:process(nil,nil)
       
-      while(found==false and V.checkSlaveResponse(S0LIST)==false) do
+      while(found==false and V.checkSlaveWriteResponse(S0LIST)==false) do
         cstdio.printf("Waiting for S0 response\n");
         m:calculateReady()
         m:process(nil,nil)
@@ -220,6 +211,8 @@ return function(top, memStart, memEnd)
       var cooldownTime = false
 
       var cyclesToDoneSignal = -1
+
+      var doneBitSet : bool = false
       while (cycle<totalCycles) and (cooldownCycles>0) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
         
@@ -252,7 +245,20 @@ return function(top, memStart, memEnd)
           lastPct = (cycle*100)/totalCycles
         end
 
-        if [SOCMT.doneHack] and cooldownTime==false then
+        if cycle % 100 == 0 then
+          V.slaveReadReq(0xA0000000+4,S0LIST)
+        end
+
+        var db : uint32
+        if V.checkSlaveReadResponse(S0LIST,&db) then
+          if db==1 then
+            doneBitSet=true
+          else
+            doneBitSet=false
+          end
+        end
+
+        if doneBitSet and cooldownTime==false then
           cstdio.printf("Start Cooldown\n")
           cyclesToDoneSignal = cycle
           cooldownTime = true
@@ -276,7 +282,7 @@ return function(top, memStart, memEnd)
 
       var errored = V.checkPorts();
 
-      if [SOCMT.doneHack]==false then
+      if doneBitSet==false then
         cstdio.printf("Error: Done bit not set at end of time!\n")
         errored = true
       end

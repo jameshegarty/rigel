@@ -11,17 +11,18 @@ local valid = macro(function(i) return `i._1 end)
 
 local SOCMT = {}
 
-SOCMT.doneHack = global(bool)
+--SOCMT.doneHack = global(bool)
 
 function SOCMT.axiRegsN(mod,port)
-  local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool }
+  local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool, doneReg:bool, RDATAReady:bool }
 
   terra AxiRegsN:reset()
     self.startReg = false
+    self.doneReg = false
     [mod:getGlobal("IP_SAXI"..port.."_ARADDR"):terraReady()] = true
     [mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraReady()] = true
     [mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraReady()] = true
-    [SOCMT.doneHack] = false
+--    [SOCMT.doneHack] = false
   end
 
   terra AxiRegsN:start( out : &bool )
@@ -30,7 +31,8 @@ function SOCMT.axiRegsN(mod,port)
       data([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = 0
       valid([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = true
       self.startReg = true
-      [SOCMT.doneHack] = false
+      self.doneReg = false
+--      [SOCMT.doneHack] = false
     end
 
     @out = self.startReg
@@ -41,15 +43,32 @@ function SOCMT.axiRegsN(mod,port)
   end
 
   terra AxiRegsN:done( inp : &bool )
+
+    if valid([mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraValue()]) and self.RDATAReady then
+      valid([mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraValue()]) = false
+    end
+
+    if valid([mod:getGlobal("IP_SAXI"..port.."_ARADDR"):terraValue()]) then
+      valid([mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraValue()]) = true
+      if self.doneReg then
+        data([mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraValue()]) = 1
+      else
+        data([mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraValue()]) = 0
+      end
+    end
+    
     if @inp then
       cstdio.printf("axiRegsN: PIPELINE DONE\n")
-      [SOCMT.doneHack] = true
+--      [SOCMT.doneHack] = true
+      self.doneReg = true
     end
   end
 
   terra AxiRegsN:calculateDoneReady()
     --cstdio.printf("axiRegsN: calcDoneReady\n")
     self.doneReady = true
+    self.RDATAReady = [mod:getGlobal("IP_SAXI"..port.."_RDATA"):terraReady()]
+    [mod:getGlobal("IP_SAXI"..port.."_ARADDR"):terraReady()] = true
   end
 
   terra AxiRegsN:calculateStartReady(readyDownstream:bool)

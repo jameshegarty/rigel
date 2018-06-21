@@ -105,8 +105,8 @@ end
 function declarePort( ty, name, isInput )
   err( type(name)=="string","declarePort: name should be string but is "..tostring(name))
 
-  local t = "input "
-  if isInput==false then t = "output " end
+  local t = "input wire "
+  if isInput==false then t = "output wire " end
 
   assert( ty~=types.null() )
   if ty:isBool()==false and ty:verilogBits()>1 then

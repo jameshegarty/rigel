@@ -187,45 +187,52 @@ module ict106_axilite_conv #
 endmodule
 
 module Conf(
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     //AXI Inputs
-    input [31:0] S_AXI_ARADDR,
-    output S_AXI_ARREADY,
-    input S_AXI_ARVALID,
+    input wire [31:0] S_AXI_ARADDR,
+    output wire S_AXI_ARREADY,
+    input wire S_AXI_ARVALID,
 
-    input [31:0] S_AXI_AWADDR,
-    output S_AXI_AWREADY,
-    input S_AXI_AWVALID,
+    input wire [31:0] S_AXI_AWADDR,
+    output wire S_AXI_AWREADY,
+    input wire S_AXI_AWVALID,
 
-    output [31:0] S_AXI_RDATA,
-    input S_AXI_RREADY,
-    output S_AXI_RVALID,
+    output wire [31:0] S_AXI_RDATA,
+    input wire S_AXI_RREADY,
+    output wire S_AXI_RVALID,
 
-    input [31:0] S_AXI_WDATA,
-    output S_AXI_WREADY,
-    input S_AXI_WVALID,
+    input wire [31:0] S_AXI_WDATA,
+    output wire S_AXI_WREADY,
+    input wire S_AXI_WVALID,
 
-    output [1:0] S_AXI_BRESP,
-    output S_AXI_BVALID,
-    input S_AXI_BREADY,
+    output wire [1:0] S_AXI_BRESP,
+    output wire S_AXI_BVALID,
+    input wire S_AXI_BREADY,
 
-    input [11:0] S_AXI_ARID,
-    input [11:0] S_AXI_AWID,
-    output [11:0] S_AXI_BID,
-    output [11:0] S_AXI_RID,
-    output S_AXI_RLAST,
-    output [1:0] S_AXI_RRESP,
-    input [3:0] S_AXI_WSTRB,
+    input wire [11:0] S_AXI_ARID,
+    input wire [11:0] S_AXI_AWID,
+    output wire [11:0] S_AXI_BID,
+    output wire [11:0] S_AXI_RID,
+    output wire S_AXI_RLAST,
+    output wire [1:0] S_AXI_RRESP,
+    input wire [3:0] S_AXI_WSTRB,
 
     
-    output CONFIG_VALID,
-    input CONFIG_READY,
-    output [31:0] CONFIG_CMD,
-    output [31:0] CONFIG_SRC,
-    output [31:0] CONFIG_DEST,
-    output [31:0] CONFIG_LEN,
-    output CONFIG_IRQ
+    output wire CONFIG_VALID,
+    input wire CONFIG_READY,
+    output wire [31:0] CONFIG_CMD,
+    output wire [31:0] CONFIG_SRC,
+    output wire [31:0] CONFIG_DEST,
+    output wire [31:0] CONFIG_LEN,
+    output wire CONFIG_IRQ,
+
+    input wire WRITE_DATA1_VALID,
+    input wire [31:0] WRITE_DATA1,
+
+    input wire WRITE_DATA2_VALID,
+    input wire [31:0] WRITE_DATA2
+    
     );
 
     //Convert Input signals to AXI lite, to avoid ID matching
@@ -319,7 +326,7 @@ always @(posedge ACLK) begin
         IDLE: begin
             if(LITE_ARVALID) begin
                 LITE_RRESP <= ar_good ? OK : SLVERR;
-                LITE_RDATA <= (r_select == 2'b0) ? counter : data[r_select];
+                LITE_RDATA <= data[r_select];
                 r_state <= RWAIT;
             end
         end
@@ -359,18 +366,45 @@ always @(posedge ACLK) begin
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
             end
+
+            if (WRITE_DATA1_VALID) begin
+              data[1] <= WRITE_DATA1;
+            end 
+
+            if (WRITE_DATA2_VALID) begin
+              data[2] <= WRITE_DATA2;
+            end 
         end
         RWAIT: begin
-            if (LITE_WREADY)
-                data[w_select_r] <= LITE_WDATA;
+            if (LITE_WREADY && w_select_r==2'd0) begin
+                data[0] <= LITE_WDATA;
+            end
+
+            if (LITE_WREADY && w_select_r==2'd1) begin
+                data[1] <= LITE_WDATA;
+            end else if (WRITE_DATA1_VALID) begin
+                data[1] <= WRITE_DATA1;
+            end 
+
+            if (LITE_WREADY && w_select_r==2'd2) begin
+                data[2] <= LITE_WDATA;
+            end else if (WRITE_DATA2_VALID) begin
+                data[2] <= WRITE_DATA2;
+            end 
+
+            if (LITE_WREADY && w_select_r==2'd3) begin
+                data[3] <= LITE_WDATA;
+            end
+
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
                 w_state <= IDLE;
-            end else if (LITE_WVALID)
+            end else if (LITE_WVALID) begin
                 w_wrotedata <= 1;
-            else if (LITE_BREADY)
+            end else if (LITE_BREADY) begin
                 w_wroteresp <= 1;
+            end
         end
     endcase
 end
@@ -382,11 +416,13 @@ always @(posedge ACLK) begin
         v_state <= IDLE;
     else case(v_state)
         IDLE:
-            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00)
+            if (LITE_WVALID && LITE_WREADY && w_select_r == 2'b00) begin
                 v_state <= RWAIT;
+            end
         RWAIT:
-            if (CONFIG_READY)
+            if (CONFIG_READY) begin
                 v_state <= IDLE;
+            end
     endcase
 end
 
@@ -402,7 +438,7 @@ always @(posedge ACLK) begin
         counter <= 0;
     else if (CONFIG_READY && CONFIG_VALID)
         counter <= 0;
-    else if (!CONFIG_READY)
+    else if (CONFIG_READY==1'b0)
         counter <= counter + 1;
 end
 
@@ -425,45 +461,45 @@ assign CONFIG_IRQ = !busy;
 endmodule
 
 module ]=]..ModuleName..[=[(
-  input CLK,
-  input done_reset,
-  input start_reset,
+  input wire CLK,
+  input wire done_reset,
+  input wire start_reset,
 
-  input [32:0] IP_SAXI]=]..port..[=[_ARADDR,
-  output IP_SAXI]=]..port..[=[_ARADDR_ready,
+  input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
+  output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
 //  input IP_SAXI]=]..port..[=[_ARADDR_valid,
 
-  input [32:0] IP_SAXI]=]..port..[=[_AWADDR,
-  output IP_SAXI]=]..port..[=[_AWADDR_ready,
+  input wire [32:0] IP_SAXI]=]..port..[=[_AWADDR,
+  output wire IP_SAXI]=]..port..[=[_AWADDR_ready,
 //  input IP_SAXI]=]..port..[=[_AWADDR_valid,
 
-  output [32:0] IP_SAXI]=]..port..[=[_RDATA,
-  input IP_SAXI]=]..port..[=[_RDATA_ready,
-//  output IP_SAXI]=]..port..[=[_RDATA_valid,
+  output wire [32:0] IP_SAXI]=]..port..[=[_RDATA,
+  input wire IP_SAXI]=]..port..[=[_RDATA_ready,
+//  output wire IP_SAXI]=]..port..[=[_RDATA_valid,
 
-  input [32:0] IP_SAXI]=]..port..[=[_WDATA,
-  output IP_SAXI]=]..port..[=[_WDATA_ready,
-//  input IP_SAXI]=]..port..[=[_WDATA_valid,
+  input wire [32:0] IP_SAXI]=]..port..[=[_WDATA,
+  output wire IP_SAXI]=]..port..[=[_WDATA_ready,
+//  input wire IP_SAXI]=]..port..[=[_WDATA_valid,
 
-  output [2:0] IP_SAXI]=]..port..[=[_BRESP,
-  input IP_SAXI]=]..port..[=[_BRESP_ready,
-//  output IP_SAXI]=]..port..[=[_BRESP_valid,
+  output wire [2:0] IP_SAXI]=]..port..[=[_BRESP,
+  input wire IP_SAXI]=]..port..[=[_BRESP_ready,
+//  output wire IP_SAXI]=]..port..[=[_BRESP_valid,
 
-  input [11:0] IP_SAXI]=]..port..[=[_ARID,
-  input [11:0] IP_SAXI]=]..port..[=[_AWID,
-  output [11:0] IP_SAXI]=]..port..[=[_BID,
-  output [11:0] IP_SAXI]=]..port..[=[_RID,
-  output IP_SAXI]=]..port..[=[_RLAST,
-  output [1:0] IP_SAXI]=]..port..[=[_RRESP,
-  input [3:0] IP_SAXI]=]..port..[=[_WSTRB,
+  input wire [11:0] IP_SAXI]=]..port..[=[_ARID,
+  input wire [11:0] IP_SAXI]=]..port..[=[_AWID,
+  output wire [11:0] IP_SAXI]=]..port..[=[_BID,
+  output wire [11:0] IP_SAXI]=]..port..[=[_RID,
+  output wire IP_SAXI]=]..port..[=[_RLAST,
+  output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
+  input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,
 
   // done signal
-  input done_input,
-  output done_ready,
+  input wire done_input,
+  output wire done_ready,
 
   // start signal
-  input start_ready_inp,
-  output start_output
+  input wire start_ready_inp,
+  output wire start_output
 );
 parameter INSTANCE_NAME="inst";
 
@@ -485,6 +521,12 @@ Conf #(.ADDR_BASE(32'hA0000000)) conf(
 .CONFIG_DEST(CONFIG_DEST),
 .CONFIG_LEN(CONFIG_LEN),
 .CONFIG_IRQ(CONFIG_IRQ),
+
+.WRITE_DATA1_VALID(done_input),
+.WRITE_DATA1(32'd1),
+
+.WRITE_DATA2_VALID(1'b1),
+.WRITE_DATA2(32'd76),
 
 .S_AXI_ARADDR(IP_SAXI]=]..port..[=[_ARADDR[31:0]),
 .S_AXI_ARVALID(IP_SAXI]=]..port..[=[_ARADDR[32]),
@@ -604,30 +646,30 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
   local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
 [=[module ]=]..ModuleName..[=[_inner(
     //AXI port
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     output reg [31:0] M_AXI_ARADDR,
-    input M_AXI_ARREADY,
-    output  M_AXI_ARVALID,
-    input [63:0] M_AXI_RDATA,
-    output M_AXI_RREADY,
-    input [1:0] M_AXI_RRESP,
-    input M_AXI_RVALID,
-    input M_AXI_RLAST,
-    output [3:0] M_AXI_ARLEN,
-    output [1:0] M_AXI_ARSIZE,
-    output [1:0] M_AXI_ARBURST,
+    input wire M_AXI_ARREADY,
+    output wire  M_AXI_ARVALID,
+    input wire [63:0] M_AXI_RDATA,
+    output wire M_AXI_RREADY,
+    input wire [1:0] M_AXI_RRESP,
+    input wire M_AXI_RVALID,
+    input wire M_AXI_RLAST,
+    output wire [3:0] M_AXI_ARLEN,
+    output wire [1:0] M_AXI_ARSIZE,
+    output wire [1:0] M_AXI_ARBURST,
     
     //Control config
-    input CONFIG_VALID,
-    output CONFIG_READY,
-    input [31:0] CONFIG_START_ADDR,
-    input [31:0] CONFIG_NBYTES,
+    input wire CONFIG_VALID,
+    output wire CONFIG_READY,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input DATA_READY_DOWNSTREAM,
-    output DATA_VALID,
-    output [63:0] DATA
+    input wire DATA_READY_DOWNSTREAM,
+    output wire DATA_VALID,
+    output wire [63:0] DATA
 );
 
 assign M_AXI_ARLEN = 4'b1111;
@@ -699,32 +741,32 @@ endmodule // DRAMReaderInner
 
 module ]=]..ModuleName..[=[(
     //AXI port
-    input CLK,
-    input reset,
+    input wire CLK,
+    input wire reset,
 
-    output [32:0] IP_MAXI]=]..port..[=[_ARADDR,
-    input IP_MAXI]=]..port..[=[_ARADDR_ready,
+    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR,
+    input wire IP_MAXI]=]..port..[=[_ARADDR_ready,
 
-    input [64:0] IP_MAXI]=]..port..[=[_RDATA,
-    output IP_MAXI]=]..port..[=[_RDATA_ready,
+    input wire [64:0] IP_MAXI]=]..port..[=[_RDATA,
+    output wire IP_MAXI]=]..port..[=[_RDATA_ready,
 
-    input [1:0] IP_MAXI]=]..port..[=[_RRESP,
+    input wire [1:0] IP_MAXI]=]..port..[=[_RRESP,
 
-    input IP_MAXI]=]..port..[=[_RLAST,
-    output [3:0] IP_MAXI]=]..port..[=[_ARLEN,
-    output [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
-    output [1:0] IP_MAXI]=]..port..[=[_ARBURST,
+    input wire IP_MAXI]=]..port..[=[_RLAST,
+    output wire [3:0] IP_MAXI]=]..port..[=[_ARLEN,
+    output wire [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
+    output wire [1:0] IP_MAXI]=]..port..[=[_ARBURST,
     
     //Control config
-    input process_input,
-    output ready,
+    input wire process_input,
+    output wire ready,
     
-//    input [31:0] CONFIG_START_ADDR,
-//    input [31:0] CONFIG_NBYTES,
+//    input wire [31:0] CONFIG_START_ADDR,
+//    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input ready_downstream,
-    output [64:0] process_output
+    input wire ready_downstream,
+    output wire [64:0] process_output
     
 );
 parameter INSTANCE_NAME="inst";
@@ -801,26 +843,26 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   
   local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
 [=[module ]=]..ModuleName..[=[(
-    input CLK,
-    input reset,
+    input wire CLK,
+    input wire reset,
 
-    output [32:0] IP_MAXI]=]..port..[=[_ARADDR,
-    input IP_MAXI]=]..port..[=[_ARADDR_ready,
+    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR,
+    input wire IP_MAXI]=]..port..[=[_ARADDR_ready,
 
-    input [64:0] IP_MAXI]=]..port..[=[_RDATA,
-    output IP_MAXI]=]..port..[=[_RDATA_ready,
+    input wire [64:0] IP_MAXI]=]..port..[=[_RDATA,
+    output wire IP_MAXI]=]..port..[=[_RDATA_ready,
 
-    input [1:0] IP_MAXI]=]..port..[=[_RRESP,
-    input IP_MAXI]=]..port..[=[_RLAST,
-    output [3:0] IP_MAXI]=]..port..[=[_ARLEN,
-    output [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
-    output [1:0] IP_MAXI]=]..port..[=[_ARBURST,
+    input wire [1:0] IP_MAXI]=]..port..[=[_RRESP,
+    input wire IP_MAXI]=]..port..[=[_RLAST,
+    output wire [3:0] IP_MAXI]=]..port..[=[_ARLEN,
+    output wire [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
+    output wire [1:0] IP_MAXI]=]..port..[=[_ARBURST,
     
-    input [32:0] process_input,
-    output ready,
+    input wire [32:0] process_input,
+    output wire ready,
 
-    output [64:0] process_output,
-    input ready_downstream
+    output wire [64:0] process_output,
+    input wire ready_downstream
 );
 parameter INSTANCE_NAME="inst";
 
@@ -856,6 +898,10 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number")
   J.err( type(address)=="number","axiBurstWriteN: missing address")
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
+
+  assert(Nbytes%128==0)
+
+  local Nburst = Nbytes/128
   
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
@@ -873,37 +919,39 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, 
 [=[module DRAMWriterInner(
     //AXI port
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     output reg [31:0] M_AXI_AWADDR,
-    input M_AXI_AWREADY,
-    output M_AXI_AWVALID,
+    input wire M_AXI_AWREADY,
+    output wire M_AXI_AWVALID,
     
-    output [63:0] M_AXI_WDATA,
-    output [7:0] M_AXI_WSTRB,
-    input M_AXI_WREADY,
-    output M_AXI_WVALID,
-    output M_AXI_WLAST,
+    output wire [63:0] M_AXI_WDATA,
+    output wire [7:0] M_AXI_WSTRB,
+    input wire M_AXI_WREADY,
+    output wire M_AXI_WVALID,
+    output wire M_AXI_WLAST,
     
-    input [1:0] M_AXI_BRESP,
-    input M_AXI_BVALID,
-    output M_AXI_BREADY,
+    input wire [1:0] M_AXI_BRESP,
+    input wire M_AXI_BVALID,
+    output wire M_AXI_BREADY,
     
-    output [3:0] M_AXI_AWLEN,
-    output [1:0] M_AXI_AWSIZE,
-    output [1:0] M_AXI_AWBURST,
+    output wire [3:0] M_AXI_AWLEN,
+    output wire [1:0] M_AXI_AWSIZE,
+    output wire [1:0] M_AXI_AWBURST,
     
     //Control config
-    input CONFIG_VALID,
-    output CONFIG_READY,
-    input [31:0] CONFIG_START_ADDR,
-    input [31:0] CONFIG_NBYTES,
+    input wire CONFIG_VALID,
+    output wire CONFIG_READY,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input [63:0] DATA,
-    output DATA_READY,
-    input DATA_VALID
+    input wire [63:0] DATA,
+    output wire DATA_READY,
+    input wire DATA_VALID,
 
+    input wire doneReady,
+    output wire done
 );
 
 assign M_AXI_AWLEN = 4'b1111;
@@ -912,6 +960,8 @@ assign M_AXI_AWBURST = 2'b01;
 assign M_AXI_WSTRB = 8'b11111111;
 
 parameter IDLE = 0, RWAIT = 1;
+
+reg [31:0] BRESP_CNT = 32'd0;
     
 //ADDR logic
 reg [24:0] a_count = 0;
@@ -970,6 +1020,18 @@ always @(posedge ACLK) begin
     endcase
 end
 
+always @(posedge ACLK) begin
+  if (ARESETN == 0) begin
+    BRESP_CNT <= 32'd0;
+  end else if (BRESP_CNT==32'd]=]..Nburst..[=[ && doneReady) begin
+    BRESP_CNT <= 32'd0;
+  end else if (M_AXI_BVALID) begin
+    BRESP_CNT <= BRESP_CNT + 32'd1;
+  end
+end
+
+assign done = BRESP_CNT==32'd]=]..Nburst..[=[;
+
 reg [3:0] last_count;
 assign M_AXI_WLAST = last_count == 4'b0000;
 
@@ -983,48 +1045,44 @@ assign M_AXI_BREADY = 1;
 
 assign M_AXI_WDATA = DATA;
 
-//always @(posedge ACLK) begin
-//  $display("MXI M_AXI_WVALID %d M_AXI_WREADY %d",M_AXI_WVALID, M_AXI_WREADY);
-//end
-
 endmodule // DRAMWriter
 
 module DRAMWriter(
     //AXI port
-    input CLK,
-    input reset,
+    input wire CLK,
+    input wire reset,
     output reg [32:0] IP_MAXI]=]..port..[=[_AWADDR,
-    input IP_MAXI]=]..port..[=[_AWADDR_ready,
+    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
     
-    output [64:0] IP_MAXI]=]..port..[=[_WDATA,
-    input IP_MAXI]=]..port..[=[_WDATA_ready,
+    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
+    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
 
-    output [7:0] IP_MAXI]=]..port..[=[_WSTRB,
-    output IP_MAXI]=]..port..[=[_WLAST,
+    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
+    output wire IP_MAXI]=]..port..[=[_WLAST,
     
-    input [2:0] IP_MAXI]=]..port..[=[_BRESP,
-    output IP_MAXI]=]..port..[=[_BRESP_ready,
+    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
+    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
     
-    output [3:0] IP_MAXI]=]..port..[=[_AWLEN,
-    output [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
-    output [1:0] IP_MAXI]=]..port..[=[_AWBURST,
+    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
+    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
+    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
     
     //Control config
-//    input CONFIG_VALID,
-//    output CONFIG_READY,
-//    input [31:0] CONFIG_START_ADDR,
-//    input [31:0] CONFIG_NBYTES,
+//    input wire CONFIG_VALID,
+//    output wire CONFIG_READY,
+//    input wire [31:0] CONFIG_START_ADDR,
+//    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input [64:0] process_input,
-    output ready,
+    input wire [64:0] process_input,
+    output wire ready,
 
-    output process_output,
-    input ready_downstream
+    output wire process_output,
+    input wire ready_downstream
 );
 parameter INSTANCE_NAME="inst";
 
-assign process_output=1'b0;
+//assign process_output=1'b0;
 
 wire CONFIG_READY;
 wire DATA_READY;
@@ -1087,7 +1145,10 @@ DRAMWriterInner inner(
     //RAM port
     .DATA( firstBufferSet? firstBuffer : process_input[63:0] ),
     .DATA_READY(DATA_READY),
-    .DATA_VALID(process_input[64] || (firstBufferSet && CONFIG_READY==1'b0) )
+    .DATA_VALID(process_input[64] || (firstBufferSet && CONFIG_READY==1'b0) ),
+
+    .done(process_output),
+    .doneReady(ready_downstream)
 );
 
 //always @(posedge CLK) begin
