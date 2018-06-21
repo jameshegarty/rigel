@@ -11,6 +11,14 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include <sys/time.h>
+
+double CurrentTimeInSeconds() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
 void usage(void) {
 	printf("*argv[0] -g <GPIO_ADDRESS> -i|-o <VALUE>\n");
 	printf("    -g <GPIO_ADDR>   GPIO physical address\n");
@@ -20,9 +28,9 @@ void usage(void) {
 }
 
 typedef struct {
-    int cmd;
-    int src;
-    int dest;
+    unsigned int cmd;
+    unsigned int src;
+    unsigned int dest;
     unsigned int len;
 } Conf;
 
@@ -284,21 +292,47 @@ int main(int argc, char *argv[]) {
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
   fflush(stdout);
   
-  conf->src = 0;
-  conf->dest = 0;
-  conf->len = 0;
   conf->cmd = 0;
+  conf->src = 0;
+  conf->dest = 42;
+  conf->len = 42;
   
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
   sleep(2);
+  double startTime = CurrentTimeInSeconds();
   conf->cmd = 1;
   printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
   fflush(stdout);
 
   //usleep(10000);
-  printf("Waiting 8 seconds\n");
-  sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
 
+  unsigned long interval = 10;
+
+  bool doneBitSet = false;
+  double doneTime = 0.f;
+  for(unsigned long t=0; t<1000000*8; t+=interval){
+    //printf("%d conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", t, conf->cmd, conf->src, conf->dest, conf->len);
+    //sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
+
+    if(conf->src>0 && doneTime==0.f){
+      doneTime = CurrentTimeInSeconds();
+      doneBitSet=true;
+      break;
+    }
+    
+    usleep(interval);
+  }
+
+  if(doneBitSet==false){
+    printf("ERROR: done bit was not set at end of time!\n");
+    exit(1);
+  }
+  
+  float MHZ = 100.f;
+  float HZ = 1000000.f;
+  double len = doneTime-startTime;
+  printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
+  
   writeOutputs(curArg,argc,argv,ptr);
   //saveImage(argv[4],ptr+lenIn,lenOutRaw);
   //  saveImage(argv[4],ptr,lenOutRaw);

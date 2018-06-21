@@ -548,7 +548,8 @@ function darkroomFunctionFunctions:sdfTransfer( I, loc )
 end
 
 function darkroomFunctionFunctions:toTerra() return self.terraModule end
-function darkroomFunctionFunctions:toVerilog() return self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
+function darkroomFunctionFunctions:toVerilog() return [[`default_nettype none // enable extra sanity checking
+]]..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
 function darkroomFunctionFunctions:instantiate(name)
   err( self.registered, "Can't instantiate a non-registered module!")
