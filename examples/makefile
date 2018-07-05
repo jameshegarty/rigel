@@ -45,6 +45,7 @@ TERRAOUT = $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
 #TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
+TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
 #TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
@@ -79,6 +80,7 @@ VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
 #VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.bmp,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
 #VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.correct.txt,$(SRCS_VERILATOR))
 
 # too slow

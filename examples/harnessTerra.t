@@ -2,6 +2,7 @@ local R = require "rigel"
 local RM = require "modules"
 local C = require "examplescommon"
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")
 local fixed = require "fixed"
 local types = require("types")
 local J = require "common"
@@ -93,31 +94,40 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       setTap
 
       var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
-       m:init()
-       m:reset();
+      m:init()
+      m:reset();
+      
+      var [incnt] = 0
+      var cnt = 0
+      var cycles = 0
+      
+      while(cnt<outputCount) do
+        m:calculateReady(true)
+        var [valid_in] = (incnt < inputCount)
+        
+        incQ
+        var [valid_out]= false
+        
+        callQ
+        if valid_out then cnt=cnt+1 end
+        
+        cycles = cycles+1
+      end
+      
+      if DARKROOM_VERBOSE then m:stats("TOP");  end
+      m:free()
+      cstdlib.free(m)
 
-       var [incnt] = 0
-       var cnt = 0
-       var cycles = 0
+      cstdio.printf("Terra Cycles %d\n",cycles)
+      var f = cstdio.fopen([filename..".terra.cycles.txt"], "w");
+      if f==nil then
+        cstdio.printf("Error opening file '%s'!\n",[filename..".terra.cycles.txt"]);
+        cstdlib.exit(1);
+      end
+      cstdio.fprintf(f,"%d",cycles)
+      cstdio.fclose(f)
+    end
 
-       while(cnt<outputCount) do
-         m:calculateReady(true)
-         var [valid_in] = (incnt < inputCount)
-
-         incQ
-         var [valid_out]= false
-
-         callQ
-         if valid_out then cnt=cnt+1 end
-
-         cycles = cycles+1
-       end
-       
-       if DARKROOM_VERBOSE then m:stats("TOP");  end
-       m:free()
-       cstdlib.free(m) 
-     end
-    
     if DARKROOM_VERBOSE then print("compile terra top") end
     dosim:compile()
 

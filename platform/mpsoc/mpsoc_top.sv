@@ -1,6 +1,6 @@
 module MPSOC_Top
   (
-    output [7:0] LED
+    output wire [7:0] LED
   );
 
   wire [3:0] fclk;

@@ -3,40 +3,40 @@ module Conf #(parameter ADDR_BASE = 32'd0,
               parameter NREG = 4,
               parameter W = 32
 )(
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     //AXI Inputs
-    input [31:0] S_AXI_ARADDR,
-    input [11:0] S_AXI_ARID,
-    output S_AXI_ARREADY,
-    input S_AXI_ARVALID,
-    input [31:0] S_AXI_AWADDR,
-    input [11:0] S_AXI_AWID,
-    output S_AXI_AWREADY,
-    input S_AXI_AWVALID,
-    output [11:0] S_AXI_BID,
-    input S_AXI_BREADY,
-    output [1:0] S_AXI_BRESP,
-    output S_AXI_BVALID,
-    output [31:0] S_AXI_RDATA,
-    output [11:0] S_AXI_RID,
-    output S_AXI_RLAST,
-    input S_AXI_RREADY,
-    output [1:0] S_AXI_RRESP,
-    output S_AXI_RVALID,
-    input [31:0] S_AXI_WDATA,
-    output S_AXI_WREADY,
-    input [3:0] S_AXI_WSTRB,
-    input S_AXI_WVALID,
+    input wire [31:0] S_AXI_ARADDR,
+    input wire [11:0] S_AXI_ARID,
+    output wire S_AXI_ARREADY,
+    input wire S_AXI_ARVALID,
+    input wire [31:0] S_AXI_AWADDR,
+    input wire [11:0] S_AXI_AWID,
+    output wire S_AXI_AWREADY,
+    input wire S_AXI_AWVALID,
+    output wire [11:0] S_AXI_BID,
+    input wire S_AXI_BREADY,
+    output wire [1:0] S_AXI_BRESP,
+    output wire S_AXI_BVALID,
+    output wire [31:0] S_AXI_RDATA,
+    output wire [11:0] S_AXI_RID,
+    output wire S_AXI_RLAST,
+    input wire S_AXI_RREADY,
+    output wire [1:0] S_AXI_RRESP,
+    output wire S_AXI_RVALID,
+    input wire [31:0] S_AXI_WDATA,
+    output wire S_AXI_WREADY,
+    input wire [3:0] S_AXI_WSTRB,
+    input wire S_AXI_WVALID,
     
-    output CONFIG_VALID,
-    input CONFIG_READY,
+    output wire CONFIG_VALID,
+    input wire CONFIG_READY,
 //    output [31:0] CONFIG_CMD,
 //    output [31:0] CONFIG_SRC,
 //    output [31:0] CONFIG_DEST,
 //    output [31:0] CONFIG_LEN,
-    output [NREG*W-1:0] CONFIG_DATA,
-    output CONFIG_IRQ
+    output wire [NREG*W-1:0] CONFIG_DATA,
+    output wire CONFIG_IRQ
     );
 
     //Convert Input signals to AXI lite, to avoid ID matching
@@ -117,6 +117,7 @@ wire [9:0] r_select;
 assign r_select  = LITE_ARADDR[11:2];
 
 // HACK: instead of sizing the addr space based on NREG, just always set it to 10 bits!!!
+wire    ar_good;
 assign ar_good = {LITE_ARADDR[31:12], 10'b00, LITE_ARADDR[1:0]} == ADDR_BASE;
 assign LITE_ARREADY = (r_state == IDLE);
 assign LITE_RVALID = (r_state == RWAIT);
@@ -148,6 +149,7 @@ wire [9:0] w_select;
 assign w_select  = LITE_AWADDR[11:2];
 
 // HACK: instead of sizing the addr space based on NREG, just always set it to 10 bits!!!
+wire    aw_good;
 assign aw_good = {LITE_AWADDR[31:12], 10'b00, LITE_AWADDR[1:0]} == ADDR_BASE;
 
 assign LITE_AWREADY = (w_state == IDLE);

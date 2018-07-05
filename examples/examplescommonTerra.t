@@ -94,10 +94,12 @@ function CT.flatten2(T,N)
   end
 end
 
-function CT.tupleToArray(A,N,atup,B)
+function CT.tupleToArray(A,W,H,atup,B,X)
+  assert(X==nil)
+  
   return terra( a : &atup:toTerraType(), out : &B:toTerraType() )
                             escape
-                            for i=0,N-1 do
+                            for i=0,(W*H)-1 do
                               emit quote (@out)[i] = a.["_"..i] end
                             end
                           end

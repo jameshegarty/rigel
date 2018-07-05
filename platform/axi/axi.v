@@ -1,33 +1,34 @@
 module stage
   (
-    inout [53:0] MIO,
-    inout PS_SRSTB,
-    inout PS_CLK,
-    inout PS_PORB,
-    inout DDR_Clk,
-    inout DDR_Clk_n,
-    inout DDR_CKE,
-    inout DDR_CS_n,
-    inout DDR_RAS_n,
-    inout DDR_CAS_n,
-    output DDR_WEB,
-    inout [2:0] DDR_BankAddr,
-    inout [14:0] DDR_Addr,
-    inout DDR_ODT,
-    inout DDR_DRSTB,
-    inout [31:0] DDR_DQ,
-    inout [3:0] DDR_DM,
-    inout [3:0] DDR_DQS,
-    inout [3:0] DDR_DQS_n,
-    inout DDR_VRN,
-    inout DDR_VRP,
-    output [7:0] LED
+    inout wire [53:0] MIO,
+    inout wire PS_SRSTB,
+    inout wire PS_CLK,
+    inout wire PS_PORB,
+    inout wire DDR_Clk,
+    inout wire DDR_Clk_n,
+    inout wire DDR_CKE,
+    inout wire DDR_CS_n,
+    inout wire DDR_RAS_n,
+    inout wire DDR_CAS_n,
+    output wire DDR_WEB,
+    inout wire [2:0] DDR_BankAddr,
+    inout wire [14:0] DDR_Addr,
+    inout wire DDR_ODT,
+    inout wire DDR_DRSTB,
+    inout wire [31:0] DDR_DQ,
+    inout wire [3:0] DDR_DM,
+    inout wire [3:0] DDR_DQS,
+    inout wire [3:0] DDR_DQS_n,
+    inout wire DDR_VRN,
+    inout wire DDR_VRP,
+    output wire [7:0] LED
   );
 
   wire [3:0] fclk;
   wire [3:0] fclkresetn;
   wire FCLK0;
   BUFG bufg(.I(fclk[0]),.O(FCLK0));
+  wire ARESETN;
   assign ARESETN = fclkresetn[0];
   
   
@@ -93,7 +94,9 @@ module stage
   
     wire READER_READY;
     wire WRITER_READY;
-    
+
+   wire  CONFIG_READY;
+   
     assign CONFIG_READY = READER_READY && WRITER_READY;
     
     Conf #(.ADDR_BASE(32'h70000000)) conf(

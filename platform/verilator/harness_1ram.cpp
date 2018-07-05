@@ -124,5 +124,16 @@ int main(int argc, char** argv) {
   top->final();
   delete top;
 
-  printf("Cycles: %d\n", (int)totalCycles);
+  printf("Verilator Cycles: %d\n", (int)totalCycles);
+
+  std::string cycfile = argv[2];
+  cycfile = cycfile.substr(0,cycfile.size()-3)+std::string("cycles.txt");
+  // write cycles to file
+  FILE *f = fopen(cycfile.c_str(), "w");
+  if (f == NULL){
+    printf("Error opening file '%s'!\n",cycfile.c_str());
+    exit(1);
+  }
+  fprintf(f, "%d", (int)totalCycles);
+  fclose(f);
 }

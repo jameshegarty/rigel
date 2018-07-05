@@ -2299,9 +2299,9 @@ end)
 -- xmin, ymin are inclusive
 modules.SSR = memoize(function( A, T, xmin, ymin )
   J.map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
-  assert(ymin<=0)
-  assert(xmin<=0)
-  assert(T>0)
+  err( ymin<=0, "modules.SSR: ymin>0")
+  err( xmin<=0, "module.SSR: xmin>0")
+  err( T>0, "modules.SSR: T<=0")
   local res = {kind="SSR", type=A, T=T, xmin=xmin, ymin=ymin }
   res.inputType = types.array2d(A,T,-ymin+1)
   res.outputType = types.array2d(A,T-xmin,-ymin+1)
