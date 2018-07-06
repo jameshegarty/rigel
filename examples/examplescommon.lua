@@ -82,16 +82,20 @@ C.flatten2 = memoize(function(T,N)
   return docast
 end)
 
-C.tupleToArray = memoize(function(A,N)
+-- converts {A,A,A...} to A[W,H] (input should be tuple of W*H A's)
+C.tupleToArray = memoize(function(A,W,H,X)
   err(types.isType(A),"tupleToArray: A should be type")
-  err(type(N)=="number","tupleToArray: N must be number")
+  err(type(W)=="number","tupleToArray: W must be number")
+  if H==nil then H=1 end
+  err(type(H)=="number","tupleToArray: H must be number")
+  err( X==nil,"tupleToArray: too many arguments")
+  
+  local atup = types.tuple(J.broadcast(A,W*H))
+  local B = types.array2d(A,W,H)
 
-  local atup = types.tuple(J.broadcast(A,N))
-  local B = types.array2d(A,N)
-
-  local docast = RM.lift( J.sanitize("tupleToArray_"..tostring(A).."_"..tostring(N)), atup, B, 0,
+  local docast = RM.lift( J.sanitize("tupleToArray_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H)), atup, B, 0,
     function(sinp) return S.cast(sinp,B) end,
-    function() return CT.tupleToArray(A,N,atup,B) end, "C.tupleToArray")
+    function() return CT.tupleToArray(A,W,H,atup,B) end, "C.tupleToArray")
 
   return docast
 end)
@@ -1123,6 +1127,50 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
 end)
 
+-- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
+C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
+  err(types.isType(A), "stencilLinebufferRegisterChain: A must be type")
+
+  err(type(T)=="number","stencilLinebufferRegisterChain: T must be number")
+  err(type(w)=="number","stencilLinebufferRegisterChain: w must be number")
+  err(type(h)=="number","stencilLinebufferRegisterChain: h must be number")
+  err(type(xmin)=="number","stencilLinebufferRegisterChain: xmin must be number")
+  err(type(xmax)=="number","stencilLinebufferRegisterChain: xmax must be number")
+  err(type(ymin)=="number","stencilLinebufferRegisterChain: ymin must be number")
+  err(type(ymax)=="number","stencilLinebufferRegisterChain: ymax must be number")
+
+  err(T>=1, "stencilLinebufferRegisterChain: T must be >=1");
+  err(w>0,"stencilLinebufferRegisterChain: w must be >0");
+  err(h>0,"stencilLinebufferRegisterChain: h must be >0");
+  err(xmin<=xmax,"stencilLinebufferRegisterChain: xmin>xmax")
+  err(ymin<=ymax,"stencilLinebufferRegisterChain: ymin>ymax")
+  err(xmax==0,"stencilLinebufferRegisterChain: xmax must be 0")
+  err(ymax==0,"stencilLinebufferRegisterChain: ymax must be 0")
+
+  local I = R.input( types.array2d(A,T) )
+  local SSRSize = w*(-ymin)-xmin+1
+  local lb = modules.SSR(A,T,-SSRSize,0)(I)
+
+  print("SSRSize",SSRSize,"w",w,"h",h,"xmin",xmin,"ymin",ymin)
+  
+  local tab = {}
+  for y=ymin,0 do
+    for x=xmin,0 do
+      local idx = y*w+x
+      -- SSR module stores values in opposite order of what we want
+      local ridx = SSRSize+idx
+
+      print("idx",idx,"ridx",ridx)
+      
+      table.insert(tab, C.index(lb.type,ridx,0)(lb) )
+    end
+  end
+  
+  local out = C.tupleToArray(A,-xmin+1,-ymin+1)(R.concat("srtab",tab))
+
+  return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_"), I, out )
+end)
+
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
@@ -1200,7 +1248,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
-    err(idxLow<W,"slice: idxLow>=W")
+    err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W))
     err(idxHigh<W, "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")

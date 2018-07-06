@@ -1,29 +1,29 @@
 module DRAMReader(
     //AXI port
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     output reg [31:0] M_AXI_ARADDR,
-    input M_AXI_ARREADY,
-    output  M_AXI_ARVALID,
-    input [63:0] M_AXI_RDATA,
-    output M_AXI_RREADY,
-    input [1:0] M_AXI_RRESP,
-    input M_AXI_RVALID,
-    input M_AXI_RLAST,
-    output [3:0] M_AXI_ARLEN,
-    output [1:0] M_AXI_ARSIZE,
-    output [1:0] M_AXI_ARBURST,
+    input wire M_AXI_ARREADY,
+    output wire  M_AXI_ARVALID,
+    input wire [63:0] M_AXI_RDATA,
+    output wire M_AXI_RREADY,
+    input wire [1:0] M_AXI_RRESP,
+    input wire M_AXI_RVALID,
+    input wire M_AXI_RLAST,
+    output wire [3:0] M_AXI_ARLEN,
+    output wire [1:0] M_AXI_ARSIZE,
+    output wire [1:0] M_AXI_ARBURST,
     
     //Control config
-    input CONFIG_VALID,
-    output CONFIG_READY,
-    input [31:0] CONFIG_START_ADDR,
-    input [31:0] CONFIG_NBYTES,
+    input wire CONFIG_VALID,
+    output wire CONFIG_READY,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input DATA_READY_DOWNSTREAM,
-    output DATA_VALID,
-    output [63:0] DATA
+    input wire DATA_READY_DOWNSTREAM,
+    output wire DATA_VALID,
+    output wire [63:0] DATA
 );
 
 assign M_AXI_ARLEN = 4'b1111;

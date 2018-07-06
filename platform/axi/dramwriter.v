@@ -1,35 +1,35 @@
 module DRAMWriter(
     //AXI port
-    input ACLK,
-    input ARESETN,
+    input wire ACLK,
+    input wire ARESETN,
     output reg [31:0] M_AXI_AWADDR,
-    input M_AXI_AWREADY,
-    output M_AXI_AWVALID,
+    input wire M_AXI_AWREADY,
+    output wire M_AXI_AWVALID,
     
-    output [63:0] M_AXI_WDATA,
-    output [7:0] M_AXI_WSTRB,
-    input M_AXI_WREADY,
-    output M_AXI_WVALID,
-    output M_AXI_WLAST,
+    output wire [63:0] M_AXI_WDATA,
+    output wire [7:0] M_AXI_WSTRB,
+    input wire M_AXI_WREADY,
+    output wire M_AXI_WVALID,
+    output wire M_AXI_WLAST,
     
-    input [1:0] M_AXI_BRESP,
-    input M_AXI_BVALID,
-    output M_AXI_BREADY,
+    input wire [1:0] M_AXI_BRESP,
+    input wire M_AXI_BVALID,
+    output wire M_AXI_BREADY,
     
-    output [3:0] M_AXI_AWLEN,
-    output [1:0] M_AXI_AWSIZE,
-    output [1:0] M_AXI_AWBURST,
+    output wire [3:0] M_AXI_AWLEN,
+    output wire [1:0] M_AXI_AWSIZE,
+    output wire [1:0] M_AXI_AWBURST,
     
     //Control config
-    input CONFIG_VALID,
-    output CONFIG_READY,
-    input [31:0] CONFIG_START_ADDR,
-    input [31:0] CONFIG_NBYTES,
+    input wire CONFIG_VALID,
+    output wire CONFIG_READY,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
     
     //RAM port
-    input [63:0] DATA,
-    output DATA_READY,
-    input DATA_VALID
+    input wire [63:0] DATA,
+    output wire DATA_READY,
+    input wire DATA_VALID
 
 );
 

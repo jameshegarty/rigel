@@ -291,6 +291,15 @@ return function(top, memStart, memEnd)
         cstdlib.exit(1);
       end
 
+      -- write cycles to file
+      var f = cstdio.fopen([top.globalMetadata["MAXI0_write_filename"]..".terra.cycles.txt"], "w");
+      if f==nil then
+        cstdio.printf("Error opening file '%s'!\n",[top.globalMetadata["MAXI0_write_filename"]..".terra.cycles.txt"]);
+        cstdlib.exit(1);
+      end
+      cstdio.fprintf(f,"%d",cyclesToDoneSignal)
+      cstdio.fclose(f)
+
     end
   end
 

@@ -1,0 +1,29 @@
+#!/bin/bash -x
+
+VERILOG_FILE=$1
+METADATA_FILE=$2
+BUILDDIR=$3
+OUTFILE=$4
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+mkdir -p $BUILDDIR
+$DIR/../../rigelLuajit $DIR/../../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.wrapper.v $DIR/../../platform/
+cd $BUILDDIR
+echo "read_verilog $VERILOG_FILE.wrapper.v" > system.tcl
+echo "read_xdc $DIR/../zynq45vivado/zc706.xdc" >> system.tcl
+echo "read_xdc $DIR/../vivado/ps7_constraints.xdc" >> system.tcl
+echo "synth_design -top stage -part xc7z045ffg900-2" >> system.tcl
+echo "opt_design" >> system.tcl
+echo "place_design" >> system.tcl
+echo "phys_opt_design" >> system.tcl
+echo "route_design" >> system.tcl
+echo "write_bitstream system.bit" >> system.tcl
+echo "report_timing" >> system.tcl
+echo "report_timing_summary" >> system.tcl
+echo "report_utilization -hierarchical -file utilization_h.txt" >> system.tcl
+echo "report_utilization -file utilization.txt" >> system.tcl
+vivado -mode batch -source 'system.tcl' -nojournal -log 'vivado.log' > /dev/null
+bootgen -image $DIR/../axi/boot.bif -w -process_bitstream bin
+cp system.bit.bin $OUTFILE
+                                          
