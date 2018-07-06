@@ -1151,7 +1151,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   local SSRSize = w*(-ymin)-xmin+1
   local lb = modules.SSR(A,T,-SSRSize,0)(I)
 
-  print("SSRSize",SSRSize,"w",w,"h",h,"xmin",xmin,"ymin",ymin)
+  --print("SSRSize",SSRSize,"w",w,"h",h,"xmin",xmin,"ymin",ymin)
   
   local tab = {}
   for y=ymin,0 do
@@ -1160,7 +1160,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
       -- SSR module stores values in opposite order of what we want
       local ridx = SSRSize+idx
 
-      print("idx",idx,"ridx",ridx)
+      --print("idx",idx,"ridx",ridx)
       
       table.insert(tab, C.index(lb.type,ridx,0)(lb) )
     end
@@ -1168,7 +1168,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   
   local out = C.tupleToArray(A,-xmin+1,-ymin+1)(R.concat("srtab",tab))
 
-  return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_"), I, out )
+  return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)) ), I, out )
 end)
 
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
