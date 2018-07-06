@@ -177,10 +177,13 @@ SRCS_AXI20 := $(filter-out lk_tr_handshake_6_2_axi.lua lk_tr_handshake_6_6_axi.l
 # broken?
 SRCS_AXI20 := $(filter-out underflow.lua,$(SRCS_AXI20))
 
+ZU9VIVADOBITS = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SRCS_ZU9))
+ZU9VIVADOBITS += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.perfcorrect.txt,$(SRCS_ZU9))
+
 ZU9VIVADO = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.raw,$(SRCS_ZU9))
 ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bmp,$(SRCS_ZU9))
 ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.correct.txt,$(SRCS_ZU9))
-ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SRCS_ZU9))
+ZU9VIVADO += $(ZU9VIVADOBITS)
 
 STATS = $(patsubst %.lua,$(BUILDDIR)/%.stats.txt,$(AXISRCS))
 
@@ -249,6 +252,8 @@ camerabits: $(CAMERABITS)
 zynq100: $(AXI100)
 
 zu9vivado: $(ZU9VIVADO)
+
+zu9vivadobits: $(ZU9VIVADOBITS)
 
 axiverilog: $(AXIVERILOG)
 	touch $(BUILDDIR)/axiverilog_done.txt
@@ -344,5 +349,32 @@ $(BUILDDIR)/%.32nmpnr.txt : $(BUILDDIR)/%.32nm.txt
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua $(BUILDDIR)/$*.metadata.lua topModule))
 	rm -Rf $(BUILDDIR)/$*_32nm/chiptop.mw
 	cd $(BUILDDIR)/$*_32nm; icc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nmpnr.txt; set DDCFILE $*.ddc; set SYNFILE $*.synthesis.v;' -f ../../../platform/32nm/32nm_icc.tcl
+
+$(BUILDDIR)/%.zu9vivado.luts.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "CLB LUTs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivado.lutscorrect.txt: $(BUILDDIR)/%.zu9vivado.luts.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.luts.txt $@
+
+$(BUILDDIR)/%.zu9vivado.brams.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivado.bramscorrect.txt: $(BUILDDIR)/%.zu9vivado.brams.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.brams.txt $@
+
+$(BUILDDIR)/%.zu9vivado.dsps.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "DSPs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivado.dspscorrect.txt: $(BUILDDIR)/%.zu9vivado.dsps.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.dsps.txt $@
+
+$(BUILDDIR)/%.zu9vivado.mhz.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/vivado.log | grep "arrival time" | head -2 | tail -1 | grep -P -o "[0-9]+\.[0-9]+" | xargs printf "scale=5; (1/%f)*1000\n" | bc | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivado.mhzcorrect.txt: $(BUILDDIR)/%.zu9vivado.mhz.txt
+	$(LUA) ../misc/approxnumdiff.lua gold/$*.zu9vivado.mhz.txt $^ $@
+
+$(BUILDDIR)/%.zu9vivado.perfcorrect.txt: $(BUILDDIR)/%.zu9vivado.lutscorrect.txt $(BUILDDIR)/%.zu9vivado.bramscorrect.txt $(BUILDDIR)/%.zu9vivado.dspscorrect.txt $(BUILDDIR)/%.zu9vivado.mhzcorrect.txt
+	touch $@
 
 include ../platform/platform.mk
