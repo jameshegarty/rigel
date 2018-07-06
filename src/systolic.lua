@@ -683,7 +683,7 @@ local function interp(tab,bits)
   if lowerk~=nil and higherk~=nil then
     local pct = (bits-lowerk)/(higherk-lowerk)
     local res = lowerv+pct*(higherv-lowerv)
-    print("INTERPOLATE",lowerk,lowerv,higherk,higherv,bits,"RES",res)
+    --print("INTERPOLATE",lowerk,lowerv,higherk,higherv,bits,"RES",res)
     return res
   elseif higherk~=nil then
     return higherv
