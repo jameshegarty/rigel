@@ -16,9 +16,7 @@ $(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp
 	date
 
 $(BUILDDIR)/%.$(1).cyclescorrect.txt : $(BUILDDIR)/%.$(1).bmp
-	diff $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt > $(BUILDDIR)/$$*.$(1).cyclesdiff
-	test ! -s $(BUILDDIR)/$$*.$(1).cyclesdiff && touch $$@
-	date
+	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.$(1).raw: $(BUILDDIR)/%.$(1).bit $(BUILDDIR)/%.metadata.lua
 	$(MKPATH)/$(1)/run $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $(shell pwd)/$(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*.$(1).raw $(shell pwd)/$(BUILDDIR)/$$*.$(!)

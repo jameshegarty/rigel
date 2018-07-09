@@ -644,6 +644,54 @@ function systolicASTFunctions:removeDelays( )
   return finalOut, pipelineRegisters
 end
 
+-- scale all internal pipeline delay values up/down
+systolic.delayScale = 1
+
+-- NOTE: we allow non-integer pipeline delays. The behavior here is we FLOOR the delays to get the # of cycles of each op.
+-- We have to do this consistantly everywhere!!
+local delayTable = {}
+delayTable.abs={[8]=2-0.97, [16]=2-0.57, [24]=2-0.18, [32]=2-0.05}
+delayTable["*"]={[8]=2-0.22, [16]=2-0.01, [24]=2-0.03, [32]=2}
+delayTable["+"]={[8]=2-0.84, [16]=2-0.35, [24]=2-0.44, [32]=2-0.27}
+delayTable["-"]={[8]=2-0.51, [16]=2-0.66, [24]=2-0.37, [32]=2-0.03}
+delayTable[">="]={[0]=0} --???
+delayTable["<="]={[0]=0} --???
+delayTable["<"]={[0]=0} --???
+delayTable[">"]={[0]=0} --???
+delayTable["=="]={[0]=0} --???
+delayTable[">>"]={[0]=0}
+delayTable["<<"]={[0]=0}
+delayTable["and"]={[0]=0}
+delayTable["not"]={[0]=0}
+delayTable["or"]={[0]=0}
+delayTable["select"]={[0]=0}
+
+local function interp(tab,bits)
+  local lowerk,lowerv,higherk,higherv
+  for k,v in pairs(tab) do
+    if k<=bits and (lowerk==nil or k>lowerk) then
+      lowerk = k
+      lowerv = v
+    end
+    
+    if k>bits and (higherk==nil or k<higherk) then
+      higherk = k
+      higherv = v
+    end
+  end
+
+  if lowerk~=nil and higherk~=nil then
+    local pct = (bits-lowerk)/(higherk-lowerk)
+    local res = lowerv+pct*(higherv-lowerv)
+    --print("INTERPOLATE",lowerk,lowerv,higherk,higherv,bits,"RES",res)
+    return res
+  elseif higherk~=nil then
+    return higherv
+  else
+    return lowerv
+  end
+end
+
 -- this returns (I=total internal delay of node), (D=delays pipelining has to add)
 -- I-D is the amount that the op has built in (eg delay of a call)
 function systolicASTFunctions:internalDelay()
@@ -653,9 +701,15 @@ function systolicASTFunctions:internalDelay()
     return res, 0
   elseif self.kind=="binop" or self.kind=="select" or self.kind=="unary" then 
     if self.pipelined==nil or self.pipelined then
-      return 1,1
+      local op = self.op
+      if self.kind=="select" then assert(op==nil); op="select" end
+      local tab = delayTable[op]
+      err(tab~=nil,"Pipelining error: no data for op '"..op.."'")
+      local id = interp(tab,self.type:verilogBits())
+      id = id*systolic.delayScale
+      return id,id
     else
-      return 0,0
+      return 0,0 -- if pipelining is disabled on an op
     end
   elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" then
     return 0,0 -- purely wiring, or inputs
@@ -711,6 +765,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
 
   local function getDelayed( node, delay, orig )
     assert( systolic.isAST(orig) )
+    assert( math.floor(delay)==delay )
     local CE
     if stallDomains[orig]~="___NOSTALL" and stallDomains[orig]~="___CONST" then CE = stallDomains[orig] end
     return systolicAST.new{kind="delay",delay=delay,inputs={node,systolic.null(),CE},type=node.type,loc=getloc()}
@@ -745,7 +800,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
           local ID, delaysToAdd = orig.inputs[k]:internalDelay()
           local inpDelay = delaysAtInput[orig.inputs[k]] + (ID-delaysToAdd)
 
-          n.inputs[k] = getDelayed( n.inputs[k], thisDelay - inpDelay, orig.inputs[k])
+          n.inputs[k] = getDelayed( n.inputs[k], math.floor(thisDelay) - math.floor(inpDelay), orig.inputs[k])
         end
       end
 
@@ -1554,7 +1609,7 @@ function userModuleFunctions:getDelay( fnname )
     return self.verilogDelay[fnname] 
   end
   assert(type(self.fndelays[fnname])=="number")
-  return self.fndelays[fnname]
+  return math.floor(self.fndelays[fnname])
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.

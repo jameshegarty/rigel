@@ -354,25 +354,25 @@ $(BUILDDIR)/%.zu9vivado.luts.txt: $(BUILDDIR)/%.zu9vivado.bit
 	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "CLB LUTs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.lutscorrect.txt: $(BUILDDIR)/%.zu9vivado.luts.txt
-	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.luts.txt $@
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.luts.txt $@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.brams.txt: $(BUILDDIR)/%.zu9vivado.bit
 	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.bramscorrect.txt: $(BUILDDIR)/%.zu9vivado.brams.txt
-	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.brams.txt $@
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.brams.txt $@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.dsps.txt: $(BUILDDIR)/%.zu9vivado.bit
 	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "DSPs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.dspscorrect.txt: $(BUILDDIR)/%.zu9vivado.dsps.txt
-	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.dsps.txt $@
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.dsps.txt $@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.mhz.txt: $(BUILDDIR)/%.zu9vivado.bit
 	 cat $(BUILDDIR)/$*_zu9vivado/vivado.log | grep "arrival time" | head -2 | tail -1 | grep -P -o "[0-9]+\.[0-9]+" | xargs printf "scale=5; (1/%f)*1000\n" | bc | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.mhzcorrect.txt: $(BUILDDIR)/%.zu9vivado.mhz.txt
-	$(LUA) ../misc/approxnumdiff.lua gold/$*.zu9vivado.mhz.txt $^ $@
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.mhz.txt $@ 0 largerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.perfcorrect.txt: $(BUILDDIR)/%.zu9vivado.lutscorrect.txt $(BUILDDIR)/%.zu9vivado.bramscorrect.txt $(BUILDDIR)/%.zu9vivado.dspscorrect.txt $(BUILDDIR)/%.zu9vivado.mhzcorrect.txt
 	touch $@

@@ -83,42 +83,61 @@ int main(int argc, char** argv) {
 
   // NOTE: you'd think we could check for overflows (too many output packets), but actually we can't
   // some of our modules start producing data immediately for the next frame, which is valid behavior (ie pad)
+
+  top->CLK = false;
+  top->eval();
+  top->CLK = true;
+  top->eval();
+
+  #if INBPP>0
+  bool ready = top->ready;
+  #else
+  bool ready = true;
+  #endif
   
   while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
-    if(CLK){
+    // posedge just occured
+
+    // set all inputs. DO NOT READ OUTPUTS DIRECTLY. Imagine these inputs come from registers, which should happen _after_ the posedge.
+    top->reset = false;
+    top->ready_downstream = 1;
 #if INBPP>0
-      if(top->ready){
-        if(validInCnt>=inPackets){
-          setValid(&(top->process_input),inbpp*inP,false);
-        }else{
-          setData(&(top->process_input),inbpp*inP,infile);
-          setValid(&(top->process_input),inbpp*inP,true);
-          validInCnt++;
-        }
-      }
-#endif
-      
-      // it's possible the pipeline has 0 cycle delay. in which case, we need to eval the async stuff here.
-      top->eval();
-      
-      if(getValid( &(top->process_output), outbpp*outP ) ){
-        validcnt++;
-        getData(&(top->process_output),outbpp*outP,outfile);
-      }
-      
-      totalCycles++;
-      if(totalCycles>outPackets*256){
-        printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
-        exit(1);
+    if(ready){
+      if(validInCnt>=inPackets){
+        setValid(&(top->process_input),inbpp*inP,false);
+      }else{
+        setData(&(top->process_input),inbpp*inP,infile);
+        setValid(&(top->process_input),inbpp*inP,true);
+        validInCnt++;
       }
     }
-
-    CLK = !CLK;
-
-    top->CLK = CLK;
-    top->ready_downstream = true;
-    top->reset = false;
+#endif
+      
     top->eval();
+
+    // flip to negedge
+    top->CLK = false;
+    top->eval();
+
+    // read outputs
+    if(getValid( &(top->process_output), outbpp*outP ) ){
+      validcnt++;
+      getData(&(top->process_output),outbpp*outP,outfile);
+    }
+
+#if INBPP>0
+    ready = top->ready;
+#endif
+
+    // activate posedge
+    top->CLK = true;
+    top->eval();
+    
+    totalCycles++;
+    if(totalCycles>outPackets*256){
+      printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
+      exit(1);
+    }
   }
 
   top->final();

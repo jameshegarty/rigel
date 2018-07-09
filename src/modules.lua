@@ -866,7 +866,7 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
       err(math.floor(outputCount)==outputCount,"filterSeq: in coerce mode, outputCount must be integer, but is "..tostring(outputCount))
       
       local vstring = [[
-module FilterSeqImpl(input CLK, input process_valid, input reset, input ce, input []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output []]..tostring(rigel.lower(res.outputType):verilogBits()-1)..[[:0] out);
+module FilterSeqImpl(input wire CLK, input wire process_valid, input wire reset, input wire ce, input wire []]..tostring(res.inputType:verilogBits()-1)..[[:0] inp, output wire []]..tostring(rigel.lower(res.outputType):verilogBits()-1)..[[:0] out);
 parameter INSTANCE_NAME="INST";
 
   reg [31:0] phase;

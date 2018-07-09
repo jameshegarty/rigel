@@ -118,7 +118,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       m:free()
       cstdlib.free(m)
 
-      cstdio.printf("Terra Cycles %d\n",cycles)
+      --cstdio.printf("Terra Cycles %d\n",cycles)
       var f = cstdio.fopen([filename..".terra.cycles.txt"], "w");
       if f==nil then
         cstdio.printf("Error opening file '%s'!\n",[filename..".terra.cycles.txt"]);
