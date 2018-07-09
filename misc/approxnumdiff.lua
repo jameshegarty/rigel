@@ -13,7 +13,7 @@ local SLACK = tonumber(arg[4])
 
 --print(LEFT,RIGHT)
 
-if (arg[5]=="smallerIsBetter" and NEW>TARGET*(1+SLACK)) or (arg[5]=="largerIsBetter" and NEW>TARGET*(1-SLACK)) then
+if (arg[5]=="smallerIsBetter" and NEW>TARGET*(1+SLACK)) or (arg[5]=="largerIsBetter" and NEW<TARGET*(1-SLACK)) then
   print("ERROR: stat regressed out of bounds, ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%")
   os.exit(1)
 elseif (arg[5]=="smallerIsBetter" and NEW>TARGET) or (arg[5]=="largerIsBetter" and NEW<TARGET) then
