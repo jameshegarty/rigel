@@ -520,9 +520,15 @@ end
 
 
 function fixedBram(conf)
+
+  assert( type(conf.A.bits)=="number" )
+  assert( conf.A.bits==1 or conf.A.bits==2 or conf.A.bits==4 or conf.A.bits==8 or conf.A.bits==16 or conf.A.bits==32)
+  assert( type(conf.B.bits)=="number" )
+  assert( conf.B.bits==1 or conf.B.bits==2 or conf.B.bits==4 or conf.B.bits==8 or conf.B.bits==16 or conf.B.bits==32)
+
   local A = "A"
   local B = "B"
-  if conf.A.chunk>conf.B.chunk then A,B=B,A end
+  if conf.A.bits>conf.B.bits then A,B=B,A end
   local res = {}
 
   local configParams = {}
@@ -547,9 +553,20 @@ function fixedBram(conf)
 --      table.insert(configParams, initS)
   end
 
-  table.insert(res,"RAMB16_S"..(conf[A].chunk*9).."_S"..(conf[B].chunk*9).." #("..table.concat(configParams,",")..") "..conf.name.." (\n")
-    table.insert(res,".DIPA("..(conf[A].chunk).."'b0),\n")
-    table.insert(res,".DIPB("..(conf[B].chunk).."'b0),\n")
+  local Abit = conf[A].bits
+  if Abit>=8 then Abit = Abit + (Abit/8) end
+  local Bbit = conf[B].bits
+  if Bbit>=8 then Bbit = Bbit + (Bbit/8) end
+  
+  table.insert(res,"RAMB16_S"..tostring(Abit).."_S"..tostring(Bbit).." #("..table.concat(configParams,",")..") "..conf.name.." (\n")
+    if conf[A].bits>=8 then
+      table.insert(res,".DIPA("..(conf[A].bits/8).."'b0),\n")
+    end
+
+    if conf[B].bits>=8 then
+      table.insert(res,".DIPB("..(conf[B].bits/8).."'b0),\n")
+    end
+
     if conf[A].DI~=nil then table.insert(res,".DIA("..conf[A].DI.."),\n") end
     if conf[B].DI~=nil then table.insert(res,".DIB("..conf[B].DI.."),\n") end
     if conf[A].DO~=nil then table.insert(res,".DOA("..conf[A].DO.."),\n") end
@@ -568,6 +585,122 @@ function fixedBram(conf)
   return res
 end
 
+
+-- makes a module that implements a large ram out of N smaller rams
+local function makeRamArray(
+    writeAndReturnOriginal,
+    sizeInBytes,
+    inputBytes,
+    outputBytes,
+    init,
+    CE,
+
+    ramCount, -- # of rams to make. Can be <1 (means make 1, but underutilize it)
+    ramInputBits, -- input BW of each ram
+    ramOutputBits, -- output BW of each ram
+    X)
+
+
+  assert( ramInputBits>=1 and ramInputBits<=32 ) -- don't have rams outside this range
+  assert( ramInputBits*math.max(ramCount,1) == inputBytes*8 )
+
+  local ramInputAddrBits = math.log((2048*8)/ramInputBits)/math.log(2)
+
+  local ramOutputAddrBits
+  if outputBytes~=nil then
+    assert( ramOutputBits>=1 and ramOutputBits<=32 )
+    assert( ramOutputBits*math.max(ramCount,1)==outputBytes*8 )
+    ramOutputAddrBits = math.log( (2048*8)/ramOutputBits)/math.log(2)
+  end
+
+  local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
+  local outputAddrBits
+  if outputBytes~=nil then outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2) end
+
+  if init~=nil then
+    err( ramCount <= 1, "NYI - inits with striped ram array" )
+    err( ramInputBits==inputBytes*8, "NYI - inits with striped ram array"  )
+    if outputBytes~=nil then err( ramOutputBits==outputBytes*8, "NYI - inits with striped ram array"  ) end
+    err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
+    while #init < 2048 do
+      table.insert(init,0)
+    end
+  end
+
+  if writeAndReturnOriginal then
+    local name = J.sanitize("bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init))
+    local mod = Ssugar.moduleConstructor( name )
+    
+    ------------------ WRITE PORT
+    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
+    local inpAddr = systolic.index(sinp,0)
+    local inpData = systolic.index(sinp,1)
+
+    local inpAddrPadded = inpAddr
+    if ramInputAddrBits>inputAddrBits then
+      -- ram supplies more addressible items than we require, so pad it out
+      inpAddrPadded = systolic.cast( inpAddrPadded, types.uint( ramInputAddrBits ) )
+    end
+
+    local out = {}
+    local rams = {}
+    for ram=0,math.max(1,ramCount)-1 do
+      rams[ram] =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, ramInputBits, ramOutputBits, CE, init ):instantiate("bram_"..ram) )
+      local inp
+
+      if ramInputBits==inputBytes*8 then
+        inp = inpData
+      elseif ramInputBits>inputBytes*8 then
+        -- pad it out
+        inp = systolic.cast( inpData, types.bits(ramInputBits) )
+      else
+        inp = systolic.bitSlice( inpData, ram*ramInputBits, (ram+1)*ramInputBits-1 )
+      end
+
+      
+      table.insert( out, rams[ram]:writeAndReturnOriginal( systolic.tuple{inpAddrPadded,inp} ) )
+    end
+
+    local res
+    if ramInputBits>inputBytes*8 then
+      assert(ramCount<1)
+      res = systolic.bitSlice( out[1], 0, inputBytes*8-1 )
+    else
+      res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
+    end
+    
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
+
+    ----------- READ PORT
+    if outputBytes~=nil then
+      local sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits))
+
+      local outAddrPadded = sinpRead
+      if ramOutputAddrBits>outputAddrBits then
+        outAddrPadded = systolic.cast( outAddrPadded, types.uint(ramOutputAddrBits) )
+      end
+
+      local outRead = {}
+      for ram=0,math.max(1,ramCount)-1 do
+        table.insert( outRead, rams[ram]:read(outAddrPadded) ) 
+      end
+
+      local readRes
+      if ramOutputBits>outputBytes*8 then
+        assert(ramCount<1)
+        readRes = systolic.bitSlice( outRead[1], 0, outputBytes*8-1 )
+      else
+        readRes = systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8))
+      end
+
+      mod:addFunction( systolic.lambda("read", sinpRead, readRes, "READ_OUT", nil, nil, J.sel(CE,S.CE("read_CE"),nil) ) ) 
+    end
+
+    return mod
+  else
+    assert(false)
+  end
+end
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
 -- if outputBits==nil, we don't make a read function (only a write function)
@@ -607,85 +740,37 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
   local maxbw = inputBytes
   if outputBytes~=nil then maxbw = math.max(inputBytes, outputBytes) end
-  local addressable = sizeInBytes/minbw
 
-  err(addressable<=2048,"Error, bramSDP arguments have more addressable items than are supported by 1 bram (size:"..tostring(sizeInBytes)..", inputBytes:"..tostring(inputBytes)..")")
+  local addressable = math.max(sizeInBytes/minbw,math.pow(2,9)) -- bram with least # of addressable items has 512 addressable items
+  err(addressable<=math.pow(2,14),"Error, bramSDP arguments have more addressable items than are supported by 1 bram (totalSize:"..tostring(sizeInBytes)..", inputBytes/cycle:"..tostring(inputBytes)..", outputBytes/cycle:"..tostring(outputBytes)..", addressableItems:"..tostring(addressable)..")")
 
-  -- find the # brams if we're bw limited, or size limited
-  local bwlimit = maxbw/4
-  local sizelimit = (addressable*maxbw)/2048
+  -- find the # brams if we're bw limited, or address limited
 
-  local count = math.max(bwlimit, sizelimit, 1)
+  -- what ram has a small enough port size to support the # of addressable items we need?
+  -- ram with largest port size is 32 bit port size (with 2^9 addressable items).
+  -- smallest port size ram has port size 1 bit (2^14 addressable)
+  local maxPossibleBWBits = 32/(addressable/math.pow(2,9))
+  assert(maxPossibleBWBits<=32 and maxPossibleBWBits>=1)
+  local maxPossibleBWBytes = maxPossibleBWBits/8 -- can be non-integer!!
+  local ramCount = maxbw/maxPossibleBWBytes
+  
+  --print(ramCount,"BRAMS needed","maxPossibleBWBits",maxPossibleBWBits,"addressable",addressable,"sizeInBytes",sizeInBytes,"inputBytes",inputBytes,"outputBytes",outputBytes)
 
-  err( count==math.floor(count), "non integer number of BRAMS needed?")
-  assert(count <= inputBytes) -- must read at least 1 byte per ram
+  -- it's ok to require <1 bram (like half a bram)
+  err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed?")
 
-  local eachInputBytes = math.max(inputBytes/count,1)
-  local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
+  -- number of input bits of the actual bram we chose
+  -- if ram BW is more than we need, prefer to have the input/output port match real port size (# allocate too many addressible items).
+  -- ... this make it easier to deal with init values
+  local ramInputBits = math.min((inputBytes*8)/ramCount,inputBytes*8)
 
-  assert(eachInputBytes>=1 and eachInputBytes<=4)
-  assert(eachInputBytes<=inputBytes)
-  assert(eachInputBytes*count==inputBytes)
-
-  local eachOutputBytes, outputAddrBits
+  local ramOutputBits, ramOutputAddrBits
   if outputBytes~=nil then
-    assert(count <= outputBytes) -- must read at least 1 byte per ram
-    eachOutputBytes = math.max(outputBytes/count,1)
-    assert(eachOutputBytes>=1 and eachOutputBytes<=4)
-    assert(eachOutputBytes<=outputBytes)
-    assert(eachOutputBytes*count==outputBytes)
-    outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2)
+    ramOutputBits = math.min((outputBytes*8)/ramCount,outputBytes*8)
   end
 
-  if sizeInBytes < count*2048 then
-    --print("Warning: bram is underutilized ("..sizeInBytes.."bytes requested, "..(count*2048).."bytes allocated, "..(count).." BRAMs, "..inputBytes.." bytes input BW, "..tostring(outputBytes).." bytes output BW). "..debug.traceback())
-  end
-
-  if init~=nil then
-    err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
-    while #init < 2048 do
-      table.insert(init,0)
-    end
-  end
-
-  if writeAndReturnOriginal then
-     local name = J.sanitize("bramSDP_WARO"..tostring(writeAndReturnOriginal).."_size"..sizeInBytes.."_bw"..inputBytes.."_obw"..tostring(outputBytes).."_CE"..tostring(CE).."_init"..tostring(init))
-    local mod = Ssugar.moduleConstructor( name )
-    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
-    local sinpRead
-    if outputBytes~=nil then sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits)) end
-    local inpAddr = systolic.index(sinp,0)
-    local inpData = systolic.index(sinp,1)
-
-    local out, outRead = {}, {}
-    for ram=0,count-1 do
-      local eachOutputBits
-      if outputBytes~=nil then eachOutputBits = eachOutputBytes*8 end
-
-      local m =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, eachInputBytes*8, eachOutputBits, CE, init ):instantiate("bram_"..ram) )
-      local inp = systolic.bitSlice( inpData, ram*eachInputBytes*8, (ram+1)*eachInputBytes*8-1 )
-
-      local internalInputAddrBits = math.log(2048/eachInputBytes)/math.log(2)
-      table.insert( out, m:writeAndReturnOriginal( systolic.tuple{ systolic.cast(inpAddr,types.uint(internalInputAddrBits)),inp} ) )
-
-      if outputBytes~=nil then 
-        local internalOutputAddrBits = math.log(2048/eachOutputBytes)/math.log(2)
-        table.insert( outRead, m:read( systolic.cast(sinpRead,types.uint(internalOutputAddrBits)) ) ) 
-      end
-    end
-
-    local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
-
-    if outputBytes~=nil then 
-      mod:addFunction( systolic.lambda("read", sinpRead, systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8)), "READ_OUT", nil, nil, J.sel(CE,S.CE("read_CE"),nil) ) ) 
-    end
-
-    return mod
-  else
-    assert(false)
-  end
-                                  end)
+  return makeRamArray( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, ramCount, ramInputBits, ramOutputBits )
+end)
 
 function script_path()
   local str = debug.getinfo(2, "S").source:sub(2)
