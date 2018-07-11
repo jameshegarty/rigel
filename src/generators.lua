@@ -166,7 +166,10 @@ function(args)
   end
 
   local input = R.input( args.type )
-  return RM.lambda( args.string, input, args.luaFunction(input) )
+  local out = args.luaFunction(input)
+  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value")
+  
+  return RM.lambda( args.string, input, out )
 end)
 
 function generators.export(t)
