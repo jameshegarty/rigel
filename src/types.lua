@@ -114,6 +114,7 @@ function types.tuple( list )
   err(#list>0, "no empty tuple types!")
 
   for _,v in ipairs(list) do
+    err( types.isType(v), "types.tuple: all items in list must be types")
     err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
   end
   

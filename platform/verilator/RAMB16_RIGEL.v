@@ -84,30 +84,30 @@ module RAMB16_RIGEL(
    parameter INIT_3E=256'd0;   
    parameter INIT_3F=256'd0;
    
-   parameter BYTES=1;
+   parameter BITS=1;
 
    input      WEA;
    input      ENA;
    input      SSRA;
    input      CLKA;
-   input [10-$clog2(BYTES):0] ADDRA;
-   input [BYTES-1:0]          DIPA;
+   input [13-$clog2(BITS):0] ADDRA;
+   input [((BITS<8?8:BITS)/8)-1:0]          DIPA;
    
-   input [BYTES*8-1:0]        DIA;
-   output [BYTES*8-1:0]       DOA;
-   input [BYTES*8-1:0]        DIB;
-   output [BYTES*8-1:0]       DOB;
+   input [BITS-1:0]        DIA;
+   output [BITS-1:0]       DOA;
+   input [BITS-1:0]        DIB;
+   output [BITS-1:0]       DOB;
    
    input                      WEB;
    input                      ENB;
    input                      SSRB;
    input                      CLKB;
-   input [10-$clog2(BYTES):0] ADDRB;
-   input [BYTES-1:0]          DIPB;
+   input [13-$clog2(BITS):0] ADDRB;
+   input [((BITS<8?8:BITS)/8)-1:0]          DIPB;
    
-   reg [BYTES*8-1:0]          ram [2048/BYTES-1:0];
-   reg [BYTES*8-1:0]          bufferA;
-   reg [BYTES*8-1:0]          bufferB;
+   reg [BITS-1:0]          ram [(2048*8)/BITS-1:0];
+   reg [BITS-1:0]          bufferA;
+   reg [BITS-1:0]          bufferB;
 
    reg [16383:0]              initpacked  = {INIT_3F,INIT_3E,INIT_3D,INIT_3C,INIT_3B,INIT_3A,INIT_39,INIT_38,INIT_37,INIT_36,INIT_35,INIT_34,INIT_33,INIT_32,INIT_31,INIT_30,INIT_2F,INIT_2E,INIT_2D,INIT_2C,INIT_2B,INIT_2A,INIT_29,INIT_28,INIT_27,INIT_26,INIT_25,INIT_24,INIT_23,INIT_22,INIT_21,INIT_20,INIT_1F,INIT_1E,INIT_1D,INIT_1C,INIT_1B,INIT_1A,INIT_19,INIT_18,INIT_17,INIT_16,INIT_15,INIT_14,INIT_13,INIT_12,INIT_11,INIT_10,INIT_0F,INIT_0E,INIT_0D,INIT_0C,INIT_0B,INIT_0A,INIT_09,INIT_08,INIT_07,INIT_06,INIT_05,INIT_04,INIT_03,INIT_02,INIT_01,INIT_00};
 
@@ -115,9 +115,9 @@ module RAMB16_RIGEL(
    reg [31:0] j=0;
    
 initial begin
-   for(i=0; i<2048/BYTES-1; i=i+1) begin
-      for(j=0; j<BYTES*8; j=j+1) begin
-         ram[i][j] = initpacked[i*BYTES*8+j];
+   for(i=0; i<(2048*8)/BITS-1; i=i+1) begin
+      for(j=0; j<BITS; j=j+1) begin
+         ram[i][j] = initpacked[i*BITS+j];
       end
    end   
 end

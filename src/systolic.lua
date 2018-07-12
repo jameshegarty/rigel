@@ -2048,7 +2048,9 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
     -- we only use the 18 kbit wide BRAM here, b/c AFAIK using the 36 kbit BRAM doesn't provide a benefit, so there's no reason to special case that
 
     local width
-    if self.inputBits==8 then
+    if self.inputBits<8 and self.inputBits>0 then
+      width = self.inputBits -- BRAM modules <8 bits have no parity bits
+    elseif self.inputBits==8 then
       width = 9
     elseif self.inputBits==16 then
       width = 18
@@ -2084,7 +2086,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
     assert(type(CEvar)=="string")
 
     local conf={name=instance.name}
-    conf.A={chunk=self.inputBits/8,
+    conf.A={bits=self.inputBits,
            DI = instance.name.."_INPUT["..(addrbits+self.inputBits-1)..":"..addrbits.."]",
            DO = instance.name.."_SET_AND_RETURN_ORIG_OUTPUT",
            ADDR = instance.name.."_INPUT["..(addrbits-1)..":0]",
@@ -2095,7 +2097,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
 
     if VCS.read~=nil then
 
-      conf.B={chunk=self.outputBits/8,
+      conf.B={bits=self.outputBits,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_READ_OUTPUT",
            ADDR = VCS.read[1],
@@ -2105,7 +2107,7 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
            readFirst = true}
 
     else
-    conf.B={chunk=self.inputBits/8,
+    conf.B={bits=self.inputBits,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_DO_B",
            ADDR = instance.name.."_addr_B",
@@ -2201,7 +2203,7 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
     err(#init==2048, "init table has size "..(#init).." but should have size 2048")
   end
 
-  err(inputBits==8 or inputBits==16 or inputBits==32, "inputBits must be 8,16, or 32")
+  err(inputBits==8 or inputBits==16 or inputBits==32 or inputBits==4 or inputBits==2 or inputBits==1, "inputBits must be 1,2,4,8,16, or 32")
 
   local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
