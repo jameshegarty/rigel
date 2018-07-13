@@ -1544,8 +1544,23 @@ function userModuleFunctions:toVerilog()
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
+    -- is there an input/output (internally wired) pair for this SC?
+    local SCPairs = {}
+    local SCSeen = {}
+    local SCPairDefn = ""
     for sc,_ in pairs(self.sideChannels) do
-      table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
+      if SCSeen[sc.name]~=nil and SCSeen[sc.name]~=sc.direction then
+        SCPairs[sc.name]=1
+        SCPairDefn = SCPairDefn.."  "..declareWire(sc.type,sc.name,nil," // Side Channel internal pair" ).."\n"
+      else
+        SCSeen[sc.name] = sc.direction
+      end
+    end
+    
+    for sc,_ in pairs(self.sideChannels) do
+      if SCPairs[sc.name]==nil then
+        table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
+      end
     end
     
     table.insert(t,table.concat(J.map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
@@ -1558,6 +1573,8 @@ function userModuleFunctions:toVerilog()
       end
     end
 
+    table.insert(t,SCPairDefn)
+    
     for k,v in pairs(self.instances) do
       if v.module.instanceToVerilogStart~=nil then
         v.module:instanceToVerilogStart( v, self )
@@ -1661,9 +1678,15 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     _usedPname[v.valid.name]="valid for fn '"..k.."'"
   end
 
+  local SCNames = {}
   for k,_ in pairs(SC) do
-    err( _usedPname[k.name]==nil,"side channel name '"..k.name.."' is used somewhere else in module (as a "..tostring(_usedPname[k.name])..")")
-    _usedPname[k.name]="side channel"
+    if SCNames[k.name]~=nil and SCNames[k.name]~=k.direction then
+      -- OK: found a matching SC with opposite direction
+    else
+      err( _usedPname[k.name]==nil,k.direction.." side channel name '"..k.name.."' is used somewhere else in module (as a "..tostring(_usedPname[k.name])..")")
+      _usedPname[k.name]=k.direction.." side channel"
+      SCNames[k.name]=k.direction
+    end
   end
   
   -- check for dangling params

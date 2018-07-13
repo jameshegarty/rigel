@@ -18,11 +18,39 @@ local SOC = {}
 SOC.ports = 4
 SOC.currentMAXIReadPort = 0
 SOC.currentMAXIWritePort = 0
+SOC.currentSAXIPort = 0
 SOC.currentAddr = 0x30008000
+SOC.currentRegAddr = 0xA0000000
 
-SOC.axiRegsN = J.memoize(function(N,port)
+SOC.axiRegs = J.memoize(function(tab,port)
 
+  if port==nil then
+    port = SOC.currentSAXIPort
+    SOC.currentSAXIPort = SOC.currentSAXIPort + 1
+  end
+
+  local globalMetadata = {}
   local globals = {}
+
+  local addToModuleHack = {}
+  local regPorts = ""
+  for k,v in pairs(tab) do
+    J.err( type(k)=="string", "axiRegs: key must be string" )
+    J.err( types.isType(v[1]), "axiRegs: first key must be type" )
+    J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
+    v[1]:checkLuaValue(v[2])
+
+    globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
+    SOC.currentRegAddr = SOC.currentRegAddr + v[1]:verilogBits()
+
+    print("ADD GLOBAL",k)
+    globals[R.newGlobal(k,"output",v[1])] = 1
+    addToModuleHack[k] = R.newGlobal(k,"input",v[1])
+
+    regPorts = regPorts.."output ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
+]]
+  end
+
   globals[R.newGlobal("IP_SAXI"..port.."_ARADDR","input",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_AWADDR","input",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_RDATA","output",R.Handshake(types.bits(32)))] = 1
@@ -37,7 +65,7 @@ SOC.axiRegsN = J.memoize(function(N,port)
   globals[R.newGlobal("IP_SAXI"..port.."_RRESP","output",types.bits(2))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_WSTRB","input",types.bits(4))] = 1
 
-  local ModuleName = J.sanitize("Regs_"..tostring(N).."_"..tostring(port))
+  local ModuleName = J.sanitize("Regs_"..tostring(tab).."_"..tostring(port))
 
 --  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.HandshakeTrigger,
 local vstring = [=[
@@ -492,7 +520,8 @@ module ]=]..ModuleName..[=[(
   output wire IP_SAXI]=]..port..[=[_RLAST,
   output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
   input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,
-
+  
+  ]=]..regPorts..[=[
   // done signal
   input wire done_input,
   output wire done_ready,
@@ -579,7 +608,7 @@ endmodule
 
 --  res.registered = true
 
-  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}}, registered=true, stateful=true, globals = globals }
+  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
   function res.makeSystolic()
     local fns = {}
 
@@ -615,7 +644,12 @@ endmodule
     res.makeTerra=nil
     res.terraModule = SOCMT.axiRegsN(res,port)
   end
-  
+
+  for k,v in pairs(addToModuleHack) do
+    assert(res[k]==nil)
+    res[k] = R.readGlobal("readGlobal_"..k,v)
+  end
+                        
   return res
 end)
 

@@ -57,8 +57,17 @@ return function(fn,t)
         table.insert(outputList,"{filename='"..fn.globalMetadata["MAXI"..i.."_write_filename"].."',W="..fn.globalMetadata["MAXI"..i.."_write_W"]..",H="..fn.globalMetadata["MAXI"..i.."_write_H"]..",bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]..",V="..fn.globalMetadata["MAXI"..i.."_write_V"]..",address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_write_address"]).."}")
       end
     end
+
+    local registerList = {}
+    for k,v in pairs(fn.globalMetadata) do
+      if string.sub(k,0,8)=="Register" then
+        local addr = string.sub(k,10)
+        table.insert(registerList,"['"..addr.."']='"..v.."'")
+      end
+    end
+    registerList=",registers={"..table.concat(registerList,",").."}"
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..(fn.sdfInput[1][2]/fn.sdfInput[1][1]).."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..(fn.sdfInput[1][2]/fn.sdfInput[1][1])..registerList.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

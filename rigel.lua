@@ -484,6 +484,15 @@ __tostring=function(mod)
   else
     table.insert(res,"  OutputSDF: Not an SDF rate?")
   end
+
+  table.insert(res,"  Globals:")
+  for k,v in pairs(mod.globals) do
+    table.insert(res,"    "..k.direction.." "..tostring(k.type).." "..k.name)
+  end
+  table.insert(res,"  GlobalMetadata:")
+  for k,v in pairs(mod.globalMetadata) do
+    table.insert(res,"    "..tostring(k).." = "..tostring(v))
+  end
   
   return table.concat(res,"\n")
 end
@@ -646,14 +655,14 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
   local res = self:visitEach( 
     function( n, args )
       local res
-      if n.kind=="input" or n.kind=="constant" then
+      if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" then
         local rate = {{1,1}}
         if n.kind=="input" and n.sdfRate~=nil then 
           err( SDFRate.isSDFRate(n.sdfRate),"sdf rate not an sdf rate? "..n.kind..n.loc)
           rate=n.sdfRate; 
         end
         res = {rate,J.broadcast(true,#rate)}
-	if DARKROOM_VERBOSE then print("INPUT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+        if DARKROOM_VERBOSE then print("INPUT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
       elseif n.kind=="applyMethod" then
         if n.fnname=="load" then
           if registeredInputRates[n.inst]==nil then
@@ -708,22 +717,22 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
             end
           end
           res = {{IR},{allConverged and ratesMatch}}
-	  if DARKROOM_VERBOSE then print("CONCAT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
-	else
-	  res = {{},{}}
-	  for k,v in ipairs(args) do
-	    assert( SDFRate.isSDFRate( v[1] ) )
-	    table.insert(res[1], v[1][1])
-	    table.insert(res[2], v[2][1])
-	  end
-	  
-	  if DARKROOM_VERBOSE then
-	    print("CONCAT",n.name)
-	    for k,v in ipairs(res[2]) do
-	      print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
-	    end
-	  end
-	end
+          if DARKROOM_VERBOSE then print("CONCAT",n.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+        else
+          res = {{},{}}
+          for k,v in ipairs(args) do
+            assert( SDFRate.isSDFRate( v[1] ) )
+            table.insert(res[1], v[1][1])
+            table.insert(res[2], v[2][1])
+          end
+  
+          if DARKROOM_VERBOSE then
+            print("CONCAT",n.name)
+            for k,v in ipairs(res[2]) do
+              print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+            end
+          end
+        end
       elseif n.kind=="statements" then
         local allConverged = true
         for _,arg in pairs(args) do
@@ -1075,7 +1084,6 @@ function darkroom.constant( name, value, ty )
   return darkroom.newIR( {kind="constant", name=name, loc=getloc(), value=value, type=ty, inputs = {}} )
 end
 
--- packStreams: do we consider the output of this to be 1 SDF stream, or N?
 function darkroom.concat( name, t, X )
   local r = {kind="concat", name=name, loc=getloc(), inputs={} }
   
@@ -1094,7 +1102,6 @@ function darkroom.concat( name, t, X )
   return darkroom.newIR( r )
 end
 
--- packStreams: do we consider the output of this to be 1 SDF stream, or N?
 function darkroom.concatArray2d( name, t, W, H, X )
   err( type(t)=="table", "array2d input should be table of darkroom values" )
   err(X==nil, "rigel concatArray2d too many arguments")

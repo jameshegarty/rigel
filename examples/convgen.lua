@@ -7,7 +7,7 @@ local C = require "examplescommon"
 require "generators".export()
 require "types".export()
 
-regs = SOC.axiRegsN(4,0):instantiate()
+regs = SOC.axiRegs{}:instantiate()
 
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
