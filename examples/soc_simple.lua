@@ -6,7 +6,7 @@ local G = require "generators"
 local RS = require "rigelSimple"
 require "types".export()
 
-regs = SOC.axiRegsN(4,0):instantiate()
+regs = SOC.axiRegs{}:instantiate()
 
 harness{
   regs.start,

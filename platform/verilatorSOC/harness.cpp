@@ -13,7 +13,7 @@ double CurrentTimeInSeconds() {
   return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
-#define S0LIST 0,&top->IP_CLK,&top->IP_ARESET_N,&top->SAXI0_ARADDR,&top->SAXI0_ARVALID,&top->SAXI0_ARREADY,&top->SAXI0_AWADDR,&top->SAXI0_AWVALID,&top->SAXI0_AWREADY,&top->SAXI0_RDATA,&top->SAXI0_RVALID,&top->SAXI0_RREADY,&top->SAXI0_BRESP,&top->SAXI0_BVALID,&top->SAXI0_BREADY,&top->SAXI0_RRESP
+#define S0LIST 0,&top->IP_CLK,&top->IP_ARESET_N,&top->SAXI0_ARADDR,&top->SAXI0_ARVALID,&top->SAXI0_ARREADY,&top->SAXI0_AWADDR,&top->SAXI0_AWVALID,&top->SAXI0_AWREADY,&top->SAXI0_RDATA,&top->SAXI0_RVALID,&top->SAXI0_RREADY,&top->SAXI0_BRESP,&top->SAXI0_BVALID,&top->SAXI0_BREADY,&top->SAXI0_RRESP,&top->SAXI0_WVALID,&top->SAXI0_WREADY
 
 #define M0READLIST 0,&top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RREADY,&top->MAXI0_RRESP,&top->MAXI0_RLAST,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST
 
@@ -33,44 +33,55 @@ void step(VERILATORCLASS* top){
 
 void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int data){
 
-    //////////////////////////////////////////////////////////////
-    step(top);
-    if(verbose){printSlave(S0LIST);}
+  bool srVerbose = false; // verbose just for this fn
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
+  if(srVerbose || verbose){printSlave(S0LIST);}
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
+  if(srVerbose || verbose){printSlave(S0LIST);}
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
+  if(srVerbose || verbose){printSlave(S0LIST);}
+  
+  // send start cmd
+  //assert(top->SAXI0_AWREADY==1);
+  top->SAXI0_AWADDR = addr;
+  top->SAXI0_AWVALID = true;
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
+  if(srVerbose || verbose){printSlave(S0LIST);}
+  bool found = checkSlaveWriteResponse(S0LIST);
 
-    //////////////////////////////////////////////////////////////
+  int i=0;
+  while(top->SAXI0_WREADY!=1){
     step(top);
-    if(verbose){printSlave(S0LIST);}
+    if(srVerbose || verbose){ printf("Waiting for ready\n"); printSlave(S0LIST); }
+    if(i>5){printf("timeout waiting for slave ready\n");exit(1);}
+  }
+  
+  top->SAXI0_WDATA = data;
+  top->SAXI0_WVALID = 1;
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
+  found |= checkSlaveWriteResponse(S0LIST);
+  
+  top->SAXI0_AWVALID = false;
+  
+  //////////////////////////////////////////////////////////////
+  step(top);
 
-    //////////////////////////////////////////////////////////////
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    
-    // send start cmd
-    //assert(top->SAXI0_AWREADY==1);
-    top->SAXI0_AWADDR = addr;
-    top->SAXI0_AWVALID = true;
-
-    //////////////////////////////////////////////////////////////
-    step(top);
-    if(verbose){printSlave(S0LIST);}
-    bool found = checkSlaveWriteResponse(S0LIST);
-    
-    assert(top->SAXI0_WREADY==1);
-    top->SAXI0_WDATA = data;
-    top->SAXI0_WVALID = 1;
-
-    //////////////////////////////////////////////////////////////
-    step(top);
-    found |= checkSlaveWriteResponse(S0LIST);
-    
-    top->SAXI0_AWVALID = false;
-
-    //////////////////////////////////////////////////////////////
-    step(top);
-    
-    while(!found && !checkSlaveWriteResponse(S0LIST)){
-      std::cout << "Waiting for S0 response" << std::endl;
-    }
+  i = 0;
+  while(!found && !checkSlaveWriteResponse(S0LIST)){
+    std::cout << "Waiting for S0 response" << std::endl;
+    if(i>5){printf("timeout waiting for s0 response\n"); exit(1);}
+    i++;
+  }
 }
 
 int main(int argc, char** argv) {
@@ -105,8 +116,8 @@ int main(int argc, char** argv) {
   for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(memory+i)=0x0df0adba; }
   
   init();
-  
-  while(strcmp(argv[curArg],"--outputs")!=0){
+
+  while(strcmp(argv[curArg],"--registers")!=0){
     unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;
 
@@ -128,25 +139,54 @@ int main(int argc, char** argv) {
     unsigned long totalCycles = simCycles+simCyclesSlack;
     
     if(verbose){printSlave(S0LIST);}
-    
-    for(int i=0; i<100; i++){
-      CLK = !CLK;
-      
-      top->IP_CLK = CLK;
-      top->IP_ARESET_N = false;
-      
+
+    if(round==0){
+      for(int i=0; i<100; i++){
+        CLK = !CLK;
+        
+        top->IP_CLK = CLK;
+        top->IP_ARESET_N = false;
+        
+        resetSlave(S0LIST);
+        
+        deactivateMasterRead(M0READLIST);
+        deactivateMasterWrite(M0WRITELIST);
+        deactivateMasterRead(M1READLIST);
+        deactivateMasterWrite(M1WRITELIST);
+        
+        top->eval();
+      }
+
+      top->IP_ARESET_N=true;
+
+      curArg++; // for "--registers"
+      while(strcmp(argv[curArg],"--outputs")!=0){
+        printf("PARSE ARG %s %s\n",argv[curArg],argv[curArg+1]);
+        unsigned int addr = strtol(argv[curArg],NULL,16);
+        int bytes = strlen(argv[curArg+1])/2;
+        printf("Set Register %x withNBytes %d\n",addr,bytes);
+
+        //unsigned int* data = (unsigned int*)argv[curArg+1];
+        char tmp[9]="";
+
+        for(int i=0; i<bytes/4; i++){
+          for(int j=0; j<8; j++){
+            tmp[j] = argv[curArg+1][i*8+j];
+          }
+
+          printf("STR %s\n",tmp);
+          unsigned long data = strtoul(tmp,NULL,16);
+          printf("try to Set Reg %x\n",data);
+          setReg( top, verbose, addr+i*4, data);
+        }
+        
+        curArg+=2;
+      }
+    }else{
       resetSlave(S0LIST);
-      
-      deactivateMasterRead(M0READLIST);
-      deactivateMasterWrite(M0WRITELIST);
-      deactivateMasterRead(M1READLIST);
-      deactivateMasterWrite(M1WRITELIST);
-      
-      top->eval();
     }
     
-    top->IP_ARESET_N=true;
-
+    
     setReg(top,verbose,0xA0000000+4,0); // clear done bit
     setReg(top,verbose,0xA0000000,1); // set start bit
     

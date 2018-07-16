@@ -62,7 +62,9 @@ return function(top, memStart, memEnd)
     `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
     `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
     `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
-    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()]}
+    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),}
 
   local MREADLIST={}
   local MWRITELIST={}

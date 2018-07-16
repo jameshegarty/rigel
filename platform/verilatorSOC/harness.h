@@ -127,12 +127,14 @@ void printSlave(
   unsigned char* BRESP,
   unsigned char* BVALID,
   unsigned char* BREADY,
-  unsigned char* RRESP){
+  unsigned char* RRESP,
+  unsigned char* WVALID,
+  unsigned char* WREADY){
 
   printf("----------------------\n");
   printf("IP_CLK(in): %d\n",(int)*IP_CLK);
   printf("IP_ARESET_N(in): %d\n",(int)*IP_ARESET_N);
-  printf("S_ARADDR(in): %d\n",*ARADDR);
+  printf("S_ARADDR(in): %d/%#x\n",*ARADDR, *ARADDR);
   printf("S_ARVALID(in): %d\n",(int)*ARVALID);
   printf("S_ARREADY(out): %d\n",(int)*ARREADY);
   printf("S_AWADDR(in): %d/%#x\n", *AWADDR, *AWADDR );
@@ -142,7 +144,9 @@ void printSlave(
   printf("S_RVALID(out): %d\n",(int)*RVALID);
   printf("S_RREADY(in): %d\n",(int)*RREADY);
   printf("S_BRESP(out): %d\n",(int)*BRESP);
-  printf("S_BVALID(out): %d\n",(int)*BRESP);
+  printf("S_BVALID(out): %d\n",(int)*BVALID);
+  printf("S_WVALID(in): %d\n",(int)*WVALID);
+  printf("S_WREADY(out): %d\n",(int)*WREADY);
 }
 
 void resetSlave(
@@ -161,7 +165,9 @@ void resetSlave(
   unsigned char* BRESP,
   unsigned char* BVALID,
   unsigned char* BREADY,
-  unsigned char* RRESP){
+  unsigned char* RRESP,
+  unsigned char* WVALID,
+  unsigned char* WREADY){
 
   *AWVALID = false;
   *ARVALID = false;
@@ -185,7 +191,9 @@ bool checkSlaveWriteResponse(
   unsigned char* BRESP,
   unsigned char* BVALID,
   unsigned char* BREADY,
-  unsigned char* RRESP){
+  unsigned char* RRESP,
+  unsigned char* WVALID,
+  unsigned char* WREADY){
 
   if( *BVALID && *BRESP==2){
     printf("Slave %d Error", id);
@@ -217,6 +225,8 @@ bool checkSlaveReadResponse(
   unsigned char* BVALID,
   unsigned char* BREADY,
   unsigned char* RRESP,
+  unsigned char* WVALID,
+  unsigned char* WREADY,
   unsigned int* dataOut){
 
   if( *RVALID && *RRESP==2){
@@ -250,7 +260,9 @@ bool slaveReadReq(
   unsigned char* BRESP,
   unsigned char* BVALID,
   unsigned char* BREADY,
-  unsigned char* RRESP){
+  unsigned char* RRESP,
+  unsigned char* WVALID,
+  unsigned char* WREADY){
 
   //  if(*ARREADY==false){
   //    printf("IP_SAXI0_ARREADY should be true\n");

@@ -6,7 +6,7 @@ local SOC = require "soc"
 local C = require "examplescommon"
 require "types".export()
 
-regs = SOC.axiRegsN(4,0):instantiate()
+regs = SOC.axiRegs{}:instantiate()
 
 local W,H = 128,64
 
