@@ -34,7 +34,9 @@ SOC.axiRegs = J.memoize(function(tab,port)
 
   local addToModuleHack = {}
   local regPorts = ""
+  local regPortAssigns = ""
   local NREG = 2
+  local curDataBit = 64 -- for start/done
   for k,v in pairs(tab) do
     J.err( type(k)=="string", "axiRegs: key must be string" )
     J.err( types.isType(v[1]), "axiRegs: first key must be type" )
@@ -44,7 +46,11 @@ SOC.axiRegs = J.memoize(function(tab,port)
 
     NREG = NREG + (v[1]:verilogBits()/32)
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    SOC.currentRegAddr = SOC.currentRegAddr + v[1]:verilogBits()
+
+    regPortAssigns = "assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
+
+    SOC.currentRegAddr = SOC.currentRegAddr + (v[1]:verilogBits()/8)
+    curDataBit = curDataBit + v[1]:verilogBits()
 
     print("ADD GLOBAL",k)
     globals[R.newGlobal(k,"output",v[1])] = 1
@@ -390,7 +396,7 @@ always @(posedge ACLK) begin
     end else case(w_state)
         IDLE: begin
             if(LITE_AWVALID) begin
-                ]=]..J.sel(verbose,"$display('Accepted Write Addr %x', LITE_AWADDR);","")..[=[
+                ]=]..J.sel(verbose,[[$display("Accepted Write Addr %x", LITE_AWADDR);]].."\n","")..[=[
                 LITE_BRESP <= aw_good ? OK : SLVERR;
                 w_select_r <= w_select;
                 w_state <= RWAIT; 
@@ -403,7 +409,7 @@ for i=0,NREG-1 do
 table.insert(vstring,[=[
             if (WRITE_DATA_VALID[]=]..i..[=[]) begin
               data[]=]..i..[=[] <= WRITE_DATA[]=]..(i*32+31)..":"..(i*32)..[=[];
-              ]=]..J.sel("$display('IP WRITE REG "..i.." %d',WRITE_DATA["..(i*32+31)..":"..(i*32).."]);","")..[=[
+              ]=]..J.sel([[$display("IP WRITE REG ]]..i..[[ %d",WRITE_DATA[]]..(i*32+31)..":"..(i*32).."]);\n","")..[=[
             end 
 ]=])
 end
@@ -417,10 +423,10 @@ table.insert(vstring,[=[
 for i=0,NREG-1 do
 table.insert(vstring,[=[            
             if (!w_wrotedata && w_select_r==]=]..REG_ADDR_BITS..[=['d]=]..i..[=[ && LITE_WVALID) begin
-                ]=]..J.sel(verbose,"$display('AXI WRITE REG "..i.." %d',LITE_WDATA);","")..[=[
+                ]=]..J.sel(verbose,[[$display("AXI WRITE REG ]]..i..[[ %d",LITE_WDATA);]].."\n","")..[=[
                 data[]=]..i..[=[] <= LITE_WDATA;
             end else if (WRITE_DATA_VALID[]=]..i..[=[]) begin
-                ]=]..J.sel(verbose,"$display('IP WRITE REG "..i.." %d',WRITE_DATA["..(i*32+31)..":"..(i*32).."]);","")..[=[
+                ]=]..J.sel(verbose,[[$display("IP WRITE REG ]]..i..[[ %d",WRITE_DATA[]]..(i*32+31)..":"..(i*32).."]);\n","")..[=[
                 data[]=]..i..[=[] <= WRITE_DATA[]=]..(i*32+31)..":"..(i*32)..[=[];
             end
 ]=])
@@ -428,18 +434,18 @@ end
 
 table.insert(vstring,[=[
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
-                ]=]..J.sel(verbose,"$display('Write done');","")..[=[
+                ]=]..J.sel(verbose,[[$display("Write done");]].."\n","")..[=[
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
                 w_state <= IDLE;
             end else if (LITE_WVALID) begin
-                ]=]..J.sel(verbose,"$display('Accepted write data WVALID');","")..[=[
+                ]=]..J.sel(verbose,[[$display("Accepted write data WVALID");]].."\n","")..[=[
                 w_wrotedata <= 1;
             end else if (LITE_BREADY) begin
-                ]=]..J.sel(verbose,"$display('Accepted RESP');","")..[=[
+                ]=]..J.sel(verbose,[[$display("Accepted RESP");]].."\n","")..[=[
                 w_wroteresp <= 1;
             end else begin
-                ]=]..J.sel(verbose,"$display('Waiting on WVALID/BREADY');","")..[=[
+                ]=]..J.sel(verbose,[[$display("Waiting on WVALID/BREADY");]].."\n","")..[=[
             end
         end
     endcase
@@ -526,8 +532,10 @@ module ]=]..ModuleName..[=[(
   output wire IP_SAXI]=]..port..[=[_RLAST,
   output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
   input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,
-  
+
+  // global drivers  
   ]=]..regPorts..[=[
+
   // done signal
   input wire done_input,
   output wire done_ready,
@@ -543,7 +551,9 @@ wire []=]..(NREG*32-1)..[=[:0] CONFIG_DATA;
 wire CONFIG_IRQ;
 
 wire []=]..(NREG-1)..[=[:0] DATA_VALID;
-wire []=]..(NREG*32-1)..[=[:0]DATA;
+wire []=]..(NREG*32-1)..[=[:0] DATA;
+
+]=]..regPortAssigns..[=[
 
 Conf #(.ADDR_BASE(32'hA0000000),.NREG(]=]..NREG..[=[)) conf(
 .ACLK(CLK),
