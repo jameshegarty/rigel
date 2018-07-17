@@ -1848,7 +1848,7 @@ return {`mself.[n.name].ready}
     if seenGlobals[k.name]~=nil then
       if seenGlobals[k.name].direction=="input" and k.direction=="output" then
         table.insert(tiedownGlobals, quote [seenGlobals[k.name]:terraValue()] = [k:terraValue()] end)
-      elseif seenGlobals[k.name].direction=="input" and k.direction=="output" then
+      elseif seenGlobals[k.name].direction=="output" and k.direction=="input" then
         table.insert(tiedownGlobals, quote [k:terraValue()] = [seenGlobals[k.name]:terraValue()] end)
       else
         print("ERROR: two globals with same name?")
