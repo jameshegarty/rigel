@@ -1845,7 +1845,6 @@ return {`mself.[n.name].ready}
   local tiedownGlobals = {}
   local seenGlobals = {}
   for k,_ in pairs(fn.globals) do
-    print("GLOB",k.name)
     if seenGlobals[k.name]~=nil then
       if seenGlobals[k.name].direction=="input" and k.direction=="output" then
         table.insert(tiedownGlobals, quote [seenGlobals[k.name]:terraValue()] = [k:terraValue()] end)
