@@ -7,6 +7,8 @@ VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_SOC))
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_SOC))	
 
+ZU9VIVADOSOCBITS = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SRCS_SOC))
+
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_SOC) harnessSOC.lua,$(SRCS))
 METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
@@ -254,6 +256,8 @@ zynq100: $(AXI100)
 zu9vivado: $(ZU9VIVADO)
 
 zu9vivadobits: $(ZU9VIVADOBITS)
+
+zu9vivadoSOCbits: $(ZU9VIVADOSOCBITS)
 
 axiverilog: $(AXIVERILOG)
 	touch $(BUILDDIR)/axiverilog_done.txt

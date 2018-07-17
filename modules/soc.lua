@@ -46,7 +46,9 @@ SOC.axiRegs = J.memoize(function(tab,port)
 
     NREG = NREG + (v[1]:verilogBits()/32)
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-
+    globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr
+    globalMetadata["TypeOfRegister_"..k] = v[1]
+    
     regPortAssigns = "assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
 
     SOC.currentRegAddr = SOC.currentRegAddr + (v[1]:verilogBits()/8)
@@ -654,7 +656,7 @@ endmodule
   -- hack
   if terralib~=nil then
     res.makeTerra=nil
-    res.terraModule = SOCMT.axiRegsN(res,port)
+    res.terraModule = SOCMT.axiRegs(res,tab,port)
   end
 
   for k,v in pairs(addToModuleHack) do

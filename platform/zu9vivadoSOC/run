@@ -31,6 +31,7 @@ MEMSTART=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryStart)
 MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
 INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS_ZYNQ)
 OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS_ZYNQ)
+REGISTERS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __REGISTERS)
 
 INPUT_FILES_ON_HOST=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUT_HOST_FILES)
 INPUT_FILES_ON_DEVICE=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUT_DEVICE_FILES)
@@ -51,7 +52,7 @@ SSHOPT="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -6"
 sshpass -p 'root' scp $SSHOPT $DIR/processimage_mpsoc_SOC $BITFILE $INPUT_FILES_ON_HOST root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH
 sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "mv $ZYNQ_WRITE_PATH/$BITFILE_BASE $ZYNQ_BIN_FILE_PATH"
 sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "echo $BITFILE_BASE > $ZYNQ_FIRMWARE_PATH"
-sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc_SOC 0xA0000000 $MEMSTART $MEMEND --inputs $INPUTS --outputs $OUTPUTS"
+sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "$ZYNQ_WRITE_PATH/processimage_mpsoc_SOC 0xA0000000 $MEMSTART $MEMEND --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS"
 sshpass -p 'root' scp $SSHOPT root@\[$ZYNQ_ADDR\]:$ZYNQ_WRITE_PATH/out.raw $OUTFILE
 sshpass -p 'root' ssh $SSHOPT root@$ZYNQ_ADDR "rm $ZYNQ_WRITE_PATH/processimage_mpsoc_SOC $INPUT_FILES_ON_DEVICE $ZYNQ_WRITE_PATH/out.raw $ZYNQ_BIN_FILE_PATH/$BITFILE_BASE"
 
