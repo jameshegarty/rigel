@@ -13,7 +13,7 @@ local SOCMT = {}
 
 --SOCMT.doneHack = global(bool)
 
-function SOCMT.axiRegsN(mod,port)
+function SOCMT.axiRegs(mod,tab,port)
   local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool, doneReg:bool, RDATAReady:bool }
 
   terra AxiRegsN:reset()
@@ -25,13 +25,38 @@ function SOCMT.axiRegsN(mod,port)
 --    [SOCMT.doneHack] = false
   end
 
+  local regSet = {}
+
+  for k,v in pairs(tab) do
+    local addr = mod.globalMetadata["AddrOfRegister_"..k]
+    local ty = mod.globalMetadata["TypeOfRegister_"..k]
+    local glob = mod:getGlobal(k):terraValue()
+
+    for i=0,ty:verilogBits()/32-1 do
+      table.insert(regSet,
+                   quote
+                     if data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])==[addr+i*4] then
+                       cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d\n", data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]), data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()]) )
+                       @([&uint](&[glob])+i) = data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()])
+                     end
+                   end)
+    end
+  end
+
   terra AxiRegsN:start( out : &bool )
     if valid([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]) then
-      --cstdio.printf("WRITE TO REG\n")
+      cstdio.printf("WRITE TO REG %x\n",[mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])
       data([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = 0
       valid([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = true
-      self.startReg = true
-      self.doneReg = false
+
+      var addr = data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])
+      if addr==0xa0000000 then
+        self.startReg = true
+        self.doneReg = false
+      else
+        [regSet]
+      end
+      
 --      [SOCMT.doneHack] = false
     end
 

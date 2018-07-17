@@ -6,7 +6,7 @@ local RS = require "rigelSimple"
 local RM = require "modules"
 require "types".export()
 
-regs = SOC.axiRegsN(4,0):instantiate()
+regs = SOC.axiRegs{}:instantiate()
 
 local inp = R.input(R.HandshakeTrigger)
 local inp0, inp1 = RS.fanOut{input=inp,branches=2}

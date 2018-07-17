@@ -35,8 +35,8 @@ return function(top, memStart, memEnd)
   local Module = top:toTerra()
 
   local memory = symbol(&uint8)
-  local IP_CLK = symbol(uint8)
-  local IP_ARESET_N = symbol(uint8)
+  local IP_CLK = symbol(&uint8)
+  local IP_ARESET_N = symbol(&uint8)
   
   local readS = {}
   local writeS = {}
@@ -48,8 +48,8 @@ return function(top, memStart, memEnd)
   
   local S0LIST = {
     0,
-    `&IP_CLK,
-    `&IP_ARESET_N,
+    `IP_CLK,
+    `IP_ARESET_N,
     `&data([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()]),
     `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
     `[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
@@ -62,7 +62,9 @@ return function(top, memStart, memEnd)
     `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
     `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
     `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
-    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()]}
+    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
+    `[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
+    `[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),}
 
   local MREADLIST={}
   local MWRITELIST={}
@@ -122,12 +124,87 @@ return function(top, memStart, memEnd)
       table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE]+ii)=0x0df0adba; end end )
     end
   end
+
+  local terra setReg([IP_CLK], [IP_ARESET_N],m:&Module, addr:uint, writeData:uint)
+    var srVerbose = true
+    ----------------------------------------------- send start cmd
+    if verbose or srVerbose then cstdio.printf("WRITE REG addr:%x data:%d\n",addr,writeData) end
   
-  local terra dosim()
-    var [IP_CLK]
-    var [IP_ARESET_N]
+    if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
+      cstdio.printf("IP_SAXI0_AWREADY should be true\n");
+      cstdlib.exit(1)
+    end
+      
+    data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = addr;
+    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
+    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
+    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
     
-    var m = [&Module](cstdlib.malloc(sizeof(Module))); 
+    --------------------------------------------------- step
+    --[=[
+    m:calculateReady()
+    m:process(nil,nil)
+      
+    if verbose then V.printSlave(S0LIST); end
+    var found = V.checkSlaveWriteResponse(S0LIST);
+     
+    if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
+      cstdio.printf("IP_SAXI0_WREADY should be true\n");
+      cstdlib.exit(1)
+    end
+      
+    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
+    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
+    ]=]
+
+    --------------------------------------------------- step
+    m:calculateReady()
+    m:process(nil,nil)
+      
+    var found = V.checkSlaveWriteResponse(S0LIST);
+      
+    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
+      
+    --------------------------------------------------- step
+    m:calculateReady()
+    m:process(nil,nil)
+      
+    while(found==false and V.checkSlaveWriteResponse(S0LIST)==false) do
+      cstdio.printf("Waiting for S0 response\n");
+      m:calculateReady()
+      m:process(nil,nil)
+    end
+  end
+
+  local setTaps = {}
+
+  local m = symbol(&Module)
+  
+  for k,v in pairs(top.globalMetadata) do
+    if string.sub(k,0,8)=="Register" then
+      local addr = string.sub(k,10)
+      --table.insert(registerList,"['"..addr.."']='"..v.."'")
+      print("REG",addr,v)
+      local bytes = #v/2
+      local addr = tonumber("0x"..addr)
+      print("BYTES",bytes,"addr",addr)
+
+      for b=0,bytes/4-1 do
+        local dat = string.sub(v,b*8+1,(b+1)*8)
+        local data = tonumber("0x"..dat)
+        print("DAT",dat,data)
+        table.insert(setTaps,quote setReg([IP_CLK],[IP_ARESET_N],[m],[addr+b*4],data) end)
+      end
+    end
+  end
+
+  local terra dosim()
+    var ip_clk : uint8
+    var [IP_CLK] = &ip_clk
+    var ip_areset_n : uint8
+    var [IP_ARESET_N] = &ip_areset_n
+    
+    var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
     m:reset();
 
@@ -151,49 +228,11 @@ return function(top, memStart, memEnd)
 
       var cycle = 0
 
-      ----------------------------------------------- send start cmd
-      if verbose then cstdio.printf("START CYCLE: SEND START CMD\n") end
-        
-      if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
-        cstdio.printf("IP_SAXI0_AWREADY should be true\n");
-        cstdlib.exit(1)
+      if round==0 then
+        [setTaps]
       end
-      
-      data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = 0xA0000000;
-      valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
-      
-      --------------------------------------------------- step
-      m:calculateReady()
-      m:process(nil,nil)
-      
-      if verbose then V.printSlave(S0LIST); end
-      var found = V.checkSlaveWriteResponse(S0LIST);
-      
-      if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
-        cstdio.printf("IP_SAXI0_WREADY should be true\n");
-        cstdlib.exit(1)
-      end
-      
-      data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = 1;
-      valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
-      
-      --------------------------------------------------- step
-      m:calculateReady()
-      m:process(nil,nil)
-      
-      found = found or V.checkSlaveWriteResponse(S0LIST);
-      
-      valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
-      
-      --------------------------------------------------- step
-      m:calculateReady()
-      m:process(nil,nil)
-      
-      while(found==false and V.checkSlaveWriteResponse(S0LIST)==false) do
-        cstdio.printf("Waiting for S0 response\n");
-        m:calculateReady()
-        m:process(nil,nil)
-      end
+
+      setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       
       V.activateMasterRead([MREADLIST[0]])
       V.activateMasterWrite([MWRITELIST[0]])

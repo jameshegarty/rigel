@@ -1839,10 +1839,30 @@ return {`mself.[n.name].ready}
         end
     end)
 
+  -- kind of a hack: we might have a pair of globals inside a module (in/out)
+  -- which should drive each other. Instead of trying to merge the global, just copy the value
+  -- will this work???
+  local tiedownGlobals = {}
+  local seenGlobals = {}
+  for k,_ in pairs(fn.globals) do
+    if seenGlobals[k.name]~=nil then
+      if seenGlobals[k.name].direction=="input" and k.direction=="output" then
+        table.insert(tiedownGlobals, quote [seenGlobals[k.name]:terraValue()] = [k:terraValue()] end)
+      elseif seenGlobals[k.name].direction=="input" and k.direction=="output" then
+        table.insert(tiedownGlobals, quote [k:terraValue()] = [seenGlobals[k.name]:terraValue()] end)
+      else
+        print("ERROR: two globals with same name?")
+        assert(false)
+      end
+    end
+    
+    seenGlobals[k.name] = k
+  end
+  
   if fn.input==nil then
-    terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
+    terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobals];[stats] end
   else
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobals];[stats] end
   end
 
   terra Module.methods.reset( [mself] ) [resetStats] end

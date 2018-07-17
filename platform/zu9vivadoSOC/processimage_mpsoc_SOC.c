@@ -28,10 +28,10 @@ void usage(void) {
 }
 
 typedef struct {
-    unsigned int cmd;
-    unsigned int src;
-    unsigned int dest;
-    unsigned int len;
+    unsigned int start;
+    unsigned int done;
+  //    unsigned int dest;
+  //    unsigned int len;
 } Conf;
 
 FILE* openImage(char* filename, int* numbytes){
@@ -150,7 +150,7 @@ int loadInputs(int fd, char *argv[], void* ptr){
   }
 
   int inputCount=1;
-  while(strcmp(argv[curArg],"--outputs")!=0){
+  while(strcmp(argv[curArg],"--registers")!=0){
     unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;
     
@@ -177,8 +177,50 @@ int loadInputs(int fd, char *argv[], void* ptr){
   return curArg;
 }
 
+int setRegisters(int curArg, char *argv[], void* ptr, unsigned int GPIO_BASE){
+  printf("Set Registers\n");
+  fflush(stdout);
+
+  curArg++; // for "--registers"
+  while(strcmp(argv[curArg],"--outputs")!=0){
+    printf("PARSE Reg %s %s\n",argv[curArg],argv[curArg+1]);
+    fflush(stdout);
+  
+    unsigned int addr = strtol(argv[curArg],NULL,16);
+    int bytes = strlen(argv[curArg+1])/2;
+    printf("Set Register %x withNBytes %d, GPIO_BASE %x\n",addr,bytes,GPIO_BASE);
+    fflush(stdout);
+  
+    //unsigned int* data = (unsigned int*)argv[curArg+1];
+    char tmp[9]="";
+
+    for(int i=0; i<bytes/4; i++){
+      for(int j=0; j<8; j++){
+        tmp[j] = argv[curArg+1][i*8+j];
+      }
+
+      printf("STR %s\n",tmp);
+      fflush(stdout);
+      unsigned int data = strtoul(tmp,NULL,16);
+      printf("try to Set Reg %x\n",data);
+      fflush(stdout);
+
+      unsigned int offset = addr+i*4-GPIO_BASE;
+      printf("offset %d\n",offset);
+      fflush(stdout);
+      
+      *(unsigned int*)(ptr+offset) = data;
+      //setReg( top, verbose, addr+i*4, data);
+    }
+
+    curArg+=2;
+  }
+
+  return curArg;
+}
+
 int writeOutputs(int curArg, int argc, char *argv[], void* ptr){
-  printf("Write Outputs %d %d \n",curArg,argc);
+  printf("Write Outputs\n");
   fflush(stdout);
       
   int MEMBASE = strtol(argv[2],NULL,16);
@@ -231,12 +273,12 @@ int writeOutputs(int curArg, int argc, char *argv[], void* ptr){
 }
 
 int main(int argc, char *argv[]) {
-	unsigned gpio_addr = strtol(argv[1],NULL,16);
+	unsigned int gpio_addr = strtol(argv[1],NULL,16);
 
   printf("start processimage SOC\n");
   fflush(stdout);
     
-	unsigned page_size = sysconf(_SC_PAGESIZE);
+	unsigned int page_size = sysconf(_SC_PAGESIZE);
 
 	printf("GPIO access through /dev/mem. addr:%08x page_size:%d\n", gpio_addr, page_size);
   fflush(stdout);
@@ -274,12 +316,15 @@ int main(int argc, char *argv[]) {
   // mmap the device into memory 
   // This mmaps the control region (the MMIO for the control registers).
   // Image data is located at addr 'copy_addr'
+  // HACK: just map 1MB of GPIO space
   void * gpioptr = mmap(NULL, sizeof(Conf), PROT_READ|PROT_WRITE, MAP_SHARED, fd, gpio_addr);
   
   if(gpioptr==(void *) -1){
     printf("Error mmaping gpio\n");
     exit(1);
   }
+
+  curArg = setRegisters( curArg, argv, gpioptr, gpio_addr );
   
   // this sleep is needed for the z100, but not the z20
   sleep(2);
@@ -289,19 +334,20 @@ int main(int argc, char *argv[]) {
   
   printf("setting gpio\n");
   fflush(stdout);
-  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+
+  printf("conf: start: %d, done: %d\n", conf->start, conf->done);
   fflush(stdout);
   
-  conf->cmd = 0;
-  conf->src = 0;
-  conf->dest = 42;
-  conf->len = 42;
+  conf->start = 0;
+  conf->done = 0;
+  //  conf->dest = 42;
+  //  conf->len = 42;
   
   // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
   sleep(2);
   double startTime = CurrentTimeInSeconds();
-  conf->cmd = 1;
-  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  conf->start = 1;
+  printf("conf: start: %d, done: %d\n", conf->start, conf->done);
   fflush(stdout);
 
   //usleep(10000);
@@ -314,7 +360,7 @@ int main(int argc, char *argv[]) {
     //printf("%d conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", t, conf->cmd, conf->src, conf->dest, conf->len);
     //sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
 
-    if(conf->src>0 && doneTime==0.f){
+    if(conf->done>0 && doneTime==0.f){
       doneTime = CurrentTimeInSeconds();
       doneBitSet=true;
       break;
@@ -334,10 +380,8 @@ int main(int argc, char *argv[]) {
   printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
   
   writeOutputs(curArg,argc,argv,ptr);
-  //saveImage(argv[4],ptr+lenIn,lenOutRaw);
-  //  saveImage(argv[4],ptr,lenOutRaw);
 
-  printf("conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", conf->cmd, conf->src, conf->dest, conf->len);
+  printf("conf: start: %d, done: %d\n", conf->start, conf->done);
   fflush(stdout);
 
   munmap( gpioptr, page_size );

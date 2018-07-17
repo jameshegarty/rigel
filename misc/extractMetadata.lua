@@ -35,6 +35,14 @@ elseif arg[2]=="__OUTPUTS" or arg[2]=="__OUTPUTS_ZYNQ" then
     str = str..fn.." 0x"..string.format("%x",v.address).." "..v.W.." "..v.H.." "..v.bitsPerPixel.." "
   end
   print(str)
+elseif arg[2]=="__REGISTERS" then
+  -- special case for SOC
+  assert(type(metadata.registers)=="table")
+  local str = ""
+  for k,v in pairs(metadata.registers) do
+    str = str..k.." "..v.." "
+  end
+  print(str)
 elseif arg[2]=="INPUT_FILES" then
   local i=1
   local str = ""
