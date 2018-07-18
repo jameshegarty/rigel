@@ -119,6 +119,11 @@ function fixed.parameter( name, ty )
   return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
 end
 
+function fixed.readGlobal( glob )
+  err( R.isGlobal(glob),"fixed.readGlobal: global should be a rigel global" )
+  return fixed.new{ kind="readGlobal", global=glob, type=glob.type, inputs={}, loc=getloc() }
+end
+
 function fixed.constant( value )
   err(type(value)=="number" or type(value)=="boolean","fixed.constant must be number or bool")
 
@@ -370,6 +375,8 @@ end
 function fixedNewASTFunctions:toSystolic()
   local instances = {}
   local resetStats = {}
+  local sideChannels = {}
+  local globals = {}
   local inp
   local res = self:visitEach(
     function( n, args )
@@ -505,8 +512,12 @@ function fixedNewASTFunctions:toSystolic()
         res = S.cast(res, n:underlyingType() )
       elseif n.kind=="addMSBs" or n.kind=="removeMSBs" then
         res = S.cast(args[1], n:underlyingType() )
+      elseif n.kind=="readGlobal" then
+        res = S.readSideChannel(n.global.systolicValue)
+        sideChannels[n.global.systolicValue] = 1
+        globals[n.global] = 1
       else
-        print(n.kind)
+        print("fixed_new NYI:",n.kind)
         assert(false)
       end
 
@@ -522,7 +533,7 @@ function fixedNewASTFunctions:toSystolic()
   end
   --end
 
-  return res, inp, instances, resetStats
+  return res, inp, instances, resetStats, sideChannels, globals
 end
 
 fixed.hists = {}
@@ -535,31 +546,34 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp, instances, resetStats = self:toSystolic()
+  local out, inp, instances, resetStats, sideChannels, globals = self:toSystolic()
 
   err(out.type==self.type,"toRigelModule type mismatch "..tostring(out.type).." "..tostring(self.type))
   
   local tfn
 
-  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}}
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}, stateful=false, globals=globals}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 
-  local sys = Ssugar.moduleConstructor(name)
-  for _,v in ipairs(instances) do sys:add(v) end
-  local CE = S.CE("process_CE")
-  sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
-
-  if #resetStats>0 then
-    res.stateful=true
-    sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
-  else
-    res.stateful=false
+  function res.makeSystolic()
+    local sys = Ssugar.moduleConstructor(name)
+    for _,v in ipairs(instances) do sys:add(v) end
+    for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
+    local CE = S.CE("process_CE")
+    sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
+    
+    if #resetStats>0 then
+      res.stateful=true
+      sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
+    else
+      res.stateful=false
+    end
+    
+    sys:complete()
+    
+    return sys
   end
-
-  sys:complete()
-
-  res.systolicModule = sys
   
   return R.newFunction(res)
 end

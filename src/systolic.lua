@@ -1311,6 +1311,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       elseif n.kind=="readSideChannel" then
+        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module?")
         finalResult = n.sideChannel.name
       else
         print(n.kind)

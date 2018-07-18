@@ -41,18 +41,20 @@ SOC.axiRegs = J.memoize(function(tab,port)
     J.err( type(k)=="string", "axiRegs: key must be string" )
     J.err( types.isType(v[1]), "axiRegs: first key must be type" )
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
-    J.err( v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
+    J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
     v[1]:checkLuaValue(v[2])
 
-    NREG = NREG + (v[1]:verilogBits()/32)
+    NREG = NREG + math.max(v[1]:verilogBits()/32,1)
+
+    assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
     globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr
     globalMetadata["TypeOfRegister_"..k] = v[1]
     
-    regPortAssigns = "assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
+    regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
 
-    SOC.currentRegAddr = SOC.currentRegAddr + (v[1]:verilogBits()/8)
-    curDataBit = curDataBit + v[1]:verilogBits()
+    SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(v[1]:verilogBits()/32)*4
+    curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
 
     print("ADD GLOBAL",k)
     globals[R.newGlobal(k,"output",v[1])] = 1
@@ -1241,7 +1243,8 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   J.err( types.isType(ty), "readBurst: type must be type")
   J.err(ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data")
   local nbytes = W*H*(ty:verilogBits()/8)
-  J.err( nbytes%128==0,"NYI - readBurst requires 128 aligned size" )
+  J.err( nbytes%8==0,"NYI - readBurst requires 8-byte aligned size" )
+  --J.err( nbytes%128==0,"NYI - readBurst requires 128-byte aligned size" )
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
   if V==nil then V=0 end
   J.err(X==nil, "readBurst: too many arguments")
@@ -1255,7 +1258,15 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
   
   local inp = R.input(R.HandshakeTrigger)
-  local out = SOC.axiBurstReadN(filename,nbytes,SOC.currentMAXIReadPort,SOC.currentAddr)(inp)
+
+  local readBytes = J.upToNearest(128,nbytes)
+  local out = SOC.axiBurstReadN(filename,readBytes,SOC.currentMAXIReadPort,SOC.currentAddr)(inp)
+
+  if readBytes~=nbytes then
+    out = RM.makeHandshake(C.arrayop(types.bits(64),1))(out)
+    out = RM.liftHandshake(RM.liftDecimate(RM.cropSeq(types.bits(64),readBytes/8,1,1,0,(readBytes-nbytes)/8,0,0)))(out)
+    out = RM.makeHandshake(C.index(types.array2d(types.bits(64),1),0))(out)
+  end
   
   local outBits = ty:verilogBits()*math.max(V,1)
 
@@ -1282,7 +1293,7 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
-  SOC.currentAddr = SOC.currentAddr+nbytes
+  SOC.currentAddr = SOC.currentAddr+readBytes
 
   return res
 end)
@@ -1348,7 +1359,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   J.err( types.isType(ty), "writeBurst: type must be type")
   J.err(ty:verilogBits()%8==0,"NYI - writeBurst currently required byte-aligned data")
   local nbytes = W*H*(ty:verilogBits()/8)
-  J.err( nbytes%128==0,"NYI - writeBurst requires 128 byte aligned size (input bytes is: "..nbytes..")" )
+  J.err( nbytes%8==0,"NYI - writeBurst requires 8-byte aligned size (input bytes is: "..nbytes..")" )
   J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
   if V==nil then V=1 end
   J.err(X==nil, "writeBurst: too many arguments")
@@ -1382,8 +1393,15 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   else
     out = RM.makeHandshake(C.cast(itype,types.bits(64)))(out)
   end
+
+  local writeBytes = J.upToNearest(128,nbytes)
+  if writeBytes~=nbytes then
+    out = RM.makeHandshake(C.arrayop(types.bits(64),1))(out)
+    out = RM.liftHandshake(RM.padSeq(types.bits(64),nbytes/8,1,1,0,(writeBytes-nbytes)/8,0,0,0))(out)
+    out = RM.makeHandshake(C.index(types.array2d(types.bits(64),1),0))(out)
+  end
   
-  out = SOC.axiBurstWriteN(filename,nbytes,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
+  out = SOC.axiBurstWriteN(filename,writeBytes,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
   
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
