@@ -201,8 +201,10 @@ int main(int argc, char** argv) {
 
     bool doneBitSet = false;
     unsigned int cyclesToDoneSignal = -1;
+    int cooldownCycles = 1000; // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
+    bool cooldownPrinted = false;
     
-    while (!Verilated::gotFinish() && cycle<totalCycles && doneBitSet==false) {
+    while (!Verilated::gotFinish() && cycle<totalCycles && (doneBitSet==false || cooldownCycles>0)) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in
@@ -240,6 +242,15 @@ int main(int argc, char** argv) {
           }else{
             doneBitSet=false;
           }
+        }
+
+        if(doneBitSet && cooldownCycles>0){
+          if(!cooldownPrinted){
+            printf("Start Cooldown\n");
+            cooldownPrinted = true;
+          }
+          
+          cooldownCycles--;
         }
         
         int pct = (cycle*100)/totalCycles;

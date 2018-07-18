@@ -634,6 +634,10 @@ function TypeFunctions:valueToHex(v)
   elseif self:isUint() then
     local res = string.format("%0"..tostring(self.precision/4).."x",v)
     return res
+  elseif self:isInt() then
+    err(v>=0,"NYI - signed int <0")
+    local res = string.format("%0"..tostring(self.precision/4).."x",v)
+    return res
   else
     err(false,":valueToHex NYI - "..tostring(self))
   end
