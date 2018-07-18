@@ -44,15 +44,17 @@ SOC.axiRegs = J.memoize(function(tab,port)
     J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
     v[1]:checkLuaValue(v[2])
 
-    NREG = NREG + (v[1]:verilogBits()/32)
+    NREG = NREG + math.max(v[1]:verilogBits()/32,1)
+
+    assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
     globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr
     globalMetadata["TypeOfRegister_"..k] = v[1]
     
-    regPortAssigns = "assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
+    regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
 
-    SOC.currentRegAddr = SOC.currentRegAddr + (v[1]:verilogBits()/8)
-    curDataBit = curDataBit + v[1]:verilogBits()
+    SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(v[1]:verilogBits()/32)*4
+    curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
 
     print("ADD GLOBAL",k)
     globals[R.newGlobal(k,"output",v[1])] = 1

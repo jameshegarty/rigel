@@ -163,20 +163,30 @@ int main(int argc, char** argv) {
       while(strcmp(argv[curArg],"--outputs")!=0){
         printf("PARSE ARG %s %s\n",argv[curArg],argv[curArg+1]);
         unsigned int addr = strtol(argv[curArg],NULL,16);
-        int bytes = strlen(argv[curArg+1])/2;
+        int hexlen = strlen(argv[curArg+1]);
+        if(hexlen%2!=0){
+          printf("NON byte size?");
+          exit(1);
+        }
+        int bytes = hexlen/2;
         printf("Set Register %x withNBytes %d\n",addr,bytes);
 
         //unsigned int* data = (unsigned int*)argv[curArg+1];
         char tmp[9]="";
 
-        for(int i=0; i<bytes/4; i++){
-          for(int j=0; j<8; j++){
-            tmp[j] = argv[curArg+1][i*8+j];
+        int numints = bytes/4;
+        if(numints<=0){numints=1;}
+        
+        for(int i=0; i<numints; i++){
+          int numhex = 8;
+          if(bytes<4){numhex=bytes*2;}
+          for(int j=0; j<numhex; j++){
+            tmp[j] = argv[curArg+1][i*numhex+j];
           }
 
           printf("STR %s\n",tmp);
           unsigned long data = strtoul(tmp,NULL,16);
-          printf("try to Set Reg %x\n",data);
+          printf("try to Set Reg addr:%x with data:%x\n",addr,data);
           setReg( top, verbose, addr+i*4, data);
         }
         
