@@ -157,6 +157,12 @@ function(args)
   return RM.reduceSeq( mod, 1/args.number )
 end)
 
+-- number is the number of cycles over which to ser
+generators.Ser = R.newGenerator("generators","Ser",{"type","number"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.Ser: type should be array" )
+  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
+end)
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string"},
 function(args)

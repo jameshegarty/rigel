@@ -189,6 +189,19 @@ function common.upToNearest(roundto,x)
   return ox
 end
 
+-- lst should be array of factors to make x divisible by
+function common.makeDivisible(x,lst)
+  while true do
+    local divisible = true
+    for _,v in pairs(lst) do
+      divisible = divisible and (x%v==0)
+    end
+
+    if divisible then return x end
+    x = x + 1
+  end
+end
+
 function common.downToNearest(roundto,x)
   assert(type(x)=="number")
   assert(roundto>=0)
