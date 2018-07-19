@@ -5,6 +5,7 @@ local RM = require "modules"
 local RS = require "rigelSimple"
 local C = require "examplescommon"
 local S = require "systolic"
+local SOC = require "soc"
 
 local __unnamedID = 0
 
@@ -165,6 +166,11 @@ function(args)
 end)
 
 generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string","size"},{},
+function(args)
+  return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+end)
+
+generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size"},{},
 function(args)
   return RS.modules.fwriteSeq({type=args.type,filename=args.string})
 end)
