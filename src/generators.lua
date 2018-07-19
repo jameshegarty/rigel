@@ -164,6 +164,11 @@ function(args)
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
 end)
 
+generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string","size"},{},
+function(args)
+  return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+end)
+
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string"},
 function(args)
   if args.string==nil then

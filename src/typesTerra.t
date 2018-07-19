@@ -29,6 +29,10 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = terralib.types.uint32
   elseif (self:isUint() or self:isBits()) and self.precision>8 and self.precision<=16 then
     ttype = terralib.types.uint16
+  elseif (self:isUint() or self:isBits()) and self.precision>64 then
+    local cnt = self.precision/8
+    assert(cnt==math.floor(cnt))
+    ttype = terralib.types.uint8[cnt]
   elseif self:isInt() and self.precision>8 and self.precision<=16 then
     ttype = terralib.types.int16
   elseif self:isArray() then
@@ -62,8 +66,17 @@ end
 
 function TypeFunctions:valueToTerra(value)
   if self:isUint() or self:isFloat() or self:isInt() or self:isBits() then
-    assert(type(value)=="number")
-    return `[self:toTerraType()](value)
+    if self.precision>64 then
+      local cnt = self.precision/8
+      assert(cnt==math.floor(cnt))
+      assert(value==0) -- NYI
+      local tup = {}
+      for i=1,cnt do table.insert(tup,`[uint8](0)) end
+      return `[uint8[cnt]](array(tup))
+    else
+      assert(type(value)=="number")
+      return `[self:toTerraType()](value)
+    end
   elseif self:isBool() then
     assert(type(value)=="boolean")
     return `[self:toTerraType()](value)
