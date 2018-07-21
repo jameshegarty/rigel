@@ -81,9 +81,21 @@ end
 function SDFRate.fracMultiply(a,b)
   err( SDFRate.isFrac(a), "SDFRate.fracMultiple a is not frac: "..tostring(a[1]).." "..tostring(a[2]) )
   err( SDFRate.isFrac(b), "SDFRate.fracMultiple b is not frac: "..tostring(b[1]).." "..tostring(b[2]) )
+
+  local a1,a2 = J.simplify(a[1],a[2])
+  a={a1,a2}
+
+  local b1,b2 = J.simplify(b[1],b[2])
+  b={b1,b2}
   
-  local n,d = J.simplify(a[1]*b[1],a[2]*b[2])
-  return {n,d}
+  local x,y = a[1]*b[1],a[2]*b[2]
+  assert(x==math.floor(x))
+  assert(y==math.floor(y))
+  local n,d = J.simplify(x,y)
+  local res = {n,d}
+
+  assert(SDFRate.isFrac(res))
+  return res
 end
 
 -- format {n,d}

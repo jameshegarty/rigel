@@ -498,7 +498,7 @@ modules.liftDecimate = memoize(function(f)
   if rigel.isV(f.outputType) then
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
   else
-    err(false, "expected V output type")
+    err(false, "liftDecimate: expected V output type, but is "..tostring(f.outputType))
   end
 
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)

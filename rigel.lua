@@ -279,6 +279,8 @@ local function typeToKey(t)
         outk="number"
       elseif type(v)=="boolean" then
         outk="bool"
+      elseif type(v)=="string" then
+        outk="string"
       elseif type(v)=="function" then
         outk="luaFunction"
       elseif types.isType(v) then
@@ -309,8 +311,8 @@ local generatorMT={}
 
 generatorMT.__call=function(tab,...)
   local rawarg = {...}
-  if darkroom.isIR(rawarg[1]) then
 
+  if darkroom.isIR(rawarg[1]) then
     local arg
     if #rawarg>1 then
       -- collapse multi args into tuple
@@ -346,8 +348,19 @@ generatorMT.__call=function(tab,...)
       return res
     end
   else
-    J.err(false, "Called a generator with something other than a Rigel value or table? Make sure you call generator with curly brackets {}")
+    J.err(false, "Called a generator with something other than a Rigel value or table ("..tostring(rawarg[1])..")? Make sure you call generator with curly brackets {}")
   end
+end
+generatorMT.__tostring=function(tab)
+  local res = {}
+  table.insert(res,"Generator "..tab.namespace.."."..tab.name)
+  table.insert(res,"  Required Args:")
+  for k,v in pairs(tab.requiredArgs) do table.insert(res,"    "..k) end
+  table.insert(res,"  Curried Args:")
+  for k,v in pairs(tab.curriedArgs) do table.insert(res,"    "..k) end
+  table.insert(res,"  Optional Args:")
+  for k,v in pairs(tab.optArgs) do table.insert(res,"    "..k) end
+  return table.concat(res,"\n")
 end
 generatorMT.__index = generatorFunctions
 
@@ -634,6 +647,35 @@ darkroomIRFunctions = {}
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
 darkroomIRMT = {__index = darkroomIRFunctions}
 
+darkroomIRMT.__tostring = function(tab)
+  if tab.kind=="apply" then
+    if #tab.inputs==0 then
+      return tab.name.." = "..tab.fn.name.."()"
+    else
+      if tab.fn.generator~=nil then
+        local gen
+        if type(tab.fn.generator)=="string" then
+          -- legacy
+          gen = tab.fn.generator
+        else
+          gen = tab.fn.generator.namespace.."."..tab.fn.generator.name.."{"
+          local lst = {}
+          for k,v in pairs(tab.fn.generatorArgs) do
+            table.insert(lst,k.."="..tostring(v))
+          end
+          gen = gen..table.concat(lst,",").."}"
+        end
+        
+        return tab.name.." = "..gen.."("..tab.inputs[1].name..")  -- Module:"..tab.fn.name
+      else
+        return tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
+      end
+    end
+  else
+    return "NYI-print of "..tab.kind
+  end
+end
+  
 darkroomInstanceMT = {}
 
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
@@ -803,6 +845,7 @@ function darkroomIRFunctions:calcSdfRate(root)
     local total = self:sdfTotal(root)
     local res = SDFRate.fracMultiply({total[1][1],total[1][2]},{self.fn.sdfOutput[1][2],self.fn.sdfOutput[1][1]})
     if DARKROOM_VERBOSE then print("SDF RATE",self.name,res[1],res[2],"sdfINP",self.fn.sdfInput[1][1],self.fn.sdfInput[1][2],"SDFOUT",self.fn.sdfOutput[1][1],self.fn.sdfOutput[1][2]) end
+    assert(SDFRate.isFrac(res))
     return res
   else
     return nil
@@ -823,7 +866,7 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
     self:visitEach(
       function( n, args )
         local r = n:calcSdfRate(self)
-        assert( SDFRate.isFrac(r) or r==nil )
+        err( SDFRate.isFrac(r) or r==nil, "sdfExtremeRate: bad SDF rate on '"..tostring(n).."'? "..n.loc )
         
         local res 
 

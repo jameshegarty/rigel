@@ -60,7 +60,7 @@ SOC.axiRegs = J.memoize(function(tab,port)
     globals[R.newGlobal(k,"output",v[1])] = 1
     addToModuleHack[k] = R.newGlobal(k,"input",v[1])
 
-    regPorts = regPorts.."output ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
+    regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]
   end
 
@@ -1045,6 +1045,8 @@ end
 //WRITE logic
 reg [31:0] b_count = 0;
 reg w_state = IDLE;
+reg [3:0] last_count;
+
 always @(posedge ACLK) begin
     if (ARESETN == 0) begin
         w_state <= IDLE;
@@ -1082,7 +1084,6 @@ end
 
 assign done = BRESP_CNT==32'd]=]..Nburst..[=[;
 
-reg [3:0] last_count;
 assign M_AXI_WLAST = last_count == 4'b0000;
 
 assign M_AXI_WVALID = (w_state == RWAIT) && DATA_VALID && (a_count<CONFIG_NBYTES[31:7]);

@@ -261,6 +261,8 @@ end
 
 function common.ratioFactor(a,b)
   local g = common.gcd(a,b)
+  assert(a%g==0)
+  assert(b%g==0)
   return a/g, b/g
 end
 common.simplify = common.ratioFactor
