@@ -66,8 +66,11 @@ return function(fn,t)
       end
     end
     registerList=",registers={"..table.concat(registerList,",").."}"
+
+    local cyc = (fn.sdfInput[1][2]/fn.sdfInput[1][1])
+    if t~=nil and t.cycles~=nil then cyc=t.cycles end
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..(fn.sdfInput[1][2]/fn.sdfInput[1][1])..registerList.."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

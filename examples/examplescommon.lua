@@ -1297,6 +1297,112 @@ function C.index( inputType, idx, idy, X )
 end
 
 
+-- returns a module of type HS(bits(inputBitsPerCyc))->HS(bits(outputBitsPerCyc)),
+-- which will take in a stream of tokens of input size, concat them, and output them at output size rate.
+-- Runs at full throughput.
+-- You give the min # of total bits that need to be read/written over a full transaction
+--    -> returns the # of total bits that actually need to be read/written for a full transaction (will be >= minimums)
+--    -> in format totalInputBits,totalOutputBits
+-- returned input/output bytes must have input/output factor as a factor
+C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, inputFactor, outputBitsPerCyc, minTotalOutputBits, outputFactor, X)
+  assert(type(inputBitsPerCyc)=="number")
+  assert(type(outputBitsPerCyc)=="number")
+  assert(type(minTotalInputBits)=="number")
+  assert(type(minTotalOutputBits)=="number")
+  assert(type(inputFactor)=="number")
+  assert(type(outputFactor)=="number")
+  assert(minTotalInputBits%inputBitsPerCyc==0)
+  assert(minTotalOutputBits%outputBitsPerCyc==0)
+  assert(X==nil)
+
+  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
+  if inputBitsPerCyc==outputBitsPerCyc then
+    local bts = math.max(minTotalInputBits,minTotalOutputBits)
+    return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
+  elseif outputBitsPerCyc<inputBitsPerCyc then
+    if inputBitsPerCyc%outputBitsPerCyc==0 then
+      local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
+      local N = inputBitsPerCyc/outputBitsPerCyc
+      local out = RM.makeHandshake(C.cast(types.bits(inputBitsPerCyc),types.array2d(types.bits(outputBitsPerCyc),N)))(inp)
+      out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,N,1))(out)
+      out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
+
+      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      print("BTS",bts,inputFactor,outputFactor)
+      bts = J.upToNearest(inputFactor,bts)
+      bts = J.upToNearest(outputFactor,bts)
+      print("BTS",bts)
+      
+      return {RM.lambda(name,inp,out),bts}
+    else
+      assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
+      local shifterBits = inputBitsPerCyc
+      while shifterBits%outputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
+      print("SHIFTBITS",shifterBits)
+      assert(shifterBits%outputBitsPerCyc==0)
+      assert(shifterBits%inputBitsPerCyc==0)
+      
+      local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
+      local out = RM.makeHandshake(C.cast(types.bits(inputBitsPerCyc),types.array2d(types.bits(inputBitsPerCyc),1)))(inp)
+      out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,shifterBits/inputBitsPerCyc))(out)
+      out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),shifterBits/inputBitsPerCyc),types.bits(shifterBits)))(out)
+      out = RM.makeHandshake(C.cast(types.bits(shifterBits),types.array2d(types.bits(outputBitsPerCyc),shifterBits/outputBitsPerCyc)))(out)
+      out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
+      out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
+
+      local bts = J.upToNearest(outputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      --bts = J.upToNearest(inputFactor,bts)
+      --bts = J.upToNearest(outputFactor,bts)
+      --bts = J.upToNearest(shifterBits,bts)
+      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      
+      return {RM.lambda(name,inp,out),bts}
+
+    end
+  elseif outputBitsPerCyc>inputBitsPerCyc then
+    if outputBitsPerCyc%inputBitsPerCyc==0 then
+      -- ez case
+
+      local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
+      local N = outputBitsPerCyc/inputBitsPerCyc
+      local out = RM.makeHandshake(C.arrayop(types.bits(inputBitsPerCyc),1))(inp)
+      out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,N))(out)
+      out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),N),types.bits(outputBitsPerCyc)))(out)
+
+      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      bts = J.upToNearest(inputFactor,bts)
+      bts = J.upToNearest(outputFactor,bts)
+      
+      return {RM.lambda(name,inp,out),bts}
+    else
+      assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
+      local shifterBits = outputBitsPerCyc
+      while shifterBits%inputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
+      print("SHIFTBITS",shifterBits)
+      assert(shifterBits%inputBitsPerCyc==0)
+      assert(shifterBits%outputBitsPerCyc==0)
+      
+      local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
+      local out = RM.makeHandshake(C.cast(types.bits(inputBitsPerCyc),types.array2d(types.bits(inputBitsPerCyc),1)))(inp)
+      out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,shifterBits/inputBitsPerCyc))(out)
+      out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),shifterBits/inputBitsPerCyc),types.bits(shifterBits)))(out)
+      out = RM.makeHandshake(C.cast(types.bits(shifterBits),types.array2d(types.bits(outputBitsPerCyc),shifterBits/outputBitsPerCyc)))(out)
+      out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
+      out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
+
+      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      --bts = J.upToNearest(inputFactor,bts)
+      --bts = J.upToNearest(outputFactor,bts)
+      --bts = J.upToNearest(shifterBits,bts)
+      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      
+      return {RM.lambda(name,inp,out),bts}
+    end
+  end
+  print(inputBitsPerCyc,outputBitsPerCyc)
+  assert(false)
+end)
+
 function C.gaussian(W,sigma)
   local center = math.floor(W/2)
   local tab = {}

@@ -5,6 +5,7 @@ local RM = require "modules"
 local RS = require "rigelSimple"
 local C = require "examplescommon"
 local S = require "systolic"
+local SOC = require "soc"
 
 local __unnamedID = 0
 
@@ -25,7 +26,14 @@ generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
 generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
 generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
-generators.Index = R.newGenerator("generators","Index",{"type","number"},{}, function(args) return C.index(args.type,args.number) end)
+generators.Index = R.newGenerator("generators","Index",{"type"},{"number","size"},
+                                  function(args)
+                                    if args.size~=nil then
+                                      return C.index(args.type,args.size[1],args.size[2])
+                                    else
+                                      return C.index(args.type,args.number)
+                                    end
+                                  end)
 generators.ValueToTrigger = R.newGenerator("generators","ValueToTrigger",{"type"},{}, function(args) return C.valueToTrigger(args.type) end)
 
 generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
@@ -69,7 +77,10 @@ function(args)
   else
     mod = args.rigelFunction
   end
-  J.err( R.isModule(mod), "generators.HS: input Rigel function didn't yield a Rigel module?" )
+
+  J.err( R.isGenerator(mod)==false, "generators.HS: input rigel function is a generator, not a module (arguments must be missing)" )
+  
+  J.err( R.isModule(mod), "generators.HS: input Rigel function didn't yield a Rigel module? (is "..tostring(mod)..")" )
 
   return RS.HS(mod)
 end)
@@ -157,6 +168,23 @@ function(args)
   return RM.reduceSeq( mod, 1/args.number )
 end)
 
+-- number is the number of cycles over which to ser
+generators.Ser = R.newGenerator("generators","Ser",{"type","number"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.Ser: type should be array" )
+  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
+end)
+
+generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string","size"},{},
+function(args)
+  return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+end)
+
+generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size"},{},
+function(args)
+  J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
+  return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)
+end)
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string"},
 function(args)

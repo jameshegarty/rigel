@@ -212,9 +212,10 @@ int main(int argc, char** argv) {
     bool doneBitSet = false;
     unsigned int cyclesToDoneSignal = -1;
     int cooldownCycles = 1000; // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
+    if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
     bool cooldownPrinted = false;
     
-    while (!Verilated::gotFinish() && cycle<totalCycles && (doneBitSet==false || cooldownCycles>0)) {
+    while (!Verilated::gotFinish() && (doneBitSet==false || cooldownCycles>0 || cycle<totalCycles)) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in
