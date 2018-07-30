@@ -36,6 +36,25 @@ generators.Index = R.newGenerator("generators","Index",{"type"},{"number","size"
                                   end)
 generators.ValueToTrigger = R.newGenerator("generators","ValueToTrigger",{"type"},{}, function(args) return C.valueToTrigger(args.type) end)
 
+generators.TriggerCounter = R.newGenerator("generators","TriggerCounter",{"type","number"},{},
+function(args)
+  J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
+  return RM.triggerCounter(args.number)
+end)
+
+generators.FanOut = R.newGenerator("generators","FanOut",{"type","number"},{},
+function(args)
+  J.err( R.isHandshake(args.type),"FanOut: expected handshake input")
+  return RM.broadcastStream( R.extractData(args.type), args.number )
+end)
+
+generators.FIFO = R.newGenerator("generators","FIFO",{"type","number"},{},
+function(args)
+  J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
+  local ty = R.extractData(args.type)
+  return C.fifo( ty, args.number )
+end)
+  
 generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.Add: type should be tuple, but is: "..tostring(args.type) )
@@ -50,11 +69,17 @@ function(args)
   return C.sub( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
 end)
 
-generators.Mul = R.newGenerator("generators","Mul",{"type"},{},
+generators.Mul = R.newGenerator("generators","Mul",{"type"},{"number"},
 function(args)
-  J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
-  J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
-  return C.multiply( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+  if args.number~=nil then
+    J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
+    return C.multiplyConst(args.type, args.number )
+  else
+    J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
+    J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+
+    return C.multiply( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+  end
 end)
 
 generators.Zip = R.newGenerator("generators","Zip",{"type"},{},
@@ -122,9 +147,12 @@ function(args)
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
-generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{},
+generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
 function(args)
-  J.err(args.number>0,"NYI - V<=0")
+  J.err( args.number>0, "NYI - V<=0" )
+  if args.type~=nil then
+    J.err( args.type==types.null(), "PosSeq: expected null input")
+  end
   return RM.posSeq(args.size[1],args.size[2],args.number)
 end)
 

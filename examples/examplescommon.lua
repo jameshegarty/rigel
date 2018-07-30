@@ -287,6 +287,7 @@ end)
 
 -----------------------------
 C.valueToTrigger = memoize(function(ty)
+  err( R.isBasic(ty), "C.valueToTrigger: input type should be basic, but is: "..tostring(ty))
   return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
     function(sinp) end, nil,"C.valueToTrigger")
 end)
@@ -868,9 +869,10 @@ end)
 -------------
 C.fifo = memoize(function(ty,size,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
-  err( R.isBasic(ty), "C.fifo: type must be basic type" )
+  err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
   err( X==nil, "C.fifo: too many arguments" )
+  err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
   
   local inp = R.input(R.Handshake(ty))
   local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size))}

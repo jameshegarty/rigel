@@ -233,6 +233,19 @@ end
 systolicFunctionFunctions = {}
 systolicFunctionMT={__index=systolicFunctionFunctions}
 
+function systolicFunctionMT.__tostring(tab)
+  local res = {}
+  table.insert(res,"\t\tInputParameter: "..tab.inputParameter.name.." : "..tostring(tab.inputParameter.type) )
+
+  if tab.output~=nil then
+    table.insert(res,"\t\tOutputType: "..tostring(tab.output.type))
+  else
+    table.insert(res,"\t\tOutputType: no output")
+  end
+  
+  return table.concat(res,"\n")
+end
+
 systolicFunction = {}
 function systolic.isFunction(t)
   return getmetatable(t)==systolicFunctionMT --or getmetatable(t)==systolicFunctionConstructorMT
@@ -1389,6 +1402,18 @@ local __usedModuleNames = {}
 userModuleFunctions={}
 setmetatable(userModuleFunctions,{__index=systolicModuleFunctions})
 userModuleMT={__index=userModuleFunctions}
+
+function userModuleMT.__tostring(tab)
+  local res = {}
+  table.insert(res,"Module "..tab.name)
+
+  for fnname,fn in pairs(tab.functions) do
+    table.insert(res,"Function "..fnname)
+    table.insert(res,tostring(fn))
+  end
+  
+  return table.concat(res,"\n")
+end
 
 function userModuleFunctions:instanceToVerilogStart( instance, module )
   instance.verilogCompilerState = instance.verilogCompilerState or {}

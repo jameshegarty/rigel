@@ -3,12 +3,19 @@ local C = require "examplescommon"
 local SOC = require "soc"
 local J = require "common"
 local SDF = require "sdfrate"
+local types = require "types"
 
 return function(fn,t)
   if R.isFunction(fn)==false then
     fn = C.linearPipeline(fn,"Top")
-  else
+  elseif R.isGenerator(fn) then
+    fn = fn{type=types.null()}
+    J.err( R.isFunction(fn) and (R.isGenerator(fn)==false), "harnessSOC: input generator could not be resolved into a module.")
+  elseif R.isFunction(fn) then
     J.err(fn.name=="Top","Top module must be called 'Top', but is "..fn.name)
+  else
+    print("Unknown input type to harnessSOC? Not a Rigel module")
+    assert(false)
   end
 
   print("SDF: ", SDF.tostring(fn.sdfInput), SDF.tostring(fn.sdfOutput))
