@@ -999,9 +999,12 @@ assign IP_MAXI]=]..port..[=[_WLAST = (last_count==4'd0);
 end
 ]=]
   end
+
+  local inputType = R.HandshakeTuple{types.uint(32),types.bits(Nbits)}
+  print("INPUT_TYPE",inputType,inputType:verilogBits())
   
   -- input format is {addr,data}
-  local res = RM.liftVerilog( ModuleName, R.HandshakeTuple{types.uint(32),types.bits(Nbits)}, R.HandshakeTrigger,
+  local res = RM.liftVerilog( ModuleName, inputType, R.HandshakeTrigger,
 [=[module ]=]..ModuleName..[=[(
     input wire CLK,
     input wire reset,
@@ -1009,8 +1012,8 @@ end
     output wire [32:0] IP_MAXI]=]..port..[=[_AWADDR,
     input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
 
-    input wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
-    output wire IP_MAXI]=]..port..[=[_WDATA_ready,
+    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
+    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
 
     output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
     output wire IP_MAXI]=]..port..[=[_WLAST,
@@ -1022,8 +1025,8 @@ end
     output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
     output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
     
-    input wire []=]..(32+Nbits)..[=[:0] process_input,
-    output wire ready,
+    input wire []=]..(32+Nbits+1)..[=[:0] process_input,
+    output wire [1:0] ready,
 
     output wire process_output,
     input wire ready_downstream
@@ -1033,10 +1036,13 @@ parameter INSTANCE_NAME="inst";
 assign IP_MAXI]=]..port..[=[_AWLEN = 4'd]=]..(burstCount-1)..[=[; // length of burst
 assign IP_MAXI]=]..port..[=[_AWSIZE = 2'b11; // number of bytes per transfer
 assign IP_MAXI]=]..port..[=[_AWBURST = 2'b01; // burst mode
-assign IP_MAXI]=]..port..[=[_AWSTRB = 8'b]=]..strb..[=[; // burst mode
+assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
 
-assign IP_MAXI]=]..port..[=[_AWADDR = process_input[31:0] + 32'd]=]..addressBase..[=[;
-assign ready = IP_MAXI]=]..port..[=[_AWADDR_ready;
+assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + 32'd]=]..addressBase..[=[;
+assign IP_MAXI]=]..port..[=[_AWADDR[32] = process_input[32];
+assign ready = {IP_MAXI]=]..port..[=[_AWADDR_ready,IP_MAXI]=]..port..[=[_WDATA_ready};
+
+assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
 
 ]=]..last..[=[
 assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];

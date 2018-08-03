@@ -276,98 +276,56 @@ bool slaveReadReq(
 }
 
 void activateMasterRead(
-  int port,
-  const unsigned int* ARADDR,
-  const unsigned char* ARVALID,
   unsigned char* ARREADY,
   unsigned long* RDATA,
   unsigned char* RVALID,
-  unsigned char* RREADY,
   unsigned char* RRESP,
-  unsigned char* RLAST,
-  unsigned char* ARLEN,
-  unsigned char* ARSIZE,
-  unsigned char* ARBURST){
-
+  unsigned char* RLAST){
   *ARREADY = true;
-  *RREADY = true;
 }
 
 void activateMasterWrite(
-  int id,
-  unsigned int* AWADDR,
-  unsigned char* AWVALID,
   unsigned char* AWREADY,
-  unsigned long* WDATA,
-  unsigned char* WVALID,
   unsigned char* WREADY,
   unsigned char* BRESP,
-  unsigned char* BVALID,
-  unsigned char* BREADY,
-  unsigned char* WSTRB,
-  unsigned char* WLAST,
-  unsigned char* AWLEN,
-  unsigned char* AWSIZE,
-  unsigned char* AWBURST){
-
+  unsigned char* BVALID){
   *AWREADY = true;
   *WREADY = true;
-  *BREADY = true;
 }
 
 void deactivateMasterRead(
-  int port,
-  const unsigned int* ARADDR,
-  const unsigned char* ARVALID,
   unsigned char* ARREADY,
   unsigned long* RDATA,
   unsigned char* RVALID,
-  unsigned char* RREADY,
   unsigned char* RRESP,
-  unsigned char* RLAST,
-  unsigned char* ARLEN,
-  unsigned char* ARSIZE,
-  unsigned char* ARBURST){
-
+  unsigned char* RLAST){
   *ARREADY = false;
-  *RREADY = false;
 }
 
 void deactivateMasterWrite(
-  int id,
-  unsigned int* AWADDR,
-  unsigned char* AWVALID,
   unsigned char* AWREADY,
-  unsigned long* WDATA,
-  unsigned char* WVALID,
   unsigned char* WREADY,
   unsigned char* BRESP,
-  unsigned char* BVALID,
-  unsigned char* BREADY,
-  unsigned char* WSTRB,
-  unsigned char* WLAST,
-  unsigned char* AWLEN,
-  unsigned char* AWSIZE,
-  unsigned char* AWBURST){
-
+  unsigned char* BVALID){
   *AWREADY = false;
   *WREADY = false;
-  *BREADY = false;
+  *BVALID = false;
 }
 
 void printMasterRead(
   int id,
   const unsigned int* ARADDR,
   const unsigned char* ARVALID,
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RREADY,
-  unsigned char* RRESP,
-  unsigned char* RLAST,
-  unsigned char* ARLEN,
-  unsigned char* ARSIZE,
-  unsigned char* ARBURST){
+  const unsigned char* RREADY,
+  const unsigned char* ARLEN,
+  const unsigned char* ARSIZE,
+  const unsigned char* ARBURST,
+  // out
+  const unsigned char* ARREADY,
+  const unsigned long* RDATA,
+  const unsigned char* RVALID,
+  const unsigned char* RRESP,
+  const unsigned char* RLAST){
 
   printf("----------------------\n");
   //printf("IP_CLK(in): " << (int)IP_CLK);
@@ -379,20 +337,21 @@ void printMasterRead(
 
 void printMasterWrite(
   int id,
-  unsigned int* AWADDR,
-  unsigned char* AWVALID,
-  unsigned char* AWREADY,
-  unsigned long* WDATA,
-  unsigned char* WVALID,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID,
-  unsigned char* BREADY,
-  unsigned char* WSTRB,
-  unsigned char* WLAST,
-  unsigned char* AWLEN,
-  unsigned char* AWSIZE,
-  unsigned char* AWBURST){
+  const unsigned int* AWADDR,
+  const unsigned char* AWVALID,
+  const unsigned long* WDATA,
+  const unsigned char* WVALID,
+  const unsigned char* BREADY,
+  const unsigned char* WSTRB,
+  const unsigned char* WLAST,
+  const unsigned char* AWLEN,
+  const unsigned char* AWSIZE,
+  const unsigned char* AWBURST,
+  // out
+  const unsigned char* AWREADY,
+  const unsigned char* WREADY,
+  const unsigned char* BRESP,
+  const unsigned char* BVALID){
 
   printf("----------------------\n");
   printf("M%d_AWADDR(out): %d/%#x\n",id, *AWADDR, *AWADDR);
@@ -405,69 +364,85 @@ void printMasterWrite(
 }
 
 // return data to master
-void masterReadData(
+void masterReadDataDriveOutputs(
+  bool verbose,
+  unsigned char* memory,
+  int port,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RRESP,
+  unsigned char* RLAST){
+
+  if( QSize(&readQ[port])>0){
+    Transaction* t = (Transaction*)QPeek(&readQ[port]);
+      
+    *RDATA = *(unsigned long*)(&memory[t->addr]);
+    *RVALID = true;
+  }else{
+    *RVALID = false;
+  }
+}
+
+void masterReadDataLatchFlops(
   bool verbose,
   unsigned char* memory,
   int port,
   const unsigned int* ARADDR,
   const unsigned char* ARVALID,
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RREADY,
-  unsigned char* RRESP,
-  unsigned char* RLAST,
-  unsigned char* ARLEN,
-  unsigned char* ARSIZE,
-  unsigned char* ARBURST){
+  const unsigned char* RREADY,
+  const unsigned char* ARLEN,
+  const unsigned char* ARSIZE,
+  const unsigned char* ARBURST){
 
   if( QSize(&readQ[port])>0 && *RREADY){
-    if(false && randf()>0.2f){
-      *RVALID = false;
-    }else{
-      Transaction* t = (Transaction*)QPeek(&readQ[port]);
+    Transaction* t = (Transaction*)QPeek(&readQ[port]);
+        
+    if(verbose){
+      printf("MAXI%d Service Read Addr:%d data:%d remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
+    }
       
-      *RDATA = *(unsigned long*)(&memory[t->addr]);
-      *RVALID = true;
-      
-      if(verbose){
-        printf("MAXI%d Service Read Addr:%d data:%d remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *RDATA, t->burst, QSize(&readQ[port]));
-      }
-      
-      t->burst--;
-      t->addr+=8;
+    t->burst--;
+    t->addr+=8;
 
-      masterBytesRead[port] += 8; // for debug
+    masterBytesRead[port] += 8; // for debug
       
-      if(t->burst==0){
-        QPop(&readQ[port]);
-      }
+    if(t->burst==0){
+      QPop(&readQ[port]);
     }
   }else if( QSize(&readQ[port]) >0 && *RREADY==false){
     if(verbose){printf("MAXI%d: %d outstanding read requests, but IP isn't ready\n", port, QSize(&readQ[port]) );}
   }else{
     if(verbose){printf("MAXI%d no outstanding read requests\n",port);}
-    *RVALID = false;
   }
 }
 
 // service read requests from master
-void masterReadReq(
+void masterReadReqDriveOutputs(
+  bool verbose,
+  unsigned int MEMBASE,
+  unsigned int MEMSIZE,
+  int port,
+  unsigned char* ARREADY,
+  unsigned long* RDATA,
+  unsigned char* RVALID,
+  unsigned char* RRESP,
+  unsigned char* RLAST){
+
+  *ARREADY = true;
+}
+
+void masterReadReqLatchFlops(
   bool verbose,
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
   const unsigned int* ARADDR,
   const unsigned char* ARVALID,
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RREADY,
-  unsigned char* RRESP,
-  unsigned char* RLAST,
-  unsigned char* ARLEN,
-  unsigned char* ARSIZE,
-  unsigned char* ARBURST){
+  const unsigned char* RREADY,
+  const unsigned char* ARLEN,
+  const unsigned char* ARSIZE,
+  const unsigned char* ARBURST){
 
   if(*ARVALID){
     // read request
@@ -500,22 +475,21 @@ void masterWriteData(
   bool verbose,
   unsigned char* memory,
   int port,
-  unsigned int* AWADDR,
-  unsigned char* AWVALID,
+  const unsigned int* AWADDR,
+  const unsigned char* AWVALID,
+  const unsigned long* WDATA,
+  const unsigned char* WVALID,
+  const unsigned char* BREADY,
+  const unsigned char* WSTRB,
+  const unsigned char* WLAST,
+  const unsigned char* AWLEN,
+  const unsigned char* AWSIZE,
+  const unsigned char* AWBURST,
+  // out
   unsigned char* AWREADY,
-  unsigned long* WDATA,
-  unsigned char* WVALID,
   unsigned char* WREADY,
   unsigned char* BRESP,
-  unsigned char* BVALID,
-  unsigned char* BREADY,
-  unsigned char* WSTRB,
-  unsigned char* WLAST,
-  unsigned char* AWLEN,
-  unsigned char* AWSIZE,
-  unsigned char* AWBURST){
-
-  assert(*WREADY); // we drive this... should always be true
+  unsigned char* BVALID){
 
   *BVALID = 0;
   
@@ -525,7 +499,6 @@ void masterWriteData(
     *(unsigned long*)(&memory[t->addr]) = *WDATA;
 
     if(verbose){
-      //std::cout << "MAXI" << port << " Accept Write, Addr: " << t.addr << "/" << std::hex << "0x" << std::dec << t.addr << " data: " << WDATA << " remaining_burst: " << t.burst << " outstanding_requests: " << writeQ[port].size() << std::endl;
       printf("MAXI%d Accept Write, Addr: %d/%#x data: %d remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, t->burst, QSize(&writeQ[port]) );
     }
     
@@ -546,7 +519,8 @@ void masterWriteData(
     }
 
     cyclesSinceWrite[port] = 0;
-  }else if( QSize(&writeQ[port])<=0 && *WVALID ){
+  }else if( QSize(&writeQ[port])<=0 && *WVALID && *WREADY){
+    printf("WREADY=%d AWREADY=%d AWVALID=%d\n",*WREADY,*AWREADY,*AWVALID);
     printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
     exit(1);
   }else{
@@ -562,25 +536,34 @@ void masterWriteData(
   }
 }
 
-void masterWriteReq(
+void masterWriteReqDriveOutputs(
   bool verbose,
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
-  unsigned int* AWADDR,
-  unsigned char* AWVALID,
   unsigned char* AWREADY,
-  unsigned long* WDATA,
-  unsigned char* WVALID,
   unsigned char* WREADY,
   unsigned char* BRESP,
-  unsigned char* BVALID,
-  unsigned char* BREADY,
-  unsigned char* WSTRB,
-  unsigned char* WLAST,
-  unsigned char* AWLEN,
-  unsigned char* AWSIZE,
-  unsigned char* AWBURST){
+  unsigned char* BVALID){
+
+  *AWREADY = 1;
+}
+
+void masterWriteReqLatchFlops(
+  bool verbose,
+  unsigned int MEMBASE,
+  unsigned int MEMSIZE,
+  int port,
+  const unsigned int* AWADDR,
+  const unsigned char* AWVALID,
+  const unsigned long* WDATA,
+  const unsigned char* WVALID,
+  const unsigned char* BREADY,
+  const unsigned char* WSTRB,
+  const unsigned char* WLAST,
+  const unsigned char* AWLEN,
+  const unsigned char* AWSIZE,
+  const unsigned char* AWBURST){
 
   if(*AWVALID){
     assert(*AWSIZE==3);
