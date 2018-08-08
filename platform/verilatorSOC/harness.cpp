@@ -130,7 +130,11 @@ int main(int argc, char** argv) {
     curArg+=2;
   }
 
-  
+  SlaveState slaveState0;
+  SlaveState slaveState1;
+  initSlaveState(&slaveState0);
+  initSlaveState(&slaveState1);
+    
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
@@ -234,8 +238,10 @@ int main(int argc, char** argv) {
         if(verbose){printMasterRead( 0, M0READ_SLAVEIN, M0READ_SLAVEOUT );}
         if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
         
-        masterWriteData( verbose, memory, 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );
-        masterWriteData( verbose, memory, 1, M1WRITE_SLAVEIN, M1WRITE_SLAVEOUT );
+        masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
+        masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN );
+        masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
+        masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN );
         
         // get data out
         masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );

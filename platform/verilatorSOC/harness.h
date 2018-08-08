@@ -470,10 +470,36 @@ void masterReadReqLatchFlops(
   }
 }
 
+typedef struct SlaveState{
+  unsigned char BVALID;
+  unsigned char BRESP;
+} SlaveState;
+
+void initSlaveState(SlaveState* slaveState){
+  slaveState->BVALID=false;
+}
+
 // return data to master
-void masterWriteData(
+void masterWriteDataDriveOutputs(
   bool verbose,
   unsigned char* memory,
+  SlaveState* slaveState,
+  int port,
+  unsigned char* AWREADY,
+  unsigned char* WREADY,
+  unsigned char* BRESP,
+  unsigned char* BVALID){
+
+  *AWREADY = true;
+  *WREADY = true;
+  *BVALID = slaveState->BVALID;
+  *BRESP = slaveState->BRESP;
+}
+
+void masterWriteDataLatchFlops(
+  bool verbose,
+  unsigned char* memory,
+  SlaveState* slaveState,
   int port,
   const unsigned int* AWADDR,
   const unsigned char* AWVALID,
@@ -484,14 +510,7 @@ void masterWriteData(
   const unsigned char* WLAST,
   const unsigned char* AWLEN,
   const unsigned char* AWSIZE,
-  const unsigned char* AWBURST,
-  // out
-  unsigned char* AWREADY,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID){
-
-  *BVALID = 0;
+  const unsigned char* AWBURST){
   
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -509,24 +528,28 @@ void masterWriteData(
           
     if(t->burst==0){
       QPop(&writeQ[port]);
-      *BVALID = 1;
-      *BRESP = 0;
+      slaveState->BVALID = true;
+      slaveState->BRESP = 0;
 
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
         exit(1);
       }
+    }else{
+      slaveState->BVALID = false;
     }
 
     cyclesSinceWrite[port] = 0;
-  }else if( QSize(&writeQ[port])<=0 && *WVALID && *WREADY){
-    printf("WREADY=%d AWREADY=%d AWVALID=%d\n",*WREADY,*AWREADY,*AWVALID);
+  }else if( QSize(&writeQ[port])<=0 && *WVALID){
+    //printf("WREADY=%d AWREADY=%d AWVALID=%d\n",*WREADY,*AWREADY,*AWVALID);
     printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
+    slaveState->BVALID = false;
     exit(1);
   }else{
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
 
     cyclesSinceWrite[port]++;
+    slaveState->BVALID = false;
 
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);

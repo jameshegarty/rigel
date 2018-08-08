@@ -207,6 +207,11 @@ return function(top, memStart, memEnd)
     var [IP_CLK] = &ip_clk
     var ip_areset_n : uint8
     var [IP_ARESET_N] = &ip_areset_n
+
+    var slaveState0 : V.SlaveState
+    var slaveState1 : V.SlaveState
+    V.initSlaveState(&slaveState0)
+    V.initSlaveState(&slaveState1)
     
     var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
@@ -272,8 +277,10 @@ return function(top, memStart, memEnd)
         if verbose then V.printMasterRead(0,[MREAD_SLAVEIN[0]],[MREAD_SLAVEOUT[0]]); end
         if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
-        V.masterWriteData(verbose,memory,0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]);
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,1,[MWRITE_SLAVEIN[1]],[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+        V.masterWriteDataDriveOutputs(verbose,memory,&slaveState0,0,[MWRITE_SLAVEOUT[0]]);
+        V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,[MWRITE_SLAVEIN[0]]);
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataDriveOutputs(verbose,memory,&slaveState1,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
         -- get data out
         V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]);
