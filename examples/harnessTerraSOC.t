@@ -66,8 +66,10 @@ return function(top, memStart, memEnd)
     `[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
     `[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),}
 
-  local MREADLIST={}
-  local MWRITELIST={}
+  local MREAD_SLAVEOUT={}
+  local MREAD_SLAVEIN={}
+  local MWRITE_SLAVEOUT={}
+  local MWRITE_SLAVEIN={}
 
   local MAX_READ_PORT = -1
   local MAX_WRITE_PORT = -1
@@ -75,16 +77,17 @@ return function(top, memStart, memEnd)
   for i=0,SOC.ports do
     if top:getGlobal("IP_MAXI"..i.."_ARADDR")~=nil then
       MAX_READ_PORT = i
-      MREADLIST[i] = {
-        i,
-        `&data([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()])),
+      MREAD_SLAVEOUT[i] = {
         `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraReady()]),
         `&data([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()]),
         `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()])),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RDATA"):terraReady()]),
         `&[top:getGlobal("IP_MAXI"..i.."_RRESP"):terraValue()],
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RLAST"):terraValue()]),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RLAST"):terraValue()])}
+
+      MREAD_SLAVEIN[i] = {
+        `&data([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()])),
+        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RDATA"):terraReady()]),
         `&[top:getGlobal("IP_MAXI"..i.."_ARLEN"):terraValue()],
         `&[top:getGlobal("IP_MAXI"..i.."_ARSIZE"):terraValue()],
         `&[top:getGlobal("IP_MAXI"..i.."_ARBURST"):terraValue()]}
@@ -92,16 +95,17 @@ return function(top, memStart, memEnd)
 
     if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
       MAX_WRITE_PORT = i
-      MWRITELIST[i] = {
-        i,
-        `&data([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()])),
+      MWRITE_SLAVEOUT[i] = {
         `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraReady()]),
-        `&data([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()])),
         `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_WDATA"):terraReady()]),
         `&data([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()])),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]))}
+
+      MWRITE_SLAVEIN[i] = {
+        `&data([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()])),
+        `&data([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()]),
+        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()])),
         `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_BRESP"):terraReady()]),
         `&[top:getGlobal("IP_MAXI"..i.."_WSTRB"):terraValue()],
         `&[top:getGlobal("IP_MAXI"..i.."_WLAST"):terraValue()],
@@ -220,11 +224,11 @@ return function(top, memStart, memEnd)
 
       clearOutputs
 
-      V.deactivateMasterRead([MREADLIST[0]])
-      V.deactivateMasterWrite([MWRITELIST[0]])
+      V.deactivateMasterRead([MREAD_SLAVEOUT[0]])
+      V.deactivateMasterWrite([MWRITE_SLAVEOUT[0]])
       
-      [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
-      [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.deactivateMasterWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
       var cycle = 0
 
@@ -234,11 +238,11 @@ return function(top, memStart, memEnd)
 
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       
-      V.activateMasterRead([MREADLIST[0]])
-      V.activateMasterWrite([MWRITELIST[0]])
+      V.activateMasterRead([MREAD_SLAVEOUT[0]])
+      V.activateMasterWrite([MWRITE_SLAVEOUT[0]])
       
-      [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREADLIST[1]]) end else return quote end end end)() ];
-      [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITELIST[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
+      [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
       var totalCycles = simCycles+extraCycles
 
@@ -258,23 +262,29 @@ return function(top, memStart, memEnd)
         m:calculateReady()
         
         -- feed data in
-        V.masterReadData(verbose,memory,[MREADLIST[0]]);
-        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadData(verbose,memory,[MREADLIST[1]]) end else return quote end end end)() ];
+        V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]);
+        V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataDriveOutputs(verbose,memory,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataLatchFlops(verbose,memory,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
 
         m:process(nil,nil)
 
-        if verbose then V.printMasterRead([MREADLIST[0]]); end
-        if verbose then V.printMasterWrite([MWRITELIST[0]]); end
+        if verbose then V.printMasterRead(0,[MREAD_SLAVEIN[0]],[MREAD_SLAVEOUT[0]]); end
+        if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
-        V.masterWriteData(verbose,memory,[MWRITELIST[0]]);
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,[MWRITELIST[1]]) end else return quote end end end)() ];
+        V.masterWriteData(verbose,memory,0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]);
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteData(verbose,memory,1,[MWRITE_SLAVEIN[1]],[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
         -- get data out
-        V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[0]]);
-        V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[0]]);
+        V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]);
+        V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]);
+        V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEOUT[0]]);
+        V.masterWriteReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEIN[0]]);
 
-        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReq(verbose,MEMBASE,MEMSIZE,[MREADLIST[1]]) end else return quote end end end)() ];
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReq(verbose,MEMBASE,MEMSIZE,[MWRITELIST[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqLatchFlops(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
         if((cycle*100)/totalCycles>lastPct) then
           var t = currentTimeInSeconds() - startSec

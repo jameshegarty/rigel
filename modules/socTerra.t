@@ -275,6 +275,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
     self.ready = [mod:getGlobal("IP_MAXI"..port.."_WDATA"):terraReady()] and (self.writeFirst==false);
     self.addrReadyDownstream = [mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraReady()];
     self.readyDownstream = readyDownstream
+    [mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraReady()] = true
   end
 
   return MT.new(WriteBurst)
