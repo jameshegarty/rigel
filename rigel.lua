@@ -29,12 +29,20 @@ local function getloc()
 end
 
 darkroom.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+darkroom.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
 darkroom.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
 
 function darkroom.V(A) 
   err(types.isType(A),"V: argument should be type"); 
   err(darkroom.isBasic(A), "V: argument should be basic type"); 
   return types.named("V("..tostring(A)..")", types.tuple{A,types.bool()}, "V", {A=A}) 
+end
+
+function darkroom.VSparse(A) 
+  err(types.isType(A),"VSparse: argument should be type"); 
+  err(darkroom.isBasic(A), "VSparse: argument should be basic type");
+  -- format is {data,valid,done}
+  return types.named("VSparse("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "VSparse", {A=A}) 
 end
 
 function darkroom.RV(A) 
@@ -45,8 +53,15 @@ end
 
 function darkroom.Handshake(A)
   err(types.isType(A),"Handshake: argument should be type")
-  err(darkroom.isBasic(A),"Handshake: argument should be basic type")
+  err(darkroom.isBasic(A),"Handshake: argument should be basic type, but is: "..tostring(A))
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
+end
+
+function darkroom.HandshakeSparse(A)
+  err(types.isType(A),"HandshakeSparse: argument should be type")
+  err(darkroom.isBasic(A),"HandshakeSparse: argument should be basic type")
+  -- format is {data,valid,done}
+  return types.named("HandshakeSparse("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "HandshakeSparse", {A=A} )
 end
 
 function darkroom.HandshakeArray(A,W,H)
@@ -112,13 +127,23 @@ function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="Han
 function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) end
 
 function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
+function darkroom.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
 function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
+function darkroom.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
 function darkroom.isBasic(A)
   assert(types.isType(A))
-  if A:isArray() then return darkroom.isBasic(A:arrayOver()) end
-  if A:isTuple() then for _,v in ipairs(A.list) do if darkroom.isBasic(v)==false then return false end end return true end
-    
-  if darkroom.isV(A) or darkroom.isRV(A) or darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArrayOneHot(A) or darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or darkroom.isHandshakeTriggerArray(A) then
+  if A:isArray() then
+    return darkroom.isBasic(A:arrayOver()) 
+  elseif A:isTuple() then
+    for _,v in ipairs(A.list) do
+      if darkroom.isBasic(v)==false then
+        return false
+      end
+    end
+    return true
+  elseif A:isNamed() and A.generator=="fixed" then
+    return true -- COMPLETE HACK, REMOVE
+  elseif A:isNamed() then
     return false
   end
 
@@ -136,7 +161,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -151,7 +176,7 @@ end
 -- Handshake(A) => A
 function darkroom.extractData(a)
   if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) then return a.params.A end
-  if darkroom.isHandshakeTrigger(a) then return types.null() end
+  if darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) then return types.null() end
   if darkroom.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
   return a -- pure
 end
@@ -462,19 +487,30 @@ __index=function(tab,key)
     return tm
   end
 end,
-__call=function(tab,arg)
-  J.err( darkroom.isIR(arg),"applying a module to something other than a rigel value?")
+__call=function(tab,...)
+  local rawarg = {...}
 
-  -- discover variable name from lua
-  if arg.defaultName then
-    local n = discoverName(arg)
-    if n~=nil then
-      arg.name=n.."_"..darkroom.__unnamedID
-      darkroom.__unnamedID = darkroom.__unnamedID+1
-      arg.defaultname=false
+  for _,arg in pairs(rawarg) do
+    J.err( arg==nil or darkroom.isIR(arg),"applying a module to something other than a rigel value?")
+
+    -- discover variable name from lua
+    if arg~=nil and arg.defaultName then
+      local n = discoverName(arg)
+      if n~=nil then
+        arg.name=n.."_"..darkroom.__unnamedID
+        darkroom.__unnamedID = darkroom.__unnamedID+1
+        arg.defaultname=false
+      end
     end
   end
 
+  local arg
+  if #rawarg>1 then
+    arg = darkroom.concat(nil,rawarg)
+  else
+    arg = rawarg[1]
+  end
+  
   local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
@@ -980,7 +1016,7 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.name)
         err( n.fn.systolicModule:lookupFunction("process")~=nil, "Error, missing process fn? "..n.fn.name)
-        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)) )
+        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)).." (Rigel type: "..tostring(n.fn.inputType)..")" )
 
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )

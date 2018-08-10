@@ -433,8 +433,9 @@ modules.waitOnInput = memoize(function(f)
   return rigel.newFunction(res)
                                end)
 
-local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
+local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger )
   assert( S.isModule(systolicModule) )
+  assert(type(handshakeTrigger)=="boolean")
   
   local res = Ssugar.moduleConstructor("LiftDecimate_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("LiftDecimate") )
@@ -448,8 +449,10 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     local sinp
     local datai
     local validi
-    if srcFn.inputParameter.type==types.null() then
+    if srcFn.inputParameter.type==types.null() and handshakeTrigger==false then
       sinp = S.parameter(fnname.."_input", types.null() )
+    elseif srcFn.inputParameter.type==types.null() and handshakeTrigger then
+      sinp = S.parameter(fnname.."_input", types.bool() )
     else
       sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn.inputParameter.type)) )
       datai = S.index(sinp,0)
@@ -457,9 +460,17 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     end
 
     local pout = inner[fnname]( inner, datai, validi )
-    local pout_data = S.index(pout,0)
-    local pout_valid = S.index(pout,1)
+    --local 
+    local pout_data, pout_valid
 
+    if pout.type:isTuple() and #pout.type.list==2 then
+      pout_data = S.index(pout,0)
+      pout_valid = S.index(pout,1)
+    elseif pout.type:isBool() then
+      pout_valid = pout
+    else
+      assert(false)
+    end
     local validout = pout_valid
 
     if srcFn.inputParameter.type~=types.null() then
@@ -467,7 +478,13 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
     end
     
     local CE = S.CE(prefix.."CE")
-    res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, validout}, fnname.."_output",nil,nil,CE ) )
+
+    if pout_data==nil then
+      res:addFunction( S.lambda(fnname, sinp, validout, fnname.."_output",nil,nil,CE ) )
+    else
+      res:addFunction( S.lambda(fnname, sinp, S.tuple{pout_data, validout}, fnname.."_output",nil,nil,CE ) )
+    end
+    
     if systolicModule:lookupFunction(prefix.."reset")~=nil then
       -- stateless modules don't have a reset
       res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool())) )
@@ -481,9 +498,12 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns )
 end
 
 -- takes basic->V to V->RV
-modules.liftDecimate = memoize(function(f)
+-- if handshakeTrigger==true, then nil->V(A) maps to VTrigger->RV(A)
+modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   err( rigel.isFunction(f), "liftDecimate: input should be rigel module" )
-
+  err( X==nil, "liftDecimate: too many arguments")
+  if handshakeTrigger==nil then handshakeTrigger=true end
+  
   local res = {kind="liftDecimate", fn = f}
   rigel.expectBasic(f.inputType)
 
@@ -497,6 +517,8 @@ modules.liftDecimate = memoize(function(f)
 
   if rigel.isV(f.outputType) then
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
+  elseif rigel.isVTrigger(f.outputType) then
+    res.outputType = rigel.RVTrigger
   else
     err(false, "liftDecimate: expected V output type, but is "..tostring(f.outputType))
   end
@@ -513,7 +535,7 @@ modules.liftDecimate = memoize(function(f)
 
   function res.makeSystolic()
     err( S.isModule(f.systolicModule), "Missing/incorrect systolic for "..f.name )
-    return liftDecimateSystolic( f.systolicModule, {"process"},{})
+    return liftDecimateSystolic( f.systolicModule, {"process"}, {}, handshakeTrigger )
   end
 
   return rigel.newFunction(res)
@@ -597,6 +619,14 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 
     local pout = inner[fnname](inner,pinp,S.constant(true,types.bool()), CE )
 
+    if pout.type:isTuple() and #pout.type.list==2 then
+    elseif pout.type==types.null() then
+    elseif pout.type:isBool() then
+    else
+      print("liftHandshakeSystolic: unexpected return type? "..tostring(pout.type).." FNNAME:"..fnname)
+      assert(false)
+    end
+    
     -- not blocked downstream: either downstream is ready (downstreamReady), or we don't have any data anyway (pout[1]==false), so we can work on clearing the pipe
     -- Actually - I don't think this is legal. We can't have our stall signal depend on our own output. We would have to register it, etc
     --local notBlockedDownstream = S.__or(downstreamReady, S.eq(S.index(pout,1),S.constant(false,types.bool()) ))
@@ -610,10 +640,22 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
       SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
     
       local srvalue = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
-      local outvalid = S.__and(S.index(pout,1), srvalue )
+      local outvalid
+
+      if pout.type:isBool() then -- IE RVTrigger
+        outvalid = S.__and( pout, srvalue )
+      else
+        outvalid = S.__and(S.index(pout,1), srvalue )
+      end
+      
       local outvalidRaw = outvalid
       --if STREAMING==false then outvalid = S.__and( outvalid, S.lt(outputCount:get(),S.instanceParameter("OUTPUT_COUNT",types.uint(16)))) end
-      out = S.tuple{ S.index(pout,0), outvalid }
+
+      if pout.type:isBool() then -- RVTrigger
+        out = outvalid
+      else
+        out = S.tuple{ S.index(pout,0), outvalid }
+      end
     else
       out = pout
     end
@@ -663,10 +705,21 @@ end
 modules.liftHandshake = memoize(function( f, X )
   err( X==nil, "liftHandshake: too many arguments" )
   local res = {kind="liftHandshake", fn=f}
-  rigel.expectV(f.inputType)
-  rigel.expectRV(f.outputType)
-  res.inputType = rigel.Handshake(rigel.extractData(f.inputType))
-  res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
+  err( rigel.isV(f.inputType) or rigel.isVTrigger(f.inputType), "liftHandshake: expected V or VTrigger input type")
+  err( rigel.isRV(f.outputType) or rigel.isRVTrigger(f.outputType),"liftHandshake: expected RV or RVTrigger output type")
+
+  if rigel.isVTrigger(f.inputType) then
+    res.inputType = rigel.HandshakeTrigger
+  else
+    res.inputType = rigel.Handshake(rigel.extractData(f.inputType))
+  end
+
+  if rigel.isRVTrigger(f.outputType) then
+    res.outputType = rigel.HandshakeTrigger
+  else
+    res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
+  end
+  
   res.name = "LiftHandshake_"..f.name
 
   err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
@@ -2590,6 +2643,13 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local res = {kind="fifo", inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), registered=true, sdfInput={{1,1}}, sdfOutput={{1,1}}, stateful=true}
 
+  if A==types.null() then
+    res.inputType=rigel.HandshakeTrigger
+    res.outputType=rigel.HandshakeTrigger
+  else
+    assert(A:verilogBits()>0)
+  end
+  
   if terralib~=nil then res.terraModule = MT.fifo(res,A, size, nostall, W, H, T, csimOnly) end
 
   local bytes = (size*A:verilogBits())/8
@@ -2628,7 +2688,15 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
       local load = systolicModule:addFunction( Ssugar.lambdaConstructor( "load", types.null(), "process_input" ) )
       local loadCE = S.CE("load_CE")
       load:setCE(loadCE)
-      load:setOutput( S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }, "load_output" )
+
+      if A==types.null() then
+        load:setOutput( fifo:hasData(), "load_output" )
+      else
+        local res = S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }
+        print("LOAD_OUTPUT",res.type)
+        load:setOutput( res, "load_output" )
+      end
+      
       local loadReset = systolicModule:addFunction( Ssugar.lambdaConstructor( "load_reset" ) )
       loadReset:addPipeline(fifo:popFrontReset())
 
@@ -2648,10 +2716,10 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
       end
       --------------
 
-      systolicModule = liftDecimateSystolic(systolicModule,{"load"},{"store"})
+      systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store"}, false )
       systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load"})
       systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{},{true,false})
-
+      
       return systolicModule
     end
   end
@@ -3675,10 +3743,11 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
     fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
 
     --if rigel.isHandshake(inputType) and rigel.isHandshake(outputType) then
-    if (rigel.isHandshake(inputType) or rigel.isHandshakeTrigger(inputType)) and (rigel.isHandshake(outputType) or rigel.isHandshakeTrigger(outputType)) then
+    if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
       local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType)) --S.parameter("ready_downstream",types.bool())
       fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
     else
+      print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
       assert(false)
     end
 
@@ -4069,5 +4138,42 @@ modules.triggeredCounter = memoize(function(TY, N, stride)
   return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
   
 end)
+
+-- this output one trigger token after N inputs
+modules.triggerCounter = memoize(function(N)
+  err(type(N)=="number", "triggerCounter: N must be number")
+
+  local res = {kind="triggerCounter"}
+  res.inputType = types.null()
+  res.outputType = rigel.VTrigger
+  res.sdfInput = {{1,1}}
+  res.sdfOutput = {{1,N}}
+  res.stateful=true
+  res.delay=0
+  res.name = "TriggerCounter_"..tostring(N)
+
+  if terralib~=nil then res.terraModule = MT.triggerCounter(res,N) end
+
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+    
+    local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.sumwrap(types.uint(32),N-1) ):CE(true):setReset(0):instantiate("phase") )
+    
+    local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
+    
+    local pipelines = {}
+    table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(32)) ) )
+    
+    local CE = S.CE("CE")
+    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.null() ), done, "process_output", pipelines, nil, CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool()) ) )
+
+    return systolicModule
+  end
+
+  return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res) ))
+  
+end)
+
 
 return modules

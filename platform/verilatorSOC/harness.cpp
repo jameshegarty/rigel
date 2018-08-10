@@ -15,13 +15,17 @@ double CurrentTimeInSeconds() {
 
 #define S0LIST 0,&top->IP_CLK,&top->IP_ARESET_N,&top->SAXI0_ARADDR,&top->SAXI0_ARVALID,&top->SAXI0_ARREADY,&top->SAXI0_AWADDR,&top->SAXI0_AWVALID,&top->SAXI0_AWREADY,&top->SAXI0_RDATA,&top->SAXI0_RVALID,&top->SAXI0_RREADY,&top->SAXI0_BRESP,&top->SAXI0_BVALID,&top->SAXI0_BREADY,&top->SAXI0_RRESP,&top->SAXI0_WVALID,&top->SAXI0_WREADY
 
-#define M0READLIST 0,&top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RREADY,&top->MAXI0_RRESP,&top->MAXI0_RLAST,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST
+#define M0READ_SLAVEOUT &top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RRESP,&top->MAXI0_RLAST
+#define M0READ_SLAVEIN &top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_RREADY,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST
 
-#define M0WRITELIST 0,&top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_AWREADY,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST
+#define M0WRITE_SLAVEOUT &top->MAXI0_AWREADY,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID
+#define M0WRITE_SLAVEIN &top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST
 
-#define M1READLIST 1,&top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RREADY,&top->MAXI1_RRESP,&top->MAXI1_RLAST,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST
+#define M1READ_SLAVEOUT &top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RRESP,&top->MAXI1_RLAST
+#define M1READ_SLAVEIN &top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_RREADY,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST
 
-#define M1WRITELIST 1,&top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_AWREADY,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST
+#define M1WRITE_SLAVEOUT &top->MAXI1_AWREADY,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID
+#define M1WRITE_SLAVEIN &top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST
 
 
 void step(VERILATORCLASS* top){
@@ -126,7 +130,11 @@ int main(int argc, char** argv) {
     curArg+=2;
   }
 
-  
+  SlaveState slaveState0;
+  SlaveState slaveState1;
+  initSlaveState(&slaveState0);
+  initSlaveState(&slaveState1);
+    
   VERILATORCLASS* top = new VERILATORCLASS;
 
   bool CLK = false;
@@ -149,10 +157,10 @@ int main(int argc, char** argv) {
         
         resetSlave(S0LIST);
         
-        deactivateMasterRead(M0READLIST);
-        deactivateMasterWrite(M0WRITELIST);
-        deactivateMasterRead(M1READLIST);
-        deactivateMasterWrite(M1WRITELIST);
+        deactivateMasterRead( M0READ_SLAVEOUT );
+        deactivateMasterWrite( M0WRITE_SLAVEOUT );
+        deactivateMasterRead( M1READ_SLAVEOUT );
+        deactivateMasterWrite( M1WRITE_SLAVEOUT );
         
         top->eval();
       }
@@ -201,10 +209,10 @@ int main(int argc, char** argv) {
     setReg(top,verbose,0xA0000000,1); // set start bit
     
     // now we're ready to service memory requests
-    activateMasterRead(M0READLIST);
-    activateMasterWrite(M0WRITELIST);
-    activateMasterRead(M1READLIST);
-    activateMasterWrite(M1WRITELIST);
+    activateMasterRead( M0READ_SLAVEOUT );
+    activateMasterWrite( M0WRITE_SLAVEOUT );
+    activateMasterRead( M1READ_SLAVEOUT );
+    activateMasterWrite( M1WRITE_SLAVEOUT );
     
     int lastPct = -1;
     double startSec = CurrentTimeInSeconds();
@@ -219,24 +227,32 @@ int main(int argc, char** argv) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in
-        masterReadData(verbose,memory,M0READLIST);
-        masterReadData(verbose,memory,M1READLIST);
+        masterReadDataDriveOutputs( verbose, memory, 0, M0READ_SLAVEOUT );
+        masterReadDataLatchFlops( verbose, memory, 0, M0READ_SLAVEIN );
+        masterReadDataDriveOutputs( verbose, memory, 1, M1READ_SLAVEOUT );
+        masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
         
         // it's possible the pipeline has 0 cycle delay (between read & write port). in which case, we need to eval the async stuff here.
         top->eval();
         
-        if(verbose){printMasterRead(M0READLIST);}
-        if(verbose){printMasterWrite(M0WRITELIST);}
+        if(verbose){printMasterRead( 0, M0READ_SLAVEIN, M0READ_SLAVEOUT );}
+        if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
         
-        masterWriteData(verbose,memory,M0WRITELIST);
-        masterWriteData(verbose,memory,M1WRITELIST);
+        masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
+        masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN );
+        masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
+        masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN );
         
         // get data out
-        masterReadReq(verbose,MEMBASE,MEMSIZE,M0READLIST);
-        masterWriteReq(verbose,MEMBASE,MEMSIZE,M0WRITELIST);
+        masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
+        masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
+        masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEOUT );
+        masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );
         
-        masterReadReq(verbose,MEMBASE,MEMSIZE,M1READLIST);
-        masterWriteReq(verbose,MEMBASE,MEMSIZE,M1WRITELIST);
+        masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEOUT );
+        masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEIN );
+        masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEOUT );
+        masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEIN );
 
         if(cycle%100==0){
           slaveReadReq(0xA0000000+4,S0LIST);

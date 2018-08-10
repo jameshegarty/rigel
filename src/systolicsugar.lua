@@ -122,6 +122,11 @@ function systolicFunctionConstructor:isPure() self:complete(); return self.fn:is
 systolicModuleConstructor = {}
 systolicModuleConstructorMT={__index=systolicModuleConstructor}
 
+function systolicModuleConstructorMT.__tostring(tab)
+  tab:complete()
+  return tostring(tab.module)
+end
+
 function sugar.isModuleConstructor(I) return getmetatable(I)==systolicModuleConstructorMT end
 
 function sugar.moduleConstructor( name, X )

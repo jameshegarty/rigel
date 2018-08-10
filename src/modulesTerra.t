@@ -193,15 +193,30 @@ function MT.liftDecimate(res,f)
   terra LiftDecimate:init() self.inner:init() end
   terra LiftDecimate:free() self.inner:free() end
   terra LiftDecimate:stats(name:&int8) cstdio.printf("LiftDecimate %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
-  terra LiftDecimate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    if valid(inp) then
-      self.inner:process(&data(inp),[&rigel.lower(f.outputType):toTerraType()](out))
-      self.activeCycles = self.activeCycles + 1
-    else
-      valid(out) = false
-      self.idleCycles = self.idleCycles + 1
+
+  if rigel.isVTrigger(res.inputType) and rigel.isRVTrigger(res.outputType) then
+    print("INOUT",res.inputType,res.outputType)
+    terra LiftDecimate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if @inp then
+        self.inner:process(out)
+        self.activeCycles = self.activeCycles + 1
+      else
+        @out = false
+        self.idleCycles = self.idleCycles + 1
+      end
+    end
+  else
+    terra LiftDecimate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if valid(inp) then
+        self.inner:process(&data(inp),[&rigel.lower(f.outputType):toTerraType()](out))
+        self.activeCycles = self.activeCycles + 1
+      else
+        valid(out) = false
+        self.idleCycles = self.idleCycles + 1
+      end
     end
   end
+
   terra LiftDecimate:calculateReady() self.ready=true end
 
   return MT.new(LiftDecimate)
@@ -237,33 +252,50 @@ function MT.liftHandshake(res,f,delay)
     self.inner:stats(name) 
   end
 
-  terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    if self.readyDownstream then
-      if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
---     if valid(inp) and self.inner:ready() then
---        self.fifo:pushBack(&data(inp))
---      end
+  if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTrigger(res.outputType) then
+    terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if self.readyDownstream then
+        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
 
-      if self.delaysr:size()==delay then
-        var ot = self.delaysr:popFront()
-        valid(out) = valid(ot)
-        data(out) = data(ot)
-      else
-        valid(out) = false
+        if self.delaysr:size()==delay then
+          var ot = self.delaysr:popFront()
+          @out = @ot
+        else
+          @out = false
+        end
+
+        var tout : rigel.lower(f.outputType):toTerraType()
+
+        self.inner:process(inp,&tout)
+        self.delaysr:pushBack(&tout)
       end
+    end
+  else
+    terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if self.readyDownstream then
+        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
 
-      var tout : rigel.lower(f.outputType):toTerraType()
+        if self.delaysr:size()==delay then
+          var ot = self.delaysr:popFront()
+          valid(out) = valid(ot)
+          data(out) = data(ot)
+        else
+          valid(out) = false
+        end
 
-      self.inner:process(inp,&tout)
-      self.delaysr:pushBack(&tout)
+        var tout : rigel.lower(f.outputType):toTerraType()
+
+        self.inner:process(inp,&tout)
+        self.delaysr:pushBack(&tout)
+      end
     end
   end
+
   terra LiftHandshake:calculateReady(readyDownstream:bool) 
     self.readyDownstream = readyDownstream
     self.inner:calculateReady()
     self.ready = readyDownstream and self.inner.ready 
   end
---  terra LiftHandshake:ready(readyDownstream:bool) return readyDownstream  end
 
   return LiftHandshake
 end
@@ -388,7 +420,25 @@ function MT.triggeredCounter(res,TY,N,stride,X)
   end
   terra TriggeredCounter:calculateReady()  self.ready = (self.phase==0) end
 
-  return TriggeredCounter
+  return MT.new(TriggeredCounter)
+end
+
+function MT.triggerCounter(res,N,X)
+  assert(X==nil)
+  
+  local struct TriggerCounter { phase:int, ready:bool }
+  terra TriggerCounter:reset() self.phase=0; end
+  terra TriggerCounter:process( out : &rigel.lower(res.outputType):toTerraType() )
+    self.phase = self.phase + 1
+    if self.phase==N then
+      self.phase=0
+      @out = true
+    else
+      @out = false
+    end
+  end
+
+  return MT.new(TriggerCounter)
 end
 
 function MT.downsampleYSeqFn(innerInputType,outputType,scale)

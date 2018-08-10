@@ -941,6 +941,132 @@ endmodule
   return res
 end)
 
+SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase, X)
+  J.err( type(port)=="number", "axiWriteBytes: port must be number" )
+  J.err( port>=0 and port<=SOC.ports,"axiWriteBytes: port out of range" )
+  J.err( type(NbytesPerCycle)=="number","axiWriteBytes: NbytesPerCycle must be number" )
+  J.err( NbytesPerCycle==math.floor(NbytesPerCycle), "axiWriteBytes: NbytesPerCycle must be integer" )
+  if NbytesPerCycle>8 then
+    J.err( NbytesPerCycle%8==0, "axiWriteBytes: NYI - NbytePerCycle must be 64 bit aligned")
+  end
+  
+  J.err( X==nil, "axiWriteBytes: too many arguments" )
+  J.err( type(addressBase)=="number", "axiWriteBytes: addressBase must be number")
+  
+  local globals = {}
+  globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_WDATA","output",R.Handshake(types.bits(64)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_WSTRB","output",types.bits(8))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_WLAST","output",types.bits(1))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_BRESP","input",R.Handshake(types.bits(2)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_AWLEN","output",types.bits(4))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_AWSIZE","output",types.bits(2))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_AWBURST","output",types.bits(2))] = 1
+
+  local globalMetadata = {}
+  globalMetadata["MAXI"..port.."_write_filename"] = filename
+  
+  local ModuleName = J.sanitize("AXI_WRITE_BYTES_"..tostring(NbytesPerCycle).."_"..tostring(port))
+
+  local burstCount = NbytesPerCycle/8
+  J.err( burstCount<=16,"axiWriteBytes: NYI - burst longer than 16")
+
+  local strb = "11111111"
+  if NbytesPerCycle<8 then
+    strb=""
+    for i=1,NbytesPerCycle do strb=strb.."1" end
+  end
+
+  local Nbits = math.min(64,NbytesPerCycle*8)
+
+  local last
+  local bursts = NbytesPerCycle/8
+  
+  if NbytesPerCycle<=8 then
+    last = "assign IP_MAXI"..port.."_WLAST = 1'b1;\n"
+  else
+    last = [=[
+reg [3:0] last_count = 4'd]=]..bursts..[=[;
+always @(posedge CLK) begin
+  if reset==1'b1 begin
+    last_count <= 4'd]=]..bursts..[=[;
+  end else begin
+    if (IP_MAXI]=]..port..[=[_AWADDR_ready && IP_MAXI]=]..port..[=[_AWADDR[32] ) begin
+      last_count <= last_count - 4'b1;
+    end
+  end
+assign IP_MAXI]=]..port..[=[_WLAST = (last_count==4'd0);
+end
+]=]
+  end
+
+  local inputType = R.HandshakeTuple{types.uint(32),types.bits(Nbits)}
+  print("INPUT_TYPE",inputType,inputType:verilogBits())
+  
+  -- input format is {addr,data}
+  local res = RM.liftVerilog( ModuleName, inputType, R.HandshakeTrigger,
+[=[module ]=]..ModuleName..[=[(
+    input wire CLK,
+    input wire reset,
+
+    output wire [32:0] IP_MAXI]=]..port..[=[_AWADDR,
+    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
+
+    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
+    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
+
+    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
+    output wire IP_MAXI]=]..port..[=[_WLAST,
+
+    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
+    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
+
+    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
+    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
+    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
+    
+    input wire []=]..(32+Nbits+1)..[=[:0] process_input,
+    output wire [1:0] ready,
+
+    output wire process_output,
+    input wire ready_downstream
+);
+parameter INSTANCE_NAME="inst";
+
+assign IP_MAXI]=]..port..[=[_AWLEN = 4'd]=]..(burstCount-1)..[=[; // length of burst
+assign IP_MAXI]=]..port..[=[_AWSIZE = 2'b11; // number of bytes per transfer
+assign IP_MAXI]=]..port..[=[_AWBURST = 2'b01; // burst mode
+assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
+
+assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + 32'd]=]..addressBase..[=[;
+assign IP_MAXI]=]..port..[=[_AWADDR[32] = process_input[32];
+assign ready = {IP_MAXI]=]..port..[=[_WDATA_ready,IP_MAXI]=]..port..[=[_AWADDR_ready};
+
+//always @(posedge CLK) begin
+//  $display("AWADDR_READY=%d AWVALID=%d",IP_MAXI]=]..port..[=[_AWADDR_ready,IP_MAXI]=]..port..[=[_AWADDR[32]);
+//end
+
+assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
+
+]=]..last..[=[
+assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];
+assign IP_MAXI]=]..port..[=[_BRESP_ready = ready_downstream;
+
+//always @(posedge CLK) begin
+//  $display("piv %d pi %d",process_input[32],process_input[31:0]);
+//end
+
+endmodule
+]=],globals,globalMetadata,{{1,1},{1,1}},{{1,1}})
+
+  if terralib~=nil then
+    res.makeTerra = nil
+    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase )
+  end
+
+  return res
+end)
+
 SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
   J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
   J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
@@ -1403,6 +1529,75 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   return res
 end)
 
+
+-- This works like C pointer deallocation:
+-- input address N of type T actually reads at physical memory address N*sizeof(T)+base
+SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
+  J.err( type(filename)=="string","SOC.write: filename must be string")
+  J.err( types.isType(writeType), "SOC.write: type must be type")
+  J.err( writeType:verilogBits()%8==0, "SOC.write: NYI - type must be byte aligned")
+  if writeType:verilogBits()>64 then
+    J.err( writeType:verilogBits()%64==0, "SOC.write: NYI - type must be 8 byte aligned")
+  end
+  if V==nil then V=1 end
+  
+  local globalMetadata={}
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = SOC.currentAddr
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_V"] = V
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(writeType)
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = writeType:verilogBits()
+
+  if V>0 then writeType=types.array2d(writeType,V) end
+
+  local inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
+
+  local inpAddr = R.selectStream( "inpAddr", inp, 0 )
+  local inpData = R.selectStream( "inpData", inp, 1 )
+
+  local writeBytesPerBurst
+
+  local G = require "generators"
+
+  local Scale0 = G.Module{
+    function(inp)
+      local a,b = G.Index{0}(inp), G.Index{1}(inp)
+      a = (a)
+      b = (b)
+      return R.concat("out",{a,b})
+    end}
+  
+  -- scale by type size
+  inpAddr = G.HS{G.Mul{writeType:verilogBits()/8}}(inpAddr)
+  inpData = G.HS{C.bitcast(writeType,types.bits(writeType:verilogBits()))}(inpData)
+  
+  if writeType:verilogBits()/8 > 8*16 then
+    assert(false) -- NYI
+  else
+    writeBytesPerBurst = writeType:verilogBits()/8
+  end
+
+  print("INP",inpAddr.type,inpData.type)
+  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, SOC.currentAddr )(inpAddr,inpData)
+
+  local N = writeType:verilogBits()/64
+  
+  if writeType:verilogBits()==64 then
+    --out = RM.makeHandshake(C.bitcast(types.bits(64),writeType))(out)
+  elseif writeType:verilogBits()>64 then
+    assert(false) -- NYI - need to collect N triggers
+  else
+    assert(false)
+  end
+
+  local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
+  
+  SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
+  SOC.currentAddr = SOC.currentAddr+W*H
+  
+  return res
+end)
 
 function SOC.export(t)
   if t==nil then t=_G end
