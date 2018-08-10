@@ -17,17 +17,10 @@ AddrGen = Module{function(inp)
   return Add(resx,resy)
 end}
 
-AddrGenTop = Module{
-  function(inp)
-    local pos = PosSeq{{W/8,H},1}()
-    local addr = AddrGen(pos)
-    return R.concat("out",{addr,inp})
-  end}
-
 fn = Module{"Top",
   function(inp)
     local o = regs.start(inp)
-    o = SOC.readBurst("frame_128.raw",128,64,ar(u(8),8))(o)
+    o = SOC.readBurst("frame_128.raw",128,64,u(8),8)(o)
 
     local ob = FanOut{2}(o)
     local ob0 = R.selectStream("ob0",ob,0)
@@ -36,14 +29,14 @@ fn = Module{"Top",
     local ob1 = R.selectStream("ob1",ob,1)
     ob1 = FIFO{128}(ob1)
     ob1 = HS{ValueToTrigger}(ob1)
-    ob1 = HS{ PosSeq{{W/8,H},1} }(ob1)
-    ob1 = HS{AddrGen}(ob1)
+    local posSeqOut = HS{ PosSeq{{W/8,H},1} }(ob1)
+    local addrGenOut = HS{AddrGen}(posSeqOut)
 
-    local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,ar(u(8),8))
+    local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8)
     print("WRITEMOD",WRITEMOD.inputType)
     print("OB0type",ob0.type)
-    o = WRITEMOD(ob1,ob0)
-    o = TriggerCounter{W*H}(o)
+    o = WRITEMOD(addrGenOut,ob0)
+    o = TriggerCounter{(W*H)/8}(o)
     o = regs.done(o)
     return o
   end}

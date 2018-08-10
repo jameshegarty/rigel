@@ -1040,7 +1040,11 @@ assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
 
 assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + 32'd]=]..addressBase..[=[;
 assign IP_MAXI]=]..port..[=[_AWADDR[32] = process_input[32];
-assign ready = {IP_MAXI]=]..port..[=[_AWADDR_ready,IP_MAXI]=]..port..[=[_WDATA_ready};
+assign ready = {IP_MAXI]=]..port..[=[_WDATA_ready,IP_MAXI]=]..port..[=[_AWADDR_ready};
+
+//always @(posedge CLK) begin
+//  $display("AWADDR_READY=%d AWVALID=%d",IP_MAXI]=]..port..[=[_AWADDR_ready,IP_MAXI]=]..port..[=[_AWADDR[32]);
+//end
 
 assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
 
@@ -1545,8 +1549,10 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(writeType)
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = writeType:verilogBits()
 
+  if V>0 then writeType=types.array2d(writeType,V) end
+
   local inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
-  --local out = inp
+
   local inpAddr = R.selectStream( "inpAddr", inp, 0 )
   local inpData = R.selectStream( "inpData", inp, 1 )
 
@@ -1563,24 +1569,17 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
     end}
   
   -- scale by type size
-  --out = RM.makeHandshake(C.multiplyConst(types.uint(32),writeType:verilogBits()/8))(out)
   inpAddr = G.HS{G.Mul{writeType:verilogBits()/8}}(inpAddr)
   inpData = G.HS{C.bitcast(writeType,types.bits(writeType:verilogBits()))}(inpData)
   
   if writeType:verilogBits()/8 > 8*16 then
     assert(false) -- NYI
-    -- longer than 1 burst, need to do multiple bursts
---    J.err( (writeType:verilogBits()/8) % 8*16 == 0, "SOC.write: NYI - write sizes that aren't 128-byte burst aligned")
---    writeBytesPerBurst = 128
---    local nBursts = (writeType:verilogBits()/8) / (8*16)
-    
---    out = RM.triggeredCounter(types.uint(32),nBursts,128)(out)
   else
     writeBytesPerBurst = writeType:verilogBits()/8
   end
 
   print("INP",inpAddr.type,inpData.type)
-  out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, SOC.currentAddr )(inpAddr,inpData)
+  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, SOC.currentAddr )(inpAddr,inpData)
 
   local N = writeType:verilogBits()/64
   
@@ -1588,11 +1587,6 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
     --out = RM.makeHandshake(C.bitcast(types.bits(64),writeType))(out)
   elseif writeType:verilogBits()>64 then
     assert(false) -- NYI - need to collect N triggers
-    --out = RM.makeHandshake(C.arrayop(types.bits(64),1,1))(out)
-
-    --out = RM.liftHandshake(RM.changeRate(types.bits(64),1,1,N))(out)
-
-    --out = RM.makeHandshake(C.bitcast(types.array2d(types.bits(64),N),writeType))(out)
   else
     assert(false)
   end

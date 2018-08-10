@@ -30,7 +30,7 @@ local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
 return function(top, memStart, memEnd)
   local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
-  local extraCycles = 10240000
+  local extraCycles = math.max(math.floor(simCycles/10),1024)
   
   local Module = top:toTerra()
 
@@ -250,7 +250,8 @@ return function(top, memStart, memEnd)
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
       var totalCycles = simCycles+extraCycles
-
+      cstdio.printf( "SimCycles %d extraCycles %d\n", simCycles, extraCycles )
+      
       var lastPct : int = -1
 
       var startSec = currentTimeInSeconds()
@@ -263,34 +264,42 @@ return function(top, memStart, memEnd)
       var doneBitSet : bool = false
       while (cycle<totalCycles) and (cooldownCycles>0) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
-        
-        m:calculateReady()
-        
-        -- feed data in
+
         V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]);
-        V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
         [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataDriveOutputs(verbose,memory,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
-        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataLatchFlops(verbose,memory,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
+
+        V.masterWriteDataDriveOutputs(verbose,memory,&slaveState0,0,[MWRITE_SLAVEOUT[0]]);
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataDriveOutputs(verbose,memory,&slaveState1,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+
+        V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]);
+        V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEOUT[0]]);
+
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
+
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+
+        m:calculateReady()
 
         m:process(nil,nil)
+
+        V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
+
+        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataLatchFlops(verbose,memory,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
 
         if verbose then V.printMasterRead(0,[MREAD_SLAVEIN[0]],[MREAD_SLAVEOUT[0]]); end
         if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
-        V.masterWriteDataDriveOutputs(verbose,memory,&slaveState0,0,[MWRITE_SLAVEOUT[0]]);
+
         V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,[MWRITE_SLAVEIN[0]]);
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataDriveOutputs(verbose,memory,&slaveState1,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
-        -- get data out
-        V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]);
         V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]);
-        V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEOUT[0]]);
+
         V.masterWriteReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEIN[0]]);
 
-        [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
         [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
+
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqLatchFlops(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
         if((cycle*100)/totalCycles>lastPct) then

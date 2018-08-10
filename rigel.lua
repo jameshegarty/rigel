@@ -161,7 +161,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or  darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 

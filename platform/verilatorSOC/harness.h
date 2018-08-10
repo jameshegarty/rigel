@@ -490,10 +490,12 @@ void masterWriteDataDriveOutputs(
   unsigned char* BRESP,
   unsigned char* BVALID){
 
-  *AWREADY = true;
-  *WREADY = true;
+  //  *AWREADY = true;
+  *WREADY = QSize(&writeQ[port])>0;
   *BVALID = slaveState->BVALID;
   *BRESP = slaveState->BRESP;
+
+  //  printf("WREADY=%d\n",*WREADY);
 }
 
 void masterWriteDataLatchFlops(
@@ -540,11 +542,11 @@ void masterWriteDataLatchFlops(
     }
 
     cyclesSinceWrite[port] = 0;
-  }else if( QSize(&writeQ[port])<=0 && *WVALID){
+    //  }else if( QSize(&writeQ[port])<=0 && *WVALID){
     //printf("WREADY=%d AWREADY=%d AWVALID=%d\n",*WREADY,*AWREADY,*AWVALID);
-    printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
-    slaveState->BVALID = false;
-    exit(1);
+    //    printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
+    //    slaveState->BVALID = false;
+    //    exit(1);
   }else{
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
 
@@ -569,7 +571,7 @@ void masterWriteReqDriveOutputs(
   unsigned char* BRESP,
   unsigned char* BVALID){
 
-  *AWREADY = 1;
+  *AWREADY = true;
 }
 
 void masterWriteReqLatchFlops(
@@ -597,14 +599,15 @@ void masterWriteReqLatchFlops(
     t.addr = *AWADDR;
     t.burst = *AWLEN+1;
 
-    if(verbose){
+    if(verbose ){
       printf("MAXI%d Write Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
     }
-    
+
+    unsigned long origAddr = t.addr;
     t.addr -= MEMBASE;
 
     if(t.addr>=MEMSIZE){
-      printf("MAXI%d Segmentation fault on write!\n",port);
+      printf("MAXI%d Segmentation fault on write! addr:%d/%#x segment:%#x-%#x\n",port,origAddr,origAddr,MEMBASE,MEMBASE+MEMSIZE);
       exit(1);
     }
 
