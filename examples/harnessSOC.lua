@@ -72,12 +72,21 @@ return function(fn,t)
         table.insert(registerList,"['"..addr.."']='"..v.."'")
       end
     end
-    registerList=",registers={"..table.concat(registerList,",").."}"
+    registerList=",registerValues={"..table.concat(registerList,",").."}"
 
+    local registerNames = {}
+    for k,v in pairs(fn.globalMetadata) do
+      if string.sub(k,0,14)=="AddrOfRegister" then
+        local name = string.sub(k,16)
+        table.insert(registerNames,name.."='"..v.."'")
+      end
+    end
+    registerNames=",registers={"..table.concat(registerNames,",").."}"
+    
     local cyc = (fn.sdfInput[1][2]/fn.sdfInput[1][1])
     if t~=nil and t.cycles~=nil then cyc=t.cycles end
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList.."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

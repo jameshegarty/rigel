@@ -15,6 +15,10 @@ $(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp
 	test ! -s $(BUILDDIR)/$$*.$(1).diff && touch $$@
 	date
 
+$(BUILDDIR)/%.$(1).regcorrect.txt : $(BUILDDIR)/%.$(1).bmp
+	$(LUA) ../misc/regcheck.lua $(BUILDDIR)/$$*.$(1).regout.lua $(GOLDSTRPRE)$$*.regout.lua && touch $$@
+	date
+
 $(BUILDDIR)/%.$(1).cyclescorrect.txt : $(BUILDDIR)/%.$(1).bmp
 	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0 smallerIsBetter
 

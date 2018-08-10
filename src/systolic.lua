@@ -477,6 +477,12 @@ function systolic.readSideChannel( sc )
   return typecheck({ kind="readSideChannel", sideChannel=sc, type = sc.type, loc=getloc(), inputs={} })
 end
 
+function systolic.writeSideChannel( sc, expr )
+  err( systolic.isSideChannel(sc), "systolic.writeSideChannel: input must be a side channel" )
+  err( systolicAST.isSystolicAST(expr), "input to writeSideChannel must be a systolic ast, but is:"..tostring(expr))
+  return typecheck({ kind="writeSideChannel", sideChannel=sc, type = types.null(), loc=getloc(), inputs={expr} })
+end
+
 function systolic.tuple( tab )
   err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
   err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array")
@@ -1326,6 +1332,9 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="readSideChannel" then
         J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module?")
         finalResult = n.sideChannel.name
+      elseif n.kind=="writeSideChannel" then
+        table.insert( declarations, "assign "..n.sideChannel.name.." = "..args[1].."; // writeSideChannel\n" )
+        finalResult = "____^&%WRITESIDECHANNELOUT"
       else
         print(n.kind)
         assert(false)

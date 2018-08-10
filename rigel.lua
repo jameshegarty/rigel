@@ -707,6 +707,8 @@ darkroomIRMT.__tostring = function(tab)
         return tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
       end
     end
+  elseif tab.kind=="readGlobal" then
+    return "readGlobal('"..tab.name.."',"..tab.global.name..")"
   else
     return "NYI-print of "..tab.kind
   end
@@ -760,6 +762,8 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
         else
           err( false, "sdfTotalInner: unknown method '"..n.fnname.."'" )
         end
+      elseif n.kind=="writeGlobal" then
+        res = args[1]
       elseif n.kind=="apply" then
         if #n.inputs==0 then
           assert( SDFRate.isSDFRate(n.fn.sdfOutput))
@@ -1075,6 +1079,8 @@ function darkroomIRFunctions:codegenSystolic( module )
         return {S.index(inputs[1][1],n.i)}
       elseif n.kind=="readGlobal" then
         return {S.readSideChannel(n.global.systolicValue)}
+      elseif n.kind=="writeGlobal" then
+        return {S.writeSideChannel(n.global.systolicValue,inputs[1][1])}
       else
         print(n.kind)
         assert(false)
@@ -1110,7 +1116,7 @@ end
 
 function darkroom.writeGlobal( name, g, input, X )
   err( type(name)=="string", "rigel.writeGlobal: name must be string" )
-  err( darkroom.isGlobal(g),"writeGlobal: first argument must be rigel global" )
+  err( darkroom.isGlobal(g),"writeGlobal: first argument must be rigel global, but is: "..tostring(g) )
   err( darkroom.isIR(input),"writeGlobal: second argument must be rigel value" )
   err(X==nil,"writeGlobal: too many arguments")
   return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
