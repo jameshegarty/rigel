@@ -1589,11 +1589,14 @@ function MT.lambdaCompile(fn)
   local Module = terralib.types.newstruct("lambda"..fn.name.."_module")
   Module.entries = terralib.newlist( {} )
   
-  local readyInput
+  local readyInput = `true
   if rigel.hasReady(fn.output.type) then
     local RIT = rigel.extractReady(fn.output.type):toTerraType()
     readyInput = symbol(RIT, "readyinput")
     table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
+--  else
+    -- this is ok: HS may be purely internal
+--    readyInput = symbol(bool, "readyinput")
   end
 
   if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) then
@@ -1720,6 +1723,8 @@ return {`mself.[n.name].ready}
           res = symbol(bool[n.inputs[1]:outputStreams()])
           table.insert( readyStats, quote var [res]; [res][n.i] = [arg] end )
           res = {res}
+        elseif n.kind=="writeGlobal" then
+          return `&[n.global:terraReady()]
         else
           print(n.kind)
           assert(false)
@@ -1873,7 +1878,7 @@ return {`mself.[n.name].ready}
           table.insert( stats, quote @out = @[inputs[1]] end)
           return out
         elseif n.kind=="statements" then
-          table.insert( stats, quote @out = @[inputs[1]] end)
+          if n.inputs[1].type~=types.null() then table.insert( stats, quote @out = @[inputs[1]] end) end
           return inputs[1]
         elseif n.kind=="selectStream" then
           if rigel.isHandshakeTuple(n.inputs[1].type) then
@@ -1883,6 +1888,8 @@ return {`mself.[n.name].ready}
           end
         elseif n.kind=="readGlobal" then
           return `&[n.global:terraValue()]
+        elseif n.kind=="writeGlobal" then
+          table.insert( stats, quote [n.global:terraValue()] = @[inputs[1]] end)
         else
           print(n.kind)
           assert(false)

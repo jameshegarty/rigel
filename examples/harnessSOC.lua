@@ -69,7 +69,7 @@ return function(fn,t)
     for k,v in pairs(fn.globalMetadata) do
       if string.sub(k,0,8)=="Register" then
         local addr = string.sub(k,10)
-        table.insert(registerList,"['"..addr.."']='"..v.."'")
+        table.insert(registerList,"['0x"..addr.."']='"..v.."'")
       end
     end
     registerList=",registerValues={"..table.concat(registerList,",").."}"
@@ -78,7 +78,7 @@ return function(fn,t)
     for k,v in pairs(fn.globalMetadata) do
       if string.sub(k,0,14)=="AddrOfRegister" then
         local name = string.sub(k,16)
-        table.insert(registerNames,name.."='"..v.."'")
+        table.insert(registerNames,name.."='0x"..string.format("%x",v).."'")
       end
     end
     registerNames=",registers={"..table.concat(registerNames,",").."}"

@@ -51,7 +51,7 @@ SOC.axiRegs = J.memoize(function(tab,port)
 
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    globalMetadata["AddrOfRegister_"..k] = string.format("%x",SOC.currentRegAddr)
+    globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
     globalMetadata["TypeOfRegister_"..k] = v[1]
 
     print("ADD GLOBAL",k)
