@@ -6,20 +6,10 @@ import lupa
 from lupa import LuaRuntime
 lua = LuaRuntime(unpack_returned_tuples=True)
 
-#lua.execute("for k,v in pairs(math) do print(k,v) end")
-#lua.execute("for k,v in pairs(debug) do print(k,v) end")
-
-#print(lua.eval("math"))
-#print(lua.eval("debug.traceback()"))
-#print("GETINFO")
-#print(lua.eval("debug.getinfo(0).currentline"))
-#print(lua.eval("2^#math"))
-
-#
-
 lua.execute("package.path='./?.lua;/home/jhegarty/rigel/?.lua;/home/jhegarty/rigel/src/?.lua;/home/jhegarty/rigel/modules/?.lua;/home/jhegarty/rigel/misc/?.lua;/home/jhegarty/rigel/misc/compare/?.lua;/home/jhegarty/rigel/examples/?.lua'")
-#print(lua.eval('package.path'))
 
+##############################################
+# generate a rigel module like in regular lua...
 R = lua.require("rigel")
 G = lua.require("generators")
 RM = lua.require("modules")
@@ -31,17 +21,7 @@ a = R.apply("a", C.plus100(types.uint(8)), inp)
 b = R.apply("b", C.plus100(types.uint(8)), a)
 p200 = RM["lambda"]( "p200", inp, b )
 
-#print(p200.toVerilog(p200))
-
-#print(p200.inputType.verilogBits(p200.inputType))
-
-#if p200.inputType.isUint(p200.inputType):
-#    print("ITS A UINT")
-
-
-#for k in p200:
-#    print(k,p200[k])
-
+#######################################
 def rigelTypeToMagmaType(ty):
     assert(types.isType(ty))
     if ty.isUint(ty):
@@ -66,6 +46,9 @@ def rigelToMagma(mod):
     NewMod.verilogFile = mod.toVerilog(mod)
 
     return NewMod
+
+#############################################
+# convert rigel module to magma & wire it to some magma stuff
 
 RigelMod = rigelToMagma(p200)
 print(RigelMod)
