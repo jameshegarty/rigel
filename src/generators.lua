@@ -55,11 +55,16 @@ function(args)
   return C.fifo( ty, args.number )
 end)
   
-generators.Add = R.newGenerator("generators","Add",{"type"},{"bool"},
+generators.Add = R.newGenerator("generators","Add",{"type"},{"bool","number"},
 function(args)
-  J.err( args.type:isTuple(), "generators.Add: type should be tuple, but is: "..tostring(args.type) )
-  J.err( args.type.list[1]==args.type.list[2], "generators.Add: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
-  return C.sum( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+  if args.number~=nil then
+    -- add a const (unary op)
+    return C.plusConst(args.type,args.number)
+  else
+    J.err( args.type:isTuple(), "generators.Add: type should be tuple, but is: "..tostring(args.type) )
+    J.err( args.type.list[1]==args.type.list[2], "generators.Add: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+    return C.sum( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+  end
 end)
 
 generators.Sub = R.newGenerator("generators","Sub",{"type"},{"bool"},
@@ -226,6 +231,16 @@ function(args)
   J.err( R.isIR(out), "Module: user function returned something other than a Rigel value")
   
   return RM.lambda( args.string, input, out )
+end)
+
+generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","size","type","number"},{},
+function(args)
+  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, args.number )
+end)
+
+generators.AXIWriteBurst = R.newGenerator("generators","AXIWriteBurst",{"string","size","type","number"},{},
+function(args)
+  return SOC.writeBurst( args.string, args.size[1], args.size[2], args.type, args.number )
 end)
 
 function generators.export(t)

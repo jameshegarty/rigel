@@ -8,10 +8,11 @@ require "types".export()
 
 regs = SOC.axiRegs{}:instantiate()
 
-harness{
-  regs.start,
-  SOC.readBurst("frame_128.raw",128,64,u(8),8),
-  G.HS{G.Map{C.plus100(u(8))}},
-  G.HS{G.Map{C.plus100(u(8))}},
-  SOC.writeBurst("out/soc_simple",128,64,u(8),8),
-  regs.done}
+OffsetModule = G.Module{
+  function(i)
+    local readStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),8}(i)
+    local offset = G.HS{G.Map{G.Add{200}}}(readStream)
+    return G.AXIWriteBurst{"out/soc_simple",{128,64} ,u(8),8}(offset)
+  end}
+
+harness{regs.start, OffsetModule, regs.done}
