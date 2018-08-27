@@ -18,7 +18,8 @@ MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
 INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS)
 OUTPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __OUTPUTS)
 REGISTERS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __REGISTERS)
+REGISTERSOUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __REGISTERSOUT)
 
 #VERBOSE=--verbose
 
-$BITFILE $CYCLES $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS
+$BITFILE $CYCLES $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS --registersOut $REGISTERSOUT

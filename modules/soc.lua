@@ -33,13 +33,16 @@ SOC.axiRegs = J.memoize(function(tab,port)
   local globals = {}
 
   local addToModuleHack = {}
+  local outputsToModuleHack = {}
   local regPorts = ""
   local regPortAssigns = ""
+  local regValidAssigns = ""
   local NREG = 2
   local curDataBit = 64 -- for start/done
   for k,v in pairs(tab) do
     J.err( type(k)=="string", "axiRegs: key must be string" )
     J.err( types.isType(v[1]), "axiRegs: first key must be type" )
+    J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
     v[1]:checkLuaValue(v[2])
@@ -48,20 +51,32 @@ SOC.axiRegs = J.memoize(function(tab,port)
 
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr
+    globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
     globalMetadata["TypeOfRegister_"..k] = v[1]
-    
-    regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
+
+    print("ADD GLOBAL",k)
+    if v[3]=="out" then
+      globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
+      outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
+
+      regPorts = regPorts.."input wire ["..tostring(v[1]:verilogBits())..":0] "..k..[[,
+output wire ]]..k..[[_ready,
+]]
+      regPortAssigns = regPortAssigns.."assign "..k.."_ready = 1'b1; // register writes always ready\n"
+      regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = "..k.."["..tostring(v[1]:verilogBits()).."];\n"
+      regPortAssigns = regPortAssigns.."assign DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."] = "..k.."["..tostring(v[1]:verilogBits()-1)..":0]; // register write\n"
+    else
+      globals[R.newGlobal(k,"output",v[1])] = 1
+      addToModuleHack[k] = R.newGlobal(k,"input",v[1])
+
+      regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
+]]
+      regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
+      regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = 1'b0; // "..k..". this is an input, so never write to it\n"
+    end
 
     SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(v[1]:verilogBits()/32)*4
     curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
-
-    print("ADD GLOBAL",k)
-    globals[R.newGlobal(k,"output",v[1])] = 1
-    addToModuleHack[k] = R.newGlobal(k,"input",v[1])
-
-    regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
-]]
   end
 
   globals[R.newGlobal("IP_SAXI"..port.."_ARADDR","input",R.Handshake(types.bits(32)))] = 1
@@ -557,7 +572,7 @@ wire CONFIG_IRQ;
 wire []=]..(NREG-1)..[=[:0] DATA_VALID;
 wire []=]..(NREG*32-1)..[=[:0] DATA;
 
-]=]..regPortAssigns..[=[
+]=]..regPortAssigns..regValidAssigns..[=[
 
 Conf #(.ADDR_BASE(32'hA0000000),.NREG(]=]..NREG..[=[)) conf(
 .ACLK(CLK),
@@ -665,7 +680,12 @@ endmodule
     assert(res[k]==nil)
     res[k] = R.readGlobal("readGlobal_"..k,v)
   end
-                        
+
+  for k,v in pairs(outputsToModuleHack) do
+    assert(res[k]==nil)
+    res[k] = v
+  end
+
   return res
 end)
 

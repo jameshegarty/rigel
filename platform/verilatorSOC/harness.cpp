@@ -88,6 +88,27 @@ void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int d
   }
 }
 
+void readReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int* data){
+  printf("READREG\n");
+  top->SAXI0_ARADDR = addr;
+  top->SAXI0_ARVALID = true;
+  top->SAXI0_RREADY = true;
+  
+  step(top);
+
+  printf("HERE\n");
+  while(top->SAXI0_RVALID!=1){
+    step(top);
+    printf("Waiting for reg read\n");
+  }
+
+  printf("READREG DAT %d\n",top->SAXI0_RDATA);
+  *data = top->SAXI0_RDATA;
+  top->SAXI0_ARVALID = false;
+
+  step(top);
+}
+
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
@@ -298,37 +319,7 @@ int main(int argc, char** argv) {
       top->eval();
     }
     
-    if(round==ROUNDS-1){
-      top->final();
-      delete top;
-    }
-    
     printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);
-    
-    curArg++; // for "--outputs"
-    unsigned int outputCount = 0;
-    while(curArg<argc){
-      unsigned int addr = strtol(argv[curArg+1],NULL,16);
-      unsigned int addrOffset = addr-MEMBASE;
-      
-      unsigned int w = atoi(argv[curArg+2]);
-      unsigned int h = atoi(argv[curArg+3]);
-      unsigned int bitsPerPixel = atoi(argv[curArg+4]);
-      
-      if( bitsPerPixel%8!=0 ){
-        std::cout << "Error, bits per pixel not byte aligned!" << std::endl;
-        exit(1);
-      }
-      
-      unsigned int bytes = w*h*(bitsPerPixel/8);
-      
-      std::string outFilename = std::string(argv[curArg])+std::string(".verilatorSOC.raw");
-      
-      saveFile(outFilename.c_str(), memory, addrOffset, bytes);
-      
-      curArg+=5;
-      outputCount++;
-    }
     
     bool errored = checkPorts();
 
@@ -341,4 +332,58 @@ int main(int argc, char** argv) {
       exit(1);
     }
   } // rounds
+
+  printf("CUR %s\n",argv[curArg-1]);
+  printf("CUR %s\n",argv[curArg]);
+  
+  curArg++; // for "--outputs"
+  unsigned int outputCount = 0;
+  //
+  char* outfile;
+  while(strcmp(argv[curArg],"--registersOut")!=0){
+    printf("OUTPUT %d %s\n",curArg,argv[curArg]);
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+    unsigned int addrOffset = addr-MEMBASE;
+    
+    unsigned int w = atoi(argv[curArg+2]);
+    unsigned int h = atoi(argv[curArg+3]);
+    unsigned int bitsPerPixel = atoi(argv[curArg+4]);
+    
+    if( bitsPerPixel%8!=0 ){
+      std::cout << "Error, bits per pixel not byte aligned!" << std::endl;
+      exit(1);
+    }
+    
+    unsigned int bytes = w*h*(bitsPerPixel/8);
+    
+    std::string outFilename = std::string(argv[curArg])+std::string(".verilatorSOC.raw");
+    outfile = argv[curArg];
+    
+    saveFile(outFilename.c_str(), memory, addrOffset, bytes);
+    
+    curArg+=5;
+    outputCount++;
+  }
+
+  std::string regFilename = std::string(outfile)+std::string(".verilatorSOC.regout.lua");
+  FILE* regFile = fopen(regFilename.c_str(),"w");
+  fprintf(regFile,"return {");
+  
+  curArg++; // for '--registersOut'
+  bool first = true;
+  while(curArg<argc){
+    unsigned int regOut = 0;
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+    readReg(top,false,addr,&regOut);
+    printf("READREG %s %d\n",argv[curArg],regOut);
+    if(!first){fprintf(regFile,",");}
+    first=false;
+    fprintf(regFile,"%s=%d",argv[curArg],regOut);
+    curArg+=2;
+  }
+  fprintf(regFile,"}");
+  fclose(regFile);
+  
+  top->final();
+  delete top;
 }

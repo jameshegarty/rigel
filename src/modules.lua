@@ -1711,9 +1711,9 @@ end)
 -- cause a combinationaly loop (validOut depends on readyDownstream) if another later unit does the opposite
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
 modules.broadcastStream = memoize(function(A,N,X)
-  err( types.isType(A), "A must be type")
+  err( types.isType(A), "broadcastStream: A must be type")
   rigel.expectBasic(A)
-  err( type(N)=="number", "N must be number")
+  err( type(N)=="number", "broadcastStream: N must be number")
   assert(X==nil)
 
   local res = {kind="broadcastStream", A=A, N=N,  stateful=false}
@@ -3286,7 +3286,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             err(res.globalMetadata[k]==nil,"Error: wrote to global metadata twice!")
             res.globalMetadata[k] = v
           end
-      elseif n.kind=="readGlobal" then
+      elseif n.kind=="readGlobal" or n.kind=="writeGlobal" then
         res.globals[n.global]=1
       end
     end)
@@ -3557,6 +3557,9 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             end
 
             res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
+          elseif n.kind=="writeGlobal" then
+            assert( rigel.isHandshakeAny(n.global.type) )
+            res = {S.readSideChannel(n.global.systolicValueReady)}
           else
             print(n.kind)
             assert(false)

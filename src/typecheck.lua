@@ -230,6 +230,9 @@ local function typecheck_inner( ast, newNodeFn )
     end
   elseif ast.kind=="readSideChannel" then
     -- noop
+  elseif ast.kind=="writeSideChannel" then
+    err(ast.sideChannel.type==ast.inputs[1].type,"writeSideChannel: input type does not match type of side channel! Input Type:"..tostring(ast.inputs[1].type).." Side Channel Type:"..tostring(ast.sideChannel.type).." "..ast.loc)
+    ast.type = types.null()
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! "..ast.loc)
     return nil

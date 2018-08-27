@@ -69,15 +69,24 @@ return function(fn,t)
     for k,v in pairs(fn.globalMetadata) do
       if string.sub(k,0,8)=="Register" then
         local addr = string.sub(k,10)
-        table.insert(registerList,"['"..addr.."']='"..v.."'")
+        table.insert(registerList,"['0x"..addr.."']='"..v.."'")
       end
     end
-    registerList=",registers={"..table.concat(registerList,",").."}"
+    registerList=",registerValues={"..table.concat(registerList,",").."}"
 
+    local registerNames = {}
+    for k,v in pairs(fn.globalMetadata) do
+      if string.sub(k,0,14)=="AddrOfRegister" then
+        local name = string.sub(k,16)
+        table.insert(registerNames,name.."='0x"..string.format("%x",v).."'")
+      end
+    end
+    registerNames=",registers={"..table.concat(registerNames,",").."}"
+    
     local cyc = (fn.sdfInput[1][2]/fn.sdfInput[1][1])
     if t~=nil and t.cycles~=nil then cyc=t.cycles end
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList.."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

@@ -37,6 +37,14 @@ elseif arg[2]=="__OUTPUTS" or arg[2]=="__OUTPUTS_ZYNQ" then
   print(str)
 elseif arg[2]=="__REGISTERS" then
   -- special case for SOC
+  assert(type(metadata.registerValues)=="table")
+  local str = ""
+  for k,v in pairs(metadata.registerValues) do
+    str = str..k.." "..v.." "
+  end
+  print(str)
+elseif arg[2]=="__REGISTERSOUT" then
+  -- special case for SOC
   assert(type(metadata.registers)=="table")
   local str = ""
   for k,v in pairs(metadata.registers) do
