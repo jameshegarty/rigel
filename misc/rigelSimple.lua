@@ -360,13 +360,13 @@ function RS.HS(t,handshakeTrigger)
     elseif R.isHandshake(t.inputType) then
       return t
 --    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
-    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) then
+    elseif (R.isBasic(t.inputType) or t.inputType:is("StaticFramed")) and (R.isV(t.outputType) or t.outputType:is("VFramed")) then
       return RM.liftHandshake(RM.liftDecimate(t))
-    elseif R.isBasic(t.inputType) and R.isBasic(t.outputType) then
+    elseif (R.isBasic(t.inputType) and R.isBasic(t.outputType)) or (t.inputType:is("StaticFramed") and t.outputType:is("StaticFramed")) then
       if handshakeTrigger==nil then handshakeTrigger = true end
       return RM.makeHandshake(t,nil,handshakeTrigger)
     else
-      print(t.inputType, t.outputType)
+      print("RS.HS: could not lift fn with input type:",t.inputType, "outputType:",t.outputType)
       assert(false)
     end
   else

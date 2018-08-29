@@ -35,6 +35,6 @@ harness{
 --  RS.HS(C.print(ar(u(8),1))),
   HS{Linebuffer{padSize,1,{3,0,3,0}}},
   HS{Map{conv}},
-  HS{Crop{padSize,1,{9,7,3,0}}},
+  HS{CropSeq{padSize,1,{9,7,3,0}}},
   SOC.writeBurst("out/convgen",1920,1080,u(8),1),
   regs.done}

@@ -501,7 +501,7 @@ end
 function TypeFunctions:isArray()  return self.kind=="array" end
 
 function TypeFunctions:arrayOver()
-  err(self.kind=="array","arrayOver type was not an array")
+  err(self.kind=="array","arrayOver type was not an array, but is: "..tostring(self))
   return self.over
 end
 
@@ -564,6 +564,10 @@ function TypeFunctions:isUint() return self.kind=="uint" end
 function TypeFunctions:isBits() return self.kind=="bits" end
 function TypeFunctions:isNull() return self.kind=="null" end
 function TypeFunctions:isNamed() return self.kind=="named" end
+function TypeFunctions:is(str)
+  if self.kind=="named" then return self.generator==str
+  else return self.kind==str end
+end
 
 function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"
@@ -707,6 +711,184 @@ function TypeFunctions:toCPUType()
     err(false, "Type:toCPUType() NYI "..tostring(self))
   end
 end
+
+function types.isBasic(A)
+  assert(types.isType(A))
+  if A:isArray() then
+    return types.isBasic(A:arrayOver()) 
+  elseif A:isTuple() then
+    for _,v in ipairs(A.list) do
+      if types.isBasic(v)==false then
+        return false
+      end
+    end
+    return true
+  elseif A:isNamed() and A.generator=="fixed" then
+    return true -- COMPLETE HACK, REMOVE
+  elseif A:isNamed() then
+    return false
+  end
+
+  return true
+end
+--[=[
+local function framedName(dims,Adims)
+  local str = ""
+  err( #dims>=#Adims, "Framed: number of total dims ("..#dims..") must be >= number of parallel dims ("..#Adims..")")
+  for i=1,#Adims do
+    if Adims[i][1]==dims[i][1] and Adims[i][2]==dims[i][2] then
+      -- parallel and serial dims match
+      str = str.."["..dims[i][1]..","..dims[i][2].."]"
+    elseif dims[i][1]>=Adims[i][1] and Adims[i][2]==1 then
+      print("DIM",Adims[i][1],Adims[i][2],dims[i][1],dims[i][2])
+      str = str.."["..Adims[i][1]..";"..dims[i][1]..","..dims[i][2].."}"
+    else
+      err(false,"NYI - HandshakeFramed, parallel and serial dim doesn't match?")
+    end
+  end
+
+  for i=#Adims+1,#dims do
+    str = str.."{"..dims[i][1]..","..dims[i][2].."}"
+  end
+  return str
+end
+]=]
+
+-- dims goes from innermost (idx 1) to outermost (idx n)
+local function makeFramedType(kind,A,mixed,dims,X)
+  err(types.isType(A),kind.."Framed: argument should be type")
+  err(types.isBasic(A),kind.."Framed: argument should be basic type, but is: "..tostring(A))
+  err( type(mixed)=="boolean", kind.."Framed: mixed should be boolean, but is: "..tostring(mixed))
+  err( type(dims)=="table", kind.."Framed: dims should be table")
+  err( X==nil, kind.."Framed: too many arguments")
+
+  -- make a deep copy, just in case
+  local ldims = {}
+  for i=1,#dims do
+    err( type(dims[i])=="table", kind.."Framed: each entry of dims should be a table of size 2")
+    err( #dims[i]==2, kind.."Framed: each entry of dims should be a table of size 2")
+    
+    assert(type(dims[i][1])=="number")
+    assert(type(dims[i][2])=="number")
+    table.insert(ldims,{dims[i][1],dims[i][2]})
+  end
+
+  err( mixed==false or A:isArray(),kind.."Framed: if mixed, input type must be an array")
+  
+  if mixed then
+    err(A.size[1]<dims[1][1] and A.size[2]<dims[1][2],kind.."Framed: when mixed, innermost serial dim must be larger than outermost parallel dim")
+    err(A.size[2]==1,kind.."Framed: NYI - mixed H~=1")
+  end
+
+  local str = kind.."Framed("
+
+  local i
+  if mixed then
+    str = str..tostring(A:arrayOver()).."["..tostring(A.size[1])..";"..tostring(dims[1][1])..","..tostring(dims[1][2]).."}"
+    i=2
+  else
+    str = str..tostring(A)
+    i=1
+  end
+
+  for j=i,#dims do
+    str = str.."{"..tostring(dims[j][1])..","..tostring(dims[j][2]).."}"
+  end
+  
+  return types.named(str..")", types.tuple{A,types.bool()}, kind.."Framed", {A=A,dims=ldims,mixed=mixed} )
+end
+
+-- if A is an array, this specifies parallel dimensions (dimensions computed in parallel)
+-- dims specifies _all_ dimensions, some of which may be in serial
+-- dims should be in format {{4,2},{7,1},{1920,1080}}. Goes from innermost->outermost
+function types.HandshakeFramed(A,mixed,dims) return makeFramedType("Handshake",A,mixed,dims) end
+function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
+function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
+function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
+
+-- Add an extra outermost dim (loop) to the type
+function TypeFunctions:addDim(w,h,mixed)
+  err( type(w)=="number", ":addDim w should be number")
+  err( type(h)=="number", ":addDim h should be number")
+  err( type(mixed)=="boolean", ":addDim mixed should be boolean")
+  err( mixed==false or types.isBasic(self), "addDim: if mixed, this must be a basic type" )
+
+  local ldims = {}
+  local A
+  if self:is("StaticFramed") then
+    for i=1,#self.params.dims do
+      table.insert(ldims,{self.params.dims[i][1],self.params.dims[i][2]})
+    end
+  else
+    A = self
+    assert(types.isBasic(self))
+  end
+
+  table.insert(ldims,{w,h})
+
+  return types.StaticFramed(A,mixed,ldims)
+end
+
+--[=[
+function types.FramedCollectParallelDims(A)
+  assert(types.isBasic(A))
+  local Adims = {}
+  local innerType
+  local function rec(ty)
+    if ty:isArray() then
+      rec(ty:arrayOver())
+      table.insert(Adims,{ty.size[1],ty.size[2]})
+    else
+      innerType = ty
+    end
+  end
+  rec(A)
+  return Adims,innerType
+end
+
+function TypeFunctions:dims()
+  return types.FramedCollectParallelDims(self)
+end
+]=]
+
+-- figure out 'V' vector width setting from HandshakeFramed
+-- 'V' is basically the last parallel dimension
+function types.HSFV(A)
+  assert(types.isType(A))
+  assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
+
+  assert(#A.params.dims==1)
+  assert(A.params.mixed)
+  assert(A.params.A.size[2]==1)
+  return A.params.A.size[1]
+end
+
+function types.HSFSize(A)
+  assert(types.isType(A))
+  assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
+
+  assert(#A.params.dims==1)
+  return {A.params.dims[1][1],A.params.dims[1][2]}
+end
+
+-- if we have HandshakeFramed(u8[8;640,480}), this will return u8
+-- if we have HandshakeFramed(u8{640,480}), this will return u8
+function types.HSFPixelType(A)
+  assert(types.isType(A))
+  assert( A:is("HandshakeFramed") or A:is("StaticFramed") )
+--  local Adims,innerType = types.FramedCollectParallelDims(A.params.A)
+
+  if A.params.mixed then
+    return A.params.A:arrayOver()
+  else
+    return A.params.A
+  end
+end
+
+function TypeFunctions:FV() return types.HSFV(self) end
+function TypeFunctions:FW() return types.HSFSize(self)[1] end
+function TypeFunctions:FH() return types.HSFSize(self)[2] end
+function TypeFunctions:FPixelType() return types.HSFPixelType(self) end
 
 if terralib~=nil then require("typesTerra") end
 

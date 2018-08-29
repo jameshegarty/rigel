@@ -505,10 +505,12 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   if handshakeTrigger==nil then handshakeTrigger=true end
   
   local res = {kind="liftDecimate", fn = f}
-  rigel.expectBasic(f.inputType)
+  err( types.isBasic(f.inputType) or f.inputType:is("StaticFramed"), "liftDecimate: fn input type should be basic or StaticFramed" )
 
   if f.inputType==types.null() then
     res.inputType = rigel.VTrigger
+  elseif f.inputType:is("StaticFramed") then
+    res.inputType = types.VFramed( f.inputType.params.A, f.inputType.params.mixed, f.inputType.params.dims )
   else
     res.inputType = rigel.V(f.inputType)
   end
@@ -519,6 +521,8 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
     res.outputType = rigel.RV(rigel.extractData(f.outputType))
   elseif rigel.isVTrigger(f.outputType) then
     res.outputType = rigel.RVTrigger
+  elseif f.outputType:is("VFramed") then
+    res.outputType = types.RVFramed( f.outputType.params.A, f.outputType.params.mixed, f.outputType.params.dims )
   else
     err(false, "liftDecimate: expected V output type, but is "..tostring(f.outputType))
   end
@@ -539,7 +543,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   end
 
   return rigel.newFunction(res)
-                                end)
+end)
 
 -- converts V->RV to RV->RV
 modules.RPassthrough = memoize(function(f)
@@ -705,17 +709,21 @@ end
 modules.liftHandshake = memoize(function( f, X )
   err( X==nil, "liftHandshake: too many arguments" )
   local res = {kind="liftHandshake", fn=f}
-  err( rigel.isV(f.inputType) or rigel.isVTrigger(f.inputType), "liftHandshake: expected V or VTrigger input type")
-  err( rigel.isRV(f.outputType) or rigel.isRVTrigger(f.outputType),"liftHandshake: expected RV or RVTrigger output type")
+  err( rigel.isV(f.inputType) or rigel.isVTrigger(f.inputType) or f.inputType:is("VFramed"), "liftHandshake: expected V or VTrigger or VFramed input type")
+  err( rigel.isRV(f.outputType) or rigel.isRVTrigger(f.outputType) or f.outputType:is("RVFramed"),"liftHandshake: expected RV or RVTrigger or RVFramed output type")
 
   if rigel.isVTrigger(f.inputType) then
     res.inputType = rigel.HandshakeTrigger
+  elseif f.inputType:is("VFramed") then
+    res.inputType = types.HandshakeFramed( f.inputType.params.A, f.inputType.params.mixed, f.inputType.params.dims )
   else
     res.inputType = rigel.Handshake(rigel.extractData(f.inputType))
   end
 
   if rigel.isRVTrigger(f.outputType) then
     res.outputType = rigel.HandshakeTrigger
+  elseif f.outputType:is("RVFramed") then
+    res.outputType = types.HandshakeFramed( f.outputType.params.A, f.outputType.params.mixed, f.outputType.params.dims )
   else
     res.outputType = rigel.Handshake(rigel.extractData(f.outputType))
   end
@@ -869,6 +877,33 @@ modules.map = memoize(function( f, W, H )
   if terralib~=nil then res.terraModule = MT.map(res,f,W,H) end
 
   return res
+end)
+
+-- vectorized: if true, treat fn as a vectorized module (ie has some array size V, where V will be part of the {w,h} loop)
+--             if false, just treat fn as some opaque data type
+modules.mapFramed = memoize(function( fn, w, h, vectorized)
+  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
+  err( type(w)=="number", "mapFramed: width must be number")
+  err( type(h)=="number", "mapFramed: height must be number")
+  err( type(vectorized)=="boolean", "mapFramed: vectorized must be bool")
+
+  local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay,sdfInput={{1,1}},sdfOutput={{1,1}}}
+  res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized)
+  
+  print("MAPFRAMED",fn.inputType)
+  --local idims = types.FramedCollectParallelDims(fn.inputType)
+  --local odims = types.FramedCollectParallelDims(fn.outputType)
+
+--  if vectorized then -- mixed
+--    assert( types.isBasic(fn.inputType) )
+--    assert( types.isBasic(fn.outputType) )
+--    assert(false)
+--  else
+  res.inputType = fn.inputType:addDim(w,h,vectorized)
+  res.outputType = fn.outputType:addDim(w,h,vectorized)
+--  end
+  
+  return rigel.newFunction(res)
 end)
 
 -- type {A,bool}->A
@@ -1891,7 +1926,7 @@ function modules.liftXYSeqPointwise( name, generatorStr, f, W, H, T, X )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
+modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, framed, X )
   err( types.isType(A), "cropSeq: type must be rigel type ")
   err( rigel.isBasic(A),"cropSeq: expects basic type")
   err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
@@ -1901,13 +1936,15 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
   err( type(B)=="number", "cropSeq: B must be number"); err(B>=0, "cropSeq: B must be >=0")
   err( type(Top)=="number", "cropSeq: Top must be number"); err(Top>=0, "cropSeq: Top must be >=0")
-
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean", "cropSeq: framed must be boolean")
+  
   err(T>=1,"cropSeq T must be <1")
 
   err( L>=0, "cropSeq, L must be <0")
   err( R>=0, "cropSeq, R must be <0")
   err( W%T==0, "cropSeq, W%T must be 0")
-  err( L%T==0, "cropSeq, L%T must be 0")
+  err( L%T==0, "cropSeq, L%T must be 0. L="..tostring(L).." T="..tostring(T))
   err( R%T==0, "cropSeq, R%T must be 0, R="..tostring(R)..", T="..tostring(T))
   err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
   err( X==nil, "cropSeq: too many arguments" )
@@ -1954,7 +1991,21 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
     end, nil,
     {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
 
-  return modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T, BITS )
+  local res = modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T, BITS )
+
+  -- HACK
+  if framed then
+    print("CROPHACK", res.inputType, res.outputType,W,H)
+    --local idim = res.inputType:dims()
+    --idim[#idim]={W,H}
+    res.inputType = res.inputType:addDim(W,H,true) --types.StaticFramed(res.inputType,idim)
+    --local odim = rigel.extractData(res.outputType):dims()
+    --odim[#odim]={W-L-R,H-B-Top}
+    res.outputType = types.VFramed(res.outputType.params.A,true,{{W-L-R,H-B-Top}})
+    print("CROPHACK", res.inputType, res.outputType)
+  end
+  
+  return res
 end)
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top].
@@ -2177,10 +2228,12 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   return modules.waitOnInput(rigel.newFunction(res))
 end)
 
-modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
+modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
   assert(w>0); assert(h>0);
   assert(ymin<=0)
   err(X==nil,"linebuffer: too many args!")
+  err( framed==nil or type(framed)=="boolean", "modules.linebuffer: framed must be bool or nil")
+  if framed==nil then framed=false end
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
   err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(w).." T="..tostring(T))
@@ -2189,10 +2242,17 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, X )
   rigel.expectBasic(A)
   res.inputType = types.array2d(A,T)
   res.outputType = types.array2d(A,T,-ymin+1)
+
+  if framed then
+    res.inputType = types.StaticFramed(res.inputType,true,{{w,h}})
+    -- this is strange for a reason: inner loop is no longer a serialized flat array, so size must change
+    res.outputType = types.StaticFramed(res.outputType,false,{{w/T,h}})
+  end
+  
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
-  res.name = sanitize("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A))
+  res.name = sanitize("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A).."_framed"..tostring(framed))
 
   if terralib~=nil then res.terraModule = MT.linebuffer(res, A, w, h, T, ymin) end
 
@@ -2488,11 +2548,15 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     end
 
   else
-    rigel.expectBasic(f.inputType)
-    rigel.expectBasic(f.outputType)
+    --rigel.expectBasic(f.inputType)
+    --rigel.expectBasic(f.outputType)
+    err( types.isBasic(f.inputType) or f.inputType:is("StaticFramed"),"makeHandshake: fn input type should be basic or StaticFramed")
+    err( types.isBasic(f.outputType) or f.outputType:is("StaticFramed"),"makeHandshake: fn output type should be basic or StaticFramed")
 
     if f.inputType==types.null() and nilhandshake==true then
       res.inputType = rigel.HandshakeTrigger
+    elseif f.inputType~=types.null() and f.inputType:is("StaticFramed") then
+      res.inputType = types.HandshakeFramed( f.inputType.params.A, f.inputType.params.mixed, f.inputType.params.dims )
     elseif f.inputType~=types.null() then
       res.inputType = rigel.Handshake(f.inputType)
     else
@@ -2501,6 +2565,8 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
 
     if f.outputType==types.null() and nilhandshake==true then
       res.outputType = rigel.HandshakeTrigger
+    elseif f.outputType~=types.null() and f.outputType:is("StaticFramed") then
+      res.outputType = types.HandshakeFramed( f.outputType.params.A, f.outputType.params.mixed, f.outputType.params.dims )
     elseif f.outputType~=types.null() then
       res.outputType = rigel.Handshake(f.outputType)
     else

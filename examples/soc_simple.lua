@@ -12,7 +12,7 @@ OffsetModule = G.Module{
   function(i)
     local readStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),8}(i)
     local offset = G.HS{G.Map{G.Add{200}}}(readStream)
-    return G.AXIWriteBurst{"out/soc_simple",{128,64} ,u(8),8}(offset)
+    return G.AXIWriteBurst{"out/soc_simple"}(offset)
   end}
 
 harness{regs.start, OffsetModule, regs.done}

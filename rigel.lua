@@ -57,6 +57,7 @@ function darkroom.Handshake(A)
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
 end
 
+
 function darkroom.HandshakeSparse(A)
   err(types.isType(A),"HandshakeSparse: argument should be type")
   err(darkroom.isBasic(A),"HandshakeSparse: argument should be basic type")
@@ -130,25 +131,7 @@ function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
 function darkroom.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
 function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
 function darkroom.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
-function darkroom.isBasic(A)
-  assert(types.isType(A))
-  if A:isArray() then
-    return darkroom.isBasic(A:arrayOver()) 
-  elseif A:isTuple() then
-    for _,v in ipairs(A.list) do
-      if darkroom.isBasic(v)==false then
-        return false
-      end
-    end
-    return true
-  elseif A:isNamed() and A.generator=="fixed" then
-    return true -- COMPLETE HACK, REMOVE
-  elseif A:isNamed() then
-    return false
-  end
-
-  return true
-end
+darkroom.isBasic = types.isBasic
 function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
 function darkroom.expectRV( A, er ) if darkroom.isRV(A)==false then error(er or "type should be RV") end end
@@ -161,7 +144,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -175,14 +158,14 @@ end
 -- RV(A) => A
 -- Handshake(A) => A
 function darkroom.extractData(a)
-  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) then return a.params.A end
+  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("StaticFramed") then return a.params.A end
   if darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) then return types.null() end
   if darkroom.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
   return a -- pure
 end
 
 function darkroom.hasReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or a:is("HandshakeFramed") then
     return true
   elseif darkroom.isBasic(a) or darkroom.isV(a) then
     return false
@@ -193,9 +176,7 @@ function darkroom.hasReady(a)
 end
 
 function darkroom.extractReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) then return types.bool()
-  elseif darkroom.isV(a) then return types.bool()
-  elseif darkroom.isRV(a) then return types.bool()
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("HandshakeFramed") then return types.bool()
   elseif darkroom.isHandshakeTuple(a) then
     return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
   elseif darkroom.isHandshakeArrayOneHot(a) then
@@ -214,7 +195,7 @@ function darkroom.extractValid(a)
 end
 
 function darkroom.streamCount(A)
-  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) then
+  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") then
     return 0
   elseif darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) then
     return 1
@@ -416,7 +397,7 @@ end
 function generatorFunctions:complete(arglist)
   self:checkArgs(arglist)
   local mod = self.completeFn(arglist)
-  J.err( darkroom.isModule(mod), "generator returned something other than a rigel module?" )
+  J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module?" )
   mod.generator = self
   mod.generatorArgs = arglist
   return mod
@@ -447,7 +428,7 @@ __index=function(tab,key)
 
   if key=="systolicModule" then
     -- build the systolic module as needed
-    assert( rawget(tab, "makeSystolic")~=nil )
+    err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
     assert(S.isModule(sm))
 

@@ -1107,11 +1107,11 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
 end)
 
 
-C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  err(types.isType(A), "stencilLinebuffer: A must be type")
+C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed, X )
+  err(types.isType(A), "stencilLinebuffer: A must be type, but is: "..tostring(A))
 
   err(type(T)=="number","stencilLinebuffer: T must be number")
-  err(type(w)=="number","stencilLinebuffer: w must be number")
+  err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
   err(type(h)=="number","stencilLinebuffer: h must be number")
   err(type(xmin)=="number","stencilLinebuffer: xmin must be number")
   err(type(xmax)=="number","stencilLinebuffer: xmax must be number")
@@ -1126,7 +1126,15 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), modules.SSR( A, T, xmin, ymin), modules.linebuffer( A, w, h, T, ymin ), "C.stencilLinebuffer" )
+  err(X==nil,"C.stencilLinebuffer: Too many arguments")
+  
+  local SSRFn = modules.SSR( A, T, xmin, ymin)
+
+  if framed then
+    SSRFn = modules.mapFramed(SSRFn,w/T,h,false)
+  end
+  
+  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, modules.linebuffer( A, w, h, T, ymin, framed ), "C.stencilLinebuffer" )
 end)
 
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
@@ -1187,7 +1195,9 @@ end)
 
 
 -- purely wiring. This should really be implemented as a lift.
-C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
+-- framed: this fn is a bit strange (actually introduces a new dimension), so can't use mapFramed
+-- instead, special case this
+C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed, framedW, framedH, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
   assert(stencilW>0)
@@ -1196,11 +1206,29 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   assert(type(T)=="number")
   assert(T>=1)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
+  err( framed==nil or type(framed)=="boolean", "unpackStencil: framed must be nil or bool")
+  if framed==nil then framed=false end
   assert(X==nil)
 
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T,generator="C.unpackStencil"}
   res.inputType = types.array2d( A, stencilW+T-1, stencilH)
   res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+
+  if framed then
+    err( type(framedW)=="number", "unpackStencil: framedW must be nil or number")
+    err( type(framedH)=="number", "unpackStencil: framedH must be nil or number")
+
+--    local idims = types.FramedCollectParallelDims(res.inputType)
+--    local odims = types.FramedCollectParallelDims(res.outputType)
+
+--    table.insert(idims,{framedW/T,framedH})
+--    odims[#odims]={framedW,framedH}
+    
+    res.inputType = res.inputType:addDim(framedW/T,framedH,false)
+    res.outputType = res.outputType:addDim(framedW,framedH,true)
+    print("UPSOP",res.outputType)
+  end
+  
   res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
   res.stateful = false
   res.delay=0
@@ -1209,7 +1237,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
   res.systolicModule = Ssugar.moduleConstructor(res.name)
-  local sinp = S.parameter("inp", res.inputType)
+  local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
   local out = {}
   for i=1,T do
     out[i] = {}
@@ -1220,7 +1248,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, X )
     end
   end
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), res.outputType ), "process_output", nil, nil, S.CE("process_CE") ) )
+  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
   --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
 
   return rigel.newFunction(res)
@@ -1462,5 +1490,16 @@ function C.linearPipeline(t,modulename)
 
   return RM.lambda(modulename,inp,out)
 end
+
+-- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
+C.handshakeToHandshakeFramed = memoize(
+  function(A,mixed,dims,X)
+    err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
+    assert(X==nil)
+    err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
+    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput={{1,1}},sdfOutput={{1,1}},stateful=false}
+    res.name="HandshakeToHandshakeFramed_"..tostring(A)
+    return rigel.newFunction(res)
+  end)
 
 return C
