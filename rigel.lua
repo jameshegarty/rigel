@@ -125,7 +125,7 @@ function darkroom.isHandshakeTriggerArray( a ) return a:isNamed() and a.generato
 function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
 -- is this any of the handshaked types?
-function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) end
+function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) or a:is("HandshakeFramed") end
 
 function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
 function darkroom.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
@@ -143,8 +143,8 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- RV(A) => {A,bool}
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
-  assert(types.isType(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") then
+  err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -167,7 +167,7 @@ end
 function darkroom.hasReady(a)
   if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or a:is("HandshakeFramed") then
     return true
-  elseif darkroom.isBasic(a) or darkroom.isV(a) then
+  elseif darkroom.isBasic(a) or darkroom.isV(a) or a:is("StaticFramed") then
     return false
   else
     print("UNKNOWN READY",a)
@@ -197,7 +197,7 @@ end
 function darkroom.streamCount(A)
   if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") then
     return 0
-  elseif darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) then
+  elseif darkroom.isHandshake(A) or A:is("HandshakeFramed") or darkroom.isHandshakeTrigger(A) then
     return 1
   elseif darkroom.isHandshakeArray(A) or darkroom.isHandshakeTriggerArray(A) then
     return A.params.W*A.params.H

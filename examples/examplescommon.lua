@@ -1498,7 +1498,21 @@ C.handshakeToHandshakeFramed = memoize(
     assert(X==nil)
     err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
     local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput={{1,1}},sdfOutput={{1,1}},stateful=false}
-    res.name="HandshakeToHandshakeFramed_"..tostring(A)
+    res.name=J.sanitize("HandshakeToHandshakeFramed_"..tostring(A))
+
+    function res.makeSystolic()
+      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
+      local r = S.parameter("ready_downstream",types.bool())
+      sm:addFunction( S.lambda("ready", r, r, "ready") )
+      local I = S.parameter("process_input", R.lower(A) )
+      sm:addFunction( S.lambda("process",I,I,"process_output") )
+      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+      return sm
+    end
+    function res.makeTerra()
+      return CT.handshakeToHandshakeFramed(res,A,mixed,dims)
+    end
+    
     return rigel.newFunction(res)
   end)
 

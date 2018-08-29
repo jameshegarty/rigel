@@ -312,6 +312,14 @@ function MT.map(res,f,W,H)
   return MT.new(MapModule)
 end
 
+function MT.mapFramed(res,f,W,H,vectorized)
+  local struct MapFramed {fn:f.terraModule}
+  terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    self.fn:process(inp,out)
+  end
+  return MT.new(MapFramed)
+end
+
 function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
 
   assert(type(coerce)=="boolean")

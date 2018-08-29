@@ -890,18 +890,27 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized)
   local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay,sdfInput={{1,1}},sdfOutput={{1,1}}}
   res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized)
   
-  print("MAPFRAMED",fn.inputType)
-  --local idims = types.FramedCollectParallelDims(fn.inputType)
-  --local odims = types.FramedCollectParallelDims(fn.outputType)
-
---  if vectorized then -- mixed
---    assert( types.isBasic(fn.inputType) )
---    assert( types.isBasic(fn.outputType) )
---    assert(false)
---  else
   res.inputType = fn.inputType:addDim(w,h,vectorized)
   res.outputType = fn.outputType:addDim(w,h,vectorized)
---  end
+
+--  print("MAPFRAMEDINNER",fn.name)
+--  assert(fn.stateful==false)
+  function res.makeSystolic()
+    local sm = Ssugar.moduleConstructor(res.name)
+    --local r = S.parameter("ready_downstream",types.bool())
+    --sm:addFunction( S.lambda("ready", r, r, "ready") )
+    local inner = sm:add(fn.systolicModule:instantiate("inner"))
+    local I = S.parameter("process_input", rigel.lower(fn.inputType) )
+    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,S.CE("process_CE")) )
+
+    if fn.stateful then
+      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool()) ) )
+    end
+      
+    return sm
+  end
+
+  function res.makeTerra() return MT.mapFramed(res,fn,w,h,vectorized) end
   
   return rigel.newFunction(res)
 end)
@@ -3491,7 +3500,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             local value = i[1]
             local thisi = value[parentKey]
 
-            if rigel.isHandshake(n.type) or rigel.isHandshakeTrigger(n.type) then
+            if rigel.isHandshake(n.type) or rigel.isHandshakeTrigger(n.type) or n.type:is("HandshakeFramed") then
               assert(systolicAST.isSystolicAST(thisi))
               assert(thisi.type:isBool())
               
@@ -3635,7 +3644,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           err( #n.inputs==0 or type(res)=="table","res should be table "..n.kind.." inputs "..tostring(#n.inputs))
               
           for k,i in ipairs(n.inputs) do
-            if rigel.isHandshake(i.type) then
+            if rigel.isHandshake(i.type) or i.type:is("HandshakeFramed") then
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." (type "..tostring(i.type)..", name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
             elseif rigel.isHandshakeTrigger(i.type) then

@@ -295,4 +295,13 @@ function CT.plusConsttfn(ty,value)
   end
 end
 
+function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
+  local struct HandshakeToHandshakeFramed {ready:bool}
+  terra HandshakeToHandshakeFramed:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  terra HandshakeToHandshakeFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
+  return MT.new(HandshakeToHandshakeFramed)
+end
+
 return CT

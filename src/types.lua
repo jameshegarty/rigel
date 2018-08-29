@@ -794,8 +794,17 @@ local function makeFramedType(kind,A,mixed,dims,X)
   for j=i,#dims do
     str = str.."{"..tostring(dims[j][1])..","..tostring(dims[j][2]).."}"
   end
+
+  local structure
+  if kind=="Handshake" or kind=="V" or kind=="RV" then
+    structure = types.tuple{A,types.bool()}
+  elseif kind=="Static" then
+    structure = A
+  else
+    assert(false)
+  end
   
-  return types.named(str..")", types.tuple{A,types.bool()}, kind.."Framed", {A=A,dims=ldims,mixed=mixed} )
+  return types.named(str..")", structure, kind.."Framed", {A=A,dims=ldims,mixed=mixed} )
 end
 
 -- if A is an array, this specifies parallel dimensions (dimensions computed in parallel)
