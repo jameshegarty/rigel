@@ -194,6 +194,18 @@ function(args)
   end
 end)
 
+generators.Downsample = R.newGenerator("generators","Downsample",{"type","size"},{},
+function(args)
+  if args.type:is("StaticFramed") then
+    local size = types.HSFSize(args.type)
+    local V = types.HSFV(args.type)
+
+    return C.downsampleSeq( args.type:FPixelType(), args.type:FW(), args.type:FH(), args.type:FV(), args.size[1], args.size[2], true )
+  else
+    err(false,"generators.Crop: unsupported input type: "..tostring(args.type))
+  end
+end)
+
 generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
 function(args)
   J.err( args.number>0, "NYI - V<=0" )

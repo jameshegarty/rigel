@@ -1150,6 +1150,8 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
   err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
   err( X==nil, "downsampleXSeq: too many arguments" )
 
+  err( W%scale==0,"downsampleXSeq: NYI - scale ("..tostring(scale)..") does not divide W ("..tostring(W)..")")
+  
   local sbits = math.log(scale)/math.log(2)
 
   local outputT
@@ -1165,9 +1167,11 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
   local tfn, sdfOverride
 
   if scale>T then -- A[T] to A[1]
-    sdfOverride = {{1,scale}}
+    -- tricky: each token contains multiple pixels, any of of which can be valid
+    assert(scale%T==0)
+    sdfOverride = {{1,scale/T}}
     if terralib~=nil then tfn = MT.downsampleXSeqFn(innerInputType,outputType,scale) end
-  else
+  else -- scale <= T... for every token, we output 1 token
     sdfOverride = {{1,1}}
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
@@ -1181,17 +1185,24 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
       if scale>T then -- A[T] to A[1]
         svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
         sdata = S.index(sinp,1)
+--        print("SDATA",sdata.type)
+        sdata = S.index(sdata,0)
+--        print("SDATA",sdata.type)
+        sdata = S.cast(S.tuple{sdata},types.array2d(sdata.type,1))
       else
         svalid = S.constant(true,types.bool())
         local datavar = S.index(sinp,1)
         sdata = J.map(J.range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
         sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
       end
-      return S.tuple{sdata,svalid}
+      local res = S.tuple{sdata,svalid}
+--      print("DXSRES",res.type,scale,T,sinp.type,sdata.type)
+      return res
     end,
     function() return tfn end, nil,
     sdfOverride)
 
+--  print(f)
   return modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W, H, T )
 end)
 
@@ -3462,10 +3473,10 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     -- for the non-handshake (purely systolic) modules, the ready bit doesn't flow from outputs to inputs,
     -- it flows from inputs to outputs. The reason is that upstream things can't stall downstream things anyway, so there's really no point of doing it the 'right' way.
     -- this is kind of messed up!
-    if rigel.isRV( fn.inputType ) then
+    if rigel.isRV( fn.inputType ) or fn.inputType:is("RVFramed") then
       assert( S.isAST(out[2]) )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
-    elseif rigel.isRV( fn.outputType ) then
+    elseif rigel.isRV( fn.outputType ) or fn.outputType:is("RVFramed") then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
     elseif HANDSHAKE_MODE then
        
@@ -3736,7 +3747,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     err( (outputType==types.null() and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name..")" )
 
     if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
-      err( systolicOutput.type==rigel.lower(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType).." (module "..name..")" )
+      err( systolicOutput.type==rigel.lower(outputType), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType)..", which lowers to "..tostring(rigel.lower(outputType)).." (module "..name..")" )
     end
     
     if systolicInstances~=nil then

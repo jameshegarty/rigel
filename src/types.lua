@@ -768,8 +768,10 @@ local function makeFramedType(kind,A,mixed,dims,X)
     err( type(dims[i])=="table", kind.."Framed: each entry of dims should be a table of size 2")
     err( #dims[i]==2, kind.."Framed: each entry of dims should be a table of size 2")
     
-    assert(type(dims[i][1])=="number")
-    assert(type(dims[i][2])=="number")
+    err(type(dims[i][1])=="number", kind.."Framed: dim must be number")
+    err(math.floor(dims[i][1])==dims[i][1], kind.."Framed: dim must be integer, but is: "..tostring(dims[i][1]))
+    err(type(dims[i][2])=="number", kind.."Framed: dim must be number")
+    err(math.floor(dims[i][2])==dims[i][2], kind.."Framed: dim must be integer, but is: "..tostring(dims[i][2]))
     table.insert(ldims,{dims[i][1],dims[i][2]})
   end
 
@@ -820,7 +822,7 @@ function TypeFunctions:addDim(w,h,mixed)
   err( type(w)=="number", ":addDim w should be number")
   err( type(h)=="number", ":addDim h should be number")
   err( type(mixed)=="boolean", ":addDim mixed should be boolean")
-  err( mixed==false or types.isBasic(self), "addDim: if mixed, this must be a basic type" )
+  err( mixed==false or types.isBasic(self) or self:is("V") or self:is("RV"), "addDim: if mixed, this must be a basic type" )
 
   local ldims = {}
   local A
@@ -828,6 +830,8 @@ function TypeFunctions:addDim(w,h,mixed)
     for i=1,#self.params.dims do
       table.insert(ldims,{self.params.dims[i][1],self.params.dims[i][2]})
     end
+  elseif self:is("V") or self:is("RV") then
+    A = self.params.A
   else
     A = self
     assert(types.isBasic(self))
@@ -835,7 +839,16 @@ function TypeFunctions:addDim(w,h,mixed)
 
   table.insert(ldims,{w,h})
 
-  return types.StaticFramed(A,mixed,ldims)
+  if self:is("StaticFramed") or types.isBasic(self) then
+    return types.StaticFramed(A,mixed,ldims)
+  elseif self:is("V") then
+    return types.VFramed(A,mixed,ldims)
+  elseif self:is("RV") then
+    return types.RVFramed(A,mixed,ldims)
+  else
+    print("COULD NOT ADDDIM "..tostring(self))
+    assert(false)
+  end
 end
 
 --[=[

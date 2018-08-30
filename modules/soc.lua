@@ -1512,7 +1512,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
   J.err(X==nil, "writeBurst: too many arguments")
-  
+
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H

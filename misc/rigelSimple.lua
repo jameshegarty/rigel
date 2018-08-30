@@ -355,7 +355,7 @@ function RS.HS(t,handshakeTrigger)
   if types.isType(t) then
     return R.Handshake(t)
   elseif R.isFunction(t) then
-    if R.isV(t.inputType) and R.isRV(t.outputType) then
+    if (R.isV(t.inputType) or t.inputType:is("VFramed")) and (R.isRV(t.outputType) or t.outputType:is("RVFramed")) then
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
       return t

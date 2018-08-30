@@ -948,7 +948,7 @@ end)
 
 
 -- V -> RV
-C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
+C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   err( types.isType(A), "C.downsampleSeq: A must be type")
   err( type(W)=="number", "C.downsampleSeq: W must be number")
   err( type(H)=="number", "C.downsampleSeq: H must be number")
@@ -959,6 +959,12 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
   err( scaleY>=1, "C.downsampleSeq: scaleY must be >=1")
   err( X==nil, "C.downsampleSeq: too many arguments" )
 
+  err( W%scaleX==0,"C.downsampleSeq: NYI - scaleX does not divide W")
+  err( H%scaleY==0,"C.downsampleSeq: NYI - scaleY does not divide H")
+  
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean", "C.donwsampleSeq: framed must be boolean" )
+    
   if scaleX==1 and scaleY==1 then
     return C.identity(A)
   end
@@ -970,6 +976,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
   end
   if scaleX>1 then
     local mod = modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))
+    print(mod)
     if scaleY>1 then mod=modules.RPassthrough(mod) end
 
     out = rigel.apply("downsampleSeq_X", mod, out)
@@ -979,7 +986,14 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  return modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), inp, out,nil,"C.downsampleSeq")
+  local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
+
+  if framed then
+    res.inputType = res.inputType:addDim(W,H,true)
+    res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
+  end
+
+  return res
 end)
 
 
@@ -1341,7 +1355,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
   assert(type(minTotalOutputBits)=="number")
   assert(type(inputFactor)=="number")
   assert(type(outputFactor)=="number")
-  assert(minTotalInputBits%inputBitsPerCyc==0)
+  err(minTotalInputBits%inputBitsPerCyc==0,"generalizedChangeRate: inputBitsPerCycle ("..inputBitsPerCyc..") must divide minTotalInputBits ("..minTotalInputBits..")")
   assert(minTotalOutputBits%outputBitsPerCyc==0)
   assert(X==nil)
 

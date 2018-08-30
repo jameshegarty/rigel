@@ -165,9 +165,9 @@ function darkroom.extractData(a)
 end
 
 function darkroom.hasReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or a:is("HandshakeFramed") then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
     return true
-  elseif darkroom.isBasic(a) or darkroom.isV(a) or a:is("StaticFramed") then
+  elseif darkroom.isBasic(a) or darkroom.isV(a) or a:is("StaticFramed") or a:is("VFramed") then
     return false
   else
     print("UNKNOWN READY",a)
@@ -195,7 +195,7 @@ function darkroom.extractValid(a)
 end
 
 function darkroom.streamCount(A)
-  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") then
+  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") or A:is("VFramed") then
     return 0
   elseif darkroom.isHandshake(A) or A:is("HandshakeFramed") or darkroom.isHandshakeTrigger(A) then
     return 1

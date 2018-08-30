@@ -1607,7 +1607,7 @@ function MT.lambdaCompile(fn)
 --    readyInput = symbol(bool, "readyinput")
   end
 
-  if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) then
+  if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") then
     table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} )
   end
   
@@ -1634,7 +1634,7 @@ function MT.lambdaCompile(fn)
   local readyOutput
     
     -- build ready calculation
-  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
+  if rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1742,10 +1742,10 @@ return {`mself.[n.name].ready}
       end)
   end
 
-  if rigel.isRV(fn.inputType) then
+  if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
     assert(readyOutput~=nil)
     terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
-  elseif rigel.isRV(fn.outputType) then
+  elseif rigel.isRV(fn.outputType) or fn.outputType:is("RVFramed") then
     assert(readyOutput~=nil)
     -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
     terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
