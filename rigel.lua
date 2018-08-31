@@ -288,6 +288,8 @@ local function typeToKey(t)
         outk="type"
       elseif darkroom.isFunction(v) then
         outk="rigelFunction"
+      elseif darkroom.isGlobal(v) then
+        outk="global"
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
         outk="size"
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"

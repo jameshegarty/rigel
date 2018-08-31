@@ -347,6 +347,14 @@ function(args)
   end
 end)
 
+generators.WriteGlobal = R.newGenerator("generators","WriteGlobal",{"global"},{},
+function(args)
+  local WG = generators.Module{"WG",function(i) return R.writeGlobal("go",args.global,i) end}
+  WG = WG{args.global.type}
+  assert(R.isModule(WG))
+  return WG
+end)
+                                        
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end

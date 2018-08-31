@@ -32,7 +32,7 @@ function SOCMT.axiRegs(mod,tab,port)
     local ty = mod.globalMetadata["TypeOfRegister_"..k]
     local glob = mod:getGlobal(k):terraValue()
 
-    for i=0,ty:verilogBits()/32-1 do
+    for i=0,math.ceil(ty:verilogBits()/32)-1 do
       table.insert(regSet,
                    quote
                      if data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])==[addr+i*4] then

@@ -7,23 +7,19 @@ local RS = require "rigelSimple"
 local types = require "types"
 types.export()
 
-local Regs = SOC.axiRegs{offset={u(32),200},lastPx={u(8),0,"out"}}
+local Regs = SOC.axiRegs{offset={u(8),200},lastPx={u(8),0,"out"}}
 regs = Regs:instantiate()
 
-local AddReg = G.Module{"AddReg",function(i) return G.Add(i,G.RemoveMSBs{24}(Regs.offset)) end}
-local WG = G.Module{"WG",function(i) return R.writeGlobal("go",Regs.lastPx,i) end}
+local AddReg = G.Module{"AddReg",function(i) return G.Add(i,Regs.offset) end}
 
---local WGG = WG{types.Handshake(types.uint(8))}
---print(WGG)
---print(WGG.systolicModule)
-
-local RegOut = G.Module{
+local RegInOut = G.Module{
   function(i)
-    local o = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),0}(i)
-    local pipeOut = G.HS{G.Map{AddReg}}(o)
+    local inputStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),0}(i)
+    local pipeOut = G.HS{G.Map{AddReg}}(inputStream)
     pipeOut = G.FanOut{2}(pipeOut)
     local doneFlag = G.AXIWriteBurst{"out/soc_regout"}(pipeOut[0])
-    return R.statements{doneFlag,G.Map{WG}(pipeOut[1])}
+    local writeRegStatement = G.Map{G.WriteGlobal{Regs.lastPx}}(pipeOut[1])
+    return R.statements{doneFlag,writeRegStatement}
   end}
 
-harness{regs.start,RegOut,regs.done}
+harness{regs.start,RegInOut,regs.done}
