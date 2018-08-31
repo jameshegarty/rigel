@@ -51,12 +51,7 @@ function darkroom.RV(A)
   return types.named("RV("..tostring(A)..")",types.tuple{A,types.bool()}, "RV", {A=A})  
 end
 
-function darkroom.Handshake(A)
-  err(types.isType(A),"Handshake: argument should be type")
-  err(darkroom.isBasic(A),"Handshake: argument should be basic type, but is: "..tostring(A))
-  return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
-end
-
+darkroom.Handshake=types.Handshake
 
 function darkroom.HandshakeSparse(A)
   err(types.isType(A),"HandshakeSparse: argument should be type")
@@ -144,7 +139,7 @@ function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false the
 -- Handshake(A) => {A,bool}
 function darkroom.lower( a, loc )
   err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") then
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") or a:is("HandshakeArrayFramed") then
     return a.structure
   elseif darkroom.isBasic(a) then 
     return a 
@@ -158,7 +153,7 @@ end
 -- RV(A) => A
 -- Handshake(A) => A
 function darkroom.extractData(a)
-  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("StaticFramed") then return a.params.A end
+  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") then return a.params.A end
   if darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) then return types.null() end
   if darkroom.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
   return a -- pure
@@ -199,7 +194,7 @@ function darkroom.streamCount(A)
     return 0
   elseif darkroom.isHandshake(A) or A:is("HandshakeFramed") or darkroom.isHandshakeTrigger(A) then
     return 1
-  elseif darkroom.isHandshakeArray(A) or darkroom.isHandshakeTriggerArray(A) then
+  elseif darkroom.isHandshakeArray(A) or darkroom.isHandshakeTriggerArray(A) or A:is("HandshakeArrayFramed") then
     return A.params.W*A.params.H
   elseif darkroom.isHandshakeTuple(A) then
     return #A.params.list
@@ -439,7 +434,7 @@ __index=function(tab,key)
     --err(A==B,"makeSystolic: side channels doesn't match globals")
     for k,_ in pairs(tab.globals) do
       err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module lacks side channel for global "..k.name )
-      err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module lacks side channel for global ready "..k.name )
+      err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
     end
 
     for k,_ in pairs(sm.sideChannels) do
@@ -661,8 +656,25 @@ function darkroom.newFunction(tab,X)
 end
 
 darkroomIRFunctions = {}
+darkroomIRFunctions.isIR=true
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
-darkroomIRMT = {__index = darkroomIRFunctions}
+darkroomIRMT = {}--{__index = darkroomIRFunctions}
+function darkroomIRMT.__index(tab,key)
+  local res = rawget(tab,key)
+  if res~=nil then return res end
+
+  if darkroomIRFunctions[key]~=nil then
+    return darkroomIRFunctions[key]
+  end
+
+  if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") ) then
+    print("TY",tab.type)
+    --assert(false)
+    local res = darkroom.selectStream(nil,tab,key)
+    rawset(tab,key,res)
+    return res
+  end
+end
 
 darkroomIRMT.__tostring = function(tab)
   if tab.kind=="apply" then
@@ -702,6 +714,12 @@ function darkroom.newIR(tab)
   assert( type(tab) == "table" )
   err( type(tab.name)=="string", "IR node "..tab.kind.." is missing name" )
   err( type(tab.loc)=="string", "IR node "..tab.kind.." is missing loc" )
+  err( type(tab.inputs)=="table","IR node "..tab.kind..", inputs should be table")
+  assert( #tab.inputs==J.keycount(tab.inputs))
+  for i=1,#tab.inputs do
+    assert(darkroom.isIR(tab.inputs[i]))
+  end
+  
   IR.new( tab )
   local r = setmetatable( tab, darkroomIRMT )
   r:typecheck()
@@ -957,10 +975,14 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="statements" then
     n.type = n.inputs[1].type
   elseif n.kind=="selectStream" then
-    if darkroom.isHandshakeArray(n.inputs[1].type) then
+    if darkroom.isHandshakeArray(n.inputs[1].type) or n.inputs[1].type:is("HandshakeArrayFramed") then
       err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
       err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
-      n.type = darkroom.Handshake(n.inputs[1].type.params.A)
+      if n.inputs[1].type:is("HandshakeArrayFramed") then
+        n.type = types.HandshakeFramed(n.inputs[1].type.params.A,n.inputs[1].type.params.mixed,n.inputs[1].type.params.dims)
+      else
+        n.type = darkroom.Handshake(n.inputs[1].type.params.A)
+      end
     elseif darkroom.isHandshakeTriggerArray(n.inputs[1].type) then
       err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
       err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
@@ -1182,10 +1204,27 @@ function darkroom.concatArray2d( name, t, W, H, X )
 end
 
 function darkroom.selectStream( name, input, i, X )
+
+  local r = {kind="selectStream"}
+  
+  if name==nil then
+    r.defaultName=true
+    r.name="selectStream"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+  else
+    err( type(name)=="string", "first selectStream input should be name")
+    r.name=name
+  end
+
   err( type(i)=="number", "i must be number")
   err( darkroom.isIR(input), "input must be IR")
   err(X==nil,"selectStream: too many arguments")
-  return darkroom.newIR({kind="selectStream", name=name, i=i, loc=getloc(), inputs={input}})
+
+  r.i=i
+  r.loc = getloc()
+  r.inputs={input}
+  
+  return darkroom.newIR(r)
 end
 
 function darkroom.statements( t )
@@ -1204,6 +1243,8 @@ function darkroom.handshakeMode(output)
         HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.fn.inputType) or darkroom.isHandshakeAny(n.fn.outputType)
       elseif n.kind=="applyMethod" then
         HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.fn.inputType) or darkroom.isHandshakeAny(n.inst.fn.outputType)
+      elseif n.kind=="writeGlobal" then
+        HANDSHAKE_MODE = HANDSHAKE_MODE or n.global.type:is("Handshake")
       end
     end)
   return HANDSHAKE_MODE

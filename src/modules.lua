@@ -889,7 +889,10 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized)
 
   local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay,sdfInput={{1,1}},sdfOutput={{1,1}}}
   res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized)
-  
+
+  res.globals={}
+  for k,_ in pairs(fn.globals) do res.globals[k]=1 end
+
   res.inputType = fn.inputType:addDim(w,h,vectorized)
   res.outputType = fn.outputType:addDim(w,h,vectorized)
 
@@ -897,16 +900,37 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized)
 --  assert(fn.stateful==false)
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
+
+    for k,_ in pairs(fn.globals) do
+      sm:addSideChannel(k.systolicValue)
+      if k.systolicValueReady~=nil then sm:addSideChannel(k.systolicValueReady) end
+    end
+
     --local r = S.parameter("ready_downstream",types.bool())
     --sm:addFunction( S.lambda("ready", r, r, "ready") )
     local inner = sm:add(fn.systolicModule:instantiate("inner"))
-    local I = S.parameter("process_input", rigel.lower(fn.inputType) )
-    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,S.CE("process_CE")) )
 
-    if fn.stateful then
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool()) ) )
+
+    local CE = S.CE("process_CE")
+    local reset_valid = S.parameter("reset",types.bool())
+    if fn.inputType:is("Handshake") and fn.outputType==types.null() then
+      --local downstreamReady = S.parameter("ready_downstream", types.bool())
+      --print(fn)
+      sm:addFunction( S.lambda("ready", S.parameter("ready_downstream",types.null()), inner:ready(), "ready" ) )
+      sm:onlyWire(true)
+      CE=nil
+--      reset_valid = S.parameter("reset",types.bool())
+    else
+      assert(types.isBasic(fn.inputType) and types.isBasic(fn.outputType))
     end
-      
+
+    local I = S.parameter("process_input", rigel.lower(fn.inputType) )
+    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
+
+    if fn.stateful or fn.inputType:is("Handshake") then
+      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
+    end
+
     return sm
   end
 
@@ -1765,10 +1789,13 @@ end)
 -- We do that here by modifying the valid bit combinationally!! This could potentially
 -- cause a combinationaly loop (validOut depends on readyDownstream) if another later unit does the opposite
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
-modules.broadcastStream = memoize(function(A,N,X)
+modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
   err( types.isType(A), "broadcastStream: A must be type")
   rigel.expectBasic(A)
   err( type(N)=="number", "broadcastStream: N must be number")
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean","broadcastStream: framed must be boolean")
+  err( framed==false or type(framedMixed)=="boolean", "broadcastStream: frameMixed should be boolean")
   assert(X==nil)
 
   local res = {kind="broadcastStream", A=A, N=N,  stateful=false}
@@ -1776,6 +1803,9 @@ modules.broadcastStream = memoize(function(A,N,X)
   if A==types.null() then
     res.inputType = rigel.HandshakeTrigger
     res.outputType = rigel.HandshakeTriggerArray(N)
+  elseif framed then
+    res.inputType = types.HandshakeFramed(A,framedMixed,framedDims)
+    res.outputType = types.HandshakeArrayFramed( A, framedMixed, framedDims, N )
   else
     res.inputType = rigel.Handshake(A)
     res.outputType = rigel.HandshakeArray(A, N)

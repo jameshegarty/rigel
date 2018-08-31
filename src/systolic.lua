@@ -730,7 +730,7 @@ function systolicASTFunctions:internalDelay()
     else
       return 0,0 -- if pipelining is disabled on an op
     end
-  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" or self.kind=="writeSideChannel" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -1741,7 +1741,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   for _,inst in pairs(instances) do
     if inst.module.sideChannels~=nil then
       for sc,_ in pairs(inst.module.sideChannels) do
-        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."'")
+        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."', when creating new module '"..name.."'")
       end
     end
   end

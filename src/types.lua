@@ -731,6 +731,13 @@ function types.isBasic(A)
 
   return true
 end
+
+function types.Handshake(A)
+  err(types.isType(A),"Handshake: argument should be type")
+  err(types.isBasic(A),"Handshake: argument should be basic type, but is: "..tostring(A))
+  return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
+end
+
 --[=[
 local function framedName(dims,Adims)
   local str = ""
@@ -755,7 +762,7 @@ end
 ]=]
 
 -- dims goes from innermost (idx 1) to outermost (idx n)
-local function makeFramedType(kind,A,mixed,dims,X)
+local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   err(types.isType(A),kind.."Framed: argument should be type")
   err(types.isBasic(A),kind.."Framed: argument should be basic type, but is: "..tostring(A))
   err( type(mixed)=="boolean", kind.."Framed: mixed should be boolean, but is: "..tostring(mixed))
@@ -798,21 +805,28 @@ local function makeFramedType(kind,A,mixed,dims,X)
   end
 
   local structure
+  local params = {A=A,dims=ldims,mixed=mixed}
   if kind=="Handshake" or kind=="V" or kind=="RV" then
     structure = types.tuple{A,types.bool()}
   elseif kind=="Static" then
     structure = A
+  elseif kind=="HandshakeArray" then
+    structure = types.array2d(types.tuple{A,types.bool()},extra0,extra1)
+    if extra1==nil then extra1=1 end
+    params.W, params.H = extra0, extra1
+    str = str..","..tostring(extra0)..","..tostring(extra1)
   else
     assert(false)
   end
   
-  return types.named(str..")", structure, kind.."Framed", {A=A,dims=ldims,mixed=mixed} )
+  return types.named(str..")", structure, kind.."Framed", params )
 end
 
 -- if A is an array, this specifies parallel dimensions (dimensions computed in parallel)
 -- dims specifies _all_ dimensions, some of which may be in serial
 -- dims should be in format {{4,2},{7,1},{1920,1080}}. Goes from innermost->outermost
 function types.HandshakeFramed(A,mixed,dims) return makeFramedType("Handshake",A,mixed,dims) end
+function types.HandshakeArrayFramed(A,mixed,dims,W,H) return makeFramedType("HandshakeArray",A,mixed,dims,W,H) end
 function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
 function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
 function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
@@ -826,21 +840,23 @@ function TypeFunctions:addDim(w,h,mixed)
 
   local ldims = {}
   local A
-  if self:is("StaticFramed") then
+  if self:is("StaticFramed") or self:is("HandshakeFramed") then
     for i=1,#self.params.dims do
       table.insert(ldims,{self.params.dims[i][1],self.params.dims[i][2]})
     end
-  elseif self:is("V") or self:is("RV") then
+  elseif self:is("V") or self:is("RV") or self:is("Handshake") then
     A = self.params.A
   else
     A = self
-    assert(types.isBasic(self))
+    err(types.isBasic(self),":addDim - "..tostring(self))
   end
 
   table.insert(ldims,{w,h})
 
   if self:is("StaticFramed") or types.isBasic(self) then
     return types.StaticFramed(A,mixed,ldims)
+  elseif self:is("HandshakeFramed") or self:is("Handshake") then
+    return types.HandshakeFramed(A,mixed,ldims)
   elseif self:is("V") then
     return types.VFramed(A,mixed,ldims)
   elseif self:is("RV") then
@@ -880,9 +896,13 @@ function types.HSFV(A)
   assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
 
   assert(#A.params.dims==1)
-  assert(A.params.mixed)
-  assert(A.params.A.size[2]==1)
-  return A.params.A.size[1]
+  --  err(A.params.mixed, "HSFV: NYI - "..tostring(A))
+  if A.params.mixed then
+    assert(A.params.A.size[2]==1)
+    return A.params.A.size[1]
+  else
+    return 0
+  end
 end
 
 function types.HSFSize(A)
@@ -911,6 +931,19 @@ function TypeFunctions:FV() return types.HSFV(self) end
 function TypeFunctions:FW() return types.HSFSize(self)[1] end
 function TypeFunctions:FH() return types.HSFSize(self)[2] end
 function TypeFunctions:FPixelType() return types.HSFPixelType(self) end
+
+-- this is sort of like arrayOver but for framed types
+function TypeFunctions:framedOver()
+  assert(#self.params.dims==1)
+  assert(self.params.mixed==false)
+
+  if self:is("StaticFramed") then
+    return self.params.A
+  elseif self:is("HandshakeFramed") then
+    return types.Handshake(self.params.A)
+  end
+  
+end
 
 if terralib~=nil then require("typesTerra") end
 

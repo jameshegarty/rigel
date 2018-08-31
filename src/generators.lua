@@ -44,8 +44,11 @@ end)
 
 generators.FanOut = R.newGenerator("generators","FanOut",{"type","number"},{},
 function(args)
-  J.err( R.isHandshake(args.type),"FanOut: expected handshake input")
-  return RM.broadcastStream( R.extractData(args.type), args.number )
+  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed"),"FanOut: expected handshake input, but is: "..tostring(args.type))
+  local mixed, dims
+  if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
+  print("FO",mixed,dims)
+  return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
 end)
 
 generators.FIFO = R.newGenerator("generators","FIFO",{"type","number"},{},
@@ -233,12 +236,27 @@ function(args)
       local size = types.HSFSize(args.type)
       local mod = args.rigelFunction
       if R.isGenerator(mod) then
-        mod = mod{args.type:arrayOver()}
+        mod = mod{args.type:framedOver()}
       end
       J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
 
       -- fully serial
       return RM.mapFramed( mod, size[1], size[2], false )
+    end
+  elseif args.type:is("HandshakeFramed") then
+    if args.type.params.mixed==false and #args.type.params.dims==1 then
+      -- this is basically just applying a HSF wrapper
+      local size = types.HSFSize(args.type)
+      local mod = args.rigelFunction
+      if R.isGenerator(mod) then
+        mod = mod{args.type:framedOver()}
+      end
+      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
+
+      -- fully serial
+      return RM.mapFramed( mod, size[1], size[2], false )
+    else
+      J.err(false, "generators.Map: attempted to apply to value with unsupported type: "..tostring(args.type))
     end
   elseif args.type:isArray() then
     local mod = args.rigelFunction
@@ -312,6 +330,8 @@ function(args)
   
   return RM.lambda( args.string, input, out )
 end)
+
+generators.Generator = generators.Module
 
 generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","size","type","number"},{},
 function(args)

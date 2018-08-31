@@ -313,10 +313,18 @@ function MT.map(res,f,W,H)
 end
 
 function MT.mapFramed(res,f,W,H,vectorized)
-  local struct MapFramed {fn:f.terraModule}
+  local struct MapFramed {fn:f.terraModule, ready:bool}
   terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
     self.fn:process(inp,out)
   end
+
+  if f.inputType:is("Handshake") then
+    terra MapFramed:calculateReady()
+      self.fn:calculateReady()
+      self.ready = self.fn.ready
+    end
+  end
+
   return MT.new(MapFramed)
 end
 
