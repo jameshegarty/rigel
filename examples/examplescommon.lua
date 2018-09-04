@@ -19,9 +19,60 @@ C.identity = memoize(function(A)
   return identity
 end)
 
-C.print = memoize(function(A)
-  local identity = RM.lift( "print_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.print(A) end, "C.print")
-  return identity
+C.print = memoize(function(A,str)
+  err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
+
+  local function constructPrint(A,symb)
+    if A:isUint() or A:isInt() or A:isBits() then
+      return {A}, "%d", {symb}
+    elseif A:isArray() then
+      local resTypes={}
+      local resStr="["
+      local resValues={}
+      for y=0,A.size[2]-1 do
+        for x=0,A.size[1]-1 do
+          local tT,tS,tV = constructPrint(A:arrayOver(),S.index(symb,x,y))
+          resStr = resStr..tS..","
+          table.insert(resTypes,tT)
+          table.insert(resValues,tV)
+        end
+      end
+      return J.flatten(resTypes), resStr.."]", J.flatten(resValues)
+    elseif A:isTuple() then
+      local resTypes={}
+      local resStr="{"
+      local resValues={}
+      for i=1,#A.list do
+        local tT,tS,tV = constructPrint(A.list[1],S.index(symb,i-1))
+        resStr = resStr..tS..","
+        table.insert(resTypes,tT)
+        table.insert(resValues,tV)
+      end
+      return J.flatten(resTypes), resStr.."}", J.flatten(resValues)
+    else
+      err(false,"C.print NYI - type: "..tostring(A))
+    end
+  end
+  
+  --local identity = RM.lift( , A, A, 0, function(sinp) return sinp end, function() return CT.print(A,str) end, "C.print")
+  local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput={{1,1}}, sdfOutput={{1,1}}}
+  res.stateful=false
+  res.delay=0
+  function res.makeSystolic()
+    local sm = Ssugar.moduleConstructor(res.name)
+    local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
+
+    local typelist, printStr, valuelist = constructPrint(A,inp)
+    if str~=nil then printStr = str.." "..printStr end
+    local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
+    local pipelines = {printInst:process( S.tuple(valuelist) )}
+    sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
+    return sm
+  end
+  
+  function res.makeTerra() return CT.print(A,str) end
+  
+  return rigel.newFunction(res)
 end)
 
 C.cast = memoize(function(A,B)
@@ -35,6 +86,15 @@ C.cast = memoize(function(A,B)
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
+
+C.bitSlice = memoize(
+  function(A,low,high)
+    local bitslice = RM.lift( J.sanitize("bitslice_"..tostring(A).."_"..tostring(low).."_"..tostring(high)), A, nil, 0,
+                          function(sinp)
+                            return S.bitSlice(sinp,low,high)
+                          end)
+    return bitslice
+  end)
 
 C.bitcast = memoize(function(A,B)
   err(types.isType(A),"cast: A should be type")
@@ -1031,7 +1091,7 @@ end)
 -- takes A to A[T] by duplicating the input
 C.broadcast = memoize(function(A,W,H)
   err( types.isType(A), "C.broadcast: A must be type A")
-  rigel.expectBasic(A)
+  err( types.isBasic(A), "C.broadcast: type should be basic, but is: "..tostring(A))
   err( type(W)=="number", "broadcast: W should be number")
   if H==nil then return C.broadcast(A,W,1) end
   err( type(H)=="number", "broadcast: H should be number")

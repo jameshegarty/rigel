@@ -18,11 +18,12 @@ function CT.identity(A)
                   end
 end
 
-function CT.print(A)
-
+function CT.print(A,str)
+  err(types.isBasic(A),"CT.print: type should be basic, but is: "..tostring(A) )
+  
   local function doprint(A,symb)
     assert(symb~=nil)
-    
+
     if A:isArray() then
       local tab = {}
       table.insert(tab,quote cstdio.printf("[") end)
@@ -48,9 +49,12 @@ function CT.print(A)
       assert(false)
     end
   end
-  
+
+  local printS = quote end
+  if str~=nil then printS = quote cstdio.printf("%s:",str) end  end
   return terra( a : &A:toTerraType(), out : &A:toTerraType() )
     var aa = @a
+    printS
     [doprint(A,aa)]
     cstdio.printf("\n")
     @out = @a

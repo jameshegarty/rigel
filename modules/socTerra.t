@@ -309,18 +309,13 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
   end
 
   terra ReadBytes:process( dataIn:&R.lower(inputType):toTerraType(), dataOut:&R.lower(outputType):toTerraType() )
-
-  if valid(dataIn) then
-
-    var addr = data(dataIn)+[addressBase]
-    --cstdio.printf("READ REQ %d, %d\n", data(dataIn),[addressBase])
-      --cstdio.printf("readBurst: send address %d port %d ready %d\n",self.nextByteToRead, port, [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()])
+    if valid(dataIn) then
+      var addr = data(dataIn)+[addressBase]
       valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = true
       data([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = addr
       [mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
       [mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
       [mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
-
     elseif valid(dataIn) and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()] then
       cstdio.printf("readBytes: want to read, but ARREADY is false\n")
     else
@@ -330,11 +325,11 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
     if valid([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]) then
       cstring.memcpy( &data(dataOut), &data([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]), [R.extractData(outputType):sizeof()] )
       valid(dataOut) = true
-      --cstdio.printf("READDAT %d R %d\n",data(dataOut),[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()])
     else
       valid(dataOut) = false
-      --cstdio.printf("READDAT IV %d\n",data(dataOut))
     end
+
+    cstdio.printf("READBYTES valid:%d\n",valid(dataOut))
   end
 
   terra ReadBytes:calculateReady(readyDownstream:bool)

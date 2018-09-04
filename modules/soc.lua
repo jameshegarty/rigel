@@ -889,8 +889,8 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   J.err( type(port)=="number", "axiReadBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
   J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
-  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
-  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
+--  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
+--  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
   J.err( X==nil, "axiReadBytes: too many arguments" )
   J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
   
@@ -908,7 +908,7 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
 
   local ModuleName = J.sanitize("AXI_READ_BYTES_"..tostring(Nbytes).."_"..tostring(port))
 
-  local burstCount = Nbytes/8
+  local burstCount = math.ceil(Nbytes/8)
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
   
   local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
@@ -1447,11 +1447,14 @@ end)
 
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
+-- readType: this is the output type we want
 SOC.read = J.memoize(function(filename,fileBytes,readType,X)
-  J.err( type(filename)=="string","read: filename must be string")
+  J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "read: type must be type")
-  J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned")
-  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned")
+  J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
+  J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned, but is: "..tostring(readType))
+--  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned, but is: "..tostring(readType))
+  J.err( X==nil, "SOC.read: too many arguments" )
   
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
@@ -1487,6 +1490,9 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
     out = RM.liftHandshake(RM.changeRate(types.bits(64),1,1,N))(out)
 
     out = RM.makeHandshake(C.bitcast(types.array2d(types.bits(64),N),readType))(out)
+  elseif readType:verilogBits()<64 then
+    out = RM.makeHandshake(C.bitSlice(types.bits(64),0,readType:verilogBits()-1))(out)
+    out = RM.makeHandshake(C.bitcast(types.bits(readType:verilogBits()),readType))(out)
   else
     assert(false)
   end

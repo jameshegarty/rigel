@@ -318,9 +318,14 @@ function MT.mapFramed(res,f,W,H,vectorized)
     self.fn:process(inp,out)
   end
 
-  if f.inputType:is("Handshake") then
+  if f.inputType:is("Handshake") and f.outputType==types.null() then
     terra MapFramed:calculateReady()
       self.fn:calculateReady()
+      self.ready = self.fn.ready
+    end
+  elseif f.inputType:is("Handshake") and f.outputType:is("Handshake") then
+    terra MapFramed:calculateReady( readyDS:bool)
+      self.fn:calculateReady(readyDS)
       self.ready = self.fn.ready
     end
   end
@@ -730,15 +735,33 @@ function MT.broadcastStream(res,A,N)
   return BroadcastStream
 end
 
-function MT.posSeq(res,W,H,T)
+function MT.posSeq(res,W,H,T,asArray)
   local struct PosSeq { x:uint16, y:uint16 }
   terra PosSeq:reset() self.x=0; self.y=0 end
-  terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
-    for i=0,T do 
-      (@out)[i] = {self.x,self.y}
-      self.x = self.x + 1
-      if self.x==W then self.x=0; self.y=self.y+1 end
-      if self.y==H then self.y=0 end
+
+  if T==0 then
+    local slf = symbol(&PosSeq)
+    local out = symbol(&rigel.lower(res.outputType):toTerraType())
+    local assign
+    if asArray then
+      assign = quote (@out)[0] = slf.x; (@out)[1] = slf.y; end
+    else
+      assign = quote (@out) = {slf.x,slf.y} end
+    end
+    terra PosSeq.methods.process( [slf], [out]  )
+      [assign]
+      slf.x = slf.x + 1
+      if slf.x==W then slf.x=0; slf.y=slf.y+1 end
+      if slf.y==H then slf.y=0 end
+    end
+  else
+    terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,T do 
+        (@out)[i] = {self.x,self.y}
+        self.x = self.x + 1
+        if self.x==W then self.x=0; self.y=self.y+1 end
+        if self.y==H then self.y=0 end
+      end
     end
   end
 
@@ -1042,7 +1065,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
-  local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake"),
+  local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake("..f.name..")"),
                               inner: f.terraModule,
                             ready:bool, readyDownstream:bool}
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end

@@ -1440,7 +1440,7 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
 
   end
 
-  if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
+  if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc) end
 
   if fn.CE~=nil then
     err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)

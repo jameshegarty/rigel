@@ -21,6 +21,21 @@ function(args)
   end
 end)
 
+-- a broadcast is basically the same as a upsample, but has no W,H
+generators.BroadcastSeq = R.newGenerator("generators","BroadcastSeq",{"type","number","size"},{},
+function(args)
+  J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
+  return RM.upsampleXSeq(args.type,args.number,args.size[1]*args.size[2])
+end)
+
+-- bits to unsigned
+generators.BtoU = R.newGenerator("generators","BtoU",{"type"},{},
+function(args)
+  J.err( args.type:isBits(), "BtoU input type should be Bits, but is: "..tostring(args.type))
+  return C.cast(args.type,types.uint(args.type.precision))
+end)
+
+generators.Print = R.newGenerator("generators","Print",{"type"},{"string"},function(args) return C.print(args.type,args.string) end)
 generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
@@ -40,6 +55,12 @@ generators.TriggerCounter = R.newGenerator("generators","TriggerCounter",{"type"
 function(args)
   J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
   return RM.triggerCounter(args.number)
+end)
+
+generators.TriggerBroadcast = R.newGenerator("generators","TriggerBroadcast",{"type","number"},{},
+function(args)
+  J.err( R.isHandshakeTrigger(args.type), "TriggerBroadcast: input should be HandshakeTrigger" )
+  return C.triggerUp(args.number)
 end)
 
 generators.FanOut = R.newGenerator("generators","FanOut",{"type","number"},{},
@@ -109,7 +130,7 @@ function(args)
   if R.isGenerator(args.rigelFunction) and args.type:is("HandshakeFramed") then
     -- fill in args from HSF
     --mod = args.rigelFunction{args.type.params.A,types.HSFV(args.type),types.HSFSize(args.type)}
-    mod = args.rigelFunction{types.StaticFramed(args.type.params.A,args.type.params.mixed,args.type.params.dims)}
+    mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ) }
   elseif R.isGenerator(args.rigelFunction) then
     mod = args.rigelFunction{R.extractData(args.type)}
   else
@@ -205,20 +226,29 @@ function(args)
 
     return C.downsampleSeq( args.type:FPixelType(), args.type:FW(), args.type:FH(), args.type:FV(), args.size[1], args.size[2], true )
   else
-    err(false,"generators.Crop: unsupported input type: "..tostring(args.type))
+    err(false,"generators.Downsample: unsupported input type: "..tostring(args.type))
   end
 end)
 
 generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
 function(args)
-  J.err( args.number>0, "NYI - V<=0" )
   if args.type~=nil then
     J.err( args.type==types.null(), "PosSeq: expected null input")
   end
   return RM.posSeq(args.size[1],args.size[2],args.number)
 end)
 
-generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction"},{},
+generators.Pos = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
+function(args)
+  if args.type~=nil then
+    J.err( args.type==types.null(), "PosSeq: expected null input")
+  end
+  return RM.posSeq( args.size[1], args.size[2], args.number, nil, true, true )
+end)
+
+-- size/bool: output size/mixed for framed types (needed if vector width/ SDF rate changes...)
+--       think of this like a combined map&flatten
+generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction"},{"size","bool"},
 function(args)
   if args.type:is("StaticFramed") then
 
@@ -253,8 +283,11 @@ function(args)
       end
       J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
 
+      local ow,oh
+      if args.size~=nil then ow,oh=args.size[1],args.size[2] end
+      
       -- fully serial
-      return RM.mapFramed( mod, size[1], size[2], false )
+      return RM.mapFramed( mod, size[1], size[2], false, ow, oh, args.bool )
     else
       J.err(false, "generators.Map: attempted to apply to value with unsupported type: "..tostring(args.type))
     end
@@ -306,6 +339,12 @@ function(args)
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
 end)
 
+generators.Deser = R.newGenerator("generators","Deser",{"type","number"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.Deser: type should be array" )
+  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
+end)
+
 generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string","size"},{},
 function(args)
   return RS.modules.fwriteSeq({type=args.type,filename=args.string})
@@ -338,7 +377,16 @@ function(args)
   return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, args.number, true )
 end)
 
-generators.AXIWriteBurst = R.newGenerator("generators","AXIWriteBurst",{"string","size","type","number"},{},
+generators.AXIRead = R.newGenerator("generators","AXIRead",{"string","type","number"},{},
+function(args)
+  if args.type:is("Handshake") then
+    return SOC.read( args.string, args.number, types.uint(8) )
+  else
+    J.err( false, "AXIRead: unsupported input type: "..tostring(args.type))
+  end
+end)
+
+generators.AXIWriteBurst = R.newGenerator("generators","AXIWriteBurst",{"string","type"},{"size","number"},
 function(args)
   if args.type:is("HandshakeFramed") then
     return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )

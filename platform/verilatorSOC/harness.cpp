@@ -135,13 +135,13 @@ int main(int argc, char** argv) {
     curArg++;
   }
 
-  int inputCount = 0;
-
   unsigned char* memory = (unsigned char*)malloc(MEMSIZE);
   for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(memory+i)=0x0df0adba; }
   
   init();
 
+  // load inputs
+  int inputCount = 0;
   while(strcmp(argv[curArg],"--registers")!=0){
     unsigned int addr = strtol(argv[curArg+1],NULL,16);
     unsigned int addrOffset = addr-MEMBASE;

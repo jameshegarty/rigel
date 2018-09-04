@@ -100,7 +100,8 @@ function types.array2d( _type, w, h )
   err(w==math.floor(w), "non integer array width "..tostring(w))
   assert(h==math.floor(h))
   err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
-
+  err( w*h>0,"types.array2d: w*h must be >0" )
+  
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
   return J.deepsetweak(types._array, {_type,w,h}, ty)
@@ -836,7 +837,7 @@ function TypeFunctions:addDim(w,h,mixed)
   err( type(w)=="number", ":addDim w should be number")
   err( type(h)=="number", ":addDim h should be number")
   err( type(mixed)=="boolean", ":addDim mixed should be boolean")
-  err( mixed==false or types.isBasic(self) or self:is("V") or self:is("RV"), "addDim: if mixed, this must be a basic type" )
+  err( mixed==false or types.isBasic(self) or self:is("V") or self:is("RV"), "addDim: if mixed, this must be a basic type, but is: "..tostring(self) )
 
   local ldims = {}
   local A
@@ -893,7 +894,7 @@ end
 -- 'V' is basically the last parallel dimension
 function types.HSFV(A)
   assert(types.isType(A))
-  assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
+  err( A:is("HandshakeFramed") or A:is("StaticFramed"), "calling HSFV on unsupported type: "..tostring(A) )
 
   assert(#A.params.dims==1)
   --  err(A.params.mixed, "HSFV: NYI - "..tostring(A))
@@ -951,11 +952,17 @@ function types.export(t)
   if t==nil then t=_G end
 
   rawset(t,"u",types.uint)
+
+  for i=1,32 do
+    rawset(t,"u"..i,types.uint(i))
+  end
+  
   rawset(t,"i",types.int)
   rawset(t,"b",types.bits)
 --  rawset(t,"bool",types.bool(false)) -- used in terra!!
   rawset(t,"ar",types.array2d)
   rawset(t,"tup",types.tuple)
+  rawset(t,"Handshake",types.Handshake)
 end
 
 return types

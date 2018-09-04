@@ -351,7 +351,7 @@ generatorMT.__call=function(tab,...)
       return res
     end
   else
-    J.err(false, "Called a generator with something other than a Rigel value or table ("..tostring(rawarg[1])..")? Make sure you call generator with curly brackets {}")
+    J.err(false, "Called generator '"..tab.name.."' with something other than a Rigel value or table ("..tostring(rawarg[1])..")? Make sure you call generator with curly brackets {}")
   end
 end
 generatorMT.__tostring=function(tab)
@@ -392,7 +392,13 @@ function generatorFunctions:listArgs()
 end
 
 function generatorFunctions:complete(arglist)
-  self:checkArgs(arglist)
+  if self:checkArgs(arglist)==false then
+    print("Generator '"..self.name.."' is missing arguments!")
+    for k,v in pairs(self.requiredArgs) do
+      if self.curriedArgs[k]==nil then print("Argument '"..k.."'") end
+    end
+    assert(false)
+  end
   local mod = self.completeFn(arglist)
   J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module?" )
   mod.generator = self
@@ -673,6 +679,11 @@ function darkroomIRMT.__index(tab,key)
     print("TY",tab.type)
     --assert(false)
     local res = darkroom.selectStream(nil,tab,key)
+    rawset(tab,key,res)
+    return res
+  elseif type(key)=="number" and darkroom.isBasic(tab.type) and (tab.type:isArray() or tab.type:isTuple()) then
+    local G = require "generators"
+    local res = G.Index{key}(tab)
     rawset(tab,key,res)
     return res
   end

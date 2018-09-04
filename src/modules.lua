@@ -880,24 +880,82 @@ modules.map = memoize(function( f, W, H )
 end)
 
 -- vectorized: if true, treat fn as a vectorized module (ie has some array size V, where V will be part of the {w,h} loop)
+--                      (this is the same as 'mixed')
 --             if false, just treat fn as some opaque data type
-modules.mapFramed = memoize(function( fn, w, h, vectorized)
+--
+-- outputW/outputH/outputMixed: if 'fn' changes SDF Rate or vector size, this allows us to override the outputW/H/Mixed
+--    think of this like a combined map+flatten operation (not just a hack..)
+modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, outputMixed, X )
   err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
   err( type(w)=="number", "mapFramed: width must be number")
   err( type(h)=="number", "mapFramed: height must be number")
   err( type(vectorized)=="boolean", "mapFramed: vectorized must be bool")
+  err( outputW==nil or type(outputW)=="number", "mapFramed: outputW must be number or nil" )
+  err( outputH==nil or type(outputH)=="number", "mapFramed: outputH must be number or nil" )
+  err( outputMixed==nil or type(outputMixed)=="boolean", "mapFramed: outputMixed must be boolean or nil" )
+  err( X==nil, "mapFramed: too many arguments" )
+       
+  local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay}
+  
+  res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized).."_outputW"..tostring(outputW).."_outputH"..tostring(outputH).."_outputMixed"..tostring(outputMixed)
 
-  local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay,sdfInput={{1,1}},sdfOutput={{1,1}}}
-  res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized)
-
+  if fn.sdfInput~=nil then
+    assert(#fn.sdfInput==1)
+    assert(#fn.sdfOutput==1)
+    res.sdfInput={{fn.sdfInput[1][1],fn.sdfInput[1][2]}}
+    res.sdfOutput={{fn.sdfOutput[1][1],fn.sdfOutput[1][2]}}
+  else
+    res.sdfInput={{1,1}}
+    res.sdfOutput={{1,1}}
+  end
+  
   res.globals={}
   for k,_ in pairs(fn.globals) do res.globals[k]=1 end
 
+  res.globalMetadata = {}
+  for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
+  
   res.inputType = fn.inputType:addDim(w,h,vectorized)
-  res.outputType = fn.outputType:addDim(w,h,vectorized)
 
---  print("MAPFRAMEDINNER",fn.name)
---  assert(fn.stateful==false)
+  -- tokens: # of actual data items we process.
+  -- make sure this ends up being consistant... (ie possible based on given vector widths/SDF)
+  local inTok = w*h
+  if vectorized and fn.inputType:is("HandshakeFramed") then
+    inTok = inTok/fn.inputType:FV()
+  elseif vectorized then
+    err( types.isBasic(fn.inputType) or fn.inputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.inputType) )
+    local BT = rigel.extractData(fn.inputType)
+    inTok = inTok/BT:channels()
+  end
+
+  local outTok
+  if outputW==nil then
+    res.outputType = fn.outputType:addDim(w,h,vectorized)
+    outTok = w*h
+    if vectorized and fn.outputType:is("HandshakeFramed") then
+      outTok = outTok/fn.outputType:FV()
+    elseif vectorized then
+      err( types.isBasic(fn.outputType) or fn.outputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.outputType) )
+      local BT = rigel.extractData(fn.outputType)
+      outTok = outTok/BT:channels()
+    end
+  else
+    res.outputType = fn.outputType:addDim(outputW,outputH,outputMixed)
+    outTok = outputW*outputH
+    print("FNOUTPUTPTYPE",fn.outputType)
+    if outputMixed then outTok = outTok/fn.outputType:FV() end
+  end
+
+  if fn.inputType:is("Handshake") then
+    -- sanity check: make sure # of tokens we say we're making is consistant with SDF
+    -- need to scale # of output tokens by SDF
+    -- outputSDF/inputSDF = (out[1]/out[2])/(in[1]/in[2]) = (out[1]*in[2])/(out[2]*in[1])
+    local n,d = fn.sdfOutput[1][1]*fn.sdfInput[1][2], fn.sdfOutput[1][2], fn.sdfInput[1][1]
+    local SDFTok = (inTok*n)/d
+    
+    err( outTok==SDFTok, "mapFramed: error, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
+  end
+  
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
 
@@ -914,14 +972,16 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized)
     local CE = S.CE("process_CE")
     local reset_valid = S.parameter("reset",types.bool())
     if fn.inputType:is("Handshake") and fn.outputType==types.null() then
-      --local downstreamReady = S.parameter("ready_downstream", types.bool())
-      --print(fn)
       sm:addFunction( S.lambda("ready", S.parameter("ready_downstream",types.null()), inner:ready(), "ready" ) )
       sm:onlyWire(true)
       CE=nil
---      reset_valid = S.parameter("reset",types.bool())
+    elseif fn.inputType:is("Handshake") and fn.outputType:is("Handshake") then
+      local rds = S.parameter("ready_downstream",types.bool())
+      sm:addFunction( S.lambda("ready", rds, inner:ready(rds), "ready" ) )
+      sm:onlyWire(true)
+      CE=nil
     else
-      assert(types.isBasic(fn.inputType) and types.isBasic(fn.outputType))
+      err(types.isBasic(fn.inputType) and types.isBasic(fn.outputType), "NYI - "..tostring(fn.inputType)..tostring(fn.outputType) )
     end
 
     local I = S.parameter("process_input", rigel.lower(fn.inputType) )
@@ -1328,25 +1388,31 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
   err( scale<65536, "upsampleXSeq: NYI - scale>=65536")
   err(X==nil, "upsampleXSeq: too many arguments")
   
-  if T==1 then
+  if T==1 or T==0 then
     -- special case the EZ case of taking one value and writing it out N times
     local res = {kind="upsampleXSeq",sdfInput={{1,scale}}, sdfOutput={{1,1}}, stateful=true, A=A, T=T, scale=scale}
 
-    local ITYPE = types.array2d(A,T)
-    res.inputType = ITYPE
-    res.outputType = rigel.RV(types.array2d(A,T))
+    if T==0 then
+      res.inputType = A
+      res.outputType = rigel.RV(A)
+    else
+      local ITYPE = types.array2d(A,T)
+      res.inputType = ITYPE
+      res.outputType = rigel.RV(types.array2d(A,T))
+    end
+    
     res.delay=0
     res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale))
 
-    if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, ITYPE ) end
+    if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, res.inputType ) end
 
     -----------------
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
-      local sinp = S.parameter( "inp", ITYPE )
+      local sinp = S.parameter( "inp", res.inputType )
 
       local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),scale-1) ):CE(true):setReset(0):instantiate("phase") )
-      local reg = systolicModule:add( S.module.reg( ITYPE,true ):instantiate("buffer") )
+      local reg = systolicModule:add( S.module.reg( res.inputType,true ):instantiate("buffer") )
 
       local reading = S.eq(sPhase:get(),S.constant(0,types.uint(16))):disablePipelining()
       local out = S.select( reading, sinp, reg:get() ) 
@@ -1871,30 +1937,44 @@ modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
 end)
 
 -- output type: {uint16,uint16}[T]
-modules.posSeq = memoize(function( W, H, T, bits, X )
+-- asArray: return output as u16[2][T] instead
+modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
   err(type(W)=="number","posSeq: W must be number")
   err(type(H)=="number","posSeq: H must be number")
   err(type(T)=="number","posSeq: T must be number")
   err(W>0, "posSeq: W must be >0");
   err(H>0, "posSeq: H must be >0");
-  err(T>=1, "posSeq: T must be >=1");
+  err(T>=0, "posSeq: T must be >=0");
   if bits==nil then bits=16 end
-  err( type(bits)=="number", "posSeq: bits should be number")
+  err( type(bits)=="number", "posSeq: bits should be number, but is: "..tostring(bits))
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean", "posSeq: framed should be boolean")
+  if asArray==nil then asArray=false end
+  err( type(asArray)=="boolean", "posSeq: asArray should be boolean")
   err(X==nil, "posSeq: too many arguments")
 
   local res = {kind="posSeq", T=T, W=W, H=H }
   res.inputType = types.null()
-  res.outputType = types.array2d(types.tuple({types.uint(bits),types.uint(bits)}),T)
+
+  local sizeType = types.tuple({types.uint(bits),types.uint(bits)})
+  if asArray then sizeType = types.array2d(types.uint(bits),2) end
+  if T==0 then
+    res.outputType = sizeType
+    if framed then res.outputType = types.StaticFramed(res.outputType,false,{{W,H}}) end
+  else
+    res.outputType = types.array2d(sizeType,T)
+    if framed then res.outputType = types.StaticFramed(res.outputType,true,{{W,H}}) end
+  end
   res.stateful = true
   res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   res.delay = 0
   res.name = sanitize("PosSeq_W"..W.."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
-  if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T) end
+  if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T,asArray) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-T, T ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-math.max(T,1), math.max(T,1) ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
 
     local printInst
@@ -1903,7 +1983,7 @@ modules.posSeq = memoize(function( W, H, T, bits, X )
       printInst = systolicModule:add( S.module.print( types.tuple{types.uint(bits),types.uint(bits)}, "x %d y %d", true):instantiate("printInst") ) 
     end
     
-    local incY = S.eq( posX:get(), S.constant(W-T,types.uint(bits))  ):disablePipelining()
+    local incY = S.eq( posX:get(), S.constant(W-math.max(T,1),types.uint(bits))  ):disablePipelining()
     
     local out = {S.tuple{posX:get(),posY:get()}}
     for i=1,T-1 do
@@ -1916,7 +1996,18 @@ modules.posSeq = memoize(function( W, H, T, bits, X )
     table.insert( pipelines, posY:setBy( incY ) )
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{posX:get(),posY:get()}) ) end
 
-    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(bits),types.uint(bits)},T)), "process_output", pipelines, nil, CE ) )
+    local finout
+    if T==0 then
+      finout = out[1]
+      if asArray then
+        finout = S.cast(finout,types.array2d(types.uint(bits),2))
+      end
+    else
+      finout = S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(bits),types.uint(bits)},T))
+      assert(asArray==false) -- NYI
+    end
+    
+    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.null()), finout, "process_output", pipelines, nil, CE ) )
 
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:reset(), posY:reset()}, S.parameter("reset",types.bool())) )
 
@@ -2198,6 +2289,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   err( types.isType(A), "A should be a type")
   err( type(H)=="number", "H should be number")
   err( type(inputRate)=="number", "inputRate should be number")
+  err( inputRate>0, "changeRate: inputRate must be >0")
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number, but is: "..tostring(outputRate))
   err( outputRate==math.floor(outputRate), "outputRate should be integer")
@@ -2205,7 +2297,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
 
   local maxRate = math.max(inputRate,outputRate)
 
-  err( maxRate % inputRate == 0, "maxRate % inputRate ~= 0")
+  err( maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
   err( maxRate % outputRate == 0, "maxRate % outputRate ~=0")
   rigel.expectBasic(A)
 
@@ -2809,7 +2901,6 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
         load:setOutput( fifo:hasData(), "load_output" )
       else
         local res = S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }
-        print("LOAD_OUTPUT",res.type)
         load:setOutput( res, "load_output" )
       end
       
@@ -4293,6 +4384,5 @@ modules.triggerCounter = memoize(function(N)
   return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res) ))
   
 end)
-
 
 return modules
