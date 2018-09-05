@@ -242,7 +242,7 @@ function MT.RPassthrough(res,f)
 end
 
 function MT.liftHandshake(res,f,delay)
-  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake"),
+  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
                               inner: f.terraModule, ready:bool, readyDownstream:bool}
   terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
   terra LiftHandshake:init() self.inner:init() end
@@ -313,20 +313,37 @@ function MT.map(res,f,W,H)
 end
 
 function MT.mapFramed(res,f,W,H,vectorized)
-  local struct MapFramed {fn:f.terraModule, ready:bool}
-  terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-    self.fn:process(inp,out)
-  end
+  local struct MapFramed {fn:f.terraModule, ready:bool, readyDownstream:bool}
 
+  if f.stateful then
+    terra MapFramed:reset() self.fn:reset() end
+  end
+  
   if f.inputType:is("Handshake") and f.outputType==types.null() then
+--    assert(false)
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      self.fn:process(inp,out)
+    end
+
     terra MapFramed:calculateReady()
       self.fn:calculateReady()
       self.ready = self.fn.ready
     end
   elseif f.inputType:is("Handshake") and f.outputType:is("Handshake") then
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      if self.readyDownstream then
+        self.fn:process(inp,out)
+      end
+    end
+
     terra MapFramed:calculateReady( readyDS:bool)
+      self.readyDownstream = readyDS
       self.fn:calculateReady(readyDS)
       self.ready = self.fn.ready
+    end
+  else
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      self.fn:process(inp,out)
     end
   end
 
@@ -1065,6 +1082,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
+  
   local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake("..f.name..")"),
                               inner: f.terraModule,
                             ready:bool, readyDownstream:bool}
@@ -1093,6 +1111,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         var tout : rigel.lower(res.outputType):toTerraType()
         valid(tout) = true
         self.inner:process(&data(tout))
+
         self.delaysr:pushBack(&tout)
       end
     end
@@ -1167,7 +1186,6 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         
         valid(tout) = valid(inp);
         if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
-        
         self.delaysr:pushBack(&tout)
       end
     end

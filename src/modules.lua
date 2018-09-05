@@ -2726,7 +2726,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
   end
 
-  res.stateful = f.stateful
+  res.stateful = true -- for the shift register of valid bits
   res.name = "MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name
 
   res.globals={}

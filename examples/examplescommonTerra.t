@@ -52,13 +52,16 @@ function CT.print(A,str)
 
   local printS = quote end
   if str~=nil then printS = quote cstdio.printf("%s:",str) end  end
-  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+
+  local struct PrintModule {}
+  terra PrintModule:process( a : &A:toTerraType(), out : &A:toTerraType() )
     var aa = @a
     printS
     [doprint(A,aa)]
     cstdio.printf("\n")
     @out = @a
   end
+  return MT.new(PrintModule)
 end
 
 function CT.cast(A,B)

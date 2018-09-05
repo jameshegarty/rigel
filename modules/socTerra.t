@@ -328,8 +328,6 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
     else
       valid(dataOut) = false
     end
-
-    cstdio.printf("READBYTES valid:%d\n",valid(dataOut))
   end
 
   terra ReadBytes:calculateReady(readyDownstream:bool)
