@@ -315,6 +315,8 @@ end
 function MT.mapFramed(res,f,W,H,vectorized)
   local struct MapFramed {fn:f.terraModule, ready:bool, readyDownstream:bool}
 
+  terra MapFramed:init() self.fn:init() end
+
   if f.stateful then
     terra MapFramed:reset() self.fn:reset() end
   end
@@ -331,9 +333,7 @@ function MT.mapFramed(res,f,W,H,vectorized)
     end
   elseif f.inputType:is("Handshake") and f.outputType:is("Handshake") then
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-      if self.readyDownstream then
-        self.fn:process(inp,out)
-      end
+      self.fn:process(inp,out)
     end
 
     terra MapFramed:calculateReady( readyDS:bool)
@@ -1519,13 +1519,15 @@ end
 function MT.fwriteSeq(filename,ty,passthrough)
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:init()
-    self.file = cstdio.fopen(filename, "wb") 
+    self.file = cstdio.fopen(filename, "wb")
     if self.file==nil then cstdio.perror(["Error opening "..filename.." for writing"]) end
     [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
   end
+
   terra FwriteSeq:free()
     cstdio.fclose(self.file)
   end
+
   terra FwriteSeq:reset() 
   end
 

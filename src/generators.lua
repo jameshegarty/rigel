@@ -345,9 +345,16 @@ function(args)
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
 end)
 
-generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string","size"},{},
+generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string"},{"size"},
 function(args)
-  return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+  --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+  return RM.fwriteSeq(args.string,args.type,args.string..".verilog.raw",true)
+end)
+
+-- assert that the input stream is the same as the file. Early out on errors.
+generators.Fassert = R.newGenerator("generators","Fassert",{"type","string"},{},
+function(args)
+  return C.fassert(args.string,args.type)
 end)
 
 generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size"},{},

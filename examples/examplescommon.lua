@@ -19,6 +19,28 @@ C.identity = memoize(function(A)
   return identity
 end)
 
+C.fassert = memoize(function(filename,A)
+  err(types.isBasic(A),"C.fassert: type should be basic, but is: "..tostring(A) )
+
+  local fassert = {name=J.verilogSanitize("fassert_"..tostring(A).."_file"..tostring(filename))}
+  fassert.inputType = A
+  fassert.outputType = A
+  fassert.sdfInput={{1,1}}
+  fassert.sdfOutput={{1,1}}
+  fassert.stateful=true
+  fassert.delay=0
+  function fassert.makeTerra() return CT.fassert(filename,A) end
+
+  function fassert.makeSystolic()
+    local sm = Ssugar.moduleConstructor(fassert.name)
+    local inp = S.parameter( "process_input", rigel.lower(fassert.inputType) )
+    sm:addFunction( S.lambda("process", inp, inp, "process_output", nil,nil,S.CE("process_CE")) )
+    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+    return sm
+  end
+  return rigel.newFunction(fassert)
+end)
+
 C.print = memoize(function(A,str)
   err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
 

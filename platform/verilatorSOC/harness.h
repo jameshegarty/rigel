@@ -520,7 +520,7 @@ void masterWriteDataLatchFlops(
     *(unsigned long*)(&memory[t->addr]) = *WDATA;
 
     if(verbose){
-      printf("MAXI%d Accept Write, Addr(base rel): %d/%#x data: %d remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, t->burst, QSize(&writeQ[port]) );
+      printf("MAXI%d Accept Write, Addr(base rel): %d/%#x data: %d/%#x remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, *WDATA, t->burst, QSize(&writeQ[port]) );
     }
     
     t->burst--;
