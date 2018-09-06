@@ -1177,13 +1177,30 @@ function darkroom.applyMethod( name, inst, fnname, input )
   return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )
 end
 
-function darkroom.constant( name, value, ty )
-  err( type(name) == "string", "constant name must be string" )
-  err( types.isType(ty), "constant type must be rigel type" )
-  ty:checkLuaValue(value)
+-- can be called either as constant(name,value,ty) or constant(value,ty)
+function darkroom.constant( name, value, ty, X )
+  err( X==nil, "rigel.constant: too many arguments" )
 
-  return darkroom.newIR( {kind="constant", name=name, loc=getloc(), value=value, type=ty, inputs = {}} )
+  local res = {kind="constant", loc=getloc(), inputs = {}}
+  if type(name)=="string" then
+    res.name = name
+    res.value = value
+    res.type = ty
+  else
+    res.defaultName=true
+    res.name="const"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+    res.value = name
+    res.type = value
+    err( ty==nil, "rigel.constant: too many arguments" )
+  end
+  
+  err( types.isType(res.type), "rigel.constant: type must be rigel type" )
+  res.type:checkLuaValue(res.value)
+
+  return darkroom.newIR( res )
 end
+darkroom.c = darkroom.constant
 
 function darkroom.concat( name, t, X )
   local r = {kind="concat", name=name, loc=getloc(), inputs={} }
@@ -1266,28 +1283,7 @@ end
 function darkroom.export(t)
   if t==nil then t=_G end
 
-  -- constants
-  local t_c = function(arg)
-    J.err( type(arg)=="table", "c: argument should be table" )
-    J.err( #arg==2, "c: should have 2 args" )
-
-    local ty, val
-    if types.isType(arg[1]) then
-      ty = arg[1]
-      val = arg[2]
-    else
-      ty = arg[2]
-      val = arg[1]
-    end
-
-    local res = darkroom.constant("const"..darkroom.__unnamedID,val,ty)
-    res.defaultName = true
-    darkroom.__unnamedID = darkroom.__unnamedID+1
-
-    return res
-  end
-
-  rawset(t,"c",t_c)
+  rawset(t,"c",darkroom.constant)
 end
 
 return darkroom
