@@ -193,6 +193,9 @@ function IR.new(node)
 end
 
 function IR.isIR(v)
+  -- hack: if table declares itself to be IR, just trust it
+  if v.isIR==true then return true end
+  
   local mt = getmetatable(v)
   if type(mt)~="table" then return false end
   if type(mt.__index)~="table" then return false end

@@ -242,7 +242,7 @@ function MT.RPassthrough(res,f)
 end
 
 function MT.liftHandshake(res,f,delay)
-  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake"),
+  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
                               inner: f.terraModule, ready:bool, readyDownstream:bool}
   terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
   terra LiftHandshake:init() self.inner:init() end
@@ -310,6 +310,44 @@ function MT.map(res,f,W,H)
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   return MT.new(MapModule)
+end
+
+function MT.mapFramed(res,f,W,H,vectorized)
+  local struct MapFramed {fn:f.terraModule, ready:bool, readyDownstream:bool}
+
+  terra MapFramed:init() self.fn:init() end
+
+  if f.stateful then
+    terra MapFramed:reset() self.fn:reset() end
+  end
+  
+  if f.inputType:is("Handshake") and f.outputType==types.null() then
+--    assert(false)
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      self.fn:process(inp,out)
+    end
+
+    terra MapFramed:calculateReady()
+      self.fn:calculateReady()
+      self.ready = self.fn.ready
+    end
+  elseif f.inputType:is("Handshake") and f.outputType:is("Handshake") then
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      self.fn:process(inp,out)
+    end
+
+    terra MapFramed:calculateReady( readyDS:bool)
+      self.readyDownstream = readyDS
+      self.fn:calculateReady(readyDS)
+      self.ready = self.fn.ready
+    end
+  else
+    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+      self.fn:process(inp,out)
+    end
+  end
+
+  return MT.new(MapFramed)
 end
 
 function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
@@ -714,15 +752,33 @@ function MT.broadcastStream(res,A,N)
   return BroadcastStream
 end
 
-function MT.posSeq(res,W,H,T)
+function MT.posSeq(res,W,H,T,asArray)
   local struct PosSeq { x:uint16, y:uint16 }
   terra PosSeq:reset() self.x=0; self.y=0 end
-  terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
-    for i=0,T do 
-      (@out)[i] = {self.x,self.y}
-      self.x = self.x + 1
-      if self.x==W then self.x=0; self.y=self.y+1 end
-      if self.y==H then self.y=0 end
+
+  if T==0 then
+    local slf = symbol(&PosSeq)
+    local out = symbol(&rigel.lower(res.outputType):toTerraType())
+    local assign
+    if asArray then
+      assign = quote (@out)[0] = slf.x; (@out)[1] = slf.y; end
+    else
+      assign = quote (@out) = {slf.x,slf.y} end
+    end
+    terra PosSeq.methods.process( [slf], [out]  )
+      [assign]
+      slf.x = slf.x + 1
+      if slf.x==W then slf.x=0; slf.y=slf.y+1 end
+      if slf.y==H then slf.y=0 end
+    end
+  else
+    terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
+      for i=0,T do 
+        (@out)[i] = {self.x,self.y}
+        self.x = self.x + 1
+        if self.x==W then self.x=0; self.y=self.y+1 end
+        if self.y==H then self.y=0 end
+      end
     end
   end
 
@@ -1026,7 +1082,8 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
-  local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake"),
+  
+  local struct MakeHandshake{ delaysr: simmodules.fifo( rigel.lower(res.outputType):toTerraType(), delay, "makeHandshake("..f.name..")"),
                               inner: f.terraModule,
                             ready:bool, readyDownstream:bool}
   terra MakeHandshake:reset() self.delaysr:reset(); self.inner:reset() end
@@ -1054,6 +1111,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         var tout : rigel.lower(res.outputType):toTerraType()
         valid(tout) = true
         self.inner:process(&data(tout))
+
         self.delaysr:pushBack(&tout)
       end
     end
@@ -1128,7 +1186,6 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         
         valid(tout) = valid(inp);
         if (valid(inp)~=validFalse) or innerconst then self.inner:process(&data(inp),&data(tout)) end -- don't bother if invalid
-        
         self.delaysr:pushBack(&tout)
       end
     end
@@ -1462,13 +1519,15 @@ end
 function MT.fwriteSeq(filename,ty,passthrough)
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:init()
-    self.file = cstdio.fopen(filename, "wb") 
+    self.file = cstdio.fopen(filename, "wb")
     if self.file==nil then cstdio.perror(["Error opening "..filename.." for writing"]) end
     [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
   end
+
   terra FwriteSeq:free()
     cstdio.fclose(self.file)
   end
+
   terra FwriteSeq:reset() 
   end
 
@@ -1599,7 +1658,7 @@ function MT.lambdaCompile(fn)
 --    readyInput = symbol(bool, "readyinput")
   end
 
-  if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) then
+  if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") then
     table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} )
   end
   
@@ -1626,7 +1685,7 @@ function MT.lambdaCompile(fn)
   local readyOutput
     
     -- build ready calculation
-  if rigel.isRV(fn.output.type) or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
+  if rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1734,10 +1793,10 @@ return {`mself.[n.name].ready}
       end)
   end
 
-  if rigel.isRV(fn.inputType) then
+  if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
     assert(readyOutput~=nil)
     terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
-  elseif rigel.isRV(fn.outputType) then
+  elseif rigel.isRV(fn.outputType) or fn.outputType:is("RVFramed") then
     assert(readyOutput~=nil)
     -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
     terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end

@@ -18,10 +18,10 @@ padSize = { 1920+16, 1080+3 }
 local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
 function(inp)
   inp = Map{AddMSBs{24}}(inp)
-  local coeff = c{ar(u(32),ConvWidth,ConvWidth),{4, 14, 14,  4,
-                                                 14, 32, 32, 14,
-                                                 14, 32, 32, 14,
-                                                 4, 14, 14,  4}}
+  local coeff = c({4, 14, 14,  4,
+                   14, 32, 32, 14,
+                   14, 32, 32, 14,
+                   4, 14, 14,  4},ar(u(32),ConvWidth,ConvWidth))
   local z = Zip(inp,coeff)
   local out = Map{Mul}(z)
   local res = Reduce{Add}(out)
@@ -35,6 +35,6 @@ harness{
 --  RS.HS(C.print(ar(u(8),1))),
   HS{Linebuffer{padSize,1,{3,0,3,0}}},
   HS{Map{conv}},
-  HS{Crop{padSize,1,{9,7,3,0}}},
-  SOC.writeBurst("out/convgen",1920,1080,u(8),1),
+  HS{CropSeq{padSize,1,{9,7,3,0}}},
+  SOC.writeBurst("out/soc_convgen",1920,1080,u(8),1),
   regs.done}

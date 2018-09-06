@@ -691,4 +691,18 @@ function common.flattenTables(arr)
   return t
 end
 
+-- flatten an array of arrays
+function common.flatten(arr)
+  common.err( #arr==common.keycount(arr),"flatten: input must be array")
+  
+  local t = {}
+  for _,v in ipairs(arr) do
+    common.err( #v==common.keycount(v),"flatten: input must be array of arrays")
+    for _,vv in ipairs(v) do
+      table.insert(t,vv)
+    end
+  end
+  return t
+end
+
 return common

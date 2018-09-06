@@ -730,7 +730,7 @@ function systolicASTFunctions:internalDelay()
     else
       return 0,0 -- if pipelining is disabled on an op
     end
-  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" or self.kind=="writeSideChannel" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -1440,7 +1440,7 @@ function userModuleFunctions:instanceToVerilog( instance, module, fnname, datava
 
   end
 
-  if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
+  if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc) end
 
   if fn.CE~=nil then
     err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)
@@ -1741,7 +1741,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   for _,inst in pairs(instances) do
     if inst.module.sideChannels~=nil then
       for sc,_ in pairs(inst.module.sideChannels) do
-        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."'")
+        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."', when creating new module '"..name.."'")
       end
     end
   end

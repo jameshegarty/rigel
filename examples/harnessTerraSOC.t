@@ -193,7 +193,7 @@ return function(top, memStart, memEnd)
       local addr = tonumber("0x"..addr)
       print("BYTES",bytes,"addr",addr)
 
-      for b=0,bytes/4-1 do
+      for b=0,math.ceil(bytes/4)-1 do
         local dat = string.sub(v,b*8+1,(b+1)*8)
         local data = tonumber("0x"..dat)
         print("DAT",dat,data)
@@ -237,9 +237,9 @@ return function(top, memStart, memEnd)
 
       var cycle = 0
 
-      if round==0 then
+--      if round==0 then
         [setTaps]
-      end
+--      end
 
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       

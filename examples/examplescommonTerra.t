@@ -18,11 +18,39 @@ function CT.identity(A)
                   end
 end
 
-function CT.print(A)
+function CT.fassert(filename,ty)
+  assert(ty:verilogBits()%8==0)
+  assert(ty:verilogBits()==ty:sizeof()*8)
+  local struct Fassert { file : &cstdio.FILE, token:uint }
+  terra Fassert:init() 
+    self.file = cstdio.fopen(filename, "rb") 
+    [J.darkroomAssert](self.file~=nil, ["file "..filename.." doesnt exist"])
+  end
+  terra Fassert:reset() self.token=0 end
+  terra Fassert:free() cstdio.fclose(self.file) end
+  terra Fassert:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
+    var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
+    [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
 
+    if @inp~=@out then
+      cstdio.printf("Fassert: file and input don't match!!\n")
+      cstdio.printf("input: %d/%#x\n",@inp,@inp)
+      cstdio.printf("file: %d/%#x\n",@out,@out)
+      cstdio.printf("at token number: %d, byte: %d\n",self.token,self.token*[ty:sizeof()])
+      cstdlib.exit(1)
+    end
+    self.token = self.token+1
+  end
+
+  return MT.new(Fassert)
+end
+
+function CT.print(A,str)
+  err(types.isBasic(A),"CT.print: type should be basic, but is: "..tostring(A) )
+  
   local function doprint(A,symb)
     assert(symb~=nil)
-    
+
     if A:isArray() then
       local tab = {}
       table.insert(tab,quote cstdio.printf("[") end)
@@ -42,19 +70,25 @@ function CT.print(A)
       table.insert(tab,quote cstdio.printf("}") end)
       return quote [tab] end      
     elseif A:isUint() or A:isInt() or A:isBits() then
-      return quote cstdio.printf("%d",symb) end
+      return quote cstdio.printf("%d/%#x",symb,symb) end
     else
       print(A)
       assert(false)
     end
   end
-  
-  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+
+  local printS = quote end
+  if str~=nil then printS = quote cstdio.printf("%s:",str) end  end
+
+  local struct PrintModule {}
+  terra PrintModule:process( a : &A:toTerraType(), out : &A:toTerraType() )
     var aa = @a
+    printS
     [doprint(A,aa)]
     cstdio.printf("\n")
     @out = @a
   end
+  return MT.new(PrintModule)
 end
 
 function CT.cast(A,B)
@@ -293,6 +327,15 @@ function CT.plusConsttfn(ty,value)
     @[out] =  @a+[ty:toTerraType()](value) 
     [q]
   end
+end
+
+function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
+  local struct HandshakeToHandshakeFramed {ready:bool}
+  terra HandshakeToHandshakeFramed:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  terra HandshakeToHandshakeFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
+  return MT.new(HandshakeToHandshakeFramed)
 end
 
 return CT

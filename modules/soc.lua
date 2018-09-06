@@ -889,8 +889,8 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   J.err( type(port)=="number", "axiReadBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
   J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
-  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
-  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
+--  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
+--  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
   J.err( X==nil, "axiReadBytes: too many arguments" )
   J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
   
@@ -908,7 +908,7 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
 
   local ModuleName = J.sanitize("AXI_READ_BYTES_"..tostring(Nbytes).."_"..tostring(port))
 
-  local burstCount = Nbytes/8
+  local burstCount = math.ceil(Nbytes/8)
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
   
   local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)),
@@ -1383,7 +1383,7 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
-SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
+SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(filename)=="string","readBurst: filename must be string")
   J.err( type(W)=="number", "readBurst: W must be number")
   J.err( type(H)=="number", "readBurst: H must be number")
@@ -1394,6 +1394,8 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   --J.err( nbytes%128==0,"NYI - readBurst requires 128-byte aligned size" )
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
   if V==nil then V=0 end
+
+  J.err( framed==nil or type(framed)=="boolean", "framed must be nil or bool, but is: "..tostring(framed))
   J.err(X==nil, "readBurst: too many arguments")
   
   local globalMetadata={}
@@ -1430,6 +1432,10 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,X)
   local outType = ty
   if V>0 then outType=types.array2d(outType,V) end
   out = RM.makeHandshake(C.cast(types.bits(outType:verilogBits()),outType))(out)
+
+  if framed then
+    out = C.handshakeToHandshakeFramed(out.type,V>0,{{W,H}})(out)
+  end
   
   local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
@@ -1441,11 +1447,14 @@ end)
 
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
+-- readType: this is the output type we want
 SOC.read = J.memoize(function(filename,fileBytes,readType,X)
-  J.err( type(filename)=="string","read: filename must be string")
+  J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "read: type must be type")
-  J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned")
-  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned")
+  J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
+  J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned, but is: "..tostring(readType))
+--  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned, but is: "..tostring(readType))
+  J.err( X==nil, "SOC.read: too many arguments" )
   
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
@@ -1481,6 +1490,9 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
     out = RM.liftHandshake(RM.changeRate(types.bits(64),1,1,N))(out)
 
     out = RM.makeHandshake(C.bitcast(types.array2d(types.bits(64),N),readType))(out)
+  elseif readType:verilogBits()<64 then
+    out = RM.makeHandshake(C.bitSlice(types.bits(64),0,readType:verilogBits()-1))(out)
+    out = RM.makeHandshake(C.bitcast(types.bits(readType:verilogBits()),readType))(out)
   else
     assert(false)
   end
@@ -1493,7 +1505,7 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   return res
 end)
                           
-SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
+SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
   J.err( type(W)=="number", "writeBurst: W must be number")
   J.err( type(H)=="number", "writeBurst: H must be number")
@@ -1503,8 +1515,10 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   --J.err( nbytes%8==0,"NYI - writeBurst requires 8-byte aligned size (input bytes is: "..nbytes..")" )
   J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
   if V==nil then V=1 end
+  if framed==nil then framed=false end
+  J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
   J.err(X==nil, "writeBurst: too many arguments")
-  
+
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
@@ -1546,6 +1560,11 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,X)
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+totalBits/8
 
+  if framed then
+    -- HACK
+    res.inputType = types.HandshakeFramed(inputType,V>0,{{W,H}})
+  end
+  
   return res
 end)
 
