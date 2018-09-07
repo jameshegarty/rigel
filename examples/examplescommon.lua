@@ -9,6 +9,7 @@ local J = require "common"
 local memoize = J.memoize
 local err = J.err
 local f = require "fixed_new"
+local SDF = require "sdf"
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
@@ -25,8 +26,8 @@ C.fassert = memoize(function(filename,A)
   local fassert = {name=J.verilogSanitize("fassert_"..tostring(A).."_file"..tostring(filename))}
   fassert.inputType = A
   fassert.outputType = A
-  fassert.sdfInput={{1,1}}
-  fassert.sdfOutput={{1,1}}
+  fassert.sdfInput=SDF{1,1}
+  fassert.sdfOutput=SDF{1,1}
   fassert.stateful=true
   fassert.delay=0
   function fassert.makeTerra() return CT.fassert(filename,A) end
@@ -77,7 +78,7 @@ C.print = memoize(function(A,str)
   end
   
   --local identity = RM.lift( , A, A, 0, function(sinp) return sinp end, function() return CT.print(A,str) end, "C.print")
-  local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput={{1,1}}, sdfOutput={{1,1}}}
+  local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
   res.stateful=false
   res.delay=0
   function res.makeSystolic()
@@ -995,7 +996,7 @@ function C.border(A,W,H,L,R,B,T,value)
   local res = {kind="border",generator="C.border",L=L,R=R,T=T,B=B,value=value}
   res.inputType = types.array2d(A,W,H)
   res.outputType = res.inputType
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 0
 
   if terralib~=nil then res.terraModule = CT.border(res,A,W,H,L,R,B,T,value) end
@@ -1144,7 +1145,7 @@ C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   res.delay=0
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.name = J.sanitize("Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax))
   res.stateful=false
 
@@ -1325,7 +1326,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
     print("UPSOP",res.outputType)
   end
   
-  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.stateful = false
   res.delay=0
   res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
@@ -1593,7 +1594,7 @@ C.handshakeToHandshakeFramed = memoize(
     err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
     assert(X==nil)
     err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
-    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput={{1,1}},sdfOutput={{1,1}},stateful=false}
+    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
     res.name=J.sanitize("HandshakeToHandshakeFramed_"..tostring(A))
 
     function res.makeSystolic()

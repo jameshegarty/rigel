@@ -5,7 +5,7 @@ local types = require "types"
 local J = require "common"
 local types = require "types"
 local C = require "examplescommon"
-local SDF = require "sdfrate"
+local SDF = require "sdf"
 
 local SOCMT
 
@@ -639,7 +639,7 @@ endmodule
 
 ]=])
 
-  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
+  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
   function res.makeSystolic()
     local fns = {}
 

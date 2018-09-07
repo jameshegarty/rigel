@@ -8,6 +8,7 @@ local fpgamodules = require("fpgamodules")
 local R = require("rigel")
 local J = require "common"
 local err = J.err
+local SDF = require "sdf"
 local fixed={}
 
 local fixedTerra
@@ -552,7 +553,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   
   local tfn
 
-  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput={{1,1}},sdfOutput={{1,1}}, stateful=false, globals=globals}
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, globals=globals}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 

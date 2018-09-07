@@ -6,6 +6,7 @@ local Ssugar = require("systolicsugar")
 local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
+local SDF = require("sdf")
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
@@ -646,10 +647,10 @@ function darkroom.newFunction(tab,X)
   err(X==nil, "rigel.newFunction: too many arguments")
 
   err( type(tab.name)=="string", "rigel.newFunction: name must be string" )
-  err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( darkroom.SDF==false or SDFRate.isSDFRate(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( darkroom.SDF==false or (tab.sdfInput[1]=='x' or #tab.sdfInput==0 or tab.sdfInput[1][1]/tab.sdfInput[1][2]<=1), "rigel.newFunction: sdf input rate is not <=1" )
-  err( darkroom.SDF==false or (tab.sdfOutput[1]=='x' or #tab.sdfOutput==0 or tab.sdfOutput[1][1]/tab.sdfOutput[1][2]<=1), "rigel.newFunction: sdf output rate is not <=1" )
+  err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
+  err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
+  err( darkroom.SDF==false or tab.sdfInput:maxnumber()<=1, "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
+  err( darkroom.SDF==false or tab.sdfOutput:maxnumber()<=1, "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
@@ -847,6 +848,7 @@ function darkroomIRFunctions:sdfTotalInner( registeredInputRates )
       end
 
       assert( SDFRate.isSDFRate(res[1]) )
+      res[1] = SDF(res[1])
       J.map( res[2], function(n) assert(type(n)=="boolean") end )
 
       __sdfTotalCache[n] = res[1]
@@ -882,6 +884,7 @@ function darkroomIRFunctions:sdfTotal(root)
   end
 
   assert( type(__sdfTotalCache[self])=="table" )
+  assert( SDF.isSDF(__sdfTotalCache[self]) )
   return __sdfTotalCache[self]
 end
 
@@ -1120,7 +1123,7 @@ function darkroom.input( ty, sdfRate )
 
   err( darkroom.streamCount(ty)==0 or darkroom.streamCount(ty)==#sdfRate, "rigel.input: number of streams in type "..tostring(ty).." ("..tostring(darkroom.streamCount(ty))..") != number of SDF streams passed in ("..tostring(#sdfRate)..")" )
   
-  return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, sdfRate=sdfRate, loc=getloc()} )
+  return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, sdfRate=SDF(sdfRate), loc=getloc()} )
 end
 
 function darkroom.readGlobal( name, g, X )
