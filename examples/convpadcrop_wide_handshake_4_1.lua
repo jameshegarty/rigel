@@ -80,9 +80,10 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local out = R.apply("HH",RM.makeHandshake(kernel), convpipeinp)
   
   if NOSTALL then
-    table.insert( fifos, R.instantiateRegistered("f_nostall",RM.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)) )
-    table.insert( statements, R.applyMethod( "s_nostall", fifos[#fifos], "store", out ) )
-    out = R.applyMethod("r_nostall",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f_nostall",RM.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)) )
+    --table.insert( statements, R.applyMethod( "s_nostall", fifos[#fifos], "store", out ) )
+    --out = R.applyMethod("r_nostall",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)(out)
   end
 
   local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)

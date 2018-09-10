@@ -773,9 +773,10 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(types.array2d(A,T),128)) )
-    table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",out) )
-    out = R.applyMethod("l13",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(types.array2d(A,T),128)) )
+    --table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",out) )
+    --out = R.applyMethod("l13",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(A,T),128)(out)
   end
 
   -----------------
@@ -788,9 +789,10 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(types.array2d(fnOutType,T),128)) )
-    table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",out) )
-    out = R.applyMethod("l2",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(types.array2d(fnOutType,T),128)) )
+    --table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",out) )
+    --out = R.applyMethod("l2",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(fnOutType,T),128)(out)
   end
   -----------------
 
@@ -950,15 +952,16 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 end)
 
 -------------
-C.fifo = memoize(function(ty,size,X)
+C.fifo = memoize(function(ty,size,nostall,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
   err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
+  err( nostall==nil or type(nostall)=="boolean", "C.fifo: nostall must be boolean")
   err( X==nil, "C.fifo: too many arguments" )
   err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
   
   local inp = R.input(R.Handshake(ty))
-  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size))}
+  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
   return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
@@ -1059,7 +1062,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   end
   if scaleX>1 then
     local mod = modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))
-    print(mod)
+
     if scaleY>1 then mod=modules.RPassthrough(mod) end
 
     out = rigel.apply("downsampleSeq_X", mod, out)
@@ -1258,17 +1261,12 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   local SSRSize = w*(-ymin)-xmin+1
   local lb = modules.SSR(A,T,-SSRSize,0)(I)
 
-  --print("SSRSize",SSRSize,"w",w,"h",h,"xmin",xmin,"ymin",ymin)
-  
   local tab = {}
   for y=ymin,0 do
     for x=xmin,0 do
       local idx = y*w+x
       -- SSR module stores values in opposite order of what we want
       local ridx = SSRSize+idx
-
-      --print("idx",idx,"ridx",ridx)
-      
       table.insert(tab, C.index(lb.type,ridx,0)(lb) )
     end
   end
@@ -1314,16 +1312,9 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   if framed then
     err( type(framedW)=="number", "unpackStencil: framedW must be nil or number")
     err( type(framedH)=="number", "unpackStencil: framedH must be nil or number")
-
---    local idims = types.FramedCollectParallelDims(res.inputType)
---    local odims = types.FramedCollectParallelDims(res.outputType)
-
---    table.insert(idims,{framedW/T,framedH})
---    odims[#odims]={framedW,framedH}
     
     res.inputType = res.inputType:addDim(framedW/T,framedH,false)
     res.outputType = res.outputType:addDim(framedW,framedH,true)
-    print("UPSOP",res.outputType)
   end
   
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}

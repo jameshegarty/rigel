@@ -1550,10 +1550,10 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
   res.stateful = false
   res.name = sanitize("ToHandshakeArrayOneHot_"..tostring(A).."_"..#inputRates)
 
-  function res:sdfTransfer( I, loc ) 
-    err(#I[1]==#inputRates, "toHandshakeArrayOneHot: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
-    return I 
-  end
+--  function res:sdfTransfer( I, loc ) 
+--    err(#I[1]==#inputRates, "toHandshakeArrayOneHot: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
+--    return I 
+--  end
   
   if terralib~=nil then res.terraModule = MT.toHandshakeArrayOneHot( res,A, inputRates ) end
 
@@ -1629,10 +1629,10 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   res.sdfInput = SDF(inputRates)
   res.sdfOutput = SDF(inputRates)
 
-  function res:sdfTransfer( I, loc ) 
-    err(#I[1]==#inputRates, "serialize: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
-    return I 
-  end
+--  function res:sdfTransfer( I, loc ) 
+--    err(#I[1]==#inputRates, "serialize: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
+--    return I 
+--  end
 
   if terralib~=nil then res.terraModule = MT.serialize( res, A, inputRates, Schedule) end
 
@@ -1691,17 +1691,19 @@ modules.demux = memoize(function( A, rates, X )
   res.stateful = false
   res.name = sanitize("Demux_"..tostring(A).."_"..#rates)
 
-  local sdfSum = rates[1][1]/rates[1][2]
-  for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
-  err(sdfSum==1, "rates must sum to 1")
+  --local sdfSum = rates[1][1]/rates[1][2]
+  --for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
+  --err(sdfSum==1, "rates must sum to 1")
+  local sdfSum = SDFRate.sum(rates)
+  err(  SDFRate.fracEq(sdfSum,{1,1}), "rates must sum to 1")
 
   res.sdfInput = SDF(rates)
   res.sdfOutput = SDF(rates)
 
-  function res:sdfTransfer( I, loc ) 
-    err(#I[1]==#rates, "demux: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#rates) )
-    return I 
-  end
+--  function res:sdfTransfer( I, loc ) 
+--    err(#I[1]==#rates, "demux: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#rates) )
+--    return I 
+--  end
 
   if terralib~=nil then res.terraModule = MT.demux(res,A,rates) end
 
@@ -2632,10 +2634,10 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
 
-    function res:sdfTransfer( I, loc ) 
-      err(#I[1]==#tmuxRates, "MakeHandshake: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#tmuxRates) )
-      return I 
-    end
+--    function res:sdfTransfer( I, loc ) 
+--      err(#I[1]==#tmuxRates, "MakeHandshake: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#tmuxRates) )
+--      return I 
+--    end
 
   else
     --rigel.expectBasic(f.inputType)
@@ -3276,8 +3278,8 @@ end)
 local function lambdaSDFNormalize( input, output )
   local sdfMaxRate = output:sdfExtremeRate(true)
   if SDFRate.fracToNumber(sdfMaxRate) < 1 then
-	 print("Warning: SDF Rate < 1, inefficient hardware may be generated")
-	 return input, output
+    print("Warning: SDF Rate < 1, inefficient hardware may be generated")
+    return input, output
   end
 
   if input~=nil and input.sdfRate~=nil then
@@ -3288,7 +3290,7 @@ local function lambdaSDFNormalize( input, output )
     end
   end
 
-  local outputBW = output:sdfTotal(output)
+  local outputBW = output.rate
   local outputBW = SDFRate.sum(outputBW)
 
   -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
@@ -3308,13 +3310,15 @@ local function lambdaSDFNormalize( input, output )
     function(n,orig)
       if n.kind=="input" then
         err( n.id==input.id, "lambdaSDFNormalize: unexpected input node. input node is not the declared module input." )
-        n.sdfRate = SDFRate.multiply(n.sdfRate,scaleFactor[1],scaleFactor[2])
-        assert( SDFRate.isSDFRate(n.sdfRate))
+        n.rate = SDF(SDFRate.multiply(n.rate,scaleFactor[1],scaleFactor[2]))
+        assert( SDFRate.isSDFRate(n.rate))
         newInput = rigel.newIR(n)
         return newInput
-      elseif n.kind=="apply" and n.sdfRateOverride~=nil then
+      elseif n.kind=="apply" and #n.inputs==0 then
         -- for nullary modules, we sometimes provide an explicit SDF rate, to get around the fact that we don't solve for SDF rates bidirectionally
-        n.sdfRateOverride = SDFRate.multiply(n.sdfRateOverride, scaleFactor[1], scaleFactor[2] )
+        n.rate = SDF(SDFRate.multiply(n.rate, scaleFactor[1], scaleFactor[2] ))
+        return rigel.newIR(n)
+      else
         return rigel.newIR(n)
       end
     end)
@@ -3339,7 +3343,12 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
   
-  if rigel.SDF then input, output = lambdaSDFNormalize(input,output) end
+  if rigel.SDF then
+    input, output = lambdaSDFNormalize(input,output)
+    local sdfMaxRate = output:sdfExtremeRate(true)
+    local rf = SDFRate.fracToNumber(sdfMaxRate)
+    err(rf <= 1,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(rf*100).."% somewhere in module '"..name.."'") 
+  end
 
   name = J.verilogSanitize(name)
 
@@ -3466,11 +3475,11 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     if input==nil then
       res.sdfInput = SDF({1,1})
     else
-      assert( SDFRate.isSDFRate(input.sdfRate) )
-      res.sdfInput = SDF(input.sdfRate)
+      assert( SDFRate.isSDFRate(input.rate) )
+      res.sdfInput = SDF(input.rate)
     end
 
-    res.sdfOutput = output:sdfTotal(output)
+    res.sdfOutput = output.rate
     
     local isum = SDFRate.sum(res.sdfInput)
     local osum = SDFRate.sum(res.sdfOutput)
@@ -3497,7 +3506,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       for k,v in ipairs(res.sdfOutput) do
         print(res.sdfOutput[k][1],res.sdfOutput[k][2])
       end
-      err(false, "lambda '"..name.."' has strange SDF rate")
+      err(false, "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
     end
 
     err(SDF.isSDF(res.sdfInput),"NOT SDF inp "..res.name.." "..tostring(res.sdfInput))

@@ -14,9 +14,10 @@ local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
   sz = math.max(sz,size)
 
   if name==nil then name = "fifo"..tostring(id) end
-  table.insert( fifos, R.instantiateRegistered(name, RM.fifo(A,sz,nil,W,H,T)) )
-  table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
-  return R.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+  --table.insert( fifos, R.instantiateRegistered(name, RM.fifo(A,sz,nil,W,H,T)) )
+  --table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
+  --return R.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+  return C.fifo(A,sz)(inp)
 end
 
 function P.FIFO(fifos,statements,A,inp,size, name,W,H,T)
