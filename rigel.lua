@@ -681,14 +681,18 @@ end
 darkroomIRMT.__tostring = function(tab)
   local res
   if tab.kind=="input" then
-    res = "R.input("..tostring(tab.type)..")"
+    res = "local "..tab.name.." = R.input("..tostring(tab.type)..")"
   elseif tab.kind=="constant" then
-    res = "R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
+    res = "local "..tab.name.." = R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
   elseif tab.kind=="applyMethod" then
-    res = tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
+    if #tab.inputs==0 then
+      res = tab.name.." = "..tab.inst.name..":"..tab.fnname.."()"
+    else
+      res = tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
+    end
   elseif tab.kind=="apply" then
     if #tab.inputs==0 then
-      res = tab.name.." = "..tab.fn.name.."()"
+      res = "local "..tab.name.." = "..tab.fn.name.."()"
     else
       if tab.fn.generator~=nil then
         local gen
@@ -708,15 +712,15 @@ darkroomIRMT.__tostring = function(tab)
           gen = gen..table.concat(lst,",").."}"
         end
         
-        res = tab.name.." = "..gen.."("..tab.inputs[1].name..")  -- Module:"..tab.fn.name
+        res = "local "..tab.name.." = "..gen.."("..tab.inputs[1].name..")  -- Module:"..tab.fn.name
       else
-        res = tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
+        res = "local "..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
       end
     end
   elseif tab.kind=="readGlobal" then
-    res = "readGlobal('"..tab.name.."',"..tab.global.name..")"
+    res = "local "..tab.name.." = readGlobal('"..tab.name.."',"..tab.global.name..")"
   elseif tab.kind=="writeGlobal" then
-    res = "writeGlobal('"..tab.name.."',"..tab.global.name..","..tab.inputs[1].name..")"
+    res = "local "..tab.name.." = writeGlobal('"..tab.name.."',"..tab.global.name..","..tab.inputs[1].name..")"
   elseif tab.kind=="selectStream" then
     res = tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
   elseif tab.kind=="statements" then
@@ -725,11 +729,18 @@ darkroomIRMT.__tostring = function(tab)
       res = res..v.name..","
     end
     res = res.."}"
+  elseif tab.kind=="concat" then
+    res = "local "..tab.name.." = R.concat('"..tab.name.."',{"
+    for k,v in ipairs(tab.inputs) do
+      res = res..v.name
+      if k~=#tab.inputs then res = res.."," end
+    end
+    res = res.."})"
   else
     res = "NYI-print of "..tab.kind
   end
 
-  if true then
+  if darkroom.SDF then
     res = res .." -- Rate:"..tostring(tab.rate)
     local util = tab:utilization()
     if util~=nil then res=res.." Util:"..tostring(util[1]).."/"..tostring(util[2]) end
@@ -849,6 +860,7 @@ function darkroomIRFunctions:utilization()
   if self.kind=="apply" then
     assert(#self.inputs<=1)
     local total = self.rate
+    err(SDF.isSDF(total),"missing rate? "..self.kind..","..self.name)
     local res = SDFRate.fracMultiply({total[1][1],total[1][2]},{self.fn.sdfOutput[1][2],self.fn.sdfOutput[1][1]})
     if DARKROOM_VERBOSE then print("SDF RATE",self.name,res[1],res[2],"sdfINP",self.fn.sdfInput[1][1],self.fn.sdfInput[1][2],"SDFOUT",self.fn.sdfOutput[1][1],self.fn.sdfOutput[1][2]) end
     assert(SDFRate.isFrac(res))

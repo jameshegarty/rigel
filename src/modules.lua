@@ -2790,9 +2790,10 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
   rigel.expectBasic(A)
-  err( type(size)=="number", "size must be number")
+  err( type(size)=="number", "fifo: size must be number")
   err( size >0,"size<=0")
-  err(nostall==nil or type(nostall)=="boolean", "nostall should be nil or boolean")
+  err( csimOnly or size >1,"fifo: NYI - size<=1")
+  err(nostall==nil or type(nostall)=="boolean", "fifo: nostall should be nil or boolean")
   err(W==nil or type(W)=="number", "W should be nil or number")
   err(H==nil or type(H)=="number", "H should be nil or number")
   err(T==nil or type(T)=="number", "T should be nil or number")
@@ -3275,7 +3276,7 @@ end)
 -- this takes in a darkroom IR graph and normalizes the input SDF rate so that
 -- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
 -- and (2) no node should have SDF rate > 1
-local function lambdaSDFNormalize( input, output )
+local function lambdaSDFNormalize( input, output, instances )
   local sdfMaxRate = output:sdfExtremeRate(true)
   if SDFRate.fracToNumber(sdfMaxRate) < 1 then
     print("Warning: SDF Rate < 1, inefficient hardware may be generated")
@@ -3305,6 +3306,15 @@ local function lambdaSDFNormalize( input, output )
 
   if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
 
+  local newInstances = {}
+  local instanceMap = {}
+  for _,v in ipairs(instances) do
+    local newRate = SDF(SDFRate.multiply( v.rate, scaleFactor[1], scaleFactor[2] ) )
+    local inst = rigel.instantiateRegistered( v.name, v.fn, newRate )
+    instanceMap[v] = inst
+    table.insert( newInstances, inst)
+  end
+
   local newInput
   local newOutput = output:process(
     function(n,orig)
@@ -3318,12 +3328,15 @@ local function lambdaSDFNormalize( input, output )
         -- for nullary modules, we sometimes provide an explicit SDF rate, to get around the fact that we don't solve for SDF rates bidirectionally
         n.rate = SDF(SDFRate.multiply(n.rate, scaleFactor[1], scaleFactor[2] ))
         return rigel.newIR(n)
+      elseif n.kind=="applyMethod" then
+        n.inst = instanceMap[n.inst]
+        return rigel.newIR(n)
       else
         return rigel.newIR(n)
       end
     end)
 
-  return newInput, newOutput
+  return newInput, newOutput, newInstances
 end
 
 -- function definition
@@ -3342,9 +3355,28 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
+
+  -- collect instances (user doesn't have to explicitly give all instances)
+  local instanceMap = J.invertTable( instances )
+
+  output:visitEach(
+    function(n)
+      if n.kind=="applyMethod" then
+        if instanceMap[n.inst]==nil then
+          table.insert( instances, n.inst )
+          instanceMap[n.inst] = "found"
+        else
+          instanceMap[n.inst] = "found"
+        end
+      end
+    end)
+
+  for k,v in pairs(instanceMap) do
+    err( v=="found", "lambda: instance '"..k.name.."' was never used?" )
+  end
   
   if rigel.SDF then
-    input, output = lambdaSDFNormalize(input,output)
+    input, output, instances = lambdaSDFNormalize(input,output,instances)
     local sdfMaxRate = output:sdfExtremeRate(true)
     local rf = SDFRate.fracToNumber(sdfMaxRate)
     err(rf <= 1,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(rf*100).."% somewhere in module '"..name.."'") 
@@ -3404,25 +3436,6 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           assert(false)
         end
       end)
-  end
-
-  -- collect instances (user doesn't have to explicitly give all instances)
-  local instanceMap = J.invertTable( res.instances )
-
-  output:visitEach(
-    function(n)
-      if n.kind=="applyMethod" then
-        if instanceMap[n.inst]==nil then
-          table.insert( res.instances, n.inst )
-          instanceMap[n.inst] = "found"
-        else
-          instanceMap[n.inst] = "found"
-        end
-      end
-    end)
-
-  for k,v in pairs(instanceMap) do
-    err( v=="found", "lambda: instance '"..k.name.."' was never used?" )
   end
   
   -- collect the globals

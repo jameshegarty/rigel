@@ -298,7 +298,7 @@ function sift.siftKernel(dxdyType)
   local inp_broad = R.apply("inp_broad", RM.broadcastStream(ITYPE,2), inp)
 
   --local inp_pos = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true) -- fifo size can also be 1 (tested in SW)
-  local inp_pos = C.fifo(ITYPE,1)(R.selectStream("i0",inp_broad,0))
+  local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
   --local pos = C.fifoLoop( fifos, statements, PTYPE, pos, 1024, "posfifo")
   local pos = C.fifo(PTYPE,1024)(pos)
@@ -313,7 +313,7 @@ function sift.siftKernel(dxdyType)
   local posY = C.fifo(posType,1024)(posY)
 
   --local inp_dxdy = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true) -- fifo size can also be 1 (tested in SW)
-  local inp_dxdy = C.fifo(ITYPE,1)(R.selectStream("i1",inp_broad,1))
+  local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
 
 --  if GRAD_INT then
