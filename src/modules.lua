@@ -413,7 +413,7 @@ modules.waitOnInput = memoize(function(f)
   err(rigel.isFunction(f),"waitOnInput argument should be darkroom function")
   local res = {kind="waitOnInput", fn = f}
   rigel.expectBasic(f.inputType)
-  rigel.expectRV(f.outputType)
+  err( rigel.isRV(f.outputType) or f.outputType:is("RVFramed"), "waitOnInput: output type should be RV, but is: "..tostring(f.outputType))
   res.inputType = rigel.V(f.inputType)
   res.outputType = f.outputType
 
@@ -432,7 +432,7 @@ modules.waitOnInput = memoize(function(f)
   end
 
   return rigel.newFunction(res)
-                               end)
+end)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger )
   assert( S.isModule(systolicModule) )
@@ -550,9 +550,9 @@ end)
 modules.RPassthrough = memoize(function(f)
   local res = {kind="RPassthrough", fn = f}
   rigel.expectV(f.inputType)
-  rigel.expectRV(f.outputType)
+  err( rigel.isRV(f.outputType) or f.outputType:is("RVFramed"),"RPassthrough: fn output type should be RV, but is: "..tostring(f.outputType) )
   res.inputType = rigel.RV(rigel.extractData(f.inputType))
-  res.outputType = rigel.RV(rigel.extractData(f.outputType))
+  res.outputType = f.outputType
   err( rigel.SDF==false or type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err( type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
@@ -799,6 +799,9 @@ modules.map = memoize(function( f, W, H )
 
   err( type(H)=="number", "map: H must be number" )
 
+  err( types.isBasic(f.inputType), "map: error, mapping a module with a non-basic input type? name:"..f.name.." "..tostring(f.inputType))
+  err( types.isBasic(f.outputType), "map: error, mapping a module with a non-basic output type? name:"..f.name.." "..tostring(f.outputType))
+
   local res
   
   if (W*H)%2==0 then
@@ -882,19 +885,19 @@ end)
 --
 -- outputW/outputH/outputMixed: if 'fn' changes SDF Rate or vector size, this allows us to override the outputW/H/Mixed
 --    think of this like a combined map+flatten operation (not just a hack..)
-modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, outputMixed, X )
+modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputMixed, X )
   err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
   err( type(w)=="number", "mapFramed: width must be number")
   err( type(h)=="number", "mapFramed: height must be number")
-  err( type(vectorized)=="boolean", "mapFramed: vectorized must be bool")
+  err( type(mixed)=="boolean", "mapFramed: mixed must be bool")
   err( outputW==nil or type(outputW)=="number", "mapFramed: outputW must be number or nil" )
   err( outputH==nil or type(outputH)=="number", "mapFramed: outputH must be number or nil" )
   err( outputMixed==nil or type(outputMixed)=="boolean", "mapFramed: outputMixed must be boolean or nil" )
   err( X==nil, "mapFramed: too many arguments" )
        
-  local res = {kind="mapFramed",fn=fn,w=w,h=h,vectorized=vectorized,stateful=fn.stateful,delay=fn.delay}
+  local res = {kind="mapFramed",fn=fn,w=w,h=h,mixed=mixed,stateful=fn.stateful,delay=fn.delay}
   
-  res.name="MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_vectorized"..tostring(vectorized).."_outputW"..tostring(outputW).."_outputH"..tostring(outputH).."_outputMixed"..tostring(outputMixed)
+  res.name=J.sanitize("MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_mixed"..tostring(mixed).."_outputW"..tostring(outputW).."_outputH"..tostring(outputH).."_outputMixed"..tostring(outputMixed))
 
   if fn.sdfInput~=nil then
     assert(#fn.sdfInput==1)
@@ -911,15 +914,18 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, ou
 
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
-  
-  res.inputType = fn.inputType:addDim(w,h,vectorized)
 
-  -- tokens: # of actual data items we process.
+  print("MAPFRAMED","inputType",fn.inputType,w,h,mixed)
+  print("MAPFRAMED","outputType",fn.outputType, outputW, outputH, outputMixed)
+  
+  res.inputType = fn.inputType:addDim(w,h,mixed)
+
+  -- tokens: # of parallel data tokens we process (which is what SDF tells us)
   -- make sure this ends up being consistant... (ie possible based on given vector widths/SDF)
   local inTok = w*h
-  if vectorized and fn.inputType:is("HandshakeFramed") then
+  if mixed and fn.inputType:is("HandshakeFramed") then
     inTok = inTok/fn.inputType:FV()
-  elseif vectorized then
+  elseif mixed then
     err( types.isBasic(fn.inputType) or fn.inputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.inputType) )
     local BT = rigel.extractData(fn.inputType)
     inTok = inTok/BT:channels()
@@ -927,11 +933,11 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, ou
 
   local outTok
   if outputW==nil then
-    res.outputType = fn.outputType:addDim(w,h,vectorized)
+    res.outputType = fn.outputType:addDim(w,h,mixed)
     outTok = w*h
-    if vectorized and fn.outputType:is("HandshakeFramed") then
+    if mixed and fn.outputType:is("HandshakeFramed") then
       outTok = outTok/fn.outputType:FV()
-    elseif vectorized then
+    elseif mixed then
       err( types.isBasic(fn.outputType) or fn.outputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.outputType) )
       local BT = rigel.extractData(fn.outputType)
       outTok = outTok/BT:channels()
@@ -939,10 +945,12 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, ou
   else
     res.outputType = fn.outputType:addDim(outputW,outputH,outputMixed)
     outTok = outputW*outputH
-    print("FNOUTPUTPTYPE",fn.outputType)
+    print("FNOUTPUTPTYPE",fn.outputType,res.outputType)
     if outputMixed then outTok = outTok/fn.outputType:FV() end
   end
 
+  print("MAPFRAMED_RESTYPE",res.inputType, res.outputType)
+  
   if fn.inputType:is("Handshake") then
     -- sanity check: make sure # of tokens we say we're making is consistant with SDF
     -- need to scale # of output tokens by SDF
@@ -950,7 +958,9 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, ou
     local n,d = fn.sdfOutput[1][1]*fn.sdfInput[1][2], fn.sdfOutput[1][2], fn.sdfInput[1][1]
     local SDFTok = (inTok*n)/d
     
-    err( outTok==SDFTok, "mapFramed: error, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
+    if outTok~=SDFTok then
+      print("mapFramed: error, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
+    end
   end
   
   function res.makeSystolic()
@@ -972,26 +982,30 @@ modules.mapFramed = memoize(function( fn, w, h, vectorized, outputW, outputH, ou
       sm:addFunction( S.lambda("ready", S.parameter("ready_downstream",types.null()), inner:ready(), "ready" ) )
       sm:onlyWire(true)
       CE=nil
-    elseif fn.inputType:is("Handshake") and fn.outputType:is("Handshake") then
+    elseif (fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed")) and (fn.outputType:is("Handshake") or fn.outputType:is("HandshakeFramed")) then
       local rds = S.parameter("ready_downstream",types.bool())
       sm:addFunction( S.lambda("ready", rds, inner:ready(rds), "ready" ) )
       sm:onlyWire(true)
       CE=nil
+    elseif fn.inputType:is("StaticFramed") and (fn.outputType:is("StaticFramed") or fn.outputType:is("V")) then
+      --
     else
-      err(types.isBasic(fn.inputType) and types.isBasic(fn.outputType), "NYI - "..tostring(fn.inputType)..tostring(fn.outputType) )
+      err(types.isBasic(fn.inputType) and types.isBasic(fn.outputType), "MapFramed NYI - "..tostring(fn.inputType).." "..tostring(fn.outputType) )
     end
 
     local I = S.parameter("process_input", rigel.lower(fn.inputType) )
     sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
 
-    if fn.stateful or fn.inputType:is("Handshake") then
+    if fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed") then
       sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
+    elseif fn.stateful then
+      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
     end
 
     return sm
   end
 
-  function res.makeTerra() return MT.mapFramed(res,fn,w,h,vectorized) end
+  function res.makeTerra() return MT.mapFramed(res,fn,w,h,mixed) end
   
   return rigel.newFunction(res)
 end)
@@ -2017,27 +2031,25 @@ function modules.liftXYSeqPointwise( name, generatorStr, f, W, H, T, X )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, framed, X )
+modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
   err( types.isType(A), "cropSeq: type must be rigel type ")
   err( rigel.isBasic(A),"cropSeq: expects basic type")
   err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
   err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
-  err( type(T)=="number", "cropSeq: T must be number"); err(T>=0, "cropSeq: T must be >=0")
+  err( type(V)=="number", "cropSeq: V must be number"); err(V>=0, "cropSeq: V must be >=0")
   err( type(L)=="number", "cropSeq: L must be number"); err(L>=0, "cropSeq: L must be >=0")
   err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
   err( type(B)=="number", "cropSeq: B must be number"); err(B>=0, "cropSeq: B must be >=0")
   err( type(Top)=="number", "cropSeq: Top must be number"); err(Top>=0, "cropSeq: Top must be >=0")
   if framed==nil then framed=false end
   err( type(framed)=="boolean", "cropSeq: framed must be boolean")
-  
-  err(T>=1,"cropSeq T must be <1")
 
   err( L>=0, "cropSeq, L must be <0")
   err( R>=0, "cropSeq, R must be <0")
-  err( W%T==0, "cropSeq, W%T must be 0")
-  err( L%T==0, "cropSeq, L%T must be 0. L="..tostring(L).." T="..tostring(T))
-  err( R%T==0, "cropSeq, R%T must be 0, R="..tostring(R)..", T="..tostring(T))
-  err( (W-L-R)%T==0, "cropSeq, (W-L-R)%T must be 0")
+  err( V==0 or W%V==0, "cropSeq, W%V must be 0. W="..tostring(W)..", V="..tostring(V))
+  err( V==0 or L%V==0, "cropSeq, L%V must be 0. L="..tostring(L).." V="..tostring(V))
+  err( V==0 or R%V==0, "cropSeq, R%V must be 0, R="..tostring(R)..", V="..tostring(V))
+  err( V==0 or (W-L-R)%V==0, "cropSeq, (W-L-R)%V must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
   local BITS = 32
@@ -2045,12 +2057,17 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, framed, X )
   err( W<math.pow(2,BITS), "cropSeq: width too large!")
   err( H<math.pow(2,BITS), "cropSeq: height too large!")
   
-  local inputType = types.array2d(A,T)
+  local inputType
+  if V==0 then
+    inputType = A
+  else
+    inputType = types.array2d(A,V)
+  end
   local outputType = rigel.V(inputType)
-  local xyType = types.array2d(types.tuple{types.uint(BITS),types.uint(BITS)},T)
+  local xyType = types.array2d(types.tuple{types.uint(BITS),types.uint(BITS)},math.max(V,1))
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top))
+  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_V"..tostring(V).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -2078,21 +2095,21 @@ modules.cropSeq = memoize(function( A, W, H, T, L, R, B, Top, framed, X )
       return S.tuple{sdata,svalid}
     end, 
     function()
-      return MT.cropSeqFn( innerInputType, outputType, A, W, H, T, L, R, B, Top ) 
+      return MT.cropSeqFn( innerInputType, outputType, A, W, H, V, L, R, B, Top ) 
     end, nil,
-    {{((W-L-R)*(H-B-Top))/T,(W*H)/T}})
+    {{((W-L-R)*(H-B-Top))/math.max(1,V),(W*H)/math.max(1,V)}})
 
-  local res = modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, T, BITS )
+  local res = modules.liftXYSeq( modname, "rigel.cropSeq", f, W, H, math.max(1,V), BITS )
 
   -- HACK
   if framed then
     print("CROPHACK", res.inputType, res.outputType,W,H)
     --local idim = res.inputType:dims()
     --idim[#idim]={W,H}
-    res.inputType = res.inputType:addDim(W,H,true) --types.StaticFramed(res.inputType,idim)
+    res.inputType = res.inputType:addDim(W,H,V>0) --types.StaticFramed(res.inputType,idim)
     --local odim = rigel.extractData(res.outputType):dims()
     --odim[#odim]={W-L-R,H-B-Top}
-    res.outputType = types.VFramed(res.outputType.params.A,true,{{W-L-R,H-B-Top}})
+    res.outputType = types.VFramed(res.outputType.params.A,V>0,{{W-L-R,H-B-Top}})
     print("CROPHACK", res.inputType, res.outputType)
   end
   
@@ -2235,7 +2252,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
-modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
+modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
   err( types.isType(A), "A should be a type")
   err( type(H)=="number", "H should be number")
   err( type(inputRate)=="number", "inputRate should be number")
@@ -2243,6 +2260,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   err( inputRate==math.floor(inputRate), "inputRate should be integer")
   err( type(outputRate)=="number", "outputRate should be number, but is: "..tostring(outputRate))
   err( outputRate==math.floor(outputRate), "outputRate should be integer")
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean","changeRate: framed must be boolean")
   err( X==nil, "changeRate: too many arguments")
 
   local maxRate = math.max(inputRate,outputRate)
@@ -2257,10 +2276,22 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, X)
   local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
   res.inputType = types.array2d(A,inputRate,H)
   res.outputType = rigel.RV(types.array2d(A,outputRate,H))
+
+  if framed and inputRate<outputRate then
+    assert(H==1) -- makes no sense
+    assert(outputRate==framedW*framedH)
+    res.inputType = res.inputType:addDim(framedW,framedH,true)
+  elseif framed and inputRate>outputRate then
+    assert(H==1) -- makes no sense
+    assert(inputRate==framedW*framedH)
+    print("SER",res.inputType,res.outputType,framedW,framedH)
+    res.outputType = res.outputType:addDim(framedW,framedH,true)
+  end
+  
   res.stateful = true
 --  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.delay = 0
-  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H)
+  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed))
 
   if inputRate>outputRate then -- 8 to 4
     res.sdfInput, res.sdfOutput = SDF{outputRate,inputRate},SDF{1,1}
@@ -3005,9 +3036,11 @@ modules.reduce = memoize(function( f, W, H )
 end)
 
 
-modules.reduceSeq = memoize(function( f, T, X )
-  err(type(T)=="number","T should be number")
-  err(T<=1, "reduceSeq T>1")
+modules.reduceSeq = memoize(function( f, T, framed, X )
+  err(type(T)=="number","reduceSeq: T should be number")
+  err(T<=1, "reduceSeq: T>1, T="..tostring(T))
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean","reduceSeq: framed must be boolean" )
   assert(X==nil)
 
   if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
@@ -3017,6 +3050,9 @@ modules.reduceSeq = memoize(function( f, T, X )
   local res = {kind="reduceSeq", fn=f, T=T}
   rigel.expectBasic(f.outputType)
   res.inputType = f.outputType
+  if framed then
+    res.inputType = types.StaticFramed( res.inputType, false, {{1/T,1}} )
+  end
   res.outputType = rigel.V(f.outputType)
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1/T}
   res.stateful = true
@@ -3278,10 +3314,12 @@ end)
 -- and (2) no node should have SDF rate > 1
 local function lambdaSDFNormalize( input, output, instances )
   local sdfMaxRate = output:sdfExtremeRate(true)
-  if SDFRate.fracToNumber(sdfMaxRate) < 1 then
-    print("Warning: SDF Rate < 1, inefficient hardware may be generated")
-    return input, output
-  end
+
+  -- if we don't early exit, we'll rescale up so that something is at 100%
+  --if SDFRate.fracToNumber(sdfMaxRate) < 1 then
+  --  print("Warning: SDF Rate < 1, inefficient hardware may be generated")
+  --  return input, output, instances
+  --end
 
   if input~=nil and input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
@@ -3348,7 +3386,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( type(name) == "string", "lambda: module name must be string" )
   err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
   err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
-  err( rigel.isIR( output ), "modules.lambda: output should be Rigel value" )
+  err( rigel.isIR( output ), "modules.lambda: module '"..tostring(name).."' output should be Rigel value, but is: "..tostring(output) )
   if instances==nil then instances={} end
   err( type(instances)=="table", "lambda: instances must be nil or a table")
   J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
@@ -3489,7 +3527,22 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       res.sdfInput = SDF({1,1})
     else
       assert( SDFRate.isSDFRate(input.rate) )
-      res.sdfInput = SDF(input.rate)
+
+      if input.type==types.null() then
+        -- HACK(?): if we have a nullary input, look for the actual input to the pipeline,
+        -- which is the module this input drives. Use that module's rate as the input rate
+        -- this pretty much only applies to the top module
+        output:visitEach(
+          function(n)
+            if #n.inputs==1 and n.inputs[1]==input then
+              res.sdfInput = n.rate
+            end
+          end)
+
+        assert(res.sdfInput~=nil)
+      else
+        res.sdfInput = SDF(input.rate)
+      end
     end
 
     res.sdfOutput = output.rate

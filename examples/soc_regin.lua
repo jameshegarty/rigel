@@ -4,10 +4,11 @@ local C = require "examplescommon"
 local harness = require "harnessSOC"
 local G = require "generators"
 local RS = require "rigelSimple"
+local SDF = require "sdf"
 require "types".export()
 
 local Regs = SOC.axiRegs{offset={u(32),200}}
-regs = Regs:instantiate()
+regs = Regs:instantiate(SDF{1,1024})
 
 print("REGS",Regs.offset)
 

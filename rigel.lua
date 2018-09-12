@@ -208,7 +208,7 @@ end
 
 -- is this type any type of handshake type?
 function darkroom.isStreaming(A)
-  if darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
+  if darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) or A:is("HandshakeFramed") then
     return true
   end
   return false
@@ -291,6 +291,8 @@ local function typeToKey(t)
         outk="rigelFunction"
       elseif darkroom.isGlobal(v) then
         outk="global"
+      elseif SDF.isSDF(v) then
+        outk="rate"
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
         outk="size"
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
@@ -328,6 +330,7 @@ generatorMT.__call=function(tab,...)
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
     if arglist.type==nil then arglist.type = arg.type end
+    if arglist.rate==nil then arglist.rate = arg.rate end
     return tab:complete(arglist)(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
     local arg = rawarg[1]
@@ -338,7 +341,7 @@ generatorMT.__call=function(tab,...)
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
     for k,v in pairs(arg) do
-      J.err( arglist[k]==nil, "Argument '"..k.."' was already passed to generator" )
+      J.err( arglist[k]==nil, "Argument '"..k.."' was already passed to generator '"..tab.name.."'" )
       arglist[k] = v
     end
     
@@ -582,13 +585,23 @@ function darkroomFunctionFunctions:toTerra() return self.terraModule end
 function darkroomFunctionFunctions:toVerilog() return [[`default_nettype none // enable extra sanity checking
 ]]..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
 
-function darkroomFunctionFunctions:instantiate(name)
+function darkroomFunctionFunctions:instantiate(arg0)
   err( self.registered, "Can't instantiate a non-registered module!")
+
+  local name, rate
+  if type(arg0)=="string" then
+    name = arg0
+  elseif SDF.isSDF(arg0) then
+    rate = arg0
+  elseif arg0~=nil then
+    assert(false)
+  end
+  
   if name==nil then
     name = "UnnamedInstance"..darkroom.__unnamedID
     darkroom.__unnamedID = darkroom.__unnamedID + 1
   end
-  local res = darkroom.instantiateRegistered(name, self )
+  local res = darkroom.instantiateRegistered(name, self, rate )
 
   -- hack
   res.start = darkroom.newInstanceCallsite(res,"start")
@@ -644,7 +657,7 @@ function darkroom.newFunction(tab,X)
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
-  if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType)) end
+  if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
 
   if tab.globals==nil then tab.globals={} end
   if tab.globalMetadata==nil then tab.globalMetadata={} end
@@ -746,6 +759,10 @@ darkroomIRMT.__tostring = function(tab)
     if util~=nil then res=res.." Util:"..tostring(util[1]).."/"..tostring(util[2]) end
   end
 
+  if true then
+    res = res .. " type:"..tostring(tab.type)
+  end
+  
   return res
 end
   
@@ -784,6 +801,7 @@ function darkroomIRFunctions:calcSDF( )
       err( self.inst.rate:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.rate)..")")
       res = self.inputs[1].rate
     elseif self.fnname=="load" or self.fnname=="start" then
+      --err( #self.inputs==0 or self.inst.rate:equals(self.inputs[1].rate), "applyMethod: input rate to nullary not the same?" )
       res = self.inst.rate
     else
       err( false, "sdfTotalInner: unknown method '"..self.fnname.."'" )
@@ -1128,13 +1146,18 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   end
   
   if darkroom.isGenerator(fn) then
-    fn = fn{input.type}
+    local arglist = {}
+    for k,v in pairs(fn.curriedArgs) do arglist[k] = v end
+    local ty, rate
+    if arglist.type==nil then ty=input.type end
+    if arglist.rate==nil then rate=input.rate end
+    fn = fn{ty,rate}
   elseif darkroom.isInstanceCallsite(fn) then
     return darkroom.applyMethod( name, fn.instance, fn.functionName, input )
   end
 
   if darkroom.isModule(fn)==false then
-    print("Generator '"..table.concat(fn.name,".").."' could not be resolved into a module?")
+    print("Generator '"..fn.name.."' could not be resolved into a module?")
     print("Unbounded args: "..fn:listArgs())
     assert(false)
   end

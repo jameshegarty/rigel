@@ -16,6 +16,7 @@ if terralib~=nil then CT=require("examplescommonTerra") end
 local C = {}
 
 C.identity = memoize(function(A)
+  err( types.isBasic(A),"C.identity: type should be basic, but is: "..tostring(A) )
   local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
   return identity
 end)
@@ -1222,7 +1223,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, fram
   err(T>=1, "stencilLinebuffer: T must be >=1");
   err(w>0,"stencilLinebuffer: w must be >0");
   err(h>0,"stencilLinebuffer: h must be >0");
-  err(xmin<=xmax,"stencilLinebuffer: xmin>xmax")
+  err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
   err(ymin<=ymax,"stencilLinebuffer: ymin>ymax")
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
@@ -1559,9 +1560,10 @@ function C.plus100(ty) return C.plusConst(ty,100) end
 __linearpipelinecnt = 0
 -- convert an array of rigel modules into a straight pipeline
 -- pipeline starts at index 1, ends at index N
-function C.linearPipeline(t,modulename)
+function C.linearPipeline(t,modulename,rate)
   err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
-
+  err( rate==nil or SDF.isSDF(rate),"linearPipeline: rate should be nil or SDF" )
+  
   if modulename==nil then
     modulename="linearpipeline"..tostring(__linearpipelinecnt)
     __linearpipelinecnt = __linearpipelinecnt+1
@@ -1570,7 +1572,7 @@ function C.linearPipeline(t,modulename)
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  local inp = R.input(t[1].inputType)
+  local inp = R.input( t[1].inputType, rate )
   local out = inp
 
   for k,v in ipairs(t) do
@@ -1604,5 +1606,27 @@ C.handshakeToHandshakeFramed = memoize(
     
     return rigel.newFunction(res)
   end)
+
+-- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}
+-- if ser==false, takes A[W*H/ratio,W,H}->A[W,H]
+C.changeRateFramed = memoize(function(A, W, H, ratio, ser, X)
+  local name = J.sanitize("ChangeRateFramed_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_ratio"..tostring(ratio).."_ser"..tostring(ser))
+                               
+  if ser then
+    local TYO = types.array2d(A,W,H)
+    local ty = R.V(TYO)
+
+    local I = R.input(ty)
+    local o = RM.liftDecimate(RM.liftBasic(C.cast(TYO, types.array2d(A,W*H))))(I)
+    o = RM.RPassthrough(RM.changeRate(A,1,W*H,W*H/ratio,true,W,H))(o)
+    return RM.lambda(name,I,o)
+  else
+    --    ty = R.V(types.array2d(A,W*H/ratio)):addDim(W,H,true)
+    assert(false)
+  end
+
+  assert(false)
+end)
+                                   
 
 return C
