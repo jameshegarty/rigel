@@ -583,7 +583,7 @@ modules.RPassthrough = memoize(function(f)
   end
 
   return rigel.newFunction(res)
-                                end)
+end)
 
 local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput, X )
   err( S.isModule(systolicModule), "liftHandshakeSystolic: systolicModule not a systolic module?" )
@@ -829,7 +829,7 @@ modules.map = memoize(function( f, W, H )
 
     res.inputType = types.array2d( f.inputType, W, H )
     res.outputType = types.array2d( f.outputType, W, H )
-    err(type(f.stateful)=="boolean", "Missing stateful annotation "..f.kind)
+    err( type(f.stateful)=="boolean", "Missing stateful annotation "..tostring(f))
     res.stateful = f.stateful
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
     res.delay = f.delay

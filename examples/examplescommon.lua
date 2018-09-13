@@ -45,7 +45,7 @@ end)
 
 C.print = memoize(function(A,str)
   err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
-
+  
   local function constructPrint(A,symb)
     if A:isUint() or A:isInt() or A:isBits() then
       return {A}, "%d", {symb}
@@ -80,7 +80,7 @@ C.print = memoize(function(A,str)
   
   --local identity = RM.lift( , A, A, 0, function(sinp) return sinp end, function() return CT.print(A,str) end, "C.print")
   local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
-  res.stateful=false
+  res.stateful=true
   res.delay=0
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
@@ -91,6 +91,7 @@ C.print = memoize(function(A,str)
     local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
+    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
     return sm
   end
   
@@ -1621,7 +1622,6 @@ C.changeRateFramed = memoize(function(A, W, H, ratio, ser, X)
     o = RM.RPassthrough(RM.changeRate(A,1,W*H,W*H/ratio,true,W,H))(o)
     return RM.lambda(name,I,o)
   else
-    --    ty = R.V(types.array2d(A,W*H/ratio)):addDim(W,H,true)
     assert(false)
   end
 

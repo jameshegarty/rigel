@@ -172,7 +172,7 @@ function darkroom.hasReady(a)
 end
 
 function darkroom.extractReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("HandshakeFramed") then return types.bool()
+  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") then return types.bool()
   elseif darkroom.isHandshakeTuple(a) then
     return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
   elseif darkroom.isHandshakeArrayOneHot(a) then
@@ -191,7 +191,7 @@ function darkroom.extractValid(a)
 end
 
 function darkroom.streamCount(A)
-  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") or A:is("VFramed") then
+  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") or A:is("VFramed") or A:is("RVFramed") then
     return 0
   elseif darkroom.isHandshake(A) or A:is("HandshakeFramed") or darkroom.isHandshakeTrigger(A) then
     return 1
@@ -1029,12 +1029,6 @@ function darkroomIRFunctions:codegenSystolic( module )
         end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)
-
---        local SC = {}
---        for g,_ in pairs(n.fn.globals) do
---          SC[g.systolicValue] = g.systolicValue
---          if g.systolicValueReady~=nil then SC[g.systolicValueReady] = g.systolicValueReady end
---        end
         
         local I = module:add( n.fn.systolicModule:instantiate(n.name) )
 

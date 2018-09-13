@@ -322,7 +322,6 @@ function MT.mapFramed(res,f,W,H,vectorized)
   end
   
   if f.inputType:is("Handshake") and f.outputType==types.null() then
---    assert(false)
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
       self.fn:process(inp,out)
     end
@@ -331,7 +330,9 @@ function MT.mapFramed(res,f,W,H,vectorized)
       self.fn:calculateReady()
       self.ready = self.fn.ready
     end
-  elseif f.inputType:is("Handshake") and f.outputType:is("Handshake") then
+  elseif (f.inputType:is("Handshake") or f.inputType:is("HandshakeFramed")) and 
+         (f.outputType:is("Handshake") or f.outputType:is("HandshakeFramed")) then
+
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
       self.fn:process(inp,out)
     end
@@ -341,10 +342,14 @@ function MT.mapFramed(res,f,W,H,vectorized)
       self.fn:calculateReady(readyDS)
       self.ready = self.fn.ready
     end
-  else
+  elseif (types.isBasic(f.inputType) or f.inputType:is("StaticFramed")) and
+         (types.isBasic(f.outputType) or f.outputType:is("V") or f.outputType:is("StaticFramed")) then
+
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
       self.fn:process(inp,out)
     end
+  else
+    err(false, "MT.mapFramed unsupported type? "..tostring(f.inputType).." "..tostring(f.outputType))
   end
 
   return MT.new(MapFramed)
@@ -1653,9 +1658,6 @@ function MT.lambdaCompile(fn)
     local RIT = rigel.extractReady(fn.output.type):toTerraType()
     readyInput = symbol(RIT, "readyinput")
     table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
---  else
-    -- this is ok: HS may be purely internal
---    readyInput = symbol(bool, "readyinput")
   end
 
   if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") then
@@ -1684,8 +1686,8 @@ function MT.lambdaCompile(fn)
   
   local readyOutput
     
-    -- build ready calculation
-  if rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") or fn.output:outputStreams()>0 or rigel.streamCount(fn.inputType)>0 or rigel.handshakeMode(fn.output) then
+  -- build ready calculation
+  if rigel.handshakeMode(fn.output) then
     
     fn.output:visitEachReverseBreakout(
       function(n, args)
@@ -1793,44 +1795,34 @@ return {`mself.[n.name].ready}
       end)
   end
 
-  if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
-    assert(readyOutput~=nil)
-    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; mself.ready = readyOutput end
-  elseif rigel.isRV(fn.outputType) or fn.outputType:is("RVFramed") then
-    assert(readyOutput~=nil)
-    -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
-    terra Module.methods.calculateReady( [mself] ) var [readyInput] = true; [readyStats]; mself.ready = readyOutput end
-  elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
-    local TMP = quote end
-    if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
-    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
-  elseif rigel.streamCount(fn.inputType)>0 then
-    -- has a handshake input, but not a handshake output
-    assert(fn.outputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
-  elseif rigel.handshakeMode(fn.output) then
-    assert(fn.outputType==types.null())
-    assert(fn.inputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
-  end
-
+  -- dumb: remember, in RV mode readys flow forward(!)
+  local RVReadyStats = {}
+  local RVReadyOutput
+  local RVReadyInput = symbol(bool,"RVReadyInput")
+  
   local out = fn.output:visitEach(
     function(n, inputs)
+
+      local inputsReady = {}
+      for k,v in ipairs(inputs) do
+        table.insert(inputsReady,v[2])
+        inputs[k] = inputs[k][1]
+      end
+      
       local out
 
       if n==fn.output then
         out = outputSymbol
       elseif n.kind=="applyRegStore" then
       elseif n.kind~="input" then
---        table.insert( Module.entries, {field="simstateoutput_"..n.name, type=rigel.lower(n.type):toTerraType()} )
         out = `&mself.["simstateoutput_"..n.name]
       end
 
+      local res
       if n.kind=="input" then
         if n.id~=fn.input.id then error("Input node is not the specified input to the lambda") end
-        return inputSymbol
+        res = {inputSymbol, RVReadyInput}
       elseif n.kind=="apply" then
---        table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
         table.insert( resetStats, quote mself.[n.name]:reset() end )
         table.insert( initStats, quote mself.[n.name]:init() end )
         table.insert( freeStats, quote mself.[n.name]:free() end )
@@ -1839,122 +1831,80 @@ return {`mself.[n.name].ready}
         if n.fn.inputType==types.null() then
           table.insert( stats, quote mself.[n.name]:process( out ) end )
         else
-          if DARKROOM_VERBOSE then
-            print("COMPILE "..n.fn.name)
-            n.fn.terraModule.methods.process:compile()
-            print("COMPILEDONE "..n.fn.name)
-          end
-
           table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
         end
 
-          if DARKROOM_VERBOSE then
-            if n.type:isArray() and rigel.isHandshake(n.type:arrayOver()) then
-            elseif #n.inputs>0 and rigel.isHandshake(n.inputs[1].type) then
-              table.insert( Module.entries, {field=n.name.."CNT", type=int} )
-              table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+        local rvready
+        if #n.inputs==1 and rigel.isV(n.inputs[1].type) then
+          table.insert( RVReadyStats, quote mself.[n.name]:calculateReady() end )
+          rvready = `mself.[n.name].ready
+        elseif #n.inputs==1 and rigel.isRV(n.inputs[1].type) then
+          table.insert( RVReadyStats, quote mself.[n.name]:calculateReady([inputsReady[1]]) end )
+          rvready = `mself.[n.name].ready
+        end
+        
+        res = {out,rvready}
+      elseif n.kind=="applyMethod" then
+        if n.fnname=="load" or n.fnname=="start" then
+          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+          table.insert( initStats, quote mself.[n.inst.name]:init() end )
+          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
 
-              table.insert( Module.entries, {field=n.name.."ICNT", type=int} )
-              table.insert( resetStats, quote mself.[n.name.."ICNT"]=0 end )
+          table.insert( stats, quote mself.[n.inst.name]:[n.fnname]( out ) end)
 
-              local readyDownstream = `mself.[n.name].readyDownstream
-              local readyThis = `mself.[n.name].ready
+          if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
 
-              table.insert( stats, quote 
---                cstdio.printf("APPLY %s inpvalid %d outvalid %d cnt %d icnt %d ready %d readydownstream %d\n",n.name, valid([inputs[1]]), valid(out), mself.[n.name.."CNT"],mself.[n.name.."ICNT"] , readyThis, readyDownstream);
+          res = {out}
+        elseif n.fnname=="store" or n.fnname=="done" then
+          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
+          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
+          table.insert( initStats, quote mself.[n.inst.name]:init() end )
+          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
 
---                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
---                if valid([inputs[1]]) and readyDownstream and readyThis then mself.[n.name.."ICNT"]=mself.[n.name.."ICNT"]+1 end
-              end )
-            elseif  rigel.isHandshake(n.type) then
-              -- input is not stateful handshake (some type of aggregate)... so we know less stuff
-              table.insert( Module.entries, {field=n.name.."CNT", type=int} )
-              table.insert( resetStats, quote mself.[n.name.."CNT"]=0 end )
+          if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
 
-              local readyDownstream = `mself.[n.name].readyDownstream
-
-              table.insert( stats, quote 
-                cstdio.printf("APPLY %s inpvalid ? outvalid %d cnt %d icnt ? ready ? readydownstream %d\n",n.name, valid(out), mself.[n.name.."CNT"], readyDownstream);
-                if valid(out) and readyDownstream then mself.[n.name.."CNT"]=mself.[n.name.."CNT"]+1 end
-              end)
-            end
-          end
-
-          return out
-        elseif n.kind=="applyMethod" then
-          if n.fnname=="load" then
-            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-            table.insert( stats, quote mself.[n.inst.name]:load( out ) end)
-
-            if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
-
-            return out
-          elseif n.fnname=="store" then
-            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-            table.insert( initStats, quote mself.[n.inst.name]:init() end )
-            table.insert( freeStats, quote mself.[n.inst.name]:free() end )
-
-            if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
-            table.insert(stats, quote  mself.[n.inst.name]:store( [inputs[1]] ) end )
-            return `nil
-          elseif n.fnname=="start" then
-            table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-            table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-            table.insert( initStats, quote mself.[n.inst.name]:init() end )
-            table.insert( freeStats, quote mself.[n.inst.name]:free() end )
-
-            table.insert( stats, quote mself.[n.inst.name]:start( out ) end)
-
-            return out
-          elseif n.fnname=="done" then
-            table.insert(stats, quote  mself.[n.inst.name]:done( [inputs[1]] ) end )
-            return `nil
-          else
-            assert(false)
-          end
-        elseif n.kind=="constant" then
-          table.insert( stats, quote (@out) = [n.type:valueToTerra(n.value)] end )
-          --if n.type:isArray() then
-          --  J.map( n.value, function(m,i) table.insert( stats, quote (@out)[i-1] = m end ) end )
-          --elseif n.type:isInt() or n.type:isUint() then
-          --  table.insert( stats, quote (@out) = n.value end)
-          --else
-          --  assert(false)
-          --end
-
-          return out
-        elseif n.kind=="concat" then
-          J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
-              table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
-          return out
-        elseif n.kind=="concatArray2d" then
-          local ty = rigel.lower(n.type):arrayOver()
-          J.map( inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
-          return out
-        elseif n.kind=="extractState" then
-          return `nil
-        elseif n.kind=="catState" then
-          table.insert( stats, quote @out = @[inputs[1]] end)
-          return out
-        elseif n.kind=="statements" then
-          if n.inputs[1].type~=types.null() then table.insert( stats, quote @out = @[inputs[1]] end) end
-          return inputs[1]
-        elseif n.kind=="selectStream" then
-          if rigel.isHandshakeTuple(n.inputs[1].type) then
-            return `&((@[inputs[1]]).["_"..tostring(n.i)])
-          else
-            return `&((@[inputs[1]])[n.i])
-          end
-        elseif n.kind=="readGlobal" then
-          return `&[n.global:terraValue()]
-        elseif n.kind=="writeGlobal" then
-          table.insert( stats, quote [n.global:terraValue()] = @[inputs[1]] end)
+          table.insert(stats, quote  mself.[n.inst.name]:[n.fnname]( [inputs[1]] ) end )
+          res = {`nil}
         else
-          print(n.kind)
           assert(false)
         end
+      elseif n.kind=="constant" then
+        table.insert( stats, quote (@out) = [n.type:valueToTerra(n.value)] end )
+        res = {out}
+      elseif n.kind=="concat" then
+        J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
+            table.insert(stats, quote cstring.memcpy(&(@out).["_"..(i-1)],[m],[ty:sizeof()]) end) end)
+        res = {out}
+      elseif n.kind=="concatArray2d" then
+        local ty = rigel.lower(n.type):arrayOver()
+        J.map( inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
+        res = {out}
+      elseif n.kind=="statements" then
+        if n.inputs[1].type~=types.null() then table.insert( stats, quote @out = @[inputs[1]] end) end
+        res = {inputs[1]}
+      elseif n.kind=="selectStream" then
+        if rigel.isHandshakeTuple(n.inputs[1].type) then
+          res = {`&((@[inputs[1]]).["_"..tostring(n.i)])}
+        else
+         res = {`&((@[inputs[1]])[n.i])}
+        end
+      elseif n.kind=="readGlobal" then
+        res = {`&[n.global:terraValue()]}
+      elseif n.kind=="writeGlobal" then
+        table.insert( stats, quote [n.global:terraValue()] = @[inputs[1]] end)
+        res = {`nil}
+      else
+        print(n.kind)
+        assert(false)
+      end
+
+      return res
     end)
 
+  RVReadyOutput = out[2]
+  out = out[1]
+  
   -- kind of a hack: we might have a pair of globals inside a module (in/out)
   -- which should drive each other. Instead of trying to merge the global, just copy the value
   -- will this work???
@@ -1979,6 +1929,25 @@ return {`mself.[n.name].ready}
     terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobals];[stats] end
   else
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobals];[stats] end
+  end
+
+  if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
+    terra Module.methods.calculateReady( [mself], [RVReadyInput] ) mself.readyDownstream = RVReadyInput; [RVReadyStats]; mself.ready = RVReadyOutput end
+  elseif rigel.isRV(fn.outputType) or fn.outputType:is("RVFramed") then
+    -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
+    terra Module.methods.calculateReady( [mself] ) var [RVReadyInput] = true; [RVReadyStats]; mself.ready = RVReadyOutput end
+  elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
+    local TMP = quote end
+    if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
+  elseif rigel.streamCount(fn.inputType)>0 then
+    -- has a handshake input, but not a handshake output
+    assert(fn.outputType==types.null())
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
+  elseif rigel.handshakeMode(fn.output) then
+    assert(fn.outputType==types.null())
+    assert(fn.inputType==types.null())
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 
   terra Module.methods.reset( [mself] ) [resetStats] end
