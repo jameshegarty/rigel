@@ -1439,6 +1439,13 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
   local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = math.max(minTotalInputBits,minTotalOutputBits)
+
+    bts = J.upToNearest(inputFactor,bts)
+    bts = J.upToNearest(outputFactor,bts)
+
+    assert( bts%inputFactor==0 )
+    assert( bts%outputFactor==0 )
+    
     return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
     if inputBitsPerCyc%outputBitsPerCyc==0 then
@@ -1453,7 +1460,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       bts = J.upToNearest(inputFactor,bts)
       bts = J.upToNearest(outputFactor,bts)
       print("BTS",bts)
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     else
       assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
@@ -1477,8 +1487,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       --bts = J.upToNearest(shifterBits,bts)
       bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
       
-      return {RM.lambda(name,inp,out),bts}
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
 
+      return {RM.lambda(name,inp,out),bts}
     end
   elseif outputBitsPerCyc>inputBitsPerCyc then
     if outputBitsPerCyc%inputBitsPerCyc==0 then
@@ -1493,7 +1505,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
       bts = J.upToNearest(inputFactor,bts)
       bts = J.upToNearest(outputFactor,bts)
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     else
       assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
@@ -1516,7 +1531,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       --bts = J.upToNearest(outputFactor,bts)
       --bts = J.upToNearest(shifterBits,bts)
       bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     end
   end
