@@ -5,7 +5,7 @@ local types = require "types"
 local J = require "common"
 local types = require "types"
 local C = require "examplescommon"
-local SDF = require "sdfrate"
+local SDF = require "sdf"
 
 local SOCMT
 
@@ -23,12 +23,13 @@ SOC.currentAddr = 0x30008000
 SOC.currentRegAddr = 0xA0000008 -- first 8 bytes are start/done bit
 
 SOC.axiRegs = J.memoize(function(tab,port)
+  J.err( type(tab)=="table","SOC.axiRegs: input must be table")
 
   if port==nil then
     port = SOC.currentSAXIPort
     SOC.currentSAXIPort = SOC.currentSAXIPort + 1
   end
-
+  
   local globalMetadata = {}
   local globals = {}
 
@@ -46,19 +47,19 @@ SOC.axiRegs = J.memoize(function(tab,port)
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
     v[1]:checkLuaValue(v[2])
-
+    
     NREG = NREG + math.max(v[1]:verilogBits()/32,1)
-
+    
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
     globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
     globalMetadata["TypeOfRegister_"..k] = v[1]
-
+    
     print("ADD GLOBAL",k)
     if v[3]=="out" then
       globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
       outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
-
+      
       regPorts = regPorts.."input wire ["..tostring(v[1]:verilogBits())..":0] "..k..[[,
 output wire ]]..k..[[_ready,
 ]]
@@ -68,13 +69,13 @@ output wire ]]..k..[[_ready,
     else
       globals[R.newGlobal(k,"output",v[1])] = 1
       addToModuleHack[k] = R.newGlobal(k,"input",v[1])
-
+      
       regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]
       regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."];\n"
       regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = 1'b0; // "..k..". this is an input, so never write to it\n"
     end
-
+    
     SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(v[1]:verilogBits()/32)*4
     curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
   end
@@ -639,7 +640,7 @@ endmodule
 
 ]=])
 
-  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput={{1,1}}, sdfOutput={{1,1}}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
+  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
   function res.makeSystolic()
     local fns = {}
 
@@ -1387,8 +1388,9 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(filename)=="string","readBurst: filename must be string")
   J.err( type(W)=="number", "readBurst: W must be number")
   J.err( type(H)=="number", "readBurst: H must be number")
-  J.err( types.isType(ty), "readBurst: type must be type")
-  J.err(ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data")
+  J.err( types.isType(ty), "readBurst: type must be type, but is: "..tostring(ty))
+  J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: "..tostring(ty))
+  J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: "..tostring(ty))
   --local nbytes = W*H*(ty:verilogBits()/8)
   --J.err( nbytes%8==0,"NYI - readBurst requires 8-byte aligned size" )
   --J.err( nbytes%128==0,"NYI - readBurst requires 128-byte aligned size" )

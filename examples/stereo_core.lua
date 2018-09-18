@@ -83,9 +83,10 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   
   -- theoretically, the left and right branch may have the same delay, so may not need a fifo.
   -- but, fifo one of the branches to be safe.
-  table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(A,128)) )
-  table.insert( statements, R.applyMethod("s1",fifos[1],"store",left) )
-  left = R.applyMethod("l1",fifos[1],"load")
+  --table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(A,128)) )
+  --table.insert( statements, R.applyMethod("s1",fifos[1],"store",left) )
+  --left = R.applyMethod("l1",fifos[1],"load")
+  left = C.fifo(A,128)(left)
 
   local left = R.apply("AO",RM.makeHandshake(C.arrayop(types.uint(8),1)),left)
   local left = R.apply( "LB", RM.makeHandshake(C.stencilLinebuffer( types.uint(8), internalW, internalH, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
@@ -95,9 +96,10 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   --------
   local right = R.apply("right", RM.makeHandshake( C.index(types.array2d(A,2),1)), R.selectStream("i1",inp_broadcast,1) )
 
-  table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(A,128)) )
-  table.insert( statements, R.applyMethod( "s2", fifos[2], "store", right ) )
-  right = R.applyMethod("r1",fifos[#fifos],"load")
+  --table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(A,128)) )
+  --table.insert( statements, R.applyMethod( "s2", fifos[2], "store", right ) )
+  --right = R.applyMethod("r1",fifos[#fifos],"load")
+  right = C.fifo(A,128)(right)
 
   local right = R.apply("AOr", RM.makeHandshake( C.arrayop(types.uint(8),1)),right) -- uint8[1]
   local right = R.apply( "rightLB", RM.makeHandshake( C.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 )), right)
@@ -117,9 +119,10 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   else
     local sz = 128
     if NOSTALL then sz = 2048 end
-    table.insert( fifos, R.instantiateRegistered("f_timing",RM.fifo(types.array2d(types.uint(8),1),sz,NOSTALL)) )
-    table.insert( statements, R.applyMethod( "s_timing", fifos[#fifos], "store", res ) )
-    res = R.applyMethod("r_timing",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f_timing",RM.fifo(types.array2d(types.uint(8),1),sz,NOSTALL)) )
+    --table.insert( statements, R.applyMethod( "s_timing", fifos[#fifos], "store", res ) )
+    --res = R.applyMethod("r_timing",fifos[#fifos],"load")
+    res = C.fifo(types.array2d(types.uint(8),1),sz,NOSTALL)(res)
   end
 
   res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(types.uint(8), internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)

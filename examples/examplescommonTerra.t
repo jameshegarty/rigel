@@ -78,16 +78,23 @@ function CT.print(A,str)
   end
 
   local printS = quote end
-  if str~=nil then printS = quote cstdio.printf("%s:",str) end  end
+  if str~=nil then printS = quote cstdio.printf("%s ",str) end  end
 
-  local struct PrintModule {}
+  local struct PrintModule {count:uint}
   terra PrintModule:process( a : &A:toTerraType(), out : &A:toTerraType() )
     var aa = @a
     printS
+    cstdio.printf("(firing:%d) ",self.count)
+    self.count = self.count+1
     [doprint(A,aa)]
     cstdio.printf("\n")
     @out = @a
   end
+
+  terra PrintModule:reset()
+    self.count = 0
+  end
+
   return MT.new(PrintModule)
 end
 

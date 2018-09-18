@@ -94,6 +94,7 @@ types._array={}
 
 function types.array2d( _type, w, h )
   err( types.isType(_type), "first index to array2d must be Rigel type" )
+  err( types.isBasic(_type), "array2d: input type must be basic, but is: "..tostring(_type) )
   err( type(w)=="number", "types.array2d: second argument must be numeric width but is "..tostring(type(w)) )
   err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..type(h))
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
@@ -116,6 +117,7 @@ function types.tuple( list )
 
   for _,v in ipairs(list) do
     err( types.isType(v), "types.tuple: all items in list must be types")
+    err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
     err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
   end
   
@@ -616,7 +618,7 @@ function TypeFunctions:checkLuaValue(v)
     err( v==math.floor(v), "integer systolic constant must be integer")
   elseif self:isUint() or self:isBits() then
     err( type(v)=="number", "uint/bits must be number but is "..type(v))
-    err( v>=0, "systolic uint/bits const must be positive")
+    err( v>=0, "uint/bits const must be positive, but value is: "..tostring(v))
     err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
   elseif self:isBool() then
     err( type(v)=="boolean", "bool must be lua bool")
@@ -764,7 +766,7 @@ end
 
 -- dims goes from innermost (idx 1) to outermost (idx n)
 local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
-  err(types.isType(A),kind.."Framed: argument should be type")
+  err(types.isType(A),kind.."Framed: argument should be type, but is: "..tostring(A))
   err(types.isBasic(A),kind.."Framed: argument should be basic type, but is: "..tostring(A))
   err( type(mixed)=="boolean", kind.."Framed: mixed should be boolean, but is: "..tostring(mixed))
   err( type(dims)=="table", kind.."Framed: dims should be table")
@@ -783,11 +785,12 @@ local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
     table.insert(ldims,{dims[i][1],dims[i][2]})
   end
 
-  err( mixed==false or A:isArray(),kind.."Framed: if mixed, input type must be an array")
+  err( mixed==false or A:isArray(),kind.."Framed: if mixed, input type must be an array, but is: "..tostring(A))
   
   if mixed then
-    err(A.size[1]<dims[1][1] and A.size[2]<dims[1][2],kind.."Framed: when mixed, innermost serial dim must be larger than outermost parallel dim")
     err(A.size[2]==1,kind.."Framed: NYI - mixed H~=1")
+
+    err(A.size[1]<dims[1][1]*dims[1][2],kind.."Framed: when mixed, innermost serial dim must be larger than outermost parallel dim")
   end
 
   local str = kind.."Framed("
@@ -833,18 +836,23 @@ function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
 function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
 
 -- Add an extra outermost dim (loop) to the type
+-- mixed: optional, perhaps this is adding dims to a type that already has sequential dimensions
 function TypeFunctions:addDim(w,h,mixed)
   err( type(w)=="number", ":addDim w should be number")
   err( type(h)=="number", ":addDim h should be number")
-  err( type(mixed)=="boolean", ":addDim mixed should be boolean")
-  err( mixed==false or types.isBasic(self) or self:is("V") or self:is("RV"), "addDim: if mixed, this must be a basic type, but is: "..tostring(self) )
+  --err( type(mixed)=="boolean", ":addDim mixed should be boolean")
+  if mixed==nil then mixed=false end
+  err( mixed==false or types.isBasic(self) or self:is("V") or self:is("RV") or self:is("Handshake"), "addDim: if mixed, this must not have any sequential dimensions (would make no sense), but type is: "..tostring(self) )
 
   local ldims = {}
   local A
+  local omixed = mixed
   if self:is("StaticFramed") or self:is("HandshakeFramed") then
     for i=1,#self.params.dims do
       table.insert(ldims,{self.params.dims[i][1],self.params.dims[i][2]})
     end
+    A = self.params.A
+    omixed = self.params.mixed
   elseif self:is("V") or self:is("RV") or self:is("Handshake") then
     A = self.params.A
   else
@@ -855,13 +863,13 @@ function TypeFunctions:addDim(w,h,mixed)
   table.insert(ldims,{w,h})
 
   if self:is("StaticFramed") or types.isBasic(self) then
-    return types.StaticFramed(A,mixed,ldims)
+    return types.StaticFramed(A,omixed,ldims)
   elseif self:is("HandshakeFramed") or self:is("Handshake") then
-    return types.HandshakeFramed(A,mixed,ldims)
+    return types.HandshakeFramed(A,omixed,ldims)
   elseif self:is("V") then
-    return types.VFramed(A,mixed,ldims)
+    return types.VFramed(A,omixed,ldims)
   elseif self:is("RV") then
-    return types.RVFramed(A,mixed,ldims)
+    return types.RVFramed(A,omixed,ldims)
   else
     print("COULD NOT ADDDIM "..tostring(self))
     assert(false)
@@ -910,8 +918,8 @@ function types.HSFSize(A)
   assert(types.isType(A))
   assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
 
-  assert(#A.params.dims==1)
-  return {A.params.dims[1][1],A.params.dims[1][2]}
+  --assert(#A.params.dims==1)
+  return {A.params.dims[#A.params.dims][1],A.params.dims[#A.params.dims][2]}
 end
 
 -- if we have HandshakeFramed(u8[8;640,480}), this will return u8
@@ -934,19 +942,31 @@ function TypeFunctions:FH() return types.HSFSize(self)[2] end
 function TypeFunctions:FPixelType() return types.HSFPixelType(self) end
 
 -- this is sort of like arrayOver but for framed types
+-- IE A[4,5]{1;3,4} would return A[4,5]
 function TypeFunctions:framedOver()
-  assert(#self.params.dims==1)
-  assert(self.params.mixed==false)
+  --assert(#self.params.dims==1) -- NYI
 
-  if self:is("StaticFramed") then
-    return self.params.A
-  elseif self:is("HandshakeFramed") then
-    return types.Handshake(self.params.A)
+  local A = self.params.A
+  if self.params.mixed then A = A:arrayOver() end
+  
+  if self:is("StaticFramed") and #self.params.dims==1 then
+    return A
+  elseif self:is("StaticFramed") and #self.params.dims>1 then
+    return types.StaticFramed(self.params.A,self.params.mixed,J.slice(self.params.dims,1,#self.params.dims-1) )
+  elseif self:is("HandshakeFramed") and #self.params.dims==1 then
+    return types.Handshake(A)
+  else
+    print("framedOver NYI - "..tostring(self))
+    assert(false)
   end
   
 end
 
 if terralib~=nil then require("typesTerra") end
+
+for i=1,32 do
+  types["u"..tostring(i)] = types.uint(i)
+end
 
 function types.export(t)
   if t==nil then t=_G end
@@ -954,7 +974,7 @@ function types.export(t)
   rawset(t,"u",types.uint)
 
   for i=1,32 do
-    rawset(t,"u"..i,types.uint(i))
+    rawset(t,"u"..i,types["u"..i])
   end
   
   rawset(t,"i",types.int)

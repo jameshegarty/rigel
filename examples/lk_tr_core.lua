@@ -6,9 +6,10 @@ local J = require "common"
 
 local function FIFO(fifos,statements,A,inp)
   local id = #fifos
-  table.insert( fifos, R.instantiateRegistered("fifo"..tostring(id),RM.fifo(A,128)) )
-  table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
-  return R.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+  --table.insert( fifos, R.instantiateRegistered("fifo"..tostring(id),RM.fifo(A,128)) )
+  --table.insert( statements, R.applyMethod("s"..tostring(id),fifos[#fifos],"store",inp) )
+  --return R.applyMethod("l"..tostring(id),fifos[#fifos],"load")
+  return C.fifo(A,128)(inp)
 end
 
 function toUint8Sign(ty)

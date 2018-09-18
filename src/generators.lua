@@ -11,18 +11,26 @@ local __unnamedID = 0
 
 local generators = {}
 
-generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number"},{"size"},
+-- takes A to A[N]
+generators.Broadcast = R.newGenerator("generators","Broadcast",{"type","number","rate"},{"size"},
 function(args)
-  print("BROADCAST",args.size,args.number)
+  local W,H
+
   if args.size~=nil then
-    return C.broadcast(args.type,args.size[1], args.size[2])
+    W,H = args.size[1], args.size[2]
   else
-    return C.broadcast(args.type,args.number)
+    W = args.number
+  end
+
+  if types.isBasic(args.type) then
+    return C.broadcast(args.type,W,H)
+  else
+    J.err(false, "Broadcast: NYI on type: "..tostring(args.type) )
   end
 end)
 
 -- a broadcast is basically the same as a upsample, but has no W,H
-generators.BroadcastSeq = R.newGenerator("generators","BroadcastSeq",{"type","number","size"},{},
+generators.BroadcastSeq = R.newGenerator("generators","BroadcastSeq",{"type","number","size","rate"},{},
 function(args)
   J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
   return RM.upsampleXSeq(args.type,args.number,args.size[1]*args.size[2])
@@ -38,10 +46,10 @@ end)
 generators.Print = R.newGenerator("generators","Print",{"type"},{"string"},function(args) return C.print(args.type,args.string) end)
 generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
-generators.Rshift = R.newGenerator("generators","Rshift",{"type"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
-generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
-generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
-generators.Index = R.newGenerator("generators","Index",{"type"},{"number","size"},
+generators.Rshift = R.newGenerator("generators","Rshift",{"type","rate"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
+generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
+generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
+generators.Index = R.newGenerator("generators","Index",{"type","rate"},{"number","size"},
                                   function(args)
                                     if args.size~=nil then
                                       return C.index(args.type,args.size[1],args.size[2])
@@ -49,37 +57,36 @@ generators.Index = R.newGenerator("generators","Index",{"type"},{"number","size"
                                       return C.index(args.type,args.number)
                                     end
                                   end)
-generators.ValueToTrigger = R.newGenerator("generators","ValueToTrigger",{"type"},{}, function(args) return C.valueToTrigger(args.type) end)
+generators.ValueToTrigger = R.newGenerator("generators","ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
 
-generators.TriggerCounter = R.newGenerator("generators","TriggerCounter",{"type","number"},{},
+generators.TriggerCounter = R.newGenerator("generators","TriggerCounter",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
   return RM.triggerCounter(args.number)
 end)
 
-generators.TriggerBroadcast = R.newGenerator("generators","TriggerBroadcast",{"type","number"},{},
+generators.TriggerBroadcast = R.newGenerator("generators","TriggerBroadcast",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshakeTrigger(args.type), "TriggerBroadcast: input should be HandshakeTrigger" )
   return C.triggerUp(args.number)
 end)
 
-generators.FanOut = R.newGenerator("generators","FanOut",{"type","number"},{},
+generators.FanOut = R.newGenerator("generators","FanOut",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed"),"FanOut: expected handshake input, but is: "..tostring(args.type))
   local mixed, dims
   if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
-  print("FO",mixed,dims)
   return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
 end)
 
-generators.FIFO = R.newGenerator("generators","FIFO",{"type","number"},{},
+generators.FIFO = R.newGenerator("generators","FIFO",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
   local ty = R.extractData(args.type)
   return C.fifo( ty, args.number )
 end)
   
-generators.Add = R.newGenerator("generators","Add",{"type"},{"bool","number"},
+generators.Add = R.newGenerator("generators","Add",{"type","rate"},{"bool","number"},
 function(args)
   if args.number~=nil then
     -- add a const (unary op)
@@ -91,14 +98,14 @@ function(args)
   end
 end)
 
-generators.Sub = R.newGenerator("generators","Sub",{"type"},{"bool"},
+generators.Sub = R.newGenerator("generators","Sub",{"type","rate"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
   J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
   return C.sub( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
 end)
 
-generators.Mul = R.newGenerator("generators","Mul",{"type"},{"number"},
+generators.Mul = R.newGenerator("generators","Mul",{"type","rate"},{"number"},
 function(args)
   if args.number~=nil then
     J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
@@ -111,7 +118,7 @@ function(args)
   end
 end)
 
-generators.Zip = R.newGenerator("generators","Zip",{"type"},{},
+generators.Zip = R.newGenerator("generators","Zip",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
 
@@ -123,16 +130,16 @@ function(args)
   return RM.SoAtoAoS( args.type.list[1].size[1], args.type.list[1].size[2], typelist )
 end)
 
-generators.HS = R.newGenerator("generators","HS",{"rigelFunction","type"},{},
+generators.HS = R.newGenerator("generators","HS",{"rigelFunction","type","rate"},{},
 function(args)
 
   local mod
   if R.isGenerator(args.rigelFunction) and args.type:is("HandshakeFramed") then
     -- fill in args from HSF
     --mod = args.rigelFunction{args.type.params.A,types.HSFV(args.type),types.HSFSize(args.type)}
-    mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ) }
+    mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ), args.rate }
   elseif R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{R.extractData(args.type)}
+    mod = args.rigelFunction{R.extractData(args.type), args.rate}
   else
     mod = args.rigelFunction
   end
@@ -143,7 +150,7 @@ function(args)
   return RS.HS(mod)
 end)
 
-generators.Linebuffer = R.newGenerator("generators","Linebuffer",{"type","size","number","bounds"},{},
+generators.Linebuffer = R.newGenerator("generators","Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
   local itype
   if args.number==0 then
@@ -164,14 +171,15 @@ function(args)
   return mod
 end)
 
-generators.Stencil = R.newGenerator("generators","Linebuffer",{"type","bounds"},{},
+generators.Stencil = R.newGenerator("generators","Stencil",{"type","bounds","rate"},{},
 function(args)
 
   if args.type:is("StaticFramed") then
     local pixelType = types.HSFPixelType(args.type)
     local size = types.HSFSize(args.type)
     local V = types.HSFV(args.type)
-    print("ST",pixelType,size[1],size[2],V)
+
+    for _,v in ipairs(args.bounds) do J.err(v>=0,"Stencil bounds must be >=0") end
     
     local a = C.stencilLinebuffer( pixelType, size[1], size[2], V, -args.bounds[1], args.bounds[2], -args.bounds[3], args.bounds[4], true )
     local b = C.unpackStencil( pixelType, args.bounds[1]+1,args.bounds[3]+1, V, nil, true, size[1], size[2] )
@@ -190,7 +198,7 @@ function(args)
   end
 end)
 
-generators.Pad = R.newGenerator("generators","Pad",{"type","size","number","bounds"},{},
+generators.Pad = R.newGenerator("generators","Pad",{"type","size","number","bounds","rate"},{},
 function(args)
   J.err(args.number>0,"NYI - V<=0")
   local A = args.type:arrayOver()
@@ -198,14 +206,14 @@ function(args)
 end)
 
 
-generators.CropSeq = R.newGenerator("generators","Crop",{"type","size","number","bounds"},{},
+generators.CropSeq = R.newGenerator("generators","CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
   J.err(args.number>0,"NYI - V<=0")
   local A = args.type:arrayOver()
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
-generators.Crop = R.newGenerator("generators","Crop",{"type","bounds"},{},
+generators.Crop = R.newGenerator("generators","Crop",{"type","bounds","rate"},{},
 function(args)
   if args.type:is("StaticFramed") then
     local pixelType = types.HSFPixelType(args.type)
@@ -218,12 +226,11 @@ function(args)
   end
 end)
 
-generators.Downsample = R.newGenerator("generators","Downsample",{"type","size"},{},
+generators.Downsample = R.newGenerator("generators","Downsample",{"type","size","rate"},{},
 function(args)
   if args.type:is("StaticFramed") then
     local size = types.HSFSize(args.type)
     local V = types.HSFV(args.type)
-
     return C.downsampleSeq( args.type:FPixelType(), args.type:FW(), args.type:FH(), args.type:FV(), args.size[1], args.size[2], true )
   else
     err(false,"generators.Downsample: unsupported input type: "..tostring(args.type))
@@ -248,17 +255,17 @@ end)
 
 -- size/bool: output size/mixed for framed types (needed if vector width/ SDF rate changes...)
 --       think of this like a combined map&flatten
-generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction"},{"size","bool"},
+generators.Map = R.newGenerator("generators","Map",{"type","rigelFunction","rate"},{"size","bool"},
 function(args)
   if args.type:is("StaticFramed") then
 
     if args.type.params.mixed and #args.type.params.dims==1 then
       local mod = args.rigelFunction
       if R.isGenerator(mod) then
-        mod = mod{args.type.params.A:arrayOver()}
+        mod = mod{args.type.params.A:arrayOver(),args.rate}
       end
-      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
-
+      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? "..tostring(mod))
+      
       assert( args.type.params.A.size[2]==1 )
       local res = RM.map( mod, args.type.params.A.size[1], args.type.params.A.size[2] )
       return RM.mapFramed( res, args.type.params.dims[1][1], args.type.params.dims[1][2], true )
@@ -266,37 +273,60 @@ function(args)
       local size = types.HSFSize(args.type)
       local mod = args.rigelFunction
       if R.isGenerator(mod) then
-        mod = mod{args.type:framedOver()}
+        mod = mod{args.type:framedOver(),args.rate}
       end
-      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
+      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? "..tostring(mod))
 
       -- fully serial
       return RM.mapFramed( mod, size[1], size[2], false )
     end
   elseif args.type:is("HandshakeFramed") then
-    if args.type.params.mixed==false and #args.type.params.dims==1 then
+    if (args.type.params.mixed==false and #args.type.params.dims==1) or (args.type.params.mixed and args.type:FV()==1) then
       -- this is basically just applying a HSF wrapper
       local size = types.HSFSize(args.type)
       local mod = args.rigelFunction
       if R.isGenerator(mod) then
-        mod = mod{args.type:framedOver()}
+        mod = mod{args.type:framedOver(),args.rate}
       end
-      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
+      J.err( R.isModule(mod), "generators.Map: function didn't yield a rigel module? "..tostring(mod))
 
+      local omixed = args.bool
       local ow,oh
+      -- optionally allow user to override output size
       if args.size~=nil then ow,oh=args.size[1],args.size[2] end
       
+      if args.type.params.mixed and args.type:FV()==1 then
+         -- hack: lift mod to work on an array of size 1
+         mod = generators.Module{R.Handshake(args.type.params.A),args.rate,
+                                function(i)
+                                  local o = generators.HS{generators.Index{0}}(i)
+                                  --o = mod(o)
+                                  --return generators.Map{mod}(o)
+                                  return mod(o)
+                                end}
+
+        assert(omixed==nil)
+        omixed=nil
+        assert(ow==nil)
+        assert(oh==nil)
+        ow=128
+        oh=64
+      end
+
+      J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? (2)")
+--      ]=]
+      
       -- fully serial
-      return RM.mapFramed( mod, size[1], size[2], false, ow, oh, args.bool )
+      return RM.mapFramed( mod, size[1], size[2], args.type.params.mixed, ow, oh, omixed )
     else
       J.err(false, "generators.Map: attempted to apply to value with unsupported type: "..tostring(args.type))
     end
   elseif args.type:isArray() then
     local mod = args.rigelFunction
     if R.isGenerator(mod) then
-      mod = mod{args.type:arrayOver()}
+      mod = mod{args.type:arrayOver(),args.rate}
     end
-    J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module?")
+    J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? "..tostring(mod))
     
     return RM.map( mod, args.type.size[1], args.type.size[2] )
   else
@@ -304,18 +334,41 @@ function(args)
   end
 end)
 
-generators.Reduce = R.newGenerator("generators","Reduce",{"type","rigelFunction"},{},
+generators.Reduce = R.newGenerator("generators","Reduce",{"type","rigelFunction","rate"},{},
 function(args)
-  J.err( args.type:isArray(), "generators.Reduce: type should be array" )
+
+  local arrayOver
+  if args.type:is("StaticFramed") then
+    arrayOver = args.type:framedOver()
+  else
+    J.err( args.type:isArray(), "generators.Reduce: type should be array, but is: "..tostring(args.type) )
+    arrayOver = args.type:arrayOver()
+  end
+  
   local mod
   if R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{types.tuple{args.type:arrayOver(),args.type:arrayOver()}}
+    mod = args.rigelFunction{types.tuple{arrayOver,arrayOver},args.rate}
     assert( R.isModule(mod) )
   else
     assert(false)
   end
-  
-  return RM.reduce( mod, args.type.size[1], args.type.size[2] )
+
+  if args.type:is("StaticFramed") then
+    local seq = RM.reduceSeq( mod, args.type:FV()/(args.type:FW()*args.type:FH()), true )
+
+    if args.type:FV()>1 then
+      local RED = RM.reduce( mod, args.type:FV(), 1 )
+
+      local par = RM.mapFramed(RED,args.type:FW(),args.type:FH(),true,(args.type:FW()*args.type:FH())/args.type:FV(),1,false)
+      local res = C.compose("Generators_Reduce_"..seq.name.."_"..par.name,seq,par)
+
+      return res
+    else
+      return seq
+    end
+  else
+    return RM.reduce( mod, args.type.size[1], args.type.size[2] )
+  end
 end)
 
 generators.ReduceSeq = R.newGenerator("generators","Reduce",{"type","rigelFunction","number"},{},
@@ -333,16 +386,18 @@ function(args)
 end)
 
 -- number is the number of cycles over which to ser
-generators.Ser = R.newGenerator("generators","Ser",{"type","number"},{},
+generators.Ser = R.newGenerator("generators","Ser",{"type","number","rate"},{},
 function(args)
-  J.err( args.type:isArray(), "generators.Ser: type should be array" )
-  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
+  J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
+  --return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
+  return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
 end)
 
-generators.Deser = R.newGenerator("generators","Deser",{"type","number"},{},
+generators.Deser = R.newGenerator("generators","Deser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Deser: type should be array" )
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
+  --return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, false )
 end)
 
 generators.Fwrite = R.newGenerator("generators","Fwrite",{"type","string"},{"size"},
@@ -363,14 +418,14 @@ function(args)
   return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)
 end)
 
-generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string"},
+generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string","rate"},
 function(args)
   if args.string==nil then
     args.string = "unnamedModuleGen"..__unnamedID
     __unnamedID = __unnamedID+1
   end
 
-  local input = R.input( args.type )
+  local input = R.input( args.type, args.rate )
   local out = args.luaFunction(input)
   J.err( R.isIR(out), "Module: user function returned something other than a Rigel value")
   
@@ -379,12 +434,18 @@ end)
 
 generators.Generator = generators.Module
 
-generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","size","type","number"},{},
+generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","size","type","rate"},{"number"},
 function(args)
-  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, args.number, true )
+  local numb = args.number
+  if numb==nil then
+    numb = math.ceil((args.size[1]*args.size[2]*args.rate[1][1])/args.rate[1][2])
+    print("AXIReadBurst V:",numb)
+  end
+  
+  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true )
 end)
 
-generators.AXIRead = R.newGenerator("generators","AXIRead",{"string","type","number"},{},
+generators.AXIRead = R.newGenerator("generators","AXIRead",{"string","type","number","rate"},{},
 function(args)
   if args.type:is("Handshake") then
     return SOC.read( args.string, args.number, types.uint(8) )
@@ -393,7 +454,7 @@ function(args)
   end
 end)
 
-generators.AXIWriteBurst = R.newGenerator("generators","AXIWriteBurst",{"string","type"},{"size","number"},
+generators.AXIWriteBurst = R.newGenerator("generators","AXIWriteBurst",{"string","type","rate"},{"size","number"},
 function(args)
   if args.type:is("HandshakeFramed") then
     return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )
@@ -409,7 +470,46 @@ function(args)
   assert(R.isModule(WG))
   return WG
 end)
-                                        
+
+generators.Reshape = R.newGenerator("generators","Reshape",{"type","rate"},{},
+function(args)
+
+  local ratio = args.rate[1][1]/args.rate[1][2]
+  if ratio<1 then
+
+    if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then
+      if args.type:FV()*ratio < 1 then
+        return generators.Module{function(i) return generators.Map{generators.Reshape}(i) end,args.type,args.rate}
+      else
+        assert(false)
+      end
+    elseif args.type:is("Handshake") then
+      if args.type.params.A:channels()*ratio < 1 then
+        assert(false)
+      else
+        local res = generators.HS{generators.Ser{args.rate[1][2]/args.rate[1][1]},args.type,args.rate}
+        return res
+      end
+    else
+      assert(false)
+    end
+  elseif ratio>1 then
+    assert(false)
+  end
+
+  -- ratio==1
+  if args.type:is("HandshakeFramed") then
+    local ID = C.identity( args.type.params.A )
+    ID = RM.mapFramed(ID,args.type:FW(),args.type:FH(),args.type:FV()>0)
+    local res = generators.HS{ID,args.type,args.rate}
+    return res
+  elseif types.isBasic(args.type) then
+    return C.identity(args.type)
+  else
+    assert(false)
+  end
+end)
+
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end

@@ -4,9 +4,10 @@ require "generators".export()
 local harness = require "harnessSOC"
 local SOC = require "soc"
 local C = require "examplescommon"
+local SDF = require "sdf"
 require "types".export()
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs{}:instantiate(SDF{1,1024})
 
 local W,H = 128,64
 

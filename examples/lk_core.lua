@@ -372,9 +372,10 @@ function LKTop(T,W,H,window,bits,nostall,X)
   else
     local sz = 128
     if nostall then sz = 2048 end
-    table.insert( fifos, R.instantiateRegistered("f_timing",RM.fifo(types.array2d(ITYPE,T),sz,nostall)) )
-    table.insert( statements, R.applyMethod( "s_timing", fifos[#fifos], "store", out ) )
-    out = R.applyMethod("r_timing",fifos[#fifos],"load")
+--    table.insert( fifos, R.instantiateRegistered("f_timing",RM.fifo(types.array2d(ITYPE,T),sz,nostall)) )
+--    table.insert( statements, R.applyMethod( "s_timing", fifos[#fifos], "store", out ) )
+    --    out = R.applyMethod("r_timing",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(ITYPE,T),sz,nostall)(out)
   end
 
   local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)

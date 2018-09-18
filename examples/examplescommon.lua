@@ -9,12 +9,14 @@ local J = require "common"
 local memoize = J.memoize
 local err = J.err
 local f = require "fixed_new"
+local SDF = require "sdf"
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
 local C = {}
 
 C.identity = memoize(function(A)
+  err( types.isBasic(A),"C.identity: type should be basic, but is: "..tostring(A) )
   local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
   return identity
 end)
@@ -25,8 +27,8 @@ C.fassert = memoize(function(filename,A)
   local fassert = {name=J.verilogSanitize("fassert_"..tostring(A).."_file"..tostring(filename))}
   fassert.inputType = A
   fassert.outputType = A
-  fassert.sdfInput={{1,1}}
-  fassert.sdfOutput={{1,1}}
+  fassert.sdfInput=SDF{1,1}
+  fassert.sdfOutput=SDF{1,1}
   fassert.stateful=true
   fassert.delay=0
   function fassert.makeTerra() return CT.fassert(filename,A) end
@@ -43,7 +45,7 @@ end)
 
 C.print = memoize(function(A,str)
   err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
-
+  
   local function constructPrint(A,symb)
     if A:isUint() or A:isInt() or A:isBits() then
       return {A}, "%d", {symb}
@@ -77,8 +79,8 @@ C.print = memoize(function(A,str)
   end
   
   --local identity = RM.lift( , A, A, 0, function(sinp) return sinp end, function() return CT.print(A,str) end, "C.print")
-  local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput={{1,1}}, sdfOutput={{1,1}}}
-  res.stateful=false
+  local res = {name = J.verilogSanitize("print_"..tostring(A).."_STR"..tostring(str)),inputType=A,outputType=A,sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
+  res.stateful=true
   res.delay=0
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
@@ -89,6 +91,7 @@ C.print = memoize(function(A,str)
     local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
+    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
     return sm
   end
   
@@ -772,9 +775,10 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(types.array2d(A,T),128)) )
-    table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",out) )
-    out = R.applyMethod("l13",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(types.array2d(A,T),128)) )
+    --table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",out) )
+    --out = R.applyMethod("l13",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(A,T),128)(out)
   end
 
   -----------------
@@ -787,9 +791,10 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
 
   if timingFifo then
     -- this FIFO is only for improving timing
-    table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(types.array2d(fnOutType,T),128)) )
-    table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",out) )
-    out = R.applyMethod("l2",fifos[#fifos],"load")
+    --table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(types.array2d(fnOutType,T),128)) )
+    --table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",out) )
+    --out = R.applyMethod("l2",fifos[#fifos],"load")
+    out = C.fifo(types.array2d(fnOutType,T),128)(out)
   end
   -----------------
 
@@ -949,15 +954,17 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 end)
 
 -------------
-C.fifo = memoize(function(ty,size,X)
+C.fifo = memoize(function(ty,size,nostall,csimOnly,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
   err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
+  err( nostall==nil or type(nostall)=="boolean", "C.fifo: nostall must be boolean")
+  err( csimOnly==nil or type(csimOnly)=="boolean", "C.fifo: csimOnly must be boolean")
   err( X==nil, "C.fifo: too many arguments" )
   err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
   
   local inp = R.input(R.Handshake(ty))
-  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size))}
+  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
   return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
@@ -995,7 +1002,7 @@ function C.border(A,W,H,L,R,B,T,value)
   local res = {kind="border",generator="C.border",L=L,R=R,T=T,B=B,value=value}
   res.inputType = types.array2d(A,W,H)
   res.outputType = res.inputType
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 0
 
   if terralib~=nil then res.terraModule = CT.border(res,A,W,H,L,R,B,T,value) end
@@ -1058,7 +1065,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   end
   if scaleX>1 then
     local mod = modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))
-    print(mod)
+
     if scaleY>1 then mod=modules.RPassthrough(mod) end
 
     out = rigel.apply("downsampleSeq_X", mod, out)
@@ -1144,7 +1151,7 @@ C.stencil = memoize(function( A, w, h, xmin, xmax, ymin, ymax )
   res.delay=0
   res.inputType = types.array2d(A,w,h)
   res.outputType = types.array2d(types.array2d(A,xmax-xmin+1,ymax-ymin+1),w,h)
-  res.sdfInput, res.sdfOutput = {{1,1}},{{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.name = J.sanitize("Stencil_"..tostring(A).."_w"..tostring(w).."_h"..tostring(h).."_xmin"..tostring(xmin).."_xmax"..tostring(xmax).."_ymin"..tostring(ymin).."_ymax"..tostring(ymax))
   res.stateful=false
 
@@ -1217,7 +1224,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, fram
   err(T>=1, "stencilLinebuffer: T must be >=1");
   err(w>0,"stencilLinebuffer: w must be >0");
   err(h>0,"stencilLinebuffer: h must be >0");
-  err(xmin<=xmax,"stencilLinebuffer: xmin>xmax")
+  err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
   err(ymin<=ymax,"stencilLinebuffer: ymin>ymax")
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
@@ -1257,17 +1264,12 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   local SSRSize = w*(-ymin)-xmin+1
   local lb = modules.SSR(A,T,-SSRSize,0)(I)
 
-  --print("SSRSize",SSRSize,"w",w,"h",h,"xmin",xmin,"ymin",ymin)
-  
   local tab = {}
   for y=ymin,0 do
     for x=xmin,0 do
       local idx = y*w+x
       -- SSR module stores values in opposite order of what we want
       local ridx = SSRSize+idx
-
-      --print("idx",idx,"ridx",ridx)
-      
       table.insert(tab, C.index(lb.type,ridx,0)(lb) )
     end
   end
@@ -1313,19 +1315,12 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   if framed then
     err( type(framedW)=="number", "unpackStencil: framedW must be nil or number")
     err( type(framedH)=="number", "unpackStencil: framedH must be nil or number")
-
---    local idims = types.FramedCollectParallelDims(res.inputType)
---    local odims = types.FramedCollectParallelDims(res.outputType)
-
---    table.insert(idims,{framedW/T,framedH})
---    odims[#odims]={framedW,framedH}
     
     res.inputType = res.inputType:addDim(framedW/T,framedH,false)
     res.outputType = res.outputType:addDim(framedW,framedH,true)
-    print("UPSOP",res.outputType)
   end
   
-  res.sdfInput, res.sdfOutput = {{1,1}}, {{1,1}}
+  res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.stateful = false
   res.delay=0
   res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
@@ -1444,6 +1439,13 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
   local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = math.max(minTotalInputBits,minTotalOutputBits)
+
+    bts = J.upToNearest(inputFactor,bts)
+    bts = J.upToNearest(outputFactor,bts)
+
+    assert( bts%inputFactor==0 )
+    assert( bts%outputFactor==0 )
+    
     return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
     if inputBitsPerCyc%outputBitsPerCyc==0 then
@@ -1458,7 +1460,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       bts = J.upToNearest(inputFactor,bts)
       bts = J.upToNearest(outputFactor,bts)
       print("BTS",bts)
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     else
       assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
@@ -1482,8 +1487,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       --bts = J.upToNearest(shifterBits,bts)
       bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
       
-      return {RM.lambda(name,inp,out),bts}
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
 
+      return {RM.lambda(name,inp,out),bts}
     end
   elseif outputBitsPerCyc>inputBitsPerCyc then
     if outputBitsPerCyc%inputBitsPerCyc==0 then
@@ -1498,7 +1505,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
       bts = J.upToNearest(inputFactor,bts)
       bts = J.upToNearest(outputFactor,bts)
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     else
       assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
@@ -1521,7 +1531,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       --bts = J.upToNearest(outputFactor,bts)
       --bts = J.upToNearest(shifterBits,bts)
       bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
-      
+
+      assert( bts%inputFactor==0 )
+      assert( bts%outputFactor==0 )
+
       return {RM.lambda(name,inp,out),bts}
     end
   end
@@ -1566,9 +1579,10 @@ function C.plus100(ty) return C.plusConst(ty,100) end
 __linearpipelinecnt = 0
 -- convert an array of rigel modules into a straight pipeline
 -- pipeline starts at index 1, ends at index N
-function C.linearPipeline(t,modulename)
+function C.linearPipeline(t,modulename,rate)
   err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
-
+  err( rate==nil or SDF.isSDF(rate),"linearPipeline: rate should be nil or SDF" )
+  
   if modulename==nil then
     modulename="linearpipeline"..tostring(__linearpipelinecnt)
     __linearpipelinecnt = __linearpipelinecnt+1
@@ -1577,7 +1591,7 @@ function C.linearPipeline(t,modulename)
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  local inp = R.input(t[1].inputType)
+  local inp = R.input( t[1].inputType, rate )
   local out = inp
 
   for k,v in ipairs(t) do
@@ -1593,7 +1607,7 @@ C.handshakeToHandshakeFramed = memoize(
     err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
     assert(X==nil)
     err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
-    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput={{1,1}},sdfOutput={{1,1}},stateful=false}
+    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
     res.name=J.sanitize("HandshakeToHandshakeFramed_"..tostring(A))
 
     function res.makeSystolic()
@@ -1611,5 +1625,26 @@ C.handshakeToHandshakeFramed = memoize(
     
     return rigel.newFunction(res)
   end)
+
+-- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}
+-- if ser==false, takes A[W*H/ratio,W,H}->A[W,H]
+C.changeRateFramed = memoize(function(A, W, H, ratio, ser, X)
+  local name = J.sanitize("ChangeRateFramed_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_ratio"..tostring(ratio).."_ser"..tostring(ser))
+                               
+  if ser then
+    local TYO = types.array2d(A,W,H)
+    local ty = R.V(TYO)
+
+    local I = R.input(ty)
+    local o = RM.liftDecimate(RM.liftBasic(C.cast(TYO, types.array2d(A,W*H))))(I)
+    o = RM.RPassthrough(RM.changeRate(A,1,W*H,W*H/ratio,true,W,H))(o)
+    return RM.lambda(name,I,o)
+  else
+    assert(false)
+  end
+
+  assert(false)
+end)
+                                   
 
 return C

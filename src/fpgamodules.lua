@@ -179,7 +179,8 @@ modules.fifo = memoize(function(ty,items,verbose)
   err(types.isType(ty),"fifo type must be type")
   err(type(items)=="number","fifo items must be number")
   err(type(verbose)=="boolean","fifo verbose must be bool")
-
+  err( items>1,"fifo: items must be >1")
+  
   local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn

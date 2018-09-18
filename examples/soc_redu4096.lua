@@ -1,0 +1,1 @@
+soc_redu8192.lua

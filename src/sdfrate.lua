@@ -19,13 +19,14 @@ function SDFRate.isSDFRate(t)
 end
 
 function SDFRate.tostring(t)
-  err(SDFRate.isSDFRate(t), "SDFRate.tostring: not an SDF rate? "..tostring(t))
+  err(SDFRate.isSDFRate(t), "SDFRate.tostring: not an SDF rate?")
   local str = "{"
-  for _,v in ipairs(t) do
+  for k,v in ipairs(t) do
     if v=='x' then
       str = str.."x,"
     else
-      str = str..tostring(v[1]).."/"..tostring(v[2])..","
+      str = str..tostring(v[1]).."/"..tostring(v[2])
+      if k~=#t then str = str.."," end
     end
   end
   str = str.."}"

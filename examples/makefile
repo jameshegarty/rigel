@@ -1,13 +1,13 @@
 BUILDDIR ?= out
 
 # soc_flipWrite.lua 
-SRCS_SOC = soc_simple.lua soc_2in.lua soc_convgen.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua
+SRCS_SOC = soc_simple.lua soc_2in.lua soc_convgen.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
-VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
-VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_SOC))
-VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_SOC))
-VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
 
 ZU9VIVADOSOCBITS = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SRCS_SOC))
 

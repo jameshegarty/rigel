@@ -158,9 +158,10 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   
   -- theoretically, the left and right branch may have the same delay, so may not need a fifo.
   -- but, fifo one of the branches to be safe.
-  table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(A,128)) )
-  table.insert( statements, R.applyMethod("s1",fifos[1],"store",left) )
-  left = R.applyMethod("l1",fifos[1],"load")
+  --table.insert( fifos, R.instantiateRegistered("f1",RM.fifo(A,128)) )
+  --table.insert( statements, R.applyMethod("s1",fifos[1],"store",left) )
+  --left = R.applyMethod("l1",fifos[1],"load")
+  left = C.fifo(A,128)(left)
 
   local left = R.apply("AO",RM.makeHandshake(C.arrayop(A,1)),left)
   local left = R.apply("LB", C.stencilLinebufferPartialOffsetOverlap( A, internalW, internalH, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
@@ -171,9 +172,10 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   
   -- theoretically, the left and right branch may have the same delay, so may not need a fifo.
   -- but, fifo one of the branches to be safe.
-  table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(A,128)) )
-  table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",right) )
-  right = R.applyMethod("l12",fifos[#fifos],"load")
+  --table.insert( fifos, R.instantiateRegistered("f2",RM.fifo(A,128)) )
+  --table.insert( statements, R.applyMethod("s2",fifos[#fifos],"store",right) )
+  --right = R.applyMethod("l12",fifos[#fifos],"load")
+  right = C.fifo(A,128)(right)
 
   local right = R.apply("AOr", RM.makeHandshake(C.arrayop(A,1)),right) -- uint8[1]
   local right = R.apply( "rightLB", RM.makeHandshake( C.stencilLinebuffer( A, internalW, internalH, 1, -SADWidth+1, 0, -SADWidth+1, 0 ) ), right)
@@ -194,9 +196,10 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
 
   -- this FIFO is only for improving timing
   local argminType = types.tuple{types.uint(8),types.uint(reducePrecision)}
-  table.insert( fifos, R.instantiateRegistered("f3",RM.fifo(argminType,128)) )
-  table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",res) )
-  res = R.applyMethod("l13",fifos[#fifos],"load")
+  --table.insert( fifos, R.instantiateRegistered("f3",RM.fifo(argminType,128)) )
+  --table.insert( statements, R.applyMethod("s3",fifos[#fifos],"store",res) )
+  --res = R.applyMethod("l13",fifos[#fifos],"load")
+  res = C.fifo(argminType,128)(res)
 
 
 
