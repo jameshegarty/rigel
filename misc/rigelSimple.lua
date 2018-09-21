@@ -417,7 +417,7 @@ function RS.writePixels(input,id,imageSize,V,DIR)
     TY = input.type
   end
 
-  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilator_"..id..".raw"}
+  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw"}
 
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)

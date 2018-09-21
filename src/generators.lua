@@ -371,12 +371,12 @@ function(args)
   end
 end)
 
-generators.ReduceSeq = R.newGenerator("generators","Reduce",{"type","rigelFunction","number"},{},
+generators.ReduceSeq = R.newGenerator("generators","ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
 
   local mod
   if R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{types.tuple{args.type,args.type}}
+    mod = args.rigelFunction{types.tuple{args.type,args.type},args.rate}
     assert( R.isModule(mod) )
   else
     assert(false)

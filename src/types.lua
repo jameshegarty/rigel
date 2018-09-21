@@ -115,8 +115,8 @@ function types.tuple( list )
   err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
-  for _,v in ipairs(list) do
-    err( types.isType(v), "types.tuple: all items in list must be types")
+  for k,v in ipairs(list) do
+    err( types.isType(v), "types.tuple: all items in list must be types, but item "..tostring(k).." is :"..tostring(v))
     err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
     err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
   end

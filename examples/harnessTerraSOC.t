@@ -8,8 +8,12 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
---V = terralib.includec("/home/jhegarty/rigel/platform/verilatorSOC/harness.h")
-V = terralib.includec("..//platform/verilatorSOC/harness.h")
+function script_path()
+  local str = debug.getinfo(2, "S").source:sub(2)
+  return str:match("(.*/)")
+end
+
+V = terralib.includec(script_path().."../platform/verilatorSOC/harness.h")
 
 local Ctmp = terralib.includecstring [[
                                         #include <stdio.h>
