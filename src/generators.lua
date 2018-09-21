@@ -412,7 +412,7 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size"},{},
+generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
   return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)
