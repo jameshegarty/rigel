@@ -371,12 +371,12 @@ function(args)
   end
 end)
 
-generators.ReduceSeq = R.newGenerator("generators","Reduce",{"type","rigelFunction","number"},{},
+generators.ReduceSeq = R.newGenerator("generators","ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
 
   local mod
   if R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{types.tuple{args.type,args.type}}
+    mod = args.rigelFunction{types.tuple{args.type,args.type},args.rate}
     assert( R.isModule(mod) )
   else
     assert(false)
@@ -412,7 +412,7 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size"},{},
+generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
   return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)

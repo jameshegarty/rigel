@@ -80,7 +80,7 @@ $(BUILDDIR)/fwriteseq12.compiles.txt: fwriteseq12.lua
 
 $(BUILDDIR)/fwriteseq12.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/dbg_terra_fwriteseq12.raw > $(BUILDDIR)/fwriteseq12test.diff
-	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/dbg_verilator_fwriteseq12.raw > $(BUILDDIR)/fwriteseq12testVerilog.diff
+	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/dbg_verilatorSOC_fwriteseq12.raw > $(BUILDDIR)/fwriteseq12testVerilog.diff
 	test ! -s $(BUILDDIR)/$*.fwriteseq12testVerilog.diff && touch $@
 ###################
 $(BUILDDIR)/fwriteseq18.compiles.txt: fwriteseq18.lua
@@ -89,7 +89,7 @@ $(BUILDDIR)/fwriteseq18.compiles.txt: fwriteseq18.lua
 	$(LUA) fwriteseq18.lua metadata
 
 $(BUILDDIR)/fwriteseq18.correct.txt: $(BUILDDIR)/verilogcorrect.txt
-	diff $(BUILDDIR)/dbg_terra_fwriteseq18.raw $(BUILDDIR)/dbg_verilator_fwriteseq18.raw > $(BUILDDIR)/fwriteseq18test.diff
+	diff $(BUILDDIR)/dbg_terra_fwriteseq18.raw $(BUILDDIR)/dbg_verilatorSOC_fwriteseq18.raw > $(BUILDDIR)/fwriteseq18test.diff
 	test ! -s $(BUILDDIR)/$*.fwriteseq18test.diff && touch $@
 ###################
 $(BUILDDIR)/fwriteseq24.compiles.txt: fwriteseq24.lua
@@ -98,9 +98,9 @@ $(BUILDDIR)/fwriteseq24.compiles.txt: fwriteseq24.lua
 	$(LUA) fwriteseq24.lua metadata
 
 $(BUILDDIR)/fwriteseq24.correct.txt: $(BUILDDIR)/verilogcorrect.txt
-	diff $(BUILDDIR)/dbg_terra_fwriteseq24.raw $(BUILDDIR)/dbg_verilator_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24test.diff
+	diff $(BUILDDIR)/dbg_terra_fwriteseq24.raw $(BUILDDIR)/dbg_verilatorSOC_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24test.diff
 	diff $(BUILDDIR)/fwriteseq24.terra.raw $(BUILDDIR)/dbg_terra_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24test2.diff
-	diff $(BUILDDIR)/fwriteseq24.terra.raw $(BUILDDIR)/dbg_verilator_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24testVerilog.diff
+	diff $(BUILDDIR)/fwriteseq24.terra.raw $(BUILDDIR)/dbg_verilatorSOC_fwriteseq24.raw > $(BUILDDIR)/fwriteseq24testVerilog.diff
 	test ! -s $(BUILDDIR)/$*.fwriteseq24test.diff && touch $@
 ###################
 $(BUILDDIR)/fwriteseq37.compiles.txt: fwriteseq37.lua
@@ -109,7 +109,7 @@ $(BUILDDIR)/fwriteseq37.compiles.txt: fwriteseq37.lua
 	$(LUA) fwriteseq37.lua metadata
 
 $(BUILDDIR)/fwriteseq37.correct.txt: $(BUILDDIR)/verilogcorrect.txt
-	diff $(BUILDDIR)/dbg_terra_fwriteseq37.raw $(BUILDDIR)/dbg_verilator_fwriteseq37.raw > $(BUILDDIR)/fwriteseq37test.diff
+	diff $(BUILDDIR)/dbg_terra_fwriteseq37.raw $(BUILDDIR)/dbg_verilatorSOC_fwriteseq37.raw > $(BUILDDIR)/fwriteseq37test.diff
 	test ! -s $(BUILDDIR)/$*.fwriteseq37test.diff && touch $@
 ###################
 
