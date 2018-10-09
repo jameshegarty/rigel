@@ -157,11 +157,12 @@ end)
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
-modules.packTuple = memoize(function( typelist, X )
+modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
   err( type(typelist)=="table", "packTuple: type list must be table" )
+  err( disableFIFOCheck==nil or type(disableFIFOCheck)=="boolean", "packTuple: disableFIFOCheck must be nil or bool" )
   err( X==nil, "packTuple: too many arguments" )
   
-  local res = {kind="packTuple"}
+  local res = {kind="packTuple", disableFIFOCheck = disableFIFOCheck}
   
   J.map(typelist, function(t) rigel.expectBasic(t) end )
   res.inputType = rigel.HandshakeTuple(typelist)
@@ -1033,9 +1034,11 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
   res.sdfOutput = SDF{rate}
   res.name = sanitize("FilterSeq_"..tostring(A))
 
-  local outTokens = ((W*H)*rate[1])/rate[2]
-  err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens in non integer ("..tonumber(outTokens)..")")
-
+  if coerce then
+    local outTokens = ((W*H)*rate[1])/rate[2]
+    err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens is non integer ("..tonumber(outTokens)..")")
+  end
+  
   if terralib~=nil then res.terraModule = MT.filterSeq( res, A, W,H, rate, fifoSize, coerce ) end
 
 
@@ -1143,6 +1146,56 @@ vstring = vstring..[[endmodule
   
   return rigel.newFunction(res)
 end)
+
+-- restrictions: input array of valids must be sorted (valids come first)
+-- output rate must be <= 1/N (& with bursts, it can't even reach this rate)
+modules.filterSeqPar = memoize(function( A, N, rate )
+  err( types.isType(A), "filterSeqPar: input type must be type" )
+  err( type(N)=="number", "filterSeqPar: N must be number" )
+  err( SDF.isSDF(rate), "filterSeqPar: rate must be SDF rate" )
+
+  local res = {}
+  res.inputType = types.array2d( types.tuple{A,types.bool()}, N )
+  res.outputType = types.RV( A )
+  res.sdfInput = SDF{1,1}
+  res.sdfOutput = rate
+  res.stateful = true
+  res.delay = 1
+  res.name = J.sanitize("FilterSeqPar_"..tostring(A).."_N"..tostring(N).."_rate"..tostring(rate))
+
+  local fakeV = {A:fakeValue(),false}
+  local fakeVA = J.broadcast(fakeV,N)
+
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+
+    local buffer = systolicModule:add( S.module.reg( res.inputType, true, fakeVA, true, fakeVA ):instantiate("buffer") )
+
+    local readyForMore0 = S.eq( S.index(S.index(reg:get(),0),1), S.constant(false,types.bool()) )
+    local readyForMore1 = S.eq( S.index(S.index(reg:get(),0),1), S.constant(true,types.bool()) )
+    local readyForMore2 = S.eq( S.index(S.index(reg:get(),1),1), S.constant(false,types.bool()) )
+    local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
+
+    local sinp = S.parameter( "inp", res.inputType )
+
+    -- shift phase
+    local sptup = {}
+    for i=1,N-1 do
+      table.insert( sptup, S.index(buffer:get(),i) )
+    end
+    table.insert( sptup, S.constant(fakeV, types.tuple{A,types.bool} ) )
+    local shiftPhase = S.concat(sptup)
+
+    ----------
+    local CE = S.CE("CE")
+    systolicModule:addFunction( S.lambda("process", sinp, S.index( buffer:get(), 0 ), "process_output", buffer:set(S.sel(readyForMore,sinp,shiftPhase)), nil, CE) )
+    systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readyForMore, "ready", {} ) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {buffer:reset()},S.parameter("reset",types.bool())) )
+  end
+
+  return modules.waitOnInput( rigel.newFunction(res) )
+end)
+
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
 -- basic -> V
@@ -3377,6 +3430,74 @@ local function lambdaSDFNormalize( input, output, instances )
   return newInput, newOutput, newInstances
 end
 
+-- check to make sure we have FIFOs in diamonds
+local function checkFIFOs(output)
+  output:visitEach(
+    function(n, arg)
+      local res = {}
+      if n.kind=="input" then
+        -- HACK: if we have multiple stream inputs, just give the user the benefit of the doubt? (& count them as fifoed)
+        res = J.broadcast(true,types.streamCount(n.type))
+      elseif n.kind=="apply" and n.fn.kind=="broadcastStream" then
+        res = J.broadcast( false, n.type.params.W*n.type.params.H )
+      elseif n.kind=="apply" and n.fn.kind=="packTuple" then
+        assert(#arg==1)
+        assert(#arg[1]==#n.fn.inputType.params.list)
+        for i=1,#n.fn.inputType.params.list do
+          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in diamond is missing FIFO! "..n.loc)
+        end
+
+        -- Is this right???? if we got this far, we did have a fifo along this brach...
+        res = {true}
+      elseif n.kind=="apply" and rigel.isGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
+        res = {true}
+      elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
+        res = {true}
+      elseif n.kind=="applyMethod" then
+        if n.fnname=="store" or n.fnname=="done" then
+          res = {}
+        else
+          res = {false} -- HACK: this isn't really correct...
+        end
+      elseif n.kind=="apply" then
+        assert(#arg==#n.inputs)
+
+        if #n.inputs==0 then
+          -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
+          res = J.broadcast(true,types.streamCount(n.type))
+        else
+          if types.streamCount(n.fn.inputType) ~= types.streamCount(n.fn.outputType) then
+            -- hack: tooooo hard to figure this out, so be conservative
+            res = J.broadcast( false, types.streamCount(n.fn.outputType) )
+          else
+            res = arg[1]
+          end
+        end
+      elseif n.kind=="selectStream" then
+        assert(#arg==1)
+        res = {arg[1][n.i+1]}
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        for i=1,#n.inputs do
+          if #arg[i]>=1 then
+            assert(#arg[i]==1)
+            res[i] = arg[i][1]
+          end
+        end
+      elseif n.kind=="statements" then
+        res = arg[1]
+      elseif n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
+        res = {}
+      else
+        print("NYI ",n.kind)
+        assert(false)
+      end
+
+      J.err( type(res)=="table", "checkFIFOs bad res "..tostring(n) )
+      J.err( #res == types.streamCount(n.type), "checkFIFOs error (res:"..#res..",streamcount:"..types.streamCount(n.type)..",type:"..tostring(n.type)..")- "..tostring(n) )
+      return res
+    end)
+end
+
 -- function definition
 -- output, inputs
 function modules.lambda( name, input, output, instances, generatorStr, generatorParams, globalMetadata, X )
@@ -3580,6 +3701,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   end
 
+  checkFIFOs(output)
   
   -- should we compile thie module as handshaked or not?
   -- For handshaked modules, the input/output type is _not_ necessarily handshaked

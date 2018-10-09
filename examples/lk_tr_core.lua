@@ -200,7 +200,7 @@ function makeA( T, dType, window, bits )
   local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )
 
   local out = R.concat("out", {out0,out1,out2,out3} )
-  out = R.apply("PT",RM.packTuple({partial_type,partial_type,partial_type,partial_type}),out)
+  out = R.apply("PT",RM.packTuple({partial_type,partial_type,partial_type,partial_type},true),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,4)),out)
 
   return RM.lambda("A", input, out ), partial_type
@@ -280,7 +280,7 @@ function makeB( T, dtype, window, bits )
   local out_1 = R.apply("out1redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_1 )
 
   local out = R.concat("arrrrry0t",{out_0,out_1})
-  out = R.apply("PT",RM.packTuple({partial_type,partial_type}),out)
+  out = R.apply("PT",RM.packTuple({partial_type,partial_type},true),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,2)),out)
 
   table.insert(statements,1,out)

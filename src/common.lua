@@ -531,6 +531,7 @@ function common.err(asst, str)
 end
 
 function common.broadcast(v,n)
+  if n==0 then return {} end
   return common.map( common.range(n), function(i) return v end )
 end
 

@@ -79,6 +79,12 @@ function(args)
   return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
 end)
 
+generators.FanIn = R.newGenerator("generators","FanIn",{"type","rate"},{"bool"},
+function(args)
+  J.err( R.isHandshakeTuple(args.type), "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
+  return RM.packTuple(args.type.params.list,args.bool)
+end)
+
 generators.FIFO = R.newGenerator("generators","FIFO",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
@@ -434,7 +440,14 @@ end)
 generators.AXIWriteBurstSeq = R.newGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number"},{},
 function(args)
   J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
-  return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type):arrayOver(), args.number, false)
+  local ty
+  if args.number>0 then
+    ty = R.extractData(args.type):arrayOver()
+  else
+    ty = R.extractData(args.type)
+  end
+  
+  return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, false)
 end)
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string","rate"},
@@ -558,6 +571,13 @@ generators.TupleToArray = R.newGenerator("generators","TupleToArray",{"type","ra
 function(args)
   J.err( args.type:isTuple(), "generators.TupleToArray: input should be tuple" )
   return C.tupleToArray( args.type.list[1], #args.type.list )
+end)
+
+generators.FilterSeq = R.newGenerator("generators","FilterSeq",{"type","rate","size"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.FilterSeq: input should be tuple" )
+  J.err( args.type.list[2]:isBool(), "generators.FilterSeq: input should be tuple of type {A,bool}, but is: "..tostring(args.type) )
+  return RM.filterSeq( args.type.list[1], 1, 1, args.size, 0, false )
 end)
 
 function generators.export(t)

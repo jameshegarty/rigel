@@ -232,8 +232,8 @@ end)
 C.GTConst = memoize(function(A,constValue)
   err( types.isType(A), "C.GTConst: A must be type")
 
-  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
-                           function(sinp) return S.GT(sinp,S.constant(constValue,A)) end )
+  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 1,
+                           function(sinp) return S.gt(sinp,S.constant(constValue,A)) end )
 
   return partial
 end)

@@ -12,7 +12,6 @@ local C = require "examplescommon"
 
 local descriptor = {}
 
-
 function descriptor.addPos()
   local descType = types.float(32)
   local PTYPE = R.tuple{types.array2d(descType,TILES_X*TILES_Y*8),R.tuple{R.uint16,R.uint16}}
@@ -48,7 +47,7 @@ function norm()
   local desc_sum = R.index{input=R.index{input=inp0, key=1 }, key=0}
   local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp1,key=0 },key=0} )
   
-  local desc = rigel.apply("pt",RM.packTuple{R.float,R.float},rigel.concat("PTT",{desc0,desc_sum}))
+  local desc = rigel.apply("pt",RM.packTuple({R.float,R.float},true),rigel.concat("PTT",{desc0,desc_sum}))
   local desc = rigel.apply("ptt",RM.makeHandshake(sift.fixedDiv(R.float)),desc)
   return R.defineModule{input=inp,output=desc}
 end
