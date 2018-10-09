@@ -220,7 +220,7 @@ C.GT = memoize(function(A,B)
   err( types.isType(A), "C.GT: A must be type")
   err( types.isType(B), "C.GT: B must be type")
 
-  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
+  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 1,
     function(sinp) return S.gt(S.index(sinp,0),S.index(sinp,1)) end )
 
   return partial
