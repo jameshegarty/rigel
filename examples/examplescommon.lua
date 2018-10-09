@@ -215,6 +215,29 @@ C.multiplyConst = memoize(function(A,constValue)
   return partial
 end)
 
+------------------------------
+C.GT = memoize(function(A,B)
+  err( types.isType(A), "C.GT: A must be type")
+  err( types.isType(B), "C.GT: B must be type")
+
+  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
+    function(sinp) return S.gt(S.index(sinp,0),S.index(sinp,1)) end )
+
+  return partial
+end)
+
+------------
+-- return A*B as a darkroom FN. A,B are types
+-- returns something of type outputType
+C.GTConst = memoize(function(A,constValue)
+  err( types.isType(A), "C.GTConst: A must be type")
+
+  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
+                           function(sinp) return S.GT(sinp,S.constant(constValue,A)) end )
+
+  return partial
+end)
+
 
 C.tokenCounter = memoize(function(A)
   err( types.isType(A), "C.multiply: A must be type")
@@ -1347,6 +1370,7 @@ end)
 
 
 -- if index==true, then we return a value, not an array
+-- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
   err( type(idxLow)=="number", "slice idxLow must be number")
@@ -1645,6 +1669,71 @@ C.changeRateFramed = memoize(function(A, W, H, ratio, ser, X)
 
   assert(false)
 end)
-                                   
+
+-- given a comparison operator (op:{A,A}->bool), returns a function
+-- of type A[2]->A[2]
+C.sortCompare = memoize(
+  function(A,op)
+    local G = require "generators"
+    return G.Module{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.array2d(A,2),
+      function(inp)
+        local res = op(inp[0],inp[1])
+        return G.Sel(res,inp,G.TupleToArray(inp[1],inp[0]))
+      end}
+  end)
+
+-- takes in an array whose two halves are sorted. Returns full array sorted.
+-- see http://www.iti.fh-flensburg.de/lang/algorithmen/sortieren/networks/oemen.htm
+C.oddEvenMerge = memoize(
+  function(A,N,op)
+    local G = require "generators"
+    assert(N>=2)
+    assert(J.isPowerOf2(N))
+    if N==2 then
+      return C.sortCompare(A,op)
+    else
+      return G.Module{"OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+        function(inp)
+
+          local even,odd = {},{}
+          for i=0,(N/2)-1 do
+            table.insert(even,inp[i*2])
+            table.insert(odd,inp[i*2+1])
+          end
+          local rEven, rOdd = G.TupleToArray(R.concat(even)), G.TupleToArray(R.concat(odd))
+          local Rec = C.oddEvenMerge(A,N/2,op)
+          local oEven, oOdd = Rec(rEven), Rec(rOdd)
+
+          local res = {oEven[0]}
+          for i=0,(N/2)-2 do
+            local o = C.sortCompare(A,op)(G.TupleToArray(oOdd[i],oEven[i+1]))
+            table.insert(res,o[0])
+            table.insert(res,o[1])
+          end
+          table.insert(res,oOdd[(N/2)-1])
+          local res = G.TupleToArray(R.concat(res))
+          return res
+        end}
+    end
+  end)
+
+C.oddEvenMergeSort = memoize(
+  function(A,N,op)
+    local G = require "generators"
+    assert(N>0)
+    assert(J.isPowerOf2(N))
+    if N==1 then
+      return G.Identity{types.array2d(A,N)}
+    else
+      return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+        function(inp)
+          local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
+          l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
+          local res = C.flatten2(A,N)(l,r)
+          res = C.oddEvenMerge(A,N,op)(res)
+          return res
+        end}
+    end
+  end)
 
 return C

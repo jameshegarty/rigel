@@ -118,6 +118,19 @@ function(args)
   end
 end)
 
+generators.GT = R.newGenerator("generators","GT",{"type","rate"},{"number"},
+function(args)
+  if args.number~=nil then
+    J.err( args.type:isUint() or args.type:isInt(), "generators.GT: type should be int or uint, but is: "..tostring(args.type) )
+    return C.GTConst(args.type, args.number )
+  else
+    J.err( args.type:isTuple(), "generators.GT: type should be tuple, but is:"..tostring(args.type) )
+    J.err( args.type.list[1]==args.type.list[2], "generators.GT: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+
+    return C.GT( args.type.list[1], args.type.list[1] )
+  end
+end)
+
 generators.Zip = R.newGenerator("generators","Zip",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
@@ -412,10 +425,16 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size","rate"},{},
+generators.AXIReadBurstSeq = R.newGenerator("generators","AXIReadBurstSeq",{"type","string","size","rate","number"},{},
+function(args)
+  -- note: type here should be explicitly passed by the user! This is the type of data we want
+  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false)
+end)
+
+generators.AXIWriteBurstSeq = R.newGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number"},{},
 function(args)
   J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
-  return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)
+  return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type):arrayOver(), args.number, false)
 end)
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string","rate"},
@@ -508,6 +527,37 @@ function(args)
   else
     assert(false)
   end
+end)
+
+generators.Sort = R.newGenerator("generators","Sort",{"type","rate","rigelFunction"},{},
+function(args)
+  J.err( args.type:isArray(),"generators.Sort: input must be array, but is: "..tostring(args.type) )
+  J.err( args.type.size[2]==1,"generators.Sort: must be 1d array" )
+  return C.oddEvenMergeSort( args.type:arrayOver(), args.type:channels(), args.rigelFunction )
+end)
+
+generators.Identity = R.newGenerator("generators","Identity",{"type","rate"},{},
+function(args)
+  return C.identity(args.type)
+end)
+
+generators.Sel = R.newGenerator("generators","Sel",{"type","rate"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.Sel: input should be tuple" )
+  return C.select(args.type.list[2])
+end)
+
+generators.Slice = R.newGenerator("generators","Slice",{"type","rate","size"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.Slice: input must be array" )
+  J.err( args.type.size[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
+  return C.slice( args.type, args.size[1], args.size[2], 0, 0)
+end)
+
+generators.TupleToArray = R.newGenerator("generators","TupleToArray",{"type","rate"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.TupleToArray: input should be tuple" )
+  return C.tupleToArray( args.type.list[1], #args.type.list )
 end)
 
 function generators.export(t)

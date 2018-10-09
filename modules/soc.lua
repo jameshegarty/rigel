@@ -1306,6 +1306,7 @@ always@(posedge CLK) begin
   end else if (process_input[64] && CONFIG_READY && firstBufferSet==1'b0 ) begin
     firstBufferSet <= 1'b1;
     firstBuffer <= process_input[63:0];
+$display("FIRST BUFFER SET");
   end else if (DATA_READY) begin
     firstBufferSet <= 1'b0;
   end

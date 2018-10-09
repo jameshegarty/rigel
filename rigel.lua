@@ -1198,16 +1198,25 @@ function darkroom.constant( name, value, ty, X )
 end
 darkroom.c = darkroom.constant
 
+-- this can be called with either (name,{}) or just {}
 function darkroom.concat( name, t, X )
-  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
-  
-  if name==nil then
+
+  local r = {kind="concat", loc=getloc(), inputs={} }
+
+  if type(name)=="string" then
+    r.name = name
+  elseif (name==nil and type(t)=="table") or (type(name)=="table" and t==nil) then
     r.defaultName=true
     r.name="concat"..darkroom.__unnamedID
     darkroom.__unnamedID = darkroom.__unnamedID+1
+
+    if type(name)=="table" and t==nil then
+      t = name
+    end
   else
-    err( type(name)=="string", "first tuple input should be name")
+    err( type(name)=="string", "first concat input should be name")
   end
+  
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
