@@ -137,6 +137,19 @@ function(args)
   end
 end)
 
+generators.And = R.newGenerator("generators","And",{"type","rate"},{"bool"},
+function(args)
+  J.err( args.type:isTuple(), "generators.And: type should be tuple, but is: "..tostring(args.type) )
+  J.err( args.type.list[1]==types.bool() and args.type.list[2]==types.bool(), "generators.And: both inputs should be bool" )
+  return C.And
+end)
+
+generators.Not = R.newGenerator("generators","Not",{"type","rate"},{"bool"},
+function(args)
+  J.err( args.type==types.bool(), "generators.Not: input type should be bool, but is: "..tostring(args.type) )
+  return C.Not
+end)
+
 generators.Zip = R.newGenerator("generators","Zip",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
@@ -158,7 +171,9 @@ function(args)
     --mod = args.rigelFunction{args.type.params.A,types.HSFV(args.type),types.HSFSize(args.type)}
     mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ), args.rate }
   elseif R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{R.extractData(args.type), args.rate}
+    local r
+    if args.rigelFunction:requiresArg("rate") then r = args.rate end
+    mod = args.rigelFunction{R.extractData(args.type), r}
   else
     mod = args.rigelFunction
   end

@@ -245,6 +245,12 @@ function generatorFunctions:listArgs()
   return s
 end
 
+-- does this generate require the arg 'arg'? (returns true if either required or optional)
+function generatorFunctions:requiresArg(arg)
+  assert(type(arg)=="string")
+  return (self.requiredArgs[arg]~=nil or self.optArgs[arg]~=nil) and (self.curriedArgs[arg]==nil)
+end
+
 function generatorFunctions:complete(arglist)
   if self:checkArgs(arglist)==false then
     print("Generator '"..self.name.."' is missing arguments!")
@@ -287,7 +293,7 @@ __index=function(tab,key)
     -- build the systolic module as needed
     err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
-    assert(S.isModule(sm))
+    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module?")
 
     -- self check module matches format we expect
     --local A,B=0,0

@@ -43,7 +43,9 @@ function systolicASTFunctions:toTerra( symbols )
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
         end
       elseif n.kind=="unary" then
-        if n.op=="abs" then
+        if n.op=="not" then
+          res = `not [args[1]]
+        elseif n.op=="abs" then
           if n.inputs[1].type:isInt() then
             res = `cstdlib.abs([args[1]])
           else

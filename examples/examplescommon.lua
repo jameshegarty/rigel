@@ -238,6 +238,8 @@ C.GTConst = memoize(function(A,constValue)
   return partial
 end)
 
+C.Not = RM.lift( "Not", types.bool(), types.bool(), 0, function(sinp) return S.__not(sinp) end )
+C.And = RM.lift( "And", types.tuple{types.bool(),types.bool()}, types.bool(), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
 
 C.tokenCounter = memoize(function(A)
   err( types.isType(A), "C.tokenCounter: A must be type")

@@ -1534,11 +1534,11 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
 
   local inputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalInputBits = W*H*ty:verilogBits()
-  print("DesiredTotalInputBits",desiredTotalInputBits,"inputBits",inputBits)
+
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
+
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
-  print("TIB,TOB",totalBits,ChangeRateModule.inputType,ChangeRateModule.outputType)
   assert(totalBits%(128*8)==0)
   assert(totalBits%inputBits==0)
   assert(totalBits>=desiredTotalInputBits)
@@ -1552,7 +1552,6 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   out = ChangeRateModule(out)
 
   out = SOC.axiBurstWriteN(filename,totalBits/8,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
-
 
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 

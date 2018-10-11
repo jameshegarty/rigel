@@ -1149,17 +1149,20 @@ vstring = vstring..[[endmodule
 end)
 
 -- restrictions: input array of valids must be sorted (valids come first)
--- output rate must be <= 1/N (& with bursts, it can't even reach this rate)
+-- 'rate' is % of tokens that will survive the filter. (ie 1/2 means half elements will be filtered)
 modules.filterSeqPar = memoize(function( A, N, rate )
   err( types.isType(A), "filterSeqPar: input type must be type" )
   err( type(N)=="number", "filterSeqPar: N must be number" )
+  err( N>0,"filterSeqPar: N must be > 0")
   err( SDF.isSDF(rate), "filterSeqPar: rate must be SDF rate" )
 
-  local res = {}
+  local res = {kind="filterSeqPar"}
   res.inputType = types.array2d( types.tuple{A,types.bool()}, N )
   res.outputType = types.RV( A )
   res.sdfInput = SDF{1,1}
-  res.sdfOutput = rate
+
+  -- we have N elements coming in, but we only write out 1 per cycle, so include that factor
+  res.sdfOutput = SDF{rate[1][1]*N,rate[1][2]}
   res.stateful = true
   res.delay = 1
   res.name = J.sanitize("FilterSeqPar_"..tostring(A).."_N"..tostring(N).."_rate"..tostring(rate))
@@ -1172,9 +1175,9 @@ modules.filterSeqPar = memoize(function( A, N, rate )
 
     local buffer = systolicModule:add( S.module.reg( res.inputType, true, fakeVA, true, fakeVA ):instantiate("buffer") )
 
-    local readyForMore0 = S.eq( S.index(S.index(reg:get(),0),1), S.constant(false,types.bool()) )
-    local readyForMore1 = S.eq( S.index(S.index(reg:get(),0),1), S.constant(true,types.bool()) )
-    local readyForMore2 = S.eq( S.index(S.index(reg:get(),1),1), S.constant(false,types.bool()) )
+    local readyForMore0 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
+    local readyForMore1 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(true,types.bool()) )
+    local readyForMore2 = S.eq( S.index(S.index(buffer:get(),1),1), S.constant(false,types.bool()) )
     local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
 
     local sinp = S.parameter( "inp", res.inputType )
@@ -1184,16 +1187,21 @@ modules.filterSeqPar = memoize(function( A, N, rate )
     for i=1,N-1 do
       table.insert( sptup, S.index(buffer:get(),i) )
     end
-    table.insert( sptup, S.constant(fakeV, types.tuple{A,types.bool} ) )
-    local shiftPhase = S.concat(sptup)
+    table.insert( sptup, S.constant(fakeV, types.tuple{A,types.bool()} ) )
+    local shiftPhase = S.tuple(sptup)
+    shiftPhase = S.cast(shiftPhase, types.array2d(types.tuple{A,types.bool()},N) )
 
     ----------
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", sinp, S.index( buffer:get(), 0 ), "process_output", buffer:set(S.sel(readyForMore,sinp,shiftPhase)), nil, CE) )
+    systolicModule:addFunction( S.lambda("process", sinp, S.index( buffer:get(), 0 ), "process_output", {buffer:set(S.select(readyForMore,sinp,shiftPhase))}, nil, CE) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), readyForMore, "ready", {} ) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {buffer:reset()},S.parameter("reset",types.bool())) )
+
+    return systolicModule
   end
 
+  res.makeTerra = function() return MT.filterSeqPar(res,A,N) end
+  
   return modules.waitOnInput( rigel.newFunction(res) )
 end)
 
@@ -2307,13 +2315,13 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
 modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
-  err( types.isType(A), "A should be a type")
-  err( type(H)=="number", "H should be number")
-  err( type(inputRate)=="number", "inputRate should be number")
+  err( types.isType(A), "changeRate: A should be a type")
+  err( type(H)=="number", "changeRate: H should be number")
+  err( type(inputRate)=="number", "changeRate: inputRate should be number")
   err( inputRate>0, "changeRate: inputRate must be >0")
-  err( inputRate==math.floor(inputRate), "inputRate should be integer")
-  err( type(outputRate)=="number", "outputRate should be number, but is: "..tostring(outputRate))
-  err( outputRate==math.floor(outputRate), "outputRate should be integer")
+  err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
+  err( type(outputRate)=="number", "changeRate: outputRate should be number, but is: "..tostring(outputRate))
+  err( outputRate==math.floor(outputRate), "changeRate: outputRate should be integer, but is: "..tostring(outputRate))
   if framed==nil then framed=false end
   err( type(framed)=="boolean","changeRate: framed must be boolean")
   err( X==nil, "changeRate: too many arguments")

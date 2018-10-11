@@ -1636,6 +1636,34 @@ function MT.crop( res, A, W, H, L, R, B, Top )
   return Crop
 end
 
+function MT.filterSeqPar(res,A,N)
+  local struct FilterSeqPar { buffer:res.inputType:toTerraType(), ready:bool }
+
+  terra FilterSeqPar:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+    data(out) = self.buffer[0]._0
+    valid(out) = self.buffer[0]._1
+
+    if self.ready then
+      self.buffer = @inp
+    else
+      for i=0,N-1 do self.buffer[i] = self.buffer[i+1] end
+      self.buffer[N-1]._1 = false
+    end
+  end
+
+  terra FilterSeqPar:reset()
+    for i=0,N do self.buffer[i]._1 = false end
+  end
+
+  terra FilterSeqPar:calculateReady() 
+    var r0 = (self.buffer[0]._1==false)
+    var r1 = (self.buffer[0]._1==true)
+    var r2 = (self.buffer[1]._1==false)
+    self.ready = r0 or (r1 and r2)
+  end
+
+  return MT.new(FilterSeqPar)
+end
 
 function MT.lambdaCompile(fn)
   local inputSymbol
