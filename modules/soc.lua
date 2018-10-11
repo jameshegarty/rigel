@@ -1073,10 +1073,6 @@ assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
 assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];
 assign IP_MAXI]=]..port..[=[_BRESP_ready = ready_downstream;
 
-//always @(posedge CLK) begin
-//  $display("piv %d pi %d",process_input[32],process_input[31:0]);
-//end
-
 endmodule
 ]=],globals,globalMetadata,{{1,1},{1,1}},{{1,1}})
 
@@ -1171,7 +1167,7 @@ always @(posedge ACLK) begin
         a_count <= 0;
     end else case(a_state)
         IDLE: begin
-            if(CONFIG_VALID) begin
+            if(CONFIG_VALID && CONFIG_READY) begin
                 M_AXI_AWADDR <= CONFIG_START_ADDR;
                 a_count <= CONFIG_NBYTES[31:7];
                 a_state <= RWAIT;
@@ -1200,7 +1196,7 @@ always @(posedge ACLK) begin
         b_count <= 0;
     end else case(w_state)
         IDLE: begin
-            if(CONFIG_VALID) begin
+            if(CONFIG_VALID && CONFIG_READY) begin
                 b_count <= {CONFIG_NBYTES[31:7],7'b0};
                 w_state <= RWAIT;
                 last_count <= 4'b1111;

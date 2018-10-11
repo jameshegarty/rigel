@@ -455,6 +455,7 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
       sinp = S.parameter(fnname.."_input", types.null() )
     elseif srcFn.inputParameter.type==types.null() and handshakeTrigger then
       sinp = S.parameter(fnname.."_input", types.bool() )
+      validi = sinp
     else
       sinp = S.parameter(fnname.."_input", rigel.lower(rigel.V(srcFn.inputParameter.type)) )
       datai = S.index(sinp,0)

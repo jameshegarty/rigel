@@ -231,7 +231,7 @@ end)
 -- returns something of type outputType
 C.GTConst = memoize(function(A,constValue)
   err( types.isType(A), "C.GTConst: A must be type")
-
+  
   local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 1,
                            function(sinp) return S.gt(sinp,S.constant(constValue,A)) end )
 
@@ -240,14 +240,18 @@ end)
 
 
 C.tokenCounter = memoize(function(A)
-  err( types.isType(A), "C.multiply: A must be type")
-
+  err( types.isType(A), "C.tokenCounter: A must be type")
+  err( types.isHandshake(A),"C.tokenCounter: A must be handshake")
+  
   local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)), A, A, 1,
                            function(sinp) assert(false) end,
     function() return CT.tokenCounter(A) end,
     "C.tokenCounter" )
 
-  partial.terraModule = CT.tokenCounter(A)
+  if terralib~=nil then
+    partial.terraModule = CT.tokenCounter(A)
+  end
+  
   return partial
 end)
 

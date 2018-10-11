@@ -282,11 +282,21 @@ int main(int argc, char** argv) {
         unsigned int db;
         if( checkSlaveReadResponse(S0LIST,&db) ){
           if(db==1){
+
             if(doneBitSet==false){
+              printf("DONE BIT SET\n");
               cyclesToDoneSignal=cycle;
             }
             
             doneBitSet=true;
+
+            // if done bit is set, we should really be done!
+            // check that there aren't outstanding reads on the ports
+            bool errored = checkPorts(true);
+            if(errored){
+              printf("Pipeline not actually done when done bit was set?\n");
+              //              exit(1);
+            }
           }else{
             doneBitSet=false;
           }
@@ -321,7 +331,7 @@ int main(int argc, char** argv) {
     
     printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);
     
-    bool errored = checkPorts();
+    bool errored = checkPorts(false);
 
     if(doneBitSet==false){
       printf("Error: done bit not set at end of time?\n");
