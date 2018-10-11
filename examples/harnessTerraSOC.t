@@ -349,7 +349,7 @@ return function(top, memStart, memEnd)
 
       writeS
 
-      var errored = V.checkPorts();
+      var errored = V.checkPorts(false);
 
       if doneBitSet==false then
         cstdio.printf("Error: Done bit not set at end of time!\n")
