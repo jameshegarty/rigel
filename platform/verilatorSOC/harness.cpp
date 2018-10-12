@@ -260,9 +260,9 @@ int main(int argc, char** argv) {
         if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
         
         masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
-        masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN );
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN )){goto WRITEOUT;}
         masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
-        masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN );
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
         
         // get data out
         masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
@@ -339,10 +339,13 @@ int main(int argc, char** argv) {
     }
     
     if(errored){
-      exit(1);
+      //exit(1);
+      goto WRITEOUT;
     }
   } // rounds
 
+  WRITEOUT:
+  
   printf("CUR %s\n",argv[curArg-1]);
   printf("CUR %s\n",argv[curArg]);
   

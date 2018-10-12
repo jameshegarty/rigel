@@ -498,7 +498,8 @@ void masterWriteDataDriveOutputs(
   //  printf("WREADY=%d\n",*WREADY);
 }
 
-void masterWriteDataLatchFlops(
+// return error flag (true if error)
+bool masterWriteDataLatchFlops(
   bool verbose,
   unsigned char* memory,
   SlaveState* slaveState,
@@ -535,7 +536,7 @@ void masterWriteDataLatchFlops(
 
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
-        exit(1);
+        return true;
       }
     }else{
       slaveState->BVALID = false;
@@ -556,9 +557,11 @@ void masterWriteDataLatchFlops(
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
       printf("MAXI%d write port is stalled out? No data sent for %d cycles (%d outstanding write requests, top addr %d)\n",port,cyclesSinceWrite[port],QSize(&writeQ[port]),t->addr);
-      exit(1);
+      return true;
     }
   }
+
+  return false;
 }
 
 void masterWriteReqDriveOutputs(

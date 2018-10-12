@@ -1008,6 +1008,8 @@ function types.HandshakeTuple(tab)
   return types.named("HandshakeTuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab} )
 end
 
+-- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
+-- input is valid (is the stream requested by ready valid this cycle?)
 function types.HandshakeArrayOneHot(A,N)
   err(types.isType(A),"HandshakeArrayOneHot: first argument should be type")
   err(types.isBasic(A),"HandshakeArrayOneHot: first argument should be basic type")

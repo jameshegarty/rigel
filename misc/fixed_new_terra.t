@@ -192,7 +192,9 @@ local function toTerra(self,name)
             var mask = ([n.inputs[1].type:toTerraType()](1) << outbits) - 1
             var r = [n.type:toTerraType()]([args[1]] and mask)
             in r end
-          end
+        end
+      elseif n.kind=="readGlobal" then
+        res = `[n.global:terraValue()]
       else
         print(n.kind)
         assert(false)

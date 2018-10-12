@@ -1254,7 +1254,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, fram
   err(w>0,"stencilLinebuffer: w must be >0");
   err(h>0,"stencilLinebuffer: h must be >0");
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
-  err(ymin<=ymax,"stencilLinebuffer: ymin>ymax")
+  err(ymin<=ymax,"stencilLinebuffer: ymin("..tostring(ymin)..") must be <= ymax("..tostring(ymax)..")")
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 

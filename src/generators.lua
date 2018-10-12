@@ -43,7 +43,7 @@ function(args)
   return C.cast(args.type,types.uint(args.type.precision))
 end)
 
-generators.Print = R.newGenerator("generators","Print",{"type"},{"string"},function(args) return C.print(args.type,args.string) end)
+generators.Print = R.newGenerator("generators","Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
 generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.newGenerator("generators","Rshift",{"type","rate"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
@@ -429,7 +429,7 @@ end)
 
 generators.Deser = R.newGenerator("generators","Deser",{"type","number","rate"},{},
 function(args)
-  J.err( args.type:isArray(), "generators.Deser: type should be array" )
+  J.err( args.type:isArray(), "generators.Deser: type should be array, but is: "..tostring(args.type) )
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
   --return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, false )
 end)
@@ -506,7 +506,7 @@ function(args)
   if args.type:is("HandshakeFramed") then
     return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )
   else
-    J.err( false, "AXIWriteBurst: unsupported input type: "..tostring(args.type))
+    J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end
 end)
 

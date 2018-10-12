@@ -239,10 +239,10 @@ function generatorFunctions:checkArgs(arglist)
   return J.keycount(reqArgs)==J.keycount(self.requiredArgs)
 end
 
-function generatorFunctions:listArgs()
-  local s = ""
-  for k,v in pairs(self.requiredArgs) do s = k..","..s end
-  return s
+function generatorFunctions:listRequiredArgs()
+  local s = {}
+  for k,v in pairs(self.requiredArgs) do if self.curriedArgs[k]==nil then table.insert(s,k) end end
+  return table.concat(s,",")
 end
 
 -- does this generate require the arg 'arg'? (returns true if either required or optional)
@@ -1008,7 +1008,7 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
 
   if darkroom.isModule(fn)==false then
     print("Generator '"..fn.name.."' could not be resolved into a module?")
-    print("Unbounded args: "..fn:listArgs())
+    print("Unbounded args: "..fn:listRequiredArgs())
     assert(false)
   end
 

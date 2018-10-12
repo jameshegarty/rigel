@@ -1530,7 +1530,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   if V>0 then inputType = types.array2d(inputType,V) end
   
   local inp = R.input(R.Handshake(inputType))
-  local out = RM.makeHandshake(C.cast(inputType,types.bits(inputType:verilogBits())))(inp)
+  local out = RM.makeHandshake(C.bitcast(inputType,types.bits(inputType:verilogBits())))(inp)
 
   local inputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalInputBits = W*H*ty:verilogBits()

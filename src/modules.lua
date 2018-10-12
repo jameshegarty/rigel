@@ -3449,15 +3449,15 @@ local function checkFIFOs(output)
         res = J.broadcast(true,types.streamCount(n.type))
       elseif n.kind=="apply" and n.fn.kind=="broadcastStream" then
         res = J.broadcast( false, n.type.params.W*n.type.params.H )
-      elseif n.kind=="apply" and n.fn.kind=="packTuple" then
+      elseif n.kind=="apply" and (n.fn.kind=="packTuple" or n.fn.kind=="toHandshakeArrayOneHot") then
         assert(#arg==1)
-        assert(#arg[1]==#n.fn.inputType.params.list)
-        for i=1,#n.fn.inputType.params.list do
-          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in diamond is missing FIFO! "..n.loc)
+        assert(#arg[1]==types.streamCount(n.fn.inputType) )
+        for i=1,types.streamCount(n.fn.inputType) do
+          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! "..n.loc)
         end
 
         -- Is this right???? if we got this far, we did have a fifo along this brach...
-        res = {true}
+        res = J.broadcast(true,types.streamCount(n.type))
       elseif n.kind=="apply" and rigel.isGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
         res = {true}
       elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
@@ -4541,6 +4541,42 @@ modules.triggerCounter = memoize(function(N)
   end
 
   return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res) ))
+  
+end)
+
+-- just counts from 0....N-1
+modules.counter = memoize(function(ty,N)
+  err( types.isType(ty), "counter: type must be rigel type")                          
+  err( ty:isUint() or ty:isInt(), "counter: type must be uint or int")
+  err(type(N)=="number", "counter: N must be number")
+
+  local res = {kind="counter"}
+  res.inputType = types.null()
+  res.outputType = ty
+  res.sdfInput = SDF{1,1}
+  res.sdfOutput = SDF{1,1}
+  res.stateful=true
+  res.delay=0
+  res.name = "Counter_"..tostring(ty).."_"..tostring(N)
+
+  if terralib~=nil then res.terraModule = MT.counter(res,ty,N) end
+
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+    
+    local sPhase = systolicModule:add( Ssugar.regByConstructor( ty, fpgamodules.sumwrap(ty,N-1) ):CE(true):setReset(0):instantiate("phase") )
+    
+    local pipelines = {}
+    table.insert( pipelines, sPhase:setBy( S.constant(1,ty) ) )
+    
+    local CE = S.CE("CE")
+    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.null() ), sPhase:get(), "process_output", pipelines, nil, CE) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool()) ) )
+
+    return systolicModule
+  end
+
+  return rigel.newFunction(res)
   
 end)
 
