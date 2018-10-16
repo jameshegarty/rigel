@@ -816,7 +816,7 @@ function darkroomIRFunctions:typecheck()
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
   elseif n.kind=="concatArray2d" then
-    J.map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
+    J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
     
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
