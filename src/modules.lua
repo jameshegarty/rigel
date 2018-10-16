@@ -2095,7 +2095,7 @@ end
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
   err( types.isType(A), "cropSeq: type must be rigel type ")
-  err( rigel.isBasic(A),"cropSeq: expects basic type")
+  err( rigel.isBasic(A),"cropSeq: expects basic type, but is: "..tostring(A))
   err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
   err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
   err( type(V)=="number", "cropSeq: V must be number"); err(V>=0, "cropSeq: V must be >=0")
@@ -3196,22 +3196,34 @@ end)
 
 -- provides fake output if we get less then _count_ inputs after _cyclecount_ cycles
 -- if thing thing is done before tooSoonCycles, throw an assert
-modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles )
+-- waitForValid: don't actually start counting cycles until we see one valid input
+--               (if false, cycle count starts at beginning of time)
+-- overflowValue: what value should we emit when we overflow?
+-- ratio: usually, should just be 1->1 rate, but this allows us to do ratio->1 rate. (doesn't actually affect behavior)
+modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue, ratio, X )
   rigel.expectBasic(A)
   err( type(count)=="number", "underflow: count must be number" )
   err( type(cycles)=="number", "underflow: cycles must be number" )
   err( cycles==math.floor(cycles),"cycles must be an integer")
   err( type(upstream)=="boolean", "underflow: upstream must be bool" )
   err( tooSoonCycles==nil or type(tooSoonCycles)=="number", "tooSoonCycles must be nil or number" )
-
+  if overflowValue~=nil then A:checkLuaValue(overflowValue) end
+  err( X==nil, "underflow: too many arguments" )
+  
   assert(count<2^32-1)
   err(cycles<2^32-1,"cycles >32 bit:"..tostring(cycles))
 
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
-  local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
+  local res = {kind="underflow", A=A, inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), stateful=true, count=count, sdfOutput=SDF{1,1}, delay=0, upstream = upstream, tooSoonCycles = tooSoonCycles}
 
-  if terralib~=nil then res.terraModule = MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) end
+  res.sdfInput = SDF{1,1}
+  if ratio~=nil then
+    assert(SDF.isSDF(ratio))
+    res.sdfInput = ratio
+  end
+  
+  if terralib~=nil then res.terraModule = MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue ) end
   res.name = sanitize("Underflow_A"..tostring(A).."_count"..count.."_cycles"..cycles.."_toosoon"..tostring(tooSoonCycles).."_US"..tostring(upstream))
 
   function res.makeSystolic()
@@ -3220,10 +3232,20 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(32),types.uint(32),types.bool()}, "outputCount %d cycleCount %d outValid"):instantiate("printInst") ) end
     
-    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("outputCount") )
+    local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),count-1,1) ):CE(true):setReset(0):instantiate("outputCount") )
     
     -- NOTE THAT WE Are counting cycles where downstream_ready == true
-    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIf(1,types.uint(32)) ):CE(true):setReset(0):instantiate("cycleCount") )
+    local cycleCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),cycles-1,1) ):CE(true):setReset(0):instantiate("cycleCount") )
+
+    -- are we in fixup mode?
+    local fixupReg = systolicModule:add( Ssugar.regByConstructor( types.uint(1), fpgamodules.incIf(1,types.uint(1)) ):CE(true):setReset(0):instantiate("fixupReg") )
+
+    local countingReg
+
+    if waitForValid then
+      -- countingReg: if 1, we should count cycles, if 0, we're waiting until we see a valid
+      countingReg = systolicModule:add( Ssugar.regByConstructor( types.uint(1), fpgamodules.incIf(1,types.uint(1)) ):CE(true):setReset(0):instantiate("countingReg") )
+    end
     
     local rst = S.parameter("reset",types.bool())
     
@@ -3232,7 +3254,8 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     local pvalid = S.index(pinp,1)
     local pdata = S.index(pinp,0)
     
-    local fixupMode = S.gt(cycleCount:get(),S.constant(cycles,types.uint(32)))
+    --local fixupMode = S.gt(cycleCount:get(),S.constant(cycles,types.uint(32)))
+    local fixupMode = S.eq(fixupReg:get(),S.constant(1,types.uint(32)))
     
     local CE = pready
     local CE_cycleCount = CE  
@@ -3244,7 +3267,17 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
 
     local pipelines = {}
     table.insert( pipelines, outputCount:setBy(S.__and(pready,S.__or(pvalid,fixupMode)), S.constant(true,types.bool()), CE) )
-    table.insert( pipelines, cycleCount:setBy(S.constant(true,types.bool()), S.constant(true,types.bool()), CE_cycleCount) )
+    local cycleCountCond = S.__not(fixupMode)
+    if waitForValid then cycleCountCond = S.__and(cycleCountCond,S.eq(countingReg:get(),S.constant(1,types.uint(1)))) end
+    table.insert( pipelines, cycleCount:setBy(cycleCountCond, S.constant(true,types.bool()), CE_cycleCount) )
+
+    local cycleCountLast = S.eq(cycleCount:get(),S.constant(cycles-1,types.uint(32)))
+    local outputCountLast = S.eq(outputCount:get(),S.constant(count-1,types.uint(32)))
+    table.insert( pipelines, fixupReg:setBy(S.__or(cycleCountLast,outputCountLast), S.constant(true,types.bool()), CE_cycleCount) )
+
+    if waitForValid then
+      table.insert( pipelines, countingReg:setBy(S.__or(S.__and(pvalid,S.__not(cycleCountCond)),S.__and(outputCountLast,fixupMode)), S.constant(true,types.bool()), CE) )
+    end
     
     local outData
     if A:verilogBits()==0 then
@@ -3252,7 +3285,11 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     else
       local DEADBEEF = 4022250974 -- deadbeef
       if upstream then DEADBEEF = 3737169374 end -- deadc0de
-      outData = S.select(fixupMode,S.cast(S.constant(math.min(DEADBEEF,math.pow(2,A:verilogBits())-1),types.bits(A:verilogBits())),A),pdata)
+      local fixupValue = S.cast(S.constant(math.min(DEADBEEF,math.pow(2,A:verilogBits())-1),types.bits(A:verilogBits())),A)
+
+      if overflowValue~=nil then fixupValue = S.constant(overflowValue,A) end
+      
+      outData = S.select(fixupMode,fixupValue,pdata)
     end
     
     local outValid = S.__or(S.__and(fixupMode,S.lt(outputCount:get(),S.constant(count,types.uint(32)))),S.__and(S.__not(fixupMode),pvalid))
@@ -3275,6 +3312,8 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles 
     local resetPipelines = {}
     table.insert( resetPipelines, outputCount:reset(nil,rst) )
     table.insert( resetPipelines, cycleCount:reset(nil,rst) )
+    table.insert( resetPipelines, fixupReg:reset(nil,rst) )
+    if waitForValid then table.insert( resetPipelines, countingReg:reset(nil,rst) ) end
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out", resetPipelines,rst) )
     
@@ -3453,7 +3492,7 @@ local function checkFIFOs(output)
         assert(#arg==1)
         assert(#arg[1]==types.streamCount(n.fn.inputType) )
         for i=1,types.streamCount(n.fn.inputType) do
-          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! "..n.loc)
+          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(n.fn.inputType)).." input streams) "..n.loc)
         end
 
         -- Is this right???? if we got this far, we did have a fifo along this brach...
@@ -3465,6 +3504,8 @@ local function checkFIFOs(output)
       elseif n.kind=="applyMethod" then
         if n.fnname=="store" or n.fnname=="done" then
           res = {}
+        elseif n.fnname=="load" and n.inst.fn.kind=="fifo" then
+          res = {true}
         else
           res = {false} -- HACK: this isn't really correct...
         end

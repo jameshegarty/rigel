@@ -1008,7 +1008,7 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
 
   if darkroom.isModule(fn)==false then
     print("Generator '"..fn.name.."' could not be resolved into a module?")
-    print("Unbounded args: "..fn:listRequiredArgs())
+    print("missing args: "..fn:listRequiredArgs())
     assert(false)
   end
 

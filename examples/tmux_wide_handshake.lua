@@ -19,7 +19,6 @@ A = R.input( R.Handshake(ITYPE), {{1,2}} )
 
 local muxout = R.applyMethod("L1", fifos[1],"load")
 
-
 local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{A,muxout},2,1))
 
 local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 

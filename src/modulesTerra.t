@@ -1405,13 +1405,56 @@ function MT.overflow(res,A,count)
 end
 
 
-function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) 
-  local struct Underflow {ready:bool; readyDownstream:bool;cycles:uint32; outputCount:uint32}
-  terra Underflow:reset() self.cycles=0; self.outputCount=0 end
-  terra Underflow:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
-    @out = @inp
+function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue ) 
+  local struct Underflow {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32; counting:bool}
+  terra Underflow:reset()
+    self.cycles=0;
+    self.outputCount=0
+    self.counting = false
   end
+
+  if overflowValue==nil then overflowValue = 4022250974 end -- DEADBEEF
+
+  terra Underflow:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+
+    @out = @inp
+
+    if self.readyDownstream then
+      if self.cycles>=cycles then
+        if valid(inp) then
+          cstdio.printf("ERROR? valid input during fixup time!\n")
+          cstdlib.exit(1)
+        end
+      
+        -- fixup mode
+        valid(out) = true
+        data(out) = overflowValue
+        self.outputCount = self.outputCount+1
+
+        --cstdio.printf("FIXUPTIME %d\n",self.outputCount)
+      elseif valid(inp) then
+        self.outputCount = self.outputCount+1
+      end
+    
+      if [waitForValid==true] then
+        if valid(inp) or self.counting then
+          self.cycles = self.cycles+1
+          self.counting = true
+        end
+      else
+        self.cycles = self.cycles+1
+      end
+    end
+
+    if self.outputCount>=count then
+      self.outputCount = 0
+      self.cycles = 0
+      self.counting = false
+    end
+  end
+
   terra Underflow:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
+
   return MT.new(Underflow)
 end
 
@@ -1634,6 +1677,23 @@ function MT.crop( res, A, W, H, L, R, B, Top )
   end
   
   return Crop
+end
+
+function MT.counter( res, ty, N )
+  local struct Counter {buf:ty:toTerraType()}
+
+  terra Counter:process( out:&ty:toTerraType() )
+    @out = self.buf
+    if self.buf==N-1 then
+      self.buf = 0
+    else
+      self.buf = self.buf+1
+    end
+  end
+
+  terra Counter:reset() self.buf=0 end
+
+  return MT.new(Counter)
 end
 
 function MT.filterSeqPar(res,A,N)

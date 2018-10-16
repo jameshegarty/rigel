@@ -242,8 +242,9 @@ end)
 
 generators.CropSeq = R.newGenerator("generators","CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
-  J.err(args.number>0,"NYI - V<=0")
-  local A = args.type:arrayOver()
+  local A = args.type
+  if args.number>0 then A  = args.type:arrayOver() end
+  
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
@@ -454,7 +455,7 @@ end)
 
 generators.AXIWriteBurstSeq = R.newGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number"},{},
 function(args)
-  J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
+  J.err( R.isHandshake(args.type), "AXIWriteBurstSeq: input must be handshaked, but is: "..tostring(args.type))
   local ty
   if args.number>0 then
     ty = R.extractData(args.type):arrayOver()

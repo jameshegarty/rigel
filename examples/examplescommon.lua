@@ -241,17 +241,24 @@ end)
 C.Not = RM.lift( "Not", types.bool(), types.bool(), 0, function(sinp) return S.__not(sinp) end )
 C.And = RM.lift( "And", types.tuple{types.bool(),types.bool()}, types.bool(), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
 
-C.tokenCounter = memoize(function(A)
+C.tokenCounter = memoize(function(A,str,X)
   err( types.isType(A), "C.tokenCounter: A must be type")
   err( types.isHandshake(A),"C.tokenCounter: A must be handshake")
+  assert(X==nil)
+
+  if str==nil then str="" end
+  assert(type(str)=="string")
+
+--  print("TC",str)
+--  assert(false)
   
-  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)), A, A, 1,
+  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)).."_"..str, A, A, 1,
                            function(sinp) assert(false) end,
-    function() return CT.tokenCounter(A) end,
+                           function() return CT.tokenCounter(A,str) end,
     "C.tokenCounter" )
 
   if terralib~=nil then
-    partial.terraModule = CT.tokenCounter(A)
+    partial.terraModule = CT.tokenCounter(A,str)
   end
   
   return partial
@@ -1227,7 +1234,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err(type(T)=="number","T must be number")
   if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
 
-  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
+  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
   local inp = rigel.input( types.array2d( A, T ) )
@@ -1327,9 +1334,9 @@ end)
 C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed, framedW, framedH, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
-  assert(stencilW>0)
+  err(stencilW>0,"unpackStencil: stencilW must be >0, but is:"..tostring(stencilW))
   assert(type(stencilH)=="number")
-  assert(stencilH>0)
+  err(stencilH>0,"unpackStencil: stencilH must be >0, but is:"..tostring(stencilH))
   assert(type(T)=="number")
   assert(T>=1)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")

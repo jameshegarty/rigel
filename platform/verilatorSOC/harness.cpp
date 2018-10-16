@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
         if(pct>lastPct){
           double t = CurrentTimeInSeconds() - startSec;
           setlocale(LC_NUMERIC,"");
-          printf("Sim %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+          printf("Sim %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
           lastPct = pct;
         }
         

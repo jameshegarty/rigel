@@ -40,7 +40,7 @@ modules.incIf=memoize(function(inc,ty,hasCE)
   return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{})
 end)
 
--- this will never wrap around
+-- this will never wrap around (this just stops at top value)
 modules.incIfNowrap=memoize(function(inc,ty)
   if inc==nil then inc=1 end
   if ty==nil then ty=types.uint(16) end
