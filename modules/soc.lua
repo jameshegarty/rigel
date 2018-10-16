@@ -1447,7 +1447,8 @@ end)
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- readType: this is the output type we want
-SOC.read = J.memoize(function(filename,fileBytes,readType,X)
+-- NOTE: do not memoize! this thing allocates a port
+SOC.read = function(filename,fileBytes,readType,X)
   J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "read: type must be type")
   J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
@@ -1502,7 +1503,7 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   SOC.currentAddr = SOC.currentAddr+fileBytes
   
   return res
-end)
+end
                           
 SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(filename)=="string","writeBurst: filename must be string")

@@ -73,7 +73,7 @@ end)
 
 generators.FanOut = R.newGenerator("generators","FanOut",{"type","number","rate"},{},
 function(args)
-  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed"),"FanOut: expected handshake input, but is: "..tostring(args.type))
+  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed") or args.type:is("HandshakeTrigger"),"FanOut: expected handshake input, but is: "..tostring(args.type))
   local mixed, dims
   if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
   return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
