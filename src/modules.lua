@@ -791,10 +791,11 @@ end)
 
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
-modules.map = memoize(function( f, W, H )
+modules.map = memoize(function( f, W, H, X )
   err( rigel.isFunction(f), "first argument to map must be Rigel module, but is "..tostring(f) )
   err( type(W)=="number", "width must be number")
-
+  err( X==nil, "map: too many arguments" )
+  
   if H==nil then 
     return modules.map(f,W,1)
   end
@@ -804,6 +805,8 @@ modules.map = memoize(function( f, W, H )
   err( types.isBasic(f.inputType), "map: error, mapping a module with a non-basic input type? name:"..f.name.." "..tostring(f.inputType))
   err( types.isBasic(f.outputType), "map: error, mapping a module with a non-basic output type? name:"..f.name.." "..tostring(f.outputType))
 
+  err( W*H==1 or f.stateful==false,"map: mapping a stateful function ("..f.name.."), which will probably not work correctly. (may execute out of order)" )
+  
   local res
   
   if (W*H)%2==0 then
@@ -1409,7 +1412,9 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
   err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
   err( type(scale)=="number","upsampleXSeq: scale must be number")
-  err( scale<65536, "upsampleXSeq: NYI - scale>=65536")
+  local COUNTER_BITS = 24
+  local COUNTER_MAX = math.pow(2,COUNTER_BITS)-1
+  err( scale<COUNTER_MAX, "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
   err(X==nil, "upsampleXSeq: too many arguments")
   
   if T==1 or T==0 then
@@ -1435,15 +1440,15 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
       local systolicModule = Ssugar.moduleConstructor(res.name)
       local sinp = S.parameter( "inp", res.inputType )
 
-      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16),scale-1) ):CE(true):setReset(0):instantiate("phase") )
+      local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(COUNTER_BITS), fpgamodules.sumwrap(types.uint(COUNTER_BITS),scale-1) ):CE(true):setReset(0):instantiate("phase") )
       local reg = systolicModule:add( S.module.reg( res.inputType,true ):instantiate("buffer") )
 
-      local reading = S.eq(sPhase:get(),S.constant(0,types.uint(16))):disablePipelining()
+      local reading = S.eq(sPhase:get(),S.constant(0,types.uint(COUNTER_BITS))):disablePipelining()
       local out = S.select( reading, sinp, reg:get() ) 
 
       local pipelines = {}
       table.insert(pipelines, reg:set( sinp, reading ) )
-      table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(16)) ) )
+      table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(COUNTER_BITS)) ) )
 
       local CE = S.CE("CE")
       systolicModule:addFunction( S.lambda("process", sinp, S.tuple{out,S.constant(true,types.bool())}, "process_output", pipelines, nil, CE) )
@@ -4272,7 +4277,8 @@ modules.freadSeq = memoize(function( filename, ty )
 end)
 
 -- passthrough: write out the input?
-modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, X )
+-- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
@@ -4283,7 +4289,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   if filenameVerilog==nil then filenameVerilog=filename end
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=J.sel(passthrough,ty,types.null()), stateful=true, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
-  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough) end
+  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough, allowBadSizes) end
   res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
   function res.makeSystolic()

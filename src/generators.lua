@@ -359,7 +359,10 @@ function(args)
   elseif args.type:isArray() then
     local mod = args.rigelFunction
     if R.isGenerator(mod) then
-      mod = mod{args.type:arrayOver(),args.rate}
+      local r
+      if mod:requiresArg("rate") then r = args.rate end
+
+      mod = mod{args.type:arrayOver(),r}
     end
     J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? "..tostring(mod))
     

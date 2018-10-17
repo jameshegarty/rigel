@@ -418,7 +418,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
 end
 
 function MT.upsampleXSeq(res,A, T, scale, ITYPE )
-  local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:int, ready:bool }
+  local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:uint, ready:bool }
   terra UpsampleXSeq:reset() self.phase=0; end
   terra UpsampleXSeq:stats(name:&int8)  end
   terra UpsampleXSeq:init()  end
@@ -1564,7 +1564,11 @@ function MT.freadSeq(filename,ty)
   return MT.new(FreadSeq)
 end
 
-function MT.fwriteSeq(filename,ty,passthrough)
+-- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
+function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes)
+  local terraSize = terralib.sizeof(ty:toTerraType())*8
+  J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
+  
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:init()
     self.file = cstdio.fopen(filename, "wb")

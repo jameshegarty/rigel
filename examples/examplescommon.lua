@@ -1750,46 +1750,72 @@ C.oddEvenMergeSort = memoize(
   end)
 
 C.StridedReader = memoize(
-  function(filename,totalBytes,itemBytes,stride,offset)
+  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr)
     -- stride,offset is given as # of items
     local G = require "generators"
     local SOC = require "soc"
     assert(totalBytes%(itemBytes*stride)==0)
-
+    assert(itemBytes%8==0)
+    
     local Nreads = (totalBytes/(itemBytes*stride))
-    return G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
+    local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
       function(inp)
         print("MAKESTRIDED",stride,offset)
         local cnt = C.triggerUp(Nreads)(inp)
         local cnt = G.HS{RM.counter(types.uint(32), Nreads)}(cnt)
-        cnt = G.HS{G.Mul{stride}}(cnt)
-        local addr = G.HS{G.Add{offset}}(cnt)
-        return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
+        cnt = G.HS{G.Mul{stride*itemBytes}}(cnt)
+        local addr = G.HS{G.Add{offset*itemBytes}}(cnt)
+        --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
+        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr)(addr)
       end}
+
+    return res
   end)
 
+-- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
   function(filename,W,H,ty,V) -- Nbits: # of bits to read in parallel
     local G = require "generators"
+    local SOC = require "soc"
     assert( (ty:verilogBits()*V)%64==0)
     local N = (ty:verilogBits()*V)/64
     assert((W*H)%N==0)
 
+    local startAddr = SOC.currentAddr
+    local startPort = SOC.currentMAXIReadPort
+    
     local totalBytes = W*H*(ty:verilogBits()/8)
-    return G.Module{"AXIReadPar_"..tostring(W), types.HandshakeTrigger,
+    local res = G.Module{"AXIReadPar_"..tostring(W), types.HandshakeTrigger,
       function(inp)
         local inpb = G.FanOut{N}(inp)
         local out = {}
         for i=0,N-1 do
           print("IMPBI",inpb[i],i,inpb)
-          local tmp = C.StridedReader(filename,totalBytes,8,N,i)(inpb[i])
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr)(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
+          SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
         end
+        SOC.currentAddr = SOC.currentAddr+totalBytes
+
         out = G.FanIn(unpack(out))
         print("OUTT",out.type)
         return G.HS{C.bitcast(out.type.params.A,types.array2d(ty,V))}(out)
       end}
+
+    res.globalMetadata["MAXI"..startPort.."_read_W"] = W
+    res.globalMetadata["MAXI"..startPort.."_read_H"] = H
+    res.globalMetadata["MAXI"..startPort.."_read_V"] = V
+    res.globalMetadata["MAXI"..startPort.."_read_type"] = tostring(ty)
+    res.globalMetadata["MAXI"..startPort.."_read_bitsPerPixel"] = ty:verilogBits()
+    res.globalMetadata["MAXI"..startPort.."_read_address"] = startAddr
+
+    -- avoid double loading the image
+    for i=1,N-1 do
+      res.globalMetadata["MAXI"..i.."_read_filename"] = nil
+    end
+    
+    return res
   end)
 
 return C

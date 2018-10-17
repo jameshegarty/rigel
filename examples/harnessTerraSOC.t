@@ -38,8 +38,9 @@ void enableCommas(){setlocale(LC_NUMERIC, "");}
 
 local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
-return function(top, memStart, memEnd)
+return function(top, options)
   local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
+  if options~=nil and options.cycles~=nil then simCycles = options.cycles end
   local extraCycles = math.max(math.floor(simCycles/10),1024)
   
   local Module = top:toTerra()
@@ -275,7 +276,7 @@ return function(top, memStart, memEnd)
       var cyclesToDoneSignal = -1
 
       var doneBitSet : bool = false
-      while (cycle<totalCycles) and (cooldownCycles>0) do
+      while (doneBitSet==false or cooldownCycles>0 or cycle<totalCycles) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
 
         V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]);
