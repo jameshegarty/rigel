@@ -1653,7 +1653,7 @@ C.handshakeToHandshakeFramed = memoize(
       sm:addFunction( S.lambda("ready", r, r, "ready") )
       local I = S.parameter("process_input", R.lower(A) )
       sm:addFunction( S.lambda("process",I,I,"process_output") )
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+      --sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
       return sm
     end
     function res.makeTerra()

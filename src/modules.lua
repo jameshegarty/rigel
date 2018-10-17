@@ -180,7 +180,7 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local CE
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,nil,CE) )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,nil,CE) )
     
     systolicModule:onlyWire(true)
     
@@ -828,13 +828,14 @@ modules.map = memoize(function( f, W, H, X )
     out = rigel.apply( "cflat", C.flatten2( f.outputType, W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( f.outputType, W*H ), types.array2d( f.outputType, W,H ) ), out)
 
-    res = modules.lambda("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)
+    res = modules.lambda("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H).."_logn", I, out)
   else
     res = { kind="map", fn = f, W=W, H=H }
 
     res.inputType = types.array2d( f.inputType, W, H )
     res.outputType = types.array2d( f.outputType, W, H )
     err( type(f.stateful)=="boolean", "Missing stateful annotation "..tostring(f))
+    print("INNER STATEFUL",f.name,f.stateful)
     res.stateful = f.stateful
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
     res.delay = f.delay
@@ -871,6 +872,7 @@ modules.map = memoize(function( f, W, H, X )
       
       systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
       if f.stateful then
+        print("ISTATE",f.name,f.stateful)
         systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, S.parameter("reset",types.bool()) ) )
       end
       return systolicModule
@@ -1001,12 +1003,14 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
     local I = S.parameter("process_input", rigel.lower(fn.inputType) )
     sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
 
-    if fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed") then
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
-    elseif fn.stateful then
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
+    if fn.stateful then
+      if fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed") then
+        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
+      else
+        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
+      end
     end
-
+    
     return sm
   end
 
@@ -1675,7 +1679,7 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
     local readyOut = J.map(J.range(#inputRates), function(i) return S.eq(S.constant(i-1,types.uint(8)), readyDownstream) end )
     systolicModule:addFunction( S.lambda("ready", readyDownstream, S.cast(S.tuple(readyOut),types.array2d(types.bool(),#inputRates)), "ready" ) )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,S.parameter("reset",types.bool())) )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro",nil,S.parameter("reset",types.bool())) )
     
     return systolicModule
   end
@@ -1796,7 +1800,7 @@ modules.demux = memoize(function( A, rates, X )
       printInst = systolicModule:add( S.module.print( types.tuple( J.concat({types.uint(8)},J.broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(J.broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) 
     end
 
-    local resetValid = S.parameter("reset_valid", types.bool() )
+    --local resetValid = S.parameter("reset_valid", types.bool() )
     
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     local inpData = S.index(inp,0)
@@ -1804,7 +1808,7 @@ modules.demux = memoize(function( A, rates, X )
     local readyDownstream = S.parameter( "ready_downstream", types.array2d( types.bool(), #rates ) )
     
     local pipelines = {}
-    local resetPipelines = {}
+    --local resetPipelines = {}
     
     local out = {}
     local readyOut = {}
@@ -1823,7 +1827,7 @@ modules.demux = memoize(function( A, rates, X )
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(printList) ) ) end
     
     systolicModule:addFunction( S.lambda("process", inp, S.cast(S.tuple(out),rigel.lower(res.outputType)) , "process_output", pipelines ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
     
     systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
 
@@ -1859,7 +1863,7 @@ modules.flattenStreams = memoize( function( A, rates, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
-    local resetValid = S.parameter("reset_valid", types.bool() )
+    --local resetValid = S.parameter("reset_valid", types.bool() )
     
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     local inpData = S.index(inp,0)
@@ -1867,10 +1871,10 @@ modules.flattenStreams = memoize( function( A, rates, X )
     local readyDownstream = S.parameter( "ready_downstream", types.bool() )
     
     local pipelines = {}
-    local resetPipelines = {}
+    --local resetPipelines = {}
     
     systolicModule:addFunction( S.lambda("process", inp, S.tuple{inpData,S.__not(S.eq(inpValid,S.constant(#rates,types.uint(8))))} , "process_output", pipelines ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
     
     systolicModule:addFunction( S.lambda("ready", readyDownstream, readyDownstream, "ready" ) )
 
@@ -1956,8 +1960,8 @@ modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
     
     systolicModule:addFunction( S.lambda("process", inp, out, "process_output", pipelines ) )
 
-    local resetValid = S.parameter("reset_valid", types.bool() )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, resetValid ) )
+    --local resetValid = S.parameter("reset_valid", types.bool() )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, resetValid ) )
 
     systolicModule:addFunction( S.lambda("ready", readyDownstream, allReady, "ready" ) )
 
@@ -3773,8 +3777,12 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
     
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
-    local reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
+    local reset
 
+    if fn.stateful then
+      reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
+    end
+    
     if HANDSHAKE_MODE==false then 
       local CE = S.CE("CE")
       process:setCE(CE)
@@ -4201,7 +4209,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   local W = w*T
   err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)
-  res.stateful = false
+  res.stateful = true
   --if T==1 then res.stateful=false end
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}  -- well, technically this produces 1 output for every (nil) input
 
@@ -4228,12 +4236,12 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
       end
     end
 
-    local shiftOut, shiftPipelines = fpgamodules.addShifterSimple( systolicModule, J.map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
+    local shiftOut, shiftPipelines, resetPipelines = fpgamodules.addShifterSimple( systolicModule, J.map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
     
     local inp = S.parameter("process_input", types.null() )
 
     systolicModule:addFunction( S.lambda("process", inp, shiftOut, "process_output", shiftPipelines, nil, S.CE("process_CE") ) )
-    systolicModule:addFunction( S.lambda("reset", S.parameter("process_nilinp", types.null() ), nil, "process_reset", {}, S.parameter("reset", types.bool() ) ) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("process_nilinp", types.null() ), nil, "process_reset", resetPipelines, S.parameter("reset", types.bool() ) ) )
 
     return systolicModule
   end

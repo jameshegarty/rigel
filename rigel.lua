@@ -319,6 +319,14 @@ __index=function(tab,key)
       err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong?" )
       err( darkroom.lower(tab.inputType)==sm.functions.process.input.type, "module input type wrong?" )
     end
+
+    if tab.registered then
+      local hasReset = (sm.functions.load_reset~=nil) and (sm.functions.store_reset~=nil)
+      hasReset = hasReset or (sm.functions.start_reset~=nil) and (sm.functions.done_reset~=nil)
+      err( hasReset==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(hasReset).." registered")
+    else
+      err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
+    end
     
     rawset(tab,"systolicModule", sm )
     return sm
@@ -379,6 +387,8 @@ __tostring=function(mod)
     table.insert(res,"  OutputSDF: Not an SDF rate?")
   end
 
+  table.insert(res,"  Stateful: "..tostring(mod.stateful))
+  
   table.insert(res,"  Globals:")
   for k,v in pairs(mod.globals) do
     table.insert(res,"    "..k.direction.." "..tostring(k.type).." "..k.name)
@@ -816,7 +826,7 @@ function darkroomIRFunctions:typecheck()
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
   elseif n.kind=="concatArray2d" then
-    J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
+    J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k-1).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
     
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
@@ -869,7 +879,10 @@ function darkroomIRFunctions:codegenSystolic( module )
         assert( n.inst.fn.registered )
         local I = module:lookupInstance(n.inst.name)
 
-        module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        if n.inst.fn.stateful then
+          module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        end
+        
         local inp = inputs[1]
         if inp~=nil then inp=inp[1] end
         return {I[n.fnname](I,inp)}
@@ -888,12 +901,14 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         local I = module:add( n.fn.systolicModule:instantiate(n.name) )
 
-        if darkroom.isHandshakeAny( n.fn.inputType ) or
-        darkroom.isHandshakeAny(n.fn.outputType) then
-          err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
-          module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
-        elseif n.fn.stateful then
-          module:lookupFunction("reset"):addPipeline( I:reset() )
+        if n.fn.stateful then
+          if darkroom.isHandshakeAny( n.fn.inputType ) or
+          darkroom.isHandshakeAny(n.fn.outputType) then
+            err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
+            module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
+          else
+            module:lookupFunction("reset"):addPipeline( I:reset() )
+          end
         end
         
         if n.fn.inputType==types.null() then

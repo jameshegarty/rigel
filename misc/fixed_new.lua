@@ -553,7 +553,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   
   local tfn
 
-  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, globals=globals}
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), globals=globals}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 
@@ -564,11 +564,8 @@ function fixedNewASTFunctions:toRigelModule(name,X)
     local CE = S.CE("process_CE")
     sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
     
-    if #resetStats>0 then
-      res.stateful=true
+    if res.stateful then
       sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
-    else
-      res.stateful=false
     end
     
     sys:complete()
