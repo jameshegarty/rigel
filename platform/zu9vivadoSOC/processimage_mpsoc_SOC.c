@@ -370,14 +370,13 @@ int main(int argc, char *argv[]) {
   }
 
   if(doneBitSet==false){
-    printf("ERROR: done bit was not set at end of time!\n");
-    exit(1);
+    printf("ERROR: done bit was not set at end of time! Writing out outputs anyway...\n");
+  }else{
+    float MHZ = 100.f;
+    float HZ = 1000000.f;
+    double len = doneTime-startTime;
+    printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
   }
-  
-  float MHZ = 100.f;
-  float HZ = 1000000.f;
-  double len = doneTime-startTime;
-  printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
   
   writeOutputs(curArg,argc,argv,ptr);
 
