@@ -309,10 +309,6 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(ptr+i)=0x0df0adba; }
-
-  int curArg = loadInputs( fd, argv, ptr );
-
   // mmap the device into memory 
   // This mmaps the control region (the MMIO for the control registers).
   // Image data is located at addr 'copy_addr'
@@ -324,60 +320,66 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  curArg = setRegisters( curArg, argv, gpioptr, gpio_addr );
-  
   // this sleep is needed for the z100, but not the z20
   sleep(2);
 
   volatile Conf * conf = (Conf*) gpioptr;
   volatile unsigned int* taps = ((unsigned int*) gpioptr)+(sizeof(Conf)/sizeof(unsigned int));
+
+  int curArg;
   
-  printf("setting gpio\n");
-  fflush(stdout);
+  for(int round=0; round<2; round++){
+    printf("Round %d. setting gpio and clearning mem\n",round);
+    fflush(stdout);
 
-  printf("conf: start: %d, done: %d\n", conf->start, conf->done);
-  fflush(stdout);
+    for(int i=0; i<MEMSIZE; i+=4){ *(unsigned int*)(ptr+i)=0x0df0adba; }
+    curArg = loadInputs( fd, argv, ptr );
+    curArg = setRegisters( curArg, argv, gpioptr, gpio_addr );
+ 
+    printf("conf: start: %d, done: %d\n", conf->start, conf->done);
+    fflush(stdout);
+    
+    conf->start = 0;
+    conf->done = 0;
   
-  conf->start = 0;
-  conf->done = 0;
-  //  conf->dest = 42;
-  //  conf->len = 42;
-  
-  // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
-  sleep(2);
-  double startTime = CurrentTimeInSeconds();
-  conf->start = 1;
-  printf("conf: start: %d, done: %d\n", conf->start, conf->done);
-  fflush(stdout);
+    // HACK: poking cmd causes the pipeline to start. sleep for 2sec to make sure the above registers set before starting.
+    sleep(2);
+    printf("conf: start: %d, done: %d\n", conf->start, conf->done);
+    fflush(stdout);
 
-  //usleep(10000);
-
-  unsigned long interval = 10;
-
-  bool doneBitSet = false;
-  double doneTime = 0.f;
-  for(unsigned long t=0; t<1000000*8; t+=interval){
-    //printf("%d conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", t, conf->cmd, conf->src, conf->dest, conf->len);
-    //sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
-
-    if(conf->done>0 && doneTime==0.f){
-      doneTime = CurrentTimeInSeconds();
-      doneBitSet=true;
-      break;
+    double startTime = CurrentTimeInSeconds();
+    conf->start = 1;
+    printf("conf: start: %d, done: %d\n", conf->start, conf->done);
+    fflush(stdout);
+    
+    //usleep(10000);
+    
+    unsigned long interval = 10;
+    
+    bool doneBitSet = false;
+    double doneTime = 0.f;
+    for(unsigned long t=0; t<1000000*8; t+=interval){
+      //printf("%d conf: cmd: %d, src: %08x, dest: %08x, len: %d\n", t, conf->cmd, conf->src, conf->dest, conf->len);
+      //sleep(8); // this sleep needs to be 2 for the z100, but 1 for the z20
+      
+      if(conf->done>0 && doneTime==0.f){
+        doneTime = CurrentTimeInSeconds();
+        doneBitSet=true;
+        break;
+      }
+      
+      usleep(interval);
     }
     
-    usleep(interval);
+    if(doneBitSet==false){
+      printf("ERROR: done bit was not set at end of time! Writing out outputs anyway...\n");
+    }else{
+      float MHZ = 100.f;
+      float HZ = 1000000.f;
+      double len = doneTime-startTime;
+      printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
+    }
   }
-
-  if(doneBitSet==false){
-    printf("ERROR: done bit was not set at end of time!\n");
-    exit(1);
-  }
-  
-  float MHZ = 100.f;
-  float HZ = 1000000.f;
-  double len = doneTime-startTime;
-  printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
   
   writeOutputs(curArg,argc,argv,ptr);
 

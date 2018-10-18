@@ -29,191 +29,41 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
-darkroom.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
-darkroom.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
-darkroom.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
-
-function darkroom.V(A) 
-  err(types.isType(A),"V: argument should be type"); 
-  err(darkroom.isBasic(A), "V: argument should be basic type"); 
-  return types.named("V("..tostring(A)..")", types.tuple{A,types.bool()}, "V", {A=A}) 
-end
-
-function darkroom.VSparse(A) 
-  err(types.isType(A),"VSparse: argument should be type"); 
-  err(darkroom.isBasic(A), "VSparse: argument should be basic type");
-  -- format is {data,valid,done}
-  return types.named("VSparse("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "VSparse", {A=A}) 
-end
-
-function darkroom.RV(A) 
-  err(types.isType(A), "RV: argument should be type"); 
-  err(darkroom.isBasic(A), "RV: argument should be basic type"); 
-  return types.named("RV("..tostring(A)..")",types.tuple{A,types.bool()}, "RV", {A=A})  
-end
-
-darkroom.Handshake=types.Handshake
-
-function darkroom.HandshakeSparse(A)
-  err(types.isType(A),"HandshakeSparse: argument should be type")
-  err(darkroom.isBasic(A),"HandshakeSparse: argument should be basic type")
-  -- format is {data,valid,done}
-  return types.named("HandshakeSparse("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "HandshakeSparse", {A=A} )
-end
-
-function darkroom.HandshakeArray(A,W,H)
-  err(types.isType(A),"HandshakeArray: argument should be type")
-  err(darkroom.isBasic(A),"HandshakeArray: argument should be basic type")
-  err(type(W)=="number" and W>0,"HandshakeArray: W should be number > 0")
-  if H==nil then H=1 end
-  err(type(H)=="number" and H>0,"HandshakeArray: H should be number > 0")
-  return types.named("HandshakeArray("..tostring(A)..","..tostring(W)..","..tostring(H)..")", types.array2d(types.tuple{A,types.bool()},W,H), "HandshakeArray", {A=A,W=W,H=H} )
-end
-
-function darkroom.HandshakeTriggerArray(W,H)
-  err(type(W)=="number" and W>0,"HandshakeTriggerArray: W should be number > 0")
-  if H==nil then H=1 end
-  err(type(H)=="number" and H>0,"HandshakeTriggerArray: H should be number > 0")
-  return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
-end
-
-function darkroom.HandshakeTuple(tab)
-  err( type(tab)=="table" and J.keycount(tab)==#tab,"HandshakeTuple: argument should be table of types")
-
-  local s = {}
-  local ty = {}
-  for k,v in ipairs(tab) do
-    err(types.isType(v) and darkroom.isBasic(v),"HandshakeTuple: type list must all be basic types, but index "..tostring(k).." is "..tostring(v))
-    table.insert(s,tostring(v))
-    table.insert(ty,types.tuple{v,types.bool()})
-  end
-
-  return types.named("HandshakeTuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab} )
-end
-
-function darkroom.HandshakeArrayOneHot(A,N)
-  err(types.isType(A),"HandshakeArrayOneHot: first argument should be type")
-  err(darkroom.isBasic(A),"HandshakeArrayOneHot: first argument should be basic type")
-  err(type(N)=="number","HandshakeArrayOneHot: second argument should be number")
-  return types.named("HandshakeArrayOneHot("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArrayOneHot", {A=A,N=N} )
-end
-
-function darkroom.HandshakeTmuxed(A,N)
-  err(types.isType(A),"HandshakeTmuxed: first argument should be type")
-  err(darkroom.isBasic(A),"HandshakeTmuxed: first argument should be basic type")
-  err(type(N)=="number","HandshakeTmuxed: second argument should be number")
-  return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
-end
-function darkroom.Sparse(A,W,H) return types.array2d(types.tuple({A,types.bool()}),W,H) end
-
-function darkroom.isHandshakeArrayOneHot(a)
-  err(types.isType(a),"isHandshakeArrayOneHot: argument must be a type")
-  return a:isNamed() and a.generator=="HandshakeArrayOneHot"
-end
-function darkroom.isHandshakeTmuxed(a)
-  return a:isNamed() and a.generator=="HandshakeTmuxed"
-end
-
-function darkroom.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
-function darkroom.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
-function darkroom.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
-function darkroom.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end
-function darkroom.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
-
--- is this any of the handshaked types?
-function darkroom.isHandshakeAny( a ) return darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeArrayOneHot(a) or a:is("HandshakeFramed") end
-
-function darkroom.isV( a ) return a:isNamed() and a.generator=="V" end
-function darkroom.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
-function darkroom.isRV( a ) return a:isNamed() and a.generator=="RV" end
-function darkroom.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
+darkroom.VTrigger = types.VTrigger
+darkroom.RVTrigger = types.RVTrigger
+darkroom.HandshakeTrigger = types.HandshakeTrigger
+darkroom.V = types.V
+darkroom.RV = types.RV
+darkroom.Handshake = types.Handshake
+darkroom.HandshakeArray = types.HandshakeArray
+darkroom.HandshakeTriggerArray = types.HandshakeTriggerArray
+darkroom.HandshakeTuple = types.HandshakeTuple
+darkroom.HandshakeArrayOneHot = types.HandshakeArrayOneHot
+darkroom.HandshakeTmuxed = types.HandshakeTmuxed
+darkroom.isHandshakeArrayOneHot = types.isHandshakeArrayOneHot
+darkroom.isHandshakeTmuxed = types.isHandshakeTmuxed
+darkroom.isHandshake = types.isHandshake
+darkroom.isHandshakeTrigger = types.isHandshakeTrigger
+darkroom.isHandshakeArray = types.isHandshakeArray
+darkroom.isHandshakeTriggerArray = types.isHandshakeTriggerArray
+darkroom.isHandshakeTuple = types.isHandshakeTuple
+darkroom.isHandshakeAny = types.isHandshakeAny
+darkroom.isV = types.isV
+darkroom.isVTrigger = types.isVTrigger
+darkroom.isRV = types.isRV
+darkroom.isRVTrigger = types.isRVTrigger
+darkroom.expectBasic = types.expectBasic
+darkroom.expectV = types.expectV
+darkroom.expectRV = types.expectRV
+darkroom.expectHandshake = types.expectHandshake
+darkroom.lower = types.lower
+darkroom.extractData = types.extractData
+darkroom.hasReady = types.hasReady
+darkroom.extractReady = types.extractReady
+darkroom.extractValid = types.extractValid
+darkroom.streamCount = types.streamCount
+darkroom.isStreaming = types.isStreaming
 darkroom.isBasic = types.isBasic
-function darkroom.expectBasic( A ) err( darkroom.isBasic(A), "type should be basic but is "..tostring(A) ) end
-function darkroom.expectV( A, er ) if darkroom.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
-function darkroom.expectRV( A, er ) if darkroom.isRV(A)==false then error(er or "type should be RV") end end
-function darkroom.expectHandshake( A, er ) if darkroom.isHandshake(A)==false then error(er or "type should be handshake") end end
-
-
--- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
--- ie V(A) => {A,bool}
--- RV(A) => {A,bool}
--- Handshake(A) => {A,bool}
-function darkroom.lower( a, loc )
-  err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) or darkroom.isRV(a) or darkroom.isV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") or a:is("HandshakeArrayFramed") then
-    return a.structure
-  elseif darkroom.isBasic(a) then 
-    return a 
-  end
-  print("rigel.lower: unknown type? ",a)
-  assert(false)
-end
-
--- extract underlying actual data type.
--- V(A) => A
--- RV(A) => A
--- Handshake(A) => A
-function darkroom.extractData(a)
-  if darkroom.isHandshake(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") then return a.params.A end
-  if darkroom.isHandshakeTrigger(a) or darkroom.isVTrigger(a) or darkroom.isRVTrigger(a) then return types.null() end
-  if darkroom.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
-  return a -- pure
-end
-
-function darkroom.hasReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isRV(a) or darkroom.isHandshakeArray(a) or darkroom.isHandshakeTuple(a) or darkroom.isHandshakeArrayOneHot(a) or darkroom.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
-    return true
-  elseif darkroom.isBasic(a) or darkroom.isV(a) or a:is("StaticFramed") or a:is("VFramed") then
-    return false
-  else
-    print("UNKNOWN READY",a)
-    assert(false)
-  end
-end
-
-function darkroom.extractReady(a)
-  if darkroom.isHandshake(a) or darkroom.isHandshakeTrigger(a) or darkroom.isV(a) or darkroom.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") then return types.bool()
-  elseif darkroom.isHandshakeTuple(a) then
-    return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
-  elseif darkroom.isHandshakeArrayOneHot(a) then
-    return types.uint(8)
-  else 
-    print("COULD NOT EXTRACT READY",a)
-    assert(false) 
-  end
-end
-
-function darkroom.extractValid(a)
-  if darkroom.isHandshakeTmuxed(a) then
-    return types.uint(8)
-  end
-  return types.bool()
-end
-
-function darkroom.streamCount(A)
-  if darkroom.isBasic(A) or darkroom.isV(A) or darkroom.isRV(A) or A:is("StaticFramed") or A:is("VFramed") or A:is("RVFramed") then
-    return 0
-  elseif darkroom.isHandshake(A) or A:is("HandshakeFramed") or darkroom.isHandshakeTrigger(A) then
-    return 1
-  elseif darkroom.isHandshakeArray(A) or darkroom.isHandshakeTriggerArray(A) or A:is("HandshakeArrayFramed") then
-    return A.params.W*A.params.H
-  elseif darkroom.isHandshakeTuple(A) then
-    return #A.params.list
-  elseif darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) then
-    return A.params.N
-  else
-    err(false, "NYI streamCount "..tostring(A))
-  end
-end
-
--- is this type any type of handshake type?
-function darkroom.isStreaming(A)
-  if darkroom.isHandshake(A) or darkroom.isHandshakeTrigger(A) or darkroom.isHandshakeArray(A) or darkroom.isHandshakeTuple(A) or  darkroom.isHandshakeTmuxed(A) or darkroom.isHandshakeArrayOneHot(A) or A:is("HandshakeFramed") then
-    return true
-  end
-  return false
-end
-
 
 rigelGlobalFunctions = {}
 rigelGlobalMT = {__index=rigelGlobalFunctions}
@@ -389,10 +239,16 @@ function generatorFunctions:checkArgs(arglist)
   return J.keycount(reqArgs)==J.keycount(self.requiredArgs)
 end
 
-function generatorFunctions:listArgs()
-  local s = ""
-  for k,v in pairs(self.requiredArgs) do s = k..","..s end
-  return s
+function generatorFunctions:listRequiredArgs()
+  local s = {}
+  for k,v in pairs(self.requiredArgs) do if self.curriedArgs[k]==nil then table.insert(s,k) end end
+  return table.concat(s,",")
+end
+
+-- does this generate require the arg 'arg'? (returns true if either required or optional)
+function generatorFunctions:requiresArg(arg)
+  assert(type(arg)=="string")
+  return (self.requiredArgs[arg]~=nil or self.optArgs[arg]~=nil) and (self.curriedArgs[arg]==nil)
 end
 
 function generatorFunctions:complete(arglist)
@@ -437,7 +293,7 @@ __index=function(tab,key)
     -- build the systolic module as needed
     err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
-    assert(S.isModule(sm))
+    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module?")
 
     -- self check module matches format we expect
     --local A,B=0,0
@@ -462,6 +318,14 @@ __index=function(tab,key)
 
       err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong?" )
       err( darkroom.lower(tab.inputType)==sm.functions.process.input.type, "module input type wrong?" )
+    end
+
+    if tab.registered then
+      local hasReset = (sm.functions.load_reset~=nil) and (sm.functions.store_reset~=nil)
+      hasReset = hasReset or (sm.functions.start_reset~=nil) and (sm.functions.done_reset~=nil)
+      err( hasReset==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(hasReset).." registered")
+    else
+      err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
     end
     
     rawset(tab,"systolicModule", sm )
@@ -523,6 +387,8 @@ __tostring=function(mod)
     table.insert(res,"  OutputSDF: Not an SDF rate?")
   end
 
+  table.insert(res,"  Stateful: "..tostring(mod.stateful))
+  
   table.insert(res,"  Globals:")
   for k,v in pairs(mod.globals) do
     table.insert(res,"    "..k.direction.." "..tostring(k.type).." "..k.name)
@@ -677,7 +543,7 @@ function darkroomIRMT.__index(tab,key)
     return darkroomIRFunctions[key]
   end
 
-  if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") ) then
+  if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") or tab.type:is("HandshakeTriggerArray")) then
     print("TY",tab.type)
     --assert(false)
     local res = darkroom.selectStream(nil,tab,key)
@@ -960,7 +826,7 @@ function darkroomIRFunctions:typecheck()
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
   elseif n.kind=="concatArray2d" then
-    J.map( n.inputs, function(i) err(i.type==n.inputs[1].type, "All inputs to array2d must have same type!") end )
+    J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k-1).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
     
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
@@ -1013,7 +879,10 @@ function darkroomIRFunctions:codegenSystolic( module )
         assert( n.inst.fn.registered )
         local I = module:lookupInstance(n.inst.name)
 
-        module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        if n.inst.fn.stateful then
+          module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        end
+        
         local inp = inputs[1]
         if inp~=nil then inp=inp[1] end
         return {I[n.fnname](I,inp)}
@@ -1023,7 +892,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)).." (Rigel type: "..tostring(n.fn.inputType)..")" )
 
         if n.fn.outputType==types.null() then
-          err(n.fn.systolicModule.functions.process.output==nil, "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
           err(n.fn.systolicModule.functions.process.output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
@@ -1032,12 +901,14 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         local I = module:add( n.fn.systolicModule:instantiate(n.name) )
 
-        if darkroom.isHandshakeAny( n.fn.inputType ) or
-        darkroom.isHandshakeAny(n.fn.outputType) then
-          err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
-          module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
-        elseif n.fn.stateful then
-          module:lookupFunction("reset"):addPipeline( I:reset() )
+        if n.fn.stateful then
+          if darkroom.isHandshakeAny( n.fn.inputType ) or
+          darkroom.isHandshakeAny(n.fn.outputType) then
+            err(I.module.functions["reset"]~=nil,"missing reset function? instance '"..I.name.."' of module '"..I.module.name.."'")
+            module:lookupFunction("reset"):addPipeline( I:reset(nil,module:lookupFunction("reset"):getValid()) )
+          else
+            module:lookupFunction("reset"):addPipeline( I:reset() )
+          end
         end
         
         if n.fn.inputType==types.null() then
@@ -1152,7 +1023,7 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
 
   if darkroom.isModule(fn)==false then
     print("Generator '"..fn.name.."' could not be resolved into a module?")
-    print("Unbounded args: "..fn:listArgs())
+    print("missing args: "..fn:listRequiredArgs())
     assert(false)
   end
 
@@ -1198,16 +1069,25 @@ function darkroom.constant( name, value, ty, X )
 end
 darkroom.c = darkroom.constant
 
+-- this can be called with either (name,{}) or just {}
 function darkroom.concat( name, t, X )
-  local r = {kind="concat", name=name, loc=getloc(), inputs={} }
-  
-  if name==nil then
+
+  local r = {kind="concat", loc=getloc(), inputs={} }
+
+  if type(name)=="string" then
+    r.name = name
+  elseif (name==nil and type(t)=="table") or (type(name)=="table" and t==nil) then
     r.defaultName=true
     r.name="concat"..darkroom.__unnamedID
     darkroom.__unnamedID = darkroom.__unnamedID+1
+
+    if type(name)=="table" and t==nil then
+      t = name
+    end
   else
-    err( type(name)=="string", "first tuple input should be name")
+    err( type(name)=="string", "first concat input should be name")
   end
+  
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")

@@ -215,16 +215,52 @@ C.multiplyConst = memoize(function(A,constValue)
   return partial
 end)
 
+------------------------------
+C.GT = memoize(function(A,B)
+  err( types.isType(A), "C.GT: A must be type")
+  err( types.isType(B), "C.GT: B must be type")
 
-C.tokenCounter = memoize(function(A)
-  err( types.isType(A), "C.multiply: A must be type")
+  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 1,
+    function(sinp) return S.gt(S.index(sinp,0),S.index(sinp,1)) end )
 
-  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)), A, A, 1,
+  return partial
+end)
+
+------------
+-- return A*B as a darkroom FN. A,B are types
+-- returns something of type outputType
+C.GTConst = memoize(function(A,constValue)
+  err( types.isType(A), "C.GTConst: A must be type")
+  
+  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 1,
+                           function(sinp) return S.gt(sinp,S.constant(constValue,A)) end )
+
+  return partial
+end)
+
+C.Not = RM.lift( "Not", types.bool(), types.bool(), 0, function(sinp) return S.__not(sinp) end )
+C.And = RM.lift( "And", types.tuple{types.bool(),types.bool()}, types.bool(), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
+
+C.tokenCounter = memoize(function(A,str,X)
+  err( types.isType(A), "C.tokenCounter: A must be type")
+  err( types.isHandshake(A),"C.tokenCounter: A must be handshake")
+  assert(X==nil)
+
+  if str==nil then str="" end
+  assert(type(str)=="string")
+
+--  print("TC",str)
+--  assert(false)
+  
+  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)).."_"..str, A, A, 1,
                            function(sinp) assert(false) end,
-    function() return CT.tokenCounter(A) end,
+                           function() return CT.tokenCounter(A,str) end,
     "C.tokenCounter" )
 
-  partial.terraModule = CT.tokenCounter(A)
+  if terralib~=nil then
+    partial.terraModule = CT.tokenCounter(A,str)
+  end
+  
   return partial
 end)
 
@@ -1198,7 +1234,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err(type(T)=="number","T must be number")
   if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
 
-  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0")
+  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
   local inp = rigel.input( types.array2d( A, T ) )
@@ -1225,7 +1261,7 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, fram
   err(w>0,"stencilLinebuffer: w must be >0");
   err(h>0,"stencilLinebuffer: h must be >0");
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
-  err(ymin<=ymax,"stencilLinebuffer: ymin>ymax")
+  err(ymin<=ymax,"stencilLinebuffer: ymin("..tostring(ymin)..") must be <= ymax("..tostring(ymax)..")")
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
   err(ymax==0,"stencilLinebuffer: ymax must be 0")
 
@@ -1298,9 +1334,9 @@ end)
 C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed, framedW, framedH, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
-  assert(stencilW>0)
+  err(stencilW>0,"unpackStencil: stencilW must be >0, but is:"..tostring(stencilW))
   assert(type(stencilH)=="number")
-  assert(stencilH>0)
+  err(stencilH>0,"unpackStencil: stencilH must be >0, but is:"..tostring(stencilH))
   assert(type(T)=="number")
   assert(T>=1)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
@@ -1347,6 +1383,7 @@ end)
 
 
 -- if index==true, then we return a value, not an array
+-- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
   err( type(idxLow)=="number", "slice idxLow must be number")
@@ -1616,7 +1653,7 @@ C.handshakeToHandshakeFramed = memoize(
       sm:addFunction( S.lambda("ready", r, r, "ready") )
       local I = S.parameter("process_input", R.lower(A) )
       sm:addFunction( S.lambda("process",I,I,"process_output") )
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+      --sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
       return sm
     end
     function res.makeTerra()
@@ -1645,6 +1682,140 @@ C.changeRateFramed = memoize(function(A, W, H, ratio, ser, X)
 
   assert(false)
 end)
-                                   
+
+-- given a comparison operator (op:{A,A}->bool), returns a function
+-- of type A[2]->A[2]
+C.sortCompare = memoize(
+  function(A,op)
+    local G = require "generators"
+    return G.Module{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.array2d(A,2),
+      function(inp)
+        local res = op(inp[0],inp[1])
+        return G.Sel(res,inp,G.TupleToArray(inp[1],inp[0]))
+      end}
+  end)
+
+-- takes in an array whose two halves are sorted. Returns full array sorted.
+-- see http://www.iti.fh-flensburg.de/lang/algorithmen/sortieren/networks/oemen.htm
+C.oddEvenMerge = memoize(
+  function(A,N,op)
+    local G = require "generators"
+    assert(N>=2)
+    assert(J.isPowerOf2(N))
+    if N==2 then
+      return C.sortCompare(A,op)
+    else
+      return G.Module{"OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+        function(inp)
+
+          local even,odd = {},{}
+          for i=0,(N/2)-1 do
+            table.insert(even,inp[i*2])
+            table.insert(odd,inp[i*2+1])
+          end
+          local rEven, rOdd = G.TupleToArray(R.concat(even)), G.TupleToArray(R.concat(odd))
+          local Rec = C.oddEvenMerge(A,N/2,op)
+          local oEven, oOdd = Rec(rEven), Rec(rOdd)
+
+          local res = {oEven[0]}
+          for i=0,(N/2)-2 do
+            local o = C.sortCompare(A,op)(G.TupleToArray(oOdd[i],oEven[i+1]))
+            table.insert(res,o[0])
+            table.insert(res,o[1])
+          end
+          table.insert(res,oOdd[(N/2)-1])
+          local res = G.TupleToArray(R.concat(res))
+          return res
+        end}
+    end
+  end)
+
+C.oddEvenMergeSort = memoize(
+  function(A,N,op)
+    local G = require "generators"
+    assert(N>0)
+    assert(J.isPowerOf2(N))
+    if N==1 then
+      return G.Identity{types.array2d(A,N)}
+    else
+      return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+        function(inp)
+          local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
+          l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
+          local res = C.flatten2(A,N)(l,r)
+          res = C.oddEvenMerge(A,N,op)(res)
+          return res
+        end}
+    end
+  end)
+
+C.StridedReader = memoize(
+  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr)
+    -- stride,offset is given as # of items
+    local G = require "generators"
+    local SOC = require "soc"
+    assert(totalBytes%(itemBytes*stride)==0)
+    assert(itemBytes%8==0)
+    
+    local Nreads = (totalBytes/(itemBytes*stride))
+    local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
+      function(inp)
+        print("MAKESTRIDED",stride,offset)
+        local cnt = C.triggerUp(Nreads)(inp)
+        local cnt = G.HS{RM.counter(types.uint(32), Nreads)}(cnt)
+        cnt = G.HS{G.Mul{stride*itemBytes}}(cnt)
+        local addr = G.HS{G.Add{offset*itemBytes}}(cnt)
+        --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
+        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr)(addr)
+      end}
+
+    return res
+  end)
+
+-- generate N DMA controllers to be able to read things with higher BW than a single axi port can
+C.AXIReadPar = memoize(
+  function(filename,W,H,ty,V) -- Nbits: # of bits to read in parallel
+    local G = require "generators"
+    local SOC = require "soc"
+    assert( (ty:verilogBits()*V)%64==0)
+    local N = (ty:verilogBits()*V)/64
+    assert((W*H)%N==0)
+
+    local startAddr = SOC.currentAddr
+    local startPort = SOC.currentMAXIReadPort
+    
+    local totalBytes = W*H*(ty:verilogBits()/8)
+    local res = G.Module{"AXIReadPar_"..tostring(W), types.HandshakeTrigger,
+      function(inp)
+        local inpb = G.FanOut{N}(inp)
+        local out = {}
+        for i=0,N-1 do
+          print("IMPBI",inpb[i],i,inpb)
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr)(inpb[i])
+          tmp = G.FIFO{128}(tmp)
+          table.insert(out, tmp)
+          SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
+        end
+        SOC.currentAddr = SOC.currentAddr+totalBytes
+
+        out = G.FanIn(unpack(out))
+        print("OUTT",out.type)
+        return G.HS{C.bitcast(out.type.params.A,types.array2d(ty,V))}(out)
+      end}
+
+    res.globalMetadata["MAXI"..startPort.."_read_W"] = W
+    res.globalMetadata["MAXI"..startPort.."_read_H"] = H
+    res.globalMetadata["MAXI"..startPort.."_read_V"] = V
+    res.globalMetadata["MAXI"..startPort.."_read_type"] = tostring(ty)
+    res.globalMetadata["MAXI"..startPort.."_read_bitsPerPixel"] = ty:verilogBits()
+    res.globalMetadata["MAXI"..startPort.."_read_address"] = startAddr
+
+    -- avoid double loading the image
+    for i=1,N-1 do
+      res.globalMetadata["MAXI"..i.."_read_filename"] = nil
+    end
+    
+    return res
+  end)
 
 return C

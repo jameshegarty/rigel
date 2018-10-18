@@ -160,7 +160,10 @@ function CT.multiplyConst(A,constValue)
   end
 end
 
-function CT.tokenCounter(A)
+function CT.tokenCounter(A,str)
+  if str==nil then str="" end
+  assert(type(str)=="string")
+  
   local struct TokenCounter { cnt:uint, ready:bool }
   terra TokenCounter:reset() self.cnt=0 end
   terra TokenCounter:process( a : &A:toTerraType(), out : &A:toTerraType() )
@@ -168,11 +171,12 @@ function CT.tokenCounter(A)
 
     if valid(a) and self.ready then
       self.cnt = self.cnt+1
-      cstdio.printf("CNT %d\n",self.cnt)
+      cstdio.printf(["CNT "..str..": %d\n"],self.cnt)
     end
   end
-terra TokenCounter:calculateReady(readyDownstream:bool)
-self.ready = readyDownstream
+
+  terra TokenCounter:calculateReady(readyDownstream:bool)
+  self.ready = readyDownstream
 end
 
 return MT.new(TokenCounter)

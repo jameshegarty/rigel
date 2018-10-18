@@ -498,7 +498,8 @@ void masterWriteDataDriveOutputs(
   //  printf("WREADY=%d\n",*WREADY);
 }
 
-void masterWriteDataLatchFlops(
+// return error flag (true if error)
+bool masterWriteDataLatchFlops(
   bool verbose,
   unsigned char* memory,
   SlaveState* slaveState,
@@ -535,7 +536,7 @@ void masterWriteDataLatchFlops(
 
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
-        exit(1);
+        return true;
       }
     }else{
       slaveState->BVALID = false;
@@ -556,9 +557,11 @@ void masterWriteDataLatchFlops(
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
       printf("MAXI%d write port is stalled out? No data sent for %d cycles (%d outstanding write requests, top addr %d)\n",port,cyclesSinceWrite[port],QSize(&writeQ[port]),t->addr);
-      exit(1);
+      return true;
     }
   }
+
+  return false;
 }
 
 void masterWriteReqDriveOutputs(
@@ -639,19 +642,22 @@ void saveFile( const char* filename, unsigned char* memory, unsigned int addrOff
   printf("Output File: filename=%s addressOffset=0x%x bytes=%d\n",filename,addrOffset,bytes);
 }
 
-bool checkPorts(){
+// checkWriteOnly: only check that the write port is idle (don't check on read port)
+bool checkPorts(bool checkWriteOnly){
   bool errored = false;
   
   for(int port=0; port<PORTS; port++){
-    if( QSize(&readQ[port])>0){
+    if( QSize(&readQ[port])>0 && checkWriteOnly==false){
       //std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << " bytesRead: " << masterBytesRead[port] << std::endl;
-      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d bytesRead: %d\n", port, QSize(&readQ[port]), masterBytesRead[port] );
+      Transaction* t = (Transaction*)QPeek(&readQ[port]);
+      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d nextTransactionBurst:%d bytesRead: %d\n", port, QSize(&readQ[port]), t->burst, masterBytesRead[port] );
       errored = true;
     }
     
     if( QSize(&writeQ[port])>0){
       //std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << " bytesWritten: " << masterBytesWritten[port] << std::endl;
-      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d bytesWritten:%d\n",port, QSize(&writeQ[port]),masterBytesWritten[port] );
+      Transaction* t = (Transaction*)QPeek(&writeQ[port]);
+      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d nextTransactionAddr:%d nextTransactionBurst:%d bytesWritten:%d\n",port, QSize(&writeQ[port]), t->addr, t->burst, masterBytesWritten[port] );
       errored = true;
     }
   }

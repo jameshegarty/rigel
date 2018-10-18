@@ -43,7 +43,7 @@ function(args)
   return C.cast(args.type,types.uint(args.type.precision))
 end)
 
-generators.Print = R.newGenerator("generators","Print",{"type"},{"string"},function(args) return C.print(args.type,args.string) end)
+generators.Print = R.newGenerator("generators","Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
 generators.FlattenBits = R.newGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.newGenerator("generators","Rshift",{"type","rate"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
@@ -73,10 +73,16 @@ end)
 
 generators.FanOut = R.newGenerator("generators","FanOut",{"type","number","rate"},{},
 function(args)
-  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed"),"FanOut: expected handshake input, but is: "..tostring(args.type))
+  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed") or args.type:is("HandshakeTrigger"),"FanOut: expected handshake input, but is: "..tostring(args.type))
   local mixed, dims
   if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
   return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
+end)
+
+generators.FanIn = R.newGenerator("generators","FanIn",{"type","rate"},{"bool"},
+function(args)
+  J.err( R.isHandshakeTuple(args.type), "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
+  return RM.packTuple(args.type.params.list,args.bool)
 end)
 
 generators.FIFO = R.newGenerator("generators","FIFO",{"type","number","rate"},{},
@@ -118,6 +124,32 @@ function(args)
   end
 end)
 
+generators.GT = R.newGenerator("generators","GT",{"type","rate"},{"number"},
+function(args)
+  if args.number~=nil then
+    J.err( args.type:isUint() or args.type:isInt(), "generators.GT: type should be int or uint, but is: "..tostring(args.type) )
+    return C.GTConst(args.type, args.number )
+  else
+    J.err( args.type:isTuple(), "generators.GT: type should be tuple, but is:"..tostring(args.type) )
+    J.err( args.type.list[1]==args.type.list[2], "generators.GT: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+
+    return C.GT( args.type.list[1], args.type.list[1] )
+  end
+end)
+
+generators.And = R.newGenerator("generators","And",{"type","rate"},{"bool"},
+function(args)
+  J.err( args.type:isTuple(), "generators.And: type should be tuple, but is: "..tostring(args.type) )
+  J.err( args.type.list[1]==types.bool() and args.type.list[2]==types.bool(), "generators.And: both inputs should be bool" )
+  return C.And
+end)
+
+generators.Not = R.newGenerator("generators","Not",{"type","rate"},{"bool"},
+function(args)
+  J.err( args.type==types.bool(), "generators.Not: input type should be bool, but is: "..tostring(args.type) )
+  return C.Not
+end)
+
 generators.Zip = R.newGenerator("generators","Zip",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
@@ -139,7 +171,9 @@ function(args)
     --mod = args.rigelFunction{args.type.params.A,types.HSFV(args.type),types.HSFSize(args.type)}
     mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ), args.rate }
   elseif R.isGenerator(args.rigelFunction) then
-    mod = args.rigelFunction{R.extractData(args.type), args.rate}
+    local r
+    if args.rigelFunction:requiresArg("rate") then r = args.rate end
+    mod = args.rigelFunction{R.extractData(args.type), r}
   else
     mod = args.rigelFunction
   end
@@ -208,8 +242,9 @@ end)
 
 generators.CropSeq = R.newGenerator("generators","CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
-  J.err(args.number>0,"NYI - V<=0")
-  local A = args.type:arrayOver()
+  local A = args.type
+  if args.number>0 then A  = args.type:arrayOver() end
+  
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
@@ -324,7 +359,10 @@ function(args)
   elseif args.type:isArray() then
     local mod = args.rigelFunction
     if R.isGenerator(mod) then
-      mod = mod{args.type:arrayOver(),args.rate}
+      local r
+      if mod:requiresArg("rate") then r = args.rate end
+
+      mod = mod{args.type:arrayOver(),r}
     end
     J.err( R.isModule(mod), "generators.Map: input didn't yield a rigel module? "..tostring(mod))
     
@@ -395,7 +433,7 @@ end)
 
 generators.Deser = R.newGenerator("generators","Deser",{"type","number","rate"},{},
 function(args)
-  J.err( args.type:isArray(), "generators.Deser: type should be array" )
+  J.err( args.type:isArray(), "generators.Deser: type should be array, but is: "..tostring(args.type) )
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
   --return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, false )
 end)
@@ -412,10 +450,23 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.WriteBurst = R.newGenerator("generators","WriteBurst",{"type","string","size","rate"},{},
+generators.AXIReadBurstSeq = R.newGenerator("generators","AXIReadBurstSeq",{"type","string","size","rate","number"},{},
 function(args)
-  J.err( R.isHandshake(args.type), "WriteBurst: input must be handshaked")
-  return SOC.writeBurst(args.string, args.size[1], args.size[2], R.extractData(args.type), 0)
+  -- note: type here should be explicitly passed by the user! This is the type of data we want
+  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false)
+end)
+
+generators.AXIWriteBurstSeq = R.newGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number"},{},
+function(args)
+  J.err( R.isHandshake(args.type), "AXIWriteBurstSeq: input must be handshaked, but is: "..tostring(args.type))
+  local ty
+  if args.number>0 then
+    ty = R.extractData(args.type):arrayOver()
+  else
+    ty = R.extractData(args.type)
+  end
+  
+  return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, false)
 end)
 
 generators.Module = R.newGenerator("generators","Module",{"luaFunction","type"},{"string","rate"},
@@ -459,7 +510,7 @@ function(args)
   if args.type:is("HandshakeFramed") then
     return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )
   else
-    J.err( false, "AXIWriteBurst: unsupported input type: "..tostring(args.type))
+    J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end
 end)
 
@@ -508,6 +559,44 @@ function(args)
   else
     assert(false)
   end
+end)
+
+generators.Sort = R.newGenerator("generators","Sort",{"type","rate","rigelFunction"},{},
+function(args)
+  J.err( args.type:isArray(),"generators.Sort: input must be array, but is: "..tostring(args.type) )
+  J.err( args.type.size[2]==1,"generators.Sort: must be 1d array" )
+  return C.oddEvenMergeSort( args.type:arrayOver(), args.type:channels(), args.rigelFunction )
+end)
+
+generators.Identity = R.newGenerator("generators","Identity",{"type","rate"},{},
+function(args)
+  return C.identity(args.type)
+end)
+
+generators.Sel = R.newGenerator("generators","Sel",{"type","rate"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.Sel: input should be tuple" )
+  return C.select(args.type.list[2])
+end)
+
+generators.Slice = R.newGenerator("generators","Slice",{"type","rate","size"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.Slice: input must be array" )
+  J.err( args.type.size[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
+  return C.slice( args.type, args.size[1], args.size[2], 0, 0)
+end)
+
+generators.TupleToArray = R.newGenerator("generators","TupleToArray",{"type","rate"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.TupleToArray: input should be tuple" )
+  return C.tupleToArray( args.type.list[1], #args.type.list )
+end)
+
+generators.FilterSeq = R.newGenerator("generators","FilterSeq",{"type","rate","size"},{},
+function(args)
+  J.err( args.type:isTuple(), "generators.FilterSeq: input should be tuple" )
+  J.err( args.type.list[2]:isBool(), "generators.FilterSeq: input should be tuple of type {A,bool}, but is: "..tostring(args.type) )
+  return RM.filterSeq( args.type.list[1], 1, 1, args.size, 0, false )
 end)
 
 function generators.export(t)

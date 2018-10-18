@@ -2,6 +2,7 @@ local SOC = require "soc"
 local SOCMT = require "socTerra"
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
+local clocale = terralib.includec("locale.h")
 local J = require "common"
 
 local data = macro(function(i) return `i._0 end)
@@ -30,10 +31,16 @@ local Ctmp = terralib.includecstring [[
                                  }
                                    ]]
 
+local Locale = terralib.includecstring[[
+#include <locale.h>
+void enableCommas(){setlocale(LC_NUMERIC, "");}
+]]
+
 local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
-return function(top, memStart, memEnd)
+return function(top, options)
   local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
+  if options~=nil and options.cycles~=nil then simCycles = options.cycles end
   local extraCycles = math.max(math.floor(simCycles/10),1024)
   
   local Module = top:toTerra()
@@ -134,6 +141,9 @@ return function(top, memStart, memEnd)
   end
 
   local terra setReg([IP_CLK], [IP_ARESET_N],m:&Module, addr:uint, writeData:uint)
+
+    Locale.enableCommas()
+
     var srVerbose = true
     ----------------------------------------------- send start cmd
     if verbose or srVerbose then cstdio.printf("WRITE REG addr:%x data:%d\n",addr,writeData) end
@@ -266,7 +276,7 @@ return function(top, memStart, memEnd)
       var cyclesToDoneSignal = -1
 
       var doneBitSet : bool = false
-      while (cycle<totalCycles) and (cooldownCycles>0) do
+      while (doneBitSet==false or cooldownCycles>0 or cycle<totalCycles) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
 
         V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]);
@@ -310,7 +320,7 @@ return function(top, memStart, memEnd)
           var t = currentTimeInSeconds() - startSec
 
           var pct = (cycle*100)/totalCycles
-          cstdio.printf("Sim %d %% complete! (%d/%d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",pct,cycle,totalCycles,t,t*([float](100-pct))/([float](pct)),V.bytesRead(),V.bytesWritten())
+          cstdio.printf("Sim %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%'d bytes read, %'d bytes written)\n",round,pct,cycle,totalCycles,t,t*([float](100-pct))/([float](pct)),V.bytesRead(),V.bytesWritten())
           lastPct = (cycle*100)/totalCycles
         end
 
@@ -322,6 +332,11 @@ return function(top, memStart, memEnd)
         if V.checkSlaveReadResponse(S0LIST,&db) then
           if db==1 then
             doneBitSet=true
+
+            var errored = V.checkPorts(true);
+            if errored then
+              cstdio.printf("Pipeline not actually done when done bit was set?\n")
+            end
           else
             doneBitSet=false
           end
@@ -349,7 +364,7 @@ return function(top, memStart, memEnd)
 
       writeS
 
-      var errored = V.checkPorts();
+      var errored = V.checkPorts(false);
 
       if doneBitSet==false then
         cstdio.printf("Error: Done bit not set at end of time!\n")

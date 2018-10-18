@@ -1073,10 +1073,6 @@ assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
 assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];
 assign IP_MAXI]=]..port..[=[_BRESP_ready = ready_downstream;
 
-//always @(posedge CLK) begin
-//  $display("piv %d pi %d",process_input[32],process_input[31:0]);
-//end
-
 endmodule
 ]=],globals,globalMetadata,{{1,1},{1,1}},{{1,1}})
 
@@ -1171,7 +1167,7 @@ always @(posedge ACLK) begin
         a_count <= 0;
     end else case(a_state)
         IDLE: begin
-            if(CONFIG_VALID) begin
+            if(CONFIG_VALID && CONFIG_READY) begin
                 M_AXI_AWADDR <= CONFIG_START_ADDR;
                 a_count <= CONFIG_NBYTES[31:7];
                 a_state <= RWAIT;
@@ -1200,7 +1196,7 @@ always @(posedge ACLK) begin
         b_count <= 0;
     end else case(w_state)
         IDLE: begin
-            if(CONFIG_VALID) begin
+            if(CONFIG_VALID && CONFIG_READY) begin
                 b_count <= {CONFIG_NBYTES[31:7],7'b0};
                 w_state <= RWAIT;
                 last_count <= 4'b1111;
@@ -1306,6 +1302,7 @@ always@(posedge CLK) begin
   end else if (process_input[64] && CONFIG_READY && firstBufferSet==1'b0 ) begin
     firstBufferSet <= 1'b1;
     firstBuffer <= process_input[63:0];
+$display("FIRST BUFFER SET");
   end else if (DATA_READY) begin
     firstBufferSet <= 1'b0;
   end
@@ -1450,7 +1447,8 @@ end)
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- readType: this is the output type we want
-SOC.read = J.memoize(function(filename,fileBytes,readType,X)
+-- NOTE: do not memoize! this thing allocates a port
+SOC.read = function(filename,fileBytes,readType,X)
   J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "read: type must be type")
   J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
@@ -1505,7 +1503,7 @@ SOC.read = J.memoize(function(filename,fileBytes,readType,X)
   SOC.currentAddr = SOC.currentAddr+fileBytes
   
   return res
-end)
+end
                           
 SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
@@ -1533,15 +1531,15 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   if V>0 then inputType = types.array2d(inputType,V) end
   
   local inp = R.input(R.Handshake(inputType))
-  local out = RM.makeHandshake(C.cast(inputType,types.bits(inputType:verilogBits())))(inp)
+  local out = RM.makeHandshake(C.bitcast(inputType,types.bits(inputType:verilogBits())))(inp)
 
   local inputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalInputBits = W*H*ty:verilogBits()
-  print("DesiredTotalInputBits",desiredTotalInputBits,"inputBits",inputBits)
+
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
+
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
-  print("TIB,TOB",totalBits,ChangeRateModule.inputType,ChangeRateModule.outputType)
   assert(totalBits%(128*8)==0)
   assert(totalBits%inputBits==0)
   assert(totalBits>=desiredTotalInputBits)
@@ -1555,7 +1553,6 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   out = ChangeRateModule(out)
 
   out = SOC.axiBurstWriteN(filename,totalBits/8,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
-
 
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 

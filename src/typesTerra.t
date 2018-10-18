@@ -78,7 +78,7 @@ function TypeFunctions:valueToTerra(value)
       return `[self:toTerraType()](value)
     end
   elseif self:isBool() then
-    assert(type(value)=="boolean")
+    J.err(type(value)=="boolean","value '"..tostring(value).."' should be boolean")
     return `[self:toTerraType()](value)
   elseif self:isArray() then
     assert(type(value)=="table")

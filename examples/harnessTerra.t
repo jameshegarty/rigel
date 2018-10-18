@@ -44,7 +44,7 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
     out = R.apply("HARNESS_inner", fn )
   end
 
-  out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType,nil,false),nil,true), out )
+  out = R.apply("fwrite", RM.makeHandshake(RM.fwriteSeq(outputFilename,outputType,nil,false,true),nil,true), out )
 
   if harnessoption==2 then
     out = R.statements{out,dramAddr}

@@ -260,9 +260,9 @@ int main(int argc, char** argv) {
         if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
         
         masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
-        masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN );
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN )){goto WRITEOUT;}
         masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
-        masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN );
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
         
         // get data out
         masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
@@ -282,11 +282,21 @@ int main(int argc, char** argv) {
         unsigned int db;
         if( checkSlaveReadResponse(S0LIST,&db) ){
           if(db==1){
+
             if(doneBitSet==false){
+              printf("DONE BIT SET\n");
               cyclesToDoneSignal=cycle;
             }
             
             doneBitSet=true;
+
+            // if done bit is set, we should really be done!
+            // check that there aren't outstanding reads on the ports
+            bool errored = checkPorts(true);
+            if(errored){
+              printf("Pipeline not actually done when done bit was set?\n");
+              //              exit(1);
+            }
           }else{
             doneBitSet=false;
           }
@@ -305,7 +315,7 @@ int main(int argc, char** argv) {
         if(pct>lastPct){
           double t = CurrentTimeInSeconds() - startSec;
           setlocale(LC_NUMERIC,"");
-          printf("Sim %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+          printf("Sim %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
           lastPct = pct;
         }
         
@@ -321,7 +331,7 @@ int main(int argc, char** argv) {
     
     printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);
     
-    bool errored = checkPorts();
+    bool errored = checkPorts(false);
 
     if(doneBitSet==false){
       printf("Error: done bit not set at end of time?\n");
@@ -329,10 +339,13 @@ int main(int argc, char** argv) {
     }
     
     if(errored){
-      exit(1);
+      //exit(1);
+      goto WRITEOUT;
     }
   } // rounds
 
+  WRITEOUT:
+  
   printf("CUR %s\n",argv[curArg-1]);
   printf("CUR %s\n",argv[curArg]);
   

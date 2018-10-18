@@ -418,7 +418,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
 end
 
 function MT.upsampleXSeq(res,A, T, scale, ITYPE )
-  local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:int, ready:bool }
+  local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:uint, ready:bool }
   terra UpsampleXSeq:reset() self.phase=0; end
   terra UpsampleXSeq:stats(name:&int8)  end
   terra UpsampleXSeq:init()  end
@@ -1405,13 +1405,56 @@ function MT.overflow(res,A,count)
 end
 
 
-function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles ) 
-  local struct Underflow {ready:bool; readyDownstream:bool;cycles:uint32; outputCount:uint32}
-  terra Underflow:reset() self.cycles=0; self.outputCount=0 end
-  terra Underflow:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
-    @out = @inp
+function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue ) 
+  local struct Underflow {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32; counting:bool}
+  terra Underflow:reset()
+    self.cycles=0;
+    self.outputCount=0
+    self.counting = false
   end
+
+  if overflowValue==nil then overflowValue = 4022250974 end -- DEADBEEF
+
+  terra Underflow:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+
+    @out = @inp
+
+    if self.readyDownstream then
+      if self.cycles>=cycles then
+        if valid(inp) then
+          cstdio.printf("ERROR? valid input during fixup time!\n")
+          cstdlib.exit(1)
+        end
+      
+        -- fixup mode
+        valid(out) = true
+        data(out) = overflowValue
+        self.outputCount = self.outputCount+1
+
+        --cstdio.printf("FIXUPTIME %d\n",self.outputCount)
+      elseif valid(inp) then
+        self.outputCount = self.outputCount+1
+      end
+    
+      if [waitForValid==true] then
+        if valid(inp) or self.counting then
+          self.cycles = self.cycles+1
+          self.counting = true
+        end
+      else
+        self.cycles = self.cycles+1
+      end
+    end
+
+    if self.outputCount>=count then
+      self.outputCount = 0
+      self.cycles = 0
+      self.counting = false
+    end
+  end
+
   terra Underflow:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
+
   return MT.new(Underflow)
 end
 
@@ -1521,7 +1564,11 @@ function MT.freadSeq(filename,ty)
   return MT.new(FreadSeq)
 end
 
-function MT.fwriteSeq(filename,ty,passthrough)
+-- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
+function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes)
+  local terraSize = terralib.sizeof(ty:toTerraType())*8
+  J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
+  
   local struct FwriteSeq { file : &cstdio.FILE }
   terra FwriteSeq:init()
     self.file = cstdio.fopen(filename, "wb")
@@ -1636,6 +1683,51 @@ function MT.crop( res, A, W, H, L, R, B, Top )
   return Crop
 end
 
+function MT.counter( res, ty, N )
+  local struct Counter {buf:ty:toTerraType()}
+
+  terra Counter:process( out:&ty:toTerraType() )
+    @out = self.buf
+    if self.buf==N-1 then
+      self.buf = 0
+    else
+      self.buf = self.buf+1
+    end
+  end
+
+  terra Counter:reset() self.buf=0 end
+
+  return MT.new(Counter)
+end
+
+function MT.filterSeqPar(res,A,N)
+  local struct FilterSeqPar { buffer:res.inputType:toTerraType(), ready:bool }
+
+  terra FilterSeqPar:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+    data(out) = self.buffer[0]._0
+    valid(out) = self.buffer[0]._1
+
+    if self.ready then
+      self.buffer = @inp
+    else
+      for i=0,N-1 do self.buffer[i] = self.buffer[i+1] end
+      self.buffer[N-1]._1 = false
+    end
+  end
+
+  terra FilterSeqPar:reset()
+    for i=0,N do self.buffer[i]._1 = false end
+  end
+
+  terra FilterSeqPar:calculateReady() 
+    var r0 = (self.buffer[0]._1==false)
+    var r1 = (self.buffer[0]._1==true)
+    var r2 = (self.buffer[1]._1==false)
+    self.ready = r0 or (r1 and r2)
+  end
+
+  return MT.new(FilterSeqPar)
+end
 
 function MT.lambdaCompile(fn)
   local inputSymbol

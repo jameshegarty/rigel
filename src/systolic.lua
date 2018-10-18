@@ -272,7 +272,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
     err(v~=output,"pipeline "..k.." is the same as the output!")
     for kk,vv in pairs(pipelines) do err(v~=vv or k==kk, "Pipeline "..k.." is the same as pipeline "..kk) end
   end
-  assert(J.keycount(pipelines)==#pipelines)
+  J.err( J.keycount(pipelines)==#pipelines, "systolic.lambda: pipelines is not an array?" )
 
   local implicitValid = false
   if validParameter==nil then implicitValid=true; validParameter = systolic.parameter(name.."_valid", types.bool()) end

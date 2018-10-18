@@ -53,6 +53,7 @@ return function(fn,t)
         if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..fn.globalMetadata["MAXI"..i.."_read_H"]) end
         if fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]~=nil then table.insert(rlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]) end
         if fn.globalMetadata["MAXI"..i.."_read_V"]~=nil then table.insert(rlist,"V="..fn.globalMetadata["MAXI"..i.."_read_V"]) end
+        J.err(fn.globalMetadata["MAXI"..i.."_read_address"]~=nil,"Error: AXI port "..tostring(i).." was given a filename, but no address?")
         table.insert(rlist,"address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_read_address"]))
         table.insert(inputList, "{"..table.concat(rlist,",").."}")
       end
@@ -90,7 +91,7 @@ return function(fn,t)
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")
-    doTerraSim(fn)
+    doTerraSim(fn,t)
   else
     print("backend",backend)
     assert(false)

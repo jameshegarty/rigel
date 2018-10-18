@@ -19,6 +19,13 @@ local function toTerra(self,name)
   local Module = terralib.types.newstruct(name)
   Module.entries = terralib.newlist( {} )
 
+  local res = self:visitEach(
+    function( n, args )
+      if n.kind=="applyUnaryLiftRigel" then
+        table.insert( Module.entries, {field=n.name, type=n.f.terraModule})
+      end
+    end)
+    
   local mself = symbol(&Module, "moduleself")
   
   local res = self:visitEach(
@@ -108,8 +115,6 @@ local function toTerra(self,name)
       elseif n.kind=="neg" then
         res = `-[args[1]]
       elseif n.kind=="applyUnaryLiftRigel" then
-        table.insert( Module.entries, {field=n.name, type=n.f.terraModule})
-        --print("RIGELLIFT",n.type,n.type:toTerraType())
         res = symbol(n.type:toTerraType())
         table.insert(stats,quote var[res];
                      var tmp : n.inputs[1].type:toTerraType() = [args[1]] -- input must be lvalue
@@ -192,7 +197,9 @@ local function toTerra(self,name)
             var mask = ([n.inputs[1].type:toTerraType()](1) << outbits) - 1
             var r = [n.type:toTerraType()]([args[1]] and mask)
             in r end
-          end
+        end
+      elseif n.kind=="readGlobal" then
+        res = `[n.global:terraValue()]
       else
         print(n.kind)
         assert(false)

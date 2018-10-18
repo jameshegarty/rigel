@@ -962,6 +962,175 @@ function TypeFunctions:framedOver()
   
 end
 
+types.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+types.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
+types.HandshakeTrigger = types.named("HandshakeTrigger", types.bool(), "HandshakeTrigger",{})
+
+function types.V(A) 
+  err(types.isType(A),"V: argument should be type"); 
+  err(types.isBasic(A), "V: argument should be basic type"); 
+  return types.named("V("..tostring(A)..")", types.tuple{A,types.bool()}, "V", {A=A}) 
+end
+
+function types.RV(A) 
+  err(types.isType(A), "RV: argument should be type"); 
+  err(types.isBasic(A), "RV: argument should be basic type"); 
+  return types.named("RV("..tostring(A)..")",types.tuple{A,types.bool()}, "RV", {A=A})  
+end
+
+function types.HandshakeArray(A,W,H)
+  err(types.isType(A),"HandshakeArray: argument should be type")
+  err(types.isBasic(A),"HandshakeArray: argument should be basic type")
+  err(type(W)=="number" and W>0,"HandshakeArray: W should be number > 0")
+  if H==nil then H=1 end
+  err(type(H)=="number" and H>0,"HandshakeArray: H should be number > 0")
+  return types.named("HandshakeArray("..tostring(A)..","..tostring(W)..","..tostring(H)..")", types.array2d(types.tuple{A,types.bool()},W,H), "HandshakeArray", {A=A,W=W,H=H} )
+end
+
+function types.HandshakeTriggerArray(W,H)
+  err(type(W)=="number" and W>0,"HandshakeTriggerArray: W should be number > 0")
+  if H==nil then H=1 end
+  err(type(H)=="number" and H>0,"HandshakeTriggerArray: H should be number > 0")
+  return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
+end
+
+function types.HandshakeTuple(tab)
+  err( type(tab)=="table" and J.keycount(tab)==#tab,"HandshakeTuple: argument should be table of types")
+
+  local s = {}
+  local ty = {}
+  for k,v in ipairs(tab) do
+    err(types.isType(v) and types.isBasic(v),"HandshakeTuple: type list must all be basic types, but index "..tostring(k).." is "..tostring(v))
+    table.insert(s,tostring(v))
+    table.insert(ty,types.tuple{v,types.bool()})
+  end
+
+  return types.named("HandshakeTuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab} )
+end
+
+-- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
+-- input is valid (is the stream requested by ready valid this cycle?)
+function types.HandshakeArrayOneHot(A,N)
+  err(types.isType(A),"HandshakeArrayOneHot: first argument should be type")
+  err(types.isBasic(A),"HandshakeArrayOneHot: first argument should be basic type")
+  err(type(N)=="number","HandshakeArrayOneHot: second argument should be number")
+  return types.named("HandshakeArrayOneHot("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArrayOneHot", {A=A,N=N} )
+end
+
+function types.HandshakeTmuxed(A,N)
+  err(types.isType(A),"HandshakeTmuxed: first argument should be type")
+  err(types.isBasic(A),"HandshakeTmuxed: first argument should be basic type")
+  err(type(N)=="number","HandshakeTmuxed: second argument should be number")
+  return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
+end
+
+
+function types.isHandshakeArrayOneHot(a)
+  err(types.isType(a),"isHandshakeArrayOneHot: argument must be a type")
+  return a:isNamed() and a.generator=="HandshakeArrayOneHot"
+end
+function types.isHandshakeTmuxed(a)
+  return a:isNamed() and a.generator=="HandshakeTmuxed"
+end
+
+function types.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+function types.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
+function types.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
+function types.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end
+function types.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
+
+-- is this any of the handshaked types?
+function types.isHandshakeAny( a ) return types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isHandshakeTuple(a) or types.isHandshakeArray(a) or types.isHandshakeTmuxed(a) or types.isHandshakeArrayOneHot(a) or a:is("HandshakeFramed") end
+
+function types.isV( a ) return a:isNamed() and a.generator=="V" end
+function types.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
+function types.isRV( a ) return a:isNamed() and a.generator=="RV" end
+function types.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
+function types.expectBasic( A ) err( types.isBasic(A), "type should be basic but is "..tostring(A) ) end
+function types.expectV( A, er ) if types.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
+function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
+function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
+
+-- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
+-- ie V(A) => {A,bool}
+-- RV(A) => {A,bool}
+-- Handshake(A) => {A,bool}
+function types.lower( a, loc )
+  err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
+  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isVTrigger(a) or types.isRVTrigger(a) or types.isRV(a) or types.isV(a) or types.isHandshakeArray(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or types.isHandshakeTuple(a) or types.isHandshakeTriggerArray(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") or a:is("HandshakeArrayFramed") then
+    return a.structure
+  elseif types.isBasic(a) then 
+    return a 
+  end
+  print("rigel.lower: unknown type? ",a)
+  assert(false)
+end
+
+-- extract underlying actual data type.
+-- V(A) => A
+-- RV(A) => A
+-- Handshake(A) => A
+function types.extractData(a)
+  if types.isHandshake(a) or types.isV(a) or types.isRV(a) or a:is("StaticFramed") or a:is("HandshakeFramed") or a:is("VFramed") or a:is("RVFramed") then return a.params.A end
+  if types.isHandshakeTrigger(a) or types.isVTrigger(a) or types.isRVTrigger(a) then return types.null() end
+  if types.isHandshakeArray(a) then return types.array2d(a.params.A,a.params.N) end
+  return a -- pure
+end
+
+function types.hasReady(a)
+  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isRV(a) or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
+    return true
+  elseif types.isBasic(a) or types.isV(a) or a:is("StaticFramed") or a:is("VFramed") then
+    return false
+  else
+    print("UNKNOWN READY",a)
+    assert(false)
+  end
+end
+
+function types.extractReady(a)
+  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isV(a) or types.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") then return types.bool()
+  elseif types.isHandshakeTuple(a) then
+    return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
+  elseif types.isHandshakeArrayOneHot(a) then
+    return types.uint(8)
+  else 
+    print("COULD NOT EXTRACT READY",a)
+    assert(false) 
+  end
+end
+
+function types.extractValid(a)
+  if types.isHandshakeTmuxed(a) then
+    return types.uint(8)
+  end
+  return types.bool()
+end
+
+function types.streamCount(A)
+  if types.isBasic(A) or types.isV(A) or types.isRV(A) or A:is("StaticFramed") or A:is("VFramed") or A:is("RVFramed") then
+    return 0
+  elseif types.isHandshake(A) or A:is("HandshakeFramed") or types.isHandshakeTrigger(A) then
+    return 1
+  elseif types.isHandshakeArray(A) or types.isHandshakeTriggerArray(A) or A:is("HandshakeArrayFramed") then
+    return A.params.W*A.params.H
+  elseif types.isHandshakeTuple(A) then
+    return #A.params.list
+  elseif types.isHandshakeTmuxed(A) or types.isHandshakeArrayOneHot(A) then
+    return A.params.N
+  else
+    err(false, "NYI streamCount "..tostring(A))
+  end
+end
+
+-- is this type any type of handshake type?
+function types.isStreaming(A)
+  if types.isHandshake(A) or types.isHandshakeTrigger(A) or types.isHandshakeArray(A) or types.isHandshakeTuple(A) or  types.isHandshakeTmuxed(A) or types.isHandshakeArrayOneHot(A) or A:is("HandshakeFramed") then
+    return true
+  end
+  return false
+end
+
 if terralib~=nil then require("typesTerra") end
 
 for i=1,32 do

@@ -15,7 +15,7 @@ function systolicASTFunctions:toTerra( symbols )
       if n.kind=="parameter" then
         res = symbols[n.name]
       elseif n.kind=="constant" then
-        res = self.type:valueToTerra(n.value)
+        res = n.type:valueToTerra(n.value)
       elseif n.kind=="binop" then
         if n.op=="and" then
           res = `[args[1]] and [args[2]]
@@ -43,7 +43,9 @@ function systolicASTFunctions:toTerra( symbols )
           err(false,"systolicAST:toTerra Binop NYI: "..n.op)
         end
       elseif n.kind=="unary" then
-        if n.op=="abs" then
+        if n.op=="not" then
+          res = `not [args[1]]
+        elseif n.op=="abs" then
           if n.inputs[1].type:isInt() then
             res = `cstdlib.abs([args[1]])
           else
@@ -112,9 +114,15 @@ function systolicASTFunctions:toTerra( symbols )
           res = args[1]
         elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
           err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
-          assert( n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 )
-          
-          res = `[n.type:toTerraType()]([args[1]])
+
+          if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 then
+            res = `[n.type:toTerraType()]([args[1]])
+          elseif n.type:isUint() then
+            local maskValue = math.pow(2,n.type:verilogBits())-1
+            res = `[n.type:toTerraType()]([args[1]]) and [n.type:toTerraType()](maskValue)
+          else
+            print("NYI - terra cast to "..tostring(n.type))
+          end
         else
           err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)
         end
