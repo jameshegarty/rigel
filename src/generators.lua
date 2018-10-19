@@ -271,7 +271,7 @@ function(args)
     err(false,"generators.Downsample: unsupported input type: "..tostring(args.type))
   end
 end)
-
+                                       
 generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
 function(args)
   if args.type~=nil then

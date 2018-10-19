@@ -1078,6 +1078,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   err( type(W)=="number", "C.downsampleSeq: W must be number")
   err( type(H)=="number", "C.downsampleSeq: H must be number")
   err( type(T)=="number", "C.downsampleSeq: T must be number")
+  err( T>0, "C.downsampleSeq: T must be >0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
   err( type(scaleY)=="number", "C.downsampleSeq: scaleY must be number")
   err( scaleX>=1, "C.downsampleSeq: scaleX must be >=1")
@@ -1816,6 +1817,29 @@ C.AXIReadPar = memoize(
     end
     
     return res
+  end)
+
+-- collect the number of tokens seen, and write it to a global
+C.tokenCounterReg = memoize(
+  function( A, regGlobal, N)
+    J.err( types.isType(A),"tokenCounterReg: a must be type" )
+    J.err( A:is("Handshake"),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
+    J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
+
+    if N==nil then
+      N = math.pow(2,32)-1
+    end
+      
+    local G = require "generators"
+
+    return G.Module{A,
+      function(inp)
+        local inpb = G.FanOut{2}(inp)
+        local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
+        local cnt = G.HS{RM.counter(types.uint(32),N)}(ct)
+        cnt = G.HS{G.Add{1}}(cnt)
+        return R.statements{inpb[0],R.writeGlobal("wg",regGlobal,cnt)}
+      end}
   end)
 
 return C

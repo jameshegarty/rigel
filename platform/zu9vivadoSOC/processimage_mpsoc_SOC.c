@@ -182,19 +182,23 @@ int setRegisters(int curArg, char *argv[], void* ptr, unsigned int GPIO_BASE){
   fflush(stdout);
 
   curArg++; // for "--registers"
-  while(strcmp(argv[curArg],"--outputs")!=0){
+  while(strcmp(argv[curArg],"--registersOut")!=0){
     printf("PARSE Reg %s %s\n",argv[curArg],argv[curArg+1]);
     fflush(stdout);
   
     unsigned int addr = strtol(argv[curArg],NULL,16);
+    unsigned int dat = strtol(argv[curArg+1],NULL,16);
     int bytes = strlen(argv[curArg+1])/2;
-    printf("Set Register %x withNBytes %d, GPIO_BASE %x\n",addr,bytes,GPIO_BASE);
+    printf("Set Register %x withNBytes %d to value 0x%s/%d, GPIO_BASE %x\n",addr,bytes,argv[curArg+1],dat,GPIO_BASE);
     fflush(stdout);
   
     //unsigned int* data = (unsigned int*)argv[curArg+1];
     char tmp[9]="";
 
-    for(int i=0; i<bytes/4; i++){
+    unsigned int num32bitchunks = bytes/4;
+    if(num32bitchunks<=0){num32bitchunks=1;}
+    
+    for(int i=0; i<num32bitchunks; i++){
       for(int j=0; j<8; j++){
         tmp[j] = argv[curArg+1][i*8+j];
       }
@@ -210,11 +214,42 @@ int setRegisters(int curArg, char *argv[], void* ptr, unsigned int GPIO_BASE){
       fflush(stdout);
       
       *(unsigned int*)(ptr+offset) = data;
+
+      unsigned int regDat = *(unsigned int*)(ptr+offset);
+      printf("Readback Reg %d\n",regDat);
       //setReg( top, verbose, addr+i*4, data);
     }
 
     curArg+=2;
   }
+
+  return curArg;
+}
+
+int getRegisters(int curArg, char *argv[], void* ptr, unsigned int GPIO_BASE ){
+  curArg++; // for '--registersOut'
+
+  FILE* regFile = fopen("regout.lua","w");
+  fprintf(regFile,"return {");
+
+  bool first = true;
+  while(strcmp(argv[curArg],"--outputs")!=0){
+    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+
+
+    unsigned int offsetBytes = addr-GPIO_BASE;
+    unsigned int regOut = *(unsigned int*)(ptr+offsetBytes);
+    
+    printf("Read Reg %s (addr:%x) value:%d\n",argv[curArg],addr,regOut);
+
+    if(!first){fprintf(regFile,",");}
+    first=false;
+    fprintf(regFile,"%s=%d",argv[curArg],regOut);
+    curArg+=2;
+  }
+
+  fprintf(regFile,"}");
+  fclose(regFile);
 
   return curArg;
 }
@@ -380,7 +415,8 @@ int main(int argc, char *argv[]) {
       printf("Done after %f seconds, %f cycles (@ %f MHZ)\n", len, (MHZ*HZ)*len,MHZ);
     }
   }
-  
+
+  curArg = getRegisters( curArg, argv, gpioptr, gpio_addr );
   writeOutputs(curArg,argc,argv,ptr);
 
   printf("conf: start: %d, done: %d\n", conf->start, conf->done);
