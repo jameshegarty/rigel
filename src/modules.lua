@@ -3353,6 +3353,8 @@ modules.underflowNew = memoize(function(ty,cycles,count)
   res.delay=0
   res.name = sanitize("UnderflowNew_"..tostring(ty).."_cycles"..tostring(cycles).."_CNT"..tostring(count))
 
+  if terralib~=nil then res.terraModule = MT.underflowNew( res, ty, cycles, count ) end
+  
   local DEADCYCLES = 1024;
   
   function res.makeSystolic()
@@ -3391,9 +3393,6 @@ module ]]..res.name..[[(input wire CLK, input wire reset, input wire []]..(ty:ve
 
   assign ready = ready_downstream || outtaTime;
 
-  reg [31:0] CNT = 32'd0;
-  
-
   always @(posedge CLK) begin
     if (reset) begin
       remainingItems <= 32'd0;
@@ -3417,18 +3416,9 @@ module ]]..res.name..[[(input wire CLK, input wire reset, input wire []]..(ty:ve
       if (remainingCycles>32'd0) begin remainingCycles <= remainingCycles-32'd1; end
     end
 
-//    if(lastItem || deadCycles>32'd0 || outtaTime ) begin
-    if( lastItem || lastWriteOut || firstItem || outtaTime ) begin
+//    if( lastItem || lastWriteOut || firstItem || outtaTime ) begin
 //      $display("firstItem:%d lastItem:%d lastWriteOut:%d deadCycles:%d validOut:%d outtaTime:%d remainingItems:%d remainingCycles:%d readyDS:%d validIn:%d CNT:%d", firstItem, lastItem, lastWriteOut, deadCycles,validOut,outtaTime,remainingItems, remainingCycles, ready_downstream, validIn, CNT);
-    end
-  end
-
-  always @(posedge CLK) begin
-    if (reset) begin
-      CNT <= 32'd0;
-    end else begin
-      if (ready_downstream && validOut) begin CNT<=CNT+32'd1; end
-    end
+//    end
   end
 
 endmodule
