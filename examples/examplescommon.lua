@@ -375,6 +375,28 @@ C.removeMSBs = memoize(function(A,bits)
 end)
 
 -----------------------------
+C.removeLSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.removeLSBs: type should be rigel type")
+  err( type(bits)=="number","C.removeLSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.uint(A.precision-bits)
+  elseif A:isInt() then
+    J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.int(A.precision-bits)
+    assert(false) -- NYI
+  else
+    J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
+  return mod
+end)
+
+-----------------------------
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
@@ -1003,7 +1025,7 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,X)
   local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 end)
 
 -------------

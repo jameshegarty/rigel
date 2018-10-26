@@ -175,20 +175,21 @@ return sliceRamCache[bits]
   return ram
 end
 
-modules.fifo = memoize(function(ty,items,verbose)
+modules.fifo = memoize(function(ty,items,verbose,nostall)
   err(types.isType(ty),"fifo type must be type")
   err(type(items)=="number","fifo items must be number")
   err(type(verbose)=="boolean","fifo verbose must be bool")
   err( items>1,"fifo: items must be >1")
   
-  local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items) )
+  local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items.."_nostall"..tostring(nostall)) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
   local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("writeAddr"))
   local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("readAddr"))
   local bits = ty:verilogBits()
   local bytes = bits/8
-
+  bytes = math.ceil(bytes) -- bits may not be byte aligned
+  
   local ram, rams
   if items <= 128 and J.isPowerOf2(bits) then
     ram = fifo:add( sliceRamGen(bits):instantiate("ram") )
@@ -225,7 +226,7 @@ modules.fifo = memoize(function(ty,items,verbose)
   local pushCE = S.CE("CE_push")
   local pushBack = fifo:addFunction( Ssugar.lambdaConstructor("pushBack",ty,"pushBack_input" ) )
   pushBack:setCE(pushCE)
-  local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true ):instantiate("pushBackAssert") )
+  local pushBackAssert = fifo:add( systolic.module.assert( "attempting to push to a full fifo", true, nostall~=true ):instantiate("pushBackAssert") )
   local hasSpace = S.lt( fsize, S.constant(items-2,types.uint(addrBits)) ):disablePipelining() -- note that this is different than ready
   pushBack:addPipeline( pushBackAssert:process( hasSpace )  )
   pushBack:addPipeline( writeAddr:setBy(systolic.constant(true, types.bool()) ) )
@@ -237,7 +238,9 @@ modules.fifo = memoize(function(ty,items,verbose)
       pushBack:addPipeline( rams[b]:write( S.tuple{ S.cast(writeAddr:get(),types.uint(7)), S.bitSlice(pushBack:getInput(),b-1,b-1)} )  )
     end
   else
-    pushBack:addPipeline( ram:writeAndReturnOriginal( S.tuple{ S.cast(writeAddr:get(),types.uint(addrBits-1)), S.cast(pushBack:getInput(),types.bits(bits))} )  )
+    local tinp = S.cast(pushBack:getInput(),types.bits(bits))
+    tinp = S.cast(tinp,types.bits(bytes*8))
+    pushBack:addPipeline( ram:writeAndReturnOriginal( S.tuple{ S.cast(writeAddr:get(),types.uint(addrBits-1)), tinp} )  )
   end
 
   -- pushBackReset
@@ -267,7 +270,10 @@ modules.fifo = memoize(function(ty,items,verbose)
     popOutput = systolic.cast( systolic.tuple(bitfield), ty)
     popFront:setOutput( popOutput, "popFront" )
   else
-    popOutput = S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),ty)
+    popOutput = S.cast(ram:read(S.cast(readAddr:get(),types.uint(addrBits-1))),types.uint(bytes*8))
+    popOutput = S.cast(popOutput,types.uint(bits))
+    popOutput = S.cast(popOutput,types.bits(bits))
+    popOutput = S.cast(popOutput,ty)
     popFront:setOutput( popOutput, "popFront" )
   end
 
