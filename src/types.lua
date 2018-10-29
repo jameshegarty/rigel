@@ -601,14 +601,14 @@ end
 -- check that v is a lua value convertable to this type
 function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
-    err( type(v)=="table", "if type is an array, v must be a table")
-    err( #v==J.keycount(v), "lua table is not an array (unstructured keys)")
-    err( #v==self:channels(), "incorrect number of channels, is "..(#v).." but should be "..self:channels() )
+    err( type(v)=="table", "CheckLuaValue: if type is an array ("..tostring(self).."), value must be a table")
+    err( #v==J.keycount(v), "CheckLuaValue: lua table is not an array (unstructured keys)")
+    err( #v==self:channels(), "CheckLuaValue: incorrect number of channels, is "..(#v).." but should be "..self:channels() )
     for i=1,#v do
       self:arrayOver():checkLuaValue(v[i])
     end
   elseif self:isTuple() then
-    err( type(v)=="table", "if type is "..tostring(self)..", v must be a table")
+    err( type(v)=="table", "if type is "..tostring(self)..", value must be a table")
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() then
@@ -739,6 +739,12 @@ function types.Handshake(A)
   err(types.isType(A),"Handshake: argument should be type")
   err(types.isBasic(A),"Handshake: argument should be basic type, but is: "..tostring(A))
   return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
+end
+
+function types.HandshakeVarlen(A)
+  err(types.isType(A),"HandshakeVarlen: argument should be type")
+  err(types.isBasic(A),"HandshakeVarlen: argument should be basic type, but is: "..tostring(A))
+  return types.named("HandshakeVarlen("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "Handshake", {A=A} )
 end
 
 --[=[

@@ -1458,6 +1458,55 @@ function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForVa
   return MT.new(Underflow)
 end
 
+
+function MT.underflowNew(res, ty, cycles, count)
+  local struct UnderflowNew{ready:bool; readyDownstream:bool; remainingItems:uint32; remainingCycles:uint32; deadCycles:uint32 }
+
+  local DEADCYCLES = 1024
+  
+  terra UnderflowNew:process( inp : &rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+    var outtaTime = (self.remainingCycles<=self.remainingItems) and (self.remainingItems>1)
+    var firstItem = self.remainingItems==0 and self.remainingCycles==0 and self.deadCycles==0 and valid(inp)
+    var lastWriteOut = self.deadCycles==1 and self.remainingCycles==0
+
+    valid(out) = (self.remainingItems>1 and valid(inp)) or firstItem or outtaTime or lastWriteOut
+    var lastItem = self.remainingItems==2 and valid(out)
+    
+    if valid(inp) then
+      data(out) = data(inp)
+    else
+      data(out) = [ty:valueToTerra(ty:fakeValue())]
+    end
+
+    if self.readyDownstream then
+      if firstItem then
+        self.remainingItems = count-1
+        self.remainingCycles = cycles-1
+      elseif lastItem then
+        self.remainingItems = 1
+        self.deadCycles = DEADCYCLES
+        if self.remainingCycles>0 then self.remainingCycles = self.remainingCycles-1 end
+      else
+        if self.deadCycles>0 and self.remainingCycles==0 then self.deadCycles = self.deadCycles-1 end
+        if self.remainingCycles>0 then self.remainingCycles = self.remainingCycles-1 end
+        if valid(out) then self.remainingItems = self.remainingItems-1 end
+      end
+    else
+      if self.remainingCycles>0 then self.remainingCycles = self.remainingCycles-1 end
+    end
+  end
+
+  terra UnderflowNew:reset()
+    self.remainingItems = 0
+    self.remainingCycles = 0
+    self.deadCycles = 0
+  end
+
+  terra UnderflowNew:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
+
+  return MT.new(UnderflowNew)
+end
+
 function MT.cycleCounter( res, A, count )
   local struct CycleCounter {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32}
   terra CycleCounter:reset() self.cycles=0; self.outputCount=0 end

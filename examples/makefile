@@ -1,7 +1,7 @@
 BUILDDIR ?= out
 
 # soc_flipWrite.lua 
-SRCS_SOC = soc_simple.lua soc_2in.lua soc_convgen.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua
+SRCS_SOC = soc_simple.lua soc_2in.lua soc_convgen.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
@@ -10,6 +10,12 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
 
 ZU9VIVADOSOCBITS = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SRCS_SOC))
+
+ZU9VIVADOSOC = $(ZU9VIVADOSOCBITS)
+ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.raw,$(SRCS_SOC))
+ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bmp,$(SRCS_SOC))
+ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.correct.txt,$(SRCS_SOC))
+ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.regcorrect.txt,$(SRCS_SOC))
 
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out harness.lua examplescommon.lua pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_SOC) harnessSOC.lua,$(SRCS))
@@ -260,6 +266,8 @@ zu9vivado: $(ZU9VIVADO)
 zu9vivadobits: $(ZU9VIVADOBITS)
 
 zu9vivadoSOCbits: $(ZU9VIVADOSOCBITS)
+
+zu9vivadoSOC: $(ZU9VIVADOSOC)
 
 axiverilog: $(AXIVERILOG)
 	touch $(BUILDDIR)/axiverilog_done.txt

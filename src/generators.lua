@@ -49,6 +49,7 @@ generators.PartitionBits = R.newGenerator("generators","PartitionBits",{"type","
 generators.Rshift = R.newGenerator("generators","Rshift",{"type","rate"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
 generators.AddMSBs = R.newGenerator("generators","AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
 generators.RemoveMSBs = R.newGenerator("generators","RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
+generators.RemoveLSBs = R.newGenerator("generators","RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
 generators.Index = R.newGenerator("generators","Index",{"type","rate"},{"number","size"},
                                   function(args)
                                     if args.size~=nil then
@@ -85,11 +86,11 @@ function(args)
   return RM.packTuple(args.type.params.list,args.bool)
 end)
 
-generators.FIFO = R.newGenerator("generators","FIFO",{"type","number","rate"},{},
+generators.FIFO = R.newGenerator("generators","FIFO",{"type","number","rate"},{"bool"},
 function(args)
   J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
   local ty = R.extractData(args.type)
-  return C.fifo( ty, args.number )
+  return C.fifo( ty, args.number, args.bool )
 end)
   
 generators.Add = R.newGenerator("generators","Add",{"type","rate"},{"bool","number"},
@@ -271,7 +272,7 @@ function(args)
     err(false,"generators.Downsample: unsupported input type: "..tostring(args.type))
   end
 end)
-
+                                       
 generators.PosSeq = R.newGenerator("generators","PosSeq",{"size","number"},{"type"},
 function(args)
   if args.type~=nil then

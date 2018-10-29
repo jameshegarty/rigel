@@ -835,7 +835,7 @@ modules.map = memoize(function( f, W, H, X )
     res.inputType = types.array2d( f.inputType, W, H )
     res.outputType = types.array2d( f.outputType, W, H )
     err( type(f.stateful)=="boolean", "Missing stateful annotation "..tostring(f))
-    print("INNER STATEFUL",f.name,f.stateful)
+
     res.stateful = f.stateful
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
     res.delay = f.delay
@@ -2915,7 +2915,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local bytes = (size*A:verilogBits())/8
 
-  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes))
+  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall))
 
   local fifo
   if csimOnly then
@@ -2925,7 +2925,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
 
-      local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE):instantiate("FIFO") )
+      local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
 
       --------------
       -- basic -> R
@@ -3339,6 +3339,108 @@ modules.underflow = memoize(function( A, count, cycles, upstream, tooSoonCycles,
   return rigel.newFunction( res )
 end)
 
+
+modules.underflowNew = memoize(function(ty,cycles,count)
+  err( types.isType(ty), "underflowNew: type must be rigel type" )
+  err( types.isBasic(ty),"underflowNew: input should be basic, but is: "..tostring(ty) )
+  
+  local res = {kind="underflowNew"}
+  res.inputType = types.Handshake(ty)
+  res.outputType = types.Handshake(ty)
+  res.sdfInput = SDF{1,1}
+  res.sdfOutput = SDF{1,1}
+  res.stateful=true
+  res.delay=0
+  res.name = sanitize("UnderflowNew_"..tostring(ty).."_cycles"..tostring(cycles).."_CNT"..tostring(count))
+
+  if terralib~=nil then res.terraModule = MT.underflowNew( res, ty, cycles, count ) end
+  
+  local DEADCYCLES = 1024;
+  
+  function res.makeSystolic()
+    local vstring = [[
+module ]]..res.name..[[(input wire CLK, input wire reset, input wire []]..(ty:verilogBits())..[[:0] process_input, output wire []]..(ty:verilogBits())..[[:0] process_output, input wire ready_downstream, output wire ready);
+  parameter INSTANCE_NAME="INST";
+
+
+
+  reg [31:0] remainingItems = 32'd0;
+  reg [31:0] remainingCycles = 32'd0;
+  reg [31:0] deadCycles = 32'd0;
+
+  wire validIn;
+  assign validIn = process_input[]]..(ty:verilogBits())..[[];
+  
+  wire outtaTime;
+  assign outtaTime =  (remainingCycles <= remainingItems) && (remainingItems>32'd1);
+
+  wire firstItem;
+  assign firstItem = remainingItems==32'd0 && remainingCycles==32'd0 && deadCycles==32'd0 && validIn;
+
+  // write out a final item in exactly cycles+DEADCYCLES cycles
+  wire lastWriteOut;
+  assign lastWriteOut = (deadCycles==32'd1) && (remainingCycles==32'd0);
+
+  wire validOut;
+  assign validOut = (remainingItems>32'd1 && validIn) || firstItem || outtaTime || lastWriteOut;
+  wire []]..(ty:verilogBits()-1)..[[:0] outData;
+  assign outData = validIn?process_input[]]..(ty:verilogBits()-1)..[[:0]:(]]..(ty:verilogBits())..[['d0);
+
+  wire lastItem;
+  assign lastItem = remainingItems==32'd2 && validOut;
+
+  assign process_output = { validOut, outData};
+
+  assign ready = ready_downstream || outtaTime;
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      remainingItems <= 32'd0;
+      remainingCycles <= 32'd0;
+      deadCycles <= 32'd0;
+    end else if (ready_downstream) begin
+      if(firstItem) begin
+        remainingItems <= 32'd]]..(count-1)..[[;
+        remainingCycles <= 32'd]]..(cycles-1)..[[;
+      end else if(lastItem) begin
+        remainingItems <= 32'd1;
+        deadCycles <= 32'd]]..DEADCYCLES..[[;
+        if (remainingCycles>32'd0) begin remainingCycles <= remainingCycles-32'd1; end
+      end else begin
+        if (deadCycles>32'd0 && remainingCycles==32'd0) begin deadCycles <= deadCycles-32'd1; end
+        if (remainingCycles>32'd0) begin remainingCycles <= remainingCycles-32'd1; end
+        if (validOut) begin remainingItems <= remainingItems - 32'd1; end
+      end
+    end else begin
+      // count down cycles even if not ready
+      if (remainingCycles>32'd0) begin remainingCycles <= remainingCycles-32'd1; end
+    end
+
+//    if( lastItem || lastWriteOut || firstItem || outtaTime ) begin
+//      $display("firstItem:%d lastItem:%d lastWriteOut:%d deadCycles:%d validOut:%d outtaTime:%d remainingItems:%d remainingCycles:%d readyDS:%d validIn:%d CNT:%d", firstItem, lastItem, lastWriteOut, deadCycles,validOut,outtaTime,remainingItems, remainingCycles, ready_downstream, validIn, CNT);
+//    end
+  end
+
+endmodule
+]]
+
+    local fns = {}
+    fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()))
+
+    local inp = S.parameter("process_input",types.lower(res.inputType))
+    fns.process = S.lambda("process",inp,S.tuple{ S.constant(ty:fakeValue(),ty), S.constant(true,types.bool()) }, "process_output")
+    
+    local downstreamReady = S.parameter("ready_downstream", types.bool())
+    fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
+    
+    local ToVarlenSys = systolic.module.new(res.name, fns, {}, true,nil, vstring,{process=0,reset=0})
+    
+    return ToVarlenSys
+  end
+  
+  return rigel.newFunction(res)
+
+end)
 
 -- record the # of cycles needed to complete the computation, and write it into the last axi burst
 -- Note that this module _does_not_ wait until it sees the first token to start counting. It
@@ -4634,5 +4736,72 @@ modules.counter = memoize(function(ty,N)
   return rigel.newFunction(res)
   
 end)
+
+modules.toVarlen = memoize(
+  function(ty,cnt)
+    err( types.isType(ty), "toVarlen: type must be rigel type" )
+    err( types.isBasic(ty),"toVarlen: input should be basic" )
+    err(type(cnt)=="number", "toVarlen: cnt must be number")
+    
+    local res = {kind="toVarlen"}
+    res.inputType = types.Handshake(ty)
+    res.outputType = types.HandshakeVarlen(ty)
+    res.sdfInput = SDF{1,1}
+    res.sdfOutput = SDF{1,1}
+    res.stateful=true
+    res.delay=0
+    res.name = sanitize("ToVarlen_"..tostring(ty).."_"..tostring(cnt))
+
+    function res.makeSystolic()
+      local vstring = [[
+module ]]..res.name..[[(input wire CLK, input wire reset, input wire []]..(ty:verilogBits())..[[:0] process_input, output wire []]..(ty:verilogBits()+1)..[[:0] process_output, input wire ready_downstream, output wire ready);
+  parameter INSTANCE_NAME="INST";
+
+  // value 0 means we're not in a frame (waiting for data)
+  reg [31:0] count = 32'd0;
+  reg []]..(ty:verilogBits())..[[:0] pbuf; // top bit is valid bit
+
+  assign ready = ready_downstream;
+  assign process_output[]]..(ty:verilogBits())..[[:0] = pbuf;
+  assign process_output[]]..(ty:verilogBits()+1)..[[] = (count>32'd0) || pbuf[]]..(ty:verilogBits())..[[];
+
+  always @(posedge CLK) begin
+    if(reset) begin
+      count <= 32'd0;
+      pbuf <= ]]..(ty:verilogBits()+1)..[['d0;
+    end else begin
+      if (ready_downstream) begin
+        pbuf <= process_input;
+
+        if (process_input[]]..(ty:verilogBits())..[[]) begin
+          if (count==32'd]]..(cnt-1)..[[) begin
+            count <= 32'd0;
+          end else begin
+            count <= count+32'd1;
+          end
+        end
+      end
+    end
+  end
+endmodule
+
+]]
+
+      local fns = {}
+      fns.reset = S.lambda( "reset", S.parameter("resetinp",types.null()), S.null(), "resetout",nil,S.parameter("reset",types.bool()))
+
+      local inp = S.parameter("process_input",types.lower(res.inputType))
+      fns.process = S.lambda("process",inp,S.tuple{S.constant(ty:fakeValue(),ty),S.constant(true,types.bool()),S.constant(true,types.bool())}, "process_output")
+
+      local downstreamReady = S.parameter("ready_downstream", types.bool())
+      fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )
+      
+      local ToVarlenSys = systolic.module.new(res.name, fns, {}, true,nil, vstring,{process=0,reset=0})
+
+      return ToVarlenSys
+    end
+
+    return rigel.newFunction(res)
+  end)
 
 return modules

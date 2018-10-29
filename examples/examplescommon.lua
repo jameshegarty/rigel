@@ -375,6 +375,28 @@ C.removeMSBs = memoize(function(A,bits)
 end)
 
 -----------------------------
+C.removeLSBs = memoize(function(A,bits)
+  err( types.isType(A),"C.removeLSBs: type should be rigel type")
+  err( type(bits)=="number","C.removeLSBs: bits should be number or value")
+
+  local otype
+  if A:isUint() then
+    J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.uint(A.precision-bits)
+  elseif A:isInt() then
+    J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
+    otype = types.int(A.precision-bits)
+    assert(false) -- NYI
+  else
+    J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
+  end
+  
+  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
+  return mod
+end)
+
+-----------------------------
 C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
@@ -1003,7 +1025,7 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,X)
   local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 end)
 
 -------------
@@ -1078,6 +1100,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   err( type(W)=="number", "C.downsampleSeq: W must be number")
   err( type(H)=="number", "C.downsampleSeq: H must be number")
   err( type(T)=="number", "C.downsampleSeq: T must be number")
+  err( T>0, "C.downsampleSeq: T must be >0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
   err( type(scaleY)=="number", "C.downsampleSeq: scaleY must be number")
   err( scaleX>=1, "C.downsampleSeq: scaleX must be >=1")
@@ -1816,6 +1839,29 @@ C.AXIReadPar = memoize(
     end
     
     return res
+  end)
+
+-- collect the number of tokens seen, and write it to a global
+C.tokenCounterReg = memoize(
+  function( A, regGlobal, N)
+    J.err( types.isType(A),"tokenCounterReg: a must be type" )
+    J.err( A:is("Handshake"),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
+    J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
+
+    if N==nil then
+      N = math.pow(2,32)-1
+    end
+      
+    local G = require "generators"
+
+    return G.Module{A,
+      function(inp)
+        local inpb = G.FanOut{2}(inp)
+        local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
+        local cnt = G.HS{RM.counter(types.uint(32),N)}(ct)
+        cnt = G.HS{G.Add{1}}(cnt)
+        return R.statements{inpb[0],R.writeGlobal("wg",regGlobal,cnt)}
+      end}
   end)
 
 return C
