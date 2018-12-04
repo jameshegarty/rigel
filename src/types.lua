@@ -617,9 +617,10 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="number", "int must be number")
     err( v==math.floor(v), "integer systolic constant must be integer")
   elseif self:isUint() or self:isBits() then
-    err( type(v)=="number", "uint/bits must be number but is "..type(v).." "..tostring(v))
+    err( type(v)=="number", "checkLuaValue: uint/bits must be number but is "..type(v).." "..tostring(v))
     err( v>=0, "uint/bits const must be positive, but value is: "..tostring(v))
     err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
+    err( v==math.floor(v), "uint constant must be integer, but is: "..tostring(v) )
   elseif self:isBool() then
     err( type(v)=="boolean", "bool must be lua bool")
   elseif self:isNamed() then

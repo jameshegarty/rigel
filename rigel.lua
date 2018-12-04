@@ -426,19 +426,25 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
   err( SDFRate.isSDFRate(Isdf), "sdfTransfer: input argument should be SDF rate" )
   err( #self.sdfInput == #Isdf, "# of SDF streams doesn't match. Was "..(#Isdf).." but expected "..(#self.sdfInput)..", "..loc )
 
-  local R
+  local Uniform = require "uniform"
+
+  local ratio
   for i=1,#self.sdfInput do
-    local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
-    thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
-    if R==nil then R=thisR end
-    consistantRatio = consistantRatio and (R[1]==thisR[1] and R[2]==thisR[2])
+    local thisR = { Uniform(Isdf[i][1],types.uint(64))*Uniform(self.sdfInput[i][2],types.uint(64)), Uniform(Isdf[i][2],types.uint(64))*Uniform(self.sdfInput[i][1],types.uint(64)) } -- I/self.sdfInput ratio
+    --thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
+    if ratio==nil then
+      ratio=thisR
+    else
+      consistantRatio = consistantRatio and ( (Uniform(ratio[1])*Uniform(thisR[2])):eq(ratio[2]*thisR[1]):assertAlwaysTrue() )
+    end
   end
 
   err( consistantRatio, "SDFTransfer: ratio is not consistant, Input rate: "..tostring(Isdf).." module rate: "..tostring(self.sdfInput) )
   
   local res = {}
   for i=1,#self.sdfOutput do
-    local On, Od = J.simplify(self.sdfOutput[i][1]*R[1], self.sdfOutput[i][2]*R[2])
+    --local On, Od = J.simplify(self.sdfOutput[i][1]*ratio[1], self.sdfOutput[i][2]*ratio[2])
+    local On, Od = Uniform(self.sdfOutput[i][1],types.uint(64))*ratio[1], Uniform(self.sdfOutput[i][2],types.uint(64))*ratio[2]
     table.insert( res, {On,Od} )
   end
 
@@ -516,8 +522,8 @@ function darkroom.newFunction(tab,X)
   err( type(tab.name)=="string", "rigel.newFunction: name must be string" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( darkroom.SDF==false or tab.sdfInput:maxnumber()<=1, "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
-  err( darkroom.SDF==false or tab.sdfOutput:maxnumber()<=1, "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
+  err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
+  err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
@@ -772,9 +778,12 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
         
         local res 
 
+        local Uniform = require "uniform"
+        
         if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+--        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
+        elseif highest and r~=nil and (Uniform(r[1],types.uint(64))*Uniform(__sdfExtremeRateCache[self][highest][1][2],types.uint(64)) ):ge(Uniform(r[2],types.uint(64))*Uniform(__sdfExtremeRateCache[self][highest][1][1],types.uint(64))):assertAlwaysTrue() then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
         elseif highest==false and r~=nil and SDFRate.fracToNumber(r)<=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}

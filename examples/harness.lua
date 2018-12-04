@@ -6,6 +6,7 @@ local types = require("types")
 local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
+local Uniform = require "uniform"
 
 local H = {}
 

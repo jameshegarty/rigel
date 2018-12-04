@@ -5,6 +5,7 @@ local SS = Ssugar
 local J = require "common"
 local memoize = J.memoize
 local err = J.err
+local Uniform = require "uniform"
 
 local S=systolic
 --statemachine = require("statemachine")
@@ -61,16 +62,17 @@ end)
 -- The reason for this is if we module the valid bit based on the condition, the valid bit may go into a undefined state.
 -- (ie at init time the condition will be unstable garbage or X's). This allows us to not mess with the valid bit,
 -- but still conditionally increment.
-modules.incIfWrap=memoize(function( ty, limit, inc )
+modules.incIfWrap=memoize(function( ty, olimit, inc, X )
   err(types.isType(ty), "incIfWrap: type must be rigel type")
-  err(type(limit)=="number", "incIfWrap: limit must be number")
-  err(limit<math.pow(2,ty:verilogBits()), "incIfWrap: limit out of bounds of type!")
+  local limit = Uniform(olimit,ty)
+  err( X==nil, "incIfWrap: too many arguments" )
+  
   local incv = inc or 1
   local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
   
-  local nextValue = S.select( S.eq(S.index(swinp,0), S.constant(limit,ty)), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
+  local nextValue = S.select( S.eq(S.index(swinp,0), limit:toSystolic() ), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
   local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..limit.."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(olimit).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
 end)
 
 

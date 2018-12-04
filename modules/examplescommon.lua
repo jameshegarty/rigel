@@ -10,6 +10,7 @@ local memoize = J.memoize
 local err = J.err
 local f = require "fixed_new"
 local SDF = require "sdf"
+local Uniform = require "uniform"
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
@@ -1485,18 +1486,25 @@ end
 --    -> returns the # of total bits that actually need to be read/written for a full transaction (will be >= minimums)
 --    -> in format totalInputBits,totalOutputBits
 -- returned input/output bytes must have input/output factor as a factor
+--   i.e. inoutBits % inputFactor==0 and inoutBits % outputFactor==0
 C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, inputFactor, outputBitsPerCyc, minTotalOutputBits, outputFactor, X)
   assert(type(inputBitsPerCyc)=="number")
   assert(type(outputBitsPerCyc)=="number")
-  assert(type(minTotalInputBits)=="number")
-  assert(type(minTotalOutputBits)=="number")
+  --assert(type(minTotalInputBits)=="number")
+  --J.err(type(minTotalOutputBits)=="number","minTotalOutputBits should be number, but is: "..tostring(minTotalOutputBits))
+  minTotalInputBits = Uniform(minTotalInputBits)
+  minTotalOutputBits = Uniform(minTotalOutputBits)
+  
   assert(type(inputFactor)=="number")
   assert(type(outputFactor)=="number")
-  err(minTotalInputBits%inputBitsPerCyc==0,"generalizedChangeRate: inputBitsPerCycle ("..inputBitsPerCyc..") must divide minTotalInputBits ("..minTotalInputBits..")")
-  assert(minTotalOutputBits%outputBitsPerCyc==0)
+  err( (minTotalInputBits%Uniform(inputBitsPerCyc)):eq(0):assertAlwaysTrue(),"generalizedChangeRate: inputBitsPerCycle ("..inputBitsPerCyc..") must divide minTotalInputBits ("..tostring(minTotalInputBits)..")")
+  err( (minTotalOutputBits%Uniform(outputBitsPerCyc)):eq(0):assertAlwaysTrue(), "generalizedChangeRate: outputBitsPerCycle ("..outputBitsPerCyc..") must divide minTotalOutputBits ("..tostring(minTotalOutputBits)..")")
   assert(X==nil)
 
   local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
+
+  print("hf",name)
+  
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = math.max(minTotalInputBits,minTotalOutputBits)
 
@@ -1515,14 +1523,29 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,N,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      local inoutBits = minTotalInputBits:max(minTotalOutputBits)
+      local bts
+      if (inoutBits%Uniform(inputBitsPerCyc)):eq(0):assertAlwaysTrue() then
+        bts = inoutBits
+      else
+        bts = J.upToNearest(inputBitsPerCyc,inoutBits)
+      end
+      
       print("BTS",bts,inputFactor,outputFactor)
-      bts = J.upToNearest(inputFactor,bts)
-      bts = J.upToNearest(outputFactor,bts)
+
+      if (inoutBits%Uniform(inputFactor)):eq(0):assertAlwaysTrue() then
+      else
+        bts = J.upToNearest(inputFactor,bts)
+      end
+
+      if (inoutBits%Uniform(outputFactor)):eq(0):assertAlwaysTrue() then
+      else
+        bts = J.upToNearest(outputFactor,bts)
+      end
       print("BTS",bts)
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      --assert( bts%inputFactor==0 )
+      --assert( bts%outputFactor==0 )
 
       return {RM.lambda(name,inp,out),bts}
     else
@@ -1864,4 +1887,70 @@ C.tokenCounterReg = memoize(
       end}
   end)
 
+-- name: name of new (renamed) module
+-- renameTable: hash map from port_on_Mod->port_on_new_module.
+--   port_on_new_module can either be a string (add port automatically), or {"SV","NEW_NAME"}, which will not introduce a port (allows for wiring to SV interfaces. then you need to add the port manually)
+C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
+
+  local portlist = {}
+  local modinst = {}
+
+  local globalRename = {}
+  for k,v in pairs(renameTable) do
+    if k=="CLK" or k=="reset" or k=="ready_downstream" then
+      table.insert(portlist,"input wire "..v)
+      table.insert(modinst,"."..k.."("..v..")")
+    elseif k=="process_input" then
+      local ty = types.lower(Mod.inputType)
+      if ty:verilogBits()==1 then
+        table.insert(portlist,"input wire "..v)
+      else
+        assert(false)
+      end
+      table.insert(modinst,"."..k.."("..v..")")
+    elseif k=="process_output_valid" then
+      assert(types.isHandshake(Mod.outputType))
+      local ty = types.lower(Mod.outputType)
+      table.insert(portlist,"output wire "..v)
+      table.insert(portlist,"output wire ["..tostring(ty:verilogBits()-2)..":0] "..renameTable.process_output_data)
+      table.insert(modinst,".process_output({"..v..","..renameTable.process_output_data.."})")
+    else
+      globalRename[k] = v
+    end
+  end
+
+  for k,v in pairs(Mod.globals) do
+    local ty = types.lower(k.type)
+
+    local portname = k.name
+    if type(globalRename[k.name])=="string" then portname=globalRename[k.name] end
+    if type(globalRename[k.name])=="table" then portname=globalRename[k.name][2] end
+
+    if type(globalRename[k.name])~="table" then 
+      if ty:verilogBits()==1 then
+        table.insert(portlist,k.direction.." wire "..k.name)
+      else
+        table.insert(portlist,k.direction.." wire ["..tostring(ty:verilogBits()-1)..":0] "..k.name)
+      end
+    end
+    
+    table.insert(modinst,"."..k.name.."("..portname..")")
+  end
+
+  if extraPortDefString~=nil then table.insert(portlist,extraPortDefString) end
+  
+  local vstr = [[module ]]..name..[[(]]..table.concat(portlist,", ")..[[);
+
+]]..Mod.name.." inst("..table.concat(modinst,", ")..[[);
+
+]]
+  if extraDefs~=nil then vstr = vstr..extraDefs end
+  
+  vstr = vstr..[[
+
+endmodule]]
+
+  return RM.liftVerilog(name,Mod.inputType,Mod.outputType,vstr,Mod.globals,Mod.globalMetadata,Mod.sdfInput,Mod.sdfOutput, {Mod})
+end
+  
 return C

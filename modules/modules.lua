@@ -9,6 +9,7 @@ local J = require "common"
 local memoize = J.memoize
 local err = J.err
 local SDF = require "sdf"
+local Uniform = require "uniform"
 
 local verilogSanitize = J.verilogSanitize
 local sanitize = verilogSanitize
@@ -1706,9 +1707,9 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   res.stateful = Schedule.stateful
   res.name = sanitize("Serialize_"..tostring(A).."_"..#inputRates)
 
-  local sdfSum = inputRates[1][1]/inputRates[1][2]
-  for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
-  err(sdfSum==1, "inputRates must sum to 1")
+  local sdfSum = SDFRate.sum(inputRates)
+  --for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
+  err( Uniform(sdfSum[1]):eq(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to 1, but are: "..tostring(SDF(inputRates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
 
   -- the output rates had better be the same as the inputs!
   res.sdfInput = SDF(inputRates)
@@ -1850,10 +1851,10 @@ modules.flattenStreams = memoize( function( A, rates, X )
   res.outputType = rigel.Handshake(A)
   res.stateful = false
 
-  local sdfSum = rates[1][1]/rates[1][2]
-  for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
-  err(sdfSum==1, "rates must sum to 1")
-
+  local sdfSum = SDFRate.sum(rates) --rates[1][1]/rates[1][2]
+  --for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
+  err( Uniform(sdfSum[1]):eq(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to 1, but are: "..tostring(SDF(rates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
+  
   res.sdfInput = SDF(rates)
   res.sdfOutput = SDF{1,1}
   res.name = sanitize("FlattenStreams_"..tostring(A).."_"..#rates)
@@ -1974,14 +1975,14 @@ end)
 -- output type: {uint16,uint16}[T]
 -- asArray: return output as u16[2][T] instead
 modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
-  err(type(W)=="number","posSeq: W must be number")
-  err(type(H)=="number","posSeq: H must be number")
-  err(type(T)=="number","posSeq: T must be number")
-  err(W>0, "posSeq: W must be >0");
-  err(H>0, "posSeq: H must be >0");
-  err(T>=0, "posSeq: T must be >=0");
   if bits==nil then bits=16 end
   err( type(bits)=="number", "posSeq: bits should be number, but is: "..tostring(bits))
+  W = Uniform(W,types.uint(bits))
+  err(type(H)=="number","posSeq: H must be number")
+  err(type(T)=="number","posSeq: T must be number")
+  err( W:gt(0):assertAlwaysTrue(), "posSeq: W must be >0, but is: "..tostring(W));
+  err(H>0, "posSeq: H must be >0");
+  err(T>=0, "posSeq: T must be >=0");
   if framed==nil then framed=false end
   err( type(framed)=="boolean", "posSeq: framed should be boolean")
   if asArray==nil then asArray=false end
@@ -2003,13 +2004,13 @@ modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 0
-  res.name = sanitize("PosSeq_W"..W.."_H"..H.."_T"..T.."_bits"..tostring(bits))
+  res.name = sanitize("PosSeq_W"..tostring(W).."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T,asArray) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-math.max(T,1), math.max(T,1) ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-Uniform(math.max(T,1),types.uint(bits)), math.max(T,1) ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
 
     local printInst
@@ -2018,7 +2019,7 @@ modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
       printInst = systolicModule:add( S.module.print( types.tuple{types.uint(bits),types.uint(bits)}, "x %d y %d", true):instantiate("printInst") ) 
     end
     
-    local incY = S.eq( posX:get(), S.constant(W-math.max(T,1),types.uint(bits))  ):disablePipelining()
+    local incY = S.eq( posX:get(), (W-Uniform(math.max(T,1),types.uint(bits))):toSystolic()  ):disablePipelining()
     
     local out = {S.tuple{posX:get(),posY:get()}}
     for i=1,T-1 do
@@ -2059,14 +2060,16 @@ end)
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
 modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, bits, X )
+  if bits==nil then bits=16 end
+  err( type(bits)=="number", "liftXYSeq: bits must be number or nil")
+
   err( type(name)=="string", "liftXYSeq: name must be string" )
   err( type(generatorStr)=="string", "liftXYSeq: generatorStr must be string" )
   err( rigel.isFunction(f), "liftXYSeq: f must be function")
-  err( type(W)=="number", "liftXYSeq: W must be number")
+  --err( type(W)=="number", "liftXYSeq: W must be number")
+  W=Uniform(W,types.uint(bits))
   err( type(H)=="number", "liftXYSeq: H must be number")
   err( type(T)=="number", "liftXYSeq: T must be number")
-  if bits==nil then bits=16 end
-  err( type(bits)=="number", "liftXYSeq: bits must be number or nil")
   err( X==nil, "liftXYSeq: too many arguments")
 
   local inputType = f.inputType.list[2]
@@ -2103,29 +2106,34 @@ end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
+
+  local BITS = 32
+
   err( types.isType(A), "cropSeq: type must be rigel type ")
   err( rigel.isBasic(A),"cropSeq: expects basic type, but is: "..tostring(A))
-  err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
+  W = Uniform(W,types.uint(BITS))
+  err( W:gt(0):assertAlwaysTrue(),"cropSeq: W must be >=0, but is: "..tostring(W) )
+  --err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
   err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
   err( type(V)=="number", "cropSeq: V must be number"); err(V>=0, "cropSeq: V must be >=0")
   err( type(L)=="number", "cropSeq: L must be number"); err(L>=0, "cropSeq: L must be >=0")
-  err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
+  --err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
+  R = Uniform(R,types.uint(32))
   err( type(B)=="number", "cropSeq: B must be number"); err(B>=0, "cropSeq: B must be >=0")
   err( type(Top)=="number", "cropSeq: Top must be number"); err(Top>=0, "cropSeq: Top must be >=0")
   if framed==nil then framed=false end
   err( type(framed)=="boolean", "cropSeq: framed must be boolean")
 
-  err( L>=0, "cropSeq, L must be <0")
-  err( R>=0, "cropSeq, R must be <0")
-  err( V==0 or W%V==0, "cropSeq, W%V must be 0. W="..tostring(W)..", V="..tostring(V))
+  err( L>=0, "cropSeq, L must be >=0")
+  err( R:ge(0):assertAlwaysTrue(), "cropSeq, R must be >= 0, but is: "..tostring(R))
+  err( V==0 or (W%V):eq(0):assertAlwaysTrue(), "cropSeq, W%V must be 0. W="..tostring(W)..", V="..tostring(V))
   err( V==0 or L%V==0, "cropSeq, L%V must be 0. L="..tostring(L).." V="..tostring(V))
-  err( V==0 or R%V==0, "cropSeq, R%V must be 0, R="..tostring(R)..", V="..tostring(V))
-  err( V==0 or (W-L-R)%V==0, "cropSeq, (W-L-R)%V must be 0")
+  err( V==0 or (R%V):eq(0):assertAlwaysTrue(), "cropSeq, R%V must be 0, R="..tostring(R)..", V="..tostring(V))
+  err( V==0 or ((W-L-R)%V):eq(0):assertAlwaysTrue(), "cropSeq, (W-L-R)%V must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
-  local BITS = 32
 
-  err( W<math.pow(2,BITS), "cropSeq: width too large!")
+  --err( W:lt(math.pow(2,BITS)-1):assertAlwaysTrue(), "cropSeq: width too large!")
   err( H<math.pow(2,BITS), "cropSeq: height too large!")
   
   local inputType
@@ -2145,7 +2153,7 @@ modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
       local sdata = S.index(sinp,1)
       local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
       local sL,sB = S.constant(L,types.uint(BITS)),S.constant(B,types.uint(BITS))
-      local sWmR,sHmTop = S.constant(W-R,types.uint(BITS)),S.constant(H-Top,types.uint(BITS))
+      local sWmR,sHmTop = (W-R):toSystolic(),S.constant(H-Top,types.uint(BITS))
       
       -- verilator lint workaround
       local lbcheck
@@ -2771,9 +2779,9 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     J.err( rigel.SDF==false or f.sdfOutput~=nil, "makeHandshake: fn is missing sdfOutput? "..f.name )
     
     J.err( rigel.SDF==false or #f.sdfInput==1, "makeHandshake expects SDF input rate of 1")
-    J.err( rigel.SDF==false or f.sdfInput[1][1]==1 and f.sdfInput[1][2]==1, "makeHandshake expects SDF input rate of 1")
+    J.err( rigel.SDF==false or f.sdfInput[1][1]:eq(f.sdfInput[1][2]):assertAlwaysTrue(), "makeHandshake expects SDF input rate of 1, but is: "..tostring(f.sdfInput))
     J.err( rigel.SDF==false or #f.sdfOutput==1, "makeHandshake expects SDF output rate of 1")
-    J.err( rigel.SDF==false or f.sdfOutput[1][1]==1 and f.sdfOutput[1][2]==1, "makeHandshake expects SDF output rate of 1")
+    J.err( rigel.SDF==false or f.sdfOutput[1][1]:eq(f.sdfOutput[1][2]):assertAlwaysTrue(), "makeHandshake expects SDF output rate of 1, but is: "..tostring(f.sdfOutput))
 
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   end
@@ -3541,18 +3549,7 @@ local function lambdaSDFNormalize( input, output, instances )
     end
   end
 
-  local outputBW = output.rate
-  local outputBW = SDFRate.sum(outputBW)
-
-  -- we will be limited by either the output BW, or max rate. Normalize to the largest of these.
-  -- we already checked that the input is <1, so that won't limit us.
-  local scaleFactor
-
-  if SDFRate.fracToNumber(sdfMaxRate) > SDFRate.fracToNumber(outputBW) then
-    scaleFactor = SDFRate.fracInvert(sdfMaxRate)
-  else
-    scaleFactor = SDFRate.fracInvert(outputBW)
-  end
+  local scaleFactor = SDFRate.fracInvert(sdfMaxRate)
 
   if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
 
@@ -3698,8 +3695,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if rigel.SDF then
     input, output, instances = lambdaSDFNormalize(input,output,instances)
     local sdfMaxRate = output:sdfExtremeRate(true)
-    local rf = SDFRate.fracToNumber(sdfMaxRate)
-    err(rf <= 1,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(rf*100).."% somewhere in module '"..name.."'") 
+    err( Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue(),"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'") 
   end
 
   name = J.verilogSanitize(name)
@@ -3841,7 +3837,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     
     if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
     
-    if (isum[1]/isum[2]<=1 and osum[1]/osum[2]<=1)  then
+    if (isum[1]:le(isum[2]):assertAlwaysTrue() and osum[1]:le(osum[2]):assertAlwaysTrue())  then
       -- normal. it is possible for a function to have input AND output rate <1.
       -- for example: pad->decimate. pad won't read every cycle, decimate won't write every cycle
     elseif (isum[1]/isum[2])*#res.sdfOutput == (osum[1]/osum[2])*#res.sdfInput then
@@ -4237,15 +4233,15 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
   err( type(vstr)=="string", "liftVerilog: verilog string must be string")
   err( type(globals)=="table", "liftVerilog: globals must be table")
   err( type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
-  err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate")
-  err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate")
+  err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate, but is: "..tostring(sdfInput))
+  err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
   
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
@@ -4292,8 +4288,15 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
         if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
       end
     end
+
+    local instances = {}
+    if dependencies~=nil then
+      for k,v in ipairs(dependencies) do
+        table.insert(instances,v.systolicModule:instantiate("INST"..tostring(k)))
+      end
+    end
     
-    return S.module.new(name,fns,{},true,nil,vstr,{process=0,ready=0},SC)
+    return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},SC)
   end
   
   return rigel.newFunction(res)

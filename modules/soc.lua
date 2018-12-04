@@ -696,8 +696,9 @@ end)
 SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
   J.err( type(port)=="number", "axiBurstReadN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
-  J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
-  J.err( Nbytes % 128 == 0, "AxiBurstReadN: Nbytes must have 128 as a factor" )
+  --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
+  Nbytes = Uniform(Nbytes)
+  J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Bytes) )
   address = Uniform(address,types.uint(32))
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
@@ -710,6 +711,7 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
   globals[R.newGlobal("IP_MAXI"..port.."_ARSIZE","output",types.bits(2))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_ARBURST","output",types.bits(2))] = 1
   address:appendGlobals(globals)
+  Nbytes:appendGlobals(globals)
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
@@ -838,7 +840,9 @@ module ]=]..ModuleName..[=[(
 //    input wire [31:0] CONFIG_START_ADDR,
 //    input wire [31:0] CONFIG_NBYTES,
 
-    ]=]..address:toVerilogPortList()..[=[    
+    ]=]..address:toVerilogPortList()..[=[
+    ]=]..Nbytes:toVerilogPortList()..[=[
+ 
     //RAM port
     input wire ready_downstream,
     output wire [64:0] process_output
@@ -871,7 +875,7 @@ parameter INSTANCE_NAME="inst";
     .CONFIG_VALID(process_input),
     .CONFIG_READY(ready),
     .CONFIG_START_ADDR(]=]..address:toVerilog()..[=[),
-    .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
+    .CONFIG_NBYTES(]=]..Nbytes:toVerilog()..[=[),
     
     //RAM port
     .DATA_READY_DOWNSTREAM(ready_downstream),
@@ -1392,10 +1396,12 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
-SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
+SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   J.err( type(filename)=="string","readBurst: filename must be string")
-  J.err( type(W)=="number", "readBurst: W must be number")
-  J.err( type(H)=="number", "readBurst: H must be number")
+  --J.err( type(W)=="number", "readBurst: W must be number")
+  --J.err( type(H)=="number", "readBurst: H must be number")
+  W = Uniform(W)
+  H = Uniform(H)
   J.err( types.isType(ty), "readBurst: type must be type, but is: "..tostring(ty))
   J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: "..tostring(ty))
   J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: "..tostring(ty))
@@ -1408,7 +1414,12 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( framed==nil or type(framed)=="boolean", "framed must be nil or bool, but is: "..tostring(framed))
   J.err(X==nil, "readBurst: too many arguments")
 
-  local address = Uniform(SOC.currentAddr,types.uint(32))
+  local address
+  if addressOverride~=nil then
+    address = Uniform(addressOverride,types.uint(32))
+  else
+    address = Uniform(SOC.currentAddr,types.uint(32))
+  end
   
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_W"] = W
@@ -1427,9 +1438,9 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
   print("TIB,TOB",totalBits,ChangeRateModule.inputType,ChangeRateModule.outputType)
-  assert(totalBits%(128*8)==0)
-  assert(totalBits%outputBits==0)
-  assert(totalBits>=desiredTotalOutputBits)
+  assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
+  assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
+  assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )
   
   local out = SOC.axiBurstReadN(filename,totalBits/8,SOC.currentMAXIReadPort,address)(inp)
 
@@ -1449,11 +1460,14 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
     out = C.handshakeToHandshakeFramed(out.type,V>0,{{W,H}})(out)
   end
   
-  local res = RM.lambda("ReadBurst_Wf"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("ReadBurst_W"..tostring(W).."_H"..tostring(H).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
-  SOC.currentAddr = SOC.currentAddr+totalBits/8
 
+  if addressOverride==nil then
+    SOC.currentAddr = SOC.currentAddr+totalBits/8
+  end
+  
   return res
 end)
 
