@@ -9,6 +9,10 @@ setmetatable( UniformFunctions,{__index=IR.IRFunctions})
 local UniformMT = {__index=UniformFunctions}
 local Uniform = {}
 
+if terralib~=nil then
+  UniformFunctions.toTerra = require("uniformTerra")
+end
+
 function Uniform.new(tab)
   assert(type(tab.inputs)=="table")
   return setmetatable(tab,UniformMT)
@@ -377,6 +381,18 @@ function UniformFunctions:assertAlwaysTrue()
       print(debug.traceback())
       return false
     end
+  end
+
+  assert(false)
+end
+
+-- what is the maximum value this expr can be?
+function UniformFunctions:maximum()
+  J.err( self:isNumber(),"Uniform:maximum() "..tostring(self)..", not a number?")
+
+  if self.kind=="const" then
+    return self.value
+  else
   end
 
   assert(false)

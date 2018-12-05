@@ -953,7 +953,7 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   else
     res.outputType = fn.outputType:addDim(outputW,outputH,outputMixed)
     outTok = outputW*outputH
-    print("FNOUTPUTPTYPE",fn.outputType,res.outputType)
+
     if outputMixed then outTok = outTok/fn.outputType:FV() end
   end
 

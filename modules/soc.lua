@@ -697,8 +697,8 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
   J.err( type(port)=="number", "axiBurstReadN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
   --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
-  Nbytes = Uniform(Nbytes_orig)
-  J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Bytes) )
+  local Nbytes = Uniform(Nbytes_orig)
+  J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
   local address = Uniform(address_orig)
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
@@ -980,7 +980,7 @@ SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase_
   end
   
   J.err( X==nil, "axiWriteBytes: too many arguments" )
-  addressBase = Uniform(addressBase_orig)
+  local addressBase = Uniform(addressBase_orig)
   
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
@@ -1419,6 +1419,7 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   if addressOverride~=nil then
     address = Uniform(addressOverride)
   else
+    assert(type(SOC.currentAddr)=="number")
     address = Uniform(SOC.currentAddr)
   end
   
@@ -1466,7 +1467,8 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
 
   if addressOverride==nil then
-    SOC.currentAddr = SOC.currentAddr+totalBits/8
+    SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
+    assert(type(SOC.currentAddr)=="number")
   end
   
   return res
@@ -1485,6 +1487,7 @@ SOC.read = function(filename,fileBytes,readType,X)
   J.err( X==nil, "SOC.read: too many arguments" )
   
   local globalMetadata={}
+  assert(type(SOC.currentAddr)=="number")
   globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
 
   local inp = R.input(R.Handshake(types.uint(32)))
@@ -1529,6 +1532,7 @@ SOC.read = function(filename,fileBytes,readType,X)
   
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
   SOC.currentAddr = SOC.currentAddr+fileBytes
+  assert(type(SOC.currentAddr)=="number")
   
   return res
 end
@@ -1547,6 +1551,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
   J.err(X==nil, "writeBurst: too many arguments")
 
+  assert(type(SOC.currentAddr)=="number")
   local address = Uniform(SOC.currentAddr)
   
   local globalMetadata={}
@@ -1587,8 +1592,9 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  SOC.currentAddr = SOC.currentAddr+totalBits/8
-
+  SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
+  assert(type(SOC.currentAddr)=="number")
+  
   if framed then
     -- HACK
     res.inputType = types.HandshakeFramed(inputType,V>0,{{W,H}})
@@ -1610,6 +1616,7 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
   if V==nil then V=1 end
   
   local globalMetadata={}
+  assert(type(SOC.currentAddr)=="number")
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = SOC.currentAddr
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
@@ -1663,6 +1670,7 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
   
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+W*H
+  assert(type(SOC.currentAddr)=="number")
   
   return res
 end)
