@@ -1974,10 +1974,10 @@ end)
 
 -- output type: {uint16,uint16}[T]
 -- asArray: return output as u16[2][T] instead
-modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
+modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
   if bits==nil then bits=16 end
   err( type(bits)=="number", "posSeq: bits should be number, but is: "..tostring(bits))
-  W = Uniform(W,types.uint(bits))
+  local W = Uniform(W_orig)
   err(type(H)=="number","posSeq: H must be number")
   err(type(T)=="number","posSeq: T must be number")
   err( W:gt(0):assertAlwaysTrue(), "posSeq: W must be >0, but is: "..tostring(W));
@@ -2004,13 +2004,13 @@ modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 0
-  res.name = sanitize("PosSeq_W"..tostring(W).."_H"..H.."_T"..T.."_bits"..tostring(bits))
+  res.name = sanitize("PosSeq_W"..tostring(W_orig).."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T,asArray) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-Uniform(math.max(T,1),types.uint(bits)), math.max(T,1) ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), W-math.max(T,1), math.max(T,1) ) ):setInit(0):setReset(0):CE(true):instantiate("posX_posSeq") )
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(bits), fpgamodules.incIfWrap( types.uint(bits), H-1 ) ):setInit(0):setReset(0):CE(true):instantiate("posY_posSeq") )
 
     local printInst
@@ -2019,7 +2019,7 @@ modules.posSeq = memoize(function( W, H, T, bits, framed, asArray, X )
       printInst = systolicModule:add( S.module.print( types.tuple{types.uint(bits),types.uint(bits)}, "x %d y %d", true):instantiate("printInst") ) 
     end
     
-    local incY = S.eq( posX:get(), (W-Uniform(math.max(T,1),types.uint(bits))):toSystolic()  ):disablePipelining()
+    local incY = S.eq( posX:get(), (W-math.max(T,1)):toSystolic(types.uint(bits))  ):disablePipelining()
     
     local out = {S.tuple{posX:get(),posY:get()}}
     for i=1,T-1 do
@@ -2059,7 +2059,7 @@ end)
 -- and drives the first tuple with (x,y) coord
 -- returns a function with type Stateful(inputType)->Stateful(outputType)
 -- sdfOverride: we can use this to define stateful->StatefulV interfaces etc, so we may want to override the default SDF rate
-modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, bits, X )
+modules.liftXYSeq = memoize(function( name, generatorStr, f, W_orig, H, T, bits, X )
   if bits==nil then bits=16 end
   err( type(bits)=="number", "liftXYSeq: bits must be number or nil")
 
@@ -2067,7 +2067,7 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, bits, X )
   err( type(generatorStr)=="string", "liftXYSeq: generatorStr must be string" )
   err( rigel.isFunction(f), "liftXYSeq: f must be function")
   --err( type(W)=="number", "liftXYSeq: W must be number")
-  W=Uniform(W,types.uint(bits))
+  local W = Uniform(W_orig)
   err( type(H)=="number", "liftXYSeq: H must be number")
   err( type(T)=="number", "liftXYSeq: T must be number")
   err( X==nil, "liftXYSeq: too many arguments")
@@ -2076,7 +2076,7 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W, H, T, bits, X )
   local inp = rigel.input( inputType )
   local p = rigel.apply("p", modules.posSeq(W,H,T,bits) )
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
-  return modules.lambda( "liftXYSeq_"..name, inp, out,nil,generatorStr )
+  return modules.lambda( "liftXYSeq_"..name.."_W"..tostring(W_orig), inp, out,nil,generatorStr )
 end)
 
 -- this takes a function f : {{uint16,uint16},inputType} -> outputType
@@ -2105,20 +2105,20 @@ function modules.liftXYSeqPointwise( name, generatorStr, f, W, H, T, X )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
+modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, X )
 
   local BITS = 32
 
   err( types.isType(A), "cropSeq: type must be rigel type ")
   err( rigel.isBasic(A),"cropSeq: expects basic type, but is: "..tostring(A))
-  W = Uniform(W,types.uint(BITS))
+  local W = Uniform(W_orig)
   err( W:gt(0):assertAlwaysTrue(),"cropSeq: W must be >=0, but is: "..tostring(W) )
   --err( type(W)=="number", "cropSeq: W must be number"); err(W>=0, "cropSeq: W must be >=0")
   err( type(H)=="number", "cropSeq: H must be number"); err(H>=0, "cropSeq: H must be >=0")
   err( type(V)=="number", "cropSeq: V must be number"); err(V>=0, "cropSeq: V must be >=0")
   err( type(L)=="number", "cropSeq: L must be number"); err(L>=0, "cropSeq: L must be >=0")
   --err( type(R)=="number", "cropSeq: R must be number"); err(R>=0, "cropSeq: R must be >=0")
-  R = Uniform(R,types.uint(32))
+  local R = Uniform(R_orig)
   err( type(B)=="number", "cropSeq: B must be number"); err(B>=0, "cropSeq: B must be >=0")
   err( type(Top)=="number", "cropSeq: Top must be number"); err(Top>=0, "cropSeq: Top must be >=0")
   if framed==nil then framed=false end
@@ -2146,14 +2146,14 @@ modules.cropSeq = memoize(function( A, W, H, V, L, R, B, Top, framed, X )
   local xyType = types.array2d(types.tuple{types.uint(BITS),types.uint(BITS)},math.max(V,1))
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_V"..tostring(V).."_L"..tostring(L).."_R"..tostring(R).."_B"..tostring(B).."_Top"..tostring(Top))
+  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H).."_V"..tostring(V).."_L"..tostring(L).."_R"..tostring(R_orig).."_B"..tostring(B).."_Top"..tostring(Top))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
       local sdata = S.index(sinp,1)
       local sx, sy = S.index(S.index(S.index(sinp,0),0),0), S.index(S.index(S.index(sinp,0),0),1)
       local sL,sB = S.constant(L,types.uint(BITS)),S.constant(B,types.uint(BITS))
-      local sWmR,sHmTop = (W-R):toSystolic(),S.constant(H-Top,types.uint(BITS))
+      local sWmR,sHmTop = (W-R):toSystolic(types.uint(BITS)),S.constant(H-Top,types.uint(BITS))
       
       -- verilator lint workaround
       local lbcheck
@@ -2232,40 +2232,42 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
+modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
   err( types.isType(A), "A must be a type")
-
+  
   err( A~=nil, "padSeq A==nil" )
   err( W~=nil, "padSeq W==nil" )
   err( H~=nil, "padSeq H==nil" )
   err( T~=nil, "padSeq T==nil" )
   err( L~=nil, "padSeq L==nil" )
-  err( R~=nil, "padSeq R==nil" )
+  err( R_orig~=nil, "padSeq R==nil" )
   err( B~=nil, "padSeq B==nil" )
   err( Top~=nil, "padSeq Top==nil" )
   err( Value~=nil, "padSeq Value==nil" )
   err( X==nil, "padSeq: too many arguments" )
   
-  J.map({W=W,H=H,T=T,L=L,R=R,B=B,Top=Top},function(n,k)
+  J.map({W=W,H=H,T=T,L=L,B=B,Top=Top},function(n,k)
         err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
 
+  local R = Uniform(R_orig)
+  
   A:checkLuaValue(Value)
   err(T>=1, "padSeq, T<1")
 
   err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
   err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
-  err( R==0 or (R>=T and R%T==0), "padSeq, R<T or R%T~=0")
-  err( (W+L+R)%T==0, "padSeq, (W+L+R)%T~=0")
+  err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
+  err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
   res.inputType = types.array2d(A,T)
   res.outputType = rigel.RV(types.array2d(A,T))
   res.stateful = true
-  res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((W+L+R)*(H+B+Top))/T}, SDF{1,1}
+  res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
   res.delay=0
-  res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
+  res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
@@ -2305,7 +2307,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R, B, Top, Value, X )
     
     local pipelines={}
 
-    local incY = S.eq( posX:get(), S.constant(W+L+R-T,types.uint(32))  ):disablePipelining()
+    local incY = S.eq( posX:get(), Uniform(W+L+R-T):toSystolic(types.uint(32))  ):disablePipelining()
     pipelines[1] = posY:setBy( incY )
     pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 

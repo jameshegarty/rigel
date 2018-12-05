@@ -693,13 +693,13 @@ end)
 
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
-SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
+SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
   J.err( type(port)=="number", "axiBurstReadN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
   --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
-  Nbytes = Uniform(Nbytes)
+  Nbytes = Uniform(Nbytes_orig)
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Bytes) )
-  address = Uniform(address,types.uint(32))
+  local address = Uniform(address_orig)
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
   local globals = {}
@@ -717,7 +717,7 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes,port,address,X)
   globalMetadata["MAXI"..port.."_read_filename"] = filename
   globalMetadata["MAXI"..port.."_read_address"] = address
 
-  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes).."_"..tostring(port).."_"..tostring(address))
+  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes_orig).."_"..tostring(port).."_"..tostring(address_orig))
   
   local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
 [=[module ]=]..ModuleName..[=[_inner(
@@ -874,8 +874,8 @@ parameter INSTANCE_NAME="inst";
     //Control config
     .CONFIG_VALID(process_input),
     .CONFIG_READY(ready),
-    .CONFIG_START_ADDR(]=]..address:toVerilog()..[=[),
-    .CONFIG_NBYTES(]=]..Nbytes:toVerilog()..[=[),
+    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
+    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
     
     //RAM port
     .DATA_READY_DOWNSTREAM(ready_downstream),
@@ -970,7 +970,7 @@ endmodule
   return res
 end)
 
-SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase, X)
+SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase_orig, X)
   J.err( type(port)=="number", "axiWriteBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiWriteBytes: port out of range" )
   J.err( type(NbytesPerCycle)=="number","axiWriteBytes: NbytesPerCycle must be number" )
@@ -980,7 +980,7 @@ SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase,
   end
   
   J.err( X==nil, "axiWriteBytes: too many arguments" )
-  J.err( type(addressBase)=="number", "axiWriteBytes: addressBase must be number")
+  addressBase = Uniform(addressBase_orig)
   
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
@@ -1067,7 +1067,7 @@ assign IP_MAXI]=]..port..[=[_AWSIZE = 2'b11; // number of bytes per transfer
 assign IP_MAXI]=]..port..[=[_AWBURST = 2'b01; // burst mode
 assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
 
-assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + 32'd]=]..addressBase..[=[;
+assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
 assign IP_MAXI]=]..port..[=[_AWADDR[32] = process_input[32];
 assign ready = {IP_MAXI]=]..port..[=[_WDATA_ready,IP_MAXI]=]..port..[=[_AWADDR_ready};
 
@@ -1092,15 +1092,16 @@ endmodule
   return res
 end)
 
-SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes,port,address,X)
+SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
   J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
   J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstWriteN: port out of range" )
-  J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number")
-  address = Uniform(address,types.uint(32))
+  --J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number, but is: "..tostring(Nbytes))
+  local Nbytes = Uniform(Nbytes_orig)
+  local address = Uniform(address_orig)
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
 
-  J.err(Nbytes%128==0, "SOC.axiBurstWriteN: Nbytes ("..Nbytes..") not 128-byte aligned")
+  J.err( Uniform(Nbytes%128):eq(0):assertAlwaysTrue(), "SOC.axiBurstWriteN: Nbytes ("..tostring(Nbytes)..") not 128-byte aligned")
 
   local Nburst = Nbytes/128
   
@@ -1231,14 +1232,14 @@ end
 always @(posedge ACLK) begin
   if (ARESETN == 0) begin
     BRESP_CNT <= 32'd0;
-  end else if (BRESP_CNT==32'd]=]..Nburst..[=[ && doneReady) begin
+  end else if (BRESP_CNT==(]=]..Nburst:toVerilog(types.uint(32))..[=[) && doneReady) begin
     BRESP_CNT <= 32'd0;
   end else if (M_AXI_BVALID) begin
     BRESP_CNT <= BRESP_CNT + 32'd1;
   end
 end
 
-assign done = BRESP_CNT==32'd]=]..Nburst..[=[;
+assign done = BRESP_CNT==(]=]..Nburst:toVerilog(types.uint(32))..[=[);
 
 assign M_AXI_WLAST = last_count == 4'b0000;
 
@@ -1349,8 +1350,8 @@ DRAMWriterInner inner(
     //Control config
     .CONFIG_VALID(firstBufferSet),
     .CONFIG_READY(CONFIG_READY),
-    .CONFIG_START_ADDR(]=]..address:toVerilog()..[=[),
-    .CONFIG_NBYTES(32'd]=]..Nbytes..[=[),
+    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
+    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
     
     //RAM port
     .DATA( firstBufferSet? firstBuffer : process_input[63:0] ),
@@ -1416,9 +1417,9 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
 
   local address
   if addressOverride~=nil then
-    address = Uniform(addressOverride,types.uint(32))
+    address = Uniform(addressOverride)
   else
-    address = Uniform(SOC.currentAddr,types.uint(32))
+    address = Uniform(SOC.currentAddr)
   end
   
   local globalMetadata={}
@@ -1546,7 +1547,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
   J.err(X==nil, "writeBurst: too many arguments")
 
-  local address = Uniform(SOC.currentAddr,types.uint(32))
+  local address = Uniform(SOC.currentAddr)
   
   local globalMetadata={}
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
@@ -1569,9 +1570,9 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
 
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
-  assert(totalBits%(128*8)==0)
-  assert(totalBits%inputBits==0)
-  assert(totalBits>=desiredTotalInputBits)
+  assert( Uniform(totalBits%(128*8)):eq(0):assertAlwaysTrue() )
+  assert( Uniform(totalBits%inputBits):eq(0):assertAlwaysTrue() )
+  assert( Uniform(totalBits):ge(desiredTotalInputBits):assertAlwaysTrue() )
 
   if desiredTotalInputBits~=totalBits then
     out = RM.makeHandshake(C.arrayop(types.bits(inputBits),1))(out)
@@ -1583,7 +1584,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
 
   out = SOC.axiBurstWriteN(filename,totalBits/8,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
 
-  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+totalBits/8
@@ -1658,7 +1659,7 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
     assert(false)
   end
 
-  local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..SOC.currentAddr.."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   SOC.currentAddr = SOC.currentAddr+W*H

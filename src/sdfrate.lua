@@ -4,21 +4,18 @@ local err = J.err
 
 function SDFRate.simplify(a,b)
   local Uniform = require "uniform"
-  local types = require "types"
-  local res = Uniform(a,types.uint(64))/Uniform(b,types.uint(64))
+
+  local res = Uniform(a)/Uniform(b)
   res = res:simplify()
 
   if res.kind=="binop" and res.op=="div" then
     return res.inputs[1], res.inputs[2]
-  elseif res.kind=="const" then
-    -- this is >=1
-    assert(res.type:isUint())
-    return res,Uniform(1,types.uint(64))
+  else
+    -- this is >=1, maybe?
+    assert( res:isNumber() )
+    assert( res:ge(0):assertAlwaysTrue() )
+    return res,Uniform(1)
   end
-
-  print("SDFRate.simplify: simplified to something that's not a ratio? "..tostring(res))
-  assert(false)
-  return nil
 end
 
 -- t should be format {{number,number},{number,number},...}
@@ -76,11 +73,10 @@ function SDFRate.isFrac(a)
   end
 
   local Uniform = require "uniform"
-  local types = require "types"
   
   if Uniform.isUniform(a[1]) or Uniform.isUniform(a[2]) then
-    local a1,a2=Uniform(a[1],types.uint(64)),Uniform(a[2],types.uint(64))
-    if a1:isUint() and a2:isUint() and a2:gt(0):assertAlwaysTrue() then
+    local a1,a2=Uniform(a[1]), Uniform(a[2])
+    if a1:isNumber() and a2:isNumber() and a2:gt(0):assertAlwaysTrue() then
       return true
     else
       print("Error: input is not a valid fraction, because N or D are not integer, or D is 0: "..tostring(a1).."/"..tostring(a2))
@@ -162,10 +158,9 @@ function SDFRate.multiply(tab,n,d)
   assert(SDFRate.isSDFRate(tab))
 
   local Uniform = require "uniform"
-  local types = require "types"
   
-  n=Uniform(n,types.uint(64))
-  d=Uniform(d,types.uint(64))
+  n=Uniform(n)
+  d=Uniform(d)
   assert(n:isUint())
   assert(d:isUint())
 

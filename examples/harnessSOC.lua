@@ -50,13 +50,13 @@ return function(fn,t)
       if fn.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
         local rlist = {}
         table.insert(rlist,"filename='"..fn.globalMetadata["MAXI"..i.."_read_filename"].."'")
-        if fn.globalMetadata["MAXI"..i.."_read_W"]~=nil then table.insert(rlist,"W="..fn.globalMetadata["MAXI"..i.."_read_W"]) end
-        if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..fn.globalMetadata["MAXI"..i.."_read_H"]) end
+        if fn.globalMetadata["MAXI"..i.."_read_W"]~=nil then table.insert(rlist,"W="..Uniform(fn.globalMetadata["MAXI"..i.."_read_W"]):toEscapedString()) end
+        if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..Uniform(fn.globalMetadata["MAXI"..i.."_read_H"]):toEscapedString()) end
         if fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]~=nil then table.insert(rlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]) end
         if fn.globalMetadata["MAXI"..i.."_read_V"]~=nil then table.insert(rlist,"V="..fn.globalMetadata["MAXI"..i.."_read_V"]) end
         J.err(fn.globalMetadata["MAXI"..i.."_read_address"]~=nil,"Error: AXI port "..tostring(i).." was given a filename, but no address?")
         
-        table.insert(rlist,"address="..Uniform(fn.globalMetadata["MAXI"..i.."_read_address"],types.uint(32)):toEscapedString() )
+        table.insert(rlist,"address="..Uniform(fn.globalMetadata["MAXI"..i.."_read_address"]):toEscapedString() )
         table.insert(inputList, "{"..table.concat(rlist,",").."}")
       end
     end
@@ -73,7 +73,7 @@ return function(fn,t)
         if fn.globalMetadata["MAXI"..i.."_write_V"]~=nil then table.insert(wlist,"V="..fn.globalMetadata["MAXI"..i.."_write_V"]) end
 
         J.err(fn.globalMetadata["MAXI"..i.."_write_address"]~=nil,"Error: AXI write port "..tostring(i).." was given a filename, but no address?")
-        table.insert( wlist, "address="..Uniform(fn.globalMetadata["MAXI"..i.."_write_address"],types.uint(32)):toEscapedString() )
+        table.insert( wlist, "address="..Uniform(fn.globalMetadata["MAXI"..i.."_write_address"]):toEscapedString() )
 
         table.insert(outputList, "{"..table.concat(wlist,",").."}")
       end
@@ -102,7 +102,7 @@ return function(fn,t)
 
     J.err(SOC.currentAddr ~= 0x30008000,"SOC.currentAddr should imply a segment size > 0?")
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList..registerNames.."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd="..Uniform(SOC.currentAddr):toEscapedString()..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

@@ -1487,13 +1487,12 @@ end
 --    -> in format totalInputBits,totalOutputBits
 -- returned input/output bytes must have input/output factor as a factor
 --   i.e. inoutBits % inputFactor==0 and inoutBits % outputFactor==0
-C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, inputFactor, outputBitsPerCyc, minTotalOutputBits, outputFactor, X)
+C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, X)
   assert(type(inputBitsPerCyc)=="number")
   assert(type(outputBitsPerCyc)=="number")
-  --assert(type(minTotalInputBits)=="number")
-  --J.err(type(minTotalOutputBits)=="number","minTotalOutputBits should be number, but is: "..tostring(minTotalOutputBits))
-  minTotalInputBits = Uniform(minTotalInputBits)
-  minTotalOutputBits = Uniform(minTotalOutputBits)
+
+  local minTotalInputBits = Uniform(minTotalInputBits_orig)
+  local minTotalOutputBits = Uniform(minTotalOutputBits_orig)
   
   assert(type(inputFactor)=="number")
   assert(type(outputFactor)=="number")
@@ -1501,18 +1500,18 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
   err( (minTotalOutputBits%Uniform(outputBitsPerCyc)):eq(0):assertAlwaysTrue(), "generalizedChangeRate: outputBitsPerCycle ("..outputBitsPerCyc..") must divide minTotalOutputBits ("..tostring(minTotalOutputBits)..")")
   assert(X==nil)
 
-  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
+  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits_orig).."_"..tostring(minTotalOutputBits_orig))
 
   print("hf",name)
   
   if inputBitsPerCyc==outputBitsPerCyc then
-    local bts = math.max(minTotalInputBits,minTotalOutputBits)
+    local bts = minTotalInputBits:max(minTotalOutputBits)
 
-    bts = J.upToNearest(inputFactor,bts)
-    bts = J.upToNearest(outputFactor,bts)
+    bts = Uniform.upToNearest(inputFactor,bts)
+    bts = Uniform.upToNearest(outputFactor,bts)
 
-    assert( bts%inputFactor==0 )
-    assert( bts%outputFactor==0 )
+    assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+    assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
     
     return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
@@ -1528,19 +1527,19 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       if (inoutBits%Uniform(inputBitsPerCyc)):eq(0):assertAlwaysTrue() then
         bts = inoutBits
       else
-        bts = J.upToNearest(inputBitsPerCyc,inoutBits)
+        bts = Uniform.upToNearest(inputBitsPerCyc,inoutBits)
       end
       
       print("BTS",bts,inputFactor,outputFactor)
 
       if (inoutBits%Uniform(inputFactor)):eq(0):assertAlwaysTrue() then
       else
-        bts = J.upToNearest(inputFactor,bts)
+        bts = Uniform.upToNearest(inputFactor,bts)
       end
 
       if (inoutBits%Uniform(outputFactor)):eq(0):assertAlwaysTrue() then
       else
-        bts = J.upToNearest(outputFactor,bts)
+        bts = Uniform.upToNearest(outputFactor,bts)
       end
       print("BTS",bts)
 
@@ -1564,14 +1563,14 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(outputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      local bts = Uniform.upToNearest(outputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
       --bts = J.upToNearest(inputFactor,bts)
       --bts = J.upToNearest(outputFactor,bts)
       --bts = J.upToNearest(shifterBits,bts)
-      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      bts = Uniform.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
       
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     end
@@ -1585,12 +1584,12 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,N))(out)
       out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),N),types.bits(outputBitsPerCyc)))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
-      bts = J.upToNearest(inputFactor,bts)
-      bts = J.upToNearest(outputFactor,bts)
+      local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
+      bts = Uniform.upToNearest(inputFactor,bts)
+      bts = Uniform.upToNearest(outputFactor,bts)
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     else
@@ -1609,14 +1608,15 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
+      local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
       --bts = J.upToNearest(inputFactor,bts)
       --bts = J.upToNearest(outputFactor,bts)
       --bts = J.upToNearest(shifterBits,bts)
-      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      print("MAKEDIVIS")
+      bts = Uniform.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     end

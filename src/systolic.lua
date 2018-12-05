@@ -162,7 +162,7 @@ function valueToVerilogLL(value,signed,bits)
 end
 
 function systolic.valueToVerilog( value, ty )
-  assert(types.isType(ty))
+  J.err(types.isType(ty),"systolic.valueToVerilog: not a type")
 
   if ty:isInt() then
     return valueToVerilogLL( value, true, ty:verilogBits() )

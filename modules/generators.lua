@@ -6,6 +6,7 @@ local RS = require "rigelSimple"
 local C = require "examplescommon"
 local S = require "systolic"
 local SOC = require "soc"
+local Uniform = require "uniform"
 
 local __unnamedID = 0
 
@@ -490,7 +491,7 @@ generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","
 function(args)
   local numb = args.number
   if numb==nil then
-    numb = math.ceil((args.size[1]*args.size[2]*args.rate[1][1])/args.rate[1][2])
+    numb = math.ceil((args.size[1]*args.size[2]*Uniform(args.rate[1][1]):toNumber())/Uniform(args.rate[1][2]):toNumber())
     print("AXIReadBurst V:",numb)
   end
   
@@ -526,7 +527,7 @@ end)
 generators.Reshape = R.newGenerator("generators","Reshape",{"type","rate"},{},
 function(args)
 
-  local ratio = args.rate[1][1]/args.rate[1][2]
+  local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
   if ratio<1 then
 
     if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then

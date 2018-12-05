@@ -124,6 +124,9 @@ darkroom.__unnamedID = 0
 
 local function typeToKey(t)
   local res = {}
+
+  local Uniform = require "uniform"
+  
   for k,v in pairs(t) do
     if type(k)=="number" then
       local outk
@@ -148,6 +151,9 @@ local function typeToKey(t)
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
              and type(v[3])=="number" and type(v[4])=="number" then
         outk="bounds"
+      elseif Uniform.isUniform(v) then
+        outk="number"
+        v = v:toNumber()
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -430,12 +436,12 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
 
   local ratio
   for i=1,#self.sdfInput do
-    local thisR = { Uniform(Isdf[i][1],types.uint(64))*Uniform(self.sdfInput[i][2],types.uint(64)), Uniform(Isdf[i][2],types.uint(64))*Uniform(self.sdfInput[i][1],types.uint(64)) } -- I/self.sdfInput ratio
+    local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
     --thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
     if ratio==nil then
       ratio=thisR
     else
-      consistantRatio = consistantRatio and ( (Uniform(ratio[1])*Uniform(thisR[2])):eq(ratio[2]*thisR[1]):assertAlwaysTrue() )
+      consistantRatio = consistantRatio and ( (Uniform(ratio[1]*thisR[2])):eq(ratio[2]*thisR[1]):assertAlwaysTrue() )
     end
   end
 
@@ -444,7 +450,7 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
   local res = {}
   for i=1,#self.sdfOutput do
     --local On, Od = J.simplify(self.sdfOutput[i][1]*ratio[1], self.sdfOutput[i][2]*ratio[2])
-    local On, Od = Uniform(self.sdfOutput[i][1],types.uint(64))*ratio[1], Uniform(self.sdfOutput[i][2],types.uint(64))*ratio[2]
+    local On, Od = self.sdfOutput[i][1]*ratio[1], self.sdfOutput[i][2]*ratio[2]
     table.insert( res, {On,Od} )
   end
 
@@ -783,7 +789,7 @@ function darkroomIRFunctions:sdfExtremeRate( highest )
         if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
 --        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
-        elseif highest and r~=nil and (Uniform(r[1],types.uint(64))*Uniform(__sdfExtremeRateCache[self][highest][1][2],types.uint(64)) ):ge(Uniform(r[2],types.uint(64))*Uniform(__sdfExtremeRateCache[self][highest][1][1],types.uint(64))):assertAlwaysTrue() then
+        elseif highest and r~=nil and (r[1]*__sdfExtremeRateCache[self][highest][1][2]):ge(r[2]*__sdfExtremeRateCache[self][highest][1][1]):assertAlwaysTrue() then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}
         elseif highest==false and r~=nil and SDFRate.fracToNumber(r)<=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
           __sdfExtremeRateCache[self][highest] = {r,n.loc}

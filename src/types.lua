@@ -716,6 +716,61 @@ function TypeFunctions:toCPUType()
   end
 end
 
+function TypeFunctions:maxValue()
+  if self:isUint() then
+    return math.pow(2,self.precision)-1
+  else
+    assert(false)
+  end
+end
+
+function TypeFunctions:minValue()
+  if self:isUint() then
+    return 0
+  else
+    assert(false)
+  end
+end
+
+-- can this type be converted to 'ty' without losing any data?
+function TypeFunctions:canSafelyConvertTo(ty)
+  if self==ty then -- trivial case
+return true
+  end
+
+  if (self:isInt() or self:isUint()) and (ty:isInt() or ty:isUint()) then
+    local minv, maxv = self:minValue(), self:maxValue()
+    local tyminv, tymaxv = ty:minValue(), ty:maxValue()
+    return (tyminv<=minv) and (tymaxv>=maxv)
+  end
+
+  return false
+end
+
+-- tries to find the most restrictive type that can represent lua value 'v'
+function types.valueToType(v)
+  if type(v)=="boolean" then
+    return types.bool()
+  elseif type(v)=="number" then
+    if v==math.floor(v) then
+      if v>=0 then
+        local bts = math.max(math.ceil(math.log(v+1)/math.log(2)),1)
+        local ty = types.uint(bts)
+        J.err(v<=ty:maxValue(),"bad type? "..tostring(v).." in type: "..tostring(ty))
+        assert(bts>0 or v>types.uint(bts-1):maxValue())
+        return ty
+      else
+        assert(false)
+      end
+    else
+      assert(false)
+      return types.float(64)
+    end
+  else
+    J.err(false,"types.valueToType: no rigel type that can represent '"..tostring(v).."'")
+  end
+end
+
 function types.isBasic(A)
   assert(types.isType(A))
   if A:isArray() then
@@ -748,29 +803,6 @@ function types.HandshakeVarlen(A)
   return types.named("HandshakeVarlen("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "Handshake", {A=A} )
 end
 
---[=[
-local function framedName(dims,Adims)
-  local str = ""
-  err( #dims>=#Adims, "Framed: number of total dims ("..#dims..") must be >= number of parallel dims ("..#Adims..")")
-  for i=1,#Adims do
-    if Adims[i][1]==dims[i][1] and Adims[i][2]==dims[i][2] then
-      -- parallel and serial dims match
-      str = str.."["..dims[i][1]..","..dims[i][2].."]"
-    elseif dims[i][1]>=Adims[i][1] and Adims[i][2]==1 then
-      print("DIM",Adims[i][1],Adims[i][2],dims[i][1],dims[i][2])
-      str = str.."["..Adims[i][1]..";"..dims[i][1]..","..dims[i][2].."}"
-    else
-      err(false,"NYI - HandshakeFramed, parallel and serial dim doesn't match?")
-    end
-  end
-
-  for i=#Adims+1,#dims do
-    str = str.."{"..dims[i][1]..","..dims[i][2].."}"
-  end
-  return str
-end
-]=]
-
 -- dims goes from innermost (idx 1) to outermost (idx n)
 local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   err(types.isType(A),kind.."Framed: argument should be type, but is: "..tostring(A))
@@ -784,6 +816,11 @@ local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   for i=1,#dims do
     err( type(dims[i])=="table", kind.."Framed: each entry of dims should be a table of size 2")
     err( #dims[i]==2, kind.."Framed: each entry of dims should be a table of size 2")
+
+    local Uniform = require "uniform"
+    
+    if Uniform.isUniform(dims[i][1]) and dims[i][1].kind=="const" then dims[i][1]=dims[i][1].value end
+    if Uniform.isUniform(dims[i][2]) and dims[i][2].kind=="const" then dims[i][2]=dims[i][2].value end
     
     err(type(dims[i][1])=="number", kind.."Framed: dim must be number")
     err(math.floor(dims[i][1])==dims[i][1], kind.."Framed: dim must be integer, but is: "..tostring(dims[i][1]))
@@ -845,6 +882,10 @@ function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) e
 -- Add an extra outermost dim (loop) to the type
 -- mixed: optional, perhaps this is adding dims to a type that already has sequential dimensions
 function TypeFunctions:addDim(w,h,mixed)
+  local Uniform = require "uniform"
+
+  w = Uniform(w):toNumber()
+  
   err( type(w)=="number", ":addDim w should be number")
   err( type(h)=="number", ":addDim h should be number")
   --err( type(mixed)=="boolean", ":addDim mixed should be boolean")

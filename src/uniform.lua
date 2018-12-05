@@ -14,7 +14,7 @@ function Uniform.new(tab)
   return setmetatable(tab,UniformMT)
 end
 
-local opToZ3={mul="*",mod="mod",eq="=",gt=">",lt="<",max="max",ge=">=",le="<=",div="/",sub="-",add="+"}
+local opToZ3={mul="*",mod="mod",eq="=",gt=">",lt="<",max="max",ge=">=",le="<=",div="/",sub="-",add="+",["and"]="and",["or"]="or"}
 function UniformFunctions:toSMT(includeProperties)
   if includeProperties==nil then includeProperties = true end
   local stats = {}
@@ -55,7 +55,7 @@ end
 
 function UniformFunctions:addProperty(stat)
   assert(Uniform.isUniform(stat))
-  J.err(stat.type==types.bool(),"stat should have boolean type? "..tostring(stat))
+  J.err( stat:isBool(),"stat should have boolean type? "..tostring(stat))
   if self.properties==nil then self.properties={} end
   table.insert(self.properties,stat)
 end
@@ -96,7 +96,7 @@ function UniformFunctions:applySimplifications()
       elseif n.kind=="binop" then
         return Uniform.binop(n.op,inputs[1],inputs[2])
       elseif n.kind=="not" then
-        return inputs[1]:n()
+        return inputs[1]:Not()
       elseif n.kind=="addMSBs" then
         return Uniform.addMSBs(inputs[1],n.msbs)
       else
@@ -123,6 +123,8 @@ function UniformFunctions:simplify()
           return Uniform(inputs[1].value>=inputs[2].value)
         elseif n.op=="le" then
           return Uniform(inputs[1].value<=inputs[2].value)
+        elseif n.op=="lt" then
+          return Uniform(inputs[1].value<inputs[2].value)
         elseif n.op=="mul" then
           local prod = inputs[1].value*inputs[2].value
           assert(inputs[1].type==inputs[2].type)
@@ -147,12 +149,18 @@ function UniformFunctions:simplify()
           end
         elseif n.op=="mod" then
           return Uniform(inputs[1].value%inputs[2].value)
+        elseif n.op=="max" then
+          return Uniform(math.max(inputs[1].value,inputs[2].value))
+        elseif n.op=="and" then
+          return Uniform(inputs[1].value and inputs[2].value)
+        elseif n.op=="or" then
+          return Uniform(inputs[1].value or inputs[2].value)
         else
           print("NYI - const op "..tostring(n.op))
           assert(false)
         end
       elseif n.kind=="binop" and n.op=="max" and
-        inputs[1].kind=="const" and inputs[1].value==0 and inputs[2].type:isUint() then
+        inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
         -- max(0,X:uint)->X
         return inputs[2]
       elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==1 then
@@ -231,6 +239,8 @@ function UniformFunctions:simplify()
           elseif C>D then
             assert(false)
           end
+      elseif (n.kind=="binop" and n.op=="div") and (inputs[1]==inputs[2]) then
+        return Uniform(1)
       elseif n.kind=="addMSBs" and inputs[1].kind=="const" then
         return Uniform.const( n.type, inputs[1].value )
       end
@@ -259,15 +269,15 @@ Uniform.binop = J.memoize(function(op,lhs,rhs)
 
   lhs,rhs = Uniform(lhs),Uniform(rhs)
 
-  if op=="eq" or op=="gt" or op=="lt" or op=="ge" or op=="le" then
-    ty = types.bool()
+  if op=="and" or op=="or" then
+    J.err(lhs:isBool(),"Uniform.binop: lhs should be bool")
+    J.err(rhs:isBool(),"Uniform.binop: rhs should be bool")
   else
-    assert(lhs.type:isUint())
-    J.err(rhs.type:isUint(),"Uniform.binop op:"..op.." rhs is not a uint? "..tostring(rhs))
-    J.err(lhs.type==rhs.type,"Uniform.binop, LHS and RHS types don't match: "..tostring(lhs).." "..tostring(rhs))
+    J.err(lhs:isNumber(),"Uniform.binop: lhs should be number, but is: "..tostring(lhs))
+    J.err(rhs:isNumber(),"Uniform.binop: rhs should be number, but is: "..tostring(rhs))
   end
   
-  return Uniform.new{kind="binop",op=op,inputs={lhs,rhs},type=ty }
+  return Uniform.new{kind="binop",op=op,inputs={lhs,rhs}}
 end)
 
 UniformMT.__mul = function(lhs,rhs) return Uniform.binop("mul",lhs,rhs):simplify() end
@@ -277,16 +287,45 @@ UniformMT.__div = function(lhs,rhs) return Uniform.binop("div",lhs,rhs):simplify
 UniformMT.__mod = function(lhs,rhs) return Uniform.binop("mod",lhs,rhs):simplify() end
 
 -- not
-function UniformFunctions:n()
+function UniformFunctions:Not()
   return Uniform.new{kind="not",inputs={self}, type=types.bool() }
 end
 
+function UniformFunctions:And(rhs) return Uniform.binop("and",self,rhs):simplify() end
+function UniformFunctions:Or(rhs) return Uniform.binop("or",self,rhs):simplify() end
 function UniformFunctions:eq(rhs) return Uniform.binop("eq",self,rhs):simplify() end
 function UniformFunctions:ge(rhs) return Uniform.binop("ge",self,rhs):simplify() end
 function UniformFunctions:lt(rhs) return Uniform.binop("lt",self,rhs):simplify() end
 function UniformFunctions:le(rhs) return Uniform.binop("le",self,rhs):simplify() end
 function UniformFunctions:gt(rhs) return Uniform.binop("gt",self,rhs):simplify() end
 function UniformFunctions:max(rhs) return Uniform.binop("max",self,rhs):simplify() end
+
+boolOps = {["and"]=1,["or"]=1,eq=1,ge=1,lt=1,le=1,gt=1}
+Uniform.isNumber = J.memoize(
+  function(n)
+    if n.kind=="const" then
+      return type(n.value)=="number"
+    elseif n.kind=="var" then
+      return true
+    elseif n.kind=="binop" then
+      return boolOps[n.op]==nil
+    elseif n.kind=="global" then
+      return n.global.type:isNumber()
+    else
+      print("NYI isNumber "..tostring(n.kind))
+      assert(false)
+    end
+  end)
+
+function UniformFunctions:isNumber() return Uniform.isNumber(self) end
+function UniformFunctions:isBool() return not Uniform.isNumber(self) end
+
+-- This should be avoided!!
+function UniformFunctions:toNumber()
+  assert(self:isNumber())
+  assert(self.kind=="const")
+  return self.value
+end
 
 Uniform.addMSBs = J.memoize(
   function(v,msbs)
@@ -298,7 +337,7 @@ Uniform.addMSBs = J.memoize(
 function UniformFunctions:addMSBs(msbs) return Uniform.addMSBs(self,msbs):simplify() end
 
 function UniformFunctions:assertAlwaysTrue()
-  J.err( self.type:isBool(),"Uniform:assert() "..tostring(self)..", not a bool?")
+  J.err( self:isBool(),"Uniform:assert() "..tostring(self)..", not a bool?")
 
   if self.kind=="const" then
     return self.value
@@ -308,7 +347,7 @@ function UniformFunctions:assertAlwaysTrue()
     --table.insert(z3str,"(set-logic QF_LIA)")
     table.insert(z3str,"(define-fun max ((x Int) (y Int)) Int (ite (< x y) y x))")
     table.insert(z3str,"(set-option :produce-models true)")
-    local smtexpr, smtstats = self:applySimplifications():n():toSMT()
+    local smtexpr, smtstats = self:applySimplifications():Not():toSMT()
     table.insert(z3str,smtstats)
     table.insert(z3str, "(assert "..smtexpr..")" )
     table.insert(z3str, "(check-sat)")
@@ -343,11 +382,11 @@ function UniformFunctions:assertAlwaysTrue()
   assert(false)
 end
 
-local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+"}
+local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+",["and"]="&",["or"]="|"}
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
-      return tostring(t.value)..":"..tostring(t.type)
+      return tostring(t.value)
     elseif t.kind=="global" then
       return t.global.name
     elseif t.kind=="binop" and t.op=="max" then
@@ -392,30 +431,86 @@ function UniformFunctions:appendGlobals(tab)
 end
 
 -- convert to a verilog string for the value
-function UniformFunctions:toVerilog()
+function UniformFunctions:toVerilog(ty)
+  J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
+  assert(self:canRepresentUsing(ty))
+
   if self.kind=="global" then
     return self.global.name
   elseif self.kind=="const" then
-    return S.valueToVerilog( self.value, self.type )
+    return S.valueToVerilog( self.value, ty )
   elseif self.kind=="binop" then
-    return self.inputs[1]:toVerilog()..opToInfix[self.op]..self.inputs[2]:toVerilog()
+    return self.inputs[1]:toVerilog(ty)..opToInfix[self.op]..self.inputs[2]:toVerilog(ty)
   else
     J.err(false,"Uniform:toVerilog() NYI - "..self.kind)
   end
 end
 
-function UniformFunctions:toSystolic()
-  if self.kind=="global" then
-    return S.readSideChannel(self.global.systolicValue)
-  elseif self.kind=="const" then
-    return S.constant( self.value, self.type )
-  else
-    J.err(false,"Uniform:toSystolic() NYI - "..self.kind)
+function UniformFunctions:toSystolic(ty)
+  J.err( types.isType(ty),"Uniform:toSystolic(): input must be type" )
+  assert(self:canRepresentUsing(ty))
+  
+  return self:visitEach(
+    function(n,inputs)
+
+      if self.kind=="global" then
+        return S.readSideChannel(self.global.systolicValue)
+      elseif self.kind=="const" then
+        return S.constant( self.value, types.valueToType(self.value) )
+      else
+        J.err(false,"Uniform:toSystolic() NYI - "..self.kind)
+      end
+    end)
+end
+
+-- can this uniform value be safely represented using type 'ty'?
+Uniform.canRepresentUsing = J.memoize(
+  function(n,ty)
+    assert(Uniform.isUniform(n))
+    assert(types.isType(ty))
+    
+    if n.kind=="const" then
+      local ot = types.valueToType(n.value)
+      return ot:canSafelyConvertTo(ty)
+    elseif n.kind=="global" then
+      return n.global.type:canSafelyConvertTo(ty)
+    elseif n.kind=="binop" then
+      local minv,maxv = ty:minValue(), ty:maxValue()
+      return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
+    else
+      J.err(false,"Uniform.canRepresentUsing: NYI - "..n.kind)
+    end
+  end)
+
+function Uniform.upToNearest(roundto,x)
+  roundto,x = Uniform(roundto),Uniform(x)
+
+  local ox = x + roundto - 1 - ((x + roundto - 1) % roundto)
+
+  J.err( ox:ge(x):assertAlwaysTrue(), "roundto: "..tostring(roundto).." x:"..tostring(x).." ox:"..tostring(ox) )
+  assert( ox:lt(x+roundto):assertAlwaysTrue() )
+  assert( (ox % roundto):eq(0):assertAlwaysTrue() )
+  return ox
+end
+
+function Uniform.makeDivisible(x,lst)
+  x = Uniform(x)
+  while true do
+    local divisible = true
+    for _,v in pairs(lst) do
+      v = Uniform(v)
+      divisible = divisible and ((x%v):eq(0):assertAlwaysTrue())
+    end
+
+    if divisible then return x end
+    x = x + 1
   end
 end
 
+function UniformFunctions:canRepresentUsing(ty) return Uniform.canRepresentUsing(self,ty) end
+
 function UniformFunctions:isUint()
-  return self.type:isUint()
+  return self:isNumber() and self:ge(0):assertAlwaysTrue()
 end
 
 -- convert to a verilog string of the input ports required for any globals
@@ -425,7 +520,7 @@ function UniformFunctions:toVerilogPortList()
   self:visitEach(
     function(n)
       if n.kind=="global" then
-        table.insert( res, S.declarePort( n.type, n.global.name, true ) )
+        table.insert( res, S.declarePort( n.global.type, n.global.name, true ) )
       end
     end)
 
@@ -438,58 +533,28 @@ local UniformTopMT = {}
 setmetatable(Uniform,UniformTopMT)
 
 Uniform.const = J.memoize(
-  function(ty,value)
-    assert( types.isType(ty) )
-    ty:checkLuaValue(value)
-    return Uniform.new{kind="const",value=value,type=ty,inputs={}}
+  function(value,X)
+    assert( X==nil )
+    return Uniform.new{kind="const",value=value,inputs={}}
   end)
   
-UniformTopMT.__call = J.memoize(function(tab,arg1,arg2,X)
-  assert(X==nil)
-  
-  local ty, value
+UniformTopMT.__call = J.memoize(function(tab,arg,X)
+  J.err(X==nil,"Uniform(): too many args")
 
-  if arg2==nil then
-    if Uniform.isUniform(arg1) then
-return arg1
-    elseif R.isGlobal(arg1) then
-      J.err( arg1.direction=="input", "Uniform: global uniform must be an input" )
-return Uniform.new{kind="global",global=arg1,type=arg1.type,inputs={}}
-    elseif type(arg1)=="number" then
-return Uniform.const(types.uint(32),arg1)
-    elseif type(arg1)=="boolean" then
-return Uniform.const(types.bool(),arg1)
-    else
-      J.err(false,"Uniform: incorrect args? "..tostring(arg1)..","..tostring(arg2))
-    end
-  end
-  
-  if types.isType(arg1) then
-    ty, value = arg1, arg2
-  elseif types.isType(arg2) then
-    ty, value = arg2, arg1
+  if Uniform.isUniform(arg) then
+return arg
+  elseif R.isGlobal(arg) then
+    J.err( arg.direction=="input", "Uniform: global uniform must be an input" )
+return Uniform.new{kind="global",global=arg,inputs={}}
+  elseif type(arg)=="number" then
+return Uniform.const(arg)
+  elseif type(arg)=="boolean" then
+return Uniform.const(arg)
+  elseif type(arg)=="string" then
+return Uniform.new{kind="var",name=arg,inputs={}}
   else
-    J.err(false,"Uniform: should be passed a value and a type, but was passed: "..tostring(arg1)..","..tostring(arg2))
+    J.err(false,"Uniform: incorrect arg? "..tostring(arg))
   end
-
-  if R.isGlobal(value) then
-    J.err( value.type==ty,"Uniform: global input type ("..tostring(value.type)..") must match requested type ("..tostring(ty)..")")
-    J.err( value.direction=="input", "Uniform: global uniform must be an input" )
-return Uniform.new{kind="global",global=value,type=ty,inputs={}}
-  elseif Uniform.isUniform(value) then
-    if value.type~=ty and value.type:isUint() and ty:isUint() and ty:verilogBits()>value.type:verilogBits() then
-      -- convert to larger size
-return value:addMSBs(ty:verilogBits()-value.type:verilogBits())
-    end
-    
-    J.err(value.type==ty,"Initializing a uniform with another uniform of unexpected type? expected type:"..tostring(ty).." input type:"..tostring(value.type))
-return value
-  elseif type(value)=="string" then
-return Uniform.new{kind="var",type=ty,name=value,inputs={}}
-  else
-return Uniform.const(ty,arg1)
-  end
-  
 end)
   
 function Uniform.isUniform(tab) return getmetatable(tab)==UniformMT end
