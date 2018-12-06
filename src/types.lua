@@ -1065,10 +1065,13 @@ function types.HandshakeArrayOneHot(A,N)
   return types.named("HandshakeArrayOneHot("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArrayOneHot", {A=A,N=N} )
 end
 
+-- serialize N Handshake streams into 1. The valid bit is a unint8 which indicates which stream was chosen.
+-- ready bit is a single bool
 function types.HandshakeTmuxed(A,N)
   err(types.isType(A),"HandshakeTmuxed: first argument should be type")
   err(types.isBasic(A),"HandshakeTmuxed: first argument should be basic type")
   err(type(N)=="number","HandshakeTmuxed: second argument should be number")
+  err(N<256,"HandshakeTmuxed: NYI - more than 255 streams not supported")
   return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
 end
 

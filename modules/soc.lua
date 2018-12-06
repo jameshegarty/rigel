@@ -1606,13 +1606,16 @@ end)
 
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
-SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
+-- syncAddrData: addr/data come in as one stream (default false)
+SOC.write = J.memoize(function( filename, W, H, writeType, V, syncAddrData, X)
   J.err( type(filename)=="string","SOC.write: filename must be string")
   J.err( types.isType(writeType), "SOC.write: type must be type")
   J.err( writeType:verilogBits()%8==0, "SOC.write: NYI - type must be byte aligned")
   if writeType:verilogBits()>64 then
     J.err( writeType:verilogBits()%64==0, "SOC.write: NYI - type must be 8 byte aligned")
   end
+  if syncAddrData==nil then syncAddrData=false end
+  assert( type(syncAddrData)=="boolean" )
   if V==nil then V=1 end
   
   local globalMetadata={}
@@ -1626,14 +1629,26 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
 
   if V>0 then writeType=types.array2d(writeType,V) end
 
-  local inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
-
-  local inpAddr = R.selectStream( "inpAddr", inp, 0 )
-  local inpData = R.selectStream( "inpData", inp, 1 )
-
-  local writeBytesPerBurst
+  local inp, inpAddr, inpData
 
   local G = require "generators"
+
+  if syncAddrData then
+    inp = R.input( R.Handshake(types.tuple{types.uint(32),writeType}) )
+    local tmp = G.FanOut{2}(inp)
+    
+    inpAddr = R.selectStream( "inpAddr", tmp, 0 )
+    inpAddr = G.HS{G.Index{0}}(inpAddr)
+    inpData = R.selectStream( "inpData", tmp, 1 )
+    inpData = G.HS{G.Index{1}}(inpData)
+  else
+    inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
+
+    inpAddr = R.selectStream( "inpAddr", inp, 0 )
+    inpData = R.selectStream( "inpData", inp, 1 )
+  end
+  
+  local writeBytesPerBurst
 
   local Scale0 = G.Module{
     function(inp)
@@ -1669,7 +1684,7 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, X)
   local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  SOC.currentAddr = SOC.currentAddr+W*H
+  SOC.currentAddr = SOC.currentAddr+Uniform(W*H):maximum()
   assert(type(SOC.currentAddr)=="number")
   
   return res

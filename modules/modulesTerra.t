@@ -1739,7 +1739,7 @@ function MT.counter( res, ty, N )
 
   terra Counter:process( out:&ty:toTerraType() )
     @out = self.buf
-    if self.buf==N-1 then
+    if self.buf==[(N-1):toTerra()] then
       self.buf = 0
     else
       self.buf = self.buf+1

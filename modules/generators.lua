@@ -480,7 +480,7 @@ function(args)
 
   local input = R.input( args.type, args.rate )
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value")
+  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
   return RM.lambda( args.string, input, out )
 end)
@@ -599,6 +599,12 @@ function(args)
   J.err( args.type:isTuple(), "generators.FilterSeq: input should be tuple" )
   J.err( args.type.list[2]:isBool(), "generators.FilterSeq: input should be tuple of type {A,bool}, but is: "..tostring(args.type) )
   return RM.filterSeq( args.type.list[1], 1, 1, args.size, 0, false )
+end)
+
+generators.Arbitrate = R.newGenerator("generators","Arbitrate",{"type","rate"},{},
+function(args)
+  J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray" )
+  return RM.arbitrate(args.type.params.A,args.rate)
 end)
 
 function generators.export(t)

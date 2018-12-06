@@ -320,10 +320,12 @@ function systolicFunctionFunctions:getDefinitionKey()
   return self
 end
 
-local function binop(lhs, rhs, op)
+systolic.binop = function(lhs, rhs, op)
   lhs, rhs = checkast(lhs), checkast(rhs)
   return typecheck({kind="binop",op=op,inputs={lhs,rhs},loc=getloc()})
 end
+
+local binop=systolic.binop
 
 local function unary(expr, op)
   expr = checkast(expr)
@@ -1942,7 +1944,8 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSe
     fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
   end
 
-  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue), fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
+  local name = sanitize("RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue))
+  local M = systolic.module.new( name, fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
   assert(systolic.isModule(M))
   return M
 end)

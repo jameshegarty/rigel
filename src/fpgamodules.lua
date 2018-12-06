@@ -12,18 +12,21 @@ local S=systolic
 local modules = {}
 
 -- calculate A+B s.t. A+B <= limit
-modules.sumwrap = memoize(function( ty, limit, X)
+modules.sumwrap = memoize(function( ty, limit_orig, X)
   err( types.isType(ty), "sumwrap: type must be rigel type, but is: "..tostring(ty) )
   err( ty:isNumber(), "sumwrap: type must be numeric rigel type, but is "..tostring(ty))
   
-  assert(type(limit)=="number")
+  --assert(type(limit)=="number")
+  local limit = Uniform(limit_orig)
   assert(X==nil)
 
+  local name = J.sanitize("sumwrap_"..tostring(ty).."_to"..tostring(limit_orig))
+  
   local swinp = S.parameter("process_input", types.tuple{ty,ty})
-  local ot = S.select(S.eq(S.index(swinp,0),S.constant(limit,ty)),
+  local ot = S.select(S.eq(S.index(swinp,0),limit:toSystolic(ty)),
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( "sumwrap_"..tostring(ty).."_to"..limit, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit

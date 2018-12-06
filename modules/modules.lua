@@ -1708,17 +1708,12 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   res.name = sanitize("Serialize_"..tostring(A).."_"..#inputRates)
 
   local sdfSum = SDFRate.sum(inputRates)
-  --for i=2,#inputRates do sdfSum = sdfSum + (inputRates[i][1]/inputRates[i][2]) end
+
   err( Uniform(sdfSum[1]):eq(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to 1, but are: "..tostring(SDF(inputRates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
 
   -- the output rates had better be the same as the inputs!
   res.sdfInput = SDF(inputRates)
   res.sdfOutput = SDF(inputRates)
-
---  function res:sdfTransfer( I, loc ) 
---    err(#I[1]==#inputRates, "serialize: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
---    return I 
---  end
 
   if terralib~=nil then res.terraModule = MT.serialize( res, A, inputRates, Schedule) end
 
@@ -1757,6 +1752,53 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
     systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
 
     return systolicModule
+  end
+
+  return rigel.newFunction(res)
+end)
+
+-- tmuxed: should we return a tmuxed type? or just a raw Handshake stream (no ids). Default false
+modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
+  err( types.isType(A), "A must be type" )
+  err( type(inputRates)=="table", "inputRates must be table")
+  assert( SDFRate.isSDFRate(inputRates) )
+  rigel.expectBasic(A)
+  if tmuxed==nil then tmuxed=false end
+  assert(type(tmuxed)=="boolean")
+  assert(X==nil)
+
+  local res = {kind="arbitrate", A=A, inputRates=inputRates}
+  res.name = sanitize("Arbitrate_"..tostring(A).."_"..#inputRates)
+  res.stateful = false
+  
+  res.inputType = rigel.HandshakeArray( A, #inputRates )
+  if tmuxed then
+    res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
+  else
+    res.outputType = rigel.Handshake( A )
+  end
+
+  local sdfSum = SDFRate.sum(inputRates)
+
+  --err( Uniform(sdfSum[1]):le(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to <= 1, but are: "..tostring(SDF(inputRates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
+
+  -- normalize to 1
+  local tmp = {}
+  for k,v in ipairs(inputRates) do
+    table.insert(tmp,SDFRate.fracMultiply(v,{sdfSum[2],sdfSum[1]}))
+  end
+
+  local sdfSumTmp = SDFRate.sum(tmp)
+
+  err( Uniform(sdfSumTmp[1]):eq(sdfSumTmp[2]):assertAlwaysTrue(), "inputRates must sum to <= 1, but are: "..tostring(SDF(tmp)).." sum:"..tostring(sdfSumTmp[1]).."/"..tostring(sdfSumTmp[2]))
+  
+  res.sdfInput = SDF(tmp)
+  res.sdfOutput = SDF{1,1}
+
+  print("ARBSDF",res.sdfInput,res.sdfOutput)
+  
+  function res.makeSystolic()
+
   end
 
   return rigel.newFunction(res)
@@ -3552,7 +3594,7 @@ local function lambdaSDFNormalize( input, output, instances )
   end
 
   local scaleFactor = SDFRate.fracInvert(sdfMaxRate)
-
+  
   if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
 
   local newInstances = {}
@@ -3833,37 +3875,21 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
 
     res.sdfOutput = output.rate
-    
-    local isum = SDFRate.sum(res.sdfInput)
-    local osum = SDFRate.sum(res.sdfOutput)
-    
-    if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
-    
-    if (isum[1]:le(isum[2]):assertAlwaysTrue() and osum[1]:le(osum[2]):assertAlwaysTrue())  then
-      -- normal. it is possible for a function to have input AND output rate <1.
-      -- for example: pad->decimate. pad won't read every cycle, decimate won't write every cycle
-    elseif (isum[1]/isum[2])*#res.sdfOutput == (osum[1]/osum[2])*#res.sdfInput then
-      -- this is OK. This is like a packTuple. it takes in 2 streams at rate 1 (sum=2), and produces 1 stream of rate 1 (sum=1)
-      -- we normalize by the number of streams. 
-      --  elseif (osum[1]/osum[2]>1) then
-      -- it's impossible to produce more than one output per cycle
-      --    res.sdfInput = sdfMultiply(res.sdfInput,osum[2],osum[1])
-      --    res.sdfOutput = sdfMultiply(res.sdfOutput,osum[2],osum[1])
-    else
-      print("INP count",#res.sdfInput,"sum",isum[1],isum[2])
-      for k,v in ipairs(res.sdfInput) do
-        print(res.sdfInput[k][1],res.sdfInput[k][2])
-      end
-      
-      print("out",#res.sdfOutput,"sum",osum[1],osum[2])
-      for k,v in ipairs(res.sdfOutput) do
-        print(res.sdfOutput[k][1],res.sdfOutput[k][2])
-      end
-      err(false, "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
-    end
 
     err(SDF.isSDF(res.sdfInput),"NOT SDF inp "..res.name.." "..tostring(res.sdfInput))
     err(SDF.isSDF(res.sdfOutput),"NOT SDF out "..res.name.." "..tostring(res.sdfOutput))
+
+    if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
+
+    -- each rate should be <=1
+    for k,v in ipairs(res.sdfInput) do
+      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
+    end
+      
+    -- each rate should be <=1
+    for _,v in ipairs(res.sdfOutput) do
+      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
+    end
 
   end
 
@@ -4714,11 +4740,14 @@ modules.triggerCounter = memoize(function(N)
 end)
 
 -- just counts from 0....N-1
-modules.counter = memoize(function(ty,N)
+modules.counter = memoize(function(ty,N_orig)
   err( types.isType(ty), "counter: type must be rigel type")                          
   err( ty:isUint() or ty:isInt(), "counter: type must be uint or int")
-  err(type(N)=="number", "counter: N must be number")
+  --err(type(N)=="number", "counter: N must be number")
+  local N = Uniform(N_orig)
 
+  J.err( N:ge(1):assertAlwaysTrue(), "modules.counter: N must be >= 1, but is: "..tostring(N) )
+  
   local res = {kind="counter"}
   res.inputType = types.null()
   res.outputType = ty
@@ -4726,7 +4755,7 @@ modules.counter = memoize(function(ty,N)
   res.sdfOutput = SDF{1,1}
   res.stateful=true
   res.delay=0
-  res.name = "Counter_"..tostring(ty).."_"..tostring(N)
+  res.name = J.sanitize("Counter_"..tostring(ty).."_"..tostring(N_orig))
 
   if terralib~=nil then res.terraModule = MT.counter(res,ty,N) end
 

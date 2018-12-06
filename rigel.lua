@@ -266,7 +266,7 @@ function generatorFunctions:complete(arglist)
     assert(false)
   end
   local mod = self.completeFn(arglist)
-  J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module?" )
+  J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module? "..tostring(mod) )
   mod.generator = self
   mod.generatorArgs = arglist
   return mod
@@ -299,7 +299,7 @@ __index=function(tab,key)
     -- build the systolic module as needed
     err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
-    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module?")
+    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
 
     -- self check module matches format we expect
     --local A,B=0,0
@@ -769,43 +769,39 @@ end
 -- assuming that the inputs are running at {1,1}, wht is the lowest/highest SDF utilization in this DAG?
 -- (this will limit the speed of the whole pipe)
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
-local __sdfExtremeRateCache = {}
-function darkroomIRFunctions:sdfExtremeRate( highest )
-  err(type(highest)=="boolean", "sdfExtremeRate: first argument should be bool")
-
-  __sdfExtremeRateCache[self] = __sdfExtremeRateCache[self] or {}
-
-  if __sdfExtremeRateCache[self][highest]==nil then
-
+darkroomIRFunctions.sdfExtremeRate = J.memoize(
+  function(self, highest )
+    local highestRate -- this is a frac
     self:visitEach(
-      function( n, args )
-        local r = n:utilization()
-        err( SDFRate.isFrac(r) or r==nil, "sdfExtremeRate: bad utilization on '"..tostring(n).."'? "..n.loc )
-        
-        local res 
+      function(n)
+        if n.kind=="apply" then
+          local util = n:utilization()
 
-        local Uniform = require "uniform"
-        
-        if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
---        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
-        elseif highest and r~=nil and (r[1]*__sdfExtremeRateCache[self][highest][1][2]):ge(r[2]*__sdfExtremeRateCache[self][highest][1][1]):assertAlwaysTrue() then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest==false and r~=nil and SDFRate.fracToNumber(r)<=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
+          local Uniform = require "uniform"
+          
+          if highestRate==nil then
+            highestRate=util
+          else
+            local cond
+            if highest then
+              cond = Uniform(highestRate[1]*util[2]):gt(util[1]*highestRate[2])
+            else
+              cond = Uniform(highestRate[1]*util[2]):lt(util[1]*highestRate[2])
+            end
+            
+            highestRate[1] = cond:sel(highestRate[1],util[1])
+            highestRate[2] = cond:sel(highestRate[2],util[2])
+          end
         end
-
       end)
 
-    if __sdfExtremeRateCache[self][highest]==nil then
-      -- no function calls => no changes to rate. (none of our other operators change rate)
-      return {1,1},"NO_APPLIES"
+    if highestRate==nil then
+      -- this can happen if we have no function calls (no other operators have utilization)
+      return {1,1}
     end
-  end
-
-
-  return __sdfExtremeRateCache[self][highest][1], __sdfExtremeRateCache[self][highest][2]
-end
+    
+    return highestRate
+  end)
 
 function darkroomIRFunctions:typecheck()
   local n = self

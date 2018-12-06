@@ -34,10 +34,15 @@ function UniformFunctions:toSMT(includeProperties)
         table.insert(stats,"(declare-const "..n.name.." Int)")
         res = n.name
       elseif n.kind=="binop" then
-        if opToZ3[n.op]==nil then print("OP",t.op) end
-        res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
-      elseif n.kind=="not" then
-        res = "(not "..inputs[1]..")"
+        if n.op=="rshift" then
+          J.err(n.inputs[2].kind=="const","Rshift: rhs should be const, but is: "..tostring(n.inputs[2]))
+          res = "(/ "..inputs[1].." "..tostring(math.pow(2,n.inputs[2].value))..")"
+        else
+          if opToZ3[n.op]==nil then print("OP",n.op) end
+          res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
+        end
+      elseif n.kind=="unary" then
+        res = "("..n.op.." "..inputs[1]..")"
       elseif n.kind=="addMSBs" then
         res = inputs[1]
       else
@@ -171,6 +176,12 @@ function UniformFunctions:simplify()
         else
           print("NYI - const op "..tostring(n.op))
           assert(false)
+        end
+      elseif n.kind=="sel" and inputs[1].kind=="const" and inputs[2].kind=="const" and inputs[3].kind=="const" then
+        if inputs[1].value then
+          return inputs[2]
+        else
+          return inputs[3]
         end
       elseif n.kind=="binop" and n.op=="max" and
         inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
@@ -319,6 +330,16 @@ function UniformFunctions:lt(rhs) return Uniform.binop("lt",self,rhs):simplify()
 function UniformFunctions:le(rhs) return Uniform.binop("le",self,rhs):simplify() end
 function UniformFunctions:gt(rhs) return Uniform.binop("gt",self,rhs):simplify() end
 function UniformFunctions:max(rhs) return Uniform.binop("max",self,rhs):simplify() end
+function UniformFunctions:lshift(rhs) return Uniform.binop("lshift",self,rhs):simplify() end
+function UniformFunctions:rshift(rhs) return Uniform.binop("rshift",self,rhs):simplify() end
+
+Uniform.sel = J.memoize(
+  function(cond,iftrue,iffalse)
+    J.err(cond:isBool(),"sel: cond should be bool")
+    return Uniform.new{kind="sel",inputs={cond,iftrue,iffalse}}
+  end)
+
+function UniformFunctions:sel(iftrue,iffalse) return Uniform.sel(self,iftrue,iffalse):simplify() end
 
 boolOps = {["and"]=1,["or"]=1,eq=1,ge=1,lt=1,le=1,gt=1,["not"]=1}
 Uniform.isNumber = J.memoize(
@@ -409,12 +430,46 @@ function UniformFunctions:maximum()
   if self.kind=="const" then
     return self.value
   else
+    local z3str = {}
+    table.insert(z3str,"(declare-const MAXIMUSVAR Int)")
+    table.insert(z3str,"(define-fun max ((x Int) (y Int)) Int (ite (< x y) y x))")
+    table.insert(z3str,"(set-option :produce-models true)")
+    local smtexpr, smtstats = self:applySimplifications():toSMT()
+    table.insert(z3str,smtstats)
+    table.insert(z3str,"(assert (<= MAXIMUSVAR "..smtexpr.."))")
+    table.insert(z3str, "(maximize MAXIMUSVAR)")
+    table.insert(z3str, "(check-sat)")
+    --table.insert(z3str, "(get-model)")
+    z3str = table.concat(z3str,"\n")
+    local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
+
+    print("Z3CALL")
+    print(z3call)
+
+    f = assert (io.popen (z3call))
+
+    local res = ""
+    for line in f:lines() do
+      res = res..line
+    end
+
+    f:close()
+
+    print("Z3RESULT:"..res.."END")
+
+    if string.match(res,"sat") then
+      local num = string.match (res, "%d+")
+      print("Z3MAX:",num)
+      return num
+    else
+      assert(false)
+    end
   end
 
   assert(false)
 end
 
-local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+",["and"]="&",["or"]="|"}
+local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+",["and"]="&",["or"]="|",lshift="<<",rshift=">>"}
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
@@ -488,19 +543,23 @@ function UniformFunctions:toVerilog(ty)
   end
 end
 
+local opToSystolic={mul="*",rshift=">>",lshift="<<",sub="-"}
 function UniformFunctions:toSystolic(ty)
   J.err( types.isType(ty),"Uniform:toSystolic(): input must be type" )
-  assert(self:canRepresentUsing(ty))
+  J.err(self:canRepresentUsing(ty),":toSystolic() Error: "..tostring(self).." can't be represented using type "..tostring(ty))
   
   return self:visitEach(
     function(n,inputs)
 
-      if self.kind=="global" then
-        return S.readSideChannel(self.global.systolicValue)
-      elseif self.kind=="const" then
-        return S.constant( self.value, types.valueToType(self.value) )
+      if n.kind=="global" then
+        return S.readSideChannel(n.global.systolicValue)
+      elseif n.kind=="const" then
+        return S.constant( n.value, types.valueToType(n.value) )
+      elseif n.kind=="binop" then
+        J.err(opToSystolic[n.op]~=nil, "Uniform:toSystolic(): missing op "..n.op.." needed for: "..tostring(self))
+        return S.binop(inputs[1],inputs[2],opToSystolic[n.op])
       else
-        J.err(false,"Uniform:toSystolic() NYI - "..self.kind)
+        J.err(false,"Uniform:toSystolic() NYI - "..n.kind)
       end
     end)
 end
