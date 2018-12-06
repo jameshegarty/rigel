@@ -163,6 +163,15 @@ function UniformFunctions:simplify()
           print("NYI - const op "..tostring(n.op))
           assert(false)
         end
+      elseif n.kind=="unary" and inputs[1].kind=="const" then
+        if n.op=="ceil" then
+          return Uniform(math.ceil(inputs[1].value))
+        elseif n.op=="floor" then
+          return Uniform(math.floor(inputs[1].value))
+        else
+          print("NYI - const op "..tostring(n.op))
+          assert(false)
+        end
       elseif n.kind=="binop" and n.op=="max" and
         inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
         -- max(0,X:uint)->X
@@ -253,6 +262,8 @@ function UniformFunctions:simplify()
       ---------- passthroughs (no simplification)
       if n.kind=="binop" then
         return Uniform.binop(n.op,inputs[1],inputs[2])
+      elseif n.kind=="unary" then
+        return Uniform.unary(n.op,inputs[1])
       elseif n.kind=="addMSBs" then
         return Uniform.addMSBs(inputs[1],n.msbs)
       elseif n.kind=="const" or n.kind=="var" or n.kind=="global" then
@@ -284,6 +295,11 @@ Uniform.binop = J.memoize(function(op,lhs,rhs)
   return Uniform.new{kind="binop",op=op,inputs={lhs,rhs}}
 end)
 
+Uniform.unary = J.memoize(
+  function(op,expr)
+    return Uniform.new{kind="unary",op=op, inputs={expr}, type=expr.ty }
+  end)
+
 UniformMT.__mul = function(lhs,rhs) return Uniform.binop("mul",lhs,rhs):simplify() end
 UniformMT.__add = function(lhs,rhs) return Uniform.binop("add",lhs,rhs):simplify() end
 UniformMT.__sub = function(lhs,rhs) return Uniform.binop("sub",lhs,rhs):simplify() end
@@ -291,9 +307,9 @@ UniformMT.__div = function(lhs,rhs) return Uniform.binop("div",lhs,rhs):simplify
 UniformMT.__mod = function(lhs,rhs) return Uniform.binop("mod",lhs,rhs):simplify() end
 
 -- not
-function UniformFunctions:Not()
-  return Uniform.new{kind="not",inputs={self}, type=types.bool() }
-end
+function UniformFunctions:Not() return Uniform.unary("not",self):simplify() end
+function UniformFunctions:ceil() return Uniform.unary("ceil",self):simplify() end
+function UniformFunctions:floor() return Uniform.unary("floor",self):simplify() end
 
 function UniformFunctions:And(rhs) return Uniform.binop("and",self,rhs):simplify() end
 function UniformFunctions:Or(rhs) return Uniform.binop("or",self,rhs):simplify() end
@@ -304,14 +320,14 @@ function UniformFunctions:le(rhs) return Uniform.binop("le",self,rhs):simplify()
 function UniformFunctions:gt(rhs) return Uniform.binop("gt",self,rhs):simplify() end
 function UniformFunctions:max(rhs) return Uniform.binop("max",self,rhs):simplify() end
 
-boolOps = {["and"]=1,["or"]=1,eq=1,ge=1,lt=1,le=1,gt=1}
+boolOps = {["and"]=1,["or"]=1,eq=1,ge=1,lt=1,le=1,gt=1,["not"]=1}
 Uniform.isNumber = J.memoize(
   function(n)
     if n.kind=="const" then
       return type(n.value)=="number"
     elseif n.kind=="var" then
       return true
-    elseif n.kind=="binop" then
+    elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
     elseif n.kind=="global" then
       return n.global.type:isNumber()
@@ -327,7 +343,7 @@ function UniformFunctions:isBool() return not Uniform.isNumber(self) end
 -- This should be avoided!!
 function UniformFunctions:toNumber()
   assert(self:isNumber())
-  assert(self.kind=="const")
+  J.err(self.kind=="const",":toNumber(): not a const? "..tostring(self))
   return self.value
 end
 
@@ -410,8 +426,8 @@ function UniformMT.__tostring(tab)
     elseif t.kind=="binop" then
       if opToInfix[t.op]==nil then print("OP",t.op) end
       return "("..tostringInner(t.inputs[1])..opToInfix[t.op]..tostringInner(t.inputs[2])..")"
-    elseif t.kind=="not" then
-      return "not("..tostringInner(t.inputs[1])..")"
+    elseif t.kind=="unary" then
+      return t.op.."("..tostringInner(t.inputs[1])..")"
     elseif t.kind=="addMSBs" then
       return tostringInner(t.inputs[1])..":"..tostring(t.type)
     elseif t.kind=="var" then
@@ -429,6 +445,16 @@ function UniformFunctions:toEscapedString()
     return tostring(self.value)
   elseif self.kind=="global" then
     return [["]]..self.global.name..[["]]
+  else
+    J.err(false,"Uniform toEscapedString() NYI - "..self.kind)
+  end
+end
+
+function UniformFunctions:toUnescapedString()
+  if self.kind=="const" then
+    return self.value
+  elseif self.kind=="global" then
+    return self.global.name
   else
     J.err(false,"Uniform toEscapedString() NYI - "..self.kind)
   end

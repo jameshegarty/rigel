@@ -4,6 +4,7 @@ local RM = require "modules"
 local J = require "common"
 local types = require "types"
 local C = require "examplescommon"
+local Uniform = require "uniform"
 
 local VERILOGFILE = arg[1]
 local METADATAFILE = arg[2]
@@ -27,7 +28,7 @@ local function expectedCycles(hsfn,inputCount,outputCount,underflowTest,slackPer
   assert(type(outputCount)=="number")
   assert(type(slackPercent)=="number")
 
-  local EC_RAW = inputCount*(hsfn.sdfInput[1][2]/hsfn.sdfInput[1][1])
+  local EC_RAW = inputCount*( Uniform(hsfn.sdfInput[1][2]):toNumber()/Uniform(hsfn.sdfInput[1][1]):toNumber() )
   EC_RAW = math.ceil(EC_RAW)
 
   if DARKROOM_VERBOSE then print("Expected cycles:",EC_RAW,"IC",inputCount,hsfn.sdfInput[1][1],hsfn.sdfInput[1][2]) end

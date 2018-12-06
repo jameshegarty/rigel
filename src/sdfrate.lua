@@ -66,7 +66,9 @@ function SDFRate.normalize( tab )
 end
 
 function SDFRate.isFrac(a)
-  if type(a)~="table" then return false end
+  if type(a)~="table" then
+    return false
+  end
 
   if type(a[1])=="number" and type(a[2])=="number" then
     return math.floor(a[1])==a[1] and math.floor(a[2])==a[2] and a[1]>=0 and a[2]>0
@@ -83,7 +85,8 @@ function SDFRate.isFrac(a)
       return false
     end
   end
-  
+
+  print("Not a frac?",a[1],a[2],type(a[1]),type(a[2]))
   return false
 end
 

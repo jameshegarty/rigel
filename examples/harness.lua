@@ -137,14 +137,14 @@ function harnessTop(t)
 
     if fn.sdfInput~=nil then
       assert(#fn.sdfInput==1)
-      MD.sdfInputN = fn.sdfInput[1][1]
-      MD.sdfInputD = fn.sdfInput[1][2]
+      MD.sdfInputN = Uniform(fn.sdfInput[1][1]):toUnescapedString()
+      MD.sdfInputD = Uniform(fn.sdfInput[1][2]):toUnescapedString()
     end
 
     if fn.sdfOutput~=nil then
       assert(#fn.sdfOutput==1)
-      MD.sdfOutputN = fn.sdfOutput[1][1]
-      MD.sdfOutputD = fn.sdfOutput[1][2]
+      MD.sdfOutputN = Uniform(fn.sdfOutput[1][1]):toUnescapedString()
+      MD.sdfOutputD = Uniform(fn.sdfOutput[1][2]):toUnescapedString()
     end
     
     MD.earlyOverride=t.earlyOverride
