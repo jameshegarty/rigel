@@ -115,7 +115,7 @@ end)
 
 C.bitSlice = memoize(
   function(A,low,high)
-    local bitslice = RM.lift( J.sanitize("bitslice_"..tostring(A).."_"..tostring(low).."_"..tostring(high)), A, nil, 0,
+    local bitslice = RM.lift( J.sanitize("bitslice_"..tostring(A).."_"..tostring(low).."_"..tostring(high)), A, types.bits(high-low+1), 0,
                           function(sinp)
                             return S.bitSlice(sinp,low,high)
                           end)
@@ -327,7 +327,7 @@ C.rshift = memoize(function(A,const)
   if const~=nil then
     -- shift by a const
     J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
-    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,nil,nil,
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,nil,
                         function(inp) return S.rshift(inp,S.constant(const,A)) end)
     return mod
   else
@@ -349,7 +349,7 @@ C.addMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -370,7 +370,7 @@ C.removeMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -1387,20 +1387,24 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
-  res.systolicModule = Ssugar.moduleConstructor(res.name)
-  local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
-  local out = {}
-  for i=1,T do
-    out[i] = {}
-    for y=0,stencilH-1 do
-      for x=0,stencilW-1 do
-        out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+    
+    local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
+    local out = {}
+    for i=1,T do
+      out[i] = {}
+      for y=0,stencilH-1 do
+        for x=0,stencilW-1 do
+          out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+        end
       end
     end
-  end
+    
+    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+    return systolicModule
+  end
 
   return rigel.newFunction(res)
 end)
@@ -1898,12 +1902,24 @@ C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
   local globalRename = {}
   for k,v in pairs(renameTable) do
     if k=="CLK" or k=="reset" or k=="ready_downstream" then
-      table.insert(portlist,"input wire "..v)
-      table.insert(modinst,"."..k.."("..v..")")
+      if type(v)=="string" then
+        table.insert(portlist,"input wire "..v)
+        table.insert(modinst,"."..k.."("..v..")")
+      else
+        table.insert(modinst,"."..k.."("..v[2]..")")
+      end
     elseif k=="process_input" then
       local ty = types.lower(Mod.inputType)
       if ty:verilogBits()==1 then
         table.insert(portlist,"input wire "..v)
+      else
+        assert(false)
+      end
+      table.insert(modinst,"."..k.."("..v..")")
+    elseif k=="process_output" then
+      local ty = types.lower(Mod.outputType)
+      if ty:verilogBits()==1 then
+        table.insert(portlist,"output wire "..v)
       else
         assert(false)
       end
@@ -1914,7 +1930,30 @@ C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
       table.insert(portlist,"output wire "..v)
       table.insert(portlist,"output wire ["..tostring(ty:verilogBits()-2)..":0] "..renameTable.process_output_data)
       table.insert(modinst,".process_output({"..v..","..renameTable.process_output_data.."})")
+    elseif k=="process_input_valid" then
+      J.err(types.isHandshakeAny(Mod.inputType),"NYIII - "..tostring(Mod.inputType))
+      local ty = types.lower(Mod.inputType)
+
+      if type(v)=="string" then
+        table.insert(portlist,"input wire "..v)
+        table.insert(portlist,"input wire ["..tostring(ty:verilogBits()-2)..":0] "..renameTable.process_input_data)
+        table.insert(modinst,".process_input({"..v..","..renameTable.process_input_data.."})")
+      else
+        table.insert(modinst,".process_input({"..v[2]..","..renameTable.process_input_data[2].."})")
+      end
+    elseif k=="process_input_data" then
+    elseif k=="process_output_data" then
+    elseif k=="ready" then
+      J.err(types.isHandshakeAny(Mod.inputType),"NYIII - "..tostring(Mod.inputType))
+
+      if type(v)=="string" then
+        assert(false)
+      else
+        table.insert(modinst,".ready("..v[2]..")")
+      end
+
     else
+      J.err(Mod:getGlobal(k)~=nil,k.." is not a global")
       globalRename[k] = v
     end
   end
@@ -1940,11 +1979,13 @@ C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
   if extraPortDefString~=nil then table.insert(portlist,extraPortDefString) end
   
   local vstr = [[module ]]..name..[[(]]..table.concat(portlist,", ")..[[);
+]]
 
-]]..Mod.name.." inst("..table.concat(modinst,", ")..[[);
+  if extraDefs~=nil then vstr = vstr..extraDefs.."\n" end
+
+vstr = vstr..Mod.name.." inst("..table.concat(modinst,", ")..[[);
 
 ]]
-  if extraDefs~=nil then vstr = vstr..extraDefs end
   
   vstr = vstr..[[
 

@@ -281,6 +281,7 @@ end
 -- This takes a basic->R to V->RV
 -- Compare to waitOnInput below: runIffReady is used when we want to take control of the ready bit purely for performance reasons, but don't want to amplify or decimate data.
 local function runIffReadySystolic( systolicModule, fns, passthroughFns )
+  if Ssugar.isModuleConstructor(systolicModule) then systolicModule = systolicModule:toModule() end
   local res = Ssugar.moduleConstructor("RunIffReady_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("RunIffReady") )
 
@@ -437,6 +438,7 @@ modules.waitOnInput = memoize(function(f)
 end)
 
 local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger )
+  if Ssugar.isModuleConstructor(systolicModule) then systolicModule=systolicModule:toModule() end
   assert( S.isModule(systolicModule) )
   assert(type(handshakeTrigger)=="boolean")
   
@@ -589,6 +591,7 @@ modules.RPassthrough = memoize(function(f)
 end)
 
 local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput, X )
+  if Ssugar.isModuleConstructor(systolicModule) then systolicModule = systolicModule:toModule() end
   err( S.isModule(systolicModule), "liftHandshakeSystolic: systolicModule not a systolic module?" )
   assert(type(hasReadyInput)=="table")
   assert(X==nil)
@@ -596,7 +599,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
   local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
   local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
 
-  systolicModule:complete()
+  if Ssugar.isModuleConstructor(systolicModule) then systolicModule:complete(); systolicModule=systolicModule.module end
 
   for K,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
@@ -1798,7 +1801,48 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
   print("ARBSDF",res.sdfInput,res.sdfOutput)
   
   function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
+    local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
+    
+    local inpData = {}
+    local inpValid = {}
+    
+    for i=1,#inputRates do
+      table.insert( inpData, S.index(S.index(inp,i-1),0) )
+      table.insert( inpValid, S.index(S.index(inp,i-1),1) )
+    end
+
+    local readyDownstream = S.parameter( "ready_downstream", types.bool() )
+
+    -- which order do we prefer to read the interfaces in?
+    -- ie if multiple are true, which do we prefer to read
+    local order = J.range(#inputRates)
+
+    local readyOut = {}
+    local dataOut
+    for idx,k in ipairs(order) do
+      if idx==1 then
+        readyOut[k] = inpValid[k]
+        dataOut = inpData[k]
+      else
+        readyOut[k] = S.__and( inpValid[k], S.__not(readyOut[order[idx-1]]) )
+        dataOut = S.select(readyOut[k],inpData[k],dataOut)
+      end
+    end
+
+    local validOut = J.foldt( inpValid, function(a,b) return S.__or(a,b) end, "X" )
+
+    -- if nothing is valid, set all readys to true (or else we will block progress)
+    for k,v in ipairs(readyOut) do readyOut[k] = S.__and(S.__or(readyOut[k],S.__not(validOut)),readyDownstream) end
+
+    local pipelines={}
+    
+    systolicModule:addFunction( S.lambda("process", inp, S.tuple{dataOut,validOut} , "process_output", pipelines) )
+
+    systolicModule:addFunction( S.lambda("ready", readyDownstream, S.cast(S.tuple(readyOut),types.array2d(types.bool(),#inputRates)), "ready" ) )
+    
+    return systolicModule
   end
 
   return rigel.newFunction(res)
@@ -2967,12 +3011,15 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
 
   local bytes = (size*A:verilogBits())/8
 
-  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall))
+  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly))
 
   local fifo
   if csimOnly then
-    res.systolicModule = fpgamodules.fifonoop(A)
-    res.stateful = false
+    function res.makeSystolic()
+      return fpgamodules.fifonoop(A)
+    end
+    
+    --res.stateful = false
   else
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -4227,12 +4274,15 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     return systolicModule
   end
 
+  --[=[
   if res.outputType==nil then
     --err( S.isModule(res.systolicModule), "modules.lift: outputType is missing, and so is the systolic module?")
     res.systolicModule = res.makeSystolic()
-    res.outputType = res.systolicModule.functions.process.output.type
+    res.outputType = res.systolicModule:lookupFunction("process").output.type
     err( types.isType(res.outputType), "modules.lift: systolic module did not return a valid type")
   end
+  ]=]
+  J.err(types.isType(res.outputType),"modules.lift: missing outputType")
 
   local res = rigel.newFunction( res )
 
@@ -4756,7 +4806,9 @@ modules.counter = memoize(function(ty,N_orig)
   res.stateful=true
   res.delay=0
   res.name = J.sanitize("Counter_"..tostring(ty).."_"..tostring(N_orig))
-
+  res.globals={}
+  N:appendGlobals(res.globals)
+  
   if terralib~=nil then res.terraModule = MT.counter(res,ty,N) end
 
   function res.makeSystolic()

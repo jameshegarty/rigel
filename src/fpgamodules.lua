@@ -463,7 +463,7 @@ end
 --   already in the shift register, it will just read that value instead
 --   of calculating it. This happens if exprs[a] == exprs[b](#exprs), using the delay syntax
 function modules.addShifter( module, exprs, stride, period, verbose, X )
-  assert( S.isModule(module) )
+  assert( Ssugar.isModuleConstructor(module) )
   assert(type(exprs)=="table")
   assert(#exprs>0)
   assert(#exprs==J.keycount(exprs))

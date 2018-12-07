@@ -299,6 +299,7 @@ __index=function(tab,key)
     -- build the systolic module as needed
     err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
+    if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
     J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
 
     -- self check module matches format we expect
@@ -312,9 +313,9 @@ __index=function(tab,key)
     end
 
     for k,_ in pairs(sm.sideChannels) do
-      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module lacks global for side channel "..k.name )
+      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
     end
-      
+
     if tab.registered==false then
       err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
           
@@ -539,6 +540,10 @@ function darkroom.newFunction(tab,X)
 
   if tab.globals==nil then tab.globals={} end
   if tab.globalMetadata==nil then tab.globalMetadata={} end
+
+  if tab.systolicModule~=nil then
+    assert(false)
+  end
   
   return setmetatable( tab, darkroomFunctionMT )
 end
@@ -620,7 +625,7 @@ darkroomIRMT.__tostring = function(tab)
       res = res..v.name..","
     end
     res = res.."}"
-  elseif tab.kind=="concat" then
+  elseif tab.kind=="concat" or tab.kind=="concatArray2d" then
     res = "local "..tab.name.." = R.concat('"..tab.name.."',{"
     for k,v in ipairs(tab.inputs) do
       res = res..v.name
@@ -632,7 +637,7 @@ darkroomIRMT.__tostring = function(tab)
   end
 
   if darkroom.SDF then
-    res = res .." -- Rate:"..tostring(tab.rate)
+    res = res .." -- RateOut:"..tostring(tab.rate)
     local util = tab:utilization()
     if util~=nil then res=res.." Util:"..tostring(util[1]).."/"..tostring(util[2]) end
   end
@@ -780,7 +785,7 @@ darkroomIRFunctions.sdfExtremeRate = J.memoize(
           local Uniform = require "uniform"
           
           if highestRate==nil then
-            highestRate=util
+            highestRate={util[1],util[2]}
           else
             local cond
             if highest then
@@ -905,7 +910,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
-          err(n.fn.systolicModule.functions.process.output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process").output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)

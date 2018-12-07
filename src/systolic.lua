@@ -227,7 +227,8 @@ function systolicModuleFunctions:lookupFunction( fnname )
   for k,v in pairs(self.functions) do
     if v.name==fnname then return v end
   end
-  err(false, "Function "..fnname.." not found!")
+  --print "Function "..fnname.." not found!")
+  return nil
 end
 
 systolicFunctionFunctions = {}
@@ -1332,7 +1333,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       elseif n.kind=="readSideChannel" then
-        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module?")
+        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module '"..module.name.."'?")
         finalResult = n.sideChannel.name
       elseif n.kind=="writeSideChannel" then
         table.insert( declarations, "assign "..n.sideChannel.name.." = "..args[1].."; // writeSideChannel\n" )
@@ -1404,7 +1405,7 @@ function systolic.isSideChannel(t) return getmetatable(t)==systolicSideChannelMT
 -- Module Definitions
 --------------------------------------------------------------------
 function systolic.isModule(t)
-  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==systolicModuleConstructorMT or getmetatable(t)==regModuleMT
+  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==regModuleMT
 end
 
 systolic.module = {}
@@ -1416,8 +1417,13 @@ userModuleMT={__index=userModuleFunctions}
 
 function userModuleMT.__tostring(tab)
   local res = {}
-  table.insert(res,"Module "..tab.name)
+  table.insert(res,"SystolicModule "..tab.name)
 
+  table.insert(res,"Side Channels:")
+  for k,_ in pairs(tab.sideChannels) do
+    table.insert(res,k.name)
+  end
+  
   for fnname,fn in pairs(tab.functions) do
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
@@ -1695,7 +1701,28 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
       SC[k]=1
     end
   end
-  
+
+  -- add missing side channels from reads/writes
+  for k,v in pairs(fns) do
+    if v.output~=nil then
+      v.output:visitEach(
+        function(n,args)
+          if n.kind=="readSideChannel" or n.kind=="writeSideChannel" then
+            SC[n.sideChannel] = 1
+          end
+        end)
+    end
+  end
+
+  -- add missing side channels from instances
+  for _,inst in pairs(instances) do
+    if inst.module.sideChannels~=nil then
+      for sc,_ in pairs(inst.module.sideChannels) do
+        SC[sc] = 1
+      end
+    end
+  end
+    
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -1739,15 +1766,6 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  -- check for dangling side channels
-  for _,inst in pairs(instances) do
-    if inst.module.sideChannels~=nil then
-      for sc,_ in pairs(inst.module.sideChannels) do
-        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."', when creating new module '"..name.."'")
-      end
-    end
-  end
-  
   -- different functions can have the same stall domains. We consider them identical if they have the same name
   for k,v in pairs(fns) do
     if v.CE~=nil then 

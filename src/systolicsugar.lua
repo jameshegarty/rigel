@@ -135,7 +135,7 @@ function sugar.moduleConstructor( name, X )
   checkReserved(name)
 
   -- we need to put the options in their own table, b/c otherwise nil options will go to the __index metamethod
-  local t = { name=name, functions={}, instances={}, isComplete=false, usedInstanceNames={}, instanceMap={}, options={}, sideChannels={} }
+  local t = { __name=name, __functions={}, __instances={}, isComplete=false, __usedInstanceNames={}, __instanceMap={}, __options={}, __sideChannels={} }
 
   return setmetatable( t, systolicModuleConstructorMT )
 end
@@ -145,30 +145,28 @@ function systolicModuleConstructor:add( inst,X )
   err( systolic.isInstance(inst), "must be an instance" )
 
   checkReserved(inst.name)
-  if self.usedInstanceNames[inst.name]~=nil then
+  if self.__usedInstanceNames[inst.name]~=nil then
     print("Error, instance name "..inst.name.." already in use")
     assert(false)
   end
 
-  self.instanceMap[inst] = 1
-  self.usedInstanceNames[inst.name] = inst
+  self.__instanceMap[inst] = 1
+  self.__usedInstanceNames[inst.name] = inst
 
-  table.insert(self.instances,inst)
+  table.insert(self.__instances,inst)
   return inst
 end
 
 function systolicModuleConstructor:lookupInstance( instName,X )
   err(X==nil,"systolicsugar: too many arguments")
   assert( type(instName)=="string")
-  err( systolic.isInstance(self.usedInstanceNames[instName]), "Could not find instance named '"..instName.."' on module")
-  return self.usedInstanceNames[instName]
+  err( systolic.isInstance(self.__usedInstanceNames[instName]), "Could not find instance named '"..instName.."' on module")
+  return self.__usedInstanceNames[instName]
 end
 
 function systolicModuleConstructor:lookupFunction( funcName,X )
   err(X==nil,"systolicsugar: too many arguments")
-  --err( self.functions[funcName]~=nil, "Could not find function named '"..funcName.."' on module")
-  --if self.functions[funcName]==nil then print("Warning: Could not find function named '"..funcName.."' on module "..self.name) end
-  return self.functions[funcName]
+  return self.__functions[funcName]
 end
 
 function systolicModuleConstructor:addFunction( fn, X )
@@ -176,42 +174,48 @@ function systolicModuleConstructor:addFunction( fn, X )
   err( self.isComplete==false, "module is already complete")
   err( systolic.isFunction(fn) or sugar.isFunctionConstructor(fn), "input must be a systolic function")
 
-  if self.usedInstanceNames[fn.name]~=nil then
+  if self.__usedInstanceNames[fn.name]~=nil then
     print("Error, function name "..fn.name.." already in use")
     assert(false)
   end
 
-  self.functions[fn.name]=fn
+  self.__functions[fn.name]=fn
   fn.module = self
   return fn
 end
 
-function systolicModuleConstructor:onlyWire(v) err( self.isComplete==false, "module is already complete"); self.options.onlyWire=v; return self end
-function systolicModuleConstructor:verilog(v) err( self.isComplete==false, "module is already complete"); self.options.verilog=v; return self end
-function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "module is already complete"); self.options.parameters=p; return self end
+function systolicModuleConstructor:onlyWire(v) err( self.isComplete==false, "module is already complete"); self.__options.onlyWire=v; return self end
+function systolicModuleConstructor:verilog(v) err( self.isComplete==false, "module is already complete"); self.__options.verilog=v; return self end
+function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "module is already complete"); self.__options.parameters=p; return self end
 
 function systolicModuleConstructor:addSideChannel(sc,X)
   err(X==nil,"systolicsugar: too many arguments")
   err( self.isComplete==false, "module is already complete");
   err( systolic.isSideChannel(sc),":addSideChannel must be side channel")
-  self.sideChannels[sc] = 1
+  self.__sideChannels[sc] = 1
   return self
 end
 
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
-    local fns = J.map(self.functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
-    self.module = systolic.module.new( self.name, fns, self.instances, self.options.onlyWire, self.options.parameters, self.options.verilog, self.options.verilogDelay, self.sideChannels )
+    local fns = J.map(self.__functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
+    self.module = systolic.module.new( self.__name, fns, self.__instances, self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__sideChannels )
     self.isComplete = true
   end
+end
+
+-- convert to plain module
+function systolicModuleConstructor:toModule()
+  self:complete()
+  return self.module
 end
 
 function systolicModuleConstructor:setDelay( fnname, delay, X )
   err(X==nil,"systolicsugar: too many arguments")
   assert(type(fnname)=="string")
   assert(type(delay)=="number")
-  self.options.verilogDelay = self.options.verilogDelay or {}
-  self.options.verilogDelay[fnname]=delay
+  self.__options.verilogDelay = self.options.verilogDelay or {}
+  self.__options.verilogDelay[fnname]=delay
 end
 
 function systolicModuleConstructor:getDelay( fnname, X )

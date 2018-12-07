@@ -45,6 +45,8 @@ function UniformFunctions:toSMT(includeProperties)
         res = "("..n.op.." "..inputs[1]..")"
       elseif n.kind=="addMSBs" then
         res = inputs[1]
+      elseif n.kind=="sel" then
+        res = "(ite "..inputs[1].." "..inputs[2].." "..inputs[3]..")"
       else
         print(":toSMT() NYI - "..tostring(n.kind))
       end
@@ -100,7 +102,7 @@ function UniformFunctions:applySimplifications()
       if simplificationMap[n]~=nil then
         --print("REPLACE",n,"=>",simplificationMap[n])
         return simplificationMap[n]
-      elseif n.kind=="global" or n.kind=="const" then
+      elseif n.kind=="global" or n.kind=="const" or n.kind=="var" then
         return n
       elseif n.kind=="binop" then
         return Uniform.binop(n.op,inputs[1],inputs[2])
@@ -108,6 +110,8 @@ function UniformFunctions:applySimplifications()
         return inputs[1]:Not()
       elseif n.kind=="addMSBs" then
         return Uniform.addMSBs(inputs[1],n.msbs)
+      elseif n.kind=="sel" then
+        return Uniform.sel(inputs[1],inputs[2],inputs[3])
       else
         print("n.kind",n.kind)
         assert(false)
@@ -118,12 +122,17 @@ function UniformFunctions:applySimplifications()
   return res
 end
 
-function UniformFunctions:simplify()
+DEEP_SIMPLIFY = true
+UniformFunctions.simplify = J.memoize(function(self)
+
+--  local res = self:visitEach(
+--    function(n,inputs)
+  local n = self
+  local inputs = {}                                      
+
+  for k,v in ipairs(self.inputs) do inputs[k] = self.inputs[k]:simplify() end
   
-  local res = self:visitEach(
-    function(n,inputs)
-      
-      if n.kind=="binop" and inputs[1].kind=="const" and inputs[2].kind=="const" then
+  if n.kind=="binop" and inputs[1].kind=="const" and inputs[2].kind=="const" then
         if n.op=="eq" then
           return Uniform(inputs[1].value==inputs[2].value)
         elseif n.op=="gt" then
@@ -177,11 +186,20 @@ function UniformFunctions:simplify()
           print("NYI - const op "..tostring(n.op))
           assert(false)
         end
-      elseif n.kind=="sel" and inputs[1].kind=="const" and inputs[2].kind=="const" and inputs[3].kind=="const" then
+      elseif n.kind=="sel" and inputs[1].kind=="const" then
         if inputs[1].value then
           return inputs[2]
         else
           return inputs[3]
+        end
+      elseif n.kind=="sel" and DEEP_SIMPLIFY then
+        if inputs[1]:assertAlwaysTrue() then
+          -- cond is always true: we can simplify
+          return inputs[2]
+        elseif inputs[1]:assertAlwaysFalse() then
+          return inputs[3]
+        else
+          return Uniform.sel(inputs[1],inputs[2],inputs[3])
         end
       elseif n.kind=="binop" and n.op=="max" and
         inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
@@ -277,6 +295,8 @@ function UniformFunctions:simplify()
         return Uniform.unary(n.op,inputs[1])
       elseif n.kind=="addMSBs" then
         return Uniform.addMSBs(inputs[1],n.msbs)
+      elseif n.kind=="sel" then
+        return Uniform.sel(inputs[1],inputs[2],inputs[3])
       elseif n.kind=="const" or n.kind=="var" or n.kind=="global" then
         return n
       else
@@ -284,11 +304,11 @@ function UniformFunctions:simplify()
         assert(false)
       end
 
-    end)
+--    end)
 
   --print("SIMPLIFY",self,res)
-  return res
-end
+--  return res
+end)
 
 Uniform.binop = J.memoize(function(op,lhs,rhs)
   local ty = types.uint(32)
@@ -352,6 +372,9 @@ Uniform.isNumber = J.memoize(
       return boolOps[n.op]==nil
     elseif n.kind=="global" then
       return n.global.type:isNumber()
+    elseif n.kind=="sel" then
+      assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
+      return n.inputs[2]:isNumber()
     else
       print("NYI isNumber "..tostring(n.kind))
       assert(false)
@@ -377,18 +400,24 @@ Uniform.addMSBs = J.memoize(
 
 function UniformFunctions:addMSBs(msbs) return Uniform.addMSBs(self,msbs):simplify() end
 
-function UniformFunctions:assertAlwaysTrue()
+-- if alwaysTrue=true, assert always true
+-- if alwaysTrue=false, assert alwaysFalse
+UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
   J.err( self:isBool(),"Uniform:assert() "..tostring(self)..", not a bool?")
-
+  assert(type(alwaysTrue)=="boolean")
+  
   if self.kind=="const" then
-    return self.value
+    assert(type(self.value)=="boolean")
+    return self.value==alwaysTrue
   else
     print(":assert() - "..tostring(self))
     local z3str = {}
     --table.insert(z3str,"(set-logic QF_LIA)")
     table.insert(z3str,"(define-fun max ((x Int) (y Int)) Int (ite (< x y) y x))")
     table.insert(z3str,"(set-option :produce-models true)")
-    local smtexpr, smtstats = self:applySimplifications():Not():toSMT()
+    local expr = self:applySimplifications()
+    if alwaysTrue then expr = expr:Not() end
+    local smtexpr, smtstats = expr:toSMT()
     table.insert(z3str,smtstats)
     table.insert(z3str, "(assert "..smtexpr..")" )
     table.insert(z3str, "(check-sat)")
@@ -398,6 +427,7 @@ function UniformFunctions:assertAlwaysTrue()
 
     print("Z3CALL")
     print(z3call)
+    --print(debug.traceback())
 
     f = assert (io.popen (z3call))
 
@@ -412,16 +442,21 @@ function UniformFunctions:assertAlwaysTrue()
     print("Z3RESULT:"..res.."END")
 
     if string.match(res,"unsat") then
---      print(debug.traceback())
+      --      print(debug.traceback())
+      print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
       return true
     else
       print(debug.traceback())
+      print("ASSERT_ALWAYS("..tostring(alwaysTrue).." return false")
       return false
     end
   end
 
   assert(false)
-end
+end)
+
+function UniformFunctions:assertAlwaysTrue() return self:assertAlways(true) end
+function UniformFunctions:assertAlwaysFalse() return self:assertAlways(false) end
 
 -- what is the maximum value this expr can be?
 function UniformFunctions:maximum()
@@ -485,6 +520,8 @@ function UniformMT.__tostring(tab)
       return t.op.."("..tostringInner(t.inputs[1])..")"
     elseif t.kind=="addMSBs" then
       return tostringInner(t.inputs[1])..":"..tostring(t.type)
+    elseif t.kind=="sel" then
+      return "("..tostringInner(t.inputs[1])..")?("..tostringInner(t.inputs[2]).."):("..tostringInner(t.inputs[3])..")"
     elseif t.kind=="var" then
       return t.name
     else
