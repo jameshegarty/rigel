@@ -40,7 +40,6 @@ void enableCommas(){setlocale(LC_NUMERIC, "");}
 local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
 return function(top, options)
-  print("HARNESSTERRASOCTOP",top)
   
   local simCycles = (top.sdfInput[1][2]):toNumber()/(top.sdfInput[1][1]):toNumber()
   if options~=nil and options.cycles~=nil then simCycles = options.cycles end
@@ -132,7 +131,6 @@ return function(top, options)
   local clearOutputs = {}
   for i=0,SOC.ports do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
-      print("READADDR",top.globalMetadata["MAXI"..i.."_read_address"])
       table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [Uniform(top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE):toTerra()]) end )
     end
 

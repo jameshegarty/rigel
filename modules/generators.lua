@@ -604,7 +604,6 @@ end)
 generators.Arbitrate = R.newGenerator("generators","Arbitrate",{"type","rate"},{},
 function(args)
   J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray" )
-  print("ARBITRATEREATE",args.rate)
   return RM.arbitrate(args.type.params.A,args.rate)
 end)
 

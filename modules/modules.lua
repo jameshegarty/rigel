@@ -1783,8 +1783,6 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
 
   local sdfSum = SDFRate.sum(inputRates)
 
-  --err( Uniform(sdfSum[1]):le(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to <= 1, but are: "..tostring(SDF(inputRates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
-
   -- normalize to 1
   local tmp = {}
   for k,v in ipairs(inputRates) do
@@ -1797,8 +1795,6 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
   
   res.sdfInput = SDF(tmp)
   res.sdfOutput = SDF{1,1}
-
-  print("ARBSDF",res.sdfInput,res.sdfOutput)
   
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
@@ -1863,19 +1859,11 @@ modules.demux = memoize(function( A, rates, X )
   res.stateful = false
   res.name = sanitize("Demux_"..tostring(A).."_"..#rates)
 
-  --local sdfSum = rates[1][1]/rates[1][2]
-  --for i=2,#rates do sdfSum = sdfSum + (rates[i][1]/rates[i][2]) end
-  --err(sdfSum==1, "rates must sum to 1")
   local sdfSum = SDFRate.sum(rates)
   err(  SDFRate.fracEq(sdfSum,{1,1}), "rates must sum to 1")
 
   res.sdfInput = SDF(rates)
   res.sdfOutput = SDF(rates)
-
---  function res:sdfTransfer( I, loc ) 
---    err(#I[1]==#rates, "demux: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#rates) )
---    return I 
---  end
 
   if terralib~=nil then res.terraModule = MT.demux(res,A,rates) end
 
@@ -1886,8 +1874,6 @@ modules.demux = memoize(function( A, rates, X )
     if DARKROOM_VERBOSE then 
       printInst = systolicModule:add( S.module.print( types.tuple( J.concat({types.uint(8)},J.broadcast(types.bool(),#rates+1))), "Demux IV %d readyDownstream ["..table.concat(J.broadcast("%d",#rates),",").."] ready %d"):instantiate("printInst") ) 
     end
-
-    --local resetValid = S.parameter("reset_valid", types.bool() )
     
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     local inpData = S.index(inp,0)
@@ -1895,7 +1881,6 @@ modules.demux = memoize(function( A, rates, X )
     local readyDownstream = S.parameter( "ready_downstream", types.array2d( types.bool(), #rates ) )
     
     local pipelines = {}
-    --local resetPipelines = {}
     
     local out = {}
     local readyOut = {}
@@ -1914,7 +1899,6 @@ modules.demux = memoize(function( A, rates, X )
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(printList) ) ) end
     
     systolicModule:addFunction( S.lambda("process", inp, S.cast(S.tuple(out),rigel.lower(res.outputType)) , "process_output", pipelines ) )
-    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", resetPipelines, resetValid ) )
     
     systolicModule:addFunction( S.lambda("ready", readyDownstream, readyOut, "ready" ) )
 
