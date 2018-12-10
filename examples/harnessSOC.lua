@@ -4,6 +4,7 @@ local SOC = require "soc"
 local J = require "common"
 local SDF = require "sdfrate"
 local types = require "types"
+local Uniform = require "uniform"
 
 return function(fn,t)
   if R.isFunction(fn)==false then
@@ -49,12 +50,13 @@ return function(fn,t)
       if fn.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
         local rlist = {}
         table.insert(rlist,"filename='"..fn.globalMetadata["MAXI"..i.."_read_filename"].."'")
-        if fn.globalMetadata["MAXI"..i.."_read_W"]~=nil then table.insert(rlist,"W="..fn.globalMetadata["MAXI"..i.."_read_W"]) end
-        if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..fn.globalMetadata["MAXI"..i.."_read_H"]) end
+        if fn.globalMetadata["MAXI"..i.."_read_W"]~=nil then table.insert(rlist,"W="..Uniform(fn.globalMetadata["MAXI"..i.."_read_W"]):toEscapedString()) end
+        if fn.globalMetadata["MAXI"..i.."_read_H"]~=nil then table.insert(rlist,"H="..Uniform(fn.globalMetadata["MAXI"..i.."_read_H"]):toEscapedString()) end
         if fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]~=nil then table.insert(rlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_read_bitsPerPixel"]) end
         if fn.globalMetadata["MAXI"..i.."_read_V"]~=nil then table.insert(rlist,"V="..fn.globalMetadata["MAXI"..i.."_read_V"]) end
         J.err(fn.globalMetadata["MAXI"..i.."_read_address"]~=nil,"Error: AXI port "..tostring(i).." was given a filename, but no address?")
-        table.insert(rlist,"address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_read_address"]))
+        
+        table.insert(rlist,"address="..Uniform(fn.globalMetadata["MAXI"..i.."_read_address"]):toEscapedString() )
         table.insert(inputList, "{"..table.concat(rlist,",").."}")
       end
     end
@@ -62,7 +64,18 @@ return function(fn,t)
     local outputList = {}
     for i=0,SOC.ports do
       if fn.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
-        table.insert(outputList,"{filename='"..fn.globalMetadata["MAXI"..i.."_write_filename"].."',W="..fn.globalMetadata["MAXI"..i.."_write_W"]..",H="..fn.globalMetadata["MAXI"..i.."_write_H"]..",bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]..",V="..fn.globalMetadata["MAXI"..i.."_write_V"]..",address=0x"..string.format("%x",fn.globalMetadata["MAXI"..i.."_write_address"]).."}")
+        local wlist = {}
+        
+        table.insert(wlist,"filename='"..fn.globalMetadata["MAXI"..i.."_write_filename"].."'")
+        if fn.globalMetadata["MAXI"..i.."_write_W"]~=nil then table.insert(wlist,"W="..fn.globalMetadata["MAXI"..i.."_write_W"]) end
+        if fn.globalMetadata["MAXI"..i.."_write_H"]~=nil then table.insert(wlist,"H="..fn.globalMetadata["MAXI"..i.."_write_H"]) end
+        if fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]~=nil then table.insert(wlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]) end
+        if fn.globalMetadata["MAXI"..i.."_write_V"]~=nil then table.insert(wlist,"V="..fn.globalMetadata["MAXI"..i.."_write_V"]) end
+
+        J.err(fn.globalMetadata["MAXI"..i.."_write_address"]~=nil,"Error: AXI write port "..tostring(i).." was given a filename, but no address?")
+        table.insert( wlist, "address="..Uniform(fn.globalMetadata["MAXI"..i.."_write_address"]):toEscapedString() )
+
+        table.insert(outputList, "{"..table.concat(wlist,",").."}")
       end
     end
 
@@ -86,8 +99,11 @@ return function(fn,t)
     
     local cyc = (fn.sdfInput[1][2]/fn.sdfInput[1][1])
     if t~=nil and t.cycles~=nil then cyc=t.cycles end
+
+    J.err( type(SOC.currentAddr)=="number","SOC.currentAddr should be a number?")
+    J.err(SOC.currentAddr ~= 0x30008000,"SOC.currentAddr should imply a segment size > 0?")
     
-    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..cyc..registerList..registerNames.."}" )
+    f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
     local doTerraSim = require("harnessTerraSOC")

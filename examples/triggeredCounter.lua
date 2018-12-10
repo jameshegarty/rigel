@@ -8,14 +8,13 @@ function top(inp)
   local pos = HS(posSeq{size={W,H},V=1},false)()
   pos.name="POSSEQ"
   pos.sdfRateOverride={{1,1}}
-  print("POSDONE")
+
   local start = liftMath(function(x) return x:index(1):index(0):index(0):removeMSBs(8) end)(inp,pos)
   start.name="START"
-  print("LIFTDONE",start.type)
+
   local tc = triggeredCounter(N)(start)
   tc.name="TC"
   return tc
---  return start
 end
 
 

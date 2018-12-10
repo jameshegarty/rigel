@@ -2,18 +2,28 @@ local SDFRate = {}
 local J = require "common"
 local err = J.err
 
+function SDFRate.simplify(a,b)
+  local Uniform = require "uniform"
+
+  local res = Uniform(a)/Uniform(b)
+  res = res:simplify()
+
+  if res.kind=="binop" and res.op=="div" then
+    return res.inputs[1], res.inputs[2]
+  else
+    -- this is >=1, maybe?
+    assert( res:isNumber() )
+    assert( res:ge(0):assertAlwaysTrue() )
+    return res,Uniform(1)
+  end
+end
+
 -- t should be format {{number,number},{number,number},...}
 function SDFRate.isSDFRate(t)
   if type(t)~="table" then return false end
   if J.keycount(t)~=#t then return false end
   for _,v in pairs(t) do
-    if v=="x" then
-      -- ok
-    else
-      --if type(v)~="table" then return false end
-      --if (type(v[1])~="number" or type(v[2])~="number") then return false end
-      return SDFRate.isFrac(v)
-    end
+    return SDFRate.isFrac(v)
   end
   return true
 end
@@ -48,7 +58,7 @@ function SDFRate.normalize( tab )
   local res = {}
   for i=1,#tab do
     local nn,dd = tab[i][1]*sum[2], tab[i][2]*sum[1]
-    local n,d = J.simplify(nn,dd)
+    local n,d = SDFRate.simplify(nn,dd)
     res[i] = {n,d}
   end
   
@@ -56,7 +66,28 @@ function SDFRate.normalize( tab )
 end
 
 function SDFRate.isFrac(a)
-  return type(a)=="table" and type(a[1])=="number" and type(a[2])=="number" and math.floor(a[1])==a[1] and math.floor(a[2])==a[2] and a[1]>=0 and a[2]>0
+  if type(a)~="table" then
+    return false
+  end
+
+  if type(a[1])=="number" and type(a[2])=="number" then
+    return math.floor(a[1])==a[1] and math.floor(a[2])==a[2] and a[1]>=0 and a[2]>0
+  end
+
+  local Uniform = require "uniform"
+  
+  if Uniform.isUniform(a[1]) or Uniform.isUniform(a[2]) then
+    local a1,a2=Uniform(a[1]), Uniform(a[2])
+    if a1:isNumber() and a2:isNumber() and a2:gt(0):assertAlwaysTrue() then
+      return true
+    else
+      print("Error: input is not a valid fraction, because N or D are not integer, or D is 0: "..tostring(a1).."/"..tostring(a2))
+      return false
+    end
+  end
+
+  print("Not a frac?",a[1],a[2],type(a[1]),type(a[2]))
+  return false
 end
 
 function SDFRate.fracToNumber(a)
@@ -73,9 +104,9 @@ end
 local function fracSum(a,b)
   assert(SDFRate.isFrac(a))
   assert(SDFRate.isFrac(b))
-  local denom = a[2]*b[2]
-  local num = a[1]*b[2]+b[1]*a[2]
-  local n,d = J.simplify(num,denom)
+  local d = a[2]*b[2]
+  local n = a[1]*b[2]+b[1]*a[2]
+  local n,d = SDFRate.simplify(n,d)
   return {n,d}
 end
 
@@ -83,16 +114,18 @@ function SDFRate.fracMultiply(a,b)
   err( SDFRate.isFrac(a), "SDFRate.fracMultiple a is not frac: "..tostring(a[1]).." "..tostring(a[2]) )
   err( SDFRate.isFrac(b), "SDFRate.fracMultiple b is not frac: "..tostring(b[1]).." "..tostring(b[2]) )
 
-  local a1,a2 = J.simplify(a[1],a[2])
+  local a1,a2 = SDFRate.simplify(a[1],a[2])
   a={a1,a2}
 
-  local b1,b2 = J.simplify(b[1],b[2])
+  local b1,b2 = SDFRate.simplify(b[1],b[2])
   b={b1,b2}
+
+  local Uniform = require "uniform"
   
-  local x,y = a[1]*b[1],a[2]*b[2]
-  assert(x==math.floor(x))
-  assert(y==math.floor(y))
-  local n,d = J.simplify(x,y)
+  local n,d = a[1]*b[1],a[2]*b[2]
+  assert( Uniform(n):isUint() )
+  assert( Uniform(d):isUint() )
+  local n,d = SDFRate.simplify(n,d)
   local res = {n,d}
 
   assert(SDFRate.isFrac(res))
@@ -112,9 +145,13 @@ end
 function SDFRate.sum(tab)
   assert( SDFRate.isSDFRate(tab) )
   
-  local sum = {0,1}
+  local sum = nil
   for k,v in pairs(tab) do 
-    if v~="x" then sum = fracSum(sum,v) end
+    if sum==nil then
+      sum = v
+    else
+      sum = fracSum(sum,v)
+    end
   end
 
   return sum
@@ -122,16 +159,17 @@ end
 
 function SDFRate.multiply(tab,n,d)
   assert(SDFRate.isSDFRate(tab))
-  assert(type(n)=="number")
-  assert(type(d)=="number")
+
+  local Uniform = require "uniform"
+  
+  n=Uniform(n)
+  d=Uniform(d)
+  assert(n:isUint())
+  assert(d:isUint())
 
   local res = {}
   for k,v in pairs(tab) do
-    if v=="x" then
-      table.insert(res,v)
-    else
-      table.insert(res, SDFRate.fracMultiply(v,{n,d}))
-    end
+    table.insert(res, SDFRate.fracMultiply(v,{n,d}))
   end
   return res
 end

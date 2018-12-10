@@ -177,14 +177,17 @@ end
 -- round x up to the next largest number that has 'roundto' as a factor
 function common.upToNearest(roundto,x)
   assert(type(x)=="number")
-
-  if x % roundto == 0 or roundto==0 then return x end
+  assert(type(roundto)=="number")
+  assert(math.ceil(x)==x)
+  common.err(math.ceil(roundto)==roundto,"upToNearest: inputs must be integer. x:"..tostring(x).." roundto:"..tostring(roundto))
   
-  local ox
+--  if x % roundto == 0 or roundto==0 then return x end
+--  local ox = x + (roundto-x%roundto)
+  
+  local ox = x + roundto - 1 - ((x + roundto - 1) % roundto)
 
-  ox = x + (roundto-x%roundto)
-
-  assert(ox > x)
+  common.err( ox >= x, "roundto: "..tostring(roundto).." x:"..tostring(x).." ox:"..tostring(ox) )
+  assert( ox < x+roundto )
   assert( (ox % roundto) == 0)
   return ox
 end

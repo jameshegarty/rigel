@@ -6,6 +6,7 @@ local RS = require "rigelSimple"
 local C = require "examplescommon"
 local S = require "systolic"
 local SOC = require "soc"
+local Uniform = require "uniform"
 
 local __unnamedID = 0
 
@@ -479,7 +480,7 @@ function(args)
 
   local input = R.input( args.type, args.rate )
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value")
+  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
   return RM.lambda( args.string, input, out )
 end)
@@ -490,7 +491,7 @@ generators.AXIReadBurst = R.newGenerator("generators","AXIReadBurst",{"string","
 function(args)
   local numb = args.number
   if numb==nil then
-    numb = math.ceil((args.size[1]*args.size[2]*args.rate[1][1])/args.rate[1][2])
+    numb = math.ceil((args.size[1]*args.size[2]*Uniform(args.rate[1][1]):toNumber())/Uniform(args.rate[1][2]):toNumber())
     print("AXIReadBurst V:",numb)
   end
   
@@ -526,7 +527,7 @@ end)
 generators.Reshape = R.newGenerator("generators","Reshape",{"type","rate"},{},
 function(args)
 
-  local ratio = args.rate[1][1]/args.rate[1][2]
+  local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
   if ratio<1 then
 
     if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then
@@ -598,6 +599,12 @@ function(args)
   J.err( args.type:isTuple(), "generators.FilterSeq: input should be tuple" )
   J.err( args.type.list[2]:isBool(), "generators.FilterSeq: input should be tuple of type {A,bool}, but is: "..tostring(args.type) )
   return RM.filterSeq( args.type.list[1], 1, 1, args.size, 0, false )
+end)
+
+generators.Arbitrate = R.newGenerator("generators","Arbitrate",{"type","rate"},{},
+function(args)
+  J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray" )
+  return RM.arbitrate(args.type.params.A,args.rate)
 end)
 
 function generators.export(t)

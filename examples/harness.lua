@@ -6,6 +6,7 @@ local types = require("types")
 local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
+local Uniform = require "uniform"
 
 local H = {}
 
@@ -40,8 +41,8 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
   assert( tapType==nil or types.isType(tapType) )
   if tapType~=nil then tapType:checkLuaValue(tapValue) end
   assert( types.isType(outputType) )
-  assert(type(inputW)=="number")
-  assert(type(outputH)=="number")
+  assert(Uniform(inputW):isNumber())
+  assert(Uniform(outputH):isNumber())
   assert(type(inputFilename)=="string")
   err(R.isFunction(hsfn), "second argument to harness.axi must be function")
   --assert(earlyOverride==nil or type(earlyOverride)=="number")
@@ -104,9 +105,9 @@ function harnessTop(t)
   err( R.isBasic(iover), "Harness error: iover ended up being handshake?")
   err( R.isBasic(oover), "Harness error: oover ended up being handshake?")
 
-  err( (t.inSize[1]*t.inSize[2]) % inputP == 0, "Error, # of input tokens is non-integer, inSize={"..tostring(t.inSize[1])..","..tostring(t.inSize[2]).."}, inputP="..tostring(inputP))
+  err( Uniform((t.inSize[1]*t.inSize[2]) % inputP):eq(0):assertAlwaysTrue(), "Error, # of input tokens is non-integer, inSize={"..tostring(t.inSize[1])..","..tostring(t.inSize[2]).."}, inputP="..tostring(inputP))
   local inputCount = (t.inSize[1]*t.inSize[2])/inputP
-  err( (t.outSize[1]*t.outSize[2]) % outputP == 0, "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
+  err( Uniform((t.outSize[1]*t.outSize[2]) % outputP):eq(0):assertAlwaysTrue(), "Error, # of output tokens is non-integer, outSize:"..tostring(t.outSize[1]).."x"..tostring(t.outSize[2]).." outputP:"..tostring(outputP) )
 
   local outputCountFrac = {t.outSize[1]*t.outSize[2], outputP}
 
@@ -136,14 +137,14 @@ function harnessTop(t)
 
     if fn.sdfInput~=nil then
       assert(#fn.sdfInput==1)
-      MD.sdfInputN = fn.sdfInput[1][1]
-      MD.sdfInputD = fn.sdfInput[1][2]
+      MD.sdfInputN = Uniform(fn.sdfInput[1][1]):toUnescapedString()
+      MD.sdfInputD = Uniform(fn.sdfInput[1][2]):toUnescapedString()
     end
 
     if fn.sdfOutput~=nil then
       assert(#fn.sdfOutput==1)
-      MD.sdfOutputN = fn.sdfOutput[1][1]
-      MD.sdfOutputD = fn.sdfOutput[1][2]
+      MD.sdfOutputN = Uniform(fn.sdfOutput[1][1]):toUnescapedString()
+      MD.sdfOutputD = Uniform(fn.sdfOutput[1][2]):toUnescapedString()
     end
     
     MD.earlyOverride=t.earlyOverride

@@ -22,7 +22,7 @@ function MAKE(T,ConvWidth,size1080p)
     inputW, inputH = 1920, 1080
   end
   
-  local PadRadius = J.upToNearest(T, ConvRadius)
+  local PadRadius = J.upToNearest(math.max(T,1), ConvRadius)
   
   -- expand to include crop region
   --W = upToNearest(T,128+ConvWidth-1)

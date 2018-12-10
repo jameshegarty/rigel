@@ -4,6 +4,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local clocale = terralib.includec("locale.h")
 local J = require "common"
+local Uniform = require "uniform"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -39,7 +40,8 @@ void enableCommas(){setlocale(LC_NUMERIC, "");}
 local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
 return function(top, options)
-  local simCycles = top.sdfInput[1][2]/top.sdfInput[1][1]
+  
+  local simCycles = (top.sdfInput[1][2]):toNumber()/(top.sdfInput[1][1]):toNumber()
   if options~=nil and options.cycles~=nil then simCycles = options.cycles end
   local extraCycles = math.max(math.floor(simCycles/10),1024)
   
@@ -129,14 +131,14 @@ return function(top, options)
   local clearOutputs = {}
   for i=0,SOC.ports do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
-      table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE]) end )
+      table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [Uniform(top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE):toTerra()]) end )
     end
 
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
       local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
-      table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE],bytes) end )
+      table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()],bytes) end )
 
-      table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE]+ii)=0x0df0adba; end end )
+      table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
     end
   end
 
@@ -158,23 +160,6 @@ return function(top, options)
     data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
     valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
     
-    --------------------------------------------------- step
-    --[=[
-    m:calculateReady()
-    m:process(nil,nil)
-      
-    if verbose then V.printSlave(S0LIST); end
-    var found = V.checkSlaveWriteResponse(S0LIST);
-     
-    if [top:getGlobal("IP_SAXI0_WDATA"):terraReady()]==false then
-      cstdio.printf("IP_SAXI0_WREADY should be true\n");
-      cstdlib.exit(1)
-    end
-      
-    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
-    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
-    ]=]
-
     --------------------------------------------------- step
     m:calculateReady()
     m:process(nil,nil)
@@ -233,15 +218,12 @@ return function(top, options)
 
     var [memory] = [&uint8](cstdlib.malloc(MEMSIZE))
 
-    readS
-
     V.init()
 
     var ROUNDS = 2
     for round=0,ROUNDS do
       if verbose then cstdio.printf("ROUND %d\n",round) end
 
-      clearOutputs
 
       V.deactivateMasterRead([MREAD_SLAVEOUT[0]])
       V.deactivateMasterWrite([MWRITE_SLAVEOUT[0]])
@@ -251,9 +233,9 @@ return function(top, options)
 
       var cycle = 0
 
---      if round==0 then
-        [setTaps]
---      end
+      [setTaps]
+      [clearOutputs]
+      [readS]
 
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       

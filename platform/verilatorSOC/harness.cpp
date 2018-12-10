@@ -112,17 +112,37 @@ void readReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int*
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  printf("Usage: XXX.verilator simCycles memStart memEnd [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
+  printf("Usage: XXX.verilator simCycles --memoryStart ADDR --memoryEnd ADDR [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
   int simCyclesSlack = simCycles/10;
-  unsigned int MEMBASE = strtol(argv[2],NULL,16);
-  unsigned int MEMSIZE = strtol(argv[3],NULL,16)-MEMBASE;
 
+  int curArg = 2;
+
+  unsigned int MEMBASE = 0;
+  if(strcmp(argv[curArg],"--memoryStart")==0){
+    curArg++;
+    MEMBASE = strtol(argv[curArg],NULL,16);
+    curArg++;
+  }else{
+    std::cout << "--memoryStart must be given" << std::endl;
+    exit(1);
+  }
+
+  // setting the end of the memory range is optional
+  unsigned int MEMSIZE = -1;
+  if(strcmp(argv[curArg],"--memoryEnd")==0){
+    curArg++;
+    MEMSIZE = strtol(argv[curArg],NULL,16)-MEMBASE;
+    curArg++;
+  }else{
+    std::cout << "--memoryEnd must be given" << std::endl;
+    exit(1);
+  }
+  
   std::cout << "SimCycles: " << simCycles << " SimCyclesSlack: " << simCyclesSlack << " MemBase: 0x" << std::hex << MEMBASE << std::dec << " MemSize: " << MEMSIZE << std::endl;
 
   bool verbose = false;
-  int curArg = 4;
 
   if(strcmp(argv[curArg],"--verbose")==0){
     verbose = true;
@@ -131,6 +151,7 @@ int main(int argc, char** argv) {
 
   if(strcmp(argv[curArg],"--inputs")!=0){
     std::cout << "fourth argument should be '--inputs' but is " << argv[4] << std::endl;
+    exit(1);
   }else{
     curArg++;
   }
@@ -355,7 +376,19 @@ int main(int argc, char** argv) {
   char* outfile;
   while(strcmp(argv[curArg],"--registersOut")!=0){
     printf("OUTPUT %d %s\n",curArg,argv[curArg]);
-    unsigned int addr = strtol(argv[curArg+1],NULL,16);
+    unsigned int addr;
+    if(argv[curArg+1][0]=='r' && argv[curArg+1][1]=='e' && argv[curArg+1][2]=='g'){
+      unsigned int regAddr = strtol(argv[curArg+1]+4,NULL,16);
+      printf("IS A REG: %x\n",regAddr);
+
+      unsigned int regOut = 0;
+      readReg(top,false,regAddr,&regOut);
+      printf("Reg Value: %x\n", regOut );
+      addr = regOut;
+    }else{
+      addr = strtol(argv[curArg+1],NULL,16);
+    }
+    
     unsigned int addrOffset = addr-MEMBASE;
     
     unsigned int w = atoi(argv[curArg+2]);

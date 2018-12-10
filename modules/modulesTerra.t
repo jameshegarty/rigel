@@ -12,6 +12,7 @@ local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
+local Uniform = require "uniform"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -757,7 +758,8 @@ function MT.broadcastStream(res,A,N)
   return BroadcastStream
 end
 
-function MT.posSeq(res,W,H,T,asArray)
+function MT.posSeq(res,W_orig,H,T,asArray)
+  local W = Uniform(W_orig)
   local struct PosSeq { x:uint16, y:uint16 }
   terra PosSeq:reset() self.x=0; self.y=0 end
 
@@ -773,7 +775,7 @@ function MT.posSeq(res,W,H,T,asArray)
     terra PosSeq.methods.process( [slf], [out]  )
       [assign]
       slf.x = slf.x + 1
-      if slf.x==W then slf.x=0; slf.y=slf.y+1 end
+      if slf.x==[W:toTerra()] then slf.x=0; slf.y=slf.y+1 end
       if slf.y==H then slf.y=0 end
     end
   else
@@ -781,7 +783,7 @@ function MT.posSeq(res,W,H,T,asArray)
       for i=0,T do 
         (@out)[i] = {self.x,self.y}
         self.x = self.x + 1
-        if self.x==W then self.x=0; self.y=self.y+1 end
+        if self.x==[W:toTerra()] then self.x=0; self.y=self.y+1 end
         if self.y==H then self.y=0 end
       end
     end
@@ -871,7 +873,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
     end
     
     self.posX = self.posX+T;
-    if self.posX==(W+L+R) then
+    if self.posX==[Uniform(W+L+R):toTerra()] then
       self.posX=0;
       self.posY = self.posY+1;
     end
@@ -1702,14 +1704,14 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
   return SeqMap
 end
 
-function MT.cropSeqFn(innerInputType,outputType,A, W, H, T, L, R, B, Top )
-return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
-                             var x,y = (inp._0)[0]._0, (inp._0)[0]._1
-                             data(out) = inp._1
-                             valid(out) = (x>=L and y>=B and x<W-R and y<H-Top)
-                             if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
-                           end
-
+function MT.cropSeqFn(innerInputType,outputType,A, W_orig, H, T, L, R, B, Top )
+  local W = Uniform(W_orig)
+  return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
+    var x,y = (inp._0)[0]._0, (inp._0)[0]._1
+    data(out) = inp._1
+    valid(out) = (x>=L and y>=B and x<[(W-R):toTerra()] and y<H-Top)
+    if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
+  end
 end
 
 function MT.crop( res, A, W, H, L, R, B, Top )
@@ -1737,7 +1739,7 @@ function MT.counter( res, ty, N )
 
   terra Counter:process( out:&ty:toTerraType() )
     @out = self.buf
-    if self.buf==N-1 then
+    if self.buf==[(N-1):toTerra()] then
       self.buf = 0
     else
       self.buf = self.buf+1

@@ -127,7 +127,10 @@ end
 
 function CC.makeGamma(g)
   local gamma = {}
-  for i=0,255 do table.insert(gamma, math.pow(i/255,g)*255) end
+  for i=0,255 do
+    local v= math.pow(i/255,g)*255
+    table.insert(gamma, math.floor(v))
+  end
   return gamma
 end
 

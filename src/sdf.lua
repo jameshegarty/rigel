@@ -6,14 +6,17 @@ local SDFMT = {__index=SDFFunctions}
 
 local sdf = {}
 
--- for each N rate, what is the largest? (returned as number)
-function SDFFunctions:maxnumber()
-  local m
+-- return true if all ratios in this rate are <= 1
+function SDFFunctions:allLE1()
   for _,v in ipairs(self) do
-    local val = v[1]/v[2]
-    if m==nil or m>val then m=val end
+    local res = v[1]:le(v[2]):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
   end
-  return m
+
+  return true
 end
 
 function SDFFunctions:tonumber()
@@ -41,13 +44,22 @@ setmetatable(sdf,SDFTOPMT)
 SDFTOPMT.__call = function(tab,arg,X)
   assert(X==nil)
 
+  local Uniform = require "uniform"
+
   -- shorthand: {1,1} instead of {{1,1}}
-  if type(arg)=="table" and type(arg[1])=="number" and type(arg[2])=="number" then
+  if type(arg)=="table" and (type(arg[1])=="number" or Uniform.isUniform(arg[1])) and (type(arg[2])=="number" or Uniform.isUniform(arg[2])) then
     arg={arg}
   end
   
   assert(SDFRate.isSDFRate(arg))
-  return setmetatable(arg,SDFMT)
+  
+  local uarg = {}
+  for _,v in ipairs(arg) do
+    local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
+    table.insert(uarg,{n,d})
+  end
+  
+  return setmetatable(uarg,SDFMT)
 end
   
 function sdf.isSDF(tab) return getmetatable(tab)==SDFMT end

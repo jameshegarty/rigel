@@ -309,7 +309,7 @@ function RS.fanOut(t)
 
   err( R.isHandshake(ty) or R.isHandshakeTrigger(ty), "calling fanOut on a non handshake type "..tostring(t.input.type))
   ty = R.extractData(ty)
-  print("FANOUT",ty)
+
   ccnt = ccnt + 1
   local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
 

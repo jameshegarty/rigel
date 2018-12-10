@@ -6,7 +6,9 @@ function basename(fn)
 end
 
 if arg[2]=="memoryStart" or arg[2]=="memoryEnd" then
-  print(string.format("%x",metadata[arg[2]]))
+  if metadata[arg[2]]~=nil then
+    print("--"..arg[2].." "..string.format("%x",metadata[arg[2]]))
+  end
 elseif arg[2]=="__INPUT_HOST_FILES" or arg[2]=="__INPUT_DEVICE_FILES" then
   local str = ""
   for _,v in ipairs(metadata.inputs) do
@@ -23,7 +25,16 @@ elseif arg[2]=="__INPUTS" or arg[2]=="__INPUTS_ZYNQ" then
   for _,v in ipairs(metadata.inputs) do
     local fn = v.filename
     if arg[2]=="__INPUTS_ZYNQ" then fn=basename(fn) end
-    str = str..fn.." 0x"..string.format("%x",v.address).." "
+
+    if type(v.address)=="number" then
+      str = str..fn.." 0x"..string.format("%x",v.address).." "
+    else
+      local regAddress = metadata.registers[v.address]
+      if regAddress==nil then print("Could not find register"); assert(false) end
+      --str = str..fn.." reg:0x"..string.format("%x",regAddress).." "
+      -- HACK: b/c this is set by the harness, just load the default address
+      str = str..fn.." 0x"..metadata.registerValues[regAddress].." "
+    end
   end
   print(str)
 elseif arg[2]=="__OUTPUTS" or arg[2]=="__OUTPUTS_ZYNQ" then
@@ -32,7 +43,17 @@ elseif arg[2]=="__OUTPUTS" or arg[2]=="__OUTPUTS_ZYNQ" then
   for _,v in ipairs(metadata.outputs) do
     local fn = v.filename
     if arg[2]=="__OUTPUTS_ZYNQ" then fn=basename(fn) end
-    str = str..fn.." 0x"..string.format("%x",v.address).." "..v.W.." "..v.H.." "..v.bitsPerPixel.." "
+    str = str..fn.." "
+
+    if type(v.address)=="number" then
+      str = str.."0x"..string.format("%x",v.address)
+    else
+      local regAddress = metadata.registers[v.address]
+      if regAddress==nil then print("Could not find register"); assert(false) end
+      str = str.." reg:0x"..string.format("%x",regAddress).." "
+    end
+    
+    str = str.." "..v.W.." "..v.H.." "..v.bitsPerPixel.." "
   end
   print(str)
 elseif arg[2]=="__REGISTERS" then

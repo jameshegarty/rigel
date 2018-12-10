@@ -124,6 +124,9 @@ darkroom.__unnamedID = 0
 
 local function typeToKey(t)
   local res = {}
+
+  local Uniform = require "uniform"
+  
   for k,v in pairs(t) do
     if type(k)=="number" then
       local outk
@@ -148,6 +151,9 @@ local function typeToKey(t)
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
              and type(v[3])=="number" and type(v[4])=="number" then
         outk="bounds"
+      elseif Uniform.isUniform(v) then
+        outk="number"
+        v = v:toNumber()
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -260,7 +266,7 @@ function generatorFunctions:complete(arglist)
     assert(false)
   end
   local mod = self.completeFn(arglist)
-  J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module?" )
+  J.err( darkroom.isModule(mod), "generator '"..self.namespace.."."..self.name.."' returned something other than a rigel module? "..tostring(mod) )
   mod.generator = self
   mod.generatorArgs = arglist
   return mod
@@ -293,7 +299,8 @@ __index=function(tab,key)
     -- build the systolic module as needed
     err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
     local sm = rawget(tab,"makeSystolic")()
-    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module?")
+    if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
+    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
 
     -- self check module matches format we expect
     --local A,B=0,0
@@ -306,9 +313,9 @@ __index=function(tab,key)
     end
 
     for k,_ in pairs(sm.sideChannels) do
-      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module lacks global for side channel "..k.name )
+      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
     end
-      
+
     if tab.registered==false then
       err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
           
@@ -426,19 +433,25 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
   err( SDFRate.isSDFRate(Isdf), "sdfTransfer: input argument should be SDF rate" )
   err( #self.sdfInput == #Isdf, "# of SDF streams doesn't match. Was "..(#Isdf).." but expected "..(#self.sdfInput)..", "..loc )
 
-  local R
+  local Uniform = require "uniform"
+
+  local ratio
   for i=1,#self.sdfInput do
     local thisR = { Isdf[i][1]*self.sdfInput[i][2], Isdf[i][2]*self.sdfInput[i][1] } -- I/self.sdfInput ratio
-    thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
-    if R==nil then R=thisR end
-    consistantRatio = consistantRatio and (R[1]==thisR[1] and R[2]==thisR[2])
+    --thisR[1],thisR[2] = J.simplify(thisR[1],thisR[2])
+    if ratio==nil then
+      ratio=thisR
+    else
+      consistantRatio = consistantRatio and ( (Uniform(ratio[1]*thisR[2])):eq(ratio[2]*thisR[1]):assertAlwaysTrue() )
+    end
   end
 
   err( consistantRatio, "SDFTransfer: ratio is not consistant, Input rate: "..tostring(Isdf).." module rate: "..tostring(self.sdfInput) )
   
   local res = {}
   for i=1,#self.sdfOutput do
-    local On, Od = J.simplify(self.sdfOutput[i][1]*R[1], self.sdfOutput[i][2]*R[2])
+    --local On, Od = J.simplify(self.sdfOutput[i][1]*ratio[1], self.sdfOutput[i][2]*ratio[2])
+    local On, Od = self.sdfOutput[i][1]*ratio[1], self.sdfOutput[i][2]*ratio[2]
     table.insert( res, {On,Od} )
   end
 
@@ -516,8 +529,8 @@ function darkroom.newFunction(tab,X)
   err( type(tab.name)=="string", "rigel.newFunction: name must be string" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( darkroom.SDF==false or tab.sdfInput:maxnumber()<=1, "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
-  err( darkroom.SDF==false or tab.sdfOutput:maxnumber()<=1, "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
+  err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
+  err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type" )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
@@ -527,6 +540,10 @@ function darkroom.newFunction(tab,X)
 
   if tab.globals==nil then tab.globals={} end
   if tab.globalMetadata==nil then tab.globalMetadata={} end
+
+  if tab.systolicModule~=nil then
+    assert(false)
+  end
   
   return setmetatable( tab, darkroomFunctionMT )
 end
@@ -608,7 +625,7 @@ darkroomIRMT.__tostring = function(tab)
       res = res..v.name..","
     end
     res = res.."}"
-  elseif tab.kind=="concat" then
+  elseif tab.kind=="concat" or tab.kind=="concatArray2d" then
     res = "local "..tab.name.." = R.concat('"..tab.name.."',{"
     for k,v in ipairs(tab.inputs) do
       res = res..v.name
@@ -620,7 +637,7 @@ darkroomIRMT.__tostring = function(tab)
   end
 
   if darkroom.SDF then
-    res = res .." -- Rate:"..tostring(tab.rate)
+    res = res .." -- RateOut:"..tostring(tab.rate)
     local util = tab:utilization()
     if util~=nil then res=res.." Util:"..tostring(util[1]).."/"..tostring(util[2]) end
   end
@@ -757,40 +774,39 @@ end
 -- assuming that the inputs are running at {1,1}, wht is the lowest/highest SDF utilization in this DAG?
 -- (this will limit the speed of the whole pipe)
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
-local __sdfExtremeRateCache = {}
-function darkroomIRFunctions:sdfExtremeRate( highest )
-  err(type(highest)=="boolean", "sdfExtremeRate: first argument should be bool")
-
-  __sdfExtremeRateCache[self] = __sdfExtremeRateCache[self] or {}
-
-  if __sdfExtremeRateCache[self][highest]==nil then
-
+darkroomIRFunctions.sdfExtremeRate = J.memoize(
+  function(self, highest )
+    local highestRate -- this is a frac
     self:visitEach(
-      function( n, args )
-        local r = n:utilization()
-        err( SDFRate.isFrac(r) or r==nil, "sdfExtremeRate: bad utilization on '"..tostring(n).."'? "..n.loc )
-        
-        local res 
+      function(n)
+        if n.kind=="apply" then
+          local util = n:utilization()
 
-        if __sdfExtremeRateCache[self][highest]==nil and r~=nil then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest and r~=nil and SDFRate.fracToNumber(r)>=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
-        elseif highest==false and r~=nil and SDFRate.fracToNumber(r)<=SDFRate.fracToNumber(__sdfExtremeRateCache[self][highest][1]) then
-          __sdfExtremeRateCache[self][highest] = {r,n.loc}
+          local Uniform = require "uniform"
+          
+          if highestRate==nil then
+            highestRate={util[1],util[2]}
+          else
+            local cond
+            if highest then
+              cond = Uniform(highestRate[1]*util[2]):gt(util[1]*highestRate[2])
+            else
+              cond = Uniform(highestRate[1]*util[2]):lt(util[1]*highestRate[2])
+            end
+            
+            highestRate[1] = cond:sel(highestRate[1],util[1])
+            highestRate[2] = cond:sel(highestRate[2],util[2])
+          end
         end
-
       end)
 
-    if __sdfExtremeRateCache[self][highest]==nil then
-      -- no function calls => no changes to rate. (none of our other operators change rate)
-      return {1,1},"NO_APPLIES"
+    if highestRate==nil then
+      -- this can happen if we have no function calls (no other operators have utilization)
+      return {1,1}
     end
-  end
-
-
-  return __sdfExtremeRateCache[self][highest][1], __sdfExtremeRateCache[self][highest][2]
-end
+    
+    return highestRate
+  end)
 
 function darkroomIRFunctions:typecheck()
   local n = self
@@ -894,7 +910,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
-          err(n.fn.systolicModule.functions.process.output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process").output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)

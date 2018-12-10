@@ -102,7 +102,7 @@ function systolic.wireIfNecessary( alreadyWiredSet, declarations, ty, name, str,
   return name
 end
 
-function declarePort( ty, name, isInput )
+function systolic.declarePort( ty, name, isInput )
   err( type(name)=="string","declarePort: name should be string but is "..tostring(name))
 
   local t = "input wire "
@@ -162,7 +162,7 @@ function valueToVerilogLL(value,signed,bits)
 end
 
 function systolic.valueToVerilog( value, ty )
-  assert(types.isType(ty))
+  J.err(types.isType(ty),"systolic.valueToVerilog: not a type")
 
   if ty:isInt() then
     return valueToVerilogLL( value, true, ty:verilogBits() )
@@ -227,7 +227,8 @@ function systolicModuleFunctions:lookupFunction( fnname )
   for k,v in pairs(self.functions) do
     if v.name==fnname then return v end
   end
-  err(false, "Function "..fnname.." not found!")
+  --print "Function "..fnname.." not found!")
+  return nil
 end
 
 systolicFunctionFunctions = {}
@@ -320,10 +321,12 @@ function systolicFunctionFunctions:getDefinitionKey()
   return self
 end
 
-local function binop(lhs, rhs, op)
+systolic.binop = function(lhs, rhs, op)
   lhs, rhs = checkast(lhs), checkast(rhs)
   return typecheck({kind="binop",op=op,inputs={lhs,rhs},loc=getloc()})
 end
+
+local binop=systolic.binop
 
 local function unary(expr, op)
   expr = checkast(expr)
@@ -1330,7 +1333,7 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       elseif n.kind=="readSideChannel" then
-        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module?")
+        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module '"..module.name.."'?")
         finalResult = n.sideChannel.name
       elseif n.kind=="writeSideChannel" then
         table.insert( declarations, "assign "..n.sideChannel.name.." = "..args[1].."; // writeSideChannel\n" )
@@ -1402,7 +1405,7 @@ function systolic.isSideChannel(t) return getmetatable(t)==systolicSideChannelMT
 -- Module Definitions
 --------------------------------------------------------------------
 function systolic.isModule(t)
-  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==systolicModuleConstructorMT or getmetatable(t)==regModuleMT
+  return getmetatable(t)==userModuleMT or getmetatable(t)==fileModuleMT or getmetatable(t)==regModuleMT
 end
 
 systolic.module = {}
@@ -1414,8 +1417,13 @@ userModuleMT={__index=userModuleFunctions}
 
 function userModuleMT.__tostring(tab)
   local res = {}
-  table.insert(res,"Module "..tab.name)
+  table.insert(res,"SystolicModule "..tab.name)
 
+  table.insert(res,"Side Channels:")
+  for k,_ in pairs(tab.sideChannels) do
+    table.insert(res,k.name)
+  end
+  
   for fnname,fn in pairs(tab.functions) do
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
@@ -1598,7 +1606,7 @@ function userModuleFunctions:toVerilog()
       end
     end
     
-    table.insert(t,table.concat(J.map(portlist,function(n) return declarePort(n[2],n[1],n[3]) end),", "))
+    table.insert(t,table.concat(J.map(portlist,function(n) return systolic.declarePort(n[2],n[1],n[3]) end),", "))
     table.insert(t,");\n")
 
     table.insert(t,[[parameter INSTANCE_NAME="INST";]].."\n")
@@ -1693,7 +1701,28 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
       SC[k]=1
     end
   end
-  
+
+  -- add missing side channels from reads/writes
+  for k,v in pairs(fns) do
+    if v.output~=nil then
+      v.output:visitEach(
+        function(n,args)
+          if n.kind=="readSideChannel" or n.kind=="writeSideChannel" then
+            SC[n.sideChannel] = 1
+          end
+        end)
+    end
+  end
+
+  -- add missing side channels from instances
+  for _,inst in pairs(instances) do
+    if inst.module.sideChannels~=nil then
+      for sc,_ in pairs(inst.module.sideChannels) do
+        SC[sc] = 1
+      end
+    end
+  end
+    
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -1737,15 +1766,6 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  -- check for dangling side channels
-  for _,inst in pairs(instances) do
-    if inst.module.sideChannels~=nil then
-      for sc,_ in pairs(inst.module.sideChannels) do
-        err(SC[sc]~=nil,"systolic.module.new: Instance '"..inst.name.."' has dangling side channel '"..sc.name.."', when creating new module '"..name.."'")
-      end
-    end
-  end
-  
   -- different functions can have the same stall domains. We consider them identical if they have the same name
   for k,v in pairs(fns) do
     if v.CE~=nil then 
@@ -1942,7 +1962,8 @@ systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSe
     fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
   end
 
-  local M = systolic.module.new( "RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue), fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
+  local name = sanitize("RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue))
+  local M = systolic.module.new( name, fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
   assert(systolic.isModule(M))
   return M
 end)

@@ -5,6 +5,7 @@ local cstdio = terralib.includec("stdio.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstring = terralib.includec("string.h")
 local J = require "common"
+local Uniform = require "uniform"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -104,35 +105,31 @@ function SOCMT.axiRegs(mod,tab,port)
   return MT.new(AxiRegsN)
 end
 
-function SOCMT.axiBurstReadN( mod, totalBytes, port, baseAddress )
-  assert(type(baseAddress)=="number")
-  assert( totalBytes % 128 == 0)
+function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig )
+  --assert(type(baseAddress)=="number")
+  local baseAddress = Uniform(baseAddress_orig)
+  local totalBytes = Uniform(totalBytes_orig)
+  assert( (totalBytes % 128):eq(0):assertAlwaysTrue() )
 
-  --print("AXIBURSTREADN ",totalBytes,port)
-  
   local outputType = R.Handshake(types.bits(64))
-  --local stride = (R.extractData(outputType):sizeof())
   local struct ReadBurst { nextByteToRead:uint, ready:bool, bytesRead:uint, readyDownstream:bool, addrReadyDownstream:bool }
 
-  --print("SOCMT.readBurst stride:",stride)
-  --oassert(stride==8)
-  
   terra ReadBurst:reset()
-    self.nextByteToRead = totalBytes
+    self.nextByteToRead = [totalBytes:toTerra()]
     [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = true
     self.ready = true
     self.bytesRead = 0
   end
 
   terra ReadBurst:process( trigger:&bool, dataOut:&R.lower(outputType):toTerraType() )
-    if @trigger and self.nextByteToRead >= totalBytes then
+    if @trigger and self.nextByteToRead >= [totalBytes:toTerra()] then
       --cstdio.printf("READ BURST START\n")
       self.nextByteToRead = 0
       self.bytesRead = 0
     end
 
-    if self.nextByteToRead<totalBytes then
-      var addr = self.nextByteToRead+[baseAddress]
+    if self.nextByteToRead<[totalBytes:toTerra()] then
+      var addr = self.nextByteToRead+[baseAddress:toTerra()]
       --cstdio.printf("readBurst: send address %d port %d ready %d\n",self.nextByteToRead, port, [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()])
       valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = true
       data([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = addr
@@ -144,9 +141,9 @@ function SOCMT.axiBurstReadN( mod, totalBytes, port, baseAddress )
         self.nextByteToRead = self.nextByteToRead + 128
         --cstdio.printf("READBURST: inc addr %d\n",self.nextByteToRead)
       end
-    elseif self.nextByteToRead<totalBytes and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()]==false then
+    elseif self.nextByteToRead<[totalBytes:toTerra()] and [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()]==false then
       cstdio.printf("readBurst: want to read, but ARREADY is false\n")
-    elseif self.nextByteToRead>=totalBytes then
+    elseif self.nextByteToRead>=[totalBytes:toTerra()] then
       valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = false
     else
       cstdio.printf("UNKNOWN READ BURST COND? %d\n",self.nextByteToRead)
@@ -188,24 +185,23 @@ function SOCMT.axiBurstReadN( mod, totalBytes, port, baseAddress )
 end
 
 
-function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
-  assert(type(baseAddress)=="number")
+function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig )
+  local baseAddress = Uniform(baseAddress_orig)
+  local Nbytes = Uniform(Nbytes_orig)
 
-  --print("AXIBURSTWRITE ",Nbytes,port)
   local struct WriteBurst { nextAddrToWrite:uint, ready:bool, addrReadyDownstream:bool, doneReg:bool, writtenBytes:uint, readyDownstream:bool, dataBuffer:uint64, writeFirst:bool }
 
   local inputType = R.Handshake(types.bits(64))
-  --local stride = (R.extractData(inputType):sizeof())
   
   terra WriteBurst:reset()
-    self.nextAddrToWrite = Nbytes
+    self.nextAddrToWrite = [Nbytes:toTerra()]
     self.doneReg = true
-    self.writtenBytes = Nbytes
+    self.writtenBytes = [Nbytes:toTerra()]
     self.writeFirst = false
   end
 
   terra WriteBurst:process( dataIn:&R.lower(inputType):toTerraType(), done:&bool )
-    if valid(dataIn) and self.nextAddrToWrite==Nbytes and self.writtenBytes==Nbytes and self.writeFirst==false then
+    if valid(dataIn) and self.nextAddrToWrite==[Nbytes:toTerra()] and self.writtenBytes==[Nbytes:toTerra()] and self.writeFirst==false then
       -- starting
       cstdio.printf("BurstWrite: start to send addresses nextAddrToWrite:%d valid:%d data:%d/%#x\n",self.nextAddrToWrite,valid(dataIn),data(dataIn),data(dataIn))
 
@@ -234,7 +230,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
         self.writtenBytes = self.writtenBytes + 8
 
         if self.writtenBytes>self.nextAddrToWrite then
-          cstdio.printf("WROTE TOO MUCH? writtenBytes:%d  nextAddrToWrite:%d totalBytes:%d\n",self.writtenBytes, self.nextAddrToWrite,[Nbytes])
+          cstdio.printf("WROTE TOO MUCH? writtenBytes:%d  nextAddrToWrite:%d totalBytes:%d\n",self.writtenBytes, self.nextAddrToWrite,[Nbytes:toTerra()])
           cstdlib.exit(1)
         end
       else
@@ -249,8 +245,8 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
       end
     end
 
-    if self.nextAddrToWrite<Nbytes then
-      var addr = self.nextAddrToWrite+[baseAddress]
+    if self.nextAddrToWrite<[Nbytes:toTerra()] then
+      var addr = self.nextAddrToWrite+[baseAddress:toTerra()]
       
       valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = true
       data([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = addr
@@ -267,9 +263,9 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
       valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = false
     end
 
-    @done = (self.writtenBytes==Nbytes) and (self.doneReg==false)
+    @done = (self.writtenBytes==[Nbytes:toTerra()]) and (self.doneReg==false)
 
-    if (self.writtenBytes==Nbytes) and self.readyDownstream then
+    if (self.writtenBytes==[Nbytes:toTerra()]) and self.readyDownstream then
       self.doneReg = true
     end
   end
@@ -277,7 +273,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes, port, baseAddress )
   terra WriteBurst:calculateReady(readyDownstream:bool)
     -- ready needs to be true at the start of time (b/c WDATA may not be true until it sees addresses)
     -- but ready needs to be false once we've seen 1 valid, but not written it to bus
-    self.ready = ([mod:getGlobal("IP_MAXI"..port.."_WDATA"):terraReady()] or self.nextAddrToWrite==Nbytes) and (self.writeFirst==false);
+    self.ready = ([mod:getGlobal("IP_MAXI"..port.."_WDATA"):terraReady()] or self.nextAddrToWrite==[Nbytes:toTerra()]) and (self.writeFirst==false);
     
     self.addrReadyDownstream = [mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraReady()];
 
@@ -339,8 +335,8 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
   return MT.new(ReadBytes)
 end
 
-function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase )
-  assert(type(addressBase)=="number")
+function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig )
+  local addressBase = Uniform(addressBase_orig)
 
   local Nbits = math.min(64,Nbytes*8)
   
@@ -359,7 +355,7 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase )
   end
 
   terra WriteBytes:process( dataIn:&R.lower(inputType):toTerraType(), dataOut:&R.lower(outputType):toTerraType() )
-    data([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = data((@dataIn)._0) + [uint](addressBase)
+    data([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = data((@dataIn)._0) + [uint]([addressBase:toTerra()])
     valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR"):terraValue()]) = valid((@dataIn)._0)
     [mod:getGlobal("IP_MAXI"..port.."_WDATA"):terraValue()] = (@dataIn)._1
 

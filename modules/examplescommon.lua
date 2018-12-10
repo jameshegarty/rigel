@@ -10,6 +10,7 @@ local memoize = J.memoize
 local err = J.err
 local f = require "fixed_new"
 local SDF = require "sdf"
+local Uniform = require "uniform"
 
 if terralib~=nil then CT=require("examplescommonTerra") end
 
@@ -114,7 +115,7 @@ end)
 
 C.bitSlice = memoize(
   function(A,low,high)
-    local bitslice = RM.lift( J.sanitize("bitslice_"..tostring(A).."_"..tostring(low).."_"..tostring(high)), A, nil, 0,
+    local bitslice = RM.lift( J.sanitize("bitslice_"..tostring(A).."_"..tostring(low).."_"..tostring(high)), A, types.bits(high-low+1), 0,
                           function(sinp)
                             return S.bitSlice(sinp,low,high)
                           end)
@@ -326,7 +327,7 @@ C.rshift = memoize(function(A,const)
   if const~=nil then
     -- shift by a const
     J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
-    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,nil,nil,
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,nil,
                         function(inp) return S.rshift(inp,S.constant(const,A)) end)
     return mod
   else
@@ -348,7 +349,7 @@ C.addMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -369,7 +370,7 @@ C.removeMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -1386,20 +1387,24 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
-  res.systolicModule = Ssugar.moduleConstructor(res.name)
-  local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
-  local out = {}
-  for i=1,T do
-    out[i] = {}
-    for y=0,stencilH-1 do
-      for x=0,stencilW-1 do
-        out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+  function res.makeSystolic()
+    local systolicModule = Ssugar.moduleConstructor(res.name)
+    
+    local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
+    local out = {}
+    for i=1,T do
+      out[i] = {}
+      for y=0,stencilH-1 do
+        for x=0,stencilW-1 do
+          out[i][y*stencilW+x+1] = S.index( sinp, x+i-1, y )
+        end
       end
     end
-  end
+    
+    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
 
-  res.systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
-  --res.systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro" ) )
+    return systolicModule
+  end
 
   return rigel.newFunction(res)
 end)
@@ -1485,26 +1490,30 @@ end
 --    -> returns the # of total bits that actually need to be read/written for a full transaction (will be >= minimums)
 --    -> in format totalInputBits,totalOutputBits
 -- returned input/output bytes must have input/output factor as a factor
-C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, inputFactor, outputBitsPerCyc, minTotalOutputBits, outputFactor, X)
+--   i.e. inoutBits % inputFactor==0 and inoutBits % outputFactor==0
+C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, X)
   assert(type(inputBitsPerCyc)=="number")
   assert(type(outputBitsPerCyc)=="number")
-  assert(type(minTotalInputBits)=="number")
-  assert(type(minTotalOutputBits)=="number")
+
+  local minTotalInputBits = Uniform(minTotalInputBits_orig)
+  local minTotalOutputBits = Uniform(minTotalOutputBits_orig)
+  
   assert(type(inputFactor)=="number")
   assert(type(outputFactor)=="number")
-  err(minTotalInputBits%inputBitsPerCyc==0,"generalizedChangeRate: inputBitsPerCycle ("..inputBitsPerCyc..") must divide minTotalInputBits ("..minTotalInputBits..")")
-  assert(minTotalOutputBits%outputBitsPerCyc==0)
+  err( (minTotalInputBits%Uniform(inputBitsPerCyc)):eq(0):assertAlwaysTrue(),"generalizedChangeRate: inputBitsPerCycle ("..inputBitsPerCyc..") must divide minTotalInputBits ("..tostring(minTotalInputBits)..")")
+  err( (minTotalOutputBits%Uniform(outputBitsPerCyc)):eq(0):assertAlwaysTrue(), "generalizedChangeRate: outputBitsPerCycle ("..outputBitsPerCyc..") must divide minTotalOutputBits ("..tostring(minTotalOutputBits)..")")
   assert(X==nil)
 
-  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits).."_"..tostring(minTotalOutputBits))
+  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits_orig).."_"..tostring(minTotalOutputBits_orig))
+
   if inputBitsPerCyc==outputBitsPerCyc then
-    local bts = math.max(minTotalInputBits,minTotalOutputBits)
+    local bts = minTotalInputBits:max(minTotalOutputBits)
 
-    bts = J.upToNearest(inputFactor,bts)
-    bts = J.upToNearest(outputFactor,bts)
+    bts = Uniform.upToNearest(inputFactor,bts)
+    bts = Uniform.upToNearest(outputFactor,bts)
 
-    assert( bts%inputFactor==0 )
-    assert( bts%outputFactor==0 )
+    assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+    assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
     
     return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
@@ -1515,21 +1524,33 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,N,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
-      print("BTS",bts,inputFactor,outputFactor)
-      bts = J.upToNearest(inputFactor,bts)
-      bts = J.upToNearest(outputFactor,bts)
-      print("BTS",bts)
+      local inoutBits = minTotalInputBits:max(minTotalOutputBits)
+      local bts
+      if (inoutBits%Uniform(inputBitsPerCyc)):eq(0):assertAlwaysTrue() then
+        bts = inoutBits
+      else
+        bts = Uniform.upToNearest(inputBitsPerCyc,inoutBits)
+      end
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      if (inoutBits%Uniform(inputFactor)):eq(0):assertAlwaysTrue() then
+      else
+        bts = Uniform.upToNearest(inputFactor,bts)
+      end
+
+      if (inoutBits%Uniform(outputFactor)):eq(0):assertAlwaysTrue() then
+      else
+        bts = Uniform.upToNearest(outputFactor,bts)
+      end
+
+      assert( (Uniform(bts)%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (Uniform(bts)%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     else
       assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
       local shifterBits = inputBitsPerCyc
       while shifterBits%outputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
-      print("SHIFTBITS",shifterBits)
+
       assert(shifterBits%outputBitsPerCyc==0)
       assert(shifterBits%inputBitsPerCyc==0)
       
@@ -1541,14 +1562,12 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(outputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
-      --bts = J.upToNearest(inputFactor,bts)
-      --bts = J.upToNearest(outputFactor,bts)
-      --bts = J.upToNearest(shifterBits,bts)
-      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      local bts = Uniform.upToNearest(outputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
+
+      bts = Uniform.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
       
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     end
@@ -1562,12 +1581,12 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,N))(out)
       out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),N),types.bits(outputBitsPerCyc)))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
-      bts = J.upToNearest(inputFactor,bts)
-      bts = J.upToNearest(outputFactor,bts)
+      local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
+      bts = Uniform.upToNearest(inputFactor,bts)
+      bts = Uniform.upToNearest(outputFactor,bts)
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     else
@@ -1586,14 +1605,11 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits, i
       out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
-      local bts = J.upToNearest(inputBitsPerCyc,math.max(minTotalInputBits,minTotalOutputBits))
-      --bts = J.upToNearest(inputFactor,bts)
-      --bts = J.upToNearest(outputFactor,bts)
-      --bts = J.upToNearest(shifterBits,bts)
-      bts = J.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
+      local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
+      bts = Uniform.makeDivisible(bts,{inputFactor,outputFactor,shifterBits})
 
-      assert( bts%inputFactor==0 )
-      assert( bts%outputFactor==0 )
+      assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+      assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
       return {RM.lambda(name,inp,out),bts}
     end
@@ -1864,4 +1880,107 @@ C.tokenCounterReg = memoize(
       end}
   end)
 
+-- name: name of new (renamed) module
+-- renameTable: hash map from port_on_Mod->port_on_new_module.
+--   port_on_new_module can either be a string (add port automatically), or {"SV","NEW_NAME"}, which will not introduce a port (allows for wiring to SV interfaces. then you need to add the port manually)
+C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
+
+  local portlist = {}
+  local modinst = {}
+
+  local globalRename = {}
+  for k,v in pairs(renameTable) do
+    if k=="CLK" or k=="reset" or k=="ready_downstream" then
+      if type(v)=="string" then
+        table.insert(portlist,"input wire "..v)
+        table.insert(modinst,"."..k.."("..v..")")
+      else
+        table.insert(modinst,"."..k.."("..v[2]..")")
+      end
+    elseif k=="process_input" then
+      local ty = types.lower(Mod.inputType)
+      if ty:verilogBits()==1 then
+        table.insert(portlist,"input wire "..v)
+      else
+        assert(false)
+      end
+      table.insert(modinst,"."..k.."("..v..")")
+    elseif k=="process_output" then
+      local ty = types.lower(Mod.outputType)
+      if ty:verilogBits()==1 then
+        table.insert(portlist,"output wire "..v)
+      else
+        assert(false)
+      end
+      table.insert(modinst,"."..k.."("..v..")")
+    elseif k=="process_output_valid" then
+      assert(types.isHandshake(Mod.outputType))
+      local ty = types.lower(Mod.outputType)
+      table.insert(portlist,"output wire "..v)
+      table.insert(portlist,"output wire ["..tostring(ty:verilogBits()-2)..":0] "..renameTable.process_output_data)
+      table.insert(modinst,".process_output({"..v..","..renameTable.process_output_data.."})")
+    elseif k=="process_input_valid" then
+      J.err(types.isHandshakeAny(Mod.inputType),"NYIII - "..tostring(Mod.inputType))
+      local ty = types.lower(Mod.inputType)
+
+      if type(v)=="string" then
+        table.insert(portlist,"input wire "..v)
+        table.insert(portlist,"input wire ["..tostring(ty:verilogBits()-2)..":0] "..renameTable.process_input_data)
+        table.insert(modinst,".process_input({"..v..","..renameTable.process_input_data.."})")
+      else
+        table.insert(modinst,".process_input({"..v[2]..","..renameTable.process_input_data[2].."})")
+      end
+    elseif k=="process_input_data" then
+    elseif k=="process_output_data" then
+    elseif k=="ready" then
+      J.err(types.isHandshakeAny(Mod.inputType),"NYIII - "..tostring(Mod.inputType))
+
+      if type(v)=="string" then
+        assert(false)
+      else
+        table.insert(modinst,".ready("..v[2]..")")
+      end
+
+    else
+      J.err(Mod:getGlobal(k)~=nil,k.." is not a global")
+      globalRename[k] = v
+    end
+  end
+
+  for k,v in pairs(Mod.globals) do
+    local ty = types.lower(k.type)
+
+    local portname = k.name
+    if type(globalRename[k.name])=="string" then portname=globalRename[k.name] end
+    if type(globalRename[k.name])=="table" then portname=globalRename[k.name][2] end
+
+    if type(globalRename[k.name])~="table" then 
+      if ty:verilogBits()==1 then
+        table.insert(portlist,k.direction.." wire "..k.name)
+      else
+        table.insert(portlist,k.direction.." wire ["..tostring(ty:verilogBits()-1)..":0] "..k.name)
+      end
+    end
+    
+    table.insert(modinst,"."..k.name.."("..portname..")")
+  end
+
+  if extraPortDefString~=nil then table.insert(portlist,extraPortDefString) end
+  
+  local vstr = [[module ]]..name..[[(]]..table.concat(portlist,", ")..[[);
+]]
+
+  if extraDefs~=nil then vstr = vstr..extraDefs.."\n" end
+
+vstr = vstr..Mod.name.." inst("..table.concat(modinst,", ")..[[);
+
+]]
+  
+  vstr = vstr..[[
+
+endmodule]]
+
+  return RM.liftVerilog(name,Mod.inputType,Mod.outputType,vstr,Mod.globals,Mod.globalMetadata,Mod.sdfInput,Mod.sdfOutput, {Mod})
+end
+  
 return C
