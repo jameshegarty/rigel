@@ -719,6 +719,8 @@ end
 function TypeFunctions:maxValue()
   if self:isUint() then
     return math.pow(2,self.precision)-1
+  elseif self:isInt() then
+    return math.pow(2,self.precision-1)-1
   else
     assert(false)
   end
@@ -727,7 +729,10 @@ end
 function TypeFunctions:minValue()
   if self:isUint() then
     return 0
+  elseif self:isInt() then
+    return -math.pow(2,self.precision-1)
   else
+    print("NYI - minValue of "..tostring(self))
     assert(false)
   end
 end
