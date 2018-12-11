@@ -4311,21 +4311,37 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
 
+  res.globals = {}
   if globals~=nil then
-    res.globals = {}
     for g,_ in pairs(globals) do
       assert(rigel.isGlobal(g))
       res.globals[g]=1
     end
   end
 
+  res.globalMetadata = {}
   if globalMetadata~=nil then
-    res.globalMetadata = {}
     for k,v in pairs(globalMetadata) do
       res.globalMetadata[k] = v
     end
   end
     
+  if dependencies~=nil then
+    for k,v in ipairs(dependencies) do
+      assert(rigel.isFunction(v))
+
+      for g,_ in pairs(v.globals) do
+        assert(rigel.isGlobal(g))
+        res.globals[g]=1
+      end
+
+      for kk,vv in pairs(v.globalMetadata) do
+        res.globalMetadata[kk] = vv
+      end
+      
+    end
+  end
+
   function res.makeSystolic()
     local fns = {}
     local inp = S.parameter("process_input",rigel.lower(inputType))

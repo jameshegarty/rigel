@@ -1746,6 +1746,8 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   for k,_ in pairs(SC) do
     if SCNames[k.name]~=nil and SCNames[k.name]~=k.direction then
       -- OK: found a matching SC with opposite direction
+    elseif SCNames[k.name]~=nil and SCNames[k.name]=="input" and k.direction=="input" then
+      -- OK: a side channel can be an input into two modules
     else
       err( _usedPname[k.name]==nil,k.direction.." side channel name '"..k.name.."' is used somewhere else in module (as a "..tostring(_usedPname[k.name])..")")
       _usedPname[k.name]=k.direction.." side channel"

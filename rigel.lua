@@ -16,6 +16,7 @@ local darkroom = {}
 
 -- enable SDF checking? (true:enable, false:disable)
 darkroom.SDF = true
+darkroom.default_nettype_none = true
 
 DEFAULT_FIFO_SIZE = 2048*16*16
 
@@ -152,8 +153,16 @@ local function typeToKey(t)
              and type(v[3])=="number" and type(v[4])=="number" then
         outk="bounds"
       elseif Uniform.isUniform(v) then
-        outk="number"
-        v = v:toNumber()
+        if v:isNumber() then
+          outk="number"
+          if v.kind=="const" then
+            v = v:toNumber()
+          else
+	    
+          end
+        else
+          J.err("NYI - typeToKey "..tostring(v))
+        end
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -461,8 +470,14 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
 end
 
 function darkroomFunctionFunctions:toTerra() return self.terraModule end
-function darkroomFunctionFunctions:toVerilog() return [[`default_nettype none // enable extra sanity checking
-]]..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() end
+function darkroomFunctionFunctions:toVerilog() 
+  local ntn = ""
+  if darkroom.default_nettype_none then
+    ntn = [[`default_nettype none // enable extra sanity checking
+]]
+  end
+  return ntn..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() 
+end
 
 function darkroomFunctionFunctions:instantiate(arg0)
   err( self.registered, "Can't instantiate a non-registered module!")
