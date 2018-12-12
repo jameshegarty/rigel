@@ -5,6 +5,7 @@ local types = require "types"
 local J = require "common"
 local err = J.err
 local MT = require "modulesTerra"
+local Uniform = require "uniform"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -325,7 +326,9 @@ return  terra(inp:&uint16, out:&uint8)
                        end
 end
 
-function CT.plusConsttfn(ty,value)
+function CT.plusConsttfn(ty,value_orig)
+  local value = Uniform(value_orig)
+  
   local out = symbol(ty:toTerraType(true))
   local q = quote end
   if ty:verilogBits()~=ty:sizeof()*8 then
@@ -335,7 +338,7 @@ function CT.plusConsttfn(ty,value)
   end
 
   return terra( a : ty:toTerraType(true), [out] ) 
-    @[out] =  @a+[ty:toTerraType()](value) 
+    @[out] =  @a+[ty:toTerraType()]([value:toTerra()]) 
     [q]
   end
 end

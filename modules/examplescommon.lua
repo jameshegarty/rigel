@@ -1643,10 +1643,15 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function(ty, value)
+C.plusConst = memoize(function(ty, value_orig)
   err(types.isType(ty),"plus100: expected type input")
-  err(type(value)=="number","plusConst expected numeric input")
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + S.constant(value,ty) end, function() return CT.plusConsttfn(ty,value) end )
+  local value = Uniform(value_orig)
+  err( value:isNumber(),"plusConst expected numeric input")
+
+  local globals = {}
+  value:appendGlobals(globals)
+  
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + value:toSystolic(ty) end, function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
   return plus100mod
 end)
 
@@ -1940,7 +1945,12 @@ C.rename = function( Mod, name, renameTable, extraPortDefString, extraDefs )
       else
         table.insert(modinst,".ready("..v[2]..")")
       end
-
+    elseif k:sub(#k-4,#k)=="valid" then
+      k = k:sub(1,#k-6)
+      J.err(Mod:getGlobal(k)~=nil,k.." is not a global")
+      globalRename[k] = {"sv","{"..renameTable[k.."_valid"][2]..","..renameTable[k.."_data"][2].."}"}
+    elseif k:sub(#k-3,#k)=="data" then
+      J.err(Mod:getGlobal(k:sub(1,#k-5))~=nil,k.." is not a global")
     else
       J.err(Mod:getGlobal(k)~=nil,k.." is not a global")
       globalRename[k] = v
@@ -1978,7 +1988,9 @@ vstr = vstr..Mod.name.." inst("..table.concat(modinst,", ")..[[);
   
   vstr = vstr..[[
 
-endmodule]]
+endmodule
+
+]]
 
   return RM.liftVerilog(name,Mod.inputType,Mod.outputType,vstr,Mod.globals,Mod.globalMetadata,Mod.sdfInput,Mod.sdfOutput, {Mod})
 end
