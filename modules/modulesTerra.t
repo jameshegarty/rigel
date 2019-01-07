@@ -1280,7 +1280,6 @@ function MT.fifo( res, A, size, nostall, W, H, T, csimOnly)
   return MT.new(Fifo)
 end
 
-
 FR = terralib.includecstring([[
 #include <stdio.h>
 #include <stdlib.h>
@@ -1967,7 +1966,17 @@ return {`mself.[n.name].ready}
           table.insert( readyStats, quote var [res]; [res][n.i] = [arg] end )
           res = {res}
         elseif n.kind=="writeGlobal" then
-          return `&[n.global:terraReady()]
+          if n.global.direction=="output" then
+            res = {`[n.global:terraReady()]}
+          else
+            assert(false)
+          end
+        elseif n.kind=="readGlobal" then
+          if n.global.direction=="input" then
+            assert(false)
+          else
+            table.insert( readyStats, quote [n.global:terraReady()]=[arg] end )
+          end
         else
           print(n.kind)
           assert(false)

@@ -2988,7 +2988,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X 
   
   assert(X==nil)
 
-  if size==1 then
+  if size==1 and csimOnly==false then
     local name = J.sanitize("OneElementFIFO_"..tostring(A))
     local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire store_reset, output wire store_ready, input wire load_ready, input wire load_reset, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
   parameter INSTANCE_NAME="INST";
@@ -3026,6 +3026,7 @@ endmodule
     
     local mod =  modules.liftVerilog(name, types.Handshake(A), outputType, vstr, nil,nil,nil,nil,nil, true )
     mod.registered = true
+    if terralib~=nil then mod.terraModule = MT.fifo(mod,A,2,nostall,W,H,T,csimOnly) end
 return mod
   end
   
