@@ -27,20 +27,26 @@ function SOCMT.axiRegs(mod,tab,port)
   end
 
   local regSet = {}
-
+  local regReady = {}
+  
   for k,v in pairs(tab) do
     local addr = mod.globalMetadata["AddrOfRegister_"..k]
     local ty = mod.globalMetadata["TypeOfRegister_"..k]
     local glob = mod:getGlobal(k):terraValue()
 
-    for i=0,math.ceil(ty:verilogBits()/32)-1 do
-      table.insert(regSet,
-                   quote
-                     if data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])==[addr+i*4] then
-                       cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d\n", data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]), data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()]) )
-                       @([&uint](&[glob])+i) = data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()])
-                     end
-                   end)
+    if v[3]=="input" then
+      -- register inputs are always Handshaked
+      table.insert( regReady, quote [mod:getGlobal(k):terraReady()] = true; end )
+    else
+      for i=0,math.ceil(ty:verilogBits()/32)-1 do
+        table.insert(regSet,
+          quote
+            if data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])==[addr+i*4] then
+              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d\n", data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]), data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()]) )
+              @([&uint](&[glob])+i) = data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()])
+            end
+          end)
+      end
     end
   end
 
@@ -57,8 +63,6 @@ function SOCMT.axiRegs(mod,tab,port)
       else
         [regSet]
       end
-      
---      [SOCMT.doneHack] = false
     end
 
     @out = self.startReg
@@ -100,6 +104,7 @@ function SOCMT.axiRegs(mod,tab,port)
   terra AxiRegsN:calculateStartReady(readyDownstream:bool)
     --cstdio.printf("axiRegsN: calcStartReady %d\n", readyDownstream)
     self.startReady = readyDownstream
+    [regReady]
   end
 
   return MT.new(AxiRegsN)

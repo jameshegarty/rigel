@@ -18,19 +18,17 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
-
 function rigelGlobalFunctions:terraValue()
   if self.terraValueVar==nil then
     local v
-    --if self.direction=="output" then v=self.type:valueToTerra(self.initValue) end
-    self.terraValueVar = global( self.type:toTerraType(), v, self.name )
+    self.terraValueVar = global( self.type:toTerraType(), v, self.name.."_"..self.direction )
   end
   return self.terraValueVar
 end
 
 function rigelGlobalFunctions:terraReady()
   if self.terraReadyVar==nil then
-    self.terraReadyVar = global( bool, false, self.name )
+    self.terraReadyVar = global( bool, false, self.name.."_"..self.direction )
   end
   return self.terraReadyVar
 end
@@ -97,13 +95,11 @@ function MT.packTuple(res,typelist)
         var hasData = [J.foldt(J.map(activePorts, function(i) return `self.["FIFO"..i]:hasData() end ), J.andopterra, true )]
 
         escape if DARKROOM_VERBOSE then J.map( typelist, function(t,k) 
---                      if t:const() then emit quote cstdio.printf("PackTuple FIFO %d valid:%d (const)\n",k-1,1) end 
                emit quote cstdio.printf("PackTuple FIFO %d valid:%d (size %d)\n", k-1, self.["FIFO"..k]:hasData(),self.["FIFO"..k]:size()) end end) end end
 
         if hasData then
           -- terra doesn't like us copying large structs by value
           escape J.map( typelist, function(t,k) 
---                        if t:const() then emit quote cstring.memcpy( &data(out).["_"..(k-1)], &data(inp.["_"..(k-1)]), [t:sizeof()] ) end 
         emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:sizeof()] ) end
         end ) end
           valid(out) = true
@@ -123,11 +119,7 @@ function MT.packTuple(res,typelist)
 
       escape
         for i=1,#typelist do 
---          if typelist[i]:const() then
---            emit quote self.ready[i-1] = true end 
---          else
-            emit quote self.ready[i-1] = (self.["FIFO"..i]:full()==false) end 
---          end
+          emit quote self.ready[i-1] = (self.["FIFO"..i]:full()==false) end 
         end
       end
   end
@@ -1852,6 +1844,15 @@ function MT.lambdaCompile(fn)
     table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
   end
 
+  -- sort of a hack: for handshaked, internal globals, we can't guarantee we'll generate code the runs in the correct order (producers before consumers)
+  -- so, instead, have all internal handshaked globals feed into FIFOs
+  for globalname,v in pairs(fn.globalsInternal) do
+    if types.isHandshakeAny( v.type ) then
+      table.insert( Module.entries, {field="GLOBALFIFO_"..globalname, type=simmodules.fifo( types.extractData(v.type):toTerraType(), 8, "GLOBALFIFO_"..globalname)} )
+    end
+  end
+  
+  -- terra requires that we predeclare all instances
   fn.output:visitEach(
     function(n, inputs)
       if n==fn.output then
@@ -1864,7 +1865,13 @@ function MT.lambdaCompile(fn)
         table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
       end
     end)
-  
+
+  for globalname,v in pairs(fn.globalsInternal) do
+    if types.isHandshakeAny( v.type ) then
+      table.insert( resetStats, quote mself.["GLOBALFIFO_"..globalname]:reset() end )
+    end
+  end
+    
   local readyOutput
     
   -- build ready calculation
@@ -1966,17 +1973,13 @@ return {`mself.[n.name].ready}
           table.insert( readyStats, quote var [res]; [res][n.i] = [arg] end )
           res = {res}
         elseif n.kind=="writeGlobal" then
-          if n.global.direction=="output" then
-            res = {`[n.global:terraReady()]}
-          else
-            assert(false)
-          end
+          -- write an output
+          assert(n.global.direction=="output")
+          res = {`[n.global:terraReady()]}
         elseif n.kind=="readGlobal" then
-          if n.global.direction=="input" then
-            assert(false)
-          else
-            table.insert( readyStats, quote [n.global:terraReady()]=[arg] end )
-          end
+          -- read an input
+          assert(n.global.direction=="input")
+          table.insert( readyStats, quote [n.global:terraReady()]=[arg] end )
         else
           print(n.kind)
           assert(false)
@@ -2081,8 +2084,12 @@ return {`mself.[n.name].ready}
          res = {`&((@[inputs[1]])[n.i])}
         end
       elseif n.kind=="readGlobal" then
+        -- read an input
+        assert(n.global.direction=="input")
         res = {`&[n.global:terraValue()]}
       elseif n.kind=="writeGlobal" then
+        -- write an output
+        assert(n.global.direction=="output")
         table.insert( stats, quote [n.global:terraValue()] = @[inputs[1]] end)
         res = {`nil}
       else
@@ -2095,31 +2102,32 @@ return {`mself.[n.name].ready}
 
   RVReadyOutput = out[2]
   out = out[1]
-  
-  -- kind of a hack: we might have a pair of globals inside a module (in/out)
-  -- which should drive each other. Instead of trying to merge the global, just copy the value
-  -- will this work???
-  local tiedownGlobals = {}
-  local seenGlobals = {}
-  for k,_ in pairs(fn.globals) do
-    if seenGlobals[k.name]~=nil then
-      if seenGlobals[k.name].direction=="input" and k.direction=="output" then
-        table.insert(tiedownGlobals, quote [seenGlobals[k.name]:terraValue()] = [k:terraValue()] end)
-      elseif seenGlobals[k.name].direction=="output" and k.direction=="input" then
-        table.insert(tiedownGlobals, quote [k:terraValue()] = [seenGlobals[k.name]:terraValue()] end)
-      else
-        print("ERROR: two globals with same name?")
-        assert(false)
-      end
+
+  -- sort of a hack: if we have an input/output pair of globals that are tied off within this module,
+  -- copy their value in this function.
+  -- why don't we just use one variable? We have two variables to work around ordering issues with Handshake globals.
+  -- instead of codegening global transactions in correct producer-consumer order (would be hard), we instead insert FIFOs between
+  -- all Handshaked globals, and put them between the inputs&outputs. Then, we can codegen in any order.
+  local tiedownGlobalsPre = {}
+  local tiedownGlobalsPost = {}
+  local tiedownGlobalsReadyPre = {}
+
+  for globalname,g in pairs(fn.globalsInternal) do
+    if types.isHandshakeAny( g.type ) then
+      local fifo = `mself.["GLOBALFIFO_"..g.name]
+      table.insert(tiedownGlobalsPre, quote [g.input:terraValue()] = {@fifo:peekFront(0),fifo:hasData()}; if [g.input:terraReady()] and fifo:hasData() then fifo:popFront() end end)
+      table.insert(tiedownGlobalsPost, quote if valid([g.output:terraValue()]) and (fifo:full()==false) then fifo:pushBack(&data([g.output:terraValue()])) end end)
+
+      table.insert(tiedownGlobalsReadyPre, quote [g.output:terraReady()] = (fifo:full()==false) end)
+    else
+      table.insert(tiedownGlobalsPost, quote [g.input:terraValue()] = [g.output:terraValue()] end)
     end
-    
-    seenGlobals[k.name] = k
   end
   
   if fn.input==nil then
-    terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobals];[stats] end
+    terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
   else
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobals];[stats] end
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
   end
 
   if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
@@ -2130,15 +2138,15 @@ return {`mself.[n.name].ready}
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
     if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
-    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [tiedownGlobalsReadyPre]; [readyStats]; TMP; end
   elseif rigel.streamCount(fn.inputType)>0 then
     -- has a handshake input, but not a handshake output
     assert(fn.outputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
+    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; mself.ready = [readyOutput]; end
   elseif rigel.handshakeMode(fn.output) then
     assert(fn.outputType==types.null())
     assert(fn.inputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
+    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; end
   end
 
   terra Module.methods.reset( [mself] ) [resetStats] end

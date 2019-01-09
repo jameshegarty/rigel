@@ -57,7 +57,7 @@ SOC.axiRegs = J.memoize(function(tab,port)
     globalMetadata["TypeOfRegister_"..k] = v[1]
     
     print("ADD GLOBAL",k)
-    if v[3]=="out" then
+    if v[3]=="input" then
       globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
       outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
       
@@ -910,7 +910,7 @@ function SOC.AXIWrapRV(mod,port)
       for glob,_ in pairs(mod.globals) do
         if portList[glob.name]~=nil then
           local newGlob = R.newGlobal(string.sub(glob.name,1,#glob.name-3),glob.direction,types.HandshakeVR(glob.type.params.A),glob.initValue)
-          local fifoout = C.fifo(glob.type.params.A,1,false,false,true)(R.readGlobal("read_"..glob.name,glob))
+          local fifoout = C.fifo(glob.type.params.A,1,false,false,true)(R.readGlobal("read_"..glob.name,glob.flip))
           print("FIFOOUT",fifoout)
           table.insert(pipelines,R.writeGlobal("write_"..glob.name,newGlob,fifoout) )
         end

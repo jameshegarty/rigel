@@ -3888,8 +3888,10 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   
   -- collect the globals
   res.globals = {}
+  res.globalsInternal = {} -- global_name->global (either the input or output, it's arbitrary)
   res.globalMetadata = {}
   local globalPairs = {} -- detect if we have an internal input/output pair
+  local globalDbgLoc = {}
   
   output:visitEach(
     function(n)
@@ -3898,14 +3900,17 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
           if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
             -- this is an internal pair, remove from list
+	    res.globalsInternal[g.name] = g
             res.globals[globalPairs[g.name]] = nil
             res.globals[g]=nil
+            globalDbgLoc[g] = nil
           else
             if g.direction=="output" then
-              err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! "..n.loc.." ORIG: ")
+              err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! "..n.loc.." ORIG: "..tostring(globalDbgLoc[g]))
             end
             res.globals[g] = 1
             globalPairs[g.name]=g
+            globalDbgLoc[g] = n.loc
           end
         end
 
@@ -3916,10 +3921,13 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       elseif n.kind=="readGlobal" or n.kind=="writeGlobal" then
         if globalPairs[n.global.name]~=nil and (n.kind=="readGlobal" and globalPairs[n.global.name].direction=="output") then
           -- this is an internal pair, remove from list
+          res.globalsInternal[n.global.name] = n.global
           res.globals[globalPairs[n.global.name]] = nil
           res.globals[n.global] = nil
+          globalDbgLoc[n.global] = nil
         else
           res.globals[n.global]=1
+          globalDbgLoc[n.global] = n.loc
           globalPairs[n.global.name]=n.global
         end
       end
@@ -3944,12 +3952,15 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
         res.globals[globalPairs[g.name]] = nil
         res.globals[g]=nil
+        res.globalsInternal[g.name] = g
+        globalDbgLoc[g]=nil
       else
         if g.direction=="output" then
-          err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ")
+          err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ORIG: "..tostring(globalDbgLoc[g]) )
         end
         res.globals[g] = 1
         globalPairs[g.name]=g
+        globalDbgLoc[g]="INSTANCE:"..v.name
       end
     end
 
