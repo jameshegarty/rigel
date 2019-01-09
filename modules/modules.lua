@@ -4231,24 +4231,12 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
           elseif n.kind=="writeGlobal" then
             assert( rigel.isHandshakeAny(n.global.type) )
-            if n.global.direction=="output" then
-              res = {S.readSideChannel(n.global.systolicValueReady)}
-            else
-              -- signal must be on an instance inside this module?
-              assert(false)
-            end
+            assert( n.global.direction=="output" )
+            res = {S.readSideChannel(n.global.systolicValueReady)}
           elseif n.kind=="readGlobal" then
             assert( rigel.isHandshakeAny(n.global.type) )
-            if n.global.direction=="input" then
-              -- signal must be from outside this module (an input to this module)
-              --res = {S.readSideChannel(n.global.systolicValueReady)}
-              assert(false)
-            else
-              -- signal must be from an instance inside this module
-              -- global is an output from an instance => ready is an input to instance
-              -- => this must be last op in chain
-              table.insert(readyPipelines, S.writeSideChannel(n.global.systolicValueReady,input) )
-            end
+            assert( n.global.direction=="input" )
+            table.insert(readyPipelines, S.writeSideChannel(n.global.systolicValueReady,input) )
           else
             print("missing ready wiring of op - "..n.kind)
             assert(false)
