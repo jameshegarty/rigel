@@ -1013,20 +1013,22 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 end)
 
 -------------
-C.fifo = memoize(function(ty,size,nostall,csimOnly,X)
+-- VRLoad: if true, make the load function be HandshakeVR
+C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
   err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
   err( nostall==nil or type(nostall)=="boolean", "C.fifo: nostall must be boolean")
   err( csimOnly==nil or type(csimOnly)=="boolean", "C.fifo: csimOnly must be boolean")
+  err( VRLoad==nil or type(VRLoad)=="boolean","C.fifo: VRLoad should be boolean")
   err( X==nil, "C.fifo: too many arguments" )
   err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
-  
+
   local inp = R.input(R.Handshake(ty))
-  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly))}
+  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 end)
 
 -------------
@@ -1705,6 +1707,41 @@ C.handshakeToHandshakeFramed = memoize(
     end
     
     return rigel.newFunction(res)
+  end)
+
+C.stripFramed = memoize(
+  function( A, X)
+    err(A:is("HandshakeFramed") or A:is("HandshakeArrayFramed"),"StripFramed: input should be framed, but is: "..tostring(A) )
+    assert(X==nil)
+
+    
+    local res = {inputType=A,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+
+    if A:is("HandshakeFramed") then
+      res.outputType = types.Handshake(A.params.A)
+    elseif A:is("HandshakeArrayFramed") then
+      res.outputType = types.HandshakeArray(A.params.A,A.params.W,A.params.H)
+    else
+      assert(false)
+    end
+    
+    res.name=J.sanitize("StripFramed_"..tostring(A))
+    
+    function res.makeSystolic()
+      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
+      local r = S.parameter("ready_downstream",types.bool())
+      sm:addFunction( S.lambda("ready", r, r, "ready") )
+      local I = S.parameter("process_input", R.lower(A) )
+      sm:addFunction( S.lambda("process",I,I,"process_output") )
+
+      return sm
+    end
+    function res.makeTerra()
+      return CT.stripFramed(res,A)
+    end
+    
+    return rigel.newFunction(res)
+
   end)
 
 -- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}

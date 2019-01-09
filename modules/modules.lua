@@ -970,7 +970,7 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
     local SDFTok = (inTok*n)/d
     
     if outTok~=SDFTok then
-      print("mapFramed: error, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
+      print("mapFramed: warning, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
     end
   end
   
@@ -1768,13 +1768,14 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
   rigel.expectBasic(A)
   if tmuxed==nil then tmuxed=false end
   assert(type(tmuxed)=="boolean")
-  assert(X==nil)
+  err(X==nil,"arbitrate: too many arguments")
 
   local res = {kind="arbitrate", A=A, inputRates=inputRates}
   res.name = sanitize("Arbitrate_"..tostring(A).."_"..#inputRates)
   res.stateful = false
-  
-  res.inputType = rigel.HandshakeArray( A, #inputRates )
+
+  res.inputType = types.HandshakeArray( A, #inputRates )
+
   if tmuxed then
     res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
   else
@@ -1795,6 +1796,8 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
   
   res.sdfInput = SDF(tmp)
   res.sdfOutput = SDF{1,1}
+
+  if terralib~=nil then res.terraModule = MT.Arbitrate( res, A, inputRates, tmuxed) end
   
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
@@ -2970,20 +2973,71 @@ end
 -- nostall: unsafe -> ready always set to true
 -- W,H,T: used for debugging (calculating last cycle)
 -- csimOnly: hack for large fifos - don't actually allocate hardware
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, X )
+-- VRLoad: make the load function be HandshakeVR
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X )
   rigel.expectBasic(A)
   err( type(size)=="number", "fifo: size must be number")
-  err( size >0,"size<=0")
-  err( csimOnly or size >1,"fifo: NYI - size<=1")
+  err( size >0,"fifo: size must be >0")
   err(nostall==nil or type(nostall)=="boolean", "fifo: nostall should be nil or boolean")
   err(W==nil or type(W)=="number", "W should be nil or number")
   err(H==nil or type(H)=="number", "H should be nil or number")
   err(T==nil or type(T)=="number", "T should be nil or number")
   assert(csimOnly==nil or type(csimOnly)=="boolean")
+  if VRLoad==nil then VRLoad=false end
+  err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
+  
   assert(X==nil)
 
-  local res = {kind="fifo", inputType=rigel.Handshake(A), outputType=rigel.Handshake(A), registered=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true}
+  if size==1 and csimOnly==false then
+    local name = J.sanitize("OneElementFIFO_"..tostring(A))
+    local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire store_reset, output wire store_ready, input wire load_ready, input wire load_reset, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
+  parameter INSTANCE_NAME="INST";
+  reg hasItem;
+  reg []]..tostring(A:verilogBits()-1)..[[:0] dataBuffer;
 
+  wire store_valid;
+  assign store_valid = store_input[]]..tostring(A:verilogBits())..[[];
+
+  always @(posedge CLK) begin
+    if (store_reset || load_reset ) begin
+      hasItem <= 1'b0;
+    end else begin
+      if (store_valid && (load_ready || hasItem==1'b0) ) begin
+        // input is valid and we can accept it
+        hasItem <= 1'b1;
+        dataBuffer <= store_input[]]..tostring(A:verilogBits()-1)..[[:0];
+      end else if (load_ready) begin
+        // buffer is being emptied
+        hasItem <= 1'b0;
+      end
+    end
+  end
+
+  assign load_output = {hasItem,dataBuffer};
+  assign store_ready = (hasItem==1'b0)||load_ready;
+endmodule
+
+]]
+
+    local outputType = types.Handshake(A)
+    if VRLoad then
+      outputType=types.HandshakeVR(A)
+    end
+    
+    local mod =  modules.liftVerilog(name, types.Handshake(A), outputType, vstr, nil,nil,nil,nil,nil, true )
+    mod.registered = true
+    if terralib~=nil then mod.terraModule = MT.fifo(mod,A,2,nostall,W,H,T,csimOnly) end
+return mod
+  end
+  
+  local res = {kind="fifo", inputType=rigel.Handshake(A),  registered=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true}
+
+  if VRLoad then
+    res.outputType = rigel.HandshakeVR(A)
+  else
+    res.outputType = rigel.Handshake(A)
+  end
+  
   if A==types.null() then
     res.inputType=rigel.HandshakeTrigger
     res.outputType=rigel.HandshakeTrigger
@@ -3718,7 +3772,10 @@ local function checkFIFOs(output)
         end
       elseif n.kind=="statements" then
         res = arg[1]
-      elseif n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
+      elseif n.kind=="readGlobal" then
+        -- is this right???
+        res = J.broadcast(true,types.streamCount(n.type))
+      elseif n.kind=="constant" or n.kind=="writeGlobal" then
         res = {}
       else
         print("NYI ",n.kind)
@@ -3831,24 +3888,48 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   
   -- collect the globals
   res.globals = {}
+  res.globalsInternal = {} -- global_name->global (either the input or output, it's arbitrary)
   res.globalMetadata = {}
-
+  local globalPairs = {} -- detect if we have an internal input/output pair
+  local globalDbgLoc = {}
+  
   output:visitEach(
     function(n)
       if n.kind=="apply" then
-          for g,_ in pairs(n.fn.globals) do
+        for g,_ in pairs(n.fn.globals) do
+
+          if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
+            -- this is an internal pair, remove from list
+	    res.globalsInternal[g.name] = g
+            res.globals[globalPairs[g.name]] = nil
+            res.globals[g]=nil
+            globalDbgLoc[g] = nil
+          else
             if g.direction=="output" then
-              err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! "..n.loc.." ORIG: ")
+              err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! "..n.loc.." ORIG: "..tostring(globalDbgLoc[g]))
             end
             res.globals[g] = 1
+            globalPairs[g.name]=g
+            globalDbgLoc[g] = n.loc
           end
+        end
 
-          for k,v in pairs(n.fn.globalMetadata) do
-            err(res.globalMetadata[k]==nil,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
-            res.globalMetadata[k] = v
-          end
+        for k,v in pairs(n.fn.globalMetadata) do
+          err(res.globalMetadata[k]==nil,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
+          res.globalMetadata[k] = v
+        end
       elseif n.kind=="readGlobal" or n.kind=="writeGlobal" then
-        res.globals[n.global]=1
+        if globalPairs[n.global.name]~=nil and (n.kind=="readGlobal" and globalPairs[n.global.name].direction=="output") then
+          -- this is an internal pair, remove from list
+          res.globalsInternal[n.global.name] = n.global
+          res.globals[globalPairs[n.global.name]] = nil
+          res.globals[n.global] = nil
+          globalDbgLoc[n.global] = nil
+        else
+          res.globals[n.global]=1
+          globalDbgLoc[n.global] = n.loc
+          globalPairs[n.global.name]=n.global
+        end
       end
     end)
 
@@ -3868,10 +3949,19 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   for k,v in pairs(res.instances) do
     for g,_ in pairs(v.fn.globals) do
-      if g.direction=="output" then
-        err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ")
+      if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
+        res.globals[globalPairs[g.name]] = nil
+        res.globals[g]=nil
+        res.globalsInternal[g.name] = g
+        globalDbgLoc[g]=nil
+      else
+        if g.direction=="output" then
+          err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ORIG: "..tostring(globalDbgLoc[g]) )
+        end
+        res.globals[g] = 1
+        globalPairs[g.name]=g
+        globalDbgLoc[g]="INSTANCE:"..v.name
       end
-      res.globals[g] = 1
     end
 
     for k,v in pairs(v.fn.globalMetadata) do
@@ -4085,12 +4175,10 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             assert(readyout==nil)
             readyout = input
           elseif n.kind=="apply" then
-
             res = {module:lookupInstance(n.name):ready(input)}
             if n.fn.inputType==types.null() then
               table.insert(readyPipelines, res[1])
             end
-            
           elseif n.kind=="applyMethod" then
             if n.fnname=="load" or n.fnname=="start" then
               -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
@@ -4143,9 +4231,14 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
           elseif n.kind=="writeGlobal" then
             assert( rigel.isHandshakeAny(n.global.type) )
+            assert( n.global.direction=="output" )
             res = {S.readSideChannel(n.global.systolicValueReady)}
+          elseif n.kind=="readGlobal" then
+            assert( rigel.isHandshakeAny(n.global.type) )
+            assert( n.global.direction=="input" )
+            table.insert(readyPipelines, S.writeSideChannel(n.global.systolicValueReady,input) )
           else
-            print(n.kind)
+            print("missing ready wiring of op - "..n.kind)
             assert(false)
           end
 
@@ -4295,15 +4388,19 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, registered, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
   err( type(vstr)=="string", "liftVerilog: verilog string must be string")
-  err( type(globals)=="table", "liftVerilog: globals must be table")
-  err( type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
+  err( globals==nil or type(globals)=="table", "liftVerilog: globals must be table")
+  err( globalMetadata==nil or type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
+  if sdfInput==nil then sdfInput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate, but is: "..tostring(sdfInput))
+  if sdfOutput==nil then sdfOutput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
+  if registered==nil then registered=false end
+  err( type(registered)=="boolean", "liftVerilog: registered must be nil or bool")
   err( X==nil, "liftVerilog: too many arguments")
   
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
@@ -4344,21 +4441,42 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
 
   function res.makeSystolic()
     local fns = {}
-    local inp = S.parameter("process_input",rigel.lower(inputType))
-    local outv = rigel.lower(outputType):fakeValue()
-    fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
 
-    --if rigel.isHandshake(inputType) and rigel.isHandshake(outputType) then
-    if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
-      local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType)) --S.parameter("ready_downstream",types.bool())
-      fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
+    if registered then
+      local inp = S.parameter("store_input",rigel.lower(inputType))
+      fns.store = S.lambda("store",inp,nil,"store_output")
+
+      local outv = rigel.lower(outputType):fakeValue()
+      fns.load = S.lambda("load",S.parameter("LO",types.null()),S.constant(outv,rigel.lower(outputType)),"load_output")
+
+      if rigel.hasReady(inputType) then
+        fns.store_ready = S.lambda( "store_ready", S.parameter("nn",types.null()), S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "store_ready")
+      end
+
+      if rigel.hasReady(outputType) then
+        local rinp =  S.parameter("load_ready",rigel.extractReady(res.outputType))
+        fns.load_ready = S.lambda( "load_ready", rinp, nil, "load_ready")
+      end
+
+      fns.store_reset = S.lambda("store_reset",S.parameter("rnils",types.null()),nil,"store_reset",{},S.parameter("store_reset",types.bool()))
+      fns.load_reset = S.lambda("load_reset",S.parameter("rnill",types.null()),nil,"load_reset",{},S.parameter("load_reset",types.bool()))
+
     else
-      print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
-      assert(false)
+      local inp = S.parameter("process_input",rigel.lower(inputType))
+      local outv = rigel.lower(outputType):fakeValue()
+      fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
+
+      if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
+        local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType))
+        fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
+      else
+        print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
+        assert(false)
+      end
+
+      fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
     end
-
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
-
+    
     local SC = {}
     if globals~=nil then
       for g,_ in pairs(res.globals) do

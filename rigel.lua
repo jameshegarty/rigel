@@ -67,22 +67,21 @@ darkroom.isStreaming = types.isStreaming
 darkroom.isBasic = types.isBasic
 
 rigelGlobalFunctions = {}
-rigelGlobalMT = {__index=rigelGlobalFunctions}
+rigelGlobalMT = {__index=rigelGlobalFunctions,
+                 __tostring = function(tab) return "Global "..tab.direction.." "..tab.name.." : "..tostring(tab.type) end}
 
 -- direction is the direction of this signal on the top module:
 -- 'output' means this is an output of the top module. 'input' means its an input to the top module.
 -- we can't write to an 'output' global twice!
-function darkroom.newGlobal( name, direction, typeof, initValue )
+local darkroomNewGlobal = J.memoize(function( name, direction, typeof, X )
   err( type(name)=="string", "newGlobal: name must be string" )
   err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
   err( types.isType(typeof), "newGlobal: type must be rigel type" )
-  err( initValue==nil or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
-
+  assert(X==nil)
+  
   err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
 
-  local t = {name=name,direction=direction,type=typeof,initValue=initValue}
-
-
+  local t = {name=name,direction=direction,type=typeof}
 
   if darkroom.isHandshakeAny(typeof) then
     t.systolicValue = S.newSideChannel( name, direction, darkroom.lower(typeof), t )
@@ -94,6 +93,38 @@ function darkroom.newGlobal( name, direction, typeof, initValue )
   end
 
   return setmetatable(t,rigelGlobalMT)
+end)
+
+function darkroom.newGlobal( name, direction, typeof, initValue )
+  local g = darkroomNewGlobal(name,direction,typeof)
+
+  err( initValue==nil or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
+
+  local function fl(x) if x=="input" then return "output" else return "input" end end
+
+  if g.initValue==nil then
+    g.initValue=initValue
+  else
+    assert(g.initValue==initValue)
+  end
+
+  if g.flip==nil then
+    g.flip = darkroomNewGlobal(name,fl(direction),typeof)
+    g[direction]=g
+    g[fl(direction)]=g.flip
+    
+    if g.flip.initValue==nil then
+      g.flip.initValue=initValue
+    else
+      assert(g.flip.initValue==initValue)
+    end
+
+    g.flip.flip=g
+    g.flip[g.flip.direction]=g.flip
+    g.flip[fl(g.flip.direction)]=g
+  end
+
+  return g
 end
 
 function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
@@ -317,7 +348,7 @@ __index=function(tab,key)
     --if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
     --err(A==B,"makeSystolic: side channels doesn't match globals")
     for k,_ in pairs(tab.globals) do
-      err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module lacks side channel for global "..k.name )
+      err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global "..k.name )
       err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
     end
 
@@ -359,7 +390,7 @@ __call=function(tab,...)
   local rawarg = {...}
 
   for _,arg in pairs(rawarg) do
-    J.err( arg==nil or darkroom.isIR(arg),"applying a module to something other than a rigel value?")
+    J.err( arg==nil or darkroom.isIR(arg),"applying a module to something other than a rigel value? Is '"..tostring(arg).."'")
 
     -- discover variable name from lua
     if arg~=nil and arg.defaultName then
@@ -409,6 +440,14 @@ __tostring=function(mod)
   for k,v in pairs(mod.globals) do
     table.insert(res,"    "..k.direction.." "..tostring(k.type).." "..k.name)
   end
+
+  if mod.globalsInternal~=nil then
+    table.insert(res,"  Globals (Internal):")
+    for k,v in pairs(mod.globalsInternal) do
+      table.insert(res,"    "..tostring(v.type).." "..v.name)
+    end
+  end
+  
   table.insert(res,"  GlobalMetadata:")
   for k,v in pairs(mod.globalMetadata) do
     table.insert(res,"    "..tostring(k).." = "..tostring(v))
@@ -861,6 +900,8 @@ function darkroomIRFunctions:typecheck()
     
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
+    elseif n.inputs[1].type:is("HandshakeFramed") then
+      n.type = types.HandshakeArrayFramed( darkroom.extractData(n.inputs[1].type), n.inputs[1].type.params.mixed, n.inputs[1].type.params.dims, n.W, n.H )
     elseif darkroom.isBasic(n.inputs[1].type) then
       n.type = types.array2d( n.inputs[1].type, n.W, n.H )
     else
@@ -888,7 +929,8 @@ function darkroomIRFunctions:typecheck()
       err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
     end
   elseif n.kind=="readGlobal" then
-    err( n.global.direction=="input", "Error, attempted to read a global output ("..n.global.name..")" )
+    -- this is actually ok: we may be making an internal connection here
+    --err( n.global.direction=="input", "Error, attempted to read a global output ("..n.global.name..")" )
   elseif n.kind=="writeGlobal" then
     err( n.global.direction=="output", "Error, attempted to write a global input ("..n.global.name..")" )
     err( n.inputs[1].type==n.global.type, "Error, input to writeGlobal is incorrect type. is "..tostring(n.inputs[1].type).." but should be "..tostring(n.global.type)..", "..n.loc )
@@ -1006,6 +1048,7 @@ end
 function darkroom.readGlobal( name, g, X )
   err( type(name)=="string", "rigel.readGlobal: name must be string" )
   err( darkroom.isGlobal(g),"readGlobal: input must be rigel global" )
+  err( g.direction=="input","readGlobal: global must be an input")
   err(X==nil,"readGlobal: too many arguments")
   return darkroom.newIR{kind="readGlobal",name=name,global=g,type=g.type,loc=getloc(),inputs={},rate=SDF{1,1}}
 end
@@ -1014,6 +1057,7 @@ function darkroom.writeGlobal( name, g, input, X )
   err( type(name)=="string", "rigel.writeGlobal: name must be string" )
   err( darkroom.isGlobal(g),"writeGlobal: first argument must be rigel global, but is: "..tostring(g) )
   err( darkroom.isIR(input),"writeGlobal: second argument must be rigel value" )
+  err( g.direction=="output","writeGlobal: global must be an output")
   err(X==nil,"writeGlobal: too many arguments")
   return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
 end

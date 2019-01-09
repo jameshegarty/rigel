@@ -57,7 +57,7 @@ SOC.axiRegs = J.memoize(function(tab,port)
     globalMetadata["TypeOfRegister_"..k] = v[1]
     
     print("ADD GLOBAL",k)
-    if v[3]=="out" then
+    if v[3]=="input" then
       globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
       outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
       
@@ -894,6 +894,36 @@ endmodule
   return res
 end)
 
+-- Rigel usually uses HandshakeRV protocol, but AXI expects HandshakeVR
+function SOC.AXIWrapRV(mod,port)
+  local portList={}
+  portList["IP_MAXI"..port.."_ARADDR_RV"]=1
+  portList["IP_MAXI"..port.."_AWADDR_RV"]=1
+  portList["IP_MAXI"..port.."_WDATA_RV"]=1
+
+  local G = require "generators"
+  
+  local WrapMod = G.Module{mod.name.."_RV_to_VR",mod.inputType,
+    function(i)
+      local pipelines = {mod(i)}
+
+      for glob,_ in pairs(mod.globals) do
+        if portList[glob.name]~=nil then
+          local newGlob = R.newGlobal(string.sub(glob.name,1,#glob.name-3),glob.direction,types.HandshakeVR(glob.type.params.A),glob.initValue)
+          local fifoout = C.fifo(glob.type.params.A,1,false,false,true)(R.readGlobal("read_"..glob.name,glob.flip))
+          print("FIFOOUT",fifoout)
+          table.insert(pipelines,R.writeGlobal("write_"..glob.name,newGlob,fifoout) )
+        end
+      end
+
+      return R.statements(pipelines)
+    end}
+
+  print(WrapMod)
+  
+  return WrapMod
+end
+
 SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   J.err( type(port)=="number", "axiReadBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
@@ -904,7 +934,7 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
   J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
   
   local globals = {}
-  globals[R.newGlobal("IP_MAXI"..port.."_ARADDR","output",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_ARADDR_RV","output",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_RDATA","input",R.Handshake(types.bits(64)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_RRESP","input",types.bits(2))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_RLAST","input",types.bool())] = 1
@@ -925,8 +955,8 @@ SOC.axiReadBytes = J.memoize(function(filename,Nbytes,port,addressBase, X)
     input wire CLK,
     input wire reset,
 
-    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR,
-    input wire IP_MAXI]=]..port..[=[_ARADDR_ready,
+    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR_RV,
+    input wire IP_MAXI]=]..port..[=[_ARADDR_RV_ready,
 
     input wire [64:0] IP_MAXI]=]..port..[=[_RDATA,
     output wire IP_MAXI]=]..port..[=[_RDATA_ready,
@@ -949,8 +979,8 @@ assign IP_MAXI]=]..port..[=[_ARLEN = 4'd]=]..(burstCount-1)..[=[; // length of b
 assign IP_MAXI]=]..port..[=[_ARSIZE = 2'b11; // number of bytes per transfer
 assign IP_MAXI]=]..port..[=[_ARBURST = 2'b01; // burst mode
 
-assign IP_MAXI]=]..port..[=[_ARADDR = process_input + 32'd]=]..addressBase..[=[;
-assign ready = IP_MAXI]=]..port..[=[_ARADDR_ready;
+assign IP_MAXI]=]..port..[=[_ARADDR_RV = process_input + 32'd]=]..addressBase..[=[;
+assign ready = IP_MAXI]=]..port..[=[_ARADDR_RV_ready;
 
 assign process_output = IP_MAXI]=]..port..[=[_RDATA;
 assign IP_MAXI]=]..port..[=[_RDATA_ready = ready_downstream;
@@ -967,7 +997,7 @@ endmodule
     res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase )
   end
 
-  return res
+  return SOC.AXIWrapRV(res,port)
 end)
 
 SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase_orig, X)
@@ -983,8 +1013,8 @@ SOC.axiWriteBytes = J.memoize(function(filename,NbytesPerCycle,port,addressBase_
   local addressBase = Uniform(addressBase_orig)
   
   local globals = {}
-  globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_WDATA","output",R.Handshake(types.bits(64)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_AWADDR_RV","output",R.Handshake(types.bits(32)))] = 1
+  globals[R.newGlobal("IP_MAXI"..port.."_WDATA_RV","output",R.Handshake(types.bits(64)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_WSTRB","output",types.bits(8))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_WLAST","output",types.bits(1))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_BRESP","input",R.Handshake(types.bits(2)))] = 1
@@ -1020,7 +1050,7 @@ always @(posedge CLK) begin
   if reset==1'b1 begin
     last_count <= 4'd]=]..bursts..[=[;
   end else begin
-    if (IP_MAXI]=]..port..[=[_AWADDR_ready && IP_MAXI]=]..port..[=[_AWADDR[32] ) begin
+    if (IP_MAXI]=]..port..[=[_AWADDR_RV_ready && IP_MAXI]=]..port..[=[_AWADDR_RV[32] ) begin
       last_count <= last_count - 4'b1;
     end
   end
@@ -1038,11 +1068,11 @@ end
     input wire CLK,
     input wire reset,
 
-    output wire [32:0] IP_MAXI]=]..port..[=[_AWADDR,
-    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
+    output wire [32:0] IP_MAXI]=]..port..[=[_AWADDR_RV,
+    input wire IP_MAXI]=]..port..[=[_AWADDR_RV_ready,
 
-    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
-    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
+    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA_RV,
+    input wire IP_MAXI]=]..port..[=[_WDATA_RV_ready,
 
     output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
     output wire IP_MAXI]=]..port..[=[_WLAST,
@@ -1067,15 +1097,15 @@ assign IP_MAXI]=]..port..[=[_AWSIZE = 2'b11; // number of bytes per transfer
 assign IP_MAXI]=]..port..[=[_AWBURST = 2'b01; // burst mode
 assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
 
-assign IP_MAXI]=]..port..[=[_AWADDR[31:0] = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
-assign IP_MAXI]=]..port..[=[_AWADDR[32] = process_input[32];
-assign ready = {IP_MAXI]=]..port..[=[_WDATA_ready,IP_MAXI]=]..port..[=[_AWADDR_ready};
+assign IP_MAXI]=]..port..[=[_AWADDR_RV[31:0] = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
+assign IP_MAXI]=]..port..[=[_AWADDR_RV[32] = process_input[32];
+assign ready = {IP_MAXI]=]..port..[=[_WDATA_RV_ready,IP_MAXI]=]..port..[=[_AWADDR_RV_ready};
 
 //always @(posedge CLK) begin
-//  $display("AWADDR_READY=%d AWVALID=%d",IP_MAXI]=]..port..[=[_AWADDR_ready,IP_MAXI]=]..port..[=[_AWADDR[32]);
+//  $display("AWADDR_READY=%d AWVALID=%d",IP_MAXI]=]..port..[=[_AWADDR_RV_ready,IP_MAXI]=]..port..[=[_AWADDR_RV[32]);
 //end
 
-assign IP_MAXI]=]..port..[=[_WDATA = process_input[]=]..(Nbits+32+1)..[=[:33];
+assign IP_MAXI]=]..port..[=[_WDATA_RV = process_input[]=]..(Nbits+32+1)..[=[:33];
 
 ]=]..last..[=[
 assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];
@@ -1089,7 +1119,7 @@ endmodule
     res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase )
   end
 
-  return res
+  return SOC.AXIWrapRV(res,port)
 end)
 
 SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)

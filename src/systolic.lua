@@ -1333,7 +1333,8 @@ function systolicASTFunctions:toVerilog( module )
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
       elseif n.kind=="readSideChannel" then
-        J.err( module.sideChannels[n.sideChannel]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module '"..module.name.."'?")
+        -- this is ok: read may be totally internal, so won't be on external list
+        J.err( module.sideChannels[n.sideChannel]~=nil or module.sideChannelsInternal[n.sideChannel.name]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module '"..module.name.."'?")
         finalResult = n.sideChannel.name
       elseif n.kind=="writeSideChannel" then
         table.insert( declarations, "assign "..n.sideChannel.name.." = "..args[1].."; // writeSideChannel\n" )
@@ -1502,7 +1503,7 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
     
     if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-      err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."'? input type "..tostring(fn.inputParameter.type))
+      err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."' (of module '"..instance.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
       local inp = instance.verilogCompilerState[module][fnname][1]
       err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
       table.insert(arglist,", ."..fn.inputParameter.name.."("..inp..")")
@@ -1588,22 +1589,13 @@ function userModuleFunctions:toVerilog()
     end
 
     -- is there an input/output (internally wired) pair for this SC?
-    local SCPairs = {}
-    local SCSeen = {}
     local SCPairDefn = ""
-    for sc,_ in pairs(self.sideChannels) do
-      if SCSeen[sc.name]~=nil and SCSeen[sc.name]~=sc.direction then
-        SCPairs[sc.name]=1
-        SCPairDefn = SCPairDefn.."  "..declareWire(sc.type,sc.name,nil," // Side Channel internal pair" ).."\n"
-      else
-        SCSeen[sc.name] = sc.direction
-      end
+    for name,sc in pairs(self.sideChannelsInternal) do
+      SCPairDefn = SCPairDefn.."  "..declareWire(sc.type,sc.name,nil," // Side Channel internal pair" ).."\n"
     end
     
     for sc,_ in pairs(self.sideChannels) do
-      if SCPairs[sc.name]==nil then
-        table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
-      end
+      table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
     end
     
     table.insert(t,table.concat(J.map(portlist,function(n) return systolic.declarePort(n[2],n[1],n[3]) end),", "))
@@ -1695,22 +1687,14 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   --if onlyWire then err(type(verilogDelay)=="table", "if onlyWire is true, verilogDelay must be passed") end
 
   local SC = {}
+  local SCInternal = {} -- sc internal pairs (name->SC map)
+  local SCPairs = {}
+  
   if sideChannels~=nil then
     for k,_ in pairs(sideChannels) do
       err(systolic.isSideChannel(k),"systolic.module.new: element in side channel set is not a side channel")
       SC[k]=1
-    end
-  end
-
-  -- add missing side channels from reads/writes
-  for k,v in pairs(fns) do
-    if v.output~=nil then
-      v.output:visitEach(
-        function(n,args)
-          if n.kind=="readSideChannel" or n.kind=="writeSideChannel" then
-            SC[n.sideChannel] = 1
-          end
-        end)
+      SCPairs[k.name] = k
     end
   end
 
@@ -1718,11 +1702,57 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   for _,inst in pairs(instances) do
     if inst.module.sideChannels~=nil then
       for sc,_ in pairs(inst.module.sideChannels) do
-        SC[sc] = 1
+        if SCInternal[sc.name]~=nil then
+        elseif SCPairs[sc.name]~=nil and SCPairs[sc.name].direction~=sc.direction then
+          SC[SCPairs[sc.name]] = nil
+          SC[sc]=nil
+          SCInternal[sc.name]=sc
+        else
+          SC[sc] = 1
+          SCPairs[sc.name]=sc
+        end
       end
     end
   end
+
+  -- add missing side channels from reads/writes
+  for k,v in pairs(fns) do
+    local function checkForSC(expr)
+      expr:visitEach(
+        function(n,args)
+          if n.kind=="readSideChannel" or n.kind=="writeSideChannel" then
+            if SCInternal[n.sideChannel.name]~=nil then
+            elseif SCPairs[n.sideChannel.name]~=nil and
+              ((n.kind=="readSideChannel" and SCPairs[n.sideChannel.name].direction=="output") or
+               (n.kind=="writeSideChannel" and SCPairs[n.sideChannel.name].direction=="input")) then
+                SC[SCPairs[n.sideChannel.name]] = nil
+                SC[n.sideChannel] = nil
+                SCInternal[n.sideChannel.name]=n.sideChannel
+            else
+              SC[n.sideChannel] = 1
+              SCPairs[n.sideChannel.name]=n.sideChannel
+              assert(SCInternal[n.sideChannel.name]==nil)
+            end
+          end
+        end)
+    end
     
+    if v.output~=nil then
+      checkForSC(v.output)
+    end
+
+    if v.pipelines~=nil then
+      for kk,vv in ipairs(v.pipelines) do
+        checkForSC(vv)
+      end
+    end
+  end
+
+  -- sanity check: make sure internal and external are exclusive
+  for k,v in pairs(SCInternal) do
+    err(SC[v]==nil,"Internal SC "..v.name.." is also in external list?")
+  end
+  
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -1775,7 +1805,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, sideChannels=SC}
+  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, sideChannels=SC, sideChannelsInternal=SCInternal}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()

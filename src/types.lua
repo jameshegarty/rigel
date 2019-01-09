@@ -796,10 +796,21 @@ function types.isBasic(A)
   return true
 end
 
-function types.Handshake(A)
+-- by default, this is ready-valid (RV), ie, ready_downstream has to be asserted before valid
+-- if VR==true, this is instead valid-ready (VR), which allows valid to be asserted _before_ ready_downstream (optionally)
+function types.Handshake(A,VR,X)
   err(types.isType(A),"Handshake: argument should be type")
   err(types.isBasic(A),"Handshake: argument should be basic type, but is: "..tostring(A))
-  return types.named("Handshake("..tostring(A)..")", types.tuple{A,types.bool()}, "Handshake", {A=A} )
+  err(X==nil,"Handshake: too many arguments")
+  if VR==nil then VR=false end
+  local name = "Handshake("..tostring(A)..")"
+  if VR then name = "HandshakeVR("..tostring(A)..")" end
+  return types.named(name, types.tuple{A,types.bool()}, "Handshake", {A=A,VR=VR} )
+end
+
+function types.HandshakeVR(A,X)
+  err(X==nil,"HandshakeVR: too many arguments")
+  return types.Handshake(A,true)
 end
 
 function types.HandshakeVarlen(A)
@@ -929,33 +940,11 @@ function TypeFunctions:addDim(w,h,mixed)
   end
 end
 
---[=[
-function types.FramedCollectParallelDims(A)
-  assert(types.isBasic(A))
-  local Adims = {}
-  local innerType
-  local function rec(ty)
-    if ty:isArray() then
-      rec(ty:arrayOver())
-      table.insert(Adims,{ty.size[1],ty.size[2]})
-    else
-      innerType = ty
-    end
-  end
-  rec(A)
-  return Adims,innerType
-end
-
-function TypeFunctions:dims()
-  return types.FramedCollectParallelDims(self)
-end
-]=]
-
 -- figure out 'V' vector width setting from HandshakeFramed
 -- 'V' is basically the last parallel dimension
 function types.HSFV(A)
   assert(types.isType(A))
-  err( A:is("HandshakeFramed") or A:is("StaticFramed"), "calling HSFV on unsupported type: "..tostring(A) )
+  err( A:is("HandshakeFramed") or A:is("StaticFramed") or A:is("HandshakeArrayFramed"), "calling HSFV on unsupported type: "..tostring(A) )
 
   assert(#A.params.dims==1)
   --  err(A.params.mixed, "HSFV: NYI - "..tostring(A))
@@ -969,7 +958,7 @@ end
 
 function types.HSFSize(A)
   assert(types.isType(A))
-  assert(A:is("HandshakeFramed") or A:is("StaticFramed") )
+  J.err(A:is("HandshakeFramed") or A:is("StaticFramed") or A:is("HandshakeArrayFramed"), "HSFSize: should be framed but is "..tostring(A) )
 
   --assert(#A.params.dims==1)
   return {A.params.dims[#A.params.dims][1],A.params.dims[#A.params.dims][2]}
@@ -979,7 +968,7 @@ end
 -- if we have HandshakeFramed(u8{640,480}), this will return u8
 function types.HSFPixelType(A)
   assert(types.isType(A))
-  assert( A:is("HandshakeFramed") or A:is("StaticFramed") )
+  J.err( A:is("HandshakeFramed") or A:is("StaticFramed") or A:is("HandshakeArrayFramed"), "HSFPixelType: should be framed, but is: "..tostring(A) )
 --  local Adims,innerType = types.FramedCollectParallelDims(A.params.A)
 
   if A.params.mixed then

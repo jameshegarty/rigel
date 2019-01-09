@@ -259,7 +259,7 @@ function(args)
 
     return RM.cropSeq(pixelType,size[1],size[2],V,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],true)
   else
-    err(false,"generators.Crop: unsupported input type: "..tostring(args.type))
+    J.err(false,"generators.Crop: unsupported input type: "..tostring(args.type))
   end
 end)
 
@@ -603,8 +603,13 @@ end)
 
 generators.Arbitrate = R.newGenerator("generators","Arbitrate",{"type","rate"},{},
 function(args)
-  J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray" )
+  J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray, but is: "..tostring(args.type) )
   return RM.arbitrate(args.type.params.A,args.rate)
+end)
+
+generators.StripFramed = R.newGenerator("generators","StripFramed",{"type","rate"},{},
+function(args)
+  return C.stripFramed(args.type)
 end)
 
 function generators.export(t)

@@ -294,7 +294,6 @@ modules.fifo = memoize(function(ty,items,verbose,nostall)
   return fifo
 end)
 
-
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
 modules.fifonoop = memoize(function(ty)

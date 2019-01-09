@@ -352,4 +352,13 @@ function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
   return MT.new(HandshakeToHandshakeFramed)
 end
 
+function CT.stripFramed(res,A)
+  local struct StripFramed {ready:bool}
+  terra StripFramed:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  terra StripFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
+  return MT.new(StripFramed)
+end
+
 return CT
