@@ -205,20 +205,6 @@ function systolicModuleFunctions:instantiate( name, parameters, X )
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
---  local A,B=0,0
---  if sideChannels~=nil then A=J.keycount(sideChannels) end
---  if self.sideChannels~=nil then B=J.keycount(self.sideChannels) end
---  err( A==B, "instantiate ("..name.."): # of input sideChannels ("..tostring(A)..","..tostring(sideChannels)..") must match expected # ("..tostring(B)..")")
-
---  local SC = {}
-
---  if self.sideChannels~=nil then
---    for k,_ in pairs(self.sideChannels) do
---        err( systolic.isSideChannel(sideChannels[k]), "instantiate: NYI - instantiate currently expects list of side channels, but is "..tostring(sideChannels[k]))
---        SC[k] = sideChannels[k]
---    end
---  end
-  
   -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
   return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
@@ -745,40 +731,18 @@ end
 
 -- this function calculates the pipe delay of each op in the AST.
 -- You can add constraints (disable pipelinging, coherence groups), and it will solve for them.
-function systolicASTFunctions:calculateDelays(coherentDelays)
+function systolicASTFunctions:calculateDelays()
   local delaysAtInput = {}
-  local coherentConverged = true
   local firstFailure
 
   local finalOut = self:visitEach(
     function( n )
       local maxd = 0
       J.map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay()) end)
-          
-      -- for coherent modules, we need all calls to have the same delay at their input.
-      -- record what delay the coherent modules are at, and whether we had to change it this round.
-      if n.kind=="call" and n.inst.coherent then 
-        if coherentDelays[n.inst]==nil or coherentDelays[n.inst] < maxd then
-          coherentConverged = false
-          coherentDelays[n.inst]=maxd
-          if firstFailure==nil then firstFailure = n end
-        else
-          -- the coherent module is at a later delay than us - we just add extra delays to match
-          maxd = coherentDelays[n.inst]
-        end
-      end
-
       delaysAtInput[n] = maxd      
-
---    pipelined==false is a soft request
---      if n.pipelined~=nil and n.pipelined==false then 
---        local loc = ""
---        if n.loc~=nil then loc=n.loc end
---        err( delaysAtInput[n]+n:internalDelay()==0, "failed to disable pipelining for "..n.kind..loc) 
---      end
     end)
 
-  return delaysAtInput, coherentDelays, coherentConverged, firstFailure
+  return delaysAtInput
 end
 
 function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains )
@@ -835,15 +799,7 @@ end
 function systolicASTFunctions:pipeline(stallDomains)
   local iter=1
   local delaysAtInput = {}
-  local coherentDelays = {}
-  local converged = false
-  local firstFailure
-  while converged==false do
-    if iter==100 then print(firstFailure.fnname,firstFailure.loc);error("Pipelining solve failed to converge! Probably, you created an unsatisfiable loop (a coherent module that reads and writes in the same cycle along a pipelined path)") end
-    delaysAtInput, coherentDelays, converged, firstFailure = self:calculateDelays(coherentDelays)
-    iter = iter + 1
-  end
-
+  delaysAtInput = self:calculateDelays()
   return self:addPipelineRegisters( delaysAtInput, stallDomains )
 end
 
@@ -1348,14 +1304,10 @@ function systolicASTFunctions:toVerilog( module )
       
       -- if this value is used multiple places, store it in a variable
       if n:parentCount(self)>1 and wire==false and const==false then
-        if n.type==types.null() then
-          -- null outputs with multiple consumers are strange, but OK. Example: A coherent call with null output that is used in two different functions. (they will both share the same node, with null output)
-        else
-          local newName = n.name.."USEDMULTIPLE"..n.kind
-          table.insert( declarations, declareWire( n.type, newName, finalResult ) )
-          wired[newName] = 1
-          return {newName,true}
-        end
+        local newName = n.name.."USEDMULTIPLE"..n.kind
+        table.insert( declarations, declareWire( n.type, newName, finalResult ) )
+        wired[newName] = 1
+        return {newName,true}
       else
         err(type(finalResult)=="string","finalResult is not string? "..n.kind)
         return {finalResult, wire}
@@ -1923,7 +1875,7 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
 
   -- ******** Note that hasValid==false makes this module pure!!!!!!!!!!!
 
-  local t = {kind="reg",initial=initial,type=ty,options={coherent=true}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
+  local t = {kind="reg",initial=initial,type=ty,options={}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
   t.functions={}
   t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT",CE=systolic.CE("CE")}
   t.functions.delay.isPure = function() return hasValid==false end
