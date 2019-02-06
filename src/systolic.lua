@@ -301,7 +301,6 @@ function systolicFunctionFunctions:isAccessor()
   return #self.inputs==0
 end
 
-
 function systolicFunctionFunctions:getDefinitionKey()
   assert(self.pure)
   return self
@@ -351,7 +350,7 @@ __index = function(tab,key)
   if v==nil and rawget(tab,"kind")=="module" then
     -- try to find key in function tab
     local fn = rawget(tab,"module").functions[key]
-    --err( systolic.isFunction(fn), "Function "..key.." is not a function on module "..tab.module.kind.."?")
+
     if fn~=nil then
       return function(self, inp, valid, ce, X)
         assert(systolic.isInstance(self))
@@ -631,7 +630,7 @@ function systolicASTFunctions:removeDelays( )
       if cebit~=nil then CENAME="_CE"..cebit.name end
       local hasvalid = true
       if validbit==nil or validbit.kind=="null" then hasvalid=false end
-      local reg = systolic.module.reg( node.type, cebit~=nil, nil, hasvalid ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME)
+      local reg = systolic.module.reg( node.type, cebit~=nil, nil, hasvalid, nil, true ):instantiate(node.name.."_delay"..delay.."_valid"..validbit.name..CENAME)
       table.insert( pipelineRegisters, reg )
       local d = getDelayed(node, delay-1, validbit, cebit)
       delayCache[node][validbit][celookup][delay] = reg:delay( d, validbit, cebit )
@@ -851,37 +850,62 @@ function systolicASTFunctions:calculateStallDomains()
   return stallDomains
 end
 
-local function addArbitration( callsite )
-  assert(systolicAST.isSystolicAST(callsite))
-    --fn, fnname, instance, input, valid)
---  assert( systolic.isFunction(fn) )
-  local fn, fnname, instance, input, valid, CE = callsite.func, callsite.fnname, callsite.inst, callsite.inputs[1], callsite.inputs[2], callsite.inputs[3]
-  assert( systolic.isInstance(instance) )
-
-  local otype = types.null()
-  if fn.output~=nil then otype = fn.output.type end
+-- check that all fns that need to be wired are wired exactly once
+function systolicASTFunctions:checkWiring(module)
+  local state = {}
+  local CEState = {}
   
-  if fn.inputParameter.type==types.null() then
-    -- if this fn takes no inputs, it doesn't matter what arbitration strategy we use
-    return callsite
-  else
-    -- no arbitration
-    if #instance.callsites[fnname]==0 then
-      table.insert(instance.callsites[fnname],callsite)
-      return callsite
-    else
-      error("Function '"..fn.name.."' on instance '"..instance.name.."' can't have multiple callsites!"..callsite.loc)
-    end
-  end
-end
-
-function systolicASTFunctions:mergeCallsites()
-  return self:process(
-    function(n)
+  self:process(
+    function(n, args)
       if n.kind=="call" then
-        return addArbitration( systolicAST.new(n) )
+        local fnname = n.fnname
+        local fn = n.inst.module.functions[fnname]
+        local inst = n.inst
+
+        if state[inst]==nil then state[inst]={} end
+        
+        if fn:isPure()==false and fn.inputParameter.type==types.null() then
+          -- it's ok to have multiple calls to a pure function w/ no inputs
+          err( state[inst][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' "..inst.loc)
+        end
+
+        if fn.CE==nil and n.inputs[3]~=nil then
+          err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' "..inst.loc)
+        end
+
+        if fn.CE~=nil then
+          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..inst.name.."' (of module "..inst.module.name..") "..inst.loc)
+
+          if CEState[inst]==nil then CEState[inst]={} end
+          if CEState[inst][fn.CE.name]==nil then
+            CEState[inst][fn.CE.name]=n.inputs[3]
+          else
+            err( CEState[inst][fn.CE.name] == n.inputs[3], "Mismatched CE. Function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."' "..inst.loc.." ----- "..tostring(n.inputs[3]).." vs "..tostring(CEState[inst][fn.CE.name]))
+          end
+        end
+
+        state[inst][fnname]={n.inputs[1],n.inputs[2],n.inputs[3]}
       end
     end)
+
+  for _,inst in ipairs(module.instances) do
+    if state[inst]==nil then state[inst]={} end
+    for fnname,fn in pairs (inst.module.functions) do
+      err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") in module '"..module.name.."'")
+
+      if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
+        err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+      end
+      
+      if fn.CE~=nil and CEState[inst][fn.CE.name]==nil then
+        err( state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
+      end
+      
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
+        err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
+      end
+    end
+  end
 end
 
 function systolicASTFunctions:addValid( validbit, module )
@@ -1013,7 +1037,7 @@ function systolicASTFunctions:toVerilog( module )
 
       if n.kind=="call" then
         local decl
-        finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, module, n.fnname, args[1], args[2], args[3] )
+        finalResult, decl, wire = n.inst.module:instanceToVerilog( n.inst, n.fnname, args[1], args[2], args[3] )
         table.insert( declarations, decl )
       elseif n.kind=="constant" then
         local function cconst( ty, val )
@@ -1385,101 +1409,47 @@ function userModuleMT.__tostring(tab)
   return table.concat(res,"\n")
 end
 
-function userModuleFunctions:instanceToVerilogStart( instance, module )
-  instance.verilogCompilerState = instance.verilogCompilerState or {}
-  assert(instance.verilogCompilerState[module]==nil)
-  instance.verilogCompilerState[module] = {}
-  instance.CEState = instance.CEState or  {}
-  instance.CEState[module] = {}
-end
-
-function userModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
-  local fn = self.functions[fnname]
-  if fn:isPure()==false and fn.inputParameter.type==types.null() then
-    -- it's ok to have multiple calls to a pure function w/ no inputs
-    err( instance.verilogCompilerState[module][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc)
-
-  end
-
-  if fn.CE==nil and cevar~=nil then err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc) end
-
-  if fn.CE~=nil then
-    err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") inside module '"..module.name.."' "..instance.loc)
-
-    if instance.CEState[module][fn.CE.name]==nil then
-      instance.CEState[module][fn.CE.name]=cevar
-    else
-      err( instance.CEState[module][fn.CE.name] == cevar, "Mismatched CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc.." ----- "..cevar.." vs "..instance.CEState[module][fn.CE.name])
-    end
-  end
-
-  instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
-  local decl = nil
-
-  if fn.output~=nil and fn.output.type~=types.null() then
-    decl = declareWire( fn.output.type, instance.name.."_"..fn.outputName)
-  end
-
-  local outname = instance.name.."_NILOUTPUT"
-  if fn.output~=nil and fn.output.type~=types.null() then outname = instance.name.."_"..fn.outputName end
-  return outname, decl, true
-end
-
-function userModuleFunctions:instanceToVerilogFinalize( instance, module )
+function userModuleFunctions:instanceToVerilogStart( instance )
   local wires = {}
   local arglist = {}
     
   local CESeen = {}
   for fnname,fn in pairs(self.functions) do
-    local canBeUndriven = fn:isPure()
-    local modtype = instance.module.name
-    if modtype==nil then modtype="" end
-    err( instance.verilogCompilerState[module][fnname]~=nil or canBeUndriven, "Undriven function "..fnname.." on instance "..instance.name.." (of type "..modtype..") in module "..module.name)
-    
+
     -- if onlyWire==true, don't try to be clever - always wire the valid bit if it exists.
     if fn:isPure()==false or self.onlyWire then
       if self.onlyWire and fn.implicitValid then
         -- when in onlyWire mode, it's ok to have an undriven valid bit
       else
-        local inp = instance.verilogCompilerState[module][fnname][2]
-        err( type(inp)=="string", "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-        table.insert( arglist, ", ."..fn.valid.name.."("..inp..")") 
+        local wirename = instance.name.."_"..fn.valid.name
+        table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" )
+        table.insert( arglist, ", ."..fn.valid.name.."("..wirename..")") 
       end      
     end
 
+    -- CESeen: prevent listing the CE twice if it's used twice
     if fn.CE~=nil and CESeen[fn.CE.name]==nil then
-      local inp = instance.CEState[module][fn.CE.name]
-      err( type(inp)=="string", "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-      table.insert( arglist, ", ."..fn.CE.name.."("..inp..")") 
+      local wirename = instance.name.."_"..fn.CE.name
+      table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" )
+      table.insert( arglist, ", ."..fn.CE.name.."("..wirename..")") 
       CESeen[fn.CE.name] = 1
     end
     
     if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-      err( instance.verilogCompilerState[module][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..instance.name.."' (of module '"..instance.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
-      local inp = instance.verilogCompilerState[module][fnname][1]
-      err( type(inp)=="string", "undriven input, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-      table.insert(arglist,", ."..fn.inputParameter.name.."("..inp..")")
+      local wirename = instance.name.."_"..fn.inputParameter.name
+      table.insert(wires, "  "..systolic.declareWire(fn.inputParameter.type, wirename ).."\n")
+      table.insert(arglist,", ."..fn.inputParameter.name.."("..wirename..")")
     end
 
     if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
-      table.insert(arglist,", ."..fn.outputName.."("..instance.name.."_"..fn.outputName..")")
-
-      -- if this fn is never actually used, this output will be dangling, so make a dummy wire to make verilator happy
-      local fnUsed = instance.verilogCompilerState[module][fnname]
-      if fnUsed==nil then
-         table.insert(wires, systolic.declareWire(fn.output.type, instance.name.."_"..fn.outputName, nil, " //unused port tieoff\n" ) )
-      end
+      local wirename = instance.name.."_"..fn.outputName
+      table.insert(wires, "  "..systolic.declareWire(fn.output.type, wirename ).."\n")
+      table.insert(arglist,", ."..fn.outputName.."("..wirename..")")
     end
-
   end
 
   for scSink,_ in pairs(self.sideChannels) do
---    if instance.module.sideChannels~=nil then
---      local scSource = instance.module.sideChannels[scSink]
     table.insert(arglist,", ."..scSink.name.."("..scSink.name..")")
---    else
---      table.insert(arglist,", ."..scSink.name.."()")
---    end
   end
   
   local params = ""
@@ -1489,7 +1459,42 @@ function userModuleFunctions:instanceToVerilogFinalize( instance, module )
     end
   end
 
-  return table.concat(wires)..self.name..[[ #(.INSTANCE_NAME({INSTANCE_NAME,"_]]..instance.name..[["})]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");"
+  return table.concat(wires).."  "..self.name..[[ #(.INSTANCE_NAME({INSTANCE_NAME,"_]]..instance.name..[["})]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n"
+
+end
+
+function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+  local fn = self.functions[fnname]
+
+  local decl = {}
+
+  if fn.CE==nil and cevar~=nil then
+    err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc)
+  elseif fn.CE~=nil then
+    err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") "..instance.loc)
+    local wirename = instance.name.."_"..fn.CE.name
+    table.insert(decl,"  assign "..wirename.." = "..cevar..";")
+  end
+
+  if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
+    assert( type(datavar)=="string" )
+    local wirename = instance.name.."_"..fn.inputParameter.name
+    table.insert(decl,"  assign "..wirename.." = "..datavar..";")
+  end
+
+  if fn:isPure()==false or self.onlyWire then
+    if self.onlyWire and fn.implicitValid then
+      -- when in onlyWire mode, it's ok to have an undriven valid bit
+    else
+      assert( type(validvar)=="string" )
+      local wirename = instance.name.."_"..fn.valid.name
+      table.insert(decl,"  assign "..wirename.." = "..validvar..";")
+    end      
+  end
+
+  local outname = instance.name.."_NILOUTPUT"
+  if fn.output~=nil and fn.output.type~=types.null() then outname = instance.name.."_"..fn.outputName end
+  return outname, table.concat(decl,"\n"), true
 end
 
 function userModuleFunctions:lower()
@@ -1564,17 +1569,18 @@ function userModuleFunctions:toVerilog()
     
     for k,v in pairs(self.instances) do
       if v.module.instanceToVerilogStart~=nil then
-        v.module:instanceToVerilogStart( v, self )
+        local sst = v.module:instanceToVerilogStart( v )
+        if sst~=nil then table.insert(t, sst ) end
       end
     end
 
     table.insert( t, self.ast:toVerilog(self) )
 
-    for k,v in pairs(self.instances) do
-      if v.module.instanceToVerilogFinalize~=nil then
-        table.insert(t, "  "..v.module:instanceToVerilogFinalize( v, self ).."\n" )
-      end
-    end
+--    for k,v in pairs(self.instances) do
+--      if v.module.instanceToVerilogFinalize~=nil then
+--        table.insert(t, "  "..v.module:instanceToVerilogFinalize( v ).."\n" )
+--      end
+--    end
 
     table.insert(t,"endmodule\n\n")
 
@@ -1773,7 +1779,6 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   end
 
   t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
-  t.ast = t.ast:mergeCallsites()
 
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays()
@@ -1785,6 +1790,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
 
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( t.instanceMap )
+  t.ast:checkWiring(t) -- check for dangling fns
 
   return t
 end
@@ -1794,66 +1800,51 @@ regModuleFunctions={}
 setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
 regModuleMT={__index=regModuleFunctions}
 
-function regModuleFunctions:instanceToVerilogStart( instance, module )
-  instance.verilogCompilerState = instance.verilogCompilerState or {}
-  assert(instance.verilogCompilerState[module]==nil)
-  instance.verilogCompilerState[module] = {decl=false}
+function regModuleFunctions:instanceToVerilogStart( instance )
+
+  if self.resetValue~=nil then
+    return "  wire "..instance.name.."_RESET;\n"
+  else
+    return ""
+  end
 end
 
-function regModuleFunctions:instanceToVerilog( instance, module, fnname, inputVar, validVar, CEVar )
-  local decl = nil
-  if instance.verilogCompilerState[module].decl==false then
-    decl = declareReg(self.type, instance.name, self.initial)
-    instance.verilogCompilerState[module].decl=true
-  end
+function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, validVar, CEVar )
 
   if fnname=="delay" or fnname=="set" then
-    if self.hasCE==false and CEVar~=nil then err(false, "Reg was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
-    if self.hasCE and type(CEVar)~="string" then err(false, "Reg missing a CE. Function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."' "..instance.loc) end
-
+    local decl = declareReg(self.type, instance.name, self.initial)
+    
     err( type(inputVar)=="string", "reg:set() or reg:delay() expected an input!")
-
-    instance.verilogCompilerState[module].setData = inputVar
-    instance.verilogCompilerState[module].setValid = validVar
-    instance.verilogCompilerState[module].setCE = CEVar
 
     local name = instance.name
     if fnname=="set" then name = "_____REG_SET" end
+
+    if self.hasCE then
+      local resetExpr
+      if self.resetValue~=nil then
+        decl = decl..[[  always @ (posedge CLK) begin if(]]..instance.name.."_RESET) begin "..instance.name.." <= "..systolic.valueToVerilog(self.resetValue,self.type).."; end else if ("..J.sel(self.hasValid,validVar,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,CEVar,"")..") begin "..instance.name.." <= "..inputVar.."; end end"
+      else
+        decl=decl.."  always @ (posedge CLK) begin if ("..J.sel(self.hasValid,validVar,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,CEVar,"")..") begin "..instance.name.." <= "..inputVar.."; end end"
+      end
+    elseif self.resetValue~=nil then
+      decl=decl.."  always @ (posedge CLK) begin "..instance.name.." <= ("..resetValid..")?"..systolic.valueToVerilog(self.resetValue,self.type)..":"..inputVar.."; end"
+    else
+      decl=decl.."  always @ (posedge CLK) begin "..instance.name.." <= "..inputVar.."; end"
+    end
+
     return name, decl, true
   elseif fnname=="get" then
-    return instance.name, decl, true
+    return instance.name, nil, true
   elseif fnname=="reset" then
     err( type(validVar)=="string", "reg:reset() was not given a valid var, but expects one "..instance.loc)
     err( CEVar==nil, "reg:reset() was given a CE, but does not expect one")
-    --err( inputVar==nil, "reg:reset() was given data ("..inputVar..", but does not expect any")
-    instance.verilogCompilerState[module].resetValid = validVar
-    return "_____REG_RESET", decl, true
+
+    --instance.verilogCompilerState[module].resetValid = validVar
+    return "_____REG_RESET", "assign "..instance.name.."_RESET = "..validVar..";", true
   else
     print("regModuleFunctions:instanceToVerilog",fnname)
     assert(false)
   end
-
-end
-
-function regModuleFunctions:instanceToVerilogFinalize( instance, module )
-  local setData, setValid, setCE, resetValid = instance.verilogCompilerState[module].setData, instance.verilogCompilerState[module].setValid, instance.verilogCompilerState[module].setCE, instance.verilogCompilerState[module].resetValid
-
-  err( type(setData)=="string", "reg, missing input value? "..instance.loc)
-
-  if (self.hasCE or module.hasValid) then
-    local resetExpr
-    if self.resetValue~=nil then
-      return [[  always @ (posedge CLK) begin if(]]..resetValid..") begin "..instance.name.." <= "..systolic.valueToVerilog(self.resetValue,self.type).."; end else if ("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") begin "..instance.name.." <= "..setData.."; end end"
-    else
-      return "  always @ (posedge CLK) begin if ("..J.sel(self.hasValid,setValid,"")..J.sel(self.hasValid and self.hasCE," && ","")..J.sel(self.hasCE,setCE,"")..") begin "..instance.name.." <= "..setData.."; end end"
-    end
-
-  elseif self.resetValue~=nil then
-    return "  always @ (posedge CLK) begin "..instance.name.." <= ("..resetValid..")?"..systolic.valueToVerilog(self.resetValue,self.type)..":"..setData.."; end"
-  else
-    return "  always @ (posedge CLK) begin "..instance.name.." <= "..setData.."; end"
-  end
-
 end
 
 function regModuleFunctions:getDependenciesLL() return {} end
@@ -1863,7 +1854,8 @@ function regModuleFunctions:getDelay( fnname )
 end
 
 -- by default, hasValid=true. (you would only want a register w/o a valid bit if you're wiring stuff up by hand and doing strange things)
-function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
+-- delayMode: instead of a set function (ty->nil), have a delay function (type ty->ty)
+function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, delayMode, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
   err( ty:verilogBits()>0, "0 bit size register?")
@@ -1872,16 +1864,23 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
   assert(hasValid==nil or type(hasValid)=="boolean")
   if hasValid==nil then hasValid=true end
   if resetValue~=nil then ty:checkLuaValue(resetValue) end
-
+  
   -- ******** Note that hasValid==false makes this module pure!!!!!!!!!!!
 
-  local t = {kind="reg",initial=initial,type=ty,options={}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
+  local t = {name="__REG", kind="reg",initial=initial,type=ty,options={}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
   t.functions={}
-  t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT",CE=systolic.CE("CE")}
-  t.functions.delay.isPure = function() return hasValid==false end
-  t.functions.set={name="set", output={type=types.null()}, inputParameter={name="SET_INPUT",type=ty},outputName="SET_OUTPUT",CE=systolic.CE("CE")}
-  t.functions.set.isPure = function() return hasValid==false end
 
+  local CE = nil
+  if hasCE then CE = systolic.CE("CE") end
+  
+  if delayMode==true then
+    t.functions.delay={name="delay", output={type=ty}, inputParameter={name="DELAY_INPUT",type=ty},outputName="DELAY_OUTPUT",CE=CE}
+    t.functions.delay.isPure = function() return hasValid==false end
+  else
+    t.functions.set={name="set", output={type=types.null()}, inputParameter={name="SET_INPUT",type=ty},outputName="SET_OUTPUT",CE=CE}
+    t.functions.set.isPure = function() return hasValid==false end
+  end
+  
   if resetValue~=nil then
     t.functions.reset={name="reset", output={type=types.null()}, inputParameter={name="RESET_INPUT",type=types.null()},outputName="RESET_OUTPUT"}
     t.functions.reset.isPure = function() return false end
@@ -1893,66 +1892,6 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, X )
 end
 
 -------------------
-systolic.module.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
-  err( types.isType(ty), "systolic.module.regBy, type must be type" )
-  assert( systolic.isModule(setby) )
-  assert( setby:getDelay( "process" ) == 0 )
-  assert( CE==nil or type(CE)=="boolean" )
-  if init~=nil then ty:checkLuaValue(init) end
-  if resetValue~=nil then ty:checkLuaValue(resetValue) end
-  if hasSet==nil then hasSet=false end
-  err( type(hasSet)=="boolean", "systolic.module.regBy: hasSet must be boolean but is "..tostring(hasSet))
-  assert(X==nil)
-
-  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R")
-  local inner = setby:instantiate("regby_inner")
-  local fns = {}
-  fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
-
-  -- check setby type
-  --err(#setby.functions==1, "regBy setby module should only have process function")
-  assert(setby.functions.process:isPure())
-  local setbytype = setby:lookupFunction("process"):getInput().type
-  assert(setbytype:isTuple())
-  local setbyTypeA = setbytype.list[1]
-  local setbyTypeB = setbytype.list[2]
-  err( setbyTypeA==ty, "regby type does not match type on setby function" )
-
-  local CEVar
-  if CE then CEVar = systolic.CE("CE") end
-
-  -- if we include the set function, and both set and setBy are called in the same cycle, set gets prescedence
-  local sinp, setvalid
-  if hasSet then
-    sinp = systolic.parameter("set_inp",ty)
-    setvalid = systolic.parameter("set_valid",types.bool())
-    fns.set = systolic.lambda("set", sinp, nil, "SET_OUTPUT",{}, setvalid, CEVar )
-  end
-
-  local sbinp = systolic.parameter("setby_inp",setbyTypeB)
-  local setbyvalidparam = systolic.parameter("setby_valid",types.bool())
-  local setbyvalid = setbyvalidparam
-  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null(),CEVar)
-
-  if hasSet then
-    setbyvalid = systolic.__or(setbyvalid,setvalid)
-    setbyout = systolic.select(setvalid,sinp,setbyout)
-  end
-
-  fns.setBy = systolic.lambda("setby", sbinp, setbyout, "SETBY_OUTPUT",{R:set(setbyout,setbyvalid,CEVar)}, setbyvalidparam, CEVar )
-
-  if resetValue~=nil then
-    local resetvalid = systolic.parameter("reset_valid",types.bool())
-    fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
-  end
-
-  local name = sanitize("RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue))
-  local M = systolic.module.new( name, fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
-  assert(systolic.isModule(M))
-  return M
-end)
-
--------------------
 ram128ModuleFunctions={}
 setmetatable(ram128ModuleFunctions,{__index=systolicModuleFunctions})
 ram128ModuleMT={__index=ram128ModuleFunctions}
@@ -1961,14 +1900,14 @@ function ram128ModuleFunctions:getDelay(fnname) return 0 end
 function ram128ModuleFunctions:getDependenciesLL() return {} end
 function ram128ModuleFunctions:toVerilog() return "" end
 
-function ram128ModuleFunctions:instanceToVerilogStart( instance, module )
-  instance.verilogCompilerState = instance.verilogCompilerState or {}
-  assert(instance.verilogCompilerState[module]==nil)
-  instance.verilogCompilerState[module] = {}
+function ram128ModuleFunctions:instanceToVerilogStart( instance )
+--  instance.verilogCompilerState = instance.verilogCompilerState or {}
+--  assert(instance.verilogCompilerState[module]==nil)
+--  instance.verilogCompilerState[module] = {}
 end
 
-function ram128ModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
-  instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
+function ram128ModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+--  instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
   local fn = self.functions[fnname]
   local decl
   if fnname=="write" then
@@ -1982,7 +1921,7 @@ function ram128ModuleFunctions:instanceToVerilog( instance, module, fnname, data
 end
 
 
-function ram128ModuleFunctions:instanceToVerilogFinalize( instance, module )
+function ram128ModuleFunctions:instanceToVerilogFinalize( instance )
 --[=[ wire ]]..instance.name..[[_WE;
 wire ]]..instance.name..[[_D;
 wire ]]..instance.name..[[_writeOut;
@@ -2038,7 +1977,7 @@ function systolic.module.ram128(hasWrite,hasRead,init)
   if hasWrite==nil then hasWrite=true else assert(type(hasWrite)=="boolean") end
   if hasRead==nil then hasRead=true else assert(type(hasRead)=="boolean") end
 
-  local __ram128 = {kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead}
+  local __ram128 = {name="__RAM128",kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead}
   if hasRead then
     __ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
     __ram128.functions.read.isPure = function() return true end
@@ -2059,14 +1998,14 @@ bramModuleFunctions={}
 setmetatable(bramModuleFunctions,{__index=systolicModuleFunctions})
 bramModuleMT={__index=bramModuleFunctions}
 
-function bramModuleFunctions:instanceToVerilogStart( instance, module )
-  instance.verilogCompilerState = instance.verilogCompilerState or {}
-  assert(instance.verilogCompilerState[module]==nil)
-  instance.verilogCompilerState[module] = {}
+function bramModuleFunctions:instanceToVerilogStart( instance )
+--  instance.verilogCompilerState = instance.verilogCompilerState or {}
+--  assert(instance.verilogCompilerState[module]==nil)
+--  instance.verilogCompilerState[module] = {}
 end
 
-function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
-  instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
+function bramModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+  --instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
   local fn = self.functions[fnname]
   local decl
   if fnname=="writeAndReturnOriginal" then
@@ -2074,7 +2013,9 @@ function bramModuleFunctions:instanceToVerilog( instance, module, fnname, datava
     decl = declareWire( types.bits( self.inputBits ), instance.name.."_"..fn.outputName)
   elseif fnname=="read" then
     decl = declareWire( types.bits( self.outputBits ), instance.name.."_"..fn.outputName)
-  else assert(false) end
+  else
+    assert(false)
+  end
 
   return instance.name.."_"..fn.outputName, decl, true
 end
@@ -2268,7 +2209,7 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
 
   err(inputBits==8 or inputBits==16 or inputBits==32 or inputBits==4 or inputBits==2 or inputBits==1, "inputBits must be 1,2,4,8,16, or 32")
 
-  local t = {kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
+  local t = {name="__BRAM2KSDP", kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
@@ -2432,7 +2373,7 @@ function systolic.module.file( filename, ty, CE, passthrough, X)
 
   err(ty:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(ty)..") is not byte aligned. NYI. Use a cast!")
   
-  local res = {kind="file",filename=filename, type=ty, CE=CE, passthrough }
+  local res = {name="_FILE", kind="file",filename=filename, type=ty, CE=CE, passthrough }
   res.functions={}
   res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="readOut",valid={name="read_valid"},CE=systolic.CE("CE")}
   res.functions.read.isPure = function() return false end
@@ -2449,7 +2390,7 @@ printModuleFunctions={}
 setmetatable(printModuleFunctions,{__index=systolicModuleFunctions})
 printModuleMT={__index=printModuleFunctions}
 
-function printModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
+function printModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
 
   local datalist = ""
   if self.type:isTuple() then
@@ -2471,7 +2412,7 @@ function printModuleFunctions:instanceToVerilog( instance, module, fnname, datav
   local validSS = ""
   if validvar~=nil then validS,validSS="valid %d",validvar.."," end
 
-  err(self.CE==false or type(cevar)=="string", "Error, missing CE from print instance '"..instance.name.."' on module '"..module.name.."'")
+  err(self.CE==false or type(cevar)=="string", "Error, missing CE from print instance '"..instance.name.."' of module '"..instance.module.name.."'")
   if self.CE then validS = validS.." CE %d"; validSS = validSS..cevar.."," end
 
   local decl = [[wire []]..(self.type:verilogBits()-1)..":0] "..instance.name..[[;
@@ -2501,7 +2442,7 @@ function systolic.module.print( ty, str, CE, showIfInvalid, X )
   if CE==nil then CE=false end
   if showIfInvalid==nil then showIfInvalid=true end
 
-  local res = {kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid}
+  local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
@@ -2513,10 +2454,10 @@ assertModuleFunctions={}
 setmetatable(assertModuleFunctions,{__index=systolicModuleFunctions})
 assertModuleMT={__index=assertModuleFunctions}
 
-function assertModuleFunctions:instanceToVerilog( instance, module, fnname, datavar, validvar, cevar )
+function assertModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
   local CES = ""
   if self.CE then 
-    err( type(cevar)=="string", "Assert missing CE for instance '"..instance.name.."' in module '"..module.name.."'")
+    err( type(cevar)=="string", "Assert missing CE for instance '"..instance.name.."'")
     CES=" && "..cevar.."==1'b1" 
   end
   local finish = "$finish(); "
@@ -2535,7 +2476,7 @@ function systolic.module.assert( str, CE, exit, X )
   err( type(CE)=="boolean", "CE must be boolean" )
   err( exit==nil or type(exit)=="boolean", "Exit must be bool or nil")
 
-  local res = {kind="assert",str=str, exit=exit, CE = CE}
+  local res = {name="_ASSERT", kind="assert",str=str, exit=exit, CE = CE}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end

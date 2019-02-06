@@ -339,7 +339,6 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
 
-    local asstInst = res:add( S.module.assert( "waitOnInput valid bit doesn't match ready bit", true ):instantiate("asstInst") )
     local printInst
     if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(),types.bool(),types.bool(),types.bool()}, "WaitOnInput "..systolicModule.name.." ready %d validIn %d runable %d RST %d", true ):instantiate(prefix.."printInst") ) end
 
@@ -355,7 +354,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     local pipelines = {}
     -- Actually, it's ok for (ready==false and valid(inp)==true) to be true. We do not have to read when ready==false, we can just ignore it.
-    --  table.insert( pipelines, asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1)))):disablePipelining() )
+
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{inner[prefix.."ready"](inner),S.index(sinp,1), runable, RST} ) ) end
 
     local CE = S.CE("CE")
@@ -2443,7 +2442,6 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
   end
   
   res.stateful = true
---  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.delay = 0
   res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed))
 
@@ -2459,8 +2457,6 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     local svalid = S.parameter("process_valid", types.bool() )
     local rvalid = S.parameter("reset", types.bool() )
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    
-    --local regs = J.map( J.range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
     
     if inputRate>outputRate then
       
@@ -2536,7 +2532,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
+    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
     
     local outarray = {}
     local evicted

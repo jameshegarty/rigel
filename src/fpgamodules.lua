@@ -189,8 +189,8 @@ modules.fifo = memoize(function(ty,items,verbose,nostall)
   local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items.."_nostall"..tostring(nostall)) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
   local addrBits = (math.ceil(math.log(items)/math.log(2)))+1 -- the +1 is so that we can disambiguate wraparoudn
-  local writeAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("writeAddr"))
-  local readAddr = fifo:add( systolic.module.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("readAddr"))
+  local writeAddr = fifo:add( modules.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("writeAddr"))
+  local readAddr = fifo:add( modules.regBy( types.uint(addrBits), modules.incIfWrap(types.uint(addrBits),items-1), true,nil,0 ):instantiate("readAddr"))
   local bits = ty:verilogBits()
   local bytes = bits/8
   bytes = math.ceil(bytes) -- bits may not be byte aligned
@@ -923,5 +923,64 @@ function modules.div(ty)
 
   return divMod
 end
+
+modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
+  err( types.isType(ty), "systolic.module.regBy, type must be type" )
+  assert( systolic.isModule(setby) )
+  assert( setby:getDelay( "process" ) == 0 )
+  assert( CE==nil or type(CE)=="boolean" )
+  if init~=nil then ty:checkLuaValue(init) end
+  if resetValue~=nil then ty:checkLuaValue(resetValue) end
+  if hasSet==nil then hasSet=false end
+  err( type(hasSet)=="boolean", "systolic.module.regBy: hasSet must be boolean but is "..tostring(hasSet))
+  assert(X==nil)
+
+  local R = systolic.module.reg( ty, CE, init, nil, resetValue ):instantiate("R")
+  local inner = setby:instantiate("regby_inner")
+  local fns = {}
+  fns.get = systolic.lambda("get", systolic.parameter("getinp",types.null()), R:get(), "GET_OUTPUT" )
+
+  -- check setby type
+  --err(#setby.functions==1, "regBy setby module should only have process function")
+  assert(setby.functions.process:isPure())
+  local setbytype = setby:lookupFunction("process"):getInput().type
+  assert(setbytype:isTuple())
+  local setbyTypeA = setbytype.list[1]
+  local setbyTypeB = setbytype.list[2]
+  err( setbyTypeA==ty, "regby type does not match type on setby function" )
+
+  local CEVar
+  if CE then CEVar = systolic.CE("CE") end
+
+  -- if we include the set function, and both set and setBy are called in the same cycle, set gets prescedence
+  local sinp, setvalid
+  if hasSet then
+    sinp = systolic.parameter("set_inp",ty)
+    setvalid = systolic.parameter("set_valid",types.bool())
+    fns.set = systolic.lambda("set", sinp, nil, "SET_OUTPUT",{}, setvalid, CEVar )
+  end
+
+  local sbinp = systolic.parameter("setby_inp",setbyTypeB)
+  local setbyvalidparam = systolic.parameter("setby_valid",types.bool())
+  local setbyvalid = setbyvalidparam
+  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null(),CEVar)
+
+  if hasSet then
+    setbyvalid = systolic.__or(setbyvalid,setvalid)
+    setbyout = systolic.select(setvalid,sinp,setbyout)
+  end
+
+  fns.setBy = systolic.lambda("setby", sbinp, setbyout, "SETBY_OUTPUT",{R:set(setbyout,setbyvalid,CEVar)}, setbyvalidparam, CEVar )
+
+  if resetValue~=nil then
+    local resetvalid = systolic.parameter("reset_valid",types.bool())
+    fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
+  end
+
+  local name = J.sanitize("RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue))
+  local M = systolic.module.new( name, fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
+  assert(systolic.isModule(M))
+  return M
+end)
 
 return modules
