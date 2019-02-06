@@ -2858,7 +2858,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   end
 
   res.stateful = true -- for the shift register of valid bits
-  res.name = "MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name
+  res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
   res.globals={}
   for k,_ in pairs(f.globals) do res.globals[k]=1 end
@@ -2880,7 +2880,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
-    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name) )
+    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate( J.sanitize("validBitDelay_"..f.systolicModule.name) ) )
     local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())
@@ -4518,11 +4518,11 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}  -- well, technically this produces 1 output for every (nil) input
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
-  local vh = J.to_string(value)
-  if #vh>100 then vh = string.sub(vh,0,100) end
+  --local vh = J.to_string(value)
+  --if #vh>100 then vh = string.sub(vh,0,100) end
   
   -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
-  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..vh.."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
+  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(value).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
@@ -4607,7 +4607,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough ):instantiate("fwritefile") )
+    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough, false ):instantiate("fwritefile") )
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
