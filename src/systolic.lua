@@ -1576,12 +1576,6 @@ function userModuleFunctions:toVerilog()
 
     table.insert( t, self.ast:toVerilog(self) )
 
---    for k,v in pairs(self.instances) do
---      if v.module.instanceToVerilogFinalize~=nil then
---        table.insert(t, "  "..v.module:instanceToVerilogFinalize( v ).."\n" )
---      end
---    end
-
     table.insert(t,"endmodule\n\n")
 
     self.verilog = table.concat(t,"")
@@ -1901,9 +1895,51 @@ function ram128ModuleFunctions:getDependenciesLL() return {} end
 function ram128ModuleFunctions:toVerilog() return "" end
 
 function ram128ModuleFunctions:instanceToVerilogStart( instance )
---  instance.verilogCompilerState = instance.verilogCompilerState or {}
---  assert(instance.verilogCompilerState[module]==nil)
---  instance.verilogCompilerState[module] = {}
+
+--  local readAddr = instance.verilogCompilerState[module].read[1]
+
+  local writeInput, writeData, writeAddr, valid, CE, WE
+  if self.hasWrite then
+    --err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
+
+    --writeInput = instance.verilogCompilerState[module].write[1]
+    writeData = instance.name.."_writeInput[7]"
+    writeAddr = instance.name.."_writeInput[6:0]"
+
+    valid = instance.name.."_VALID"
+    CE = instance.name.."_CE"
+    WE = valid.." && "..CE
+  else
+    WE="1'b0"
+    CE="1'b0"
+    writeInput="8'd0"
+    writeData="1'b0"
+    writeAddr="7'd0"
+  end
+
+  local initS = ""
+  if self.init~=nil then
+    local strlst = J.map(self.init,function(n) assert(type(n)=="boolean"); if n then return "1" else return "0" end end)
+    strlst = J.reverse(strlst)
+    initS = " #(.INIT(128'b"..table.concat( strlst,"")..")) "
+  end
+
+  return [[wire [7:0] ]]..instance.name..[[_writeInput;
+wire [6:0] ]]..instance.name..[[_READ_ADDR;
+wire ]]..instance.name..[[_writeOut;
+wire ]]..instance.name..[[_READ_OUTPUT;
+wire ]]..instance.name..[[_VALID;
+wire ]]..instance.name..[[_CE;
+RAM128X1D ]]..initS..instance.name..[[  (
+  .WCLK( CLK ),
+  .D(]]..writeData..[[),
+  .WE(]]..WE..[[),
+  .SPO(]]..instance.name..[[_writeOut),
+  .DPO(]]..instance.name..[[_READ_OUTPUT),
+  .A(]]..writeAddr..[[),
+  .DPRA(]]..instance.name..[[_READ_ADDR));
+]]
+
 end
 
 function ram128ModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
@@ -1911,72 +1947,28 @@ function ram128ModuleFunctions:instanceToVerilog( instance, fnname, datavar, val
   local fn = self.functions[fnname]
   local decl
   if fnname=="write" then
+    assert(type(datavar)=="string")
+    assert(type(validvar)=="string")
     assert(type(cevar)=="string")
---    decl = declareWire( types.bool(), instance.name.."_"..fn.outputName)
+    decl = "assign "..instance.name.."_writeInput = "..datavar..";\n"
+    decl = decl.."  assign "..instance.name.."_VALID = "..validvar..";\n"
+    decl = decl.."  assign "..instance.name.."_CE = "..cevar..";\n"
   elseif fnname=="read" then
-    decl = declareWire( types.bool(), instance.name.."_"..fn.outputName)
-  else assert(false) end
+    assert(type(datavar)=="string")
+    decl = "assign "..instance.name.."_READ_ADDR = "..datavar..";\n"
+--    decl = declareWire( types.bool(), instance.name.."_"..fn.outputName)
+  else
+    assert(false)
+  end
 
   return instance.name.."_"..fn.outputName, decl, true
 end
 
-
-function ram128ModuleFunctions:instanceToVerilogFinalize( instance )
---[=[ wire ]]..instance.name..[[_WE;
-wire ]]..instance.name..[[_D;
-wire ]]..instance.name..[[_writeOut;
-wire ]]..instance.name..[[_READ_OUTPUT;
-wire [6:0] ]]..instance.name..[[_writeAddr;
-wire [6:0] ]]..instance.name..[[_readAddr;
-                               ]=]
-
-
-local readAddr = instance.verilogCompilerState[module].read[1]
-
-local writeInput, writeData, writeAddr, valid, CE, WE
-if self.hasWrite then
-  err(instance.verilogCompilerState[module].write~=nil, "Undriven write port, instance '"..instance.name.."' in module '"..module.name.."'"..instance.loc)
-
-  writeInput = instance.verilogCompilerState[module].write[1]
-  writeData = instance.name.."_writeInput[7]"
-  writeAddr = instance.name.."_writeInput[6:0]"
-
-  valid = instance.verilogCompilerState[module].write[2]
-  CE = instance.verilogCompilerState[module].write[3]
-  WE = valid.." && "..CE
-
-else
-  WE="1'b0"
-  CE="1'b0"
-  writeInput="8'd0"
-  writeData="1'b0"
-  writeAddr="7'd0"
-end
-
-local initS = ""
-if self.init~=nil then
-  local strlst = J.map(self.init,function(n) assert(type(n)=="boolean"); if n then return "1" else return "0" end end)
-  strlst = J.reverse(strlst)
-  initS = " #(.INIT(128'b"..table.concat( strlst,"")..")) "
-end
-
-return [[wire [7:0] ]]..instance.name..[[_writeInput = ]]..writeInput..[[;
-wire ]]..instance.name..[[_writeOut;
-RAM128X1D ]]..initS..instance.name..[[  (
-  .WCLK(CLK),
-  .D(]]..writeData..[[),
-  .WE(]]..WE..[[),
-  .SPO(]]..instance.name..[[_writeOut),
-  .DPO(]]..instance.name..[[_READ_OUTPUT),
-  .A(]]..writeAddr..[[),
-  .DPRA(]]..readAddr..[[));
-]]
-end
-
-function systolic.module.ram128(hasWrite,hasRead,init)
+function systolic.module.ram128( hasWrite, hasRead, init, X )
   if hasWrite==nil then hasWrite=true else assert(type(hasWrite)=="boolean") end
   if hasRead==nil then hasRead=true else assert(type(hasRead)=="boolean") end
-
+  J.err( X==nil,"ram128: too many arguments" )
+  
   local __ram128 = {name="__RAM128",kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead}
   if hasRead then
     __ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
@@ -1993,42 +1985,6 @@ function systolic.module.ram128(hasWrite,hasRead,init)
   return __ram128 
 end
 
---------------------
-bramModuleFunctions={}
-setmetatable(bramModuleFunctions,{__index=systolicModuleFunctions})
-bramModuleMT={__index=bramModuleFunctions}
-
-function bramModuleFunctions:instanceToVerilogStart( instance )
---  instance.verilogCompilerState = instance.verilogCompilerState or {}
---  assert(instance.verilogCompilerState[module]==nil)
---  instance.verilogCompilerState[module] = {}
-end
-
-function bramModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
-  --instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
-  local fn = self.functions[fnname]
-  local decl
-  if fnname=="writeAndReturnOriginal" then
-    assert(type(cevar)=="string")
-    decl = declareWire( types.bits( self.inputBits ), instance.name.."_"..fn.outputName)
-  elseif fnname=="read" then
-    decl = declareWire( types.bits( self.outputBits ), instance.name.."_"..fn.outputName)
-  else
-    assert(false)
-  end
-
-  return instance.name.."_"..fn.outputName, decl, true
-end
-
-
-function bramModuleFunctions:getDependenciesLL() return {} end
-function bramModuleFunctions:toVerilog() return "" end
-function bramModuleFunctions:getDelay( fnname ) 
-  if fnname=="writeAndReturnOriginal" then return 1
-  elseif fnname=="read" then return 1
-  else assert(false) end
-end
-
 ----------------------
 -- the tradeoff is:
 -- TDP has 2 independent RW/R/W. 2 input ports, 2 output ports.
@@ -2038,13 +1994,10 @@ end
 
 -- 2KB SDP ram
 bram2KSDPModuleFunctions={}
-setmetatable(bram2KSDPModuleFunctions,{__index=bramModuleFunctions})
+setmetatable(bram2KSDPModuleFunctions,{__index=systolicModuleFunctions})
 bram2KSDPModuleMT={__index=bram2KSDPModuleFunctions}
 
-function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
-  local VCS = instance.verilogCompilerState[module]
-  
-  for k,v in pairs(VCS) do assert(k=="writeAndReturnOriginal" or k=="read") end
+function bram2KSDPModuleFunctions:instanceToVerilogStart( instance )
 
   if self.writeAndReturnOriginal then
     -- we only used 1 port
@@ -2084,114 +2037,96 @@ function bram2KSDPModuleFunctions:instanceToVerilogFinalize( instance, module )
 
     local addrbits = math.log((2048*8)/self.inputBits)/math.log(2)
 
-    local valid = VCS.writeAndReturnOriginal[2]
-    local CEvar = VCS.writeAndReturnOriginal[3]
+    local valid = instance.name.."_VALID"
+    local CEvar = instance.name.."_CE"
     if self.CE then valid=valid.." && "..CEvar end
     assert(type(CEvar)=="string")
 
     local conf={name=instance.name}
     conf.A={bits=self.inputBits,
-           DI = instance.name.."_INPUT["..(addrbits+self.inputBits-1)..":"..addrbits.."]",
-           DO = instance.name.."_SET_AND_RETURN_ORIG_OUTPUT",
-           ADDR = instance.name.."_INPUT["..(addrbits-1)..":0]",
-           CLK = "CLK",
-           EN=CEvar,
-           WE = valid,
-           readFirst = true}
+         DI = instance.name.."_INPUT["..(addrbits+self.inputBits-1)..":"..addrbits.."]",
+         DO = instance.name.."_SET_AND_RETURN_ORIG_OUTPUT",
+         ADDR = instance.name.."_INPUT["..(addrbits-1)..":0]",
+         CLK = "CLK",
+         EN = CEvar,
+         WE = valid,
+         readFirst = true}
 
-    if VCS.read~=nil then
-
+    if self.outputBits~=nil then
       conf.B={bits=self.outputBits,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_READ_OUTPUT",
-           ADDR = VCS.read[1],
+           ADDR = instance.name.."_READ_ADDR",
            CLK = "CLK",
-           EN=VCS.read[3],
+           EN = instance.name.."_READ_CE",
            WE = "1'd0",
            readFirst = true}
 
     else
-    conf.B={bits=self.inputBits,
+      -- just tie down the unused port so tools don't complain
+      conf.B={bits=self.inputBits,
            DI = instance.name.."_DI_B",
            DO = instance.name.."_DO_B",
            ADDR = instance.name.."_addr_B",
            CLK = "CLK",
-           EN=CEvar,
+           EN = CEvar,
            WE = "1'd0",
            readFirst = true}
-
     end
 
     conf.init = self.init
 
    return [[reg []]..(self.inputBits-1)..":0] "..instance.name..[[_DI_B;
 reg []]..(addrbits-1)..":0] "..instance.name..[[_addr_B;
+wire ]]..instance.name..[[_VALID;
+wire ]]..instance.name..[[_CE;
+wire []]..(self.inputBits-1)..[[:0] ]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT;
 wire []]..(self.inputBits-1)..":0] "..instance.name..[[_DO_B;
 wire []]..(self.inputBits+addrbits-1)..[[:0] ]]..instance.name..[[_INPUT;
-assign ]]..instance.name..[[_INPUT = ]]..VCS.writeAndReturnOriginal[1]..[[;
+wire []]..(J.sel(self.outputBits~=nil,self.outputBits,self.inputBits)-1)..[[:0] ]]..instance.name..[[_READ_OUTPUT;
+wire []]..(addrbits-1)..[[:0] ]]..instance.name..[[_READ_ADDR;
+wire ]]..instance.name..[[_READ_CE;
 ]]..table.concat(fixedBram(conf))
-
--- It turns out that once you drill down, the 7 series BRAMs are just macros
--- built out of Spartan 3 BRAMS, but with less options.
---[=[
-    local addrbits = math.log((2048*8)/self.inputBits)/math.log(2)
-    local addrS = instance.name.."_INPUT[13:0]"
-    if self.inputBits>1 then
-      -- bram macro ignore bottom bits
-      addrS = "{"..instance.name.."_INPUT["..(addrbits-1)..":0],"..(14-addrbits).."'b0}"
-    end
-
-    local DI = [[.DIBDI(]]..instance.name.."_INPUT["..(addrbits+16-1)..":"..addrbits.."]),"
-    if self.inputBits>16 then
-      -- for whatever reason, input ports are flipped in this mode
-      DI = ".DIADI("..instance.name.."_INPUT["..(addrbits+16-1)..":"..addrbits.."]),.DIBDI("..instance.name.."_INPUT["..(addrbits+32-1)..":"..(addrbits+16).."]),"
-    end
-
-
-    --local debug = [[always @(posedge CLK) begin $display("BRAM v %d ce %d addr %d OUT %H inp %H",]]..VCS.writeAndReturnOriginal[2]..[[,CE,]]..addrS..[[,]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0],]]..instance.name..[[_INPUT[]]..(addrbits+32-1)..":"..(addrbits)..[[]); end]]
-
-    -- signals that don't seem to matter: DIPADIP, DIPBDIP, DOPADOP, DOPBDOP:
-    -- //.ENBWREN(1'b0), // in SDP this is write enable
-    -- //.REGCEAREGCE(1'b1), // DO_REG clock enable
-    -- //.REGCEB(1'b1), // DO_REG clock enable
-
-    return [[wire []]..(self.inputBits+addrbits-1)..[[:0] ]]..instance.name..[[_INPUT;
-assign ]]..instance.name..[[_INPUT = ]]..VCS.writeAndReturnOriginal[1]..[[;
-RAMB18E1 #(.DOA_REG(0),
-.DOB_REG(0),
-.RAM_MODE("SDP"),
-.READ_WIDTH_A(]]..width..[[),  // in SDP, this is read width including parity
-.READ_WIDTH_B(0),  // not used for SDP
-.WRITE_WIDTH_A(0), // not used in SDP
-.WRITE_WIDTH_B(]]..width..[[),  // in SDP, this is write width including parity
-.WRITE_MODE_A("READ_FIRST"),  // READ_FIRST
-.WRITE_MODE_B("READ_FIRST"),
-.RDADDR_COLLISION_HWCONFIG("PERFORMANCE"),
-]]..initS..[[
-.SIM_DEVICE("7SERIES"),
-.SIM_COLLISION_CHECK("ALL")
-) ]]..instance.name..[[(]]..DI..[[
-.DOADO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[15:0]),
-.DOBDO(]]..instance.name..[[_SET_AND_RETURN_ORIG_OUTPUT[31:16]),
-.ADDRARDADDR(]]..addrS..[[), // in SDP, this is read addr
-.ADDRBWRADDR(]]..addrS..[[), // in SDP, this is write addr
-.WEBWE(4'b1111), // in SDP this is write port enable
-.ENARDEN(]]..valid..[[), // in SDP this is read enable
-.ENBWREN(]]..valid..[[), // in SDP this is write enable
-.WEA(2'b0),             // Port A (read port in SDP) Write Enable[3:0], input
-.RSTRAMARSTRAM(1'b0),
-.RSTREGARSTREG(1'b0),
-.RSTRAMB(1'b0),
-.RSTREGB(1'b0),
-.CLKARDCLK(CLK), // in SDP, this is read clock
-.CLKBWRCLK(CLK) // in SDP, this is write clock
-);]]
-]=]
   else
     print("INVALID BRAM CONFIGURATION")
     for k,v in pairs(VCS) do print("VCS",k) end
     assert(false)
   end
+end
+
+function bram2KSDPModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+  --instance.verilogCompilerState[module][fnname]={datavar,validvar,cevar}
+  local fn = self.functions[fnname]
+  local decl
+  if fnname=="writeAndReturnOriginal" then
+    assert(type(datavar)=="string")
+    assert(type(validvar)=="string")
+    assert(type(cevar)=="string")
+    --decl = declareWire( types.bits( self.inputBits ), instance.name.."_"..fn.outputName)
+    decl = "assign "..instance.name.."_INPUT = "..datavar..";\n"
+    decl = decl.."  assign "..instance.name.."_CE = "..cevar..";\n"
+    decl = decl.."  assign "..instance.name.."_VALID = "..validvar..";"
+  elseif fnname=="read" then
+    assert(type(datavar)=="string")
+    --assert(validvar==nil)
+    assert(type(cevar)=="string")
+
+    --decl = declareWire( types.bits( self.outputBits ), instance.name.."_"..fn.outputName)
+    decl = "assign "..instance.name.."_READ_ADDR = "..datavar..";\n"
+    decl = decl.."  assign "..instance.name.."_READ_CE = "..cevar..";"
+  else
+    assert(false)
+  end
+
+  return instance.name.."_"..fn.outputName, decl, true
+end
+
+function bram2KSDPModuleFunctions:getDependenciesLL() return {} end
+function bram2KSDPModuleFunctions:toVerilog() return "" end
+function bram2KSDPModuleFunctions:getDelay( fnname ) 
+  if fnname=="writeAndReturnOriginal" then return 1
+  elseif fnname=="read" then return 1
+  else assert(false) end
 end
 
 -- if outputBits==nil, we don't make a read port (only a write port)
