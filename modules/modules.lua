@@ -2800,10 +2800,11 @@ end)
 -- if nilhandshake is false or nil, and f input type is nil, we produce type nil->Handshake(A)
 -- Handshake(nil) provides a ready bit but no data, vs nil, which provides nothing.
 -- (nilhandshake also applies the same way to the output type)
-modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
+modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   assert( rigel.isFunction(f) )
   if nilhandshake==nil then nilhandshake=false end
   err( type(nilhandshake)=="boolean", "makeHandshake: nilhandshake must be nil or boolean")
+  assert( X==nil )
   
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
@@ -2814,15 +2815,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     res.outputType = rigel.HandshakeTmuxed (f.outputType, #tmuxRates )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
-
---    function res:sdfTransfer( I, loc ) 
---      err(#I[1]==#tmuxRates, "MakeHandshake: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#tmuxRates) )
---      return I 
---    end
-
   else
-    --rigel.expectBasic(f.inputType)
-    --rigel.expectBasic(f.outputType)
     err( types.isBasic(f.inputType) or f.inputType:is("StaticFramed"),"makeHandshake: fn input type should be basic or StaticFramed")
     err( types.isBasic(f.outputType) or f.outputType:is("StaticFramed"),"makeHandshake: fn output type should be basic or StaticFramed")
 
@@ -4514,15 +4507,15 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
-  --if T==1 then res.stateful=false end
+
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}  -- well, technically this produces 1 output for every (nil) input
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
-  --local vh = J.to_string(value)
-  --if #vh>100 then vh = string.sub(vh,0,100) end
+  local vh = J.to_string(value)
+  if #vh>100 then vh = string.sub(vh,0,100) end
   
   -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
-  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(value).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
+  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(vh).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
