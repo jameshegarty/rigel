@@ -4,6 +4,7 @@ local J = require "common"
 local err = J.err
 local checkReserved = J.verilogCheckReserved
 
+
 local sugar = {}
 
 -- generates a class that provides a nice interface for setting optional parameters
@@ -45,7 +46,10 @@ new=function( ty, setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
-complete=function(self) return systolic.module.regBy( self.type, self.setby, self.CE, self.init, self.resetValue, self.hasSetFn ) end,
+complete=function(self)
+  local fpgamodules = require "fpgamodules"
+  return fpgamodules.regBy( self.type, self.setby, self.CE, self.init, self.resetValue, self.hasSetFn )
+end,
 configFns={CE=function(self,v) self.CE=v; return self end, 
 hasSet=function(self,v) err(type(v)=="boolean", "hasSet should be bool");self.hasSetFn=v; return self end, 
 setInit=function(self,I) self.type:checkLuaValue(I); self.init=I; return self end,

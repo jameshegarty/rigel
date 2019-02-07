@@ -339,7 +339,6 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     err( systolicModule:getDelay(prefix.."ready")==0, "ready bit should not be pipelined")
 
-    local asstInst = res:add( S.module.assert( "waitOnInput valid bit doesn't match ready bit", true ):instantiate("asstInst") )
     local printInst
     if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(),types.bool(),types.bool(),types.bool()}, "WaitOnInput "..systolicModule.name.." ready %d validIn %d runable %d RST %d", true ):instantiate(prefix.."printInst") ) end
 
@@ -355,7 +354,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
 
     local pipelines = {}
     -- Actually, it's ok for (ready==false and valid(inp)==true) to be true. We do not have to read when ready==false, we can just ignore it.
-    --  table.insert( pipelines, asstInst:process(S.__not(S.__and(S.eq(inner:ready(),S.constant(false,types.bool())),S.index(sinp,1)))):disablePipelining() )
+
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{inner[prefix.."ready"](inner),S.index(sinp,1), runable, RST} ) ) end
 
     local CE = S.CE("CE")
@@ -2443,7 +2442,6 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
   end
   
   res.stateful = true
---  res.delay = (math.log(maxRate/inputRate)/math.log(2)) + (math.log(maxRate/outputRate)/math.log(2))
   res.delay = 0
   res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed))
 
@@ -2459,8 +2457,6 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     local svalid = S.parameter("process_valid", types.bool() )
     local rvalid = S.parameter("reset", types.bool() )
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    
-    --local regs = J.map( J.range(maxRate), function(i) return systolicModule:add(S.module.reg(A,true):instantiate("Buffer_"..i)) end )
     
     if inputRate>outputRate then
       
@@ -2536,7 +2532,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( S.module.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
+    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
     
     local outarray = {}
     local evicted
@@ -2804,10 +2800,11 @@ end)
 -- if nilhandshake is false or nil, and f input type is nil, we produce type nil->Handshake(A)
 -- Handshake(nil) provides a ready bit but no data, vs nil, which provides nothing.
 -- (nilhandshake also applies the same way to the output type)
-modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
+modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   assert( rigel.isFunction(f) )
   if nilhandshake==nil then nilhandshake=false end
   err( type(nilhandshake)=="boolean", "makeHandshake: nilhandshake must be nil or boolean")
+  assert( X==nil )
   
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
@@ -2818,15 +2815,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     res.outputType = rigel.HandshakeTmuxed (f.outputType, #tmuxRates )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
-
---    function res:sdfTransfer( I, loc ) 
---      err(#I[1]==#tmuxRates, "MakeHandshake: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#tmuxRates) )
---      return I 
---    end
-
   else
-    --rigel.expectBasic(f.inputType)
-    --rigel.expectBasic(f.outputType)
     err( types.isBasic(f.inputType) or f.inputType:is("StaticFramed"),"makeHandshake: fn input type should be basic or StaticFramed")
     err( types.isBasic(f.outputType) or f.outputType:is("StaticFramed"),"makeHandshake: fn output type should be basic or StaticFramed")
 
@@ -2862,7 +2851,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
   end
 
   res.stateful = true -- for the shift register of valid bits
-  res.name = "MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name
+  res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
   res.globals={}
   for k,_ in pairs(f.globals) do res.globals[k]=1 end
@@ -2884,7 +2873,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake )
     
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
-    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate("validBitDelay_"..f.systolicModule.name) )
+    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate( J.sanitize("validBitDelay_"..f.systolicModule.name) ) )
     local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())
@@ -4518,7 +4507,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)
   res.stateful = true
-  --if T==1 then res.stateful=false end
+
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}  -- well, technically this produces 1 output for every (nil) input
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
@@ -4526,7 +4515,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   if #vh>100 then vh = string.sub(vh,0,100) end
   
   -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
-  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..vh.."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
+  res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(vh).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))
   res.delay = 0
 
   if terralib~=nil then res.terraModule = MT.constSeq(res, value, A, w, h, T,W ) end
@@ -4611,7 +4600,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough ):instantiate("fwritefile") )
+    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough, false ):instantiate("fwritefile") )
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
