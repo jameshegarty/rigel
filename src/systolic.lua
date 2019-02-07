@@ -2178,9 +2178,15 @@ function fileModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
   local decl = nil
   local fn = self.functions[fnname]
   if fnname=="read" then
-    decl = "assign 
+
   elseif fnname=="write" then
+    assert(type(datavar)=="string")
+    assert(type(validvar)=="string")
+    assert(type(cevar)=="string")
     --decl = declareReg( fn.output.type, instance.name.."_"..fn.outputName)
+    decl = "assign "..instance.name.."_WRITE_INPUT = "..datavar..";\n"
+    decl = decl.."assign "..instance.name.."_WRITE_VALID = "..validvar..";\n"
+    decl = decl.."assign "..instance.name.."_WRITE_CE = "..cevar..";\n"
   end
   return instance.name.."_"..fn.outputName, decl, true
 end
@@ -2254,6 +2260,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   wire ]]..instance.name..[[_WRITE_CE;
   wire ]]..instance.name..[[_WRITE_VALID;
   wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_WRITE_INPUT;
+  wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_writeOut;
 ]]..debug..obuffers..buffers..[[
   reg[63:0] ]]..instance.name..[[_file;
   reg ]]..instance.name..[[_dowrite=1'b0;
@@ -2277,6 +2284,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   always @ (posedge CLK) begin 
     if (]]..instance.name.."_WRITE_VALID"..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin ]]..assn..[[ end 
     ]]..RST..[[
+
   end
 ]]
     end
