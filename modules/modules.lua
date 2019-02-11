@@ -3723,7 +3723,7 @@ local function checkFIFOs(output)
 
         -- Is this right???? if we got this far, we did have a fifo along this brach...
         res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and rigel.isGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
+      elseif n.kind=="apply" and rigel.isFunctionGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
         res = {true}
       elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
         res = {true}
