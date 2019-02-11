@@ -4512,7 +4512,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
   local vh = J.to_string(value)
-  if #vh>100 then vh = string.sub(vh,0,100) end
+  if #vh>50 then vh = string.sub(vh,0,50) end
   
   -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
   res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(vh).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))

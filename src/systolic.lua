@@ -2260,9 +2260,9 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   wire ]]..instance.name..[[_WRITE_CE;
   wire ]]..instance.name..[[_WRITE_VALID;
   wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_WRITE_INPUT;
-  wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_writeOut;
+  reg []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_writeOut;
 ]]..debug..obuffers..buffers..[[
-  reg[63:0] ]]..instance.name..[[_file;
+  reg [63:0] ]]..instance.name..[[_file;
   reg ]]..instance.name..[[_dowrite=1'b0;
   initial begin 
     $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); 
