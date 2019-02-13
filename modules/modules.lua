@@ -444,6 +444,7 @@ modules.waitOnInput = memoize(function(f)
   if terralib~=nil then res.terraModule = MT.waitOnInput(res,f) end
 
   function res.makeSystolic()
+    assert( S.isModule(f.systolicModule) )
     return waitOnInputSystolic( f.systolicModule, {"process"},{} )
   end
 
@@ -2998,9 +2999,9 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   local loadFunction = {name="load", inputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
   
   if VRLoad then
-    loadFunction.outputType = rigel.HandshakeVR(A)
+    loadFunction.outputType = types.HandshakeVR(A)
   else
-    loadFunction.outputType = rigel.Handshake(A)
+    loadFunction.outputType = types.Handshake(A)
   end
   
   if A==types.null() then

@@ -23,7 +23,7 @@ padSize = { 1920+16, 1080+3 }
 local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
 function(inp)
   inp = Map{AddMSBs{24}}(inp)
-  local z = Zip(inp,regs.fn.coeffs)
+  local z = Zip(inp,regs.module.coeffs)
   local out = Map{Mul}(z)
   local res = Reduce{Add}(out)
   return RemoveMSBs{24}(Rshift{8}(res))

@@ -23,12 +23,16 @@ SOC.currentSAXIPort = 0
 SOC.currentAddr = 0x30008000
 SOC.currentRegAddr = 0xA0000008 -- first 8 bytes are start/done bit
 
-SOC.axiRegs = J.memoize(function(tab,port)
+SOC.axiRegs = J.memoize(function(tab,port,rate)
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
 
   if port==nil then
     port = SOC.currentSAXIPort
     SOC.currentSAXIPort = SOC.currentSAXIPort + 1
+  end
+
+  if rate==nil then
+    rate = SDF{1,1}
   end
   
   local globalMetadata = {}
@@ -672,8 +676,8 @@ endmodule
   --res =  R.newFunction(res)
 
   local functionList = {}
-  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=true}
+  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
   
   local res = R.newModule( ModuleName, functionList, true, makeSystolic )
   res.globals = globals
