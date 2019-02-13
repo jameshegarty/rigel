@@ -16,7 +16,4 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     return G.AXIWriteBurst{"out/soc_simple"}(offset)
   end}
 
---print(OffsetModule)
---print(OffsetModule:toVerilog())
-
 harness{regs.start, OffsetModule, regs.done}

@@ -326,6 +326,42 @@ function darkroom.newFunctionGenerator( namespace, name, requiredArgs, optArgs, 
 end
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
+local function buildAndCheckSystolicModule(tab, isModule)
+  -- build the systolic module as needed
+  err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
+  local sm = rawget(tab,"makeSystolic")()
+  if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
+  J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
+  
+  for k,_ in pairs(tab.globals) do
+    err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global "..k.name )
+    err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
+  end
+  
+  for k,_ in pairs(sm.sideChannels) do
+    err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
+  end
+  
+  if isModule==false then
+    err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
+    
+    if tab.outputType~=types.null() then
+      err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
+      err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(sm.functions.process.output.type).."' but should be '"..tostring(darkroom.lower(tab.outputType)).."'" )
+    end
+
+    err( darkroom.lower(tab.inputType)==sm.functions.process.inputParameter.type, "module input type wrong?" )
+    
+    err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
+  else
+    -- NYI
+    err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
+  end
+  
+  rawset(tab,"systolicModule", sm )
+  return sm
+end
+
 darkroomFunctionFunctions = {}
 darkroomFunctionMT={
 __index=function(tab,key)
@@ -335,47 +371,7 @@ __index=function(tab,key)
   if v~=nil then return v end
 
   if key=="systolicModule" then
-    -- build the systolic module as needed
-    err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for module '"..tab.name.."'" )
-    local sm = rawget(tab,"makeSystolic")()
-    if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
-    J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
-
-    -- self check module matches format we expect
-    --local A,B=0,0
-    --if tab.globals~=nil then A=J.keycount(tab.globals) end
-    --if sm.sideChannels~=nil then B=J.keycount(sm.sideChannels) end
-    --err(A==B,"makeSystolic: side channels doesn't match globals")
-    for k,_ in pairs(tab.globals) do
-      err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global "..k.name )
-      err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
-    end
-
-    for k,_ in pairs(sm.sideChannels) do
-      err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
-    end
-
-    if tab.registered==false then
-      err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
-          
-      if tab.outputType~=types.null() then
-        err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
-      end
-
-      err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong?" )
-      err( darkroom.lower(tab.inputType)==sm.functions.process.input.type, "module input type wrong?" )
-    end
-
-    if tab.registered then
-      local hasReset = (sm.functions.load_reset~=nil) and (sm.functions.store_reset~=nil)
-      hasReset = hasReset or (sm.functions.start_reset~=nil) and (sm.functions.done_reset~=nil)
-      err( hasReset==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(hasReset).." registered")
-    else
-      err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
-    end
-    
-    rawset(tab,"systolicModule", sm )
-    return sm
+    return buildAndCheckSystolicModule(tab,false)
   elseif key=="terraModule" then
     err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
     err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
@@ -511,33 +507,6 @@ function darkroomFunctionFunctions:toVerilog()
   return ntn..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() 
 end
 
-function darkroomFunctionFunctions:instantiate(arg0)
-  err( self.registered, "Can't instantiate a non-registered module!")
-
-  local name, rate
-  if type(arg0)=="string" then
-    name = arg0
-  elseif SDF.isSDF(arg0) then
-    rate = arg0
-  elseif arg0~=nil then
-    assert(false)
-  end
-  
-  if name==nil then
-    name = "UnnamedInstance"..darkroom.__unnamedID
-    darkroom.__unnamedID = darkroom.__unnamedID + 1
-  end
-  local res = darkroom.instantiateRegistered(name, self, rate )
-
-  -- hack
-  res.start = darkroom.newInstanceCallsite(res,"start")
-  res.done = darkroom.newInstanceCallsite(res,"done")
-  res.load = darkroom.newInstanceCallsite(res,"load")
-  res.store = darkroom.newInstanceCallsite(res,"store")
-  
-  return res
-end
-
 function darkroomFunctionFunctions:getGlobal(name)
   for k,_ in pairs(self.globals) do
     if k.name==name then return k end
@@ -591,25 +560,64 @@ function darkroom.newFunction(tab,X)
   if tab.systolicModule~=nil then
     assert(false)
   end
+
+  err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
   
   return setmetatable( tab, darkroomFunctionMT )
 end
 
+local darkroomModuleFunctions = {}
+
 darkroomModuleMT = {
-__tostring = function(tab) return "Module" end
+__tostring = function(tab) return "Module "..tab.name end,
+__index=function(tab,key)
+  local v = rawget(tab, key)
+  if v ~= nil then return v end
+  v = darkroomModuleFunctions[key]
+  if v~=nil then return v end
+
+  if key=="systolicModule" then
+    return buildAndCheckSystolicModule(tab,true)
+  end
+end
 }
 
-function darkroom.newModule(name,functionList,X)
+function darkroomModuleFunctions:instantiate(name)
+  err( name==nil or type(name)=="string", "instantiate: input should be string")
+  
+  if name==nil then
+    name = "UnnamedInstance"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID + 1
+  end
+  local res = darkroom.instantiate(name, self, rate )
+
+  -- hack
+  res.start = darkroom.newInstanceCallsite(res,"start")
+  res.done = darkroom.newInstanceCallsite(res,"done")
+  res.load = darkroom.newInstanceCallsite(res,"load")
+  res.store = darkroom.newInstanceCallsite(res,"store")
+  
+  return res
+end
+
+function darkroom.newModule( name, functionList, stateful, makeSystolic, terraModule, X )
   err( type(name)=="string", "newModule: name must be string" )
   err( type(functionList)=="table", "newModule: function list must be table (map from fn name to fn)")
+  err( type(makeSystolic)=="function", "newModule: makeSystolic should be function")
+  err( type(stateful)=="boolean","newModule: stateful should be boolean" )
   err( X==nil, "newModule: too many arguments" )
 
-  for k,v in pairs(functionList) do
+  -- collect globals of all fns
+  local globals = {}
+  local globalMetadata = {}
+  for k,fn in pairs(functionList) do
     err( type(k)=="string", "newModule: function name should be string?")
-    err( darkroom.isPlainFunction(v), "newModule: function should be plain Rigel function")
+    err( darkroom.isPlainFunction(fn), "newModule: function should be plain Rigel function")
+    for g,_ in pairs(fn.globals) do globals[g] = 1 end
+    for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
   end
   
-  local tab = {name=name,functions=functionList}
+  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,terraModule=terraModule, globals = globals, globalMetadata=globalMetadata, stateful=stateful}
   return setmetatable( tab, darkroomModuleMT )
 end
 
@@ -794,9 +802,9 @@ darkroomIRMT.__tostring = function(tab)
   return res
 end
   
-darkroomRegisteredInstanceMT = {}
+darkroomInstanceMT = {}
 
-function darkroom.isInstance(t) return getmetatable(t)==darkroomRegisteredInstanceMT end
+function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
   err( type(tab.name)=="string", "IR node "..tab.kind.." is missing name" )
@@ -825,14 +833,16 @@ function darkroomIRFunctions:calcSDF( )
     err( SDF.isSDF(self.rate),"input missing SDF?")
     res = self.rate
   elseif self.kind=="applyMethod" then
-    if self.fnname=="store" or self.fnname=="done" then
-      err( self.inst.rate:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.rate)..")")
+    if #self.inputs==0 then
+      err( self.inst.module.functions[self.fnname].sdfExact==true, "nullary applyMethod should have sdfExact==true")
+      res = self.inst.module.functions[self.fnname].sdfOutput
+    elseif self.inst.module.functions[self.fnname].sdfExact==true then
+      err( self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput)..")")
       res = self.inputs[1].rate
-    elseif self.fnname=="load" or self.fnname=="start" then
-      --err( #self.inputs==0 or self.inst.rate:equals(self.inputs[1].rate), "applyMethod: input rate to nullary not the same?" )
-      res = self.inst.rate
+    elseif #self.inputs==1 then
+      res =  self.inst.module.functions[self.fnname]:sdfTransfer(self.inputs[1].rate, "APPLYMETHOD "..self.name.." "..self.loc)
     else
-      err( false, "sdfTotalInner: unknown method '"..self.fnname.."'" )
+      assert(false)
     end
   elseif self.kind=="writeGlobal" then
     res = self.inputs[1].rate
@@ -965,17 +975,15 @@ function darkroomIRFunctions:typecheck()
     end
     n.type = n.fn.outputType
   elseif n.kind=="applyMethod" then
-    err( n.inst.fn.registered==true, "Error, calling method "..n.fnname.." on a non-registered type! "..n.loc)
-    
-    if n.fnname=="load" or n.fnname=="start" then
-      n.type = n.inst.fn.outputType
-    elseif n.fnname=="store" or n.fnname=="done" then
-      if n.inputs[1].type~=n.inst.fn.inputType then error("input to reg store has incorrect type, should be "..tostring(n.inst.fn.inputType).." but is "..tostring(n.inputs[1].type)..", "..n.loc) end
-      n.type = types.null()
-    else
-      err(false,"Unknown method "..n.fnname)
-    end
+    err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
 
+    if n.inputs[1]==nil then
+      err( n.inst.module.functions[n.fnname].inputType==types.null(), "Error, method '"..n.fnname.."' was passed no input, but expected an input")
+    else
+      err( n.inst.module.functions[n.fnname].inputType==n.inputs[1].type, "Error, input to function '"..n.fnname.."' should have type '"..tostring(n.inst.module.functions[n.fnname].inputType).."', but was passed type '"..tostring(n.inputs[1].type).."'")
+    end
+    
+    n.type = n.inst.module.functions[n.fnname].outputType
   elseif n.kind=="input" then
   elseif n.kind=="constant" then
   elseif n.kind=="concat" then
@@ -1040,13 +1048,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         if darkroom.isRV(n.type) then res[2] = module:lookupFunction("ready"):getInput() end
         return res
       elseif n.kind=="applyMethod" then
-        assert( n.inst.fn.registered )
         local I = module:lookupInstance(n.inst.name)
-
-        if n.inst.fn.stateful then
-          module:lookupFunction("reset"):addPipeline( I[n.fnname.."_reset"](I,nil,module:lookupFunction("reset"):getValid()) )
-        end
-        
         local inp = inputs[1]
         if inp~=nil then inp=inp[1] end
         return {I[n.fnname](I,inp)}
@@ -1153,15 +1155,13 @@ function darkroom.writeGlobal( name, g, input, X )
   return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
 end
 
-function darkroom.instantiateRegistered( name, fn, rate, X )
-  err( type(name)=="string", "instantiateRegistered: name must be string")
-  err( darkroom.isFunction(fn) and fn.registered, "fn must be a registered function or module" )
-  err( rate==nil or SDFRate.isSDFRate(rate),"instantiate: rate must be SDF rate or nil")
+function darkroom.instantiate( name, mod, X )
+  err( type(name)=="string", "instantiate: name must be string")
+  err( darkroom.isModule(mod), "instantiate: module must be a Rigel module" )
   err( X==nil, "darkroom.instantiate: too many arguments" )
 
-  if rate==nil then rate={{1,1}} end
-  local t = {name=name, fn=fn, rate=SDF(rate)}
-  return setmetatable(t, darkroomRegisteredInstanceMT)
+  local t = {name=name, module=mod }
+  return setmetatable(t, darkroomInstanceMT)
 end
 
 -- sdfRateOverride: override the firing rate of this apply. useful for nullary modules.
@@ -1313,7 +1313,7 @@ function darkroom.handshakeMode(output)
       if n.kind=="apply" then
         HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.fn.inputType) or darkroom.isHandshakeAny(n.fn.outputType)
       elseif n.kind=="applyMethod" then
-        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.fn.inputType) or darkroom.isHandshakeAny(n.inst.fn.outputType)
+        HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.module.functions[n.fnname].inputType) or darkroom.isHandshakeAny(n.inst.module.functions[n.fnname].outputType)
       elseif n.kind=="writeGlobal" then
         HANDSHAKE_MODE = HANDSHAKE_MODE or n.global.type:is("Handshake")
       end

@@ -90,7 +90,7 @@ end
 function systolicFunctionConstructor:setOutput( o, oname ) 
   err( self.isComplete==false, "function is already complete"); 
   assert(systolic.isAST(o)); 
-  err(type(oname)=="string", "output must be given a name")
+  err(o.type==types.null() or type(oname)=="string", "output must be given a name")
   self.output = o;
   self.outputName = oname
 end
@@ -98,9 +98,11 @@ function systolicFunctionConstructor:getOutputName() return self.outputName end
 function systolicFunctionConstructor:getOutput() return self.output end
 
 function systolicFunctionConstructor:setCE( ce ) 
-  err( self.isComplete==false, "function is already complete"); 
-  assert( systolic.isAST(ce) and ce.kind=="parameter" and ce.type==types.bool(true) )
-  self.CEparameter = ce 
+  err( self.isComplete==false, "function is already complete");
+  if ce~=nil then
+    err( systolic.isAST(ce) and ce.kind=="parameter" and ce.type==types.bool(true), "CE wasn't as expected: "..tostring(ce) )
+    self.CEparameter = ce
+  end
 end
 
 function systolicFunctionConstructor:addPipeline( p ) 

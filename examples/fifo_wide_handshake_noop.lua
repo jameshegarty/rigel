@@ -17,7 +17,7 @@ local p100 = RM.makeHandshake(RM.map( C.plus100(types.uint(8)), T))
 ------------
 ITYPE = types.array2d( types.uint(8), T )
 local inp = R.input( R.Handshake(ITYPE) )
-local regs = {R.instantiateRegistered("f1",RM.fifo(ITYPE,1,false,W,H,T,true))}
+local regs = {R.instantiate("f1",RM.fifo(ITYPE,1,false,W,H,T,true))}
 
 ------
 local pinp = R.applyMethod("l1",regs[1],"load")

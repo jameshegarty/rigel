@@ -1486,7 +1486,7 @@ function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
     if self.onlyWire and fn.implicitValid then
       -- when in onlyWire mode, it's ok to have an undriven valid bit
     else
-      assert( type(validvar)=="string" )
+      err( type(validvar)=="string", "function '"..fnname.."' on instance '"..instance.name.."' is missing validvar?"..tostring(validvar) )
       local wirename = instance.name.."_"..fn.valid.name
       table.insert(decl,"  assign "..wirename.." = "..validvar..";")
     end      
@@ -1624,7 +1624,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
   J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
-  err( type(instances)=="table", "instances must be a table")
+  err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
   J.map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
 
