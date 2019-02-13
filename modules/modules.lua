@@ -3951,7 +3951,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         end
         res.globals[g] = 1
         globalPairs[g.name]=g
-        globalDbgLoc[g]="INSTANCE:"..v.name
+        globalDbgLoc[g]="INSTANCE:"..inst.name
       end
     end
 

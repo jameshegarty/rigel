@@ -523,15 +523,12 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
   err( X==nil, "newInstanceCallsite: too many arguments" )
 
   local res = { instance=instance, functionName=functionName }
-  if functionName=="load" or functionName=="start" then
-    res.outputType = instance.fn.outputType
-    res.inputType = types.null()
-  elseif functionName=="store" or functionName=="done" then
-    res.inputType = instance.fn.inputType
-    res.outputType = types.null()
-  else
-    err(false,"newInstanceCallsite: unknown function '"..functionName.."'")
-  end
+  --if functionName=="load" or functionName=="start" then
+
+  err( instance.module.functions[functionName]~=nil, "newInstanceCallsite: function '"..functionName.."' not found on module '"..instance.module.name.."'" )
+
+  res.inputType = instance.module.functions[functionName].inputType
+  res.outputType = instance.module.functions[functionName].outputType
 
   return setmetatable( res, darkroomInstanceCallsiteMT )
 end)
@@ -590,13 +587,6 @@ function darkroomModuleFunctions:instantiate(name)
     darkroom.__unnamedID = darkroom.__unnamedID + 1
   end
   local res = darkroom.instantiate(name, self, rate )
-
-  -- hack
-  res.start = darkroom.newInstanceCallsite(res,"start")
-  res.done = darkroom.newInstanceCallsite(res,"done")
-  res.load = darkroom.newInstanceCallsite(res,"load")
-  res.store = darkroom.newInstanceCallsite(res,"store")
-  
   return res
 end
 
@@ -801,8 +791,17 @@ darkroomIRMT.__tostring = function(tab)
   
   return res
 end
-  
-darkroomInstanceMT = {}
+
+local darkroomInstanceMT = {
+  __index = function( tab, key )
+    local v = rawget(tab, key)
+    if v ~= nil then return v end
+
+    if tab.module.functions[key]~=nil then
+      return darkroom.newInstanceCallsite( tab, key )
+    end
+  end,
+  __tostring = function(tab) return "Instance "..tab.name end}
 
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
