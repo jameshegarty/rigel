@@ -537,7 +537,7 @@ function darkroom.isInstanceCallsite( t ) return getmetatable(t)==darkroomInstan
 
 function darkroom.newFunction(tab,X)
   err( type(tab) == "table", "rigel.newFunction: input must be table" )
-  err(X==nil, "rigel.newFunction: too many arguments")
+  err( X==nil, "rigel.newFunction: too many arguments")
   err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable?")
   
   err( type(tab.name)=="string", "rigel.newFunction: name must be string, but is: "..tostring(tab.name) )
@@ -559,6 +559,8 @@ function darkroom.newFunction(tab,X)
   if tab.globalMetadata==nil then tab.globalMetadata={} end
   if tab.globals==nil then tab.globals={} end
 
+  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable? 33")
+  
   if rawget(tab,"systolicModule")~=nil then
     print("SYSTOLICMODULE RAWGET")
   end
