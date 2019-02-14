@@ -559,10 +559,12 @@ function darkroom.newFunction(tab,X)
     print("SYSTOLICMODULE RAWGET")
   end
 
-  print("SYSTOLICMODULEGET",getmetatable(tab),tab.name,rawget(tab,"systolicModule"))
-  
+  --print("SYSTOLICMODULEGET",getmetatable(tab),tab.name,rawget(tab,"systolicModule"))
+
+  assert( getmetatable(tab)==nil )
+        
   if tab.systolicModule~=nil then
-    print("systolic module already exists?", tab.name)
+    print("systolic module already exists?", tab.name, getmetatable(tab))
     print(debug.traceback())
     print(tab.systolicModule)
     assert(false)
