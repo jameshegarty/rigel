@@ -5,10 +5,9 @@ local SOC = require "soc"
 local SDF = require "sdf"
 local types = require "types"
 
-local regs = SOC.axiRegs{}:instantiate()
-
 local cycles = tonumber(string.match(arg[0],"%d+"))
---print("CYCLES",arg[0],cycles)
+
+local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate()
 
 local Conv = G.Module{ "ConvTop", SDF{1,cycles},
   function(i)

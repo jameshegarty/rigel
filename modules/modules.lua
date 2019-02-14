@@ -3015,7 +3015,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   local loadRigelFn = rigel.newFunction(loadFunction)
 
   local terraModule
-  if terralib~=nil then terraModule = MT.fifo(res,A, size, nostall, W, H, T, csimOnly) end
+  if terralib~=nil then terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
 
   if size==1 and (csimOnly==false) then
     local name = J.sanitize("OneElementFIFO_"..tostring(A))
@@ -3049,7 +3049,7 @@ endmodule
 ]]
 
     local mod =  modules.liftVerilogModule(name, vstr, {load=loadRigelFn,store=storeRigelFn}, true)
-    if terralib~=nil then mod.terraModule = MT.fifo(mod,A,2,nostall,W,H,T,csimOnly) end
+    if terralib~=nil then mod.terraModule = MT.fifo(storeRigelFn.inputType,loadRigelFn.outputType,A,2,nostall,W,H,T,csimOnly) end
 return mod
   else
     local bytes = (size*A:verilogBits())/8

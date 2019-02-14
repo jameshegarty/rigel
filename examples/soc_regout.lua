@@ -8,8 +8,8 @@ local types = require "types"
 local SDF = require "sdf"
 types.export()
 
-local Regs = SOC.axiRegs{offset={u(8),200},lastPx={u(8),0,"input"}}
-regs = Regs:instantiate(SDF{1,8192})
+local Regs = SOC.axiRegs({offset={u(8),200},lastPx={u(8),0,"input"}},SDF{1,8192})
+regs = Regs:instantiate()
 
 local AddReg = G.Module{"AddReg",function(i) return G.Add(i,Regs.offset) end}
 

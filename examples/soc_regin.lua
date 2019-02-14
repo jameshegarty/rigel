@@ -7,8 +7,8 @@ local RS = require "rigelSimple"
 local SDF = require "sdf"
 require "types".export()
 
-local Regs = SOC.axiRegs{offset={u(32),200}}
-regs = Regs:instantiate(SDF{1,1024})
+local Regs = SOC.axiRegs({offset={u(32),200}},SDF{1,1024})
+regs = Regs:instantiate()
 
 print("REGS",Regs.offset)
 

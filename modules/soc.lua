@@ -23,17 +23,15 @@ SOC.currentSAXIPort = 0
 SOC.currentAddr = 0x30008000
 SOC.currentRegAddr = 0xA0000008 -- first 8 bytes are start/done bit
 
-SOC.axiRegs = J.memoize(function(tab,port,rate)
+SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
+  J.err( X==nil, "soc.axiRegs: too many arguments")
 
-  if port==nil then
-    port = SOC.currentSAXIPort
-    SOC.currentSAXIPort = SOC.currentSAXIPort + 1
-  end
+  local port = SOC.currentSAXIPort
+  SOC.currentSAXIPort = SOC.currentSAXIPort + 1
 
-  if rate==nil then
-    rate = SDF{1,1}
-  end
+  if rate==nil then rate = SDF{1,1} end
+  J.err( SDF.isSDF(rate), "SOC.axiRegs: rate should be SDF rate" )
   
   local globalMetadata = {}
   local globals = {}

@@ -5,9 +5,10 @@ local harness = require "harnessSOC"
 local G = require "generators"
 local RS = require "rigelSimple"
 local types = require "types"
+local SDF = require "sdf"
 types.export()
 
-Regs = SOC.axiRegs{readAddress={u(32),0x30008000},writeAddress={u(32),0x30008000+(128*64)}}
+Regs = SOC.axiRegs({readAddress={u(32),0x30008000},writeAddress={u(32),0x30008000+(128*64)}},SDF{1,128*64})
 regs = Regs:instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,

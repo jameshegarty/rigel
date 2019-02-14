@@ -3,8 +3,9 @@ local G = require "generators"
 local SOC = require "soc"
 local harness = require "harnessSOC"
 require "types".export()
+local SDF = require "sdf"
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,30*14*9}):instantiate()
 
 PosToAddr = G.Module{ "PosToAddr", ar(u16,2),
   function(loc)

@@ -565,6 +565,12 @@ end
 
 local darkroomModuleFunctions = {}
 
+function darkroomModuleFunctions:getGlobal(name)
+  for k,_ in pairs(self.globals) do
+    if k.name==name then return k end
+  end
+end
+
 darkroomModuleMT = {
 __tostring = function(tab) return "Module "..tab.name end,
 __index=function(tab,key)
@@ -579,14 +585,15 @@ __index=function(tab,key)
 end
 }
 
-function darkroomModuleFunctions:instantiate(name)
+function darkroomModuleFunctions:instantiate( name, X )
   err( name==nil or type(name)=="string", "instantiate: input should be string")
+  err( X==nil, "instantiate: too many arguments" )
   
   if name==nil then
     name = "UnnamedInstance"..darkroom.__unnamedID
     darkroom.__unnamedID = darkroom.__unnamedID + 1
   end
-  local res = darkroom.instantiate(name, self, rate )
+  local res = darkroom.instantiate(name, self )
   return res
 end
 
@@ -832,11 +839,11 @@ function darkroomIRFunctions:calcSDF( )
     err( SDF.isSDF(self.rate),"input missing SDF?")
     res = self.rate
   elseif self.kind=="applyMethod" then
-    if #self.inputs==0 then
+    if #self.inputs==0 or self.inputs[1].type==types.null() then
       err( self.inst.module.functions[self.fnname].sdfExact==true, "nullary applyMethod should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
-      err( self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput)..")")
+      err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
       res = self.inputs[1].rate
     elseif #self.inputs==1 then
       res =  self.inst.module.functions[self.fnname]:sdfTransfer(self.inputs[1].rate, "APPLYMETHOD "..self.name.." "..self.loc)

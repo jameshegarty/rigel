@@ -1239,11 +1239,11 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
 end
 
 
-function MT.fifo( res, A, size, nostall, W, H, T, csimOnly)
+function MT.fifo( inputType, outputType, A, size, nostall, W, H, T, csimOnly)
   local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), ready:bool, readyDownstream:bool }
   terra Fifo:reset() self.fifo:reset() end
   terra Fifo:stats(name:&int8)  end
-  terra Fifo:store( inp : &rigel.lower(res.inputType):toTerraType())
+  terra Fifo:store( inp : &rigel.lower(inputType):toTerraType())
     if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.ready,valid(inp)) end
     -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
     -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
@@ -1252,7 +1252,7 @@ function MT.fifo( res, A, size, nostall, W, H, T, csimOnly)
       self.fifo:pushBack(&data(inp)) 
     end
   end
-  terra Fifo:load( out : &rigel.lower(res.outputType):toTerraType())
+  terra Fifo:load( out : &rigel.lower(outputType):toTerraType())
     if self.readyDownstream then
       if self.fifo:hasData() then
         if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, hasData. size=%d\n", size, self.fifo:size()) end
@@ -1839,9 +1839,11 @@ function MT.lambdaCompile(fn)
   
   local mself = symbol( &Module, "module self" )
   
-  if fn.instances~=nil then for k,v in pairs(fn.instances) do 
-    err(v.fn.terraModule~=nil, "Missing terra module for "..v.fn.kind)
-    table.insert( Module.entries, {field=v.name, type=v.fn.terraModule} ) end 
+  if fn.instances~=nil then
+    for _,inst in pairs(fn.instances) do 
+      err(inst.module.terraModule~=nil, "Missing terra module for "..inst.module.name)
+      table.insert( Module.entries, {field=inst.name, type=inst.module.terraModule} )
+    end 
   end
 
   -- sort of a hack: for handshaked, internal globals, we can't guarantee we'll generate code the runs in the correct order (producers before consumers)

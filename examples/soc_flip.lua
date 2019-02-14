@@ -7,7 +7,7 @@ local C = require "examplescommon"
 local SDF = require "sdf"
 require "types".export()
 
-regs = SOC.axiRegs({},nil,SDF{1,1024}):instantiate()
+regs = SOC.axiRegs({},SDF{1,1024}):instantiate()
 
 local W,H = 128,64
 
