@@ -548,32 +548,15 @@ function darkroom.newFunction(tab,X)
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
-
-  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable? 2")
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
-
-  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable? 3")
   
   if tab.globalMetadata==nil then tab.globalMetadata={} end
-  if tab.globals==nil then tab.globals={} end
-
-  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable? 33")
-  
-  if rawget(tab,"systolicModule")~=nil then
-    print("SYSTOLICMODULE RAWGET")
-  end
-
-  --print("SYSTOLICMODULEGET",getmetatable(tab),tab.name,rawget(tab,"systolicModule"))
-
-  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable? 4")
-  assert( getmetatable(tab)==nil )
+  if rawget(tab,"globals")==nil then rawset(tab,"globals",{}) end -- if we don't use rawset/rawget, this messes up the metatable? some kind of compiler bug?
         
   if tab.systolicModule~=nil then
     print("systolic module already exists?", tab.name, getmetatable(tab))
-    print(debug.traceback())
-    print(tab.systolicModule)
     assert(false)
   end
 
