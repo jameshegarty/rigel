@@ -3314,7 +3314,7 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
   end
 
   return rigel.newFunction( res )
-    end)
+end)
 
 -- surpresses output if we get more then _count_ inputs
 modules.overflow = memoize(function( A, count )

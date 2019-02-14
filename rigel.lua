@@ -555,6 +555,8 @@ function darkroom.newFunction(tab,X)
   if tab.globals==nil then tab.globals={} end
   
   if tab.systolicModule~=nil then
+    print("systolic module already exists?")
+    print(tab.systolicModule)
     assert(false)
   end
 
