@@ -425,8 +425,9 @@ end)
 -- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
 -- if inner:ready()==true, inner will run iff valid(input)==true
 -- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
-modules.waitOnInput = memoize(function(f)
+modules.waitOnInput = memoize(function( f, X )
   err(rigel.isFunction(f),"waitOnInput argument should be darkroom function")
+  err( X==nil, "waitOnInput: too many arguments" )
   local res = {kind="waitOnInput", fn = f}
   rigel.expectBasic(f.inputType)
   err( rigel.isRV(f.outputType) or f.outputType:is("RVFramed"), "waitOnInput: output type should be RV, but is: "..tostring(f.outputType))
