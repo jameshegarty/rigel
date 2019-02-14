@@ -554,15 +554,19 @@ function darkroom.newFunction(tab,X)
   
   if tab.globalMetadata==nil then tab.globalMetadata={} end
   if rawget(tab,"globals")==nil then rawset(tab,"globals",{}) end -- if we don't use rawset/rawget, this messes up the metatable? some kind of compiler bug?
-        
+
+  assert(getmetatable(tab)==nil)
   if tab.systolicModule~=nil then
     print("systolic module already exists?", tab.name, getmetatable(tab))
     assert(false)
   end
 
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
-  
-  return setmetatable( tab, darkroomFunctionMT )
+
+  assert(getmetatable(tab)==nil)
+  setmetatable( tab, darkroomFunctionMT )
+
+  return tab
 end
 
 local darkroomModuleFunctions = {}
