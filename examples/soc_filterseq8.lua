@@ -10,11 +10,9 @@ local types = require "types"
 local J = require "common"
 types.export()
 
---local Regs = SOC.axiRegs{count={u8,0,"out"}}
-local Regs = SOC.axiRegs{}
+local Regs = SOC.axiRegs({},SDF{1,1024})
 regs = Regs:instantiate()
 
---BoolGT = G.Module{"BoolGT",function(i) return G.Not(G.And(G.Not(i[0][1]),i[1][1])) end}
 IdxGT = G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
 
 -- input type: {{A,bool},u8} -> {A,u8}

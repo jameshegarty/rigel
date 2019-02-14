@@ -312,24 +312,11 @@ modules.fifonoop = memoize(function(ty)
   local popFront = fifo:addFunction( S.lambda("load",S.parameter("pfnil",types.null()),internalData,"load_output") )
   local popFront_ready = fifo:addFunction( S.lambda("load_ready",internalReady,nil,"load_ready") )
 
-  -- size
---  local sizeFn = fifo:addFunction( S.lambda("size",S.parameter("sznil",types.null()),S.constant(0,types.uint(16)),"size",{}) )
-
-  -- ready
---  local readyFn = fifo:addFunction( S.lambda("ready",S.parameter("rnil",types.null()),internalReady,"readyv") )
-
-  -- has data
---  local hasDataFn = fifo:addFunction( S.lambda("hasData",S.parameter("hdnil",types.null()),internalValid,"hasData") )
-
-  -- pushBackReset
-  local pushBackReset = fifo:addFunction( Ssugar.lambdaConstructor("store_reset" ) )
-
-  -- popFrontReset
-  local popFrontReset = fifo:addFunction( Ssugar.lambdaConstructor("load_reset" ) )
+  -- reset
+  local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )
 
   return fifo
-                           end)
---modules.fifo = memoize(modules.fifonoop)
+end)
 
 -- tab should be a key of systolic values. Key is a systolic value that chooses between them.
 -- key is 0 indexed

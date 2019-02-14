@@ -6,24 +6,25 @@ local RS = require "rigelSimple"
 local C = require "examplescommon"
 require "generators".export()
 require "types".export()
+local SDF = require "sdf"
 
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
 
-regs = SOC.axiRegs{
+inSize = { 1920, 1080 }
+padSize = { 1920+16, 1080+3 }
+
+regs = SOC.axiRegs({
   coeffs={ar(u(32),ConvWidth,ConvWidth),
           {4, 14, 14,  4,
            14, 32, 32, 14,
            14, 32, 32, 14,
-           4, 14, 14,  4}}}:instantiate()
-
-inSize = { 1920, 1080 }
-padSize = { 1920+16, 1080+3 }
+           4, 14, 14,  4}}},SDF{1,padSize[1]*padSize[2]}):instantiate()
 
 local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
 function(inp)
   inp = Map{AddMSBs{24}}(inp)
-  local z = Zip(inp,regs.fn.coeffs)
+  local z = Zip(inp,regs.module.coeffs)
   local out = Map{Mul}(z)
   local res = Reduce{Add}(out)
   return RemoveMSBs{24}(Rshift{8}(res))

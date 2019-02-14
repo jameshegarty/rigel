@@ -263,7 +263,15 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
   for _,fnname in pairs(passthroughFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
-    res:addFunction( S.lambda(fnname, srcFn:getInput(), inner[fnname]( inner, srcFn:getInput() ), srcFn:getOutputName(), nil, J.sel(onlyWire,nil,srcFn:getValid()), srcFn:getCE() ) )
+    local VALID
+    if onlyWire then
+      VALID = srcFn:getValid()
+    end
+
+    local fn = Ssugar.lambdaConstructor( fnname, srcFn:getInput().type, srcFn:getInput().name, srcFn:getValid().name )
+    fn:setOutput( inner[fnname]( inner, srcFn:getInput(), VALID ), srcFn:getOutputName() )
+    fn:setCE(srcFn:getCE())
+    res:addFunction(fn)
 
     local readySrcFn = systolicModule:lookupFunction(fnname.."_ready")
     if readySrcFn~=nil then
@@ -312,14 +320,20 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
       out = S.tuple{ out, S.__and( runable,svalid ):disablePipelining() }
     end
     
-    local RST = S.parameter(prefix.."reset",types.bool())
-    if systolicModule:lookupFunction(prefix.."reset"):isPure() then RST=S.constant(false,types.bool()) end
+    
+    if systolicModule:lookupFunction(prefix.."reset")~=nil then
+      local RST = S.parameter(prefix.."reset",types.bool())
+      if systolicModule:lookupFunction(prefix.."reset"):isPure() then
+        RST=S.constant(false,types.bool())
+      end
+      
+      res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST) )
+    end
 
     local pipelines = {}
 
     local CE = S.CE("CE")
     res:addFunction( S.lambda(fnname, sinp, out, fnname.."_output", pipelines, svalid, CE ) )
-    res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"](inner), "ro", {}, RST) )
     res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), inner[prefix.."ready"](inner), prefix.."ready", {} ) )
   end
 
@@ -411,8 +425,9 @@ end)
 -- You should never use basic->RV directly! S->SRV's input should be valid iff ready==true. This is not the case with normal Stateful functions!
 -- if inner:ready()==true, inner will run iff valid(input)==true
 -- if inner:ready()==false, inner will run always. Input will be garbage, but inner isn't supposed to be reading from it! (this condition is used for upsample, for example)
-modules.waitOnInput = memoize(function(f)
+modules.waitOnInput = memoize(function( f, X )
   err(rigel.isFunction(f),"waitOnInput argument should be darkroom function")
+  err( X==nil, "waitOnInput: too many arguments" )
   local res = {kind="waitOnInput", fn = f}
   rigel.expectBasic(f.inputType)
   err( rigel.isRV(f.outputType) or f.outputType:is("RVFramed"), "waitOnInput: output type should be RV, but is: "..tostring(f.outputType))
@@ -430,6 +445,7 @@ modules.waitOnInput = memoize(function(f)
   if terralib~=nil then res.terraModule = MT.waitOnInput(res,f) end
 
   function res.makeSystolic()
+    assert( S.isModule(f.systolicModule) )
     return waitOnInputSystolic( f.systolicModule, {"process"},{} )
   end
 
@@ -600,6 +616,10 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule:complete(); systolicModule=systolicModule.module end
 
+  local resetPipelines = {}
+
+  passthroughSystolic( res, systolicModule, inner, passthroughFns, true )
+
   for K,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
@@ -613,8 +633,6 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount") ) end
 
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
-
-    local rst = S.parameter(prefix.."reset",types.bool())
 
     local downstreamReady
     local CE
@@ -681,33 +699,25 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
     
-    --local asstInst = res:add( S.module.assert( "LiftHandshake: output valid bit should not be X!" , false, false):instantiate(prefix.."asstInst") )
-    --table.insert(pipelines, asstInst:process(S.__not(S.isX(S.index(out,1))), S.constant(true,types.bool()) ) )
-    
-    --local asstInst2 = res:add( S.module.assert( "LiftHandshake: input valid bit should not be X!" , false, false):instantiate(prefix.."asstInst2") )
-    --table.insert(pipelines, asstInst2:process(S.__not(S.isX(S.index(pinp,1))), S.constant(true,types.bool()) ) )
-    
     res:addFunction( S.lambda(fnname, pinp, out, fnname.."_output", pipelines ) ) 
     
-    local resetPipelines = {}
-
     if pout.type~=types.null() then
-      resetPipelines[1] = SR:reset( nil, rst )
+      err(res:lookupFunction("reset")~=nil, "Reset is missing on module '"..systolicModule.name.."'? "..tostring(systolicModule))
+      table.insert(resetPipelines, SR:reset( nil, res:lookupFunction("reset"):getValid() ))
     end
     
-    if STREAMING==false and DARKROOM_VERBOSE then table.insert(resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
-    
-    if systolicModule.functions[prefix.."reset"]~=nil then -- stateless modules do not have reset
-      res:addFunction( S.lambda(prefix.."reset", S.parameter(prefix.."r",types.null()), inner[prefix.."reset"]( inner, nil, rst ), prefix.."reset_out", resetPipelines, rst ) )
-    end
-
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
     
     res:addFunction( S.lambda(prefix.."ready", downstreamReady, readyOut, prefix.."ready" ) )
   end
-  
-  assert(#passthroughFns==0)
 
+  assert(res:lookupFunction("reset")~=nil)
+
+  for _,p in pairs(resetPipelines) do
+    assert( Ssugar.isFunctionConstructor(res:lookupFunction("reset")) )
+    res:lookupFunction("reset"):addPipeline(p)
+  end
+  
   return res
 end
 
@@ -748,7 +758,9 @@ modules.liftHandshake = memoize(function( f, X )
 
   function res.makeSystolic()
     assert( S.isModule(f.systolicModule) )
-    return liftHandshakeSystolic( f.systolicModule, {"process"},{},{true} )
+    local passthrough = {}
+    if f.stateful then passthrough={"reset"} end
+    return liftHandshakeSystolic( f.systolicModule, {"process"},passthrough,{true} )
   end
 
   return rigel.newFunction(res)
@@ -1535,7 +1547,10 @@ modules.interleveSchedule = memoize(function( N, period )
   err( type(N)=="number", "N must be number")
   err( J.isPowerOf2(N), "N must be power of 2")
   err( type(period)=="number", "period must be number")
-  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
+
+  local log2N = math.ceil(math.log(N)/math.log(2))
+  
+  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "InterleveSchedule_"..N.."_"..period
 
   if terralib~=nil then res.terraModule = MT.interleveSchedule( N, period ) end
@@ -1548,13 +1563,13 @@ modules.interleveSchedule = memoize(function( N, period )
     
     local inp = S.parameter("process_input", rigel.lower(res.inputType) )
     local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(8), fpgamodules.incIfWrap( types.uint(8), 255, 1 ) ):setInit(0):setReset(0):CE(true):instantiate("interlevePhase") )
-    local log2N = math.log(N)/math.log(2)
+    
     
     local CE = S.CE("CE")
     local pipelines = {phase:setBy( S.constant(true,types.bool()))}
     if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(phase:get())) end
     
-    systolicModule:addFunction( S.lambda("process", inp, S.cast(S.cast(S.bitSlice(phase:get(),period,period+log2N-1),types.uint(log2N)), types.uint(8)), "process_output", pipelines, nil, CE ) )
+    systolicModule:addFunction( S.lambda("process", inp, S.cast(S.bitSlice(phase:get(),period,period+log2N-1),types.uint(log2N)), "process_output", pipelines, nil, CE ) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()}, S.parameter("reset",types.bool())) )
 
     return systolicModule
@@ -1568,7 +1583,10 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
   err(type(depth)=="number", "depth must be number")
   err(type(wtop)=="number", "wtop must be number")
   err(type(T)=="number", "T must be number")
-  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(8), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
+
+  local log2N = math.ceil(math.log(depth)/math.log(2))
+
+  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "PyramidSchedule_depth_"..tostring(depth).."_wtop_"..tostring(wtop).."_T_"..tostring(T)
 
   if terralib~=nil then res.terraModule = MT.pyramidSchedule( depth, wtop, T ) end
@@ -1589,8 +1607,6 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
   assert(#pattern<=128)
   local patternTotal = #pattern
   while #pattern<128 do table.insert(pattern,0) end
-
-  local log2N = math.ceil(math.log(depth)/math.log(2))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -1698,7 +1714,9 @@ modules.serialize = memoize(function( A, inputRates, Schedule, X )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates) )
   err( rigel.isFunction(Schedule), "schedule must be darkroom function")
-  err( rigel.lower(Schedule.outputType)==types.uint(8), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+
+  local log2N = math.ceil(math.log(#inputRates)/math.log(2))
+  err( rigel.lower(Schedule.outputType)==types.uint(log2N), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
   rigel.expectBasic(A)
   assert(X==nil)
 
@@ -2862,10 +2880,8 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
     local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
 
---    local SC = {}
     for k,_ in pairs(f.globals) do
       systolicModule:addSideChannel(k.systolicValue)
---      SC[k.systolicValue]=k.systolicValue
     end
     
     local outputCount
@@ -2963,7 +2979,7 @@ end
 -- W,H,T: used for debugging (calculating last cycle)
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X )
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, X )
   rigel.expectBasic(A)
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
@@ -2974,12 +2990,37 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X 
   assert(csimOnly==nil or type(csimOnly)=="boolean")
   if VRLoad==nil then VRLoad=false end
   err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
+
+  if SDFRate==nil then SDFRate=SDF{1,1} end
+  err( SDF.isSDF(SDFRate),"modules.fifo: SDFRate must be nil or SDF rate")
   
   assert(X==nil)
 
-  if size==1 and csimOnly==false then
+  local storeFunction = {name="store", inputType=rigel.Handshake(A),  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+  local loadFunction = {name="load", inputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+  
+  if VRLoad then
+    loadFunction.outputType = types.HandshakeVR(A)
+  else
+    loadFunction.outputType = types.Handshake(A)
+  end
+  
+  if A==types.null() then
+    storeFunction.inputType=rigel.HandshakeTrigger
+    loadFunction.outputType=rigel.HandshakeTrigger
+  else
+    assert(A:verilogBits()>0)
+  end
+
+  local storeRigelFn = rigel.newFunction(storeFunction)
+  local loadRigelFn = rigel.newFunction(loadFunction)
+
+  local terraModule
+  if terralib~=nil then terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
+
+  if size==1 and (csimOnly==false) then
     local name = J.sanitize("OneElementFIFO_"..tostring(A))
-    local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire store_reset, output wire store_ready, input wire load_ready, input wire load_reset, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
+    local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
   parameter INSTANCE_NAME="INST";
   reg hasItem;
   reg []]..tostring(A:verilogBits()-1)..[[:0] dataBuffer;
@@ -2988,14 +3029,14 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X 
   assign store_valid = store_input[]]..tostring(A:verilogBits())..[[];
 
   always @(posedge CLK) begin
-    if (store_reset || load_reset ) begin
+    if (reset) begin
       hasItem <= 1'b0;
     end else begin
-      if (store_valid && (load_ready || hasItem==1'b0) ) begin
+      if (store_valid && (load_ready_downstream || hasItem==1'b0) ) begin
         // input is valid and we can accept it
         hasItem <= 1'b1;
         dataBuffer <= store_input[]]..tostring(A:verilogBits()-1)..[[:0];
-      end else if (load_ready) begin
+      end else if (load_ready_downstream) begin
         // buffer is being emptied
         hasItem <= 1'b0;
       end
@@ -3003,114 +3044,90 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, X 
   end
 
   assign load_output = {hasItem,dataBuffer};
-  assign store_ready = (hasItem==1'b0)||load_ready;
+  assign store_ready = (hasItem==1'b0)||load_ready_downstream;
 endmodule
 
 ]]
 
-    local outputType = types.Handshake(A)
-    if VRLoad then
-      outputType=types.HandshakeVR(A)
-    end
-    
-    local mod =  modules.liftVerilog(name, types.Handshake(A), outputType, vstr, nil,nil,nil,nil,nil, true )
-    mod.registered = true
-    if terralib~=nil then mod.terraModule = MT.fifo(mod,A,2,nostall,W,H,T,csimOnly) end
+    local mod =  modules.liftVerilogModule(name, vstr, {load=loadRigelFn,store=storeRigelFn}, true)
+    if terralib~=nil then mod.terraModule = MT.fifo(storeRigelFn.inputType,loadRigelFn.outputType,A,2,nostall,W,H,T,csimOnly) end
 return mod
-  end
-  
-  local res = {kind="fifo", inputType=rigel.Handshake(A),  registered=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true}
-
-  if VRLoad then
-    res.outputType = rigel.HandshakeVR(A)
   else
-    res.outputType = rigel.Handshake(A)
-  end
-  
-  if A==types.null() then
-    res.inputType=rigel.HandshakeTrigger
-    res.outputType=rigel.HandshakeTrigger
-  else
-    assert(A:verilogBits()>0)
-  end
-  
-  if terralib~=nil then res.terraModule = MT.fifo(res,A, size, nostall, W, H, T, csimOnly) end
-
-  local bytes = (size*A:verilogBits())/8
-
-  res.name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly))
-
-  local fifo
-  if csimOnly then
-    function res.makeSystolic()
-      return fpgamodules.fifonoop(A)
-    end
+    local bytes = (size*A:verilogBits())/8
     
-    --res.stateful = false
-  else
-    function res.makeSystolic()
-      local systolicModule = Ssugar.moduleConstructor(res.name)
-
-      local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
-
-      --------------
-      -- basic -> R
-      local store = systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A, "store_input" ) )
-      local storeCE = S.CE("store_CE")
-      store:setCE(storeCE)
-      store:addPipeline( fifo:pushBack( store:getInput() ) )
-
-      local storeReady = systolicModule:addFunction( Ssugar.lambdaConstructor( "store_ready" ) )
-      if nostall then
-        storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
-      else
-        storeReady:setOutput( fifo:ready(), "store_ready" )
+    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly))
+    
+    local makeSystolic
+    local fifo
+    if csimOnly then
+      makeSystolic = function()
+        return fpgamodules.fifonoop(A)
       end
-
-      local storeReset = systolicModule:addFunction( Ssugar.lambdaConstructor( "store_reset" ) )
-      storeReset:addPipeline(fifo:pushBackReset())
-
-      --------------
-      -- basic -> V
-      local load = systolicModule:addFunction( Ssugar.lambdaConstructor( "load", types.null(), "process_input" ) )
-      local loadCE = S.CE("load_CE")
-      load:setCE(loadCE)
-
-      if A==types.null() then
-        load:setOutput( fifo:hasData(), "load_output" )
-      else
-        local res = S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }
-        load:setOutput( res, "load_output" )
-      end
-      
-      local loadReset = systolicModule:addFunction( Ssugar.lambdaConstructor( "load_reset" ) )
-      loadReset:addPipeline(fifo:popFrontReset())
-
-      --------------
-      -- debug
-      if W~=nil then
-        local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):setReset(0):instantiate("outputCount") )
-        load:addPipeline(outputCount:setBy(fifo:hasData()))
-        loadReset:addPipeline(outputCount:reset())
+    else
+      makeSystolic = function()
+        local systolicModule = Ssugar.moduleConstructor(name)
         
-        local maxSize = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):setReset(0):CE(true):setInit(0):instantiate("maxSize") ) 
-        local printInst = systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
-        load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
-        local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
-        load:addPipeline(printInst:process(maxSize:get(), lastCycle))
-        loadReset:addPipeline(maxSize:reset())
+        local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
+        
+        --------------
+        -- basic -> R
+        local store = systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A, "store_input" ) )
+        local storeCE = S.CE("store_CE")
+        store:setCE(storeCE)
+        store:addPipeline( fifo:pushBack( store:getInput() ) )
+        
+        local storeReady = systolicModule:addFunction( Ssugar.lambdaConstructor( "store_ready" ) )
+        if nostall then
+          storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
+        else
+          storeReady:setOutput( fifo:ready(), "store_ready" )
+        end
+        --------------
+        -- basic -> V
+        local load = systolicModule:addFunction( Ssugar.lambdaConstructor( "load", types.null(), "process_input" ) )
+        local loadCE = S.CE("load_CE")
+        load:setCE(loadCE)
+        
+        if A==types.null() then
+          load:setOutput( fifo:hasData(), "load_output" )
+        else
+          local res = S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }
+          load:setOutput( res, "load_output" )
+        end
+        --------------
+        local reset = systolicModule:addFunction( Ssugar.lambdaConstructor( "reset" ) )
+        reset:addPipeline(fifo:pushBackReset())
+        reset:addPipeline(fifo:popFrontReset())      
+        --------------
+        -- debug
+        if W~=nil then
+          local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):setReset(0):instantiate("outputCount") )
+          load:addPipeline(outputCount:setBy(fifo:hasData()))
+          reset:addPipeline(outputCount:reset())
+          
+          local maxSize = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):setReset(0):CE(true):setInit(0):instantiate("maxSize") ) 
+          local printInst = systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
+          load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
+          local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
+          load:addPipeline(printInst:process(maxSize:get(), lastCycle))
+          reset:addPipeline(maxSize:reset())
+        end
+        --------------
+        
+        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset"}, false )
+        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset"})
+        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset"},{true,false})
+        
+        return systolicModule
       end
-      --------------
-
-      systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store"}, false )
-      systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load"})
-      systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{},{true,false})
-      
-      return systolicModule
     end
+
+    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn}, true, makeSystolic, terraModule )
+    res.kind="fifo"
+return res
   end
 
-  return rigel.newFunction(res)
+  assert(false)
 end)
 
 modules.dram = memoize(function( A, delay, filename, X )
@@ -3298,7 +3315,7 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
   end
 
   return rigel.newFunction( res )
-    end)
+end)
 
 -- surpresses output if we get more then _count_ inputs
 modules.overflow = memoize(function( A, count )
@@ -3650,14 +3667,10 @@ end)
 -- this takes in a darkroom IR graph and normalizes the input SDF rate so that
 -- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
 -- and (2) no node should have SDF rate > 1
-local function lambdaSDFNormalize( input, output, instances )
-  local sdfMaxRate = output:sdfExtremeRate(true)
+local function lambdaSDFNormalize( input, output, X )
+  assert( X==nil, "lambdaSDFNormalize: too many arguments")
 
-  -- if we don't early exit, we'll rescale up so that something is at 100%
-  --if SDFRate.fracToNumber(sdfMaxRate) < 1 then
-  --  print("Warning: SDF Rate < 1, inefficient hardware may be generated")
-  --  return input, output, instances
-  --end
+  local sdfMaxRate = output:sdfExtremeRate(true)
 
   if input~=nil and input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
@@ -3670,15 +3683,6 @@ local function lambdaSDFNormalize( input, output, instances )
   local scaleFactor = SDFRate.fracInvert(sdfMaxRate)
   
   if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
-
-  local newInstances = {}
-  local instanceMap = {}
-  for _,v in ipairs(instances) do
-    local newRate = SDF(SDFRate.multiply( v.rate, scaleFactor[1], scaleFactor[2] ) )
-    local inst = rigel.instantiateRegistered( v.name, v.fn, newRate )
-    instanceMap[v] = inst
-    table.insert( newInstances, inst)
-  end
 
   local newInput
   local newOutput = output:process(
@@ -3694,14 +3698,14 @@ local function lambdaSDFNormalize( input, output, instances )
         n.rate = SDF(SDFRate.multiply(n.rate, scaleFactor[1], scaleFactor[2] ))
         return rigel.newIR(n)
       elseif n.kind=="applyMethod" then
-        n.inst = instanceMap[n.inst]
+        n.rate = SDF(SDFRate.multiply(n.rate, scaleFactor[1], scaleFactor[2] ))
         return rigel.newIR(n)
       else
         return rigel.newIR(n)
       end
     end)
 
-  return newInput, newOutput, newInstances
+  return newInput, newOutput
 end
 
 -- check to make sure we have FIFOs in diamonds
@@ -3723,15 +3727,15 @@ local function checkFIFOs(output)
 
         -- Is this right???? if we got this far, we did have a fifo along this brach...
         res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and rigel.isGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
+      elseif n.kind=="apply" and rigel.isFunctionGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
         res = {true}
       elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
         res = {true}
       elseif n.kind=="applyMethod" then
-        if n.fnname=="store" or n.fnname=="done" then
-          res = {}
-        elseif n.fnname=="load" and n.inst.fn.kind=="fifo" then
+        if n.fnname=="load" and n.inst.module.kind=="fifo" then
           res = {true}
+        elseif types.streamCount(n.inst.module.functions[n.fnname].outputType)==0 then
+          res = {}
         else
           res = {false} -- HACK: this isn't really correct...
         end
@@ -3814,7 +3818,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   end
   
   if rigel.SDF then
-    input, output, instances = lambdaSDFNormalize(input,output,instances)
+    input, output = lambdaSDFNormalize(input,output)
     local sdfMaxRate = output:sdfExtremeRate(true)
     err( Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue(),"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'") 
   end
@@ -3853,8 +3857,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.fn.name )
         res.stateful = res.stateful or n.fn.stateful
       elseif n.kind=="applyMethod" then
-        err( type(n.inst.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.inst.fn.name )
-        res.stateful = res.stateful or n.inst.fn.stateful
+        err( type(n.inst.module.functions[n.fnname].stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
+        res.stateful = res.stateful or n.inst.module.functions[n.fnname].stateful
       end
     end)
 
@@ -3936,8 +3940,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   end
   
 
-  for k,v in pairs(res.instances) do
-    for g,_ in pairs(v.fn.globals) do
+  for _,inst in pairs(res.instances) do
+    for g,_ in pairs(inst.module.globals) do
       if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
         res.globals[globalPairs[g.name]] = nil
         res.globals[g]=nil
@@ -3949,11 +3953,11 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         end
         res.globals[g] = 1
         globalPairs[g.name]=g
-        globalDbgLoc[g]="INSTANCE:"..v.name
+        globalDbgLoc[g]="INSTANCE:"..inst.name
       end
     end
 
-    for k,v in pairs(v.fn.globalMetadata) do
+    for k,v in pairs(inst.module.globalMetadata) do
       err(res.globalMetadata[k]==nil,"Error: wrote to global metadata twice!")
       res.globalMetadata[k] = v
     end
@@ -4032,9 +4036,13 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
 
     if fn.instances~=nil then
-      for k,v in pairs(fn.instances) do
-        err( systolic.isModule(v.fn.systolicModule), "Missing systolic module for "..v.fn.kind)
-        module:add( v.fn.systolicModule:instantiate(v.name) )
+      for _,inst in pairs(fn.instances) do
+        err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
+        local I = module:add( inst.module.systolicModule:instantiate(inst.name) )
+
+        if inst.module.stateful then
+          module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
+        end
       end
     end
 
@@ -4169,6 +4177,14 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               table.insert(readyPipelines, res[1])
             end
           elseif n.kind=="applyMethod" then
+              local inst = module:lookupInstance(n.inst.name)
+              res = {inst[n.fnname.."_ready"](inst, input)}
+
+              if n.inst.module.functions[n.fnname].inputType==types.null() then
+                -- eg fifo:load_ready()... nothing else will drive this, so we need to add it
+                table.insert(readyPipelines,res[1])
+              end
+            --[=[
             if n.fnname=="load" or n.fnname=="start" then
               -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
               local inst = module:lookupInstance(n.inst.name)
@@ -4180,6 +4196,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
             else
               err(false, "ready bit wiring for applyMethod, unknown function '"..n.fnname.."'")
             end
+            ]=]
           elseif n.kind=="concat" or n.kind=="concatArray2d" then
             err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
 
@@ -4377,7 +4394,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, registered, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
@@ -4388,8 +4405,6 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate, but is: "..tostring(sdfInput))
   if sdfOutput==nil then sdfOutput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
-  if registered==nil then registered=false end
-  err( type(registered)=="boolean", "liftVerilog: registered must be nil or bool")
   err( X==nil, "liftVerilog: too many arguments")
   
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
@@ -4431,40 +4446,19 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   function res.makeSystolic()
     local fns = {}
 
-    if registered then
-      local inp = S.parameter("store_input",rigel.lower(inputType))
-      fns.store = S.lambda("store",inp,nil,"store_output")
-
-      local outv = rigel.lower(outputType):fakeValue()
-      fns.load = S.lambda("load",S.parameter("LO",types.null()),S.constant(outv,rigel.lower(outputType)),"load_output")
-
-      if rigel.hasReady(inputType) then
-        fns.store_ready = S.lambda( "store_ready", S.parameter("nn",types.null()), S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "store_ready")
-      end
-
-      if rigel.hasReady(outputType) then
-        local rinp =  S.parameter("load_ready",rigel.extractReady(res.outputType))
-        fns.load_ready = S.lambda( "load_ready", rinp, nil, "load_ready")
-      end
-
-      fns.store_reset = S.lambda("store_reset",S.parameter("rnils",types.null()),nil,"store_reset",{},S.parameter("store_reset",types.bool()))
-      fns.load_reset = S.lambda("load_reset",S.parameter("rnill",types.null()),nil,"load_reset",{},S.parameter("load_reset",types.bool()))
-
+    local inp = S.parameter("process_input",rigel.lower(inputType))
+    local outv = rigel.lower(outputType):fakeValue()
+    fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
+    
+    if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
+      local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType))
+      fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
     else
-      local inp = S.parameter("process_input",rigel.lower(inputType))
-      local outv = rigel.lower(outputType):fakeValue()
-      fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
-
-      if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
-        local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType))
-        fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
-      else
-        print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
-        assert(false)
-      end
-
-      fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
+      print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
+      assert(false)
     end
+    
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
     
     local SC = {}
     if globals~=nil then
@@ -4485,6 +4479,58 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   end
   
   return rigel.newFunction(res)
+end)
+
+modules.liftVerilogModule = memoize(function( name, vstr, functionList, stateful, X )
+  err( type(name)=="string", "liftVerilogModule: name must be string")
+  err( type(vstr)=="string", "liftVerilogModule: verilog string must be string")
+  err( type(functionList)=="table", "liftVerilogModule: functionList must be table")
+  err( X==nil, "liftVerilog: too many arguments")
+
+  for _,fn in pairs(functionList) do
+    err( rigel.isPlainFunction(fn),"liftVerilogModule: functions in function list should be rigel functions")
+  end
+  
+  local function makeSystolic()
+    local fns = {}
+
+    for fnname,fn in pairs(functionList) do
+      local inp = S.parameter(fnname.."_input",rigel.lower(fn.inputType))
+
+      local out
+      if fn.outputType~=types.null() then
+        local outv = rigel.lower(fn.outputType):fakeValue()
+        out = S.constant(outv,rigel.lower(fn.outputType))
+      end
+      fns[fnname] = S.lambda(fnname,inp,out,fnname.."_output")
+      
+      if (rigel.hasReady(fn.inputType) or fn.inputType==types.null()) and 
+          (rigel.hasReady(fn.outputType) or fn.outputType==types.null()) then
+
+        local rinp
+        if fn.outputType~=types.null() then
+          rinp =  S.parameter(fnname.."_ready_downstream",rigel.extractReady(fn.outputType))
+        else
+          rinp =  S.parameter(fnname.."_ready_downstream",types.null())
+        end
+
+        local rout
+        if fn.inputType~=types.null() then
+          rout = S.constant(rigel.extractReady(fn.inputType):fakeValue(),rigel.extractReady(fn.inputType))
+        end
+        
+        fns[fnname.."_ready"] = S.lambda( fnname.."_ready", rinp, rout, fnname.."_ready")
+      else
+        print("liftVerilog: unsupported input/output type? inputType: "..tostring(fn.inputType)..", outputType:"..tostring(fn.outputType))
+        assert(false)
+      end
+    end
+    
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
+    return S.module.new(name,fns,{},true,nil,vstr,{process=0,ready=0})
+  end
+  
+  return rigel.newModule( name, functionList, stateful, makeSystolic )
 end)
 
 modules.constSeqInner = memoize(function( value, A, w, h, T, X )
@@ -4512,7 +4558,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
 
   -- TODO: FIX: replace this with an actual hash function... it seems likely this can lead to collisions
   local vh = J.to_string(value)
-  if #vh>100 then vh = string.sub(vh,0,100) end
+  if #vh>50 then vh = string.sub(vh,0,50) end
   
   -- some different types can have the same lua array representation (i.e. different array shapes), so we need to include both
   res.name = verilogSanitize("constSeq_"..tostring(A).."_"..tostring(vh).."_T"..tostring(1/T).."_w"..tostring(w).."_h"..tostring(h))

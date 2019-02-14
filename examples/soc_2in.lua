@@ -6,8 +6,9 @@ local RS = require "rigelSimple"
 local RM = require "modules"
 local G = require "generators"
 require "types".export()
+local SDF = require "sdf"
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,1024}):instantiate()
 
 local inp = R.input(R.HandshakeTrigger)
 local inp0, inp1 = RS.fanOut{input=inp,branches=2}

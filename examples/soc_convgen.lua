@@ -4,16 +4,17 @@ local SOC = require "soc"
 local harness = require "harnessSOC"
 local RS = require "rigelSimple"
 local C = require "examplescommon"
+local SDF = require "sdf"
 require "generators".export()
 require "types".export()
-
-regs = SOC.axiRegs{}:instantiate()
 
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
 
 inSize = { 1920, 1080 }
 padSize = { 1920+16, 1080+3 }
+
+regs = SOC.axiRegs({},SDF{1,padSize[1]*padSize[2]}):instantiate()
 
 local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
 function(inp)

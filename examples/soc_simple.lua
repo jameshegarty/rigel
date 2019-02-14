@@ -6,8 +6,9 @@ local G = require "generators"
 local RS = require "rigelSimple"
 local types = require "types"
 types.export()
+local SDF = require "sdf"
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,1024}):instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
@@ -15,8 +16,5 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     local offset = G.HS{G.Map{G.Add{200}}}(readStream)
     return G.AXIWriteBurst{"out/soc_simple"}(offset)
   end}
-
---print(OffsetModule)
---print(OffsetModule:toVerilog())
 
 harness{regs.start, OffsetModule, regs.done}

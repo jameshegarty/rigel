@@ -1025,7 +1025,7 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,X)
   err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
 
   local inp = R.input(R.Handshake(ty))
-  local regs = {R.instantiateRegistered("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
+  local regs = {R.instantiate("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
   return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )

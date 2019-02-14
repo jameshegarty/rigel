@@ -23,13 +23,15 @@ SOC.currentSAXIPort = 0
 SOC.currentAddr = 0x30008000
 SOC.currentRegAddr = 0xA0000008 -- first 8 bytes are start/done bit
 
-SOC.axiRegs = J.memoize(function(tab,port)
+SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
+  J.err( X==nil, "soc.axiRegs: too many arguments")
 
-  if port==nil then
-    port = SOC.currentSAXIPort
-    SOC.currentSAXIPort = SOC.currentSAXIPort + 1
-  end
+  local port = SOC.currentSAXIPort
+  SOC.currentSAXIPort = SOC.currentSAXIPort + 1
+
+  if rate==nil then rate = SDF{1,1} end
+  J.err( SDF.isSDF(rate), "SOC.axiRegs: rate should be SDF rate" )
   
   local globalMetadata = {}
   local globals = {}
@@ -528,8 +530,7 @@ endmodule
 
 module ]=]..ModuleName..[=[(
   input wire CLK,
-  input wire done_reset,
-  input wire start_reset,
+  input wire reset,
 
   input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
   output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
@@ -578,7 +579,7 @@ wire []=]..(NREG*32-1)..[=[:0] DATA;
 
 Conf #(.ADDR_BASE(32'hA0000000),.NREG(]=]..NREG..[=[)) conf(
 .ACLK(CLK),
-.ARESETN(~done_reset),
+.ARESETN(~reset),
 
 .CONFIG_READY(1'b1),
 .CONFIG_VALID(CONFIG_VALID),
@@ -641,25 +642,24 @@ endmodule
 
 ]=])
 
-  local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
-  function res.makeSystolic()
+
+  local function makeSystolic()
     local fns = {}
 
     local inp = S.parameter("start_input",types.null())
-    local outv = R.lower(res.outputType):fakeValue()
-    fns.start = S.lambda("start",inp,S.constant(outv,R.lower(res.outputType)),"start_output")
+    local outv = R.lower(types.HandshakeTrigger):fakeValue()
+    fns.start = S.lambda("start",inp,S.constant(outv,R.lower(types.HandshakeTrigger)),"start_output")
 
-    local inp = S.parameter("done_input",R.lower(res.inputType))
+    local inp = S.parameter("done_input",R.lower(types.HandshakeTrigger))
     fns.done = S.lambda("done",inp,nil,"done_output")
 
     local rinp =  S.parameter("done_ready_inp",types.null())
-    fns.done_ready = S.lambda( "done_ready", rinp, S.constant(R.extractReady(res.inputType):fakeValue(),R.extractReady(res.inputType)), "done_ready")
+    fns.done_ready = S.lambda( "done_ready", rinp, S.constant(R.extractReady(types.HandshakeTrigger):fakeValue(),R.extractReady(types.HandshakeTrigger)), "done_ready")
 
-    local rinp =  S.parameter("start_ready_inp", R.extractReady(res.outputType))
+    local rinp =  S.parameter("start_ready_inp", R.extractReady(types.HandshakeTrigger))
     fns.start_ready = S.lambda( "start_ready", rinp, nil, "start_ready")
 
-    fns.start_reset = S.lambda("start_reset",S.parameter("rnil_start",types.null()),nil,"start_reset_out",{},S.parameter("start_reset",types.bool()))
-    fns.done_reset = S.lambda("done_reset",S.parameter("rnil_done",types.null()),nil,"done_reset_out",{},S.parameter("done_reset",types.bool()))
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
 
     local SC = {}
     for g,_ in pairs(globals) do
@@ -670,8 +670,17 @@ endmodule
     return S.module.new( ModuleName,fns,{},true,nil,table.concat(vstring),{start=0,done=0,ready=0},SC)
   end
 
-  res =  R.newFunction(res)
+  --local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
+  --res =  R.newFunction(res)
 
+  local functionList = {}
+  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  
+  local res = R.newModule( ModuleName, functionList, true, makeSystolic )
+  res.globals = globals
+  res.globalMetadata = globalMetadata
+  
   -- hack
   if terralib~=nil then
     res.makeTerra=nil

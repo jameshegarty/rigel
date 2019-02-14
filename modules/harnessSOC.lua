@@ -9,9 +9,9 @@ local Uniform = require "uniform"
 return function(fn,t)
   if R.isFunction(fn)==false then
     fn = C.linearPipeline(fn,"Top")
-  elseif R.isGenerator(fn) then
+  elseif R.isFunctionGenerator(fn) then
     fn = fn{type=types.null()}
-    J.err( R.isFunction(fn) and (R.isGenerator(fn)==false), "harnessSOC: input generator could not be resolved into a module.")
+    J.err( R.isPlainFunction(fn), "harnessSOC: input generator could not be resolved into a module.")
   elseif R.isFunction(fn) then
     J.err(fn.name=="Top","Top module must be called 'Top', but is "..fn.name)
   else

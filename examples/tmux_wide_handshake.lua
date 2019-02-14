@@ -4,6 +4,7 @@ local types = require("types")
 local S = require("systolic")
 local harness = require "harness"
 local C = require "examplescommon"
+local SDF = require "sdf"
 W = 128
 H = 64
 T = 8
@@ -13,7 +14,7 @@ T = 8
 ------------
 ITYPE = types.array2d( types.uint(8), T )
 ------------
-local fifos = { R.instantiateRegistered("f1", RM.fifo(ITYPE,128), {{1,2}}) }
+local fifos = { R.instantiate("f1", RM.fifo( ITYPE, 128, nil, nil, nil, nil, nil, nil, SDF{1,2}) ) } --, {{1,2}}) }
 
 A = R.input( R.Handshake(ITYPE), {{1,2}} )
 

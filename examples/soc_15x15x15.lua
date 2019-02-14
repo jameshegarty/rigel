@@ -7,8 +7,9 @@ local RS = require "rigelSimple"
 local RM = require "modules"
 require "types".export()
 local types = require "types"
+local SDF = require "sdf"
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,240}):instantiate()
 
 ------------
 inp = R.input( types.uint(8) )

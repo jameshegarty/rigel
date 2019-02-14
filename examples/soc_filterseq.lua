@@ -6,9 +6,9 @@ local G = require "generators"
 local RS = require "rigelSimple"
 local types = require "types"
 types.export()
+local SDF = require "sdf"
 
---local Regs = SOC.axiRegs{count={u8,0,"out"}}
-local Regs = SOC.axiRegs{}
+local Regs = SOC.axiRegs({},SDF{1,128*64})
 regs = Regs:instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,

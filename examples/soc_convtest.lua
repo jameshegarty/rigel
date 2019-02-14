@@ -5,8 +5,9 @@ local harness = require "harnessSOC"
 local G = require "generators"
 local RS = require "rigelSimple"
 require "types".export()
+local SDF = require "sdf"
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,8192}):instantiate()
 
 ConvTop = G.Module{
   function(i)

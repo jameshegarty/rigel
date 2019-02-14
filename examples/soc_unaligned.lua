@@ -5,9 +5,10 @@ local harness = require "harnessSOC"
 local G = require "generators"
 local RS = require "rigelSimple"
 local types = require "types"
+local SDF = require "sdf"
 types.export()
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,128}):instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
@@ -16,12 +17,8 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     addrStream = G.HS{G.Index{0}}(addrStream)
     addrStream = G.HS{G.AddMSBs{16}}(addrStream)
     addrStream = G.HS{G.Add{3}}(addrStream)
-    --addrStream = G.HS{G.Print}(addrStream)
     local readStream = G.AXIRead{"frame_128.raw",128*64}(addrStream)
     return G.AXIWriteBurstSeq{"out/soc_unaligned",{128,1},0}(readStream)
   end}
-
---print(OffsetModule)
---print(OffsetModule:toVerilog())
 
 harness{regs.start, OffsetModule, regs.done}

@@ -6,9 +6,10 @@ local G = require "generators"
 local RS = require "rigelSimple"
 local types = require "types"
 local RM = require "modules"
+local SDF = require "sdf"
 types.export()
 
-regs = SOC.axiRegs{}:instantiate()
+regs = SOC.axiRegs({},SDF{1,(128*64)/16}):instantiate()
 
 -- this will use 2 AXI ports to read in parallel at twice the BW
 
