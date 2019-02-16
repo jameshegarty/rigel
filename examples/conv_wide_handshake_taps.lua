@@ -33,17 +33,20 @@ local STTYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
 
 local tapValue = range(ConvArea)
 
-soc.taps = R.newGlobal("taps","input",STTYPE,tapValue)
+--soc.taps = R.newGlobal("taps","input",STTYPE,tapValue)
+local regs = soc.regStub{taps={STTYPE,tapValue}}:instantiate("taps")
+regs.extern = true
 
 local ITYPE = STTYPE
 inp = R.input( ITYPE )
-local tapv = R.readGlobal("tg",soc.taps)
-packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), R.concat("tc",{inp,tapv}) )
+--local tapv = R.readGlobal("tg",regs.coeffs)
+packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), R.concat("tc",{inp,regs.taps()}) )
 conv = R.apply( "partial", RM.map( partial, ConvWidth, ConvWidth ), packed )
 conv = R.apply( "sum", RM.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = R.apply( "touint8", touint8, conv )
 
 convolve = RM.lambda( "convolve", inp, conv )
+print(convolve)
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = BASE_TYPE

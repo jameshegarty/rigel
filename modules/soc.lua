@@ -23,6 +23,36 @@ SOC.currentSAXIPort = 0
 SOC.currentAddr = 0x30008000
 SOC.currentRegAddr = 0xA0000008 -- first 8 bytes are start/done bit
 
+-- a stub for module that provides registers
+SOC.regStub = J.memoize(function(tab)
+  local fns = {}
+  for k,v in pairs(tab) do
+    J.err( type(k)=="string", "axiRegs: key must be string" )
+    J.err( types.isType(v[1]), "axiRegs: first key must be type" )
+    J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
+    J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
+    v[1]:checkLuaValue(v[2])
+    fns[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+  end
+
+  local name = J.sanitize("RegStub_"..tostring(tab))
+
+  local function makeSystolic()
+    local fns = {}
+    local delays = {}
+    for k,v in pairs(tab) do
+      local inp = S.parameter(k.."_input",types.null())
+      fns[k] = S.lambda(k,inp,S.constant(v[2],v[1]),k)
+      delays[k]=0
+    end
+    return S.module.new( name,fns,{},true,nil,"",delays)
+  end
+  
+  local res = R.newModule( name, fns, false, makeSystolic )
+
+  return res
+end)
+
 SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
   J.err( X==nil, "soc.axiRegs: too many arguments")

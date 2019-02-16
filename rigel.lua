@@ -66,69 +66,6 @@ darkroom.streamCount = types.streamCount
 darkroom.isStreaming = types.isStreaming
 darkroom.isBasic = types.isBasic
 
-rigelGlobalFunctions = {}
-rigelGlobalMT = {__index=rigelGlobalFunctions,
-                 __tostring = function(tab) return "Global "..tab.direction.." "..tab.name.." : "..tostring(tab.type) end}
-
--- direction is the direction of this signal on the top module:
--- 'output' means this is an output of the top module. 'input' means its an input to the top module.
--- we can't write to an 'output' global twice!
-local darkroomNewGlobal = J.memoize(function( name, direction, typeof, X )
-  err( type(name)=="string", "newGlobal: name must be string" )
-  err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
-  err( types.isType(typeof), "newGlobal: type must be rigel type" )
-  assert(X==nil)
-  
-  err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
-
-  local t = {name=name,direction=direction,type=typeof}
-
-  if darkroom.isHandshakeAny(typeof) then
-    t.systolicValue = S.newSideChannel( name, direction, darkroom.lower(typeof), t )
-    local flip = "input"
-    if direction=="input" then flip="output" end
-    t.systolicValueReady = S.newSideChannel( name.."_ready", flip, darkroom.extractReady(typeof), t )
-  else
-    t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof), t )
-  end
-
-  return setmetatable(t,rigelGlobalMT)
-end)
-
-function darkroom.newGlobal( name, direction, typeof, initValue )
-  local g = darkroomNewGlobal(name,direction,typeof)
-
-  err( initValue==nil or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
-
-  local function fl(x) if x=="input" then return "output" else return "input" end end
-
-  if g.initValue==nil then
-    g.initValue=initValue
-  else
-    assert(g.initValue==initValue)
-  end
-
-  if g.flip==nil then
-    g.flip = darkroomNewGlobal(name,fl(direction),typeof)
-    g[direction]=g
-    g[fl(direction)]=g.flip
-    
-    if g.flip.initValue==nil then
-      g.flip.initValue=initValue
-    else
-      assert(g.flip.initValue==initValue)
-    end
-
-    g.flip.flip=g
-    g.flip[g.flip.direction]=g.flip
-    g.flip[fl(g.flip.direction)]=g
-  end
-
-  return g
-end
-
-function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
-
 local function discoverName(x)
   local y = 1
   while true do
@@ -332,16 +269,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
   local sm = rawget(tab,"makeSystolic")()
   if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
   J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
-  
-  for k,_ in pairs(tab.globals) do
-    err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global "..k.name )
-    err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
-  end
-  
-  for k,_ in pairs(sm.sideChannels) do
-    err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
-  end
-  
+    
   if isModule==false then
     err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
     
@@ -357,13 +285,23 @@ local function buildAndCheckSystolicModule(tab, isModule)
     -- NYI
     err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
   end
-  
+
+  for inst,lst in pairs(sm.externalInstances) do
+    for _,fnname in ipairs(lst) do
+      local found = false
+
+      for ic,_ in pairs(tab.requires) do if ic.instance.name==inst.name and ic.functionName==fnname then found=true end end
+      for ic,_ in pairs(tab.provides) do if ic.instance.name==inst.name and ic.functionName==fnname then found=true end end
+      err( found, "makeSystolic(): systolic module '"..sm.name.."' refers to external instance '"..inst.name.."', but rigel module doesn't?")
+    end
+  end
+
   rawset(tab,"systolicModule", sm )
   return sm
 end
 
-darkroomFunctionFunctions = {}
-darkroomFunctionMT={
+local darkroomFunctionFunctions = {}
+local darkroomFunctionMT = {
 __index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
@@ -430,19 +368,22 @@ __tostring=function(mod)
   end
 
   table.insert(res,"  Stateful: "..tostring(mod.stateful))
-  
-  if mod.globalsInternal~=nil then
-    table.insert(res,"  Globals (Internal):")
-    for k,v in pairs(mod.globalsInternal) do
-      table.insert(res,"    "..tostring(v.type).." "..v.name)
-    end
-  end
-  
+    
   table.insert(res,"  Metadata:")
   for k,v in pairs(mod.globalMetadata) do
     table.insert(res,"    "..tostring(k).." = "..tostring(v))
   end
 
+  table.insert(res,"  Requires:")
+  for ic,_ in pairs(mod.requires) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  table.insert(res,"  Provides:")
+  for ic,_ in pairs(mod.provides) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+  
   if mod.kind=="lambda" then
     mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
   end
@@ -514,7 +455,15 @@ function darkroomFunctionFunctions:getGlobal(name)
   --print("Could not find global '"..name.."'")
 end
 
-darkroomInstanceCallsiteMT = {}
+darkroomInstanceCallsiteMT = {
+__index = function(tab,key)
+  local v = rawget(tab, key)
+  if v ~= nil then return v end
+
+  -- make this appear like as if it's the original function
+  --assert(tab.instance.module.functions[functionName]~=nil)
+  return tab.instance.module.functions[tab.functionName][key]
+end}
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
 
 darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
@@ -562,6 +511,12 @@ function darkroom.newFunction(tab,X)
   end
 
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
+
+  if tab.requires==nil then tab.requires={} end
+  if tab.provides==nil then tab.provides={} end
+
+  for ic,_ in pairs(tab.requires) do err( darkroom.isInstanceCallsite(ic), "Require list should be instance callsites" ) end
+  for ic,_ in pairs(tab.provides) do err( darkroom.isInstanceCallsite(ic), "Provide list should be instance callsites" ) end
 
   assert(getmetatable(tab)==nil)
   setmetatable( tab, darkroomFunctionMT )
@@ -611,16 +566,18 @@ function darkroom.newModule( name, functionList, stateful, makeSystolic, terraMo
   err( X==nil, "newModule: too many arguments" )
 
   -- collect globals of all fns
-  local globals = {}
+  local requires = {}
+  local provides = {}
   local globalMetadata = {}
   for k,fn in pairs(functionList) do
     err( type(k)=="string", "newModule: function name should be string?")
     err( darkroom.isPlainFunction(fn), "newModule: function should be plain Rigel function")
-    for g,_ in pairs(fn.globals) do globals[g] = 1 end
+    for _,ic in pairs(fn.requires) do table.insert(requires,ic) end
+    for _,ic in pairs(fn.provides) do table.insert(provides,ic) end
     for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
   end
   
-  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,terraModule=terraModule, globals = globals, globalMetadata=globalMetadata, stateful=stateful}
+  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,terraModule=terraModule, globals = globals, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides}
   return setmetatable( tab, darkroomModuleMT )
 end
 
@@ -805,16 +762,26 @@ darkroomIRMT.__tostring = function(tab)
   return res
 end
 
+local darkroomInstanceFunctions = {}
 local darkroomInstanceMT = {
   __index = function( tab, key )
     local v = rawget(tab, key)
     if v ~= nil then return v end
+    v = darkroomInstanceFunctions[key]
+    if v~=nil then return v end
 
     if tab.module.functions[key]~=nil then
       return darkroom.newInstanceCallsite( tab, key )
     end
   end,
   __tostring = function(tab) return "Instance "..tab.name end}
+
+-- we want there to be a 1-1 correspondence between systolic instances and rigel instances
+darkroomInstanceFunctions.toSystolicInstance = J.memoize(function(tab,X)
+  assert(X==nil)
+  err( S.isModule(tab.module.systolicModule), "Missing systolic module for instance '"..tab.name.."' of module '"..tab.module.name.."'")
+  return tab.module.systolicModule:instantiate(tab.name)
+end)
 
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
@@ -1167,7 +1134,7 @@ function darkroom.writeGlobal( name, g, input, X )
   return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
 end
 
-function darkroom.instantiate( name, mod, X )
+darkroom.instantiate = function( name, mod, X )
   err( type(name)=="string", "instantiate: name must be string")
   err( darkroom.isModule(mod), "instantiate: module must be a Rigel module" )
   err( X==nil, "darkroom.instantiate: too many arguments" )

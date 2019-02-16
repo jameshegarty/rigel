@@ -42,7 +42,9 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local outputH = inputH
   
   local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
-  soc.taps = R.newGlobal("taps","input",TAP_TYPE,J.range(ConvWidth*ConvWidth))
+  --soc.taps = R.newGlobal("taps","input",TAP_TYPE,J.range(ConvWidth*ConvWidth))
+  local taps = soc.regStub{taps={TAP_TYPE,J.range(ConvWidth*ConvWidth)}}:instantiate("taps")
+  taps.extern = true
   -------------
   -------------
   local convKernel = C.convolveTaps( types.uint(8), ConvWidth, J.sel(ConvWidth==4,7,11))
@@ -73,7 +75,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   out1 = R.apply("out1fifo",C.fifo(BASE_TYPE,128),out1)
 
   local trig = R.apply("trig", RM.makeHandshake(C.valueToTrigger(BASE_TYPE),nil,true), out0)
-  local tapinp = R.apply("RT", RM.makeHandshake(C.readTap(soc.taps),nil,true), trig)
+  local tapinp = R.apply("RT", RM.makeHandshake(taps.taps,nil,true), trig)
   
   local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.concat("CONVPIPEINP",{out1,tapinp}))
 

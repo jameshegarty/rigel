@@ -205,7 +205,7 @@ function systolicModuleFunctions:instantiate( name, parameters, X )
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
-  -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final=true (we can't mutate it anymore)
+  -- Instances are mutable (they collect callsites etc). We will only mutate it when final=false. Adding it to a module marks final="USED_LOC_STRING" (we can't mutate it anymore)
   return systolicInstance.new({ kind="module", module=self, name=name, parameters=parameters, callsites={}, arbitration={}, final=false, loc=getloc() })
 end
 
@@ -460,17 +460,6 @@ function systolic.constant( v, ty )
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
 
-function systolic.readSideChannel( sc )
-  err( systolic.isSideChannel(sc), "systolic.readSideChannel: input must be a side channel" )
-  return typecheck({ kind="readSideChannel", sideChannel=sc, type = sc.type, loc=getloc(), inputs={} })
-end
-
-function systolic.writeSideChannel( sc, expr )
-  err( systolic.isSideChannel(sc), "systolic.writeSideChannel: input must be a side channel" )
-  err( systolicAST.isSystolicAST(expr), "input to writeSideChannel must be a systolic ast, but is:"..tostring(expr))
-  return typecheck({ kind="writeSideChannel", sideChannel=sc, type = types.null(), loc=getloc(), inputs={expr} })
-end
-
 function systolic.tuple( tab )
   err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
   err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array")
@@ -522,22 +511,6 @@ function systolic.abs(expr) return unary(expr,"abs") end
 
 function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
-end
-
-
-function checkForInst(inst, scopes)
-  assert(systolicInstance.isSystolicInstance(inst))
-
-  local fnd = false
-  for k,scope in ipairs(scopes) do
-    fnd = fnd or scope.instanceMap[inst]~=nil
-  end
-  
-  if fnd==false then
-    print("missing instance "..inst.name.." (kind "..inst.kind..")")
-    J.map(scopes, function(n) print("scope",n.name) end)
-    assert(false)
-  end
 end
 
 function systolicASTFunctions:checkInstances( instMap )
@@ -718,7 +691,7 @@ function systolicASTFunctions:internalDelay()
     else
       return 0,0 -- if pipelining is disabled on an op
     end
-  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="readSideChannel" or self.kind=="writeSideChannel" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -1312,13 +1285,6 @@ function systolicASTFunctions:toVerilog( module )
         end
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
-      elseif n.kind=="readSideChannel" then
-        -- this is ok: read may be totally internal, so won't be on external list
-        J.err( module.sideChannels[n.sideChannel]~=nil or module.sideChannelsInternal[n.sideChannel.name]~=nil,"readSideChannel: side channel named '"..n.sideChannel.name.."' is not attached to module '"..module.name.."'?")
-        finalResult = n.sideChannel.name
-      elseif n.kind=="writeSideChannel" then
-        table.insert( declarations, "assign "..n.sideChannel.name.." = "..args[1].."; // writeSideChannel\n" )
-        finalResult = "____^&%WRITESIDECHANNELOUT"
       else
         print(n.kind)
         assert(false)
@@ -1362,22 +1328,6 @@ function systolic.CE( name )
   return systolic.parameter( name, types.bool(true) )
 end
 
-systolicSideChannelFunctions = {}
-systolicSideChannelMT={__index=systolicSideChannelFunctions}
-
-function systolic.newSideChannel( name, direction, ty, global, X )
-  err( type(name)=="string", "systolic.sideParameter: name must be string" )
-  checkReserved(name)
-  err( direction=="input" or direction=="output","systolic.sideParameter: direction must be 'input' or 'output'" )
-  err( types.isType(ty), "systolic.sideParameter: type must be type but is "..tostring(ty) )
-  err( global~=nil,"systolic.newSideChannel: missing global")
-  err( X==nil, "systolic.sideParameter: too many arguments")
-
-  return setmetatable({name=name,direction=direction,type=ty,key={},inputs={},loc=getloc(),global=global},systolicSideChannelMT)
-end
-
-function systolic.isSideChannel(t) return getmetatable(t)==systolicSideChannelMT end
-
 --------------------------------------------------------------------
 -- Module Definitions
 --------------------------------------------------------------------
@@ -1396,11 +1346,6 @@ function userModuleMT.__tostring(tab)
   local res = {}
   table.insert(res,"SystolicModule "..tab.name)
 
-  table.insert(res,"Side Channels:")
-  for k,_ in pairs(tab.sideChannels) do
-    table.insert(res,k.name)
-  end
-  
   for fnname,fn in pairs(tab.functions) do
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
@@ -1448,8 +1393,11 @@ function userModuleFunctions:instanceToVerilogStart( instance )
     end
   end
 
-  for scSink,_ in pairs(self.sideChannels) do
-    table.insert(arglist,", ."..scSink.name.."("..scSink.name..")")
+  -- add external references
+  for inst,fnmap in pairs(self.externalInstances) do
+    for fnname,_ in pairs(fnmap) do
+      table.insert(arglist,", ."..inst.name.."_"..fnname.."("..inst.name.."_"..fnname..")")
+    end
   end
   
   local params = ""
@@ -1545,14 +1493,17 @@ function userModuleFunctions:toVerilog()
       if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then table.insert(portlist,{ fn.outputName, fn.output.type, false })  end
     end
 
-    -- is there an input/output (internally wired) pair for this SC?
-    local SCPairDefn = ""
-    for name,sc in pairs(self.sideChannelsInternal) do
-      SCPairDefn = SCPairDefn.."  "..declareWire(sc.type,sc.name,nil," // Side Channel internal pair" ).."\n"
-    end
-    
-    for sc,_ in pairs(self.sideChannels) do
-      table.insert(portlist,{sc.name,sc.type,sc.direction=="input"})
+    -- add ports for external instances
+    for inst,fnmap in pairs(self.externalInstances) do
+      for fnname,_ in pairs(fnmap) do
+        local fn = inst.module.functions[fnname]
+        if fn.inputParameter.type~=types.null() then
+          table.insert( portlist, {inst.name.."_"..fn.inputParameter.name, fn.inputParameter.type, false} )
+        end
+        if fn.output.type~=types.null() then
+          table.insert( portlist, {inst.name.."_"..fn.outputName, fn.output.type, true} )
+        end
+      end
     end
     
     table.insert(t,table.concat(J.map(portlist,function(n) return systolic.declarePort(n[2],n[1],n[3]) end),", "))
@@ -1567,9 +1518,9 @@ function userModuleFunctions:toVerilog()
 
     table.insert(t,SCPairDefn)
     
-    for k,v in pairs(self.instances) do
-      if v.module.instanceToVerilogStart~=nil then
-        local sst = v.module:instanceToVerilogStart( v )
+    for _,inst in pairs(self.instances) do
+      if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then
+        local sst = inst.module:instanceToVerilogStart( inst )
         if sst~=nil then table.insert(t, sst ) end
       end
     end
@@ -1617,7 +1568,7 @@ function userModuleFunctions:getDelay( fnname )
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
-function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, sideChannels, X )
+function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
@@ -1626,85 +1577,31 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
   err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
-  J.map(instances, function(n) err(n.final==false, "Instance was already added to another module?"); n.final=true end )
+
+  if externalInstances==nil then externalInstances={} end
+  for inst,fnmap in pairs(externalInstances) do
+    err(systolic.isInstance(inst),"systolic.module.new: external instances map should be systolic instances")
+    err( type(fnmap)=="table", "systolic.module.new: external instances should be fn name list")
+    for fnname,_ in pairs(fnmap) do err( type(fnname)=="string","systolic.module.new: external fn map should have fnname keys") end
+  end
+
+  for _,inst in ipairs(instances) do
+    if externalInstances[inst]==nil then
+      err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
+      inst.final="added to module '"..name.."' "..debug.traceback()
+    end
+  end
 
   err( onlyWire==nil or type(onlyWire)=="boolean", "onlyWire must be nil or bool")
   err( parameters==nil or type(parameters)=="table", "parameters must be nil or table")
   err( verilog==nil or type(verilog)=="string", "verilog must be nil or string, module "..name)
   err( verilogDelay==nil or type(verilogDelay)=="table", "verilogDelay must be nil or table, module "..name)
-
+  
   err( X==nil, "systolic.module.new: too many arguments" )
 
   -- not actually true: verilogDelay can be missing if this module is never used by a module with onlyWire==false
   --if onlyWire then err(type(verilogDelay)=="table", "if onlyWire is true, verilogDelay must be passed") end
 
-  local SC = {}
-  local SCInternal = {} -- sc internal pairs (name->SC map)
-  local SCPairs = {}
-  
-  if sideChannels~=nil then
-    for k,_ in pairs(sideChannels) do
-      err(systolic.isSideChannel(k),"systolic.module.new: element in side channel set is not a side channel")
-      SC[k]=1
-      SCPairs[k.name] = k
-    end
-  end
-
-  -- add missing side channels from instances
-  for _,inst in pairs(instances) do
-    if inst.module.sideChannels~=nil then
-      for sc,_ in pairs(inst.module.sideChannels) do
-        if SCInternal[sc.name]~=nil then
-        elseif SCPairs[sc.name]~=nil and SCPairs[sc.name].direction~=sc.direction then
-          SC[SCPairs[sc.name]] = nil
-          SC[sc]=nil
-          SCInternal[sc.name]=sc
-        else
-          SC[sc] = 1
-          SCPairs[sc.name]=sc
-        end
-      end
-    end
-  end
-
-  -- add missing side channels from reads/writes
-  for k,v in pairs(fns) do
-    local function checkForSC(expr)
-      expr:visitEach(
-        function(n,args)
-          if n.kind=="readSideChannel" or n.kind=="writeSideChannel" then
-            if SCInternal[n.sideChannel.name]~=nil then
-            elseif SCPairs[n.sideChannel.name]~=nil and
-              ((n.kind=="readSideChannel" and SCPairs[n.sideChannel.name].direction=="output") or
-               (n.kind=="writeSideChannel" and SCPairs[n.sideChannel.name].direction=="input")) then
-                SC[SCPairs[n.sideChannel.name]] = nil
-                SC[n.sideChannel] = nil
-                SCInternal[n.sideChannel.name]=n.sideChannel
-            else
-              SC[n.sideChannel] = 1
-              SCPairs[n.sideChannel.name]=n.sideChannel
-              assert(SCInternal[n.sideChannel.name]==nil)
-            end
-          end
-        end)
-    end
-    
-    if v.output~=nil then
-      checkForSC(v.output)
-    end
-
-    if v.pipelines~=nil then
-      for kk,vv in ipairs(v.pipelines) do
-        checkForSC(vv)
-      end
-    end
-  end
-
-  -- sanity check: make sure internal and external are exclusive
-  for k,v in pairs(SCInternal) do
-    err(SC[v]==nil,"Internal SC "..v.name.." is also in external list?")
-  end
-  
   if __usedModuleNames[name]~=nil then
     print("Module name ",name, "already used")
     assert(false)
@@ -1722,19 +1619,6 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
       err( _usedPname[v.valid.name]==nil, "valid bit name '"..v.valid.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.valid.name] )
     end
     _usedPname[v.valid.name]="valid for fn '"..k.."'"
-  end
-
-  local SCNames = {}
-  for k,_ in pairs(SC) do
-    if SCNames[k.name]~=nil and SCNames[k.name]~=k.direction then
-      -- OK: found a matching SC with opposite direction
-    elseif SCNames[k.name]~=nil and SCNames[k.name]=="input" and k.direction=="input" then
-      -- OK: a side channel can be an input into two modules
-    else
-      err( _usedPname[k.name]==nil,k.direction.." side channel name '"..k.name.."' is used somewhere else in module (as a "..tostring(_usedPname[k.name])..")")
-      _usedPname[k.name]=k.direction.." side channel"
-      SCNames[k.name]=k.direction
-    end
   end
   
   -- check for dangling params
@@ -1757,7 +1641,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  local t = {name=name,kind="user",instances=instances,functions=fns, instanceMap={}, usedInstanceNames = {}, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, sideChannels=SC, sideChannelsInternal=SCInternal}
+  local t = {name=name,kind="user",instances=instances,functions=fns, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, externalInstances=externalInstances}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
@@ -1780,10 +1664,28 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
 
   t.ast = t.ast:CSE()
 
-  J.map( t.instances, function(i) t.instanceMap[i]=1; err(t.usedInstanceNames[i.name]==nil,"Instance name '"..i.name.."' used multiple times!"); t.usedInstanceNames[i.name]=1 end )
+  local instanceMap = {}
+  local usedInstanceNames = {}
+  for _,inst in ipairs(t.instances) do
+    instanceMap[inst]=1;
+    err(usedInstanceNames[inst.name]==nil,"Instance name '"..inst.name.."' used multiple times!")
+    usedInstanceNames[inst.name]=1
+
+    -- make sure external references of this instance are provided for in this module
+    if inst.module.externalInstances~=nil then
+      for einst,lst in pairs(inst.module.externalInstances) do
+        --err( instanceMap[einst]~=nil or t.externalInstances[einst]~=nil, "Error: module '"..t.name.."' contains instance '"..inst.name.."', which referes to external instance '"..einst.name.."', but this is not in this module's external instance list!")
+        if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
+          t.externalInstances[einst] = lst
+          err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times!")
+          usedInstanceNames[einst.name]=1
+        end
+      end
+    end
+  end
 
   -- check that the instances refered to by this module are actually in the module
-  t.ast:checkInstances( t.instanceMap )
+  t.ast:checkInstances( instanceMap )
   t.ast:checkWiring(t) -- check for dangling fns
 
   return t

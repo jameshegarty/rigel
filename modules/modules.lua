@@ -843,7 +843,7 @@ modules.map = memoize(function( f, W, H, X )
     out = rigel.apply( "cflat", C.flatten2( f.outputType, W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( f.outputType, W*H ), types.array2d( f.outputType, W,H ) ), out)
 
-    res = modules.lambda("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H).."_logn", I, out)
+    res = modules.lambda("map_pow2_"..f.name.."_W"..tostring(W).."_H"..tostring(H).."_logn", I, out)
   else
     res = { kind="map", fn = f, W=W, H=H }
 
@@ -855,13 +855,12 @@ modules.map = memoize(function( f, W, H, X )
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
     res.delay = f.delay
     res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
-    
-    res.globals={}
-    for k,_ in pairs(f.globals) do
-      err( k.direction=="input", "modules.map: mapped modules not allowed to write output globals")
-      res.globals[k] = 1
-    end
-    
+
+    res.requires = {}
+    for ic,_ in pairs(f.requires) do res.requires[ic]=1 end
+    res.provides = {}
+    for ic,_ in pairs(f.provides) do res.provides[ic]=1 end
+      
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
       
@@ -2871,18 +2870,16 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   res.stateful = true -- for the shift register of valid bits
   res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
-  res.globals={}
-  for k,_ in pairs(f.globals) do res.globals[k]=1 end
+  res.requires = {}
+  for ic,_ in pairs(f.requires) do res.requires[ic]=1 end
+  res.provides = {}
+  for ic,_ in pairs(f.provides) do res.provides[ic]=1 end
   
   if terralib~=nil then res.makeTerra = function() return MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end end
 
   function res.makeSystolic()
     -- We _NEED_ to set an initial value for the shift register output (invalid), or else stuff downstream can get strange values before the pipe is primed
     local systolicModule = Ssugar.moduleConstructor(res.name):parameters({INPUT_COUNT=0,OUTPUT_COUNT=0}):onlyWire(true)
-
-    for k,_ in pairs(f.globals) do
-      systolicModule:addSideChannel(k.systolicValue)
-    end
     
     local outputCount
     if DARKROOM_VERBOSE then outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate("outputCount") ) end
@@ -3781,6 +3778,122 @@ local function checkFIFOs(output)
     end)
 end
 
+
+local function collectInstances( output, instances )
+  -- add instances to instance list that are fully resolved
+  -- (ie, all their dependencies and provided functions are fully tied down)
+  -- Note: this simple algorithm doesn't cover complex cases (mutual recursion between instances)
+  --       for those cases, user has to explicitly add instances to instance list
+
+  -- hashes of instance callsites this fn definitely provides/requires
+  local internalProvides = {}
+  local internalRequires = {}
+
+  -- hash of all instances we may potentially need
+  local requiredInstances = {}
+
+  -- hash of instances to add to this module
+  local instanceMap = {}
+
+  -- make sure we add the instances the user has explicitly added
+  for _,inst in ipairs(instances) do
+    instanceMap[inst] = 1
+
+    for instanceCallsite,_ in pairs(inst.module.requires) do
+      requiredInstances[instanceCallsite.instance] = 1
+      internalRequires[instanceCallsite] = 1
+    end
+
+    for instanceCallsite,_ in pairs(inst.module.provides) do
+      internalProvides[instanceCallsite] = 1
+    end
+  end
+
+  -- collect other instances refered to by the fn
+  output:visitEach(
+    function(n)
+      if n.kind=="applyMethod" then
+        requiredInstances[n.inst] = 1
+        internalRequires[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+      elseif n.kind=="apply" then
+        for instanceCallsite,_ in pairs(n.fn.requires) do
+          requiredInstances[instanceCallsite.instance] = 1
+          internalRequires[instanceCallsite] = 1
+        end
+
+        for instanceCallsite,_ in pairs(n.fn.provides) do
+          internalProvides[instanceCallsite] = 1
+        end
+      end
+    end)
+
+  -- now we know what instances we may want, and have list of callsites tied down
+  -- go through and add anything fully resolved
+
+  for inst,_ in pairs(requiredInstances) do
+    assert( rigel.isInstance(inst) )
+    local tiedDown = true
+
+    for instanceCallsite,_ in pairs(inst.module.requires) do
+      if internalRequires[instanceCallsite]==nil then tiedDown=false end
+    end
+
+    for instanceCallsite,_ in pairs(inst.module.provides) do
+      if internalRequires[instanceCallsite]==nil then tiedDown=false end
+    end
+
+    for fnname, fn in pairs(inst.module.functions) do
+      if internalRequires[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+    end
+
+    if tiedDown and (inst.extern~=true) then instanceMap[inst] = 1 end
+  end
+
+  local instancesOut = {}
+  for inst,_ in pairs(instanceMap) do
+    table.insert(instancesOut,inst)
+    
+    -- add these new instances to provides/dependencies list
+    for instanceCallsite,_ in pairs(inst.module.requires) do
+      internalProvides[instanceCallsite]=1
+    end
+
+    for instanceCallsite,_ in pairs(inst.module.provides) do
+      internalRequires[instanceCallsite]=1
+    end
+
+    for fnname, fn in pairs(inst.module.functions) do
+      internalProvides[rigel.newInstanceCallsite(inst,fnname)]=1
+    end
+  end
+
+  -- now compile a list of things this fn provides/requires, which aren't internally tied down
+  local providesMap = {}
+  for instanceCallsite,_ in pairs(internalProvides) do
+    -- was this internally tied down?
+    if internalRequires[instanceCallsite]==nil then providesMap[instanceCallsite]=1 end
+  end
+
+  local requiresMap = {}
+  for instanceCallsite,_ in pairs(internalRequires) do
+    -- was this internally tied down?
+    if internalProvides[instanceCallsite]==nil then requiresMap[instanceCallsite]=1 end
+  end
+
+  local externalInstances = {}
+  for inst, _ in pairs(requiredInstances) do
+    if instanceMap[inst]==nil then
+      -- compile a list of fns to pass through
+      local fnmap = {}
+      for ic,_ in pairs(providesMap) do if ic.instance==inst then fnmap[ic.functionName]=1 end end
+      for ic,_ in pairs(requiresMap) do if ic.instance==inst then fnmap[ic.functionName]=1 end end
+      externalInstances[inst] = fnmap
+    end
+  end
+
+  return instancesOut, providesMap, requiresMap, externalInstances
+end
+
 -- function definition
 -- output, inputs
 function modules.lambda( name, input, output, instances, generatorStr, generatorParams, globalMetadata, X )
@@ -3799,23 +3912,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
 
   -- collect instances (user doesn't have to explicitly give all instances)
-  local instanceMap = J.invertTable( instances )
-
-  output:visitEach(
-    function(n)
-      if n.kind=="applyMethod" then
-        if instanceMap[n.inst]==nil then
-          table.insert( instances, n.inst )
-          instanceMap[n.inst] = "found"
-        else
-          instanceMap[n.inst] = "found"
-        end
-      end
-    end)
-
-  for k,v in pairs(instanceMap) do
-    err( v=="found", "lambda: instance '"..k.name.."' was never used?" )
-  end
+  local instances, providesList, requiresList, externalInstances = collectInstances( output, instances )
   
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output)
@@ -3825,7 +3922,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances }
 
   if input==nil then
     res.inputType = types.null()
@@ -3872,59 +3969,15 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         elseif n.kind=="apply" then
           if n.fn.inputType==types.null() then return n.fn.delay
           else return inputs[1] + n.fn.delay end
+        elseif n.kind=="applyMethod" then
+          if n.inst.module.functions[n.fnname].inputType==types.null() then return n.inst.module.functions[n.fnname].delay
+          else return inputs[1] + n.inst.module.functions[n.fnname].delay end
         else
           print(n.kind,input.type,output.type)
           assert(false)
         end
       end)
   end
-  
-  -- collect the globals
-  res.globals = {}
-  res.globalsInternal = {} -- global_name->global (either the input or output, it's arbitrary)
-  res.globalMetadata = {}
-  local globalPairs = {} -- detect if we have an internal input/output pair
-  local globalDbgLoc = {}
-  
-  output:visitEach(
-    function(n)
-      if n.kind=="apply" then
-        for g,_ in pairs(n.fn.globals) do
-
-          if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
-            -- this is an internal pair, remove from list
-	    res.globalsInternal[g.name] = g
-            res.globals[globalPairs[g.name]] = nil
-            res.globals[g]=nil
-            globalDbgLoc[g] = nil
-          else
-            if g.direction=="output" then
-              err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! "..n.loc.." ORIG: "..tostring(globalDbgLoc[g]))
-            end
-            res.globals[g] = 1
-            globalPairs[g.name]=g
-            globalDbgLoc[g] = n.loc
-          end
-        end
-
-        for k,v in pairs(n.fn.globalMetadata) do
-          err(res.globalMetadata[k]==nil,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
-          res.globalMetadata[k] = v
-        end
-      elseif n.kind=="readGlobal" or n.kind=="writeGlobal" then
-        if globalPairs[n.global.name]~=nil and (n.kind=="readGlobal" and globalPairs[n.global.name].direction=="output") then
-          -- this is an internal pair, remove from list
-          res.globalsInternal[n.global.name] = n.global
-          res.globals[globalPairs[n.global.name]] = nil
-          res.globals[n.global] = nil
-          globalDbgLoc[n.global] = nil
-        else
-          res.globals[n.global]=1
-          globalDbgLoc[n.global] = n.loc
-          globalPairs[n.global.name]=n.global
-        end
-      end
-    end)
 
   -- NOTE: notice that this will overwrite the previous metadata values
   if globalMetadata~=nil then
@@ -3936,30 +3989,6 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end
       
       res.globalMetadata[k]=v
-    end
-  end
-  
-
-  for _,inst in pairs(res.instances) do
-    for g,_ in pairs(inst.module.globals) do
-      if globalPairs[g.name]~=nil and globalPairs[g.name].direction~=g.direction then
-        res.globals[globalPairs[g.name]] = nil
-        res.globals[g]=nil
-        res.globalsInternal[g.name] = g
-        globalDbgLoc[g]=nil
-      else
-        if g.direction=="output" then
-          err( res.globals[g]==nil,"Error: wrote to output global '"..g.name.."' twice (apply)! ORIG: "..tostring(globalDbgLoc[g]) )
-        end
-        res.globals[g] = 1
-        globalPairs[g.name]=g
-        globalDbgLoc[g]="INSTANCE:"..inst.name
-      end
-    end
-
-    for k,v in pairs(inst.module.globalMetadata) do
-      err(res.globalMetadata[k]==nil,"Error: wrote to global metadata twice!")
-      res.globalMetadata[k] = v
     end
   end
   
@@ -4018,11 +4047,6 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   local function makeSystolic( fn )
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire( HANDSHAKE_MODE )
 
-    for g,_ in pairs(fn.globals) do
-      module:addSideChannel(g.systolicValue)
-      if g.systolicValueReady~=nil then module:addSideChannel(g.systolicValueReady) end
-    end
-    
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset
 
@@ -4046,6 +4070,12 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end
     end
 
+    if fn.externalInstances~=nil then
+      for inst,fnmap in pairs(fn.externalInstances) do
+        local I = module:addExternal( inst:toSystolicInstance(), fnmap )
+      end
+    end
+    
     local out = fn.output:codegenSystolic( module )
 
     assert(systolic.isAST(out[1]))
@@ -4177,26 +4207,13 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               table.insert(readyPipelines, res[1])
             end
           elseif n.kind=="applyMethod" then
-              local inst = module:lookupInstance(n.inst.name)
-              res = {inst[n.fnname.."_ready"](inst, input)}
+            local inst = module:lookupInstance(n.inst.name)
+            res = {inst[n.fnname.."_ready"](inst, input)}
 
-              if n.inst.module.functions[n.fnname].inputType==types.null() then
-                -- eg fifo:load_ready()... nothing else will drive this, so we need to add it
-                table.insert(readyPipelines,res[1])
-              end
-            --[=[
-            if n.fnname=="load" or n.fnname=="start" then
-              -- "hack": systolic requires all function to be driven. We don't actually care about load fn ready bit, but drive it anyway
-              local inst = module:lookupInstance(n.inst.name)
-              res = {inst[n.fnname.."_ready"](inst, input)}
+            if n.inst.module.functions[n.fnname].inputType==types.null() then
+              -- eg fifo:load_ready()... nothing else will drive this, so we need to add it
               table.insert(readyPipelines,res[1])
-            elseif n.fnname=="store" or n.fnname=="done" then
-              local inst = module:lookupInstance(n.inst.name)
-              res = {inst[n.fnname.."_ready"](inst, input)}
-            else
-              err(false, "ready bit wiring for applyMethod, unknown function '"..n.fnname.."'")
             end
-            ]=]
           elseif n.kind=="concat" or n.kind=="concatArray2d" then
             err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
 

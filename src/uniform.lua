@@ -683,9 +683,8 @@ UniformTopMT.__call = J.memoize(function(tab,arg,X)
 
   if Uniform.isUniform(arg) then
 return arg
-  elseif R.isGlobal(arg) then
-    J.err( arg.direction=="input", "Uniform: global uniform must be an input" )
-return Uniform.new{kind="global",global=arg,inputs={}}
+  elseif R.isInstanceCallsite(arg) then
+return Uniform.new{kind="instanceCallsite",instanceCallsite=arg,inputs={}}
   elseif type(arg)=="number" then
 return Uniform.const(arg)
   elseif type(arg)=="boolean" then
