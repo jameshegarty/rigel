@@ -208,10 +208,10 @@ end
 
 ------------------------------
 -- add axi harness
-local globals = {}
-if metadata.tapBits>0 then
-  globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
-end
+--local globals = {}
+--if metadata.tapBits>0 then
+--  globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
+--end
 
 local hsfnSdfInput = {{1,1}}
 local hsfnSdfOutput = {{1,1}}

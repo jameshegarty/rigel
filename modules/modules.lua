@@ -4406,12 +4406,14 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globals, globalMetadata, sdfInput, sdfOutput, dependencies, X )
+-- dependencies: this is a list of rigel modules, which this verilog instantiates (IE, we need to make sure to
+--               include these in the final file)
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, dependencies, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
   err( type(vstr)=="string", "liftVerilog: verilog string must be string")
-  err( globals==nil or type(globals)=="table", "liftVerilog: globals must be table")
+  err( requires==nil or type(requires)=="table", "liftVerilog: requires must be table")
   err( globalMetadata==nil or type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
   if sdfInput==nil then sdfInput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate, but is: "..tostring(sdfInput))
@@ -4424,11 +4426,11 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
 
-  res.globals = {}
-  if globals~=nil then
-    for g,_ in pairs(globals) do
-      assert(rigel.isGlobal(g))
-      res.globals[g]=1
+  res.requires = {}
+  if requires~=nil then
+    for r,_ in pairs(requires) do
+      assert(rigel.isInstanceCallsite(r))
+      res.requires[r]=1
     end
   end
 
@@ -4443,9 +4445,9 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
     for k,v in ipairs(dependencies) do
       assert(rigel.isFunction(v))
 
-      for g,_ in pairs(v.globals) do
-        assert(rigel.isGlobal(g))
-        res.globals[g]=1
+      for r,_ in pairs(v.requires) do
+        assert(rigel.isInstanceCallsite(r))
+        res.requires[r]=1
       end
 
       for kk,vv in pairs(v.globalMetadata) do

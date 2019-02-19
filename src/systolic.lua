@@ -1516,8 +1516,6 @@ function userModuleFunctions:toVerilog()
       end
     end
 
-    table.insert(t,SCPairDefn)
-    
     for _,inst in pairs(self.instances) do
       if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then
         local sst = inst.module:instanceToVerilogStart( inst )
