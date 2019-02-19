@@ -280,7 +280,10 @@ local function buildAndCheckSystolicModule(tab, isModule)
     
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
   else
-    -- NYI
+    for fn,_ in ipairs(tab.functions) do
+      err( sm.functions[fn.name]~=nil,"Systolic module is missing function '"..fn.name.."'")
+    end
+    
     err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
   end
 
@@ -298,6 +301,16 @@ local function buildAndCheckSystolicModule(tab, isModule)
   return sm
 end
 
+function buildAndCheckTerraModule(tab)
+  err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
+  err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
+  local tm = rawget(tab,"makeTerra")()
+  err( terralib.types.istype(tm) and tm:isstruct(), "makeTerra for module '"..tab.name.."' returned something other than a terra struct? returned: "..tostring(tm))
+  
+  rawset(tab,"terraModule", tm )
+  return tm
+end
+
 local darkroomFunctionFunctions = {}
 local darkroomFunctionMT = {
 __index=function(tab,key)
@@ -309,12 +322,7 @@ __index=function(tab,key)
   if key=="systolicModule" then
     return buildAndCheckSystolicModule(tab,false)
   elseif key=="terraModule" then
-    err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
-    err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
-    local tm = rawget(tab,"makeTerra")()
-
-    rawset(tab,"terraModule", tm )
-    return tm
+    return buildAndCheckTerraModule(tab)
   end
 end,
 __call=function(tab,...)
@@ -464,6 +472,19 @@ __index = function(tab,key)
     systolicModule = systolicModule:toModule()
     tab.systolicModule = systolicModule
     return systolicModule
+  elseif key=="terraModule" then
+    local MT = require "modulesTerra"
+    tab.terraModule = MT.instanceCallsiteShim(tab)
+    return tab.terraModule
+  elseif key=="requires" then
+    local fn = tab.instance.module.functions[tab.functionName]
+    tab.requires = {}
+    for ic,_ in pairs(fn.requires) do
+      tab.requires[ic]=1
+    end
+    tab.requires[tab]=1
+    
+    return tab.requires
   end
   
   -- make this appear like as if it's the original function
@@ -543,6 +564,8 @@ __index=function(tab,key)
 
   if key=="systolicModule" then
     return buildAndCheckSystolicModule(tab,true)
+  elseif key=="terraModule" then
+    return buildAndCheckTerraModule(tab)
   end
 end
 }
@@ -559,11 +582,12 @@ function darkroomModuleFunctions:instantiate( name, X )
   return res
 end
 
-function darkroom.newModule( name, functionList, stateful, makeSystolic, terraModule, X )
+function darkroom.newModule( name, functionList, stateful, makeSystolic, makeTerra, X )
   err( type(name)=="string", "newModule: name must be string" )
   err( type(functionList)=="table", "newModule: function list must be table (map from fn name to fn)")
   err( type(makeSystolic)=="function", "newModule: makeSystolic should be function")
   err( type(stateful)=="boolean","newModule: stateful should be boolean" )
+  err( makeTerra==nil or type(makeTerra)=="function","newModule: makeTerra should be function, but is: "..tostring(makeTerra))
   err( X==nil, "newModule: too many arguments" )
 
   -- collect globals of all fns
@@ -578,7 +602,7 @@ function darkroom.newModule( name, functionList, stateful, makeSystolic, terraMo
     for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
   end
   
-  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,terraModule=terraModule, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides}
+  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,makeTerra=makeTerra, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides}
   return setmetatable( tab, darkroomModuleMT )
 end
 
@@ -780,6 +804,12 @@ darkroomInstanceFunctions.toSystolicInstance = J.memoize(function(tab,X)
   return tab.module.systolicModule:instantiate(tab.name)
 end)
 
+-- get a reference to the instance in terra
+darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
+  local MT = require "modulesTerra"
+  return MT.terraReference(tab)
+end)
+  
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )

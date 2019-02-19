@@ -18,22 +18,33 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
-function rigelGlobalFunctions:terraValue()
-  if self.terraValueVar==nil then
-    local v
-    self.terraValueVar = global( self.type:toTerraType(), v, self.name.."_"..self.direction )
-  end
-  return self.terraValueVar
-end
-
-function rigelGlobalFunctions:terraReady()
-  if self.terraReadyVar==nil then
-    self.terraReadyVar = global( bool, false, self.name.."_"..self.direction )
-  end
-  return self.terraReadyVar
-end
-
 local MT = {}
+
+-- just putting this here to keep terra code out of rigel.lua
+function MT.terraReference(inst)
+  return global( &inst.module.terraModule, nil, inst.name )
+end
+
+function MT.instanceCallsiteShim(tab)
+  local struct InstanceCallsiteShim {}
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  if fn.inputType==types.null() then
+    terra InstanceCallsiteShim:process( out : &rigel.lower(fn.outputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](out)
+    end
+  elseif fn.outputType==types.null() then
+    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](inp)
+    end
+  else
+    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType(), out : &rigel.lower(fn.outputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](inp,out)
+    end
+  end
+
+  return MT.new(InstanceCallsiteShim)
+end
 
 function MT.new(Module)
   if Module.methods.init==nil then terra Module:init() end end
@@ -41,7 +52,7 @@ function MT.new(Module)
   if Module.methods.reset==nil then terra Module:reset() end end
   if Module.methods.stats==nil then terra Module:stats(n:&int8) end end
 
-  err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
+  --err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
   assert(Module.methods.init~=nil)
   assert(Module.methods.stats~=nil)
   assert(Module.methods.free~=nil)
@@ -1846,14 +1857,6 @@ function MT.lambdaCompile(fn)
     end 
   end
 
-  -- sort of a hack: for handshaked, internal globals, we can't guarantee we'll generate code the runs in the correct order (producers before consumers)
-  -- so, instead, have all internal handshaked globals feed into FIFOs
-  for globalname,v in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( v.type ) then
-      table.insert( Module.entries, {field="GLOBALFIFO_"..globalname, type=simmodules.fifo( types.extractData(v.type):toTerraType(), 8, "GLOBALFIFO_"..globalname)} )
-    end
-  end
-  
   -- terra requires that we predeclare all instances
   fn.output:visitEach(
     function(n, inputs)
@@ -1868,12 +1871,6 @@ function MT.lambdaCompile(fn)
       end
     end)
 
-  for globalname,v in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( v.type ) then
-      table.insert( resetStats, quote mself.["GLOBALFIFO_"..globalname]:reset() end )
-    end
-  end
-    
   local readyOutput
     
   -- build ready calculation
@@ -2041,26 +2038,30 @@ return {`mself.[n.name].ready}
         
         res = {out,rvready}
       elseif n.kind=="applyMethod" then
-        if n.fnname=="load" or n.fnname=="start" then
-          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-          table.insert( initStats, quote mself.[n.inst.name]:init() end )
-          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
 
-          table.insert( stats, quote mself.[n.inst.name]:[n.fnname]( out ) end)
+        local inst
+        if fn.externalInstances[n.inst]~=nil then
+          inst = n.inst:terraReference()
+        else
+          inst = `mself.[n.inst.name]
+        end
+        
+        table.insert( statStats, quote inst:stats([n.name]) end )
+        table.insert( resetStats, quote inst:reset() end )
+        table.insert( initStats, quote inst:init() end )
+        table.insert( freeStats, quote inst:free() end )
+
+        local instfn = n.inst.module.functions[n.fnname]
+        if instfn.inputType==types.null() then
+          table.insert( stats, quote inst:[n.fnname]( out ) end)
 
           if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
 
           res = {out}
-        elseif n.fnname=="store" or n.fnname=="done" then
-          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-          table.insert( initStats, quote mself.[n.inst.name]:init() end )
-          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
-
+        elseif instfn.outputType==types.null() then
           if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
 
-          table.insert(stats, quote  mself.[n.inst.name]:[n.fnname]( [inputs[1]] ) end )
+          table.insert(stats, quote  inst:[n.fnname]( [inputs[1]] ) end )
           res = {`nil}
         else
           assert(false)
@@ -2105,31 +2106,10 @@ return {`mself.[n.name].ready}
   RVReadyOutput = out[2]
   out = out[1]
 
-  -- sort of a hack: if we have an input/output pair of globals that are tied off within this module,
-  -- copy their value in this function.
-  -- why don't we just use one variable? We have two variables to work around ordering issues with Handshake globals.
-  -- instead of codegening global transactions in correct producer-consumer order (would be hard), we instead insert FIFOs between
-  -- all Handshaked globals, and put them between the inputs&outputs. Then, we can codegen in any order.
-  local tiedownGlobalsPre = {}
-  local tiedownGlobalsPost = {}
-  local tiedownGlobalsReadyPre = {}
-
-  for globalname,g in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( g.type ) then
-      local fifo = `mself.["GLOBALFIFO_"..g.name]
-      table.insert(tiedownGlobalsPre, quote [g.input:terraValue()] = {@fifo:peekFront(0),fifo:hasData()}; if [g.input:terraReady()] and fifo:hasData() then fifo:popFront() end end)
-      table.insert(tiedownGlobalsPost, quote if valid([g.output:terraValue()]) and (fifo:full()==false) then fifo:pushBack(&data([g.output:terraValue()])) end end)
-
-      table.insert(tiedownGlobalsReadyPre, quote [g.output:terraReady()] = (fifo:full()==false) end)
-    else
-      table.insert(tiedownGlobalsPost, quote [g.input:terraValue()] = [g.output:terraValue()] end)
-    end
-  end
-  
   if fn.input==nil then
-    terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
+    terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
   else
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
   end
 
   if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
@@ -2140,24 +2120,21 @@ return {`mself.[n.name].ready}
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
     if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
-    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [tiedownGlobalsReadyPre]; [readyStats]; TMP; end
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
   elseif rigel.streamCount(fn.inputType)>0 then
     -- has a handshake input, but not a handshake output
     assert(fn.outputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; mself.ready = [readyOutput]; end
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
   elseif rigel.handshakeMode(fn.output) then
     assert(fn.outputType==types.null())
     assert(fn.inputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; end
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 
   terra Module.methods.reset( [mself] ) [resetStats] end
   terra Module.methods.init( [mself] ) [initStats] end
   terra Module.methods.free( [mself] ) [freeStats] end
   terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
-
-  --if DARKROOM_VERBOSE then Module.methods.process:printpretty(true,false) end
-  --if Module.methods.calculateReady~=nil then Module.methods.calculateReady:printpretty(true,false) end
 
   return Module
 end

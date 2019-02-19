@@ -14,6 +14,21 @@ local SOCMT = {}
 
 --SOCMT.doneHack = global(bool)
 
+function SOCMT.regStub(tab)
+  local struct RegStub {}
+
+  for regname,v in pairs(tab) do
+    local regtype = v[1]
+    local regval = v[2]
+    print("REGSTUB",regname)
+    RegStub.methods[regname] = terra( self:&RegStub, out: &regtype:toTerraType())
+      @out = [regtype:valueToTerra(regval)]
+    end
+  end
+
+  return MT.new(RegStub)
+end
+
 function SOCMT.axiRegs(mod,tab,port)
   local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool, doneReg:bool, RDATAReady:bool }
 

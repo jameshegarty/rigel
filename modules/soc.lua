@@ -47,8 +47,8 @@ SOC.regStub = J.memoize(function(tab)
     end
     return S.module.new( name,fns,{},true,nil,"",delays)
   end
-  
-  local res = R.newModule( name, fns, false, makeSystolic )
+
+  local res = R.newModule( name, fns, false, makeSystolic, function() return SOCMT.regStub(tab) end )
 
   return res
 end)

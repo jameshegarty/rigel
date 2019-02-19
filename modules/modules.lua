@@ -754,7 +754,7 @@ modules.liftHandshake = memoize(function( f, X )
   res.delay = math.max(1, f.delay)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
-  if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,delay) end
+  if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,res.delay) end
 
   function res.makeSystolic()
     assert( S.isModule(f.systolicModule) )
@@ -3114,7 +3114,7 @@ return mod
       end
     end
 
-    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn}, true, makeSystolic, terraModule )
+    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn}, true, makeSystolic, function() return terraModule end )
     res.kind="fifo"
 return res
   end
