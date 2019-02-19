@@ -23,7 +23,9 @@ OTYPE = types.array2d( types.array2d(types.uint(8),4), 2 )
 --local TTYPE = types.array2d( types.uint(32), 4 ):makeConst()
 local TTYPE = types.uint(32)
 local TAPVALUE =10
-soc.taps = R.newGlobal("taps","input",TTYPE,TAPVALUE)
+--soc.taps = R.newGlobal("taps","input",TTYPE,TAPVALUE)
+local taps = soc.regStub{taps={TTYPE,TAPVALUE}}:instantiate("taps")
+taps.extern = true
 
 TAPS = false
 
@@ -107,7 +109,7 @@ local out = R.apply("bf",blurfn,out)
 local out = R.apply("ef",edgefn,out)
 
 if TAPS then
-  out = R.apply("oack",RM.makeHandshake(C.packTapBroad(types.array2d(types.uint(8),T),TTYPE,soc.taps,T)),out)
+  out = R.apply("oack",RM.makeHandshake(C.packTapBroad(types.array2d(types.uint(8),T),TTYPE,taps.taps,T)),out)
   out = R.apply("SOS",RM.makeHandshake(RM.SoAtoAoS(2,1,{types.uint(8),TTYPE})),out)
 end
 

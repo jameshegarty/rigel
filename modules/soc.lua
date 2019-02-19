@@ -32,7 +32,7 @@ SOC.regStub = J.memoize(function(tab)
     J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     v[1]:checkLuaValue(v[2])
-    fns[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+    fns[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   end
 
   local name = J.sanitize("RegStub_"..tostring(tab))

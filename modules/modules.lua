@@ -751,7 +751,7 @@ modules.liftHandshake = memoize(function( f, X )
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful
 
-  local delay = math.max(1, f.delay)
+  res.delay = math.max(1, f.delay)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
   if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,delay) end
@@ -863,11 +863,6 @@ modules.map = memoize(function( f, W, H, X )
       
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
-      
-      for k,_ in pairs(f.globals) do
-        systolicModule:addSideChannel(k.systolicValue)
-        assert(S.isSideChannel(k.systolicValue))
-      end
       
       local inp = S.parameter("process_input", res.inputType )
       local out = {}
@@ -3962,20 +3957,29 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if input~=nil and input.type~=types.null() and rigel.isStreaming(input.type)==false and rigel.isStreaming(output.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
+        local res
         if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
-          return 0
+          res = 0
         elseif n.kind=="concat" or n.kind=="concatArray2d" then
-          return math.max(unpack(inputs))
+          res = math.max(unpack(inputs))
         elseif n.kind=="apply" then
-          if n.fn.inputType==types.null() then return n.fn.delay
-          else return inputs[1] + n.fn.delay end
+          if n.fn.inputType==types.null() then res = n.fn.delay
+          else
+            res = inputs[1] + n.fn.delay
+          end
         elseif n.kind=="applyMethod" then
-          if n.inst.module.functions[n.fnname].inputType==types.null() then return n.inst.module.functions[n.fnname].delay
-          else return inputs[1] + n.inst.module.functions[n.fnname].delay end
+          if n.inst.module.functions[n.fnname].inputType==types.null() then
+            res = n.inst.module.functions[n.fnname].delay
+          else
+            res = inputs[1] + n.inst.module.functions[n.fnname].delay
+          end
         else
           print(n.kind,input.type,output.type)
           assert(false)
         end
+
+        err( type(res)=="number",n.kind.." returned a non-numeric delay?")
+        return res
       end)
   end
 
@@ -4321,7 +4325,7 @@ end
 -- makeSystolic: a lua function that returns the systolic implementation. 
 --      Input argument: systolic input value. Output: systolic output value, systolic instances table
 -- outputType, delay are optional, but will cause systolic to be built if they are missing!
-function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, globals, X )
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, requires, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
@@ -4330,29 +4334,20 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
   err( type(makeSystolic)=="function", "modules.lift: makeSystolic argument must be lua function that returns a systolic value" )
   err( generatorStr==nil or type(generatorStr)=="string", "generatorStr must be nil or string")
-  err( globals==nil or type(globals)=="table","modules.lift: globals must be table")
   assert(X==nil)
 
+  if requires==nil then requires={} end
+  err( type(requires)=="table", "lift: requires map should be table")
+  
   if sdfOutput==nil then sdfOutput = SDF{1,1} end
 
   name = J.verilogSanitize(name)
 
-  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr,globals={} }
+  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, requires=requires }
 
-  if globals~=nil then
-    for g,_ in pairs(globals) do
-      assert(rigel.isGlobal(g))
-      res.globals[g]=1
-    end
-  end
-  
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
 
-    for g,_ in pairs(res.globals) do
-      systolicModule:addSideChannel(g.systolicValue)
-    end
-    
     local systolicInput = S.parameter( "inp", inputType )
 
     local systolicOutput, systolicInstances

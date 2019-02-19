@@ -34,7 +34,9 @@ if LARGE then
 end
 
 local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
-soc.taps = R.newGlobal("taps","input",TAP_TYPE,P.G)
+--soc.taps = R.newGlobal("taps","input",TAP_TYPE,P.G)
+local taps = soc.regStub{taps={TAP_TYPE,P.G}}:instantiate("taps")
+taps.extern = true
 
 local DATA_TYPE = types.array2d(A,8)
 --local HST = types.tuple{DATA_TYPE,TAP_TYPE}
@@ -77,7 +79,7 @@ for depth=1,TARGET_DEPTH do
   local PI
 
   if curT>1 then
-    PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false)
+    PI = P.pyramidIterTaps(depth,depth>1,curT,curW,curH,ConvWidth,NOFIFO,false,taps.taps)
     --local piinp = R.apply("CPI"..depth, RM.packTuple({types.array2d(A,curT),TAP_TYPE}), R.concat("CONVPIPEINP"..depth,out))
     out = R.apply("p"..depth, PI, out)
   else

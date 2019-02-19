@@ -552,11 +552,11 @@ function UniformFunctions:toUnescapedString()
   end
 end
 
--- 'tab' should be a map of globals, to which we will append any globals required to execute this uniform
---       ie: if we include the uniform somewhere in this module, it may need to read some values (globals)
+-- 'tab' should be a map of instance callsites, to which we will append any callsites required to execute this uniform
+--       ie: if we include the uniform somewhere in this module, it may need to read some values (instance callsite)
 --           use this fn to get that list of things it requires
 -- this will mutate 'tab'!
-function UniformFunctions:appendGlobals(tab)
+function UniformFunctions:appendRequires(tab)
   self:visitEach(
     function(n)
       if n.kind=="global" then

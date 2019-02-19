@@ -461,17 +461,15 @@ C.packTap = memoize(function(A,ty,global)
 end)
 
 -----------------------------
-C.packTapBroad = memoize(function(A,ty,global,N)
+C.packTapBroad = memoize(function(A,ty,tap,N)
   assert(types.isType(A))
   assert(types.isType(ty))
   assert(type(N)=="number")
-  assert(rigel.isGlobal(global))
-  
-  local tt = types.array2d(ty,N)
-  local G = {}
-  G[global]=1
-  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,types.array2d(ty,N)}, 0,
-    function(sinp) return S.tuple{sinp,S.cast(S.tuple(J.broadcast(S.readSideChannel(global.systolicValue),N)),tt)} end, nil,"C.packTap",nil,G)
+  assert(R.isFunction(tap))
+
+  local G = require "generators"
+  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),A,SDF{1,1},function(i)
+                    return R.concat{i,G.Broadcast{N}(tap())} end}
 end)
 
 -----------------------------
@@ -1651,7 +1649,7 @@ C.plusConst = memoize(function(ty, value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
 
   local globals = {}
-  value:appendGlobals(globals)
+  value:appendRequires(globals)
   
   local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + value:toSystolic(ty) end, function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
   return plus100mod
