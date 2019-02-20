@@ -2038,6 +2038,23 @@ function C.automaticSystolicStub(mod)
     local inp = S.parameter(fnname.."_input",fn.inputType)
     fns[fnname] = S.lambda(fnname,inp,S.constant(fn.outputType:fakeValue(),fn.outputType),fnname)
     delays[fnname]=0
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      local inp
+      if fn.outputType==types.null() then
+        inp = S.parameter(fnname.."_ready_downstream",types.null() )
+      else
+        inp = S.parameter(fnname.."_ready_downstream",types.extractReady(fn.outputType) )
+      end
+
+      local out
+      if fn.inputType~=types.null() then
+        out = S.constant(types.extractReady(fn.inputType):fakeValue(),types.extractReady(fn.inputType))
+      end
+      
+      fns[fnname.."_ready"] = S.lambda(fnname.."_ready",inp,out,fnname.."_ready")
+      delays[fnname.."_ready"]=0
+    end
   end
   return S.module.new( mod.name,fns,{},true,nil,"",delays)
 end

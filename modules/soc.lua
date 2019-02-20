@@ -858,23 +858,23 @@ assign CONFIG_READY = (r_state == IDLE) && (a_state == IDLE);
 
 endmodule // DRAMReaderInner
 
-module ]=]..ModuleName..[=[(
+module ]=]..ModuleName..[=[_ported(
     //AXI port
     input wire CLK,
     input wire reset,
 
-    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR,
-    input wire IP_MAXI]=]..port..[=[_ARADDR_ready,
+    output wire [32:0] IP_MAXI_ARADDR,
+    input wire IP_MAXI_ARADDR_ready,
 
-    input wire [64:0] IP_MAXI]=]..port..[=[_RDATA,
-    output wire IP_MAXI]=]..port..[=[_RDATA_ready,
+    input wire [64:0] IP_MAXI_RDATA,
+    output wire IP_MAXI_RDATA_ready,
 
-    input wire [1:0] IP_MAXI]=]..port..[=[_RRESP,
+    input wire [1:0] IP_MAXI_RRESP,
 
-    input wire IP_MAXI]=]..port..[=[_RLAST,
-    output wire [3:0] IP_MAXI]=]..port..[=[_ARLEN,
-    output wire [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
-    output wire [1:0] IP_MAXI]=]..port..[=[_ARBURST,
+    input wire IP_MAXI_RLAST,
+    output wire [3:0] IP_MAXI_ARLEN,
+    output wire [1:0] IP_MAXI_ARSIZE,
+    output wire [1:0] IP_MAXI_ARBURST,
     
     //Control config
     input wire process_input,
@@ -899,20 +899,20 @@ parameter INSTANCE_NAME="inst";
     .ACLK(CLK),
     .ARESETN(~reset),
 
-    .M_AXI_ARADDR(IP_MAXI]=]..port..[=[_ARADDR[31:0]),
-    .M_AXI_ARREADY(IP_MAXI]=]..port..[=[_ARADDR_ready),
-    .M_AXI_ARVALID(IP_MAXI]=]..port..[=[_ARADDR[32]),
+    .M_AXI_ARADDR(IP_MAXI_ARADDR[31:0]),
+    .M_AXI_ARREADY(IP_MAXI_ARADDR_ready),
+    .M_AXI_ARVALID(IP_MAXI_ARADDR[32]),
 
-    .M_AXI_RDATA(IP_MAXI]=]..port..[=[_RDATA[63:0]),
-    .M_AXI_RREADY(IP_MAXI]=]..port..[=[_RDATA_ready),
-    .M_AXI_RVALID(IP_MAXI]=]..port..[=[_RDATA[64]),
+    .M_AXI_RDATA(IP_MAXI_RDATA[63:0]),
+    .M_AXI_RREADY(IP_MAXI_RDATA_ready),
+    .M_AXI_RVALID(IP_MAXI_RDATA[64]),
 
-    .M_AXI_RRESP(IP_MAXI]=]..port..[=[_RRESP),
+    .M_AXI_RRESP(IP_MAXI_RRESP),
 
-    .M_AXI_RLAST(IP_MAXI]=]..port..[=[_RLAST),
-    .M_AXI_ARLEN(IP_MAXI]=]..port..[=[_ARLEN),
-    .M_AXI_ARSIZE(IP_MAXI]=]..port..[=[_ARSIZE),
-    .M_AXI_ARBURST(IP_MAXI]=]..port..[=[_ARBURST),
+    .M_AXI_RLAST(IP_MAXI_RLAST),
+    .M_AXI_ARLEN(IP_MAXI_ARLEN),
+    .M_AXI_ARSIZE(IP_MAXI_ARSIZE),
+    .M_AXI_ARBURST(IP_MAXI_ARBURST),
     
     //Control config
     .CONFIG_VALID(process_input),
@@ -927,6 +927,46 @@ parameter INSTANCE_NAME="inst";
 );
 
 endmodule
+
+module ]=]..ModuleName..[=[(
+  input wire CLK,
+  input wire reset,
+
+  output wire [55:0] ZynqNOC_read_input,
+  input wire [79:0] ZynqNOC_read,
+
+  output wire ZynqNOC_read_ready_downstream,
+  input wire ZynqNOC_read_ready,
+
+  input wire process_input,
+  output wire ready,
+    
+  input wire ready_downstream,
+  output wire [64:0] process_output
+);
+parameter INSTANCE_NAME="inst";
+
+  ]=]..ModuleName..[=[_ported inner(
+    .CLK(CLK),
+    .reset(reset),.process_input(process_input),.ready(ready),.ready_downstream(ready_downstream),.process_output(process_output),
+    .IP_MAXI_ARADDR({ZynqNOC_read_input[55],ZynqNOC_read_input[31:0]}),
+    .IP_MAXI_ARADDR_ready(ZynqNOC_read_ready),
+    .IP_MAXI_ARLEN(ZynqNOC_read_input[35:32]),
+    .IP_MAXI_ARSIZE(ZynqNOC_read_input[37:36]),
+    .IP_MAXI_ARBURST(ZynqNOC_read_input[39:38]),
+//    .IP_MAXI_ARID(ZynqNOC_read_input[51:40]),
+//    .IP_MAXI_ARPROT(ZynqNOC_read_input[54:52]),
+//    .IP_MAXI_ARVALID(ZynqNOC_read_input[55]),
+
+    .IP_MAXI_RDATA({ZynqNOC_read[79],ZynqNOC_read[63:0]}),
+    .IP_MAXI_RDATA_ready(ZynqNOC_read_ready_downstream),
+    .IP_MAXI_RLAST(ZynqNOC_read[64]),
+    .IP_MAXI_RRESP(ZynqNOC_read[66:65])
+//    .IP_MAXI_RID(ZynqNOC_read[46:35]),
+//    .IP_MAXI_RVALID(ZynqNOC_read[47])
+);
+
+endmodule
 ]=]
 
   
@@ -936,7 +976,7 @@ endmodule
     res.makeTerra = nil
     res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address )
   end
-
+  
   return res
 end)
 

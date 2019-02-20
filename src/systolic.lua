@@ -380,6 +380,9 @@ __index = function(tab,key)
     
   end
   return v
+end,
+__tostring = function(tab)
+  return "SystolicInstance "..tab.name..":"..tab.module.name
 end}
 
 systolicASTFunctions = {}
@@ -864,10 +867,10 @@ function systolicASTFunctions:checkWiring(module)
   for _,inst in ipairs(module.instances) do
     if state[inst]==nil then state[inst]={} end
     for fnname,fn in pairs (inst.module.functions) do
-      if module.externalInstances[inst]~=nil and module.externalInstances[inst][fnname]~=nil then
-        -- this is OK: module is external, so don't check wiring here
+      if module.externalInstances[inst]~=nil then
+        -- this is OK: module is external, so don't check wiring here - not everything has to be tied down at this point
       else
-        err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") in module '"..module.name.."'")
+        err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
         
         if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
           err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
@@ -878,7 +881,7 @@ function systolicASTFunctions:checkWiring(module)
         end
         
         if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-          err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
+          err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') inside module '"..module.name.."'? input type: "..tostring(fn.inputParameter.type).." output:"..tostring(fn.output))
         end
       end
     end
@@ -1401,11 +1404,11 @@ function userModuleFunctions:instanceToVerilogStart( instance )
   for inst,fnmap in pairs(self.externalInstances) do
     for fnname,_ in pairs(fnmap) do
       local fn = inst.module.functions[fnname]
-      if fn.inputType~=types.null() then
+      if fn.inputParameter.type~=types.null() then
         table.insert(arglist,", ."..inst.name.."_"..fn.inputParameter.name.."("..inst.name.."_"..fn.inputParameter.name..")")
       end
 
-      if fn.outputType~=types.null() then
+      if fn.output.type~=types.null() then
         table.insert(arglist,", ."..inst.name.."_"..fn.outputName.."("..inst.name.."_"..fn.outputName..")")
       end
     end

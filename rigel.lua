@@ -280,6 +280,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
     
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
   else
+    
     for fn,_ in ipairs(tab.functions) do
       err( sm.functions[fn.name]~=nil,"Systolic module is missing function '"..fn.name.."'")
     end
@@ -297,6 +298,16 @@ local function buildAndCheckSystolicModule(tab, isModule)
     end
   end
 
+  for ic,_ in pairs(tab.requires) do
+    err( sm.externalInstances[ic.instance:toSystolicInstance()]~=nil, "Rigel module requires instance, but its missing from systolic module? ")
+    err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName]~=nil, "Rigel module requires instance, but its missing from systolic module? ")
+
+    local fn = ic.instance.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName.."_ready"]~=nil, "Rigel module '"..tab.name.."' requires instance callsite '"..ic.instance.name..":"..ic.functionName.."()', but its ready fn missing from systolic module external list? ")
+    end
+  end
+  
   rawset(tab,"systolicModule", sm )
   return sm
 end

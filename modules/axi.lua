@@ -12,7 +12,7 @@ AXI.ReadAddress = types.Handshake(types.tuple{
 })
 
 AXI.ReadData = types.Handshake(types.tuple{
-  types.bits(32), -- RDATA
+  types.bits(64), -- RDATA
   types.bool(), -- RLAST
   types.bits(2), -- RRESP
   types.bits(12), -- RID

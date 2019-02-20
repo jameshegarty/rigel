@@ -424,6 +424,8 @@ end
 
 common.stripkeys = common.mapToArray
 
+-- takes in a table t, strips the values and
+-- makes an array out of the keys
 function common.invertAndStripKeys(t)
   local r = {}
   for k,v in pairs(t) do table.insert(r,k) end

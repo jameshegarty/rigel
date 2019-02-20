@@ -3781,11 +3781,11 @@ local function collectInstances( output, instances )
   --       for those cases, user has to explicitly add instances to instance list
 
   -- hashes of instance callsites this fn definitely provides/requires
-  local internalProvides = {}
-  local internalRequires = {}
+  local providesMap = {}
+  local requiresMap = {}
 
   -- hash of all instances we may potentially need
-  local requiredInstances = {}
+  local requiredInstanceMap = {}
 
   -- hash of instances to add to this module
   local instanceMap = {}
@@ -3795,12 +3795,12 @@ local function collectInstances( output, instances )
     instanceMap[inst] = 1
 
     for instanceCallsite,_ in pairs(inst.module.requires) do
-      requiredInstances[instanceCallsite.instance] = 1
-      internalRequires[instanceCallsite] = 1
+      requiredInstanceMap[instanceCallsite.instance] = 1
+      requiresMap[instanceCallsite] = 1
     end
 
     for instanceCallsite,_ in pairs(inst.module.provides) do
-      internalProvides[instanceCallsite] = 1
+      providesMap[instanceCallsite] = 1
     end
   end
 
@@ -3808,16 +3808,16 @@ local function collectInstances( output, instances )
   output:visitEach(
     function(n)
       if n.kind=="applyMethod" then
-        requiredInstances[n.inst] = 1
-        internalRequires[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+        requiredInstanceMap[n.inst] = 1
+        requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
       elseif n.kind=="apply" then
         for instanceCallsite,_ in pairs(n.fn.requires) do
-          requiredInstances[instanceCallsite.instance] = 1
-          internalRequires[instanceCallsite] = 1
+          requiredInstanceMap[instanceCallsite.instance] = 1
+          requiresMap[instanceCallsite] = 1
         end
 
         for instanceCallsite,_ in pairs(n.fn.provides) do
-          internalProvides[instanceCallsite] = 1
+          providesMap[instanceCallsite] = 1
         end
       end
     end)
@@ -3825,20 +3825,20 @@ local function collectInstances( output, instances )
   -- now we know what instances we may want, and have list of callsites tied down
   -- go through and add anything fully resolved
 
-  for inst,_ in pairs(requiredInstances) do
+  for inst,_ in pairs(requiredInstanceMap) do
     assert( rigel.isInstance(inst) )
     local tiedDown = true
 
     for instanceCallsite,_ in pairs(inst.module.requires) do
-      if internalRequires[instanceCallsite]==nil then tiedDown=false end
+      if requiresMap[instanceCallsite]==nil then tiedDown=false end
     end
 
     for instanceCallsite,_ in pairs(inst.module.provides) do
-      if internalRequires[instanceCallsite]==nil then tiedDown=false end
+      if requiresMap[instanceCallsite]==nil then tiedDown=false end
     end
 
     for fnname, fn in pairs(inst.module.functions) do
-      if internalRequires[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+      if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
     end
 
     if tiedDown and (inst.extern~=true) then
@@ -3846,49 +3846,84 @@ local function collectInstances( output, instances )
     end
   end
 
-  local instancesOut = {}
+  -- make sure we have all provides/requires up to date for our final instance list
   for inst,_ in pairs(instanceMap) do
-    table.insert(instancesOut,inst)
-    
     -- add these new instances to provides/dependencies list
     for instanceCallsite,_ in pairs(inst.module.requires) do
-      internalProvides[instanceCallsite]=1
+      providesMap[instanceCallsite]=1
     end
 
     for instanceCallsite,_ in pairs(inst.module.provides) do
-      internalRequires[instanceCallsite]=1
+      requiresMap[instanceCallsite]=1
     end
 
     for fnname, fn in pairs(inst.module.functions) do
-      internalProvides[rigel.newInstanceCallsite(inst,fnname)]=1
+      providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
     end
   end
 
-  -- now compile a list of things this fn provides/requires, which aren't internally tied down
-  local providesMap = {}
-  for instanceCallsite,_ in pairs(internalProvides) do
+  -- now tie off matches between the provides & requires list
+  for instanceCallsite,_ in pairs(providesMap) do
     -- was this internally tied down?
-    if internalRequires[instanceCallsite]==nil then providesMap[instanceCallsite]=1 end
+    if requiresMap[instanceCallsite]~=nil then
+      providesMap[instanceCallsite]=nil
+      requiresMap[instanceCallsite]=nil
+    end
   end
 
-  local requiresMap = {}
-  for instanceCallsite,_ in pairs(internalRequires) do
+  for instanceCallsite,_ in pairs(requiresMap) do
     -- was this internally tied down?
-    if internalProvides[instanceCallsite]==nil then requiresMap[instanceCallsite]=1 end
+    if providesMap[instanceCallsite]~=nil then
+      requiresMap[instanceCallsite]=nil
+      providesMap[instanceCallsite]=nil
+    end
   end
 
+  -- generate externalInstances table for systolic
   local externalInstances = {}
+  for ic,_ in pairs(requiresMap) do
+    if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
+    externalInstances[ic.instance][ic.functionName]=1
+    local fn = ic.instance.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      externalInstances[ic.instance][ic.functionName.."_ready"]=1
+    end
+  end
+
+  for ic,_ in pairs(providesMap) do
+    if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
+    externalInstances[ic.instance][ic.functionName]=1
+    local fn = ic.instace.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      externalInstances[ic.instance][ic.functionName.."_ready"]=1
+    end
+  end
+  
+  --[=[
   for inst, _ in pairs(requiredInstances) do
     if instanceMap[inst]==nil then
       -- compile a list of fns to pass through
       local fnmap = {}
-      for ic,_ in pairs(providesMap) do if ic.instance==inst then fnmap[ic.functionName]=1 end end
-      for ic,_ in pairs(requiresMap) do if ic.instance==inst then fnmap[ic.functionName]=1 end end
+        
+      for ic,_ in pairs(providesMap) do
+        if ic.instance==inst then
+          local fn = 
+
+          fnmap[ic.functionName]=1
+        end
+      end
+      
+      for ic,_ in pairs(requiresMap) do
+        if ic.instance==inst then
+          fnmap[ic.functionName]=1
+        end
+      end
+      
       externalInstances[inst] = fnmap
     end
-  end
+    end]=]
 
-  return instancesOut, providesMap, requiresMap, externalInstances
+  return J.invertAndStripKeys(instanceMap), providesMap, requiresMap, externalInstances
 end
 
 -- function definition
@@ -4482,6 +4517,12 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
       local sinst = ic.instance:toSystolicInstance()
       if externalInstances[sinst]==nil then externalInstances[sinst]={} end
       externalInstances[sinst][ic.functionName] = 1
+
+      local fn = ic.instance.module.functions[ic.functionName]
+      if types.isHandshakeAny(fn.outputType) or types.isHandshakeAny(fn.inputType) then
+        externalInstances[sinst][ic.functionName.."_ready"] = 1
+      end
+      
       table.insert(instances,sinst)
     end
 
@@ -4490,7 +4531,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
         table.insert(instances,v.systolicModule:instantiate("INST"..tostring(k)))
       end
     end
-    
+
     return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},externalInstances)
   end
   
