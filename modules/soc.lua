@@ -53,7 +53,7 @@ SOC.regStub = J.memoize(function(tab)
   return res
 end)
 
-SOC.axiRegs = J.memoize(function( tab, rate, X )
+SOC.axiRegs = J.memoize(function( tab, rate, issueRead, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
@@ -64,7 +64,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( SDF.isSDF(rate), "SOC.axiRegs: rate should be SDF rate" )
   
   local globalMetadata = {}
-  local globals = {}
+  --local globals = {}
 
   local addToModuleHack = {}
   local outputsToModuleHack = {}
@@ -90,8 +90,8 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     
     print("ADD GLOBAL",k)
     if v[3]=="input" then
-      globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
-      outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
+      --globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
+      --outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
       
       regPorts = regPorts.."input wire ["..tostring(v[1]:verilogBits())..":0] "..k..[[,
 output wire ]]..k..[[_ready,
@@ -100,8 +100,8 @@ output wire ]]..k..[[_ready,
       regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = "..k.."["..tostring(v[1]:verilogBits()).."];\n"
       regPortAssigns = regPortAssigns.."assign DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."] = "..k.."["..tostring(v[1]:verilogBits()-1)..":0]; // register write\n"
     else
-      globals[R.newGlobal(k,"output",v[1])] = 1
-      addToModuleHack[k] = R.newGlobal(k,"input",v[1])
+      --globals[R.newGlobal(k,"output",v[1])] = 1
+      --addToModuleHack[k] = R.newGlobal(k,"input",v[1])
       
       regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]
@@ -113,6 +113,7 @@ output wire ]]..k..[[_ready,
     curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
   end
 
+  --[=[
   globals[R.newGlobal("IP_SAXI"..port.."_ARADDR","input",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_AWADDR","input",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_RDATA","output",R.Handshake(types.bits(32)))] = 1
@@ -126,7 +127,8 @@ output wire ]]..k..[[_ready,
   globals[R.newGlobal("IP_SAXI"..port.."_RLAST","output",types.bool())] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_RRESP","output",types.bits(2))] = 1
   globals[R.newGlobal("IP_SAXI"..port.."_WSTRB","input",types.bits(4))] = 1
-
+  ]=]
+  
   local ModuleName = J.sanitize("Regs_"..tostring(tab).."_"..tostring(port))
 
   local REG_ADDR_BITS = math.ceil(math.log(NREG)/math.log(2))
@@ -691,11 +693,11 @@ endmodule
 
     fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
 
-    local SC = {}
-    for g,_ in pairs(globals) do
-      SC[g.systolicValue] = 1
-      if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
-    end
+--    local SC = {}
+--    for g,_ in pairs(globals) do
+--      SC[g.systolicValue] = 1
+--      if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
+--    end
     
     return S.module.new( ModuleName,fns,{},true,nil,table.concat(vstring),{start=0,done=0,ready=0},SC)
   end
@@ -732,15 +734,17 @@ end)
 
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
-SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
+SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,readFn,X)
   J.err( type(port)=="number", "axiBurstReadN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
   --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
   local Nbytes = Uniform(Nbytes_orig)
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
   local address = Uniform(address_orig)
+  J.err( R.isFunction(readFn), "axiBurstReadN: readFn should be rigel function")
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
+  --[=[
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_ARADDR","output",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_RDATA","input",R.Handshake(types.bits(64)))] = 1
@@ -751,15 +755,15 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
   globals[R.newGlobal("IP_MAXI"..port.."_ARBURST","output",types.bits(2))] = 1
   address:appendGlobals(globals)
   Nbytes:appendGlobals(globals)
+  ]=]
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
   globalMetadata["MAXI"..port.."_read_address"] = address
 
   local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes_orig).."_"..tostring(port).."_"..tostring(address_orig))
-  
-  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)),
-[=[module ]=]..ModuleName..[=[_inner(
+
+  local vstr = [=[module ]=]..ModuleName..[=[_inner(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -923,7 +927,10 @@ parameter INSTANCE_NAME="inst";
 );
 
 endmodule
-]=],globals,globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
+]=]
+
+  
+  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, {[readFn]=1}, globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1161,7 +1168,7 @@ endmodule
   return SOC.AXIWrapRV(res,port)
 end)
 
-SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X)
+SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_orig, writeFn, X )
   J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
   J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstWriteN: port out of range" )
@@ -1173,7 +1180,8 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X
   J.err( Uniform(Nbytes%128):eq(0):assertAlwaysTrue(), "SOC.axiBurstWriteN: Nbytes ("..tostring(Nbytes)..") not 128-byte aligned")
 
   local Nburst = Nbytes/128
-  
+
+  --[=[
   local globals = {}
   globals[R.newGlobal("IP_MAXI"..port.."_AWADDR","output",R.Handshake(types.bits(32)))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_WDATA","output",R.Handshake(types.bits(64)))] = 1
@@ -1184,6 +1192,7 @@ SOC.axiBurstWriteN = J.memoize(function(filename,Nbytes_orig,port,address_orig,X
   globals[R.newGlobal("IP_MAXI"..port.."_AWSIZE","output",types.bits(2))] = 1
   globals[R.newGlobal("IP_MAXI"..port.."_AWBURST","output",types.bits(2))] = 1
   address:appendGlobals(globals)
+  ]=]
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_write_filename"] = filename
@@ -1466,7 +1475,7 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
-SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
+SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverride, readFn, X )
   J.err( type(filename)=="string","readBurst: filename must be string")
   --J.err( type(W)=="number", "readBurst: W must be number")
   --J.err( type(H)=="number", "readBurst: H must be number")
@@ -1478,6 +1487,7 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   --local nbytes = W*H*(ty:verilogBits()/8)
   --J.err( nbytes%8==0,"NYI - readBurst requires 8-byte aligned size" )
   --J.err( nbytes%128==0,"NYI - readBurst requires 128-byte aligned size" )
+  J.err( R.isFunction(readFn),"readBurst: readFn should be rigel function, but is: "..tostring(readFn))
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
   if V==nil then V=0 end
 
@@ -1512,8 +1522,9 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
   assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )
-  
-  local out = SOC.axiBurstReadN(filename,totalBits/8,SOC.currentMAXIReadPort,address)(inp)
+
+  local BRN = SOC.axiBurstReadN( filename, totalBits/8, SOC.currentMAXIReadPort, address, readFn )
+  local out = BRN(inp)
 
   out = ChangeRateModule(out)
 
@@ -1532,7 +1543,7 @@ SOC.readBurst = J.memoize(function(filename,W,H,ty,V,framed,addressOverride,X)
   end
   
   local res = RM.lambda("ReadBurst_W"..tostring(W).."_H"..tostring(H).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
-
+  
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
 
   if addressOverride==nil then

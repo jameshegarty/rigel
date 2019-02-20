@@ -864,18 +864,22 @@ function systolicASTFunctions:checkWiring(module)
   for _,inst in ipairs(module.instances) do
     if state[inst]==nil then state[inst]={} end
     for fnname,fn in pairs (inst.module.functions) do
-      err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") in module '"..module.name.."'")
-
-      if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
-        err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-      end
-      
-      if fn.CE~=nil and CEState[inst][fn.CE.name]==nil then
-        err( state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
-      end
-      
-      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-        err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
+      if module.externalInstances[inst]~=nil and module.externalInstances[inst][fnname]~=nil then
+        -- this is OK: module is external, so don't check wiring here
+      else
+        err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") in module '"..module.name.."'")
+        
+        if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
+          err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+        end
+        
+        if fn.CE~=nil and CEState[inst][fn.CE.name]==nil then
+          err( state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
+        end
+        
+        if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
+          err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') in module '"..module.name.."'? input type "..tostring(fn.inputParameter.type))
+        end
       end
     end
   end
@@ -1396,7 +1400,14 @@ function userModuleFunctions:instanceToVerilogStart( instance )
   -- add external references
   for inst,fnmap in pairs(self.externalInstances) do
     for fnname,_ in pairs(fnmap) do
-      table.insert(arglist,", ."..inst.name.."_"..fnname.."("..inst.name.."_"..fnname..")")
+      local fn = inst.module.functions[fnname]
+      if fn.inputType~=types.null() then
+        table.insert(arglist,", ."..inst.name.."_"..fn.inputParameter.name.."("..inst.name.."_"..fn.inputParameter.name..")")
+      end
+
+      if fn.outputType~=types.null() then
+        table.insert(arglist,", ."..inst.name.."_"..fn.outputName.."("..inst.name.."_"..fn.outputName..")")
+      end
     end
   end
   
@@ -1566,6 +1577,8 @@ function userModuleFunctions:getDelay( fnname )
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
+-- 'externalInstances' should be a subset of 'instances'... this is a map from systolicInstance->StringList
+--                     of functions we require on this instance
 function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
@@ -1581,6 +1594,11 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     err(systolic.isInstance(inst),"systolic.module.new: external instances map should be systolic instances")
     err( type(fnmap)=="table", "systolic.module.new: external instances should be fn name list")
     for fnname,_ in pairs(fnmap) do err( type(fnname)=="string","systolic.module.new: external fn map should have fnname keys") end
+
+    -- make sure this is in instance list too
+    local found = false
+    for _,iinst in ipairs(instances) do if inst==iinst then found=true end end
+    err( found, "External instance '"..inst.name.."' is not in instance list?" )
   end
 
   for _,inst in ipairs(instances) do

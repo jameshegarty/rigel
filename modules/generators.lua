@@ -487,15 +487,14 @@ end)
 generators.Generator = generators.Module
 
 -- rigelFunction: the fn to call to perform the AXI read
-generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate"},{"number"},
+generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number"},
 function(args)
   local numb = args.number
   if numb==nil then
     numb = math.ceil((args.size[1]*args.size[2]*Uniform(args.rate[1][1]):toNumber())/Uniform(args.rate[1][2]):toNumber())
     print("AXIReadBurst V:",numb)
   end
-  
-  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true )
+  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true, nil, args.rigelFunction )
 end)
 
 generators.AXIRead = R.newFunctionGenerator("generators","AXIRead",{"string","type","number","rate"},{},

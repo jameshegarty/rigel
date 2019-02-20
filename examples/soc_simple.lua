@@ -7,12 +7,15 @@ local RS = require "rigelSimple"
 local types = require "types"
 types.export()
 local SDF = require "sdf"
+local Zynq = require "zynq"
 
-regs = SOC.axiRegs({},SDF{1,1024}):instantiate()
+noc = Zynq.SimpleNOC:instantiate("ZynqNOC")
+noc.extern=true
+regs = SOC.axiRegs({},SDF{1,1024},noc.issueRead):instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
-    local readStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),8}(i)
+    local readStream = G.AXIReadBurst{ "frame_128.raw", {128,64}, u(8), 8, noc.read }(i)
     local offset = G.HS{G.Map{G.Add{200}}}(readStream)
     return G.AXIWriteBurst{"out/soc_simple"}(offset)
   end}

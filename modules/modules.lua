@@ -925,8 +925,8 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
     res.sdfOutput=SDF{1,1}
   end
   
-  res.globals={}
-  for k,_ in pairs(fn.globals) do res.globals[k]=1 end
+  --res.globals={}
+  --for k,_ in pairs(fn.globals) do res.globals[k]=1 end
 
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
@@ -982,10 +982,10 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
 
-    for k,_ in pairs(fn.globals) do
-      sm:addSideChannel(k.systolicValue)
-      if k.systolicValueReady~=nil then sm:addSideChannel(k.systolicValueReady) end
-    end
+--    for k,_ in pairs(fn.globals) do
+--      sm:addSideChannel(k.systolicValue)
+--      if k.systolicValueReady~=nil then sm:addSideChannel(k.systolicValueReady) end
+--    end
 
     --local r = S.parameter("ready_downstream",types.bool())
     --sm:addFunction( S.lambda("ready", r, r, "ready") )
@@ -3841,7 +3841,9 @@ local function collectInstances( output, instances )
       if internalRequires[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
     end
 
-    if tiedDown and (inst.extern~=true) then instanceMap[inst] = 1 end
+    if tiedDown and (inst.extern~=true) then
+      instanceMap[inst] = 1
+    end
   end
 
   local instancesOut = {}
@@ -3917,7 +3919,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances }
+  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances, globalMetadata={} }
 
   if input==nil then
     res.inputType = types.null()
@@ -4067,7 +4069,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       for _,inst in pairs(fn.instances) do
         err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
         local I = module:add( inst.module.systolicModule:instantiate(inst.name) )
-
+        
         if inst.module.stateful then
           module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
         end
@@ -4473,23 +4475,23 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
     end
     
     fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
-    
-    local SC = {}
-    if globals~=nil then
-      for g,_ in pairs(res.globals) do
-        SC[g.systolicValue] = 1
-        if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
-      end
-    end
 
     local instances = {}
+    local externalInstances = {}
+    for ic,_ in pairs(res.requires) do
+      local sinst = ic.instance:toSystolicInstance()
+      if externalInstances[sinst]==nil then externalInstances[sinst]={} end
+      externalInstances[sinst][ic.functionName] = 1
+      table.insert(instances,sinst)
+    end
+
     if dependencies~=nil then
       for k,v in ipairs(dependencies) do
         table.insert(instances,v.systolicModule:instantiate("INST"..tostring(k)))
       end
     end
     
-    return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},SC)
+    return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},externalInstances)
   end
   
   return rigel.newFunction(res)

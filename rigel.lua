@@ -266,7 +266,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
   err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
   local sm = rawget(tab,"makeSystolic")()
   if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
-  J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
+  J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Returned '"..tostring(sm).."'. Module: "..tostring(tab))
     
   if isModule==false then
     err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
@@ -389,8 +389,13 @@ __tostring=function(mod)
   for ic,_ in pairs(mod.provides) do
     table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
   end
-  
+
   if mod.kind=="lambda" then
+    table.insert(res,"  Instances:")
+    for _,inst in pairs(mod.instances) do
+      table.insert(res,"    "..inst.name..":"..inst.module.name)
+    end
+
     mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
   end
   
@@ -525,7 +530,7 @@ function darkroom.newFunction(tab,X)
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType), "rigel.newFunction: missing delay? fn '"..tab.name.."'" )
+  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.null() and tab.outputType==types.null()), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
@@ -585,7 +590,7 @@ end
 function darkroom.newModule( name, functionList, stateful, makeSystolic, makeTerra, X )
   err( type(name)=="string", "newModule: name must be string" )
   err( type(functionList)=="table", "newModule: function list must be table (map from fn name to fn)")
-  err( type(makeSystolic)=="function", "newModule: makeSystolic should be function")
+  err( makeSystolic==nil or type(makeSystolic)=="function", "newModule: makeSystolic should be function")
   err( type(stateful)=="boolean","newModule: stateful should be boolean" )
   err( makeTerra==nil or type(makeTerra)=="function","newModule: makeTerra should be function, but is: "..tostring(makeTerra))
   err( X==nil, "newModule: too many arguments" )

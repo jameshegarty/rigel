@@ -2029,5 +2029,17 @@ endmodule
 
   return RM.liftVerilog(name,Mod.inputType,Mod.outputType,vstr,Mod.globals,Mod.globalMetadata,Mod.sdfInput,Mod.sdfOutput, {Mod})
 end
-  
+
+-- given a rigel module, create a systolic stub for it
+function C.automaticSystolicStub(mod)
+  local fns = {}
+  local delays = {}
+  for fnname,fn in pairs(mod.functions) do
+    local inp = S.parameter(fnname.."_input",fn.inputType)
+    fns[fnname] = S.lambda(fnname,inp,S.constant(fn.outputType:fakeValue(),fn.outputType),fnname)
+    delays[fnname]=0
+  end
+  return S.module.new( mod.name,fns,{},true,nil,"",delays)
+end
+
 return C
