@@ -4029,6 +4029,17 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end)
   end
 
+  -- collect metadata
+  output:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        for k,v in pairs(n.fn.globalMetadata) do
+          err(res.globalMetadata[k]==nil,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
+          res.globalMetadata[k] = v
+        end
+      end
+  end)
+  
   -- NOTE: notice that this will overwrite the previous metadata values
   if globalMetadata~=nil then
     for k,v in pairs(globalMetadata) do

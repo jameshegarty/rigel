@@ -82,8 +82,8 @@ void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int d
 
   i = 0;
   while(!found && !checkSlaveWriteResponse(S0LIST)){
-    std::cout << "Waiting for S0 response" << std::endl;
-    if(i>5){printf("timeout waiting for s0 response\n"); exit(1);}
+    std::cout << "Waiting for S0 response to write" << std::endl;
+    if(i>5){printf("timeout waiting for s0 response to write\n"); exit(1);}
     i++;
   }
 }
@@ -371,9 +371,10 @@ int main(int argc, char** argv) {
   printf("CUR %s\n",argv[curArg]);
   
   curArg++; // for "--outputs"
+  printf("CUR %s\n",argv[curArg]);
   unsigned int outputCount = 0;
   //
-  char* outfile;
+  char* outfile = NULL;
   while(strcmp(argv[curArg],"--registersOut")!=0){
     printf("OUTPUT %d %s\n",curArg,argv[curArg]);
     unsigned int addr;
@@ -411,11 +412,18 @@ int main(int argc, char** argv) {
     outputCount++;
   }
 
-  std::string regFilename = std::string(outfile)+std::string(".verilatorSOC.regout.lua");
-  FILE* regFile = fopen(regFilename.c_str(),"w");
-  fprintf(regFile,"return {");
+  FILE* regFile;
+  if(outfile!=NULL){
+    std::string regFilename = std::string(outfile)+std::string(".verilatorSOC.regout.lua");
+    regFile = fopen(regFilename.c_str(),"w");
+    fprintf(regFile,"return {");
+  }else{
+    printf("Error? there were not outfile files defined in metadata file\n");
+    exit(1);
+  }
   
   curArg++; // for '--registersOut'
+  
   bool first = true;
   while(curArg<argc){
     unsigned int regOut = 0;

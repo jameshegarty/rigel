@@ -569,28 +569,28 @@ module ]=]..ModuleName..[=[_ported(
   input wire CLK,
   input wire reset,
 
-  input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
-  output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
+  input wire [32:0] IP_SAXI_ARADDR,
+  output wire IP_SAXI_ARADDR_ready,
 
-  input wire [32:0] IP_SAXI]=]..port..[=[_AWADDR,
-  output wire IP_SAXI]=]..port..[=[_AWADDR_ready,
+  input wire [32:0] IP_SAXI_AWADDR,
+  output wire IP_SAXI_AWADDR_ready,
 
-  output wire [32:0] IP_SAXI]=]..port..[=[_RDATA,
-  input wire IP_SAXI]=]..port..[=[_RDATA_ready,
+  output wire [32:0] IP_SAXI_RDATA,
+  input wire IP_SAXI_RDATA_ready,
 
-  input wire [32:0] IP_SAXI]=]..port..[=[_WDATA,
-  output wire IP_SAXI]=]..port..[=[_WDATA_ready,
+  input wire [32:0] IP_SAXI_WDATA,
+  output wire IP_SAXI_WDATA_ready,
 
-  output wire [2:0] IP_SAXI]=]..port..[=[_BRESP,
-  input wire IP_SAXI]=]..port..[=[_BRESP_ready,
+  output wire [2:0] IP_SAXI_BRESP,
+  input wire IP_SAXI_BRESP_ready,
 
-  input wire [11:0] IP_SAXI]=]..port..[=[_ARID,
-  input wire [11:0] IP_SAXI]=]..port..[=[_AWID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_BID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_RID,
-  output wire IP_SAXI]=]..port..[=[_RLAST,
-  output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
-  input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,
+  input wire [11:0] IP_SAXI_ARID,
+  input wire [11:0] IP_SAXI_AWID,
+  output wire [11:0] IP_SAXI_BID,
+  output wire [11:0] IP_SAXI_RID,
+  output wire IP_SAXI_RLAST,
+  output wire [1:0] IP_SAXI_RRESP,
+  input wire [3:0] IP_SAXI_WSTRB,
 
   // global drivers  
   ]=]..regPorts..[=[
@@ -626,33 +626,33 @@ Conf #(.ADDR_BASE(32'hA0000000),.NREG(]=]..NREG..[=[)) conf(
 .WRITE_DATA_VALID(DATA_VALID),
 .WRITE_DATA(DATA),
 
-.S_AXI_ARADDR(IP_SAXI]=]..port..[=[_ARADDR[31:0]),
-.S_AXI_ARVALID(IP_SAXI]=]..port..[=[_ARADDR[32]),
-.S_AXI_ARREADY(IP_SAXI]=]..port..[=[_ARADDR_ready),
+.S_AXI_ARADDR(IP_SAXI_ARADDR[31:0]),
+.S_AXI_ARVALID(IP_SAXI_ARADDR[32]),
+.S_AXI_ARREADY(IP_SAXI_ARADDR_ready),
 
-.S_AXI_AWADDR(IP_SAXI]=]..port..[=[_AWADDR[31:0]),
-.S_AXI_AWVALID(IP_SAXI]=]..port..[=[_AWADDR[32]),
-.S_AXI_AWREADY(IP_SAXI]=]..port..[=[_AWADDR_ready),
+.S_AXI_AWADDR(IP_SAXI_AWADDR[31:0]),
+.S_AXI_AWVALID(IP_SAXI_AWADDR[32]),
+.S_AXI_AWREADY(IP_SAXI_AWADDR_ready),
 
-.S_AXI_RDATA(IP_SAXI]=]..port..[=[_RDATA[31:0]),
-.S_AXI_RVALID(IP_SAXI]=]..port..[=[_RDATA[32]),
-.S_AXI_RREADY(IP_SAXI]=]..port..[=[_RDATA_ready),
+.S_AXI_RDATA(IP_SAXI_RDATA[31:0]),
+.S_AXI_RVALID(IP_SAXI_RDATA[32]),
+.S_AXI_RREADY(IP_SAXI_RDATA_ready),
 
-.S_AXI_WDATA(IP_SAXI]=]..port..[=[_WDATA[31:0]),
-.S_AXI_WVALID(IP_SAXI]=]..port..[=[_WDATA[32]),
-.S_AXI_WREADY(IP_SAXI]=]..port..[=[_WDATA_ready),
+.S_AXI_WDATA(IP_SAXI_WDATA[31:0]),
+.S_AXI_WVALID(IP_SAXI_WDATA[32]),
+.S_AXI_WREADY(IP_SAXI_WDATA_ready),
 
-.S_AXI_BRESP(IP_SAXI]=]..port..[=[_BRESP[1:0]),
-.S_AXI_BVALID(IP_SAXI]=]..port..[=[_BRESP[2]),
-.S_AXI_BREADY(IP_SAXI]=]..port..[=[_BRESP_ready),
+.S_AXI_BRESP(IP_SAXI_BRESP[1:0]),
+.S_AXI_BVALID(IP_SAXI_BRESP[2]),
+.S_AXI_BREADY(IP_SAXI_BRESP_ready),
 
-.S_AXI_ARID(IP_SAXI]=]..port..[=[_ARID),
-.S_AXI_AWID(IP_SAXI]=]..port..[=[_AWID),
-.S_AXI_BID(IP_SAXI]=]..port..[=[_BID),
-.S_AXI_RID(IP_SAXI]=]..port..[=[_RID),
-.S_AXI_RLAST(IP_SAXI]=]..port..[=[_RLAST),
-.S_AXI_RRESP(IP_SAXI]=]..port..[=[_RRESP),
-.S_AXI_WSTRB(IP_SAXI]=]..port..[=[_WSTRB)
+.S_AXI_ARID(IP_SAXI_ARID),
+.S_AXI_AWID(IP_SAXI_AWID),
+.S_AXI_BID(IP_SAXI_BID),
+.S_AXI_RID(IP_SAXI_RID),
+.S_AXI_RLAST(IP_SAXI_RLAST),
+.S_AXI_RRESP(IP_SAXI_RRESP),
+.S_AXI_WSTRB(IP_SAXI_WSTRB)
 );
 
 assign DATA_VALID[0] = 1'd0;
@@ -707,13 +707,13 @@ module ]=]..ModuleName..[=[(
   input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] ZynqNOC_readSource,
   output wire ZynqNOC_readSource_ready_downstream,
 
-  output wire []=]..tostring(AXI.ReadData:verilogBits()-1)..[=[:0] ZynqNOC_readSink_input,
+  output wire []=]..tostring(AXI.ReadData(32):verilogBits()-1)..[=[:0] ZynqNOC_readSink_input,
   input wire ZynqNOC_readSink_ready,
 
-  input wire []=]..tostring(AXI.WriteIssue:verilogBits()-1)..[=[:0] ZynqNOC_writeSource,
+  input wire []=]..tostring(AXI.WriteIssue(32):verilogBits()-1)..[=[:0] ZynqNOC_writeSource,
   output wire [1:0] ZynqNOC_writeSource_ready_downstream,
 
-  output wire []=]..tostring(AXI.WriteResponse:verilogBits()-1)..[=[:0] ZynqNOC_writeSink_input,
+  output wire []=]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[=[:0] ZynqNOC_writeSink_input,
   input wire ZynqNOC_writeSink_ready,
 
   // global drivers  
@@ -734,7 +734,28 @@ parameter INSTANCE_NAME="inst";
 .done_input(done_input),
 .done_ready(done_ready),
 .start_ready_inp(start_ready_downstream),
-.start_output(start)
+.start_output(start),
+.IP_SAXI_ARADDR({ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.arvalid..[=[],ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.araddr..[=[]}),
+.IP_SAXI_ARID(ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.arid..[=[]),
+.IP_SAXI_ARADDR_ready(ZynqNOC_readSource_ready_downstream),
+
+.IP_SAXI_RDATA({ZynqNOC_readSink_input[]=]..AXI.ReadDataVSelect(32).rvalid..[=[],ZynqNOC_readSink_input[]=]..AXI.ReadDataVSelect(32).rdata..[=[]}),
+.IP_SAXI_RRESP(ZynqNOC_readSink_input[]=]..AXI.ReadDataVSelect(32).rresp..[=[]),
+.IP_SAXI_RID(ZynqNOC_readSink_input[]=]..AXI.ReadDataVSelect(32).rid..[=[]),
+.IP_SAXI_RLAST(ZynqNOC_readSink_input[]=]..AXI.ReadDataVSelect(32).rlast..[=[]),
+.IP_SAXI_RDATA_ready(ZynqNOC_readSink_ready),
+
+.IP_SAXI_AWADDR({ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).awvalid..[=[],ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).awaddr..[=[]}),
+.IP_SAXI_AWID(ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).awid..[=[]),
+.IP_SAXI_AWADDR_ready(ZynqNOC_writeSource_ready_downstream[0]),
+
+.IP_SAXI_WDATA({ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).wvalid..[=[],ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).wdata..[=[]}),
+.IP_SAXI_WSTRB(ZynqNOC_writeSource[]=]..AXI.WriteIssueVSelect(32).wstrb..[=[]),
+.IP_SAXI_WDATA_ready(ZynqNOC_writeSource_ready_downstream[1]),
+
+.IP_SAXI_BRESP({ZynqNOC_writeSink_input[]=]..AXI.WriteResponseVSelect(32).bvalid..[=[],ZynqNOC_writeSink_input[]=]..AXI.WriteResponseVSelect(32).bresp..[=[]}),
+.IP_SAXI_BID(ZynqNOC_writeSink_input[]=]..AXI.WriteResponseVSelect(32).bid..[=[]),
+.IP_SAXI_BRESP_ready(ZynqNOC_writeSink_ready)
 );
 
 endmodule
@@ -1567,24 +1588,8 @@ module DRAMWriter(
     input wire CLK,
     input wire reset,
 
-//    output reg [32:0] IP_MAXI]=]..port..[=[_AWADDR,
-//    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
-    
-//    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
-//    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
-
-//    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
-//    output wire IP_MAXI]=]..port..[=[_WLAST,
-    
-//    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
-//    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
-    
-//    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
-
-    output wire []=]..tostring(AXI.WriteIssue:verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
-    input wire []=]..tostring(AXI.WriteResponse:verilogBits()-1)..[=[:0] ZynqNOC_write, 
+    output wire []=]..tostring(AXI.WriteIssue(64):verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
+    input wire []=]..tostring(AXI.WriteResponse(64):verilogBits()-1)..[=[:0] ZynqNOC_write, 
     output wire ZynqNOC_write_ready_downstream, 
     input wire [1:0] ZynqNOC_write_ready,
 
@@ -1605,18 +1610,18 @@ parameter INSTANCE_NAME="inst";
     .ready(ready),
     .process_output(process_output),
     .ready_downstream(ready_downstream),
-    .IP_MAXI_AWADDR({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awaddr..[=[]}),
-    .IP_MAXI_AWLEN(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awlen..[=[]),
-    .IP_MAXI_AWBURST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awburst..[=[]),
-    .IP_MAXI_AWSIZE(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awsize..[=[]),
+    .IP_MAXI_AWADDR({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awaddr..[=[]}),
+    .IP_MAXI_AWLEN(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awlen..[=[]),
+    .IP_MAXI_AWBURST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awburst..[=[]),
+    .IP_MAXI_AWSIZE(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awsize..[=[]),
     .IP_MAXI_AWADDR_ready(ZynqNOC_write_ready[0]),
 
-    .IP_MAXI_WDATA({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wdata..[=[]}),
-    .IP_MAXI_WSTRB(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wstrb..[=[]),
-    .IP_MAXI_WLAST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wlast..[=[]),
+    .IP_MAXI_WDATA({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wdata..[=[]}),
+    .IP_MAXI_WSTRB(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wstrb..[=[]),
+    .IP_MAXI_WLAST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wlast..[=[]),
     .IP_MAXI_WDATA_ready(ZynqNOC_write_ready[1]),
 
-    .IP_MAXI_BRESP({ZynqNOC_write[]=]..AXI.WriteResponseVSelect.bvalid..[=[],ZynqNOC_write[]=]..AXI.WriteResponseVSelect.bresp..[=[]}),
+    .IP_MAXI_BRESP({ZynqNOC_write[]=]..AXI.WriteResponseVSelect(64).bvalid..[=[],ZynqNOC_write[]=]..AXI.WriteResponseVSelect(64).bresp..[=[]}),
 
     .IP_MAXI_BRESP_ready(ZynqNOC_write_ready_downstream)
 );
