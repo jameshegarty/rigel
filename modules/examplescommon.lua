@@ -1660,9 +1660,10 @@ function C.plus100(ty) return C.plusConst(ty,100) end
 __linearpipelinecnt = 0
 -- convert an array of rigel modules into a straight pipeline
 -- pipeline starts at index 1, ends at index N
-function C.linearPipeline(t,modulename,rate)
+function C.linearPipeline( t, modulename, rate, instances, X )
   err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
   err( rate==nil or SDF.isSDF(rate),"linearPipeline: rate should be nil or SDF" )
+  assert(X==nil)
   
   if modulename==nil then
     modulename="linearpipeline"..tostring(__linearpipelinecnt)
@@ -1679,7 +1680,7 @@ function C.linearPipeline(t,modulename,rate)
     out = R.apply("linearPipe"..k,v,out)
   end
 
-  return RM.lambda(modulename,inp,out)
+  return RM.lambda( modulename, inp, out, instances )
 end
 
 -- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
@@ -2035,8 +2036,14 @@ function C.automaticSystolicStub(mod)
   local fns = {}
   local delays = {}
   for fnname,fn in pairs(mod.functions) do
-    local inp = S.parameter(fnname.."_input",fn.inputType)
-    fns[fnname] = S.lambda(fnname,inp,S.constant(fn.outputType:fakeValue(),fn.outputType),fnname)
+    local inp = S.parameter(fnname.."_input",types.lower(fn.inputType))
+
+    local out
+    if fn.outputType~=types.null() then
+      out = S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType))
+    end
+    
+    fns[fnname] = S.lambda(fnname,inp,out,fnname)
     delays[fnname]=0
 
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
@@ -2056,7 +2063,26 @@ function C.automaticSystolicStub(mod)
       delays[fnname.."_ready"]=0
     end
   end
-  return S.module.new( mod.name,fns,{},true,nil,"",delays)
+
+  local instances = {}
+  local externalInstances = {}
+  for ic,_ in pairs(mod.requires) do
+    local inst = ic.instance:toSystolicInstance()
+    if externalInstances[inst]==nil then externalInstances[inst]={} end
+    externalInstances[inst][ic.functionName]=1
+    instances[inst]=1
+
+    local fn = ic.instance.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      externalInstances[inst][ic.functionName.."_ready"]=1
+    end
+  end
+  
+  if mod.stateful then
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
+  end
+  
+  return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
 end
 
 return C

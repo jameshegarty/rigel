@@ -7,6 +7,7 @@ local types = require "types"
 local C = require "examplescommon"
 local SDF = require "sdf"
 local Uniform = require "uniform"
+local AXI = require "axi"
 
 local SOCMT
 
@@ -53,8 +54,12 @@ SOC.regStub = J.memoize(function(tab)
   return res
 end)
 
-SOC.axiRegs = J.memoize(function( tab, rate, issueRead, X )
+SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, writeSink, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
+  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function")
+  J.err( R.isFunction(readSink), "SOC.axiRegs: readSink should be rigel function")
+  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function")
+  J.err( R.isFunction(writeSink), "SOC.axiRegs: writeSink should be rigel function")
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
   local port = SOC.currentSAXIPort
@@ -560,7 +565,7 @@ assign CONFIG_IRQ = !busy;
 
 endmodule
 
-module ]=]..ModuleName..[=[(
+module ]=]..ModuleName..[=[_ported(
   input wire CLK,
   input wire reset,
 
@@ -672,9 +677,70 @@ assign done_ready = 1'b1;
 
 endmodule
 
+module ]=]..ModuleName..[=[(
+  input wire CLK,
+  input wire reset,
+
+/*  input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
+  output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
+
+  input wire [32:0] IP_SAXI]=]..port..[=[_AWADDR,
+  output wire IP_SAXI]=]..port..[=[_AWADDR_ready,
+
+  output wire [32:0] IP_SAXI]=]..port..[=[_RDATA,
+  input wire IP_SAXI]=]..port..[=[_RDATA_ready,
+
+  input wire [32:0] IP_SAXI]=]..port..[=[_WDATA,
+  output wire IP_SAXI]=]..port..[=[_WDATA_ready,
+
+  output wire [2:0] IP_SAXI]=]..port..[=[_BRESP,
+  input wire IP_SAXI]=]..port..[=[_BRESP_ready,
+
+  input wire [11:0] IP_SAXI]=]..port..[=[_ARID,
+  input wire [11:0] IP_SAXI]=]..port..[=[_AWID,
+  output wire [11:0] IP_SAXI]=]..port..[=[_BID,
+  output wire [11:0] IP_SAXI]=]..port..[=[_RID,
+  output wire IP_SAXI]=]..port..[=[_RLAST,
+  output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
+  input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,*/
+
+  input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] ZynqNOC_readSource,
+  output wire ZynqNOC_readSource_ready_downstream,
+
+  output wire []=]..tostring(AXI.ReadData:verilogBits()-1)..[=[:0] ZynqNOC_readSink_input,
+  input wire ZynqNOC_readSink_ready,
+
+  input wire []=]..tostring(AXI.WriteIssue:verilogBits()-1)..[=[:0] ZynqNOC_writeSource,
+  output wire [1:0] ZynqNOC_writeSource_ready_downstream,
+
+  output wire []=]..tostring(AXI.WriteResponse:verilogBits()-1)..[=[:0] ZynqNOC_writeSink_input,
+  input wire ZynqNOC_writeSink_ready,
+
+  // global drivers  
+  ]=]..regPorts..[=[
+
+  // done signal
+  input wire done_input,
+  output wire done_ready,
+
+  // start signal
+  input wire start_ready_downstream,
+  output wire start
+);
+parameter INSTANCE_NAME="inst";
+
+]=]..ModuleName..[=[_ported ported(.CLK(CLK),
+.reset(reset),
+.done_input(done_input),
+.done_ready(done_ready),
+.start_ready_inp(start_ready_downstream),
+.start_output(start)
+);
+
+endmodule
 ]=])
 
-
+--[=[
   local function makeSystolic()
     local fns = {}
 
@@ -701,7 +767,7 @@ endmodule
     
     return S.module.new( ModuleName,fns,{},true,nil,table.concat(vstring),{start=0,done=0,ready=0},SC)
   end
-
+]=]
   --local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
   --res =  R.newFunction(res)
 
@@ -712,6 +778,16 @@ endmodule
   local res = R.newModule( ModuleName, functionList, true, makeSystolic )
   res.globals = globals
   res.globalMetadata = globalMetadata
+  res.requires[readSource]=1
+  res.requires[readSink]=1
+  res.requires[writeSource]=1
+  res.requires[writeSink]=1
+
+  res.makeSystolic = function()
+    local res = C.automaticSystolicStub(res)
+    res.verilog = table.concat(vstring)
+    return res
+  end
   
   -- hack
   if terralib~=nil then
@@ -1215,6 +1291,7 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
   --J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number, but is: "..tostring(Nbytes))
   local Nbytes = Uniform(Nbytes_orig)
   local address = Uniform(address_orig)
+  J.err( R.isFunction(writeFn), "axiBurstWriteN: writeFn should be rigel function, but is: "..tostring(writeFn))
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
 
   J.err( Uniform(Nbytes%128):eq(0):assertAlwaysTrue(), "SOC.axiBurstWriteN: Nbytes ("..tostring(Nbytes)..") not 128-byte aligned")
@@ -1240,9 +1317,8 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
   globalMetadata["MAXI"..port.."_write_W"] = Nbytes
   globalMetadata["MAXI"..port.."_write_H"] = 1
   globalMetadata["MAXI"..port.."_write_bitsPerPixel"] = 8
-  
-  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, 
-[=[module DRAMWriterInner(
+
+  local vstr = [=[module DRAMWriterInner(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -1373,25 +1449,25 @@ assign M_AXI_WDATA = DATA;
 
 endmodule // DRAMWriter
 
-module DRAMWriter(
+module DRAMWriter_ported(
     //AXI port
     input wire CLK,
     input wire reset,
-    output reg [32:0] IP_MAXI]=]..port..[=[_AWADDR,
-    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
+    output reg [32:0] IP_MAXI_AWADDR,
+    input wire IP_MAXI_AWADDR_ready,
     
-    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
-    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
+    output wire [64:0] IP_MAXI_WDATA,
+    input wire IP_MAXI_WDATA_ready,
 
-    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
-    output wire IP_MAXI]=]..port..[=[_WLAST,
+    output wire [7:0] IP_MAXI_WSTRB,
+    output wire IP_MAXI_WLAST,
     
-    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
-    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
+    input wire [2:0] IP_MAXI_BRESP,
+    output wire IP_MAXI_BRESP_ready,
     
-    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
-    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
-    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
+    output wire [3:0] IP_MAXI_AWLEN,
+    output wire [1:0] IP_MAXI_AWSIZE,
+    output wire [1:0] IP_MAXI_AWBURST,
     
     //Control config
 //    input wire CONFIG_VALID,
@@ -1447,23 +1523,23 @@ DRAMWriterInner inner(
     .ACLK(CLK),
     .ARESETN(~reset),
 
-    .M_AXI_AWADDR(IP_MAXI]=]..port..[=[_AWADDR[31:0]),
-    .M_AXI_AWREADY(IP_MAXI]=]..port..[=[_AWADDR_ready),
-    .M_AXI_AWVALID(IP_MAXI]=]..port..[=[_AWADDR[32]),
+    .M_AXI_AWADDR(IP_MAXI_AWADDR[31:0]),
+    .M_AXI_AWREADY(IP_MAXI_AWADDR_ready),
+    .M_AXI_AWVALID(IP_MAXI_AWADDR[32]),
     
-    .M_AXI_WDATA(IP_MAXI]=]..port..[=[_WDATA[63:0]),
-    .M_AXI_WREADY(IP_MAXI]=]..port..[=[_WDATA_ready),
-    .M_AXI_WVALID(IP_MAXI]=]..port..[=[_WDATA[64]),
+    .M_AXI_WDATA(IP_MAXI_WDATA[63:0]),
+    .M_AXI_WREADY(IP_MAXI_WDATA_ready),
+    .M_AXI_WVALID(IP_MAXI_WDATA[64]),
 
-    .M_AXI_BRESP(IP_MAXI]=]..port..[=[_BRESP[1:0]),
-    .M_AXI_BVALID(IP_MAXI]=]..port..[=[_BRESP[2]),
-    .M_AXI_BREADY(IP_MAXI]=]..port..[=[_BRESP_ready),
+    .M_AXI_BRESP(IP_MAXI_BRESP[1:0]),
+    .M_AXI_BVALID(IP_MAXI_BRESP[2]),
+    .M_AXI_BREADY(IP_MAXI_BRESP_ready),
 
-    .M_AXI_WSTRB(IP_MAXI]=]..port..[=[_WSTRB),
-    .M_AXI_WLAST(IP_MAXI]=]..port..[=[_WLAST),
-    .M_AXI_AWLEN(IP_MAXI]=]..port..[=[_AWLEN),
-    .M_AXI_AWSIZE(IP_MAXI]=]..port..[=[_AWSIZE),
-    .M_AXI_AWBURST(IP_MAXI]=]..port..[=[_AWBURST),
+    .M_AXI_WSTRB(IP_MAXI_WSTRB),
+    .M_AXI_WLAST(IP_MAXI_WLAST),
+    .M_AXI_AWLEN(IP_MAXI_AWLEN),
+    .M_AXI_AWSIZE(IP_MAXI_AWSIZE),
+    .M_AXI_AWBURST(IP_MAXI_AWBURST),
     
     //Control config
     .CONFIG_VALID(firstBufferSet),
@@ -1486,7 +1562,69 @@ DRAMWriterInner inner(
 
 endmodule
 
-]=],globals, globalMetadata,{{1,1}},{{1,Nbytes/8}})
+module DRAMWriter(
+    //AXI port
+    input wire CLK,
+    input wire reset,
+
+//    output reg [32:0] IP_MAXI]=]..port..[=[_AWADDR,
+//    input wire IP_MAXI]=]..port..[=[_AWADDR_ready,
+    
+//    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA,
+//    input wire IP_MAXI]=]..port..[=[_WDATA_ready,
+
+//    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
+//    output wire IP_MAXI]=]..port..[=[_WLAST,
+    
+//    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
+//    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
+    
+//    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
+//    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
+//    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
+
+    output wire []=]..tostring(AXI.WriteIssue:verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
+    input wire []=]..tostring(AXI.WriteResponse:verilogBits()-1)..[=[:0] ZynqNOC_write, 
+    output wire ZynqNOC_write_ready_downstream, 
+    input wire [1:0] ZynqNOC_write_ready,
+
+    ]=]..address:toVerilogPortList()..[=[  
+    
+    //RAM port
+    input wire [64:0] process_input,
+    output wire ready,
+
+    output wire process_output,
+    input wire ready_downstream
+);
+parameter INSTANCE_NAME="inst";
+
+  DRAMWriter_ported ported(.CLK(CLK),
+    .reset(reset),
+    .process_input(process_input),
+    .ready(ready),
+    .process_output(process_output),
+    .ready_downstream(ready_downstream),
+    .IP_MAXI_AWADDR({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awaddr..[=[]}),
+    .IP_MAXI_AWLEN(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awlen..[=[]),
+    .IP_MAXI_AWBURST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awburst..[=[]),
+    .IP_MAXI_AWSIZE(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.awsize..[=[]),
+    .IP_MAXI_AWADDR_ready(ZynqNOC_write_ready[0]),
+
+    .IP_MAXI_WDATA({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wdata..[=[]}),
+    .IP_MAXI_WSTRB(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wstrb..[=[]),
+    .IP_MAXI_WLAST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect.wlast..[=[]),
+    .IP_MAXI_WDATA_ready(ZynqNOC_write_ready[1]),
+
+    .IP_MAXI_BRESP({ZynqNOC_write[]=]..AXI.WriteResponseVSelect.bvalid..[=[],ZynqNOC_write[]=]..AXI.WriteResponseVSelect.bresp..[=[]}),
+
+    .IP_MAXI_BRESP_ready(ZynqNOC_write_ready_downstream)
+);
+endmodule
+
+]=]
+
+  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, {[writeFn]=1}, globalMetadata,{{1,1}},{{1,Nbytes/8}})
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1657,7 +1795,7 @@ SOC.read = function(filename,fileBytes,readType,X)
   return res
 end
                           
-SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
+SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn, X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
   J.err( type(W)=="number", "writeBurst: W must be number")
   J.err( type(H)=="number", "writeBurst: H must be number")
@@ -1669,6 +1807,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
   if V==nil then V=1 end
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
+  J.err( R.isFunction(writeFn), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn))
   J.err(X==nil, "writeBurst: too many arguments")
 
   assert(type(SOC.currentAddr)=="number")
@@ -1707,7 +1846,7 @@ SOC.writeBurst = J.memoize(function(filename,W,H,ty,V,framed,X)
 
   out = ChangeRateModule(out)
 
-  out = SOC.axiBurstWriteN(filename,totalBits/8,SOC.currentMAXIWritePort,SOC.currentAddr)(out)
+  out = SOC.axiBurstWriteN( filename, totalBits/8, SOC.currentMAXIWritePort, SOC.currentAddr, writeFn )(out)
 
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 

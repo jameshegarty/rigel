@@ -11,13 +11,13 @@ local Zynq = require "zynq"
 
 noc = Zynq.SimpleNOC:instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,1024},noc.issueRead):instantiate()
+regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate()
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
     local readStream = G.AXIReadBurst{ "frame_128.raw", {128,64}, u(8), 8, noc.read }(i)
     local offset = G.HS{G.Map{G.Add{200}}}(readStream)
-    return G.AXIWriteBurst{"out/soc_simple"}(offset)
+    return G.AXIWriteBurst{"out/soc_simple",noc.write}(offset)
   end}
 
-harness{regs.start, OffsetModule, regs.done}
+harness({regs.start, OffsetModule, regs.done},nil,{regs})

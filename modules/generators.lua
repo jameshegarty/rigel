@@ -506,10 +506,10 @@ function(args)
   end
 end)
 
-generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate"},{"size","number"},
+generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate","rigelFunction"},{"size","number"},
 function(args)
   if args.type:is("HandshakeFramed") then
-    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )
+    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true, args.rigelFunction )
   else
     J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end

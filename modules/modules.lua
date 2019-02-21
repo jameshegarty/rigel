@@ -3850,11 +3850,11 @@ local function collectInstances( output, instances )
   for inst,_ in pairs(instanceMap) do
     -- add these new instances to provides/dependencies list
     for instanceCallsite,_ in pairs(inst.module.requires) do
-      providesMap[instanceCallsite]=1
+      requiresMap[instanceCallsite]=1
     end
 
     for instanceCallsite,_ in pairs(inst.module.provides) do
-      requiresMap[instanceCallsite]=1
+      providesMap[instanceCallsite]=1
     end
 
     for fnname, fn in pairs(inst.module.functions) do
@@ -3866,6 +3866,7 @@ local function collectInstances( output, instances )
   for instanceCallsite,_ in pairs(providesMap) do
     -- was this internally tied down?
     if requiresMap[instanceCallsite]~=nil then
+      --print(instanceCallsite.instance.name..":"..instanceCallsite.functionName.." tied down")
       providesMap[instanceCallsite]=nil
       requiresMap[instanceCallsite]=nil
     end
@@ -3874,6 +3875,7 @@ local function collectInstances( output, instances )
   for instanceCallsite,_ in pairs(requiresMap) do
     -- was this internally tied down?
     if providesMap[instanceCallsite]~=nil then
+      --print(instanceCallsite.instance.name..":"..instanceCallsite.functionName.." tied down")
       requiresMap[instanceCallsite]=nil
       providesMap[instanceCallsite]=nil
     end
@@ -3896,6 +3898,13 @@ local function collectInstances( output, instances )
     local fn = ic.instace.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       externalInstances[ic.instance][ic.functionName.."_ready"]=1
+    end
+  end
+
+  -- purely checking
+  for inst,_ in pairs(instanceMap) do
+    for ic,_ in pairs(inst.module.requires) do
+      err( requiresMap[ic]~=nil, "Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in requires list?" )
     end
   end
   

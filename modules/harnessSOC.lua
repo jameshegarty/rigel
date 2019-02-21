@@ -6,9 +6,9 @@ local SDF = require "sdfrate"
 local types = require "types"
 local Uniform = require "uniform"
 
-return function(fn,t)
+return function(fn,t,instances)
   if R.isFunction(fn)==false then
-    fn = C.linearPipeline(fn,"Top")
+    fn = C.linearPipeline(fn,"Top", nil, instances )
   elseif R.isFunctionGenerator(fn) then
     fn = fn{type=types.null()}
     J.err( R.isPlainFunction(fn), "harnessSOC: input generator could not be resolved into a module.")

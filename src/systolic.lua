@@ -459,6 +459,7 @@ end
 
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type")
+  err( types.isBasic(ty),"constant type must be basic, but is: "..tostring(ty))
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
@@ -866,6 +867,16 @@ function systolicASTFunctions:checkWiring(module)
 
   for _,inst in ipairs(module.instances) do
     if state[inst]==nil then state[inst]={} end
+
+    if inst.module.kind=="user" then
+      for einst,nameMap in pairs(inst.module.externalInstances) do
+        err( module.externalInstances[einst]~=nil,"module instances has external dependences that are not passed up?")
+        for fnname,_ in pairs(nameMap) do
+          err( module.externalInstances[einst][fnname]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."'has external dependency on "..einst.name..":"..fnname.."() that is not passed up?")
+        end
+      end
+    end
+    
     for fnname,fn in pairs (inst.module.functions) do
       if module.externalInstances[inst]~=nil then
         -- this is OK: module is external, so don't check wiring here - not everything has to be tied down at this point
@@ -1328,6 +1339,7 @@ function systolic.parameter( name, ty )
   err( type(name)=="string", "parameter name must be string" )
   checkReserved(name)
   err( types.isType(ty), "systolic.parameter: type must be type but is "..tostring(ty) )
+  err( types.isBasic(ty),"systolic.paramter: type must be basic, but is: "..tostring(ty) )
   return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})
 end
 
@@ -1408,7 +1420,7 @@ function userModuleFunctions:instanceToVerilogStart( instance )
         table.insert(arglist,", ."..inst.name.."_"..fn.inputParameter.name.."("..inst.name.."_"..fn.inputParameter.name..")")
       end
 
-      if fn.output.type~=types.null() then
+      if fn.output~=nil and fn.output.type~=types.null() then
         table.insert(arglist,", ."..inst.name.."_"..fn.outputName.."("..inst.name.."_"..fn.outputName..")")
       end
     end
@@ -1514,7 +1526,7 @@ function userModuleFunctions:toVerilog()
         if fn.inputParameter.type~=types.null() then
           table.insert( portlist, {inst.name.."_"..fn.inputParameter.name, fn.inputParameter.type, false} )
         end
-        if fn.output.type~=types.null() then
+        if fn.output~=nil and fn.output.type~=types.null() then
           table.insert( portlist, {inst.name.."_"..fn.outputName, fn.output.type, true} )
         end
       end

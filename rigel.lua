@@ -299,12 +299,12 @@ local function buildAndCheckSystolicModule(tab, isModule)
   end
 
   for ic,_ in pairs(tab.requires) do
-    err( sm.externalInstances[ic.instance:toSystolicInstance()]~=nil, "Rigel module requires instance, but its missing from systolic module? ")
-    err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName]~=nil, "Rigel module requires instance, but its missing from systolic module? ")
+    err( sm.externalInstances[ic.instance:toSystolicInstance()]~=nil, "Rigel module '"..tab.name.."' requires instance '"..ic.instance.name.."', but it's missing from systolic module? ")
+    err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName]~=nil, "Rigel module requires instance, but it's missing from systolic module? ")
 
     local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-      err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName.."_ready"]~=nil, "Rigel module '"..tab.name.."' requires instance callsite '"..ic.instance.name..":"..ic.functionName.."()', but its ready fn missing from systolic module external list? ")
+      err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName.."_ready"]~=nil, "Rigel module '"..tab.name.."' requires instance callsite '"..ic.instance.name..":"..ic.functionName.."()', but its ready fn is missing from systolic module external list? ")
     end
   end
   
@@ -613,8 +613,8 @@ function darkroom.newModule( name, functionList, stateful, makeSystolic, makeTer
   for k,fn in pairs(functionList) do
     err( type(k)=="string", "newModule: function name should be string?")
     err( darkroom.isPlainFunction(fn), "newModule: function should be plain Rigel function")
-    for _,ic in pairs(fn.requires) do table.insert(requires,ic) end
-    for _,ic in pairs(fn.provides) do table.insert(provides,ic) end
+    for ic,_ in pairs(fn.requires) do requires[ic]=1 end
+    for ic,_ in pairs(fn.provides) do provides[ic]=1 end
     for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
   end
   
