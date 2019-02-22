@@ -509,8 +509,8 @@ function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
       return tostring(t.value)
-    elseif t.kind=="global" then
-      return t.global.name
+    elseif t.kind=="instanceCallsite" then
+      return t.instanceCallsite.instance.name..":"..t.instanceCallsite.functionName.."()"
     elseif t.kind=="binop" and t.op=="max" then
       return "max("..tostringInner(t.inputs[1])..","..tostringInner(t.inputs[2])..")"
     elseif t.kind=="binop" then
@@ -535,8 +535,8 @@ end
 function UniformFunctions:toEscapedString()
   if self.kind=="const" then
     return tostring(self.value)
-  elseif self.kind=="global" then
-    return [["]]..self.global.name..[["]]
+  elseif self.kind=="instanceCallsite" then
+    return [["]]..self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName..[["]]
   else
     J.err(false,"Uniform toEscapedString() NYI - "..self.kind)
   end
@@ -559,9 +559,8 @@ end
 function UniformFunctions:appendRequires(tab)
   self:visitEach(
     function(n)
-      if n.kind=="global" then
-        assert(tab[n.global]==nil)
-        tab[n.global] = 1
+      if n.kind=="instanceCallsite" then
+        tab[n.instanceCallsite] = 1
       end
     end)
 end
@@ -571,8 +570,8 @@ function UniformFunctions:toVerilog(ty)
   J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
   assert(self:canRepresentUsing(ty))
 
-  if self.kind=="global" then
-    return self.global.name
+  if self.kind=="instanceCallsite" then
+    return self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName
   elseif self.kind=="const" then
     return S.valueToVerilog( self.value, ty )
   elseif self.kind=="binop" then
@@ -612,8 +611,8 @@ Uniform.canRepresentUsing = J.memoize(
     if n.kind=="const" then
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
-    elseif n.kind=="global" then
-      return n.global.type:canSafelyConvertTo(ty)
+    elseif n.kind=="instanceCallsite" then
+      return n.instanceCallsite.outputType:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
@@ -659,8 +658,26 @@ function UniformFunctions:toVerilogPortList()
 
   self:visitEach(
     function(n)
-      if n.kind=="global" then
-        table.insert( res, S.declarePort( n.global.type, n.global.name, true ) )
+      if n.kind=="instanceCallsite" then
+        local fn = n.instanceCallsite.instance.module.functions[n.instanceCallsite.functionName]
+        table.insert( res, S.declarePort( fn.outputType, n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName, true ) )
+      end
+    end)
+
+  local rr = table.concat(res,",")
+  if #res>0 then rr = rr.."," end
+  return rr
+end
+
+-- convert to a verilog string with a port list passthrough, ie ".XXX(XXX),"
+function UniformFunctions:toVerilogPassthrough()
+  local res = {}
+
+  self:visitEach(
+    function(n)
+      if n.kind=="instanceCallsite" then
+        local nm = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
+        table.insert(res,"."..nm.."("..nm..")")
       end
     end)
 

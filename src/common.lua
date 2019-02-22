@@ -129,8 +129,6 @@ end
 
 -- takes an array of values to a hash where the values are keys
 function common.invertTable(t)
---  for k,v in pairs(t) do assert(type(k)=="number") end
-
   local out = {}
   for k,v in pairs(t) do
     assert(out[v]==nil)  -- no duplicates

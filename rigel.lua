@@ -368,7 +368,7 @@ end,
 __tostring=function(mod)
   local res = {}
 
-  table.insert(res,"Function "..mod.name)
+  table.insert(res,"Rigel Function "..mod.name)
   table.insert(res,"  InputType: "..tostring(mod.inputType))
   table.insert(res,"  OutputType: "..tostring(mod.outputType))
 
@@ -571,7 +571,34 @@ end
 local darkroomModuleFunctions = {}
 
 darkroomModuleMT = {
-__tostring = function(tab) return "Module "..tab.name end,
+__tostring = function(tab)
+  local res = {}
+  table.insert(res,"Rigel Module "..tab.name)
+
+  table.insert(res,"  Functions:")
+  for fnname,fn in pairs(tab.functions) do
+    table.insert(res,"    "..fnname.." : "..tostring(fn.inputType).."->"..tostring(fn.outputType))
+  end
+
+  table.insert(res,"  Stateful: "..tostring(tab.stateful))
+    
+  table.insert(res,"  Metadata:")
+  for k,v in pairs(tab.globalMetadata) do
+    table.insert(res,"    "..tostring(k).." = "..tostring(v))
+  end
+
+  table.insert(res,"  Requires:")
+  for ic,_ in pairs(tab.requires) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  table.insert(res,"  Provides:")
+  for ic,_ in pairs(tab.provides) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  return table.concat(res,"\n")
+end,
 __index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end

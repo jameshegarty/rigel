@@ -327,7 +327,7 @@ C.rshift = memoize(function(A,const)
   if const~=nil then
     -- shift by a const
     J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
-    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,nil,
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
                         function(inp) return S.rshift(inp,S.constant(const,A)) end)
     return mod
   else

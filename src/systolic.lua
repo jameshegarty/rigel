@@ -383,7 +383,8 @@ __index = function(tab,key)
 end,
 __tostring = function(tab)
   return "SystolicInstance "..tab.name..":"..tab.module.name
-end}
+end
+}
 
 systolicASTFunctions = {}
 setmetatable(systolicASTFunctions,{__index=IR.IRFunctions})
@@ -865,22 +866,26 @@ function systolicASTFunctions:checkWiring(module)
       end
     end)
 
+  local instanceMap = J.invertTable(module.instances)
   for _,inst in ipairs(module.instances) do
     if state[inst]==nil then state[inst]={} end
 
-    if inst.module.kind=="user" then
-      for einst,nameMap in pairs(inst.module.externalInstances) do
-        err( module.externalInstances[einst]~=nil,"module instances has external dependences that are not passed up?")
-        for fnname,_ in pairs(nameMap) do
-          err( module.externalInstances[einst][fnname]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."'has external dependency on "..einst.name..":"..fnname.."() that is not passed up?")
+    -- if module is external, so don't check wiring here - not everything has to be tied down at this point
+    if module.externalInstances[inst]==nil then
+      if inst.module.kind=="user" then
+        for einst,nameMap in pairs(inst.module.externalInstances) do
+          if instanceMap[einst]==nil then -- obviously, if this module contains the module we need, it's ok
+            err( module.externalInstances[einst]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on '"..einst.name.."' that is not passed up?")
+            
+            -- at this point, we know einst isn't internal to this module, so all its ports must be ported out
+            for fnname,_ in pairs(nameMap) do
+              err( module.externalInstances[einst][fnname]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on "..einst.name..":"..fnname.."() that is not passed up?")
+            end
+          end
         end
       end
-    end
-    
-    for fnname,fn in pairs (inst.module.functions) do
-      if module.externalInstances[inst]~=nil then
-        -- this is OK: module is external, so don't check wiring here - not everything has to be tied down at this point
-      else
+      
+      for fnname,fn in pairs (inst.module.functions) do
         err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
         
         if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
@@ -1695,20 +1700,23 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
 
   t.ast = t.ast:CSE()
 
-  local instanceMap = {}
+--  print("START")
+  local instanceMap = J.invertTable(t.instances)
   local usedInstanceNames = {}
   for _,inst in ipairs(t.instances) do
-    instanceMap[inst]=1;
     err(usedInstanceNames[inst.name]==nil,"Instance name '"..inst.name.."' used multiple times!")
     usedInstanceNames[inst.name]=1
-
+--    print("REGINST",inst.name,inst,instanceMap[inst])
+    assert(instanceMap[inst]~=nil)
+    
     -- make sure external references of this instance are provided for in this module
     if inst.module.externalInstances~=nil then
       for einst,lst in pairs(inst.module.externalInstances) do
         --err( instanceMap[einst]~=nil or t.externalInstances[einst]~=nil, "Error: module '"..t.name.."' contains instance '"..inst.name.."', which referes to external instance '"..einst.name.."', but this is not in this module's external instance list!")
         if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
+--          print("ADDEINST",einst.name,einst,instanceMap[einst])
           t.externalInstances[einst] = lst
-          err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times!")
+          err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times! ")
           usedInstanceNames[einst.name]=1
         end
       end

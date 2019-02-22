@@ -69,13 +69,14 @@ SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, 
   J.err( SDF.isSDF(rate), "SOC.axiRegs: rate should be SDF rate" )
   
   local globalMetadata = {}
-  --local globals = {}
+  local functionList = {}
 
   local addToModuleHack = {}
   local outputsToModuleHack = {}
   local regPorts = ""
   local regPortAssigns = ""
   local regValidAssigns = ""
+  local portPassthrough = {}
   local NREG = 2
   local curDataBit = 64 -- for start/done
   for k,v in pairs(tab) do
@@ -90,13 +91,16 @@ SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, 
     
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    globalMetadata["AddrOfRegister_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
-    globalMetadata["TypeOfRegister_"..k] = v[1]
+    globalMetadata["AddrOfRegister_".."regs_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
+    globalMetadata["TypeOfRegister_".."regs_"..k] = v[1]
+
+    table.insert(portPassthrough,"."..k.."("..k..")")
     
     print("ADD GLOBAL",k)
     if v[3]=="input" then
       --globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
       --outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
+      assert(false)
       
       regPorts = regPorts.."input wire ["..tostring(v[1]:verilogBits())..":0] "..k..[[,
 output wire ]]..k..[[_ready,
@@ -107,6 +111,7 @@ output wire ]]..k..[[_ready,
     else
       --globals[R.newGlobal(k,"output",v[1])] = 1
       --addToModuleHack[k] = R.newGlobal(k,"input",v[1])
+      functionList[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
       
       regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]
@@ -118,21 +123,11 @@ output wire ]]..k..[[_ready,
     curDataBit = curDataBit + math.max(v[1]:verilogBits(),32)
   end
 
-  --[=[
-  globals[R.newGlobal("IP_SAXI"..port.."_ARADDR","input",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_AWADDR","input",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_RDATA","output",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_WDATA","input",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_BRESP","output",R.Handshake(types.bits(2)))] = 1
-  
-  globals[R.newGlobal("IP_SAXI"..port.."_ARID","input",types.bits(12))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_AWID","input",types.bits(12))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_BID","output",types.bits(12))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_RID","output",types.bits(12))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_RLAST","output",types.bool())] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_RRESP","output",types.bits(2))] = 1
-  globals[R.newGlobal("IP_SAXI"..port.."_WSTRB","input",types.bits(4))] = 1
-  ]=]
+  if #portPassthrough==0 then
+    portPassthrough=""
+  else
+    portPassthrough = table.concat(portPassthrough,",")..","
+  end
   
   local ModuleName = J.sanitize("Regs_"..tostring(tab).."_"..tostring(port))
 
@@ -735,6 +730,7 @@ parameter INSTANCE_NAME="inst";
 .done_ready(done_ready),
 .start_ready_inp(start_ready_downstream),
 .start_output(start),
+]=]..portPassthrough..[=[
 .IP_SAXI_ARADDR({ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.arvalid..[=[],ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.araddr..[=[]}),
 .IP_SAXI_ARID(ZynqNOC_readSource[]=]..AXI.ReadAddressVSelect.arid..[=[]),
 .IP_SAXI_ARADDR_ready(ZynqNOC_readSource_ready_downstream),
@@ -792,7 +788,6 @@ endmodule
   --local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
   --res =  R.newFunction(res)
 
-  local functionList = {}
   functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
   functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
   
@@ -838,21 +833,8 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,re
   local Nbytes = Uniform(Nbytes_orig)
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
   local address = Uniform(address_orig)
-  J.err( R.isFunction(readFn), "axiBurstReadN: readFn should be rigel function")
+  J.err( R.isFunction(readFn), "axiBurstReadN: readFn should be rigel function, but is: "..tostring(readFn))
   J.err( X==nil, "axiBurstReadN: too many arguments" )
-
-  --[=[
-  local globals = {}
-  globals[R.newGlobal("IP_MAXI"..port.."_ARADDR","output",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RDATA","input",R.Handshake(types.bits(64)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RRESP","input",types.bits(2))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RLAST","input",types.bool())] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARLEN","output",types.bits(4))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARSIZE","output",types.bits(2))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARBURST","output",types.bits(2))] = 1
-  address:appendGlobals(globals)
-  Nbytes:appendGlobals(globals)
-  ]=]
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
@@ -1035,6 +1017,9 @@ module ]=]..ModuleName..[=[(
   output wire ZynqNOC_read_ready_downstream,
   input wire ZynqNOC_read_ready,
 
+  ]=]..address:toVerilogPortList()..[=[
+  ]=]..Nbytes:toVerilogPortList()..[=[
+
   input wire process_input,
   output wire ready,
     
@@ -1045,29 +1030,34 @@ parameter INSTANCE_NAME="inst";
 
   ]=]..ModuleName..[=[_ported inner(
     .CLK(CLK),
-    .reset(reset),.process_input(process_input),.ready(ready),.ready_downstream(ready_downstream),.process_output(process_output),
+    .reset(reset),
+    .process_input(process_input),
+    .ready(ready),
+    .ready_downstream(ready_downstream),
+    .process_output(process_output),
+    ]=]..address:toVerilogPassthrough()..[=[
+    ]=]..Nbytes:toVerilogPassthrough()..[=[
+
     .IP_MAXI_ARADDR({ZynqNOC_read_input[55],ZynqNOC_read_input[31:0]}),
     .IP_MAXI_ARADDR_ready(ZynqNOC_read_ready),
     .IP_MAXI_ARLEN(ZynqNOC_read_input[35:32]),
     .IP_MAXI_ARSIZE(ZynqNOC_read_input[37:36]),
     .IP_MAXI_ARBURST(ZynqNOC_read_input[39:38]),
-//    .IP_MAXI_ARID(ZynqNOC_read_input[51:40]),
-//    .IP_MAXI_ARPROT(ZynqNOC_read_input[54:52]),
-//    .IP_MAXI_ARVALID(ZynqNOC_read_input[55]),
 
     .IP_MAXI_RDATA({ZynqNOC_read[79],ZynqNOC_read[63:0]}),
     .IP_MAXI_RDATA_ready(ZynqNOC_read_ready_downstream),
     .IP_MAXI_RLAST(ZynqNOC_read[64]),
     .IP_MAXI_RRESP(ZynqNOC_read[66:65])
-//    .IP_MAXI_RID(ZynqNOC_read[46:35]),
-//    .IP_MAXI_RVALID(ZynqNOC_read[47])
 );
 
 endmodule
 ]=]
 
+  local requires = {[readFn]=1}
+  address:appendRequires(requires)
+  Nbytes:appendRequires(requires)
   
-  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, {[readFn]=1}, globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
+  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, requires, globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1497,6 +1487,7 @@ module DRAMWriter_ported(
 //    input wire [31:0] CONFIG_NBYTES,
 
     ]=]..address:toVerilogPortList()..[=[  
+    ]=]..Nbytes:toVerilogPortList()..[=[  
     
     //RAM port
     input wire [64:0] process_input,
@@ -1594,7 +1585,8 @@ module DRAMWriter(
     input wire [1:0] ZynqNOC_write_ready,
 
     ]=]..address:toVerilogPortList()..[=[  
-    
+    ]=]..Nbytes:toVerilogPortList()..[=[  
+
     //RAM port
     input wire [64:0] process_input,
     output wire ready,
@@ -1610,6 +1602,8 @@ parameter INSTANCE_NAME="inst";
     .ready(ready),
     .process_output(process_output),
     .ready_downstream(ready_downstream),
+    ]=]..address:toVerilogPassthrough()..[=[
+    ]=]..Nbytes:toVerilogPassthrough()..[=[
     .IP_MAXI_AWADDR({ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awvalid..[=[],ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awaddr..[=[]}),
     .IP_MAXI_AWLEN(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awlen..[=[]),
     .IP_MAXI_AWBURST(ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awburst..[=[]),
@@ -1629,7 +1623,11 @@ endmodule
 
 ]=]
 
-  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, {[writeFn]=1}, globalMetadata,{{1,1}},{{1,Nbytes/8}})
+  local requires = {[writeFn]=1}
+  address:appendRequires(requires)
+  Nbytes:appendRequires(requires)
+  
+  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
 
   if terralib~=nil then
     res.makeTerra = nil

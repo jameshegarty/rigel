@@ -3774,7 +3774,7 @@ local function checkFIFOs(output)
 end
 
 
-local function collectInstances( output, instances )
+local function collectInstances( moduleName, output, instances )
   -- add instances to instance list that are fully resolved
   -- (ie, all their dependencies and provided functions are fully tied down)
   -- Note: this simple algorithm doesn't cover complex cases (mutual recursion between instances)
@@ -3892,46 +3892,36 @@ local function collectInstances( output, instances )
     end
   end
 
+  --[=[
   for ic,_ in pairs(providesMap) do
     if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
     externalInstances[ic.instance][ic.functionName]=1
-    local fn = ic.instace.module.functions[ic.functionName]
+    local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       externalInstances[ic.instance][ic.functionName.."_ready"]=1
     end
-  end
+    end]=]
 
   -- purely checking
   for inst,_ in pairs(instanceMap) do
     for ic,_ in pairs(inst.module.requires) do
       err( requiresMap[ic]~=nil, "Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in requires list?" )
+      err( externalInstances[ic.instance][ic.functionName]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in external instances list?" )
+      local fn = ic.instance.module.functions[ic.functionName]
+      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+        err( externalInstances[ic.instance][ic.functionName.."_ready"]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."_ready(), but this is not in external instances list?" )
+      end
+      
+    end
+  end
+
+  -- checking
+  for _,inst in ipairs(instances) do
+    if externalInstances[inst]~=nil then
+      err( false, "The instance '"..inst.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
     end
   end
   
-  --[=[
-  for inst, _ in pairs(requiredInstances) do
-    if instanceMap[inst]==nil then
-      -- compile a list of fns to pass through
-      local fnmap = {}
-        
-      for ic,_ in pairs(providesMap) do
-        if ic.instance==inst then
-          local fn = 
-
-          fnmap[ic.functionName]=1
-        end
-      end
-      
-      for ic,_ in pairs(requiresMap) do
-        if ic.instance==inst then
-          fnmap[ic.functionName]=1
-        end
-      end
-      
-      externalInstances[inst] = fnmap
-    end
-    end]=]
-
   return J.invertAndStripKeys(instanceMap), providesMap, requiresMap, externalInstances
 end
 
@@ -3953,7 +3943,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
 
   -- collect instances (user doesn't have to explicitly give all instances)
-  local instances, providesList, requiresList, externalInstances = collectInstances( output, instances )
+  local instances, providesList, requiresList, externalInstances = collectInstances( name, output, instances )
   
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output)
@@ -4032,9 +4022,12 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   -- collect metadata
   output:visitEach(
     function(n)
-      if n.kind=="apply" then
-        for k,v in pairs(n.fn.globalMetadata) do
-          err(res.globalMetadata[k]==nil,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
+      if n.kind=="apply" or n.kind=="applyMethod" then
+        local globalMetadata
+        if n.kind=="apply" then globalMetadata=n.fn.globalMetadata else globalMetadata=n.inst.module.globalMetadata end
+        
+        for k,v in pairs(globalMetadata) do
+          err( res.globalMetadata[k]==nil or res.globalMetadata[k]==v,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
           res.globalMetadata[k] = v
         end
       end
@@ -4123,7 +4116,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     if fn.instances~=nil then
       for _,inst in pairs(fn.instances) do
         err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
-        local I = module:add( inst.module.systolicModule:instantiate(inst.name) )
+        -- even though this isn't external here, it may be refered to in other modules (ie some ports may be externalized), so we need to use the same instance
+        local I = module:add( inst:toSystolicInstance() )
         
         if inst.module.stateful then
           module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
