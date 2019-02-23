@@ -349,7 +349,7 @@ C.addMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -370,7 +370,7 @@ C.removeMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype, 0,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)

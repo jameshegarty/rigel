@@ -842,6 +842,7 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,re
 
   local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes_orig).."_"..tostring(port).."_"..tostring(address_orig))
 
+  local RPORT = readFn.instance.name.."_"..readFn.functionName
   local vstr = [=[module ]=]..ModuleName..[=[_inner(
     //AXI port
     input wire ACLK,
@@ -1011,11 +1012,11 @@ module ]=]..ModuleName..[=[(
   input wire CLK,
   input wire reset,
 
-  output wire [55:0] ZynqNOC_read_input,
-  input wire [79:0] ZynqNOC_read,
+  output wire [55:0] ]=]..RPORT..[=[_input,
+  input wire [79:0] ]=]..RPORT..[=[,
 
-  output wire ZynqNOC_read_ready_downstream,
-  input wire ZynqNOC_read_ready,
+  output wire ]=]..RPORT..[=[_ready_downstream,
+  input wire ]=]..RPORT..[=[_ready,
 
   ]=]..address:toVerilogPortList()..[=[
   ]=]..Nbytes:toVerilogPortList()..[=[
@@ -1038,16 +1039,16 @@ parameter INSTANCE_NAME="inst";
     ]=]..address:toVerilogPassthrough()..[=[
     ]=]..Nbytes:toVerilogPassthrough()..[=[
 
-    .IP_MAXI_ARADDR({ZynqNOC_read_input[55],ZynqNOC_read_input[31:0]}),
-    .IP_MAXI_ARADDR_ready(ZynqNOC_read_ready),
-    .IP_MAXI_ARLEN(ZynqNOC_read_input[35:32]),
-    .IP_MAXI_ARSIZE(ZynqNOC_read_input[37:36]),
-    .IP_MAXI_ARBURST(ZynqNOC_read_input[39:38]),
+    .IP_MAXI_ARADDR({]=]..RPORT..[=[_input[55],]=]..RPORT..[=[_input[31:0]}),
+    .IP_MAXI_ARADDR_ready(]=]..RPORT..[=[_ready),
+    .IP_MAXI_ARLEN(]=]..RPORT..[=[_input[35:32]),
+    .IP_MAXI_ARSIZE(]=]..RPORT..[=[_input[37:36]),
+    .IP_MAXI_ARBURST(]=]..RPORT..[=[_input[39:38]),
 
-    .IP_MAXI_RDATA({ZynqNOC_read[79],ZynqNOC_read[63:0]}),
-    .IP_MAXI_RDATA_ready(ZynqNOC_read_ready_downstream),
-    .IP_MAXI_RLAST(ZynqNOC_read[64]),
-    .IP_MAXI_RRESP(ZynqNOC_read[66:65])
+    .IP_MAXI_RDATA({]=]..RPORT..[=[[79],]=]..RPORT..[=[[63:0]}),
+    .IP_MAXI_RDATA_ready(]=]..RPORT..[=[_ready_downstream),
+    .IP_MAXI_RLAST(]=]..RPORT..[=[[64]),
+    .IP_MAXI_RRESP(]=]..RPORT..[=[[66:65])
 );
 
 endmodule
@@ -1809,7 +1810,7 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn, X)
   J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
   if V==nil then V=1 end
   if framed==nil then framed=false end
-  J.err( type(framed)=="boolean","writeBurst: framed must be boolean")
+  J.err( type(framed)=="boolean","writeBurst: framed must be boolean, but is: "..tostring(framed))
   J.err( R.isFunction(writeFn), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn))
   J.err(X==nil, "writeBurst: too many arguments")
 

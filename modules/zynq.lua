@@ -51,16 +51,29 @@ end)
 
 -- for regs: issueRead, readResponse, issueWrite, writeResponse
 -- for IP DMAs: read, write
-local SimpleNOCFns = {}
-SimpleNOCFns.readSource = R.newFunction{name="ReadSource",inputType=types.null(),outputType=AXI.ReadAddress,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
-SimpleNOCFns.readSink = R.newFunction{name="ReadSink",inputType=AXI.ReadData(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
 
-SimpleNOCFns.writeSource = R.newFunction{name="WriteSource",inputType=types.null(),outputType=AXI.WriteIssue(32),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
-SimpleNOCFns.writeSink = R.newFunction{name="WriteSink",inputType=AXI.WriteResponse(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
 
-SimpleNOCFns.read = R.newFunction{name="Read",inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
-SimpleNOCFns.write = R.newFunction{name="Write",inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
-Zynq.SimpleNOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,nil)
-Zynq.SimpleNOC.makeSystolic = function() return C.automaticSystolicStub(Zynq.SimpleNOC) end
+Zynq.SimpleNOC = function(readPorts,writePorts)
+  if readPorts==nil then readPorts=1 end
+  if writePorts==nil then writePorts=1 end
+
+  local SimpleNOCFns = {}
+  SimpleNOCFns.readSource = R.newFunction{name="ReadSource",inputType=types.null(),outputType=AXI.ReadAddress,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  SimpleNOCFns.readSink = R.newFunction{name="ReadSink",inputType=AXI.ReadData(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  
+  SimpleNOCFns.writeSource = R.newFunction{name="WriteSource",inputType=types.null(),outputType=AXI.WriteIssue(32),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  SimpleNOCFns.writeSink = R.newFunction{name="WriteSink",inputType=AXI.WriteResponse(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+
+  for i=1,readPorts do
+    SimpleNOCFns["read"..J.sel(i==1,"",tostring(i-1))] = R.newFunction{name="Read",inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  end
+  
+  SimpleNOCFns.write = R.newFunction{name="Write",inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+
+  local NOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,nil)
+  NOC.makeSystolic = function() return C.automaticSystolicStub(NOC) end
+  
+  return NOC
+end
 
 return Zynq

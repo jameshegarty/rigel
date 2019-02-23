@@ -19,6 +19,23 @@ function assnRigelToExt(vtab,dest,src)
   return str
 end
 
+local READ_PORTS = ""
+
+for i=1,2 do
+  local PORT = "ZynqNOC_read"
+  if i>1 then PORT=PORT..tostring(i-1) end
+    
+  READ_PORTS = READ_PORTS..[[wire         ]]..PORT..[[_ready_downstream;
+   assign MAXI]]..(i-1)..[[_RREADY = ]]..PORT..[[_ready_downstream;
+   wire   ]]..PORT..[[_ready;
+   assign ]]..PORT..[[_ready = MAXI]]..(i-1)..[[_ARREADY;
+   wire [55:0] ]]..PORT..[[_input; // read request
+   ]]..assnRigelToExt(AXI.ReadAddressVSelect,"MAXI"..(i-1).."_",PORT.."_input")..[[
+   wire [79:0] ]]..PORT..[[;    // read response
+   assign ]]..PORT..[[ = {MAXI]]..(i-1)..[[_RVALID,]]..assnExtToRigel(AXI.ReadDataIdx,"MAXI"..(i-1).."_")..[[};
+]]
+end
+
 print([[module VerilatorWrapper(
   input         IP_CLK,
   input         IP_ARESET_N,
@@ -94,6 +111,9 @@ print([[module VerilatorWrapper(
     output        MAXI1_ARVALID,
     input         MAXI1_ARREADY,
     input [63:0]  MAXI1_RDATA,
+    input [11:0]  MAXI1_RID,
+    output [2:0]  MAXI1_ARPROT,
+    output [11:0] MAXI1_ARID,
     input         MAXI1_RVALID,
     output        MAXI1_RREADY,
     input [1:0]   MAXI1_RRESP,
@@ -128,14 +148,6 @@ print([[module VerilatorWrapper(
    assign SAXI0_ARREADY = ZynqNOC_readSource_ready_downstream;
    wire         ZynqNOC_writeSink_ready;
    assign ZynqNOC_writeSink_ready= SAXI0_BREADY;
-   wire         ZynqNOC_read_ready_downstream;
-   assign MAXI0_RREADY = ZynqNOC_read_ready_downstream;
-   wire   ZynqNOC_read_ready;
-   assign ZynqNOC_read_ready = MAXI0_ARREADY;
-   wire [55:0] ZynqNOC_read_input; // read request
-   ]]..assnRigelToExt(AXI.ReadAddressVSelect,"MAXI0_","ZynqNOC_read_input")..[[
-   wire [79:0] ZynqNOC_read;    // read response
-   assign ZynqNOC_read = {MAXI0_RVALID,]]..assnExtToRigel(AXI.ReadDataIdx,"MAXI0_")..[[};
    wire ZynqNOC_write_ready_downstream;  
    assign MAXI0_BREADY = ZynqNOC_write_ready_downstream;
    wire [1:0] ZynqNOC_write_ready;  
@@ -153,6 +165,8 @@ print([[module VerilatorWrapper(
    assign ZynqNOC_readSource = {SAXI0_ARVALID,]]..assnExtToRigel(AXI.ReadAddressIdx,"SAXI0_")..[[};
    wire [47:0] ZynqNOC_readSink_input;  // slave read response
    ]]..assnRigelToExt(AXI.ReadDataVSelect(32),"SAXI0_","ZynqNOC_readSink_input")..[[
+
+   ]]..READ_PORTS..[[
 
    Top top(.CLK(IP_CLK), .reset(~IP_ARESET_N), .*);
 
