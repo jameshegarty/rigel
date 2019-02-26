@@ -866,6 +866,24 @@ function systolicASTFunctions:checkWiring(module)
       end
     end)
 
+  -- this is kind of a hack: since we don't need to actually explicitly wire external requirements
+  -- (their signal names will just match up in Verilog), we only really need to surpress the
+  -- undriven function warnings...
+  for _,inst in ipairs(module.instances) do
+
+    if module.externalInstances[inst]==nil then
+      -- for internal instances, collect their 'requires' calls
+      err(inst.module.externalInstances~=nil,inst.module.name.." MISSING EXTERNAL INSTS?")
+      for einst,nameMap in pairs(inst.module.externalInstances) do
+        if state[einst]==nil then state[einst]={} end
+
+        for fnname,_ in pairs(nameMap) do
+          state[einst][fnname]={"DATABIT"}
+        end
+      end
+    end
+  end
+  
   local instanceMap = J.invertTable(module.instances)
   for _,inst in ipairs(module.instances) do
     if state[inst]==nil then state[inst]={} end
@@ -891,9 +909,9 @@ function systolicASTFunctions:checkWiring(module)
         if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
           err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
         end
-        
-        if fn.CE~=nil and CEState[inst][fn.CE.name]==nil then
-          err( state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
+
+        if fn.CE~=nil and (CEState[inst]==nil or CEState[inst][fn.CE.name]==nil) then
+          err( state[inst][fnname]~=nil and state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
         end
         
         if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
@@ -1374,7 +1392,21 @@ function userModuleMT.__tostring(tab)
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
   end
-  
+
+  table.insert(res,"Internal Instances:")
+  for _,inst in ipairs(tab.instances) do
+    if tab.externalInstances[inst]==nil then
+      table.insert(res,"  "..inst.name)
+    end
+  end
+
+  table.insert(res,"External Instances:")
+  for inst,fnlist in pairs(tab.externalInstances) do
+    for fnname,_ in pairs(fnlist) do
+      table.insert(res,"  "..inst.name..":"..fnname.."()")
+    end
+  end
+
   return table.concat(res,"\n")
 end
 
@@ -1649,8 +1681,8 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   for k,v in pairs(fns) do
     if v.output~=nil and v.output.type~=types.null() then err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" ) end
     if v.output~=nil and v.output.type~=types.null() then _usedPname[v.outputName]="output" end
-    err( _usedPname[v.inputParameter.name]==nil, "input name "..v.inputParameter.name.." used somewhere else in module" )
-    _usedPname[v.inputParameter.name]="input"
+    err( _usedPname[v.inputParameter.name]==nil, "input name "..v.inputParameter.name.." on function '"..v.name.."' used somewhere else in module '"..name.."'? as: "..tostring(_usedPname[v.inputParameter.name]) )
+    _usedPname[v.inputParameter.name]="input to function '"..v.name.."'"
     if _usedPname[v.valid.name]~=nil then
       err( _usedPname[v.valid.name]==nil, "valid bit name '"..v.valid.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.valid.name] )
     end
@@ -1700,21 +1732,17 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
 
   t.ast = t.ast:CSE()
 
---  print("START")
   local instanceMap = J.invertTable(t.instances)
   local usedInstanceNames = {}
   for _,inst in ipairs(t.instances) do
     err(usedInstanceNames[inst.name]==nil,"Instance name '"..inst.name.."' used multiple times!")
     usedInstanceNames[inst.name]=1
---    print("REGINST",inst.name,inst,instanceMap[inst])
     assert(instanceMap[inst]~=nil)
-    
+
     -- make sure external references of this instance are provided for in this module
-    if inst.module.externalInstances~=nil then
+    if t.externalInstances[inst]==nil then
       for einst,lst in pairs(inst.module.externalInstances) do
-        --err( instanceMap[einst]~=nil or t.externalInstances[einst]~=nil, "Error: module '"..t.name.."' contains instance '"..inst.name.."', which referes to external instance '"..einst.name.."', but this is not in this module's external instance list!")
         if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
---          print("ADDEINST",einst.name,einst,instanceMap[einst])
           t.externalInstances[einst] = lst
           err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times! ")
           usedInstanceNames[einst.name]=1
@@ -1802,7 +1830,7 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, delayMod
   
   -- ******** Note that hasValid==false makes this module pure!!!!!!!!!!!
 
-  local t = {name="__REG", kind="reg",initial=initial,type=ty,options={}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue}
+  local t = {name="__REG", kind="reg",initial=initial,type=ty,options={}, hasCE=hasCE, hasValid=hasValid, resetValue=resetValue, externalInstances={}}
   t.functions={}
 
   local CE = nil
@@ -1910,7 +1938,7 @@ function systolic.module.ram128( hasWrite, hasRead, init, X )
   if hasRead==nil then hasRead=true else assert(type(hasRead)=="boolean") end
   J.err( X==nil,"ram128: too many arguments" )
   
-  local __ram128 = {name="__RAM128",kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead}
+  local __ram128 = {name="__RAM128",kind="ram128", functions={}, init=init, hasWrite=hasWrite, hasRead=hasRead, externalInstances={}}
   if hasRead then
     __ram128.functions.read={name="read", inputParameter={name="READ",type=types.uint(7)},outputName="READ_OUTPUT", output={type=types.bits(1)}}
     __ram128.functions.read.isPure = function() return true end
@@ -2085,7 +2113,7 @@ function systolic.module.bram2KSDP( writeAndReturnOriginal, inputBits, outputBit
 
   err(inputBits==8 or inputBits==16 or inputBits==32 or inputBits==4 or inputBits==2 or inputBits==1, "inputBits must be 1,2,4,8,16, or 32")
 
-  local t = {name="__BRAM2KSDP", kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init}
+  local t = {name="__BRAM2KSDP", kind="bram2KSDP",functions={}, inputBits = inputBits, outputBits = outputBits, writeAndReturnOriginal=writeAndReturnOriginal, init=init, externalInstances={}}
   local addrbits = math.log((2048*8)/inputBits)/math.log(2)
   if writeAndReturnOriginal then
     --err( inputBits==outputBits, "with writeAndReturnOriginal, inputBits and outputBits must match")
@@ -2262,7 +2290,7 @@ function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, X)
 
   err(ty:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(ty)..") is not byte aligned. NYI. Use a cast!")
   
-  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, passthrough }
+  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, passthrough,externalInstances={} }
 
   local CE
   if hasCE then CE = systolic.CE("CE") end
@@ -2339,7 +2367,7 @@ function systolic.module.print( ty, str, CE, showIfInvalid, X )
   if CE==nil then CE=false end
   if showIfInvalid==nil then showIfInvalid=true end
 
-  local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid}
+  local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid, externalInstances={}}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
@@ -2373,7 +2401,7 @@ function systolic.module.assert( str, CE, exit, X )
   err( type(CE)=="boolean", "CE must be boolean" )
   err( exit==nil or type(exit)=="boolean", "Exit must be bool or nil")
 
-  local res = {name="_ASSERT", kind="assert",str=str, exit=exit, CE = CE}
+  local res = {name="_ASSERT", kind="assert",str=str, exit=exit, CE = CE, externalInstances={}}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="ASSERT_INPUT",type=types.bool()},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end

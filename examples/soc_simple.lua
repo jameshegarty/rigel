@@ -9,11 +9,11 @@ types.export()
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate()
+local regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
-OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
+local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
     local readStream = G.AXIReadBurst{ "frame_128.raw", {128,64}, u(8), 8, noc.read }(i)
     local offset = G.HS{G.Map{G.Add{200}}}(readStream)

@@ -925,8 +925,8 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
     res.sdfOutput=SDF{1,1}
   end
   
-  --res.globals={}
-  --for k,_ in pairs(fn.globals) do res.globals[k]=1 end
+  res.requires={}
+  for k,_ in pairs(fn.requires) do res.requires[k]=1 end
 
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
@@ -948,7 +948,9 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   end
 
   local outTok
-  if outputW==nil then
+  if fn.outputType==types.null() then
+    res.outputType = types.null()
+  elseif outputW==nil then
     res.outputType = fn.outputType:addDim(w,h,mixed)
     outTok = w*h
     if mixed and fn.outputType:is("HandshakeFramed") then
@@ -982,15 +984,14 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
 
---    for k,_ in pairs(fn.globals) do
---      sm:addSideChannel(k.systolicValue)
---      if k.systolicValueReady~=nil then sm:addSideChannel(k.systolicValueReady) end
---    end
-
-    --local r = S.parameter("ready_downstream",types.bool())
-    --sm:addFunction( S.lambda("ready", r, r, "ready") )
+    for ic,_ in pairs(res.requires) do
+      sm:addExternalFn(ic.instance:toSystolicInstance(),ic.functionName)
+      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+        sm:addExternalFn(ic.instance:toSystolicInstance(),ic.functionName.."_ready")
+      end
+    end
+    
     local inner = sm:add(fn.systolicModule:instantiate("inner"))
-
 
     local CE = S.CE("process_CE")
     local reset_valid = S.parameter("reset",types.bool())
@@ -2943,7 +2944,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     table.insert( resetPipelines, SR:reset(nil,rst) )
     if DARKROOM_VERBOSE then table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
     
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
+    systolicModule:addFunction( S.lambda("reset", S.parameter("rst",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
     
     if res.inputType==types.null() and nilhandshake==false then
       systolicModule:addFunction( S.lambda("ready", pready, nil, "ready" ) )
@@ -4326,7 +4327,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           for k,i in ipairs(n.inputs) do
             if rigel.isHandshake(i.type) or i.type:is("HandshakeFramed") then
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
-              err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format "..n.kind.." input "..tostring(k).." (type "..tostring(i.type)..", name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
+              err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format of ready function. This node: kind='"..n.kind.."' "..tostring(n).." input index "..tostring(k).."/"..(#n.inputs).." (with input type "..tostring(i.type)..", and input name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
             elseif rigel.isHandshakeTrigger(i.type) then
               assert(#res==1)
               assert(res[1].type:isBool())
@@ -5030,8 +5031,8 @@ modules.counter = memoize(function(ty,N_orig)
   res.stateful=true
   res.delay=0
   res.name = J.sanitize("Counter_"..tostring(ty).."_"..tostring(N_orig))
-  res.globals={}
-  N:appendGlobals(res.globals)
+  res.requires={}
+  N:appendRequires(res.requires)
   
   if terralib~=nil then res.terraModule = MT.counter(res,ty,N) end
 

@@ -176,6 +176,18 @@ function systolicModuleConstructor:addExternal( inst, fnmap, X )
   return self:add( inst, fnmap, X )
 end
 
+-- add reference to external fn on an instance
+function systolicModuleConstructor:addExternalFn( inst, fnname, X )
+  assert(type(fnname)=="string")
+
+  if self.__instanceMap[inst]==nil then
+    return self:addExternal(inst,{[fnname]=1})
+  else
+    self.__externalInstances[inst][fnname]=1
+    return inst
+  end
+end
+
 function systolicModuleConstructor:lookupInstance( instName,X )
   err(X==nil,"systolicsugar: too many arguments")
   assert( type(instName)=="string")

@@ -8,9 +8,9 @@ require "types".export()
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC:instantiate("ZynqNOC")
+local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,8192},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate()
+local regs = SOC.axiRegs({},SDF{1,8192},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 ConvTop = G.Module{
   function(i)

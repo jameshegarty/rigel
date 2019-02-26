@@ -26,6 +26,6 @@ harness({
   C.triggerUp( (W*H)/8 ),
   HS{PosSeq{{W/8,H},1}},
   HS{addrGen},
-  SOC.read("frame_128.raw",128*64,ar(u(8),8,nil,nil,noc.read)),
+  SOC.read( "frame_128.raw", 128*64,ar(u(8),8), noc.read),
   SOC.writeBurst("out/soc_flip",128,64,u(8),8,nil,noc.write),
   regs.done},nil,{regs})

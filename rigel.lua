@@ -99,6 +99,7 @@ local function typeToKey(t)
   for k,v in pairs(t) do
     if type(k)=="number" then
       local outk
+      
       if type(v)=="number" then
         outk="number"
       elseif type(v)=="boolean" then
@@ -129,6 +130,8 @@ local function typeToKey(t)
         else
           J.err("NYI - typeToKey "..tostring(v))
         end
+      elseif type(v)=="table" and #t==J.keycount(t) and J.foldl(J.andop,false,J.map(v,darkroom.isInstance)) then
+        outk="instanceList"
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -276,6 +279,14 @@ local function buildAndCheckSystolicModule(tab, isModule)
       err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(sm.functions.process.output.type).."' but should be '"..tostring(darkroom.lower(tab.outputType)).."'" )
     end
 
+    if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
+      err( sm.functions.ready~=nil, "module ready function missing?")
+
+      if tab.inputType~=types.null() and darkroom.extractReady(tab.inputType)~=sm.functions.ready.output.type then
+        err(false, "module '"..tab.name.."' systolic ready output type wrong. is '"..tostring(sm.functions.ready.output.type).."', but should be '"..tostring(darkroom.extractReady(tab.inputType)).."'.")
+      end
+    end
+    
     err( darkroom.lower(tab.inputType)==sm.functions.process.inputParameter.type, "module input type wrong?" )
     
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
@@ -480,13 +491,38 @@ __index = function(tab,key)
     -- (so that MakeHandshake etc can operate over it)
     local fn = tab.instance.module.functions[tab.functionName]
     local systolicModule = Ssugar.moduleConstructor("InstanceCallsiteShim_"..tab.instance.name.."_"..tab.functionName)
-    local systolicInput = S.parameter( "inp", fn.inputType )
+    local systolicInput = S.parameter( "inp", types.lower(fn.inputType) )
     local inst = tab.instance:toSystolicInstance()
     local systolicOutput = inst[tab.functionName](inst,systolicInput)
     systolicModule:addExternal(inst,{[tab.functionName]=1})
-    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      systolicModule:addExternalFn(inst,tab.functionName.."_ready")
+    end
+    
+    local CE
+    if types.isHandshakeAny(fn.inputType)==false and types.isHandshakeAny(fn.outputType)==false then
+      CE = S.CE("process_CE")
+    end
+    
+    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,CE) )
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      local systolicInputRdy, systolicOutputRdy
+      if fn.outputType==types.null() then
+        systolicInputRdy = S.parameter( "ready_downstream", types.null() )
+        systolicOutputRdy = inst[tab.functionName.."_ready"](inst)
+      else
+        systolicInputRdy = S.parameter( "ready_downstream", types.extractReady(fn.outputType) )
+        systolicOutputRdy = inst[tab.functionName.."_ready"](inst,systolicInputRdy)
+      end
+
+      systolicModule:addFunction( S.lambda("ready", systolicInputRdy, systolicOutputRdy, "ready") )
+    end
+    
     systolicModule = systolicModule:toModule()
     tab.systolicModule = systolicModule
+
     return systolicModule
   elseif key=="terraModule" then
     local MT = require "modulesTerra"
@@ -506,7 +542,9 @@ __index = function(tab,key)
   -- make this appear like as if it's the original function
   --assert(tab.instance.module.functions[functionName]~=nil)
   return tab.instance.module.functions[tab.functionName][key]
-end}
+end,
+__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."()" end
+}
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
 
 darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )

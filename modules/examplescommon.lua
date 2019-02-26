@@ -1830,12 +1830,13 @@ C.oddEvenMergeSort = memoize(
   end)
 
 C.StridedReader = memoize(
-  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr)
+  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr,readFn)
     -- stride,offset is given as # of items
     local G = require "generators"
     local SOC = require "soc"
     assert(totalBytes%(itemBytes*stride)==0)
     assert(itemBytes%8==0)
+    assert( R.isFunction(readFn) )
     
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
@@ -1846,7 +1847,7 @@ C.StridedReader = memoize(
         cnt = G.HS{G.Mul{stride*itemBytes}}(cnt)
         local addr = G.HS{G.Add{offset*itemBytes}}(cnt)
         --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
-        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr)(addr)
+        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr,readFn)(addr)
       end}
 
     return res
@@ -1854,7 +1855,7 @@ C.StridedReader = memoize(
 
 -- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
-  function(filename,W,H,ty,V) -- Nbits: # of bits to read in parallel
+  function(filename,W,H,ty,V,noc) -- Nbits: # of bits to read in parallel
     local G = require "generators"
     local SOC = require "soc"
     assert( (ty:verilogBits()*V)%64==0)
@@ -1871,7 +1872,7 @@ C.AXIReadPar = memoize(
         local out = {}
         for i=0,N-1 do
           print("IMPBI",inpb[i],i,inpb)
-          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr)(inpb[i])
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc["read"..J.sel(i==0,"",tostring(i))])(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
           SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
@@ -1904,7 +1905,8 @@ C.tokenCounterReg = memoize(
     J.err( types.isType(A),"tokenCounterReg: a must be type" )
     J.err( A:is("Handshake"),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
     J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
-
+    J.err( R.isFunction(regGlobal),"tokenCounterReg: reg should be fn")
+    
     if N==nil then
       N = math.pow(2,32)-1
     end
@@ -1917,7 +1919,7 @@ C.tokenCounterReg = memoize(
         local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
         local cnt = G.HS{RM.counter(types.uint(32),N)}(ct)
         cnt = G.HS{G.Add{1}}(cnt)
-        return R.statements{inpb[0],R.writeGlobal("wg",regGlobal,cnt)}
+        return R.statements{inpb[0],regGlobal(cnt)}
       end}
   end)
 
