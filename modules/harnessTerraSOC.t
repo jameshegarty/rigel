@@ -177,7 +177,7 @@ return function(top, options)
 
     var srVerbose = true
     ----------------------------------------------- send start cmd
-    if verbose or srVerbose then cstdio.printf("WRITE REG addr:%x data:%d\n",addr,writeData) end
+    if verbose or srVerbose then cstdio.printf("harnessTerra: WRITE REG addr:%x data:%d\n",addr,writeData) end
   
     if NOC.SAXI0_AWREADY==false then
       cstdio.printf("IP_SAXI0_AWREADY should be true\n");
@@ -243,6 +243,7 @@ return function(top, options)
 
     var NOCINST : Zynq.SimpleNOC().terraModule
     [NOC] = &NOCINST
+    NOC:reset()
     
     var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
@@ -273,7 +274,7 @@ return function(top, options)
       
       V.activateMasterRead([MREAD_SLAVEOUT[0]])
       V.activateMasterWrite([MWRITE_SLAVEOUT[0]])
-      
+
       [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
@@ -307,7 +308,6 @@ return function(top, options)
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
         m:calculateReady()
-
         m:process(nil,nil)
 
         V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);

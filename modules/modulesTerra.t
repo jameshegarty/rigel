@@ -51,7 +51,8 @@ end
 function MT.instanceCallsiteReady(tab)
   local fn = tab.instance.module.functions[tab.functionName]
   err(types.isHandshakeAny(fn.inputType),tab.instance.name..":"..tab.functionName.."() does not have a upstream ready bit. input type: "..tostring(fn.inputType))
-  return `[tab.instance:terraReference()].[tab.functionName.."_ready"]
+  local qt = `[tab.instance:terraReference()].[tab.functionName.."_ready"]
+  return qt
 end
 
 function MT.instanceCallsiteTerraFn(tab)

@@ -75,6 +75,17 @@ local function makeTerra()
                              write_ready:bool[2] -- 0:MAXI0_AWREADY, 1:MAXI0_WREADY (driven by TB)
                            }
 
+  terra ZynqNOCTerra:reset()
+    self.SAXI0_ARVALID=false
+    self.SAXI0_RVALID=false
+    self.SAXI0_AWVALID=false
+    self.SAXI0_WVALID=false
+    self.SAXI0_BVALID=false
+
+    self.MAXI0_RVALID=false
+    self.MAXI0_BVALID=false
+  end
+    
   terra ZynqNOCTerra:read( inp : &types.lower(AXI.ReadAddress64):toTerraType(), out : &types.lower(AXI.ReadData64):toTerraType() )
     @AXIT.RVALID64(out) = self.MAXI0_RVALID;
     @AXIT.RDATA64(out) = self.MAXI0_RDATA;
@@ -89,6 +100,10 @@ local function makeTerra()
     self.MAXI0_ARBURST = @AXIT.ARBURST64(inp);
     self.MAXI0_ARID = @AXIT.ARID64(inp);
     self.MAXI0_ARPROT = @AXIT.ARPROT64(inp);
+  end
+
+  terra ZynqNOCTerra:read_calculateReady(inp:bool)
+    self.MAXI0_RREADY = inp
   end
 
   terra ZynqNOCTerra:write( inp : &types.lower(AXI.WriteIssue64):toTerraType(), out : &types.lower(AXI.WriteResponse64):toTerraType() )
@@ -108,10 +123,6 @@ local function makeTerra()
     @AXIT.BVALID64(out) = self.MAXI0_BVALID
     @AXIT.BRESP64(out) = self.MAXI0_BRESP
     @AXIT.BID64(out) = self.MAXI0_BID
-  end
-
-  terra ZynqNOCTerra:read_calculateReady(inp:bool)
-    self.MAXI0_RREADY = inp
   end
 
   terra ZynqNOCTerra:write_calculateReady(inp:bool)
