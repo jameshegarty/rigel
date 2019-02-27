@@ -21,6 +21,7 @@ AXI.ReadAddress = types.Handshake(types.tuple{
   types.bits(12), -- ARID
   types.bits(3) -- ARPROT
 })
+AXI.ReadAddress64 = AXI.ReadAddress
 AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5}
 AXI.ReadAddressVSelect = {arvalid=tostring(types.extractData(AXI.ReadAddress):verilogBits())}
 for k,v in pairs(AXI.ReadAddressIdx) do AXI.ReadAddressVSelect[k] = vrange(types.extractData(AXI.ReadAddress),AXI.ReadAddressIdx[k],0) end
@@ -34,6 +35,8 @@ AXI.ReadData = J.memoize(function(bits)
                              types.bits(12), -- RID
     })
 end)
+AXI.ReadData64 = AXI.ReadData(64)
+AXI.ReadData32 = AXI.ReadData(32)
 
 AXI.ReadDataIdx={rdata=0,rlast=1,rresp=2,rid=3}
 AXI.ReadDataVSelect = J.memoize(function(bits)
@@ -66,6 +69,7 @@ end)
 AXI.WriteDataIdx = {wdata=0,wstrb=1,wlast=2,wid=3}
 
 AXI.WriteIssue = J.memoize(function(bits) return types.HandshakeTuple{AXI.WriteAddress,AXI.WriteData(bits)} end)
+AXI.WriteIssue64 = AXI.WriteIssue(64)
 
 -- verilog bit select
 AXI.WriteIssueVSelect = J.memoize(function(bits)
@@ -82,6 +86,8 @@ AXI.WriteResponse = J.memoize(function(bits)
                              types.bits(12) -- BID
     })
 end)
+
+AXI.WriteResponse64 = AXI.WriteResponse(64)
 
 AXI.WriteResponseIdx = {bresp=0,bid=1}
 AXI.WriteResponseVSelect = J.memoize(function(bits)

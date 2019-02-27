@@ -201,7 +201,7 @@ bool checkSlaveWriteResponse(
   }else if( *BVALID && *BRESP==0){
     return true;
   }else if( *BVALID ){
-    printf("Slave %d returned strange respose? ", *BRESP);
+    printf("Slave %d returned strange respose? %d", id, *BRESP);
     exit(1);
   }
 

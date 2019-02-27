@@ -53,7 +53,7 @@ end)
 -- for IP DMAs: read, write
 
 
-Zynq.SimpleNOC = function(readPorts,writePorts)
+Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts)
   if readPorts==nil then readPorts=1 end
   if writePorts==nil then writePorts=1 end
 
@@ -70,10 +70,15 @@ Zynq.SimpleNOC = function(readPorts,writePorts)
   
   SimpleNOCFns.write = R.newFunction{name="Write",inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
 
-  local NOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,nil)
+  local makeTerra
+  if terralib~=nil then
+    makeTerra = require "zynqTerra"
+  end
+  
+  local NOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,makeTerra)
   NOC.makeSystolic = function() return C.automaticSystolicStub(NOC) end
   
   return NOC
-end
+end)
 
 return Zynq

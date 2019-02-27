@@ -25,6 +25,53 @@ function MT.terraReference(inst)
   return global( &inst.module.terraModule, nil, inst.name )
 end
 
+function MT.instanceCallsiteCalculateReady(tab)
+  --  return `[tab.instance:terraReference()].methods.[tab.functionName.."_calculateReady"]
+  -- closure
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  err(tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]~=nil, tab.functionName.."_calculateReady() is missing on terra module")
+  
+  if fn.inputType==types.null() then
+    return terra(inp:types.extractReady(fn.outputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
+    end
+  elseif fn.outputType==types.null() and fn.inputType~=types.null() then
+    return terra()
+      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()])
+    end
+  else
+    return terra(inp:types.extractReady(fn.outputType):toTerraType())
+      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
+    end
+  end
+end
+
+-- REMEMBER: This should be READ ONLY
+function MT.instanceCallsiteReady(tab)
+  local fn = tab.instance.module.functions[tab.functionName]
+  err(types.isHandshakeAny(fn.inputType),tab.instance.name..":"..tab.functionName.."() does not have a upstream ready bit. input type: "..tostring(fn.inputType))
+  return `[tab.instance:terraReference()].[tab.functionName.."_ready"]
+end
+
+function MT.instanceCallsiteTerraFn(tab)
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  if fn.inputType==types.null() then
+    return terra(out:&types.lower(fn.outputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],out)
+    end
+  elseif fn.outputType==types.null() then
+    return terra(inp:&types.lower(fn.inputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp)
+    end
+  else
+    return terra( inp:&types.lower(fn.inputType):toTerraType(), out:&types.lower(fn.outputType):toTerraType() )
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp,out)
+    end
+  end
+end
+
 function MT.instanceCallsiteShim(tab)
   local struct InstanceCallsiteShim {}
   local fn = tab.instance.module.functions[tab.functionName]

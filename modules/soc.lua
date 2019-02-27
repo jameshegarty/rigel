@@ -763,42 +763,11 @@ parameter INSTANCE_NAME="inst";
 endmodule
 ]=])
 
---[=[
-  local function makeSystolic()
-    local fns = {}
-
-    local inp = S.parameter("start_input",types.null())
-    local outv = R.lower(types.HandshakeTrigger):fakeValue()
-    fns.start = S.lambda("start",inp,S.constant(outv,R.lower(types.HandshakeTrigger)),"start_output")
-
-    local inp = S.parameter("done_input",R.lower(types.HandshakeTrigger))
-    fns.done = S.lambda("done",inp,nil,"done_output")
-
-    local rinp =  S.parameter("done_ready_inp",types.null())
-    fns.done_ready = S.lambda( "done_ready", rinp, S.constant(R.extractReady(types.HandshakeTrigger):fakeValue(),R.extractReady(types.HandshakeTrigger)), "done_ready")
-
-    local rinp =  S.parameter("start_ready_inp", R.extractReady(types.HandshakeTrigger))
-    fns.start_ready = S.lambda( "start_ready", rinp, nil, "start_ready")
-
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
-
---    local SC = {}
---    for g,_ in pairs(globals) do
---      SC[g.systolicValue] = 1
---      if g.systolicValueReady~=nil then SC[g.systolicValueReady] = 1 end
---    end
-    
-    return S.module.new( ModuleName,fns,{},true,nil,table.concat(vstring),{start=0,done=0,ready=0},SC)
-  end
-]=]
-  --local res = { kind="SOCREGS", name=ModuleName, inputType = R.HandshakeTrigger, outputType = R.HandshakeTrigger, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, registered=true, stateful=true, globals = globals, globalMetadata=globalMetadata }
-  --res =  R.newFunction(res)
 
   functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
   functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
   
-  local res = R.newModule( ModuleName, functionList, true, makeSystolic )
-  res.globals = globals
+  local res = R.newModule( ModuleName, functionList, true, function() end )
   res.globalMetadata = globalMetadata
   res.requires[readSource]=1
   res.requires[readSink]=1
@@ -814,7 +783,7 @@ endmodule
   -- hack
   if terralib~=nil then
     res.makeTerra=nil
-    res.terraModule = SOCMT.axiRegs(res,tab,port)
+    res.terraModule = SOCMT.axiRegs(res,tab,readSource, readSink, writeSource, writeSink)
   end
 
   for k,v in pairs(addToModuleHack) do
@@ -1068,7 +1037,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address )
+    res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn )
   end
   
   return res
@@ -1671,7 +1640,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, port, address )
+    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, port, address, writeFn )
   end
 
   return res

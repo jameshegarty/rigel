@@ -528,6 +528,18 @@ __index = function(tab,key)
     local MT = require "modulesTerra"
     tab.terraModule = MT.instanceCallsiteShim(tab)
     return tab.terraModule
+  elseif key=="terraCalculateReady" then
+    local MT = require "modulesTerra"
+    tab.terraCalculateReady = MT.instanceCallsiteCalculateReady(tab)
+    return tab.terraCalculateReady
+  elseif key=="terraReady" then
+    local MT = require "modulesTerra"
+    tab.terraReady = MT.instanceCallsiteReady(tab)
+    return tab.terraReady
+  elseif key=="terraFn" then
+    local MT = require "modulesTerra"
+    tab.terraFn = MT.instanceCallsiteTerraFn(tab)
+    return tab.terraFn
   elseif key=="requires" then
     local fn = tab.instance.module.functions[tab.functionName]
     tab.requires = {}

@@ -5,6 +5,7 @@ local cstdio = terralib.includec("stdio.h")
 local clocale = terralib.includec("locale.h")
 local J = require "common"
 local Uniform = require "uniform"
+local Zynq = require "zynq"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -58,26 +59,45 @@ return function(top, options)
   local MEMSIZE = SOC.currentAddr-MEMBASE
 
   local verbose = false
+
+  local NOC = noc:terraReference()
   
   local S0LIST = {
     0,
     `IP_CLK,
     `IP_ARESET_N,
-    `&data([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_RDATA"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_RDATA"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
-    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),}
+    `&NOC.SAXI0_ARADDR,
+    --    `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
+    `[&uint8](&NOC.SAXI0_ARVALID),
+    --`[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
+    `[&uint8](&NOC.SAXI0_ARREADY),
+    --`&data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]),
+    `&NOC.SAXI0_AWADDR,
+    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()])),
+    `[&uint8](&NOC.SAXI0_AWVALID),
+    --`[&uint8](&[top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]),
+    `[&uint8](&NOC.SAXI0_AWREADY),
+    --`&data([top:getGlobal("IP_SAXI0_RDATA"):terraValue()]),
+    `&NOC.SAXI0_RDATA,
+    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_RDATA"):terraValue()])),
+    `[&uint8](&NOC.SAXI0_RVALID),
+    --`[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
+    --`[&uint8](&NOC.SAXI0_RREADY),
+    `[&uint8](&NOC.readSink_ready),
+    --`&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
+    `&NOC.SAXI0_BRESP,
+    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
+    `[&uint8](&NOC.SAXI0_BVALID),
+    --`[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
+    --`[&uint8](&NOC.SAXI0_BREADY),
+    `[&uint8](&NOC.writeSink_ready),
+    --`&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
+    `&NOC.SAXI0_RRESP,
+    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
+    `[&uint8](&NOC.SAXI0_WVALID),
+    --`[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),
+    `[&uint8](&NOC.SAXI0_WREADY)
+  }
 
   local MREAD_SLAVEOUT={}
   local MREAD_SLAVEIN={}
@@ -87,44 +107,53 @@ return function(top, options)
   local MAX_READ_PORT = -1
   local MAX_WRITE_PORT = -1
   
-  for i=0,SOC.ports do
-    if top:getGlobal("IP_MAXI"..i.."_ARADDR")~=nil then
+  for i=0,0 do
+    --local nm_araddr = "MAXI"..i.."_ARADDR"
+    --if NOC[nm_araddr]~=nil then
+    if true then
       MAX_READ_PORT = i
       MREAD_SLAVEOUT[i] = {
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraReady()]),
-        `&data([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()])),
-        `&[top:getGlobal("IP_MAXI"..i.."_RRESP"):terraValue()],
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RLAST"):terraValue()])}
+        --`[&uint8](&NOC.["MAXI"..i.."_ARREADY"]),
+        `[&uint8](&NOC.read_ready),
+        `&NOC.["MAXI"..i.."_RDATA"],
+        `[&uint8](&NOC.["MAXI"..i.."_RVALID"]),
+        `&NOC.["MAXI"..i.."_RRESP"],
+        `[&uint8](&NOC.["MAXI"..i.."_RLAST"])
+      }
 
       MREAD_SLAVEIN[i] = {
-        `&data([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()])),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RDATA"):terraReady()]),
-        `&[top:getGlobal("IP_MAXI"..i.."_ARLEN"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_ARSIZE"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_ARBURST"):terraValue()]}
+        `&NOC.["MAXI"..i.."_ARADDR"],
+        `[&uint8](&NOC.["MAXI"..i.."_ARVALID"]),
+        `[&uint8](&NOC.["MAXI"..i.."_RREADY"]),
+        `&NOC.["MAXI"..i.."_ARLEN"],
+        `&NOC.["MAXI"..i.."_ARSIZE"],
+        `&NOC.["MAXI"..i.."_ARBURST"]
+      }
     end
 
-    if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
+    --if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
+    if true then
       MAX_WRITE_PORT = i
       MWRITE_SLAVEOUT[i] = {
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraReady()]),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_WDATA"):terraReady()]),
-        `&data([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]))}
+        --`[&uint8](&NOC.["MAXI"..i.."_AWREADY"]),
+        `[&uint8](&NOC.write_ready[0]),
+        --`[&uint8](&NOC.["MAXI"..i.."_WREADY"]),
+        `[&uint8](&NOC.write_ready[1]),
+        `&NOC.["MAXI"..i.."_BRESP"],
+        `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
+      }
 
       MWRITE_SLAVEIN[i] = {
-        `&data([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()])),
-        `&data([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()])),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_BRESP"):terraReady()]),
-        `&[top:getGlobal("IP_MAXI"..i.."_WSTRB"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_WLAST"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWLEN"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWSIZE"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWBURST"):terraValue()]}
+        `&NOC.["MAXI"..i.."_AWADDR"],
+        `[&uint8](&NOC.["MAXI"..i.."_AWVALID"]),
+        `&NOC.["MAXI"..i.."_WDATA"],
+        `[&uint8](&NOC.["MAXI"..i.."_WVALID"]),
+        `[&uint8](&NOC.["MAXI"..i.."_BREADY"]),
+        `&NOC.["MAXI"..i.."_WSTRB"],
+        `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
+        `&NOC.["MAXI"..i.."_AWLEN"],
+        `&NOC.["MAXI"..i.."_AWSIZE"],
+        `&NOC.["MAXI"..i.."_AWBURST"]}
     end
   end
 
@@ -150,15 +179,15 @@ return function(top, options)
     ----------------------------------------------- send start cmd
     if verbose or srVerbose then cstdio.printf("WRITE REG addr:%x data:%d\n",addr,writeData) end
   
-    if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
+    if NOC.SAXI0_AWREADY==false then
       cstdio.printf("IP_SAXI0_AWREADY should be true\n");
       cstdlib.exit(1)
     end
       
-    data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = addr;
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
-    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
-    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
+    NOC.SAXI0_AWADDR = addr;
+    NOC.SAXI0_AWVALID = true;
+    NOC.SAXI0_WDATA = writeData;
+    NOC.SAXI0_WVALID = true;
     
     --------------------------------------------------- step
     m:calculateReady()
@@ -166,7 +195,7 @@ return function(top, options)
       
     var found = V.checkSlaveWriteResponse(S0LIST);
       
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
+    NOC.SAXI0_AWVALID = false;
       
     --------------------------------------------------- step
     m:calculateReady()
@@ -211,6 +240,9 @@ return function(top, options)
     var slaveState1 : V.SlaveState
     V.initSlaveState(&slaveState0)
     V.initSlaveState(&slaveState1)
+
+    var NOCINST : Zynq.SimpleNOC().terraModule
+    [NOC] = &NOCINST
     
     var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
