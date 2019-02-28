@@ -8,7 +8,7 @@ local Zynq = require "zynq"
 
 local cycles = tonumber(string.match(arg[0],"%d+"))
 
-local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 local regs = SOC.axiRegs({},SDF{1,cycles},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 

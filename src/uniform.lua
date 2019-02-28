@@ -297,17 +297,12 @@ UniformFunctions.simplify = J.memoize(function(self)
         return Uniform.addMSBs(inputs[1],n.msbs)
       elseif n.kind=="sel" then
         return Uniform.sel(inputs[1],inputs[2],inputs[3])
-      elseif n.kind=="const" or n.kind=="var" or n.kind=="global" then
+      elseif n.kind=="const" or n.kind=="var" or n.kind=="instanceCallsite" then
         return n
       else
         print("simplify missing passthrough?",n.kind)
         assert(false)
       end
-
---    end)
-
-  --print("SIMPLIFY",self,res)
---  return res
 end)
 
 Uniform.binop = J.memoize(function(op,lhs,rhs)
@@ -370,8 +365,8 @@ Uniform.isNumber = J.memoize(
       return true
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
-    elseif n.kind=="global" then
-      return n.global.type:isNumber()
+    elseif n.kind=="instanceCallsite" then
+      return n.instanceCallsite.outputType:isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()

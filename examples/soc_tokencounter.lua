@@ -9,7 +9,7 @@ local SDF = require "sdf"
 types.export()
 local Zynq = require "zynq"
 
-local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 local regs = SOC.axiRegs({startCnt={u32,0,"input"},endCnt={u32,0,"input"}},SDF{1,8192},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 

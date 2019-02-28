@@ -75,8 +75,10 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts)
     makeTerra = require "zynqTerra"
   end
   
-  local NOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,makeTerra)
+  local NOC = R.newModule("Zynq_NOC",SimpleNOCFns,false,nil,function() return makeTerra(readPorts,writePorts) end)
   NOC.makeSystolic = function() return C.automaticSystolicStub(NOC) end
+  NOC.readPorts = readPorts
+  NOC.writePorts = writePorts
   
   return NOC
 end)

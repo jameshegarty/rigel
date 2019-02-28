@@ -67,35 +67,19 @@ return function(top, options)
     `IP_CLK,
     `IP_ARESET_N,
     `&NOC.SAXI0_ARADDR,
-    --    `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
     `[&uint8](&NOC.SAXI0_ARVALID),
-    --`[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
     `[&uint8](&NOC.SAXI0_ARREADY),
-    --`&data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]),
     `&NOC.SAXI0_AWADDR,
-    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()])),
     `[&uint8](&NOC.SAXI0_AWVALID),
-    --`[&uint8](&[top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]),
     `[&uint8](&NOC.SAXI0_AWREADY),
-    --`&data([top:getGlobal("IP_SAXI0_RDATA"):terraValue()]),
     `&NOC.SAXI0_RDATA,
-    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_RDATA"):terraValue()])),
     `[&uint8](&NOC.SAXI0_RVALID),
-    --`[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
-    --`[&uint8](&NOC.SAXI0_RREADY),
     `[&uint8](&NOC.readSink_ready),
-    --`&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
     `&NOC.SAXI0_BRESP,
-    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
     `[&uint8](&NOC.SAXI0_BVALID),
-    --`[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
-    --`[&uint8](&NOC.SAXI0_BREADY),
     `[&uint8](&NOC.writeSink_ready),
-    --`&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
     `&NOC.SAXI0_RRESP,
-    --`[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
     `[&uint8](&NOC.SAXI0_WVALID),
-    --`[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),
     `[&uint8](&NOC.SAXI0_WREADY)
   }
 
@@ -104,17 +88,15 @@ return function(top, options)
   local MWRITE_SLAVEOUT={}
   local MWRITE_SLAVEIN={}
 
-  local MAX_READ_PORT = -1
-  local MAX_WRITE_PORT = -1
+  local MAX_READ_PORT = noc.module.readPorts-1
+  local MAX_WRITE_PORT = noc.module.writePorts-1
+
+  print("PORTS",MAX_READ_PORT,MAX_WRITE_PORT)
   
-  for i=0,0 do
-    --local nm_araddr = "MAXI"..i.."_ARADDR"
-    --if NOC[nm_araddr]~=nil then
-    if true then
-      MAX_READ_PORT = i
+  for i=0,noc.module.readPorts-1 do
+    local I = J.sel(i==0,"",tostring(i))
       MREAD_SLAVEOUT[i] = {
-        --`[&uint8](&NOC.["MAXI"..i.."_ARREADY"]),
-        `[&uint8](&NOC.read_ready),
+        `[&uint8](&NOC.["read"..I.."_ready"]),
         `&NOC.["MAXI"..i.."_RDATA"],
         `[&uint8](&NOC.["MAXI"..i.."_RVALID"]),
         `&NOC.["MAXI"..i.."_RRESP"],
@@ -129,19 +111,17 @@ return function(top, options)
         `&NOC.["MAXI"..i.."_ARSIZE"],
         `&NOC.["MAXI"..i.."_ARBURST"]
       }
-    end
-
-    --if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
-    if true then
-      MAX_WRITE_PORT = i
-      MWRITE_SLAVEOUT[i] = {
-        --`[&uint8](&NOC.["MAXI"..i.."_AWREADY"]),
-        `[&uint8](&NOC.write_ready[0]),
-        --`[&uint8](&NOC.["MAXI"..i.."_WREADY"]),
-        `[&uint8](&NOC.write_ready[1]),
+  end
+  
+  for i=0,noc.module.writePorts-1 do
+    local I = J.sel(i==0,"",tostring(i))
+    
+    MWRITE_SLAVEOUT[i] = {
+      `[&uint8](&NOC.["write"..I.."_ready"][0]),
+      `[&uint8](&NOC.["write"..I.."_ready"][1]),
         `&NOC.["MAXI"..i.."_BRESP"],
         `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
-      }
+    }
 
       MWRITE_SLAVEIN[i] = {
         `&NOC.["MAXI"..i.."_AWADDR"],
@@ -154,15 +134,17 @@ return function(top, options)
         `&NOC.["MAXI"..i.."_AWLEN"],
         `&NOC.["MAXI"..i.."_AWSIZE"],
         `&NOC.["MAXI"..i.."_AWBURST"]}
-    end
+
   end
 
   local clearOutputs = {}
-  for i=0,SOC.ports do
+  for i=0,noc.module.readPorts-1 do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
       table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [Uniform(top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE):toTerra()]) end )
     end
+  end
 
+  for i=0,noc.module.writePorts-1 do
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
       local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
       table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()],bytes) end )
@@ -215,7 +197,7 @@ return function(top, options)
   for k,v in pairs(top.globalMetadata) do
     if string.sub(k,0,8)=="Register" then
       local addr = string.sub(k,10)
-      --table.insert(registerList,"['"..addr.."']='"..v.."'")
+
       print("REG",addr,v)
       local bytes = #v/2
       local addr = tonumber("0x"..addr)
@@ -241,7 +223,7 @@ return function(top, options)
     V.initSlaveState(&slaveState0)
     V.initSlaveState(&slaveState1)
 
-    var NOCINST : Zynq.SimpleNOC().terraModule
+    var NOCINST : noc.module.terraModule
     [NOC] = &NOCINST
     NOC:reset()
     
@@ -285,7 +267,8 @@ return function(top, options)
 
       var startSec = currentTimeInSeconds()
 
-      var cooldownCycles = 10000
+      var cooldownCycles = 1000
+      if(totalCycles/10<cooldownCycles) then cooldownCycles=totalCycles/10; end
       var cooldownTime = false
 
       var cyclesToDoneSignal = -1

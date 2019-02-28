@@ -1078,21 +1078,8 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase, read
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
   J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
   J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
---  J.err( Nbytes%8==0, "axiReadBytes: Nbytes must have 8 as a factor" )
---  J.err( Nbytes>=8, "axiReadBytes: NYI - Nbytes must be >=8" )
   J.err( X==nil, "axiReadBytes: too many arguments" )
   J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
-
-  --[=[
-  local globals = {}
-  globals[R.newGlobal("IP_MAXI"..port.."_ARADDR_RV","output",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RDATA","input",R.Handshake(types.bits(64)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RRESP","input",types.bits(2))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_RLAST","input",types.bool())] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARLEN","output",types.bits(4))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARSIZE","output",types.bits(2))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_ARBURST","output",types.bits(2))] = 1
-  ]=]
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
@@ -1107,18 +1094,6 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase, read
   local vstr = [=[module ]=]..ModuleName..[=[(
     input wire CLK,
     input wire reset,
-
-//    output wire [32:0] IP_MAXI]=]..port..[=[_ARADDR_RV,
-//    input wire IP_MAXI]=]..port..[=[_ARADDR_RV_ready,
-
-//    input wire [64:0] IP_MAXI]=]..port..[=[_RDATA,
-//    output wire IP_MAXI]=]..port..[=[_RDATA_ready,
-
-//    input wire [1:0] IP_MAXI]=]..port..[=[_RRESP,
-//    input wire IP_MAXI]=]..port..[=[_RLAST,
-//    output wire [3:0] IP_MAXI]=]..port..[=[_ARLEN,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_ARSIZE,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_ARBURST,
   
     output wire [55:0] ]=]..RPORT..[=[_input,
     input wire [79:0] ]=]..RPORT..[=[,
@@ -1134,23 +1109,16 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase, read
 );
 parameter INSTANCE_NAME="inst";
 
-//assign IP_MAXI]=]..port..[=[_ARLEN = 4'd]=]..(burstCount-1)..[=[; // length of burst
 assign ]=]..RPORT..[=[_input[]=]..AXI.ReadAddressVSelect.arlen.."] = 4'd"..(burstCount-1)..[=[; // length of burst
-//assign IP_MAXI]=]..port..[=[_ARSIZE = 2'b11; // number of bytes per transfer
 assign ]=]..RPORT..[=[_input[]=]..AXI.ReadAddressVSelect.arsize..[=[] = 2'b11; // number of bytes per transfer
-//assign IP_MAXI]=]..port..[=[_ARBURST = 2'b01; // burst mode
 assign ]=]..RPORT.."_input["..AXI.ReadAddressVSelect.arburst..[=[] = 2'b01; // burst mode
 
-//assign IP_MAXI]=]..port..[=[_ARADDR_RV = process_input + 32'd]=]..addressBase..[=[;
 assign ]=]..RPORT..[=[_input[]=]..AXI.ReadAddressVSelect.arvalid..[=[] = process_input[32];
 assign ]=]..RPORT..[=[_input[]=]..AXI.ReadAddressVSelect.araddr..[=[] = process_input[31:0] + 32'd]=]..addressBase..[=[;
-//assign ready = IP_MAXI]=]..port..[=[_ARADDR_RV_ready;
 assign ready = ]=]..RPORT..[=[_ready;
 
-//assign process_output = IP_MAXI]=]..port..[=[_RDATA;
 assign process_output[63:0] = ]=]..RPORT.."["..AXI.ReadDataVSelect(64).rdata..[=[];
 assign process_output[64] = ]=]..RPORT.."["..AXI.ReadDataVSelect(64).rvalid..[=[];
-//assign IP_MAXI]=]..port..[=[_RDATA_ready = ready_downstream;
 assign ]=]..RPORT..[=[_ready_downstream = ready_downstream;
 
 //always @(posedge CLK) begin
@@ -1165,7 +1133,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase )
+    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase, readFn )
   end
 
   --return SOC.AXIWrapRV(res,port)
@@ -1183,18 +1151,6 @@ SOC.axiWriteBytes = J.memoize(function( filename, NbytesPerCycle, port, addressB
   J.err( R.isFunction(writeFn), "axiWriteBytes: writeFn should be rigel function, but is: "..tostring(writeFn))
   J.err( X==nil, "axiWriteBytes: too many arguments" )
   local addressBase = Uniform(addressBase_orig)
-
-  --[=[
-  local globals = {}
-  globals[R.newGlobal("IP_MAXI"..port.."_AWADDR_RV","output",R.Handshake(types.bits(32)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_WDATA_RV","output",R.Handshake(types.bits(64)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_WSTRB","output",types.bits(8))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_WLAST","output",types.bits(1))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_BRESP","input",R.Handshake(types.bits(2)))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_AWLEN","output",types.bits(4))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_AWSIZE","output",types.bits(2))] = 1
-  globals[R.newGlobal("IP_MAXI"..port.."_AWBURST","output",types.bits(2))] = 1
-  ]=]
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_write_filename"] = filename
@@ -1240,22 +1196,6 @@ end
   local vstr = [=[module ]=]..ModuleName..[=[(
     input wire CLK,
     input wire reset,
-
-//    output wire [32:0] IP_MAXI]=]..port..[=[_AWADDR_RV,
-//    input wire IP_MAXI]=]..port..[=[_AWADDR_RV_ready,
-
-//    output wire [64:0] IP_MAXI]=]..port..[=[_WDATA_RV,
-//    input wire IP_MAXI]=]..port..[=[_WDATA_RV_ready,
-
-//    output wire [7:0] IP_MAXI]=]..port..[=[_WSTRB,
-//    output wire IP_MAXI]=]..port..[=[_WLAST,
-
-//    input wire [2:0] IP_MAXI]=]..port..[=[_BRESP,
-//    output wire IP_MAXI]=]..port..[=[_BRESP_ready,
-
-//    output wire [3:0] IP_MAXI]=]..port..[=[_AWLEN,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_AWSIZE,
-//    output wire [1:0] IP_MAXI]=]..port..[=[_AWBURST,
   
     output wire []=]..tostring(AXI.WriteIssue(64):verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
     input wire []=]..tostring(AXI.WriteResponse(64):verilogBits()-1)..[=[:0] ZynqNOC_write, 
@@ -1270,20 +1210,13 @@ end
 );
 parameter INSTANCE_NAME="inst";
 
-//assign IP_MAXI]=]..port..[=[_AWLEN = 4'd]=]..(burstCount-1)..[=[; // length of burst
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awlen..[=[] = 4'd]=]..(burstCount-1)..[=[; // length of burst
-//assign IP_MAXI]=]..port..[=[_AWSIZE = 2'b11; // number of bytes per transfer
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awsize..[=[] = 2'b11; // number of bytes per transfer
-//assign IP_MAXI]=]..port..[=[_AWBURST = 2'b01; // burst mode
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awburst..[=[] = 2'b01; // burst mode
-//assign IP_MAXI]=]..port..[=[_WSTRB = 8'b]=]..strb..[=[; // burst mode
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wstrb..[=[] = 8'b]=]..strb..[=[; // burst mode
 
-//assign IP_MAXI]=]..port..[=[_AWADDR_RV[31:0] = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awaddr..[=[] = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
-//assign IP_MAXI]=]..port..[=[_AWADDR_RV[32] = process_input[32];
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).awvalid..[=[] = process_input[32];
-//assign ready = {IP_MAXI]=]..port..[=[_WDATA_RV_ready,IP_MAXI]=]..port..[=[_AWADDR_RV_ready};
 assign ready = ZynqNOC_write_ready;
 
 //always @(posedge CLK) begin
@@ -1295,9 +1228,7 @@ assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wdata..[=[] = process_
 assign ZynqNOC_write_input[]=]..AXI.WriteIssueVSelect(64).wvalid..[=[] = process_input[]=]..(Nbits+32+1)..[=[];
 
 ]=]..last..[=[
-//assign process_output = IP_MAXI]=]..port..[=[_BRESP[2];
 assign process_output = ZynqNOC_write[]=]..AXI.WriteResponseVSelect(64).bvalid..[=[];
-//assign IP_MAXI]=]..port..[=[_BRESP_ready = ready_downstream;
 assign ZynqNOC_write_ready_downstream = ready_downstream;
 
 endmodule
@@ -1310,7 +1241,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase )
+    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase, writeFn )
   end
 
   --return SOC.AXIWrapRV(res,port)

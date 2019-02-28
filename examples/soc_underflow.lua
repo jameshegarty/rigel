@@ -9,7 +9,7 @@ local SDF = require "sdf"
 types.export()
 local Zynq = require "zynq"
 
-local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 
 -- test underflow block

@@ -2,8 +2,13 @@ local MT = require "modulesTerra"
 local AXI = require "axi"
 local AXIT = require "axiTerra"
 local types = require "types"
+local J = require "common"
 
-local function makeTerra()
+local makeTerra = J.memoize(function(readPorts,writePorts)
+    print("MAKE ZYNC NOC TERRA",readPorts,writePorts)
+  if readPorts==nil then readPorts=1 end
+  if writePorts==nil then writePorts=1 end
+  
   local struct ZynqNOCTerra{ SAXI0_ARADDR:uint32,
                              SAXI0_ARVALID:bool,
                              SAXI0_ARREADY:bool,
@@ -37,19 +42,6 @@ local function makeTerra()
                              SAXI0_BID:uint8,
 
                              --MAXI0_ARREADY:bool,
-                             MAXI0_RDATA:uint64,
-                             MAXI0_RVALID:bool,
-                             MAXI0_RID:uint8,
-                             MAXI0_RRESP:uint8,
-                             MAXI0_RLAST:bool,
-                             MAXI0_ARADDR:uint32,
-                             MAXI0_ARVALID:bool,
-                             MAXI0_RREADY:bool,
-                             MAXI0_ARLEN:uint8,
-                             MAXI0_ARSIZE:uint8,
-                             MAXI0_ARID:uint8,
-                             MAXI0_ARPROT:uint8,
-                             MAXI0_ARBURST:uint8,
 
                              --MAXI0_AWREADY:bool,
                              MAXI0_AWADDR:uint32,
@@ -71,40 +63,75 @@ local function makeTerra()
                              
                              readSink_ready:bool, -- SAXI0_RREADY (driven by TB)
                              writeSink_ready:bool, -- SAXI0_BREADY (driven by TB)
-                             read_ready:bool,   -- MAXI0_ARREADY (driven by TB)
+
                              write_ready:bool[2] -- 0:MAXI0_AWREADY, 1:MAXI0_WREADY (driven by TB)
                            }
 
-  terra ZynqNOCTerra:reset()
+  local resetQuotes = {}
+  local self = symbol(&ZynqNOCTerra)
+  
+  for i=1,readPorts do
+    print("ADDPORT",i)
+    table.insert( ZynqNOCTerra.entries, {field="read"..J.sel(i==1,"",i-1).."_ready", type=bool})   -- MAXI0_ARREADY (driven by TB)
+
+    local I = tostring(i-1)
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RDATA",type=uint64})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RVALID",type=bool})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RID",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RRESP",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RLAST",type=bool})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARADDR",type=uint32})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARVALID",type=bool})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RREADY",type=bool})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARLEN",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARSIZE",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARID",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARPROT",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARBURST",type=uint8})
+  end
+  
+  for i=1,readPorts do
+    local I = tostring(i-1)
+    table.insert(resetQuotes, quote self.["MAXI"..I.."_RVALID"]=false end)
+    --table.insert(resetQuotes, quote self.["MAXI"..I.."_BVALID"]=false end)
+  end
+  
+  ZynqNOCTerra.methods.reset = terra ([self])
     self.SAXI0_ARVALID=false
     self.SAXI0_RVALID=false
     self.SAXI0_AWVALID=false
     self.SAXI0_WVALID=false
     self.SAXI0_BVALID=false
 
-    self.MAXI0_RVALID=false
+    resetQuotes
     self.MAXI0_BVALID=false
   end
+
+  for i=1,readPorts do
+    local I = tostring(i-1)
     
-  terra ZynqNOCTerra:read( inp : &types.lower(AXI.ReadAddress64):toTerraType(), out : &types.lower(AXI.ReadData64):toTerraType() )
-    @AXIT.RVALID64(out) = self.MAXI0_RVALID;
-    @AXIT.RDATA64(out) = self.MAXI0_RDATA;
-    @AXIT.RLAST64(out) = self.MAXI0_RLAST;
-    @AXIT.RRESP64(out) = self.MAXI0_RRESP;
-    @AXIT.RID64(out) = self.MAXI0_RID;
+    ZynqNOCTerra.methods["read"..J.sel(i==1,"",i-1)] = terra( self:&ZynqNOCTerra, inp : &types.lower(AXI.ReadAddress64):toTerraType(), out : &types.lower(AXI.ReadData64):toTerraType() )
+      @AXIT.RVALID64(out) = self.MAXI0_RVALID;
+      @AXIT.RDATA64(out) = self.MAXI0_RDATA;
+      @AXIT.RLAST64(out) = self.MAXI0_RLAST;
+      @AXIT.RRESP64(out) = self.MAXI0_RRESP;
+      @AXIT.RID64(out) = self.MAXI0_RID;
 
-    self.MAXI0_ARVALID = @AXIT.ARVALID64(inp);
-    self.MAXI0_ARADDR = @AXIT.ARADDR64(inp);
-    self.MAXI0_ARSIZE = @AXIT.ARSIZE64(inp);
-    self.MAXI0_ARLEN = @AXIT.ARLEN64(inp);
-    self.MAXI0_ARBURST = @AXIT.ARBURST64(inp);
-    self.MAXI0_ARID = @AXIT.ARID64(inp);
-    self.MAXI0_ARPROT = @AXIT.ARPROT64(inp);
+      self.["MAXI"..I.."_ARVALID"] = @AXIT.ARVALID64(inp);
+      self.["MAXI"..I.."_ARADDR"] = @AXIT.ARADDR64(inp);
+      self.["MAXI"..I.."_ARSIZE"] = @AXIT.ARSIZE64(inp);
+      self.["MAXI"..I.."_ARLEN"] = @AXIT.ARLEN64(inp);
+      self.["MAXI"..I.."_ARBURST"] = @AXIT.ARBURST64(inp);
+      self.["MAXI"..I.."_ARID"] = @AXIT.ARID64(inp);
+      self.["MAXI"..I.."_ARPROT"] = @AXIT.ARPROT64(inp);
+    end
+
+    ZynqNOCTerra.methods["read"..J.sel(i==1,"",i-1).."_calculateReady"] = terra( self:&ZynqNOCTerra, inp:bool )
+      self.["MAXI"..I.."_RREADY"] = inp
+    end
+
   end
 
-  terra ZynqNOCTerra:read_calculateReady(inp:bool)
-    self.MAXI0_RREADY = inp
-  end
 
   terra ZynqNOCTerra:write( inp : &types.lower(AXI.WriteIssue64):toTerraType(), out : &types.lower(AXI.WriteResponse64):toTerraType() )
     self.MAXI0_AWVALID = @AXIT.AWVALID64(inp) 
@@ -178,6 +205,6 @@ local function makeTerra()
   end
 
   return MT.new(ZynqNOCTerra)
-end
+end)
 
 return makeTerra

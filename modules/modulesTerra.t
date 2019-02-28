@@ -58,6 +58,8 @@ end
 function MT.instanceCallsiteTerraFn(tab)
   local fn = tab.instance.module.functions[tab.functionName]
 
+  err( tab.instance.module.terraModule.methods[tab.functionName]~=nil, tab.instance.name..":"..tab.functionName.."() terra fn is missing?" )
+  
   if fn.inputType==types.null() then
     return terra(out:&types.lower(fn.outputType):toTerraType())
       [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],out)

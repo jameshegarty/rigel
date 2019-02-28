@@ -11,7 +11,7 @@ local J = require "common"
 types.export()
 local Zynq = require "zynq"
 
-local noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 local regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 

@@ -34,65 +34,72 @@ end
 function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X )
   local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool, doneReg:bool, RDATAReady:bool }
 
+  for k,v in pairs(tab) do
+    local ty = v[1]
+    print("ADDENTRY",k,v,ty,v[1])
+    table.insert( AxiRegsN.entries,{field=k,type=ty:toTerraType()})
+  end
+
+  local self = symbol(&AxiRegsN)
+  
+  for k,v in pairs(tab) do
+    local ty = v[1]
+    AxiRegsN.methods[k] = terra([self],out:&ty:toTerraType()) @out=self.[k] end
+  end
+  
   terra AxiRegsN:reset()
     self.startReg = false
     self.doneReg = false
-    --[mod:getGlobal("IP_SAXI"..port.."_ARADDR"):terraReady()] = true
-    readSource.terraCalculateReady(true)
-    --[mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraReady()] = true
-    --    [mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraReady()] = true
-    writeSource.terraCalculateReady(array(true,true))
 
---    [SOCMT.doneHack] = false
+    readSource.terraCalculateReady(true)
+    writeSource.terraCalculateReady(array(true,true))
   end
 
   local regSet = {}
   local regReady = {}
 
   local W = symbol(types.lower(AXI.WriteIssue(32)):toTerraType(),"W")
+
+  
   
   for k,v in pairs(tab) do
-    local addr = mod.globalMetadata["AddrOfRegister_"..k]
-    local ty = mod.globalMetadata["TypeOfRegister_"..k]
-    local glob = mod:getGlobal(k):terraValue()
+    local addr = mod.globalMetadata["AddrOfRegister_regs_"..k]
+    local ty = v[1]
 
     if v[3]=="input" then
+      assert(false)
       -- register inputs are always Handshaked
       table.insert( regReady, quote [mod:getGlobal(k):terraReady()] = true; end )
     else
       for i=0,math.ceil(ty:verilogBits()/32)-1 do
         table.insert(regSet,
           quote
-            --if data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])==[addr+i*4] then
-            if @AXIT.AWADDR(&W)==[addr+i*4] then
-              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d\n", data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]), data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()]) )
-              @([&uint](&[glob])+i) = data([mod:getGlobal("IP_SAXI"..port.."_WDATA"):terraValue()])
+            if @AXIT.AWADDR32(&W)==[addr+i*4] then
+              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
+              @([&uint](&self.[k])+i) = @AXIT.WDATA32(&W)
             end
           end)
       end
     end
   end
 
-  terra AxiRegsN:start( out : &bool )
+  AxiRegsN.methods.start = terra( [self], out : &bool )
     var [W] 
     writeSource.terraFn(&W)
   
-    --if valid([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()]) then
     if @[AXIT.AWVALID(32)](&W) then
       cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
 
-      --data([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = 0
-      --valid([mod:getGlobal("IP_SAXI"..port.."_BRESP"):terraValue()]) = true
       var BRESP : types.lower(AXI.WriteResponse(32)):toTerraType()
       @AXIT.BRESP32(&BRESP) = 0
       @AXIT.BVALID32(&BRESP) = true
       [writeSink.terraFn](&BRESP)
 
-      --var addr = data([mod:getGlobal("IP_SAXI"..port.."_AWADDR"):terraValue()])
       var addr = @AXIT.AWADDR32(&W)
       if addr==0xa0000000 then
         self.startReg = true
         self.doneReg = false
+        cstdio.printf("socTerra.axiRegs: pipeline start requested, waiting on ready\n")
       else
         [regSet]
       end
@@ -101,6 +108,7 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
     @out = self.startReg
 
     if self.startReg and self.startReady then
+      cstdio.printf("socTerra.axiRegs: trigger pipeline start\n")
       self.startReg = false
     end
   end
@@ -115,8 +123,6 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
     end
 
     if @AXIT.ARVALID32(&AR) then
-      --cstdio.printf("socTerra: READ FROM REG. Addr:%x\n",@AXIT.ARADDR32(&AR))
-
       if @AXIT.ARADDR32(&AR)~=0xa0000004 then
         cstdio.printf("socTerra: AxiRegsN: NYI - read from something other than done bit!\n")
       end
@@ -180,17 +186,11 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
           
     if self.nextByteToRead<[totalBytes:toTerra()] then
       var addr = self.nextByteToRead+[baseAddress:toTerra()]
-      --cstdio.printf("readBurst: send address %d port %d ready %d\n",self.nextByteToRead, port, [mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraReady()])
       
-      --valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = true
       valid(AR) = true
-      --data([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = addr
       @AXIT.ARADDR(&AR) = addr
-      --[mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = 15
       @AXIT.ARLEN(&AR) = 15
-      --[mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
       @AXIT.ARSIZE(&AR) = 3
-      --[mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
       @AXIT.ARBURST(&AR) = 1
       
       if self.ready then
@@ -254,7 +254,6 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
   end
 
   terra WriteBurst:process( dataIn:&R.lower(inputType):toTerraType(), done:&bool )
-
     var W : types.lower(AXI.WriteIssue64):toTerraType()
     var BRESP : types.lower(AXI.WriteResponse64):toTerraType()
   
@@ -346,9 +345,10 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
   return MT.new(WriteBurst)
 end
 
-function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
+function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase, readFn )
   assert(type(addressBase)=="number")
-
+  assert(R.isFunction(readFn))
+  
   local inputType = R.Handshake(types.uint(32))
   local outputType = R.Handshake(types.bits(64))
 
@@ -358,28 +358,37 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
 
   terra ReadBytes:reset()
-    [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = false
+    --[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = false
     self.ready = true
   end
 
   terra ReadBytes:process( dataIn:&R.lower(inputType):toTerraType(), dataOut:&R.lower(outputType):toTerraType() )
+    var AR : types.lower(AXI.ReadAddress64):toTerraType()
+    var RDATA : types.lower(AXI.ReadData64):toTerraType()
 
-    if valid(dataIn) and self.ARADDRReady then
+    if valid(dataIn) and self.ready then
       var addr = data(dataIn)+[addressBase]
-      valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = true
-      data([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = addr
-      [mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
-      [mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
-      [mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
+      --valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = true
+      --data([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = addr
+      --[mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
+      --[mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
+      --[mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
+      valid(AR) = true
+      @AXIT.ARADDR(&AR) = addr
+      @AXIT.ARLEN(&AR) = [burstCount-1]
+      @AXIT.ARSIZE(&AR) = 3
+      @AXIT.ARBURST(&AR) = 1
     elseif valid(dataIn) and self.ARADDRReady==false then
       cstdio.printf("readBytes: want to read, but ARREADY is false\n")
     elseif valid(dataIn)==false and self.ARADDRReady then
-      valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = false
+      valid(AR) = false
     end
 
+    readFn.terraFn(&AR,&RDATA)
+    
     if self.readyDownstream then
-      if valid([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]) then
-        cstring.memcpy( &data(dataOut), &data([mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraValue()]), [R.extractData(outputType):sizeof()] )
+      if valid(RDATA) then
+        cstring.memcpy( &data(dataOut), AXIT.RDATA64(&RDATA), [R.extractData(outputType):sizeof()] )
         valid(dataOut) = true
       else
         valid(dataOut) = false
@@ -388,16 +397,20 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase )
   end
 
   terra ReadBytes:calculateReady(readyDownstream:bool)
-    self.ARADDRReady = [mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraReady()]
-    [mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = readyDownstream
+  --self.ARADDRReady = [mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraReady()]
+    readFn.terraCalculateReady(readyDownstream)
+    --self.ARADDRReady = readFn.terraReady
+    --[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = readyDownstream
     self.readyDownstream = readyDownstream
-    self.ready = [mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraReady()]
+    self.ready = readFn.terraReady
   end
 
   return MT.new(ReadBytes)
 end
 
-function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig )
+function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
+  assert(R.isFunction(writeFn))
+  
   local addressBase = Uniform(addressBase_orig)
 
   local Nbits = math.min(64,Nbytes*8)
@@ -411,29 +424,46 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig )
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
 
   terra WriteBytes:reset()
-    [mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()] = false
+    --[mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()] = false
     self.ready[0] = false
     self.ready[1] = false
   end
 
   terra WriteBytes:process( dataIn:&R.lower(inputType):toTerraType(), dataOut:&R.lower(outputType):toTerraType() )
-    data([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = data((@dataIn)._0) + [uint]([addressBase:toTerra()])
-    valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = valid((@dataIn)._0)
-    [mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraValue()] = (@dataIn)._1
+    var W : types.lower(AXI.WriteIssue64):toTerraType()
+    var BRESP : types.lower(AXI.WriteResponse64):toTerraType()
 
-    [mod:getGlobal("IP_MAXI"..port.."_AWLEN"):terraValue()] = (burstCount-1)
-    [mod:getGlobal("IP_MAXI"..port.."_AWSIZE"):terraValue()] = 3
-    [mod:getGlobal("IP_MAXI"..port.."_AWBURST"):terraValue()] = 1
-    [mod:getGlobal("IP_MAXI"..port.."_WSTRB"):terraValue()] = 255
+    @AXIT.AWVALID64(&W) = valid((@dataIn)._0)
+    @AXIT.AWADDR64(&W) = data((@dataIn)._0) + [uint]([addressBase:toTerra()])
+    @AXIT.AWLEN64(&W) = (burstCount-1)
+    @AXIT.AWSIZE64(&W) = 3
+    @AXIT.AWBURST64(&W) = 1
 
-    @dataOut = valid([mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraValue()])
+    @AXIT.WVALID64(&W) = valid((@dataIn)._1)
+    @AXIT.WDATA64(&W) = data((@dataIn)._1)
+    @AXIT.WSTRB64(&W) = 255
+    
+    --data([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = data((@dataIn)._0) + [uint]([addressBase:toTerra()])
+    --valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = valid((@dataIn)._0)
+    --[mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraValue()] = (@dataIn)._1
+
+    --[mod:getGlobal("IP_MAXI"..port.."_AWLEN"):terraValue()] = (burstCount-1)
+    --[mod:getGlobal("IP_MAXI"..port.."_AWSIZE"):terraValue()] = 3
+    --[mod:getGlobal("IP_MAXI"..port.."_AWBURST"):terraValue()] = 1
+    --[mod:getGlobal("IP_MAXI"..port.."_WSTRB"):terraValue()] = 255
+
+    writeFn.terraFn(&W,&BRESP)
+    --@dataOut = valid([mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraValue()])
+    @dataOut = @AXIT.BVALID64(&BRESP)
   end
 
   terra WriteBytes:calculateReady(readyDownstream:bool)
     --cstdio.printf("READBUSRT CALCReADY\n")
-    [mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraReady()] = readyDownstream
-    self.ready[0] = [mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraReady()]
-    self.ready[1] = [mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()]
+  --[mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraReady()] = readyDownstream
+    writeFn.terraCalculateReady(readyDownstream)
+    --self.ready[0] = [mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraReady()]
+    --self.ready[1] = [mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()]
+    self.ready = writeFn.terraReady
   end
 
   return MT.new(WriteBytes)
