@@ -36,30 +36,36 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
 
   for k,v in pairs(tab) do
     local ty = v[1]
-    print("ADDENTRY",k,v,ty,v[1],ty:toTerraType())
+    --print("ADDENTRY",k,v,ty,v[1],ty:toTerraType())
     table.insert( AxiRegsN.entries,{field=k.."_value",type=ty:toTerraType()})
+
+    if v[3]=="input" then
+      table.insert( AxiRegsN.entries,{field=k.."_ready",type=bool})
+    end
   end
 
   local SELF = symbol(&AxiRegsN)
   
   for k,v in pairs(tab) do
     local ty = v[1]
-    AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())
---    cstdio.printf("READ %d %d\n",[SELF],out)
-    @out=SELF.[k.."_value"]
---    cstdio.printf("READ_DONE %d %d\n",[SELF],out)
-  end
---    AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())  end
+
+    if v[3]=="input" then
+      AxiRegsN.methods[k] = terra([SELF],inp:&types.lower(types.Handshake(ty)):toTerraType())
+        if valid(@inp) then SELF.[k.."_value"] = data(@inp) end
+      end
+      AxiRegsN.methods[k.."_calculateReady"] = terra([SELF]) SELF.[k.."_ready"] = true; end
+    else
+      AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())
+        @out=SELF.[k.."_value"]
+      end
+    end
   end
   
   terra AxiRegsN:reset()
---cstdio.printf("REGSRESET\n")
     self.startReg = false
     self.doneReg = false
---cstdio.printf("REGSRESET AA\n")
     readSource.terraCalculateReady(true)
     writeSource.terraCalculateReady(array(true,true))
---    cstdio.printf("REGSRESETDONE\n")
   end
 
   local regSet = {}
@@ -72,9 +78,9 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
     local ty = v[1]
 
     if v[3]=="input" then
-      assert(false)
+      --assert(false)
       -- register inputs are always Handshaked
-      table.insert( regReady, quote [mod:getGlobal(k):terraReady()] = true; end )
+      --table.insert( regReady, quote [mod:getGlobal(k):terraReady()] = true; end )
     else
       for i=0,math.ceil(ty:verilogBits()/32)-1 do
         table.insert(regSet,

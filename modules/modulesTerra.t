@@ -77,13 +77,29 @@ end
 
 function MT.instanceCallsiteShim(tab)
   local struct InstanceCallsiteShim {}
+  InstanceCallsiteShim.name="InstanceCallsiteShim_"..tab.instance.name.."_"..tab.functionName
   local fn = tab.instance.module.functions[tab.functionName]
 
   if fn.inputType==types.null() then
     terra InstanceCallsiteShim:process( out : &rigel.lower(fn.outputType):toTerraType() )
       [tab.instance:terraReference()]:[tab.functionName](out)
     end
+
+    if types.isHandshakeAny(fn.outputType) then
+      terra InstanceCallsiteShim:calculateReady( readyDownstream:bool )
+        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"](readyDownstream)
+      end
+    end
   elseif fn.outputType==types.null() then
+  
+    if types.isHandshakeAny(fn.inputType) then
+      table.insert( InstanceCallsiteShim.entries, {field="ready",type=bool})
+      terra InstanceCallsiteShim:calculateReady()
+        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"]()
+        self.ready = [tab.instance:terraReference()].[tab.functionName.."_ready"]
+      end
+    end
+
     terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType() )
       [tab.instance:terraReference()]:[tab.functionName](inp)
     end
@@ -93,6 +109,7 @@ function MT.instanceCallsiteShim(tab)
     end
   end
 
+  
   return MT.new(InstanceCallsiteShim)
 end
 
@@ -377,7 +394,7 @@ function MT.mapFramed(res,f,W,H,vectorized)
   
   if f.inputType:is("Handshake") and f.outputType==types.null() then
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-      self.fn:process(inp,out)
+      self.fn:process(inp)
     end
 
     terra MapFramed:calculateReady()
