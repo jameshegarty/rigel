@@ -5,6 +5,7 @@ local cstdio = terralib.includec("stdio.h")
 local clocale = terralib.includec("locale.h")
 local J = require "common"
 local Uniform = require "uniform"
+local Zynq = require "zynq"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -58,85 +59,98 @@ return function(top, options)
   local MEMSIZE = SOC.currentAddr-MEMBASE
 
   local verbose = false
+
+  local NOC = noc:terraReference()
   
   local S0LIST = {
     0,
     `IP_CLK,
     `IP_ARESET_N,
-    `&data([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_ARADDR"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_ARADDR"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_RDATA"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_RDATA"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_RDATA"):terraReady()]),
-    `&data([top:getGlobal("IP_SAXI0_BRESP"):terraValue()]),
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_BRESP"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_BRESP"):terraReady()]),
-    `&[top:getGlobal("IP_SAXI0_RRESP"):terraValue()],
-    `[&uint8](&valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()])),
-    `[&uint8](&[top:getGlobal("IP_SAXI0_WDATA"):terraReady()]),}
+    `&NOC.SAXI0_ARADDR,
+    `[&uint8](&NOC.SAXI0_ARVALID),
+    `[&uint8](&NOC.SAXI0_ARREADY),
+    `&NOC.SAXI0_AWADDR,
+    `[&uint8](&NOC.SAXI0_AWVALID),
+    `[&uint8](&NOC.SAXI0_AWREADY),
+    `&NOC.SAXI0_RDATA,
+    `[&uint8](&NOC.SAXI0_RVALID),
+    `[&uint8](&NOC.readSink_ready),
+    `&NOC.SAXI0_BRESP,
+    `[&uint8](&NOC.SAXI0_BVALID),
+    `[&uint8](&NOC.writeSink_ready),
+    `&NOC.SAXI0_RRESP,
+    `[&uint8](&NOC.SAXI0_WVALID),
+    `[&uint8](&NOC.SAXI0_WREADY)
+  }
 
   local MREAD_SLAVEOUT={}
   local MREAD_SLAVEIN={}
   local MWRITE_SLAVEOUT={}
   local MWRITE_SLAVEIN={}
 
-  local MAX_READ_PORT = -1
-  local MAX_WRITE_PORT = -1
-  
-  for i=0,SOC.ports do
-    if top:getGlobal("IP_MAXI"..i.."_ARADDR")~=nil then
-      MAX_READ_PORT = i
+  local MAX_READ_PORT = noc.module.readPorts-1
+  local MAX_WRITE_PORT = noc.module.writePorts-1
+
+  for i=0,noc.module.readPorts-1 do
+    local I = J.sel(i==0,"",tostring(i))
       MREAD_SLAVEOUT[i] = {
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraReady()]),
-        `&data([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_RDATA"):terraValue()])),
-        `&[top:getGlobal("IP_MAXI"..i.."_RRESP"):terraValue()],
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RLAST"):terraValue()])}
+        `[&uint8](&NOC.["read"..I.."_ready"]),
+        `&NOC.["MAXI"..i.."_RDATA"],
+        `[&uint8](&NOC.["MAXI"..i.."_RVALID"]),
+        `&NOC.["MAXI"..i.."_RRESP"],
+        `[&uint8](&NOC.["MAXI"..i.."_RLAST"])
+      }
 
       MREAD_SLAVEIN[i] = {
-        `&data([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_ARADDR"):terraValue()])),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_RDATA"):terraReady()]),
-        `&[top:getGlobal("IP_MAXI"..i.."_ARLEN"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_ARSIZE"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_ARBURST"):terraValue()]}
-    end
+        `&NOC.["MAXI"..i.."_ARADDR"],
+        `[&uint8](&NOC.["MAXI"..i.."_ARVALID"]),
+        `[&uint8](&NOC.["MAXI"..i.."_RREADY"]),
+        `&NOC.["MAXI"..i.."_ARLEN"],
+        `&NOC.["MAXI"..i.."_ARSIZE"],
+        `&NOC.["MAXI"..i.."_ARBURST"]
+      }
+  end
+  
+  for i=0,noc.module.writePorts-1 do
+    local I = J.sel(i==0,"",tostring(i))
+    
+    MWRITE_SLAVEOUT[i] = {
+      `[&uint8](&NOC.["write"..I.."_ready"][0]),
+      `[&uint8](&NOC.["write"..I.."_ready"][1]),
+      `&NOC.["MAXI"..i.."_BRESP"],
+      `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
+    }
 
-    if top:getGlobal("IP_MAXI"..i.."_AWADDR")~=nil then
-      MAX_WRITE_PORT = i
-      MWRITE_SLAVEOUT[i] = {
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraReady()]),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_WDATA"):terraReady()]),
-        `&data([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_BRESP"):terraValue()]))}
-
-      MWRITE_SLAVEIN[i] = {
-        `&data([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_AWADDR"):terraValue()])),
-        `&data([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()]),
-        `[&uint8](&valid([top:getGlobal("IP_MAXI"..i.."_WDATA"):terraValue()])),
-        `[&uint8](&[top:getGlobal("IP_MAXI"..i.."_BRESP"):terraReady()]),
-        `&[top:getGlobal("IP_MAXI"..i.."_WSTRB"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_WLAST"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWLEN"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWSIZE"):terraValue()],
-        `&[top:getGlobal("IP_MAXI"..i.."_AWBURST"):terraValue()]}
-    end
+    MWRITE_SLAVEIN[i] = {
+      `&NOC.["MAXI"..i.."_AWADDR"],
+      `[&uint8](&NOC.["MAXI"..i.."_AWVALID"]),
+      `&NOC.["MAXI"..i.."_WDATA"],
+      `[&uint8](&NOC.["MAXI"..i.."_WVALID"]),
+      `[&uint8](&NOC.["MAXI"..i.."_BREADY"]),
+      `&NOC.["MAXI"..i.."_WSTRB"],
+      `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
+      `&NOC.["MAXI"..i.."_AWLEN"],
+      `&NOC.["MAXI"..i.."_AWSIZE"],
+      `&NOC.["MAXI"..i.."_AWBURST"]}
   end
 
   local clearOutputs = {}
-  for i=0,SOC.ports do
+  for i=0,noc.module.readPorts-1 do
     if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
       table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [Uniform(top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE):toTerra()]) end )
     end
+  end
 
+  for i=0,noc.module.writePorts-1 do
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
       local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
-      table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()],bytes) end )
+      table.insert( writeS, quote
+                    var addr = [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]
+                    if addr+bytes>MEMSIZE then
+                      cstdio.printf("ERROR: requested to read file outside of memory segment? addr:%d bytes:%d\n",addr,bytes)
+                      cstdlib.exit(1)
+                    end
+                    V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, bytes ) end )
 
       table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
     end
@@ -148,17 +162,17 @@ return function(top, options)
 
     var srVerbose = true
     ----------------------------------------------- send start cmd
-    if verbose or srVerbose then cstdio.printf("WRITE REG addr:%x data:%d\n",addr,writeData) end
+    if verbose or srVerbose then cstdio.printf("harnessTerra: WRITE REG addr:%x data:%d\n",addr,writeData) end
   
-    if [top:getGlobal("IP_SAXI0_AWADDR"):terraReady()]==false then
+    if NOC.SAXI0_AWREADY==false then
       cstdio.printf("IP_SAXI0_AWREADY should be true\n");
       cstdlib.exit(1)
     end
       
-    data([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = addr;
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = true;
-    data([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = writeData;
-    valid([top:getGlobal("IP_SAXI0_WDATA"):terraValue()]) = true;
+    NOC.SAXI0_AWADDR = addr;
+    NOC.SAXI0_AWVALID = true;
+    NOC.SAXI0_WDATA = writeData;
+    NOC.SAXI0_WVALID = true;
     
     --------------------------------------------------- step
     m:calculateReady()
@@ -166,7 +180,7 @@ return function(top, options)
       
     var found = V.checkSlaveWriteResponse(S0LIST);
       
-    valid([top:getGlobal("IP_SAXI0_AWADDR"):terraValue()]) = false;
+    NOC.SAXI0_AWVALID = false;
       
     --------------------------------------------------- step
     m:calculateReady()
@@ -186,16 +200,13 @@ return function(top, options)
   for k,v in pairs(top.globalMetadata) do
     if string.sub(k,0,8)=="Register" then
       local addr = string.sub(k,10)
-      --table.insert(registerList,"['"..addr.."']='"..v.."'")
-      print("REG",addr,v)
+
       local bytes = #v/2
       local addr = tonumber("0x"..addr)
-      print("BYTES",bytes,"addr",addr)
 
       for b=0,math.ceil(bytes/4)-1 do
         local dat = string.sub(v,b*8+1,(b+1)*8)
         local data = tonumber("0x"..dat)
-        print("DAT",dat,data)
         table.insert(setTaps,quote setReg([IP_CLK],[IP_ARESET_N],[m],[addr+b*4],data) end)
       end
     end
@@ -211,6 +222,10 @@ return function(top, options)
     var slaveState1 : V.SlaveState
     V.initSlaveState(&slaveState0)
     V.initSlaveState(&slaveState1)
+
+    var NOCINST : noc.module.terraModule
+    [NOC] = &NOCINST
+    NOC:reset()
     
     var [m] = [&Module](cstdlib.malloc(sizeof(Module))); 
     m:init()
@@ -241,7 +256,7 @@ return function(top, options)
       
       V.activateMasterRead([MREAD_SLAVEOUT[0]])
       V.activateMasterWrite([MWRITE_SLAVEOUT[0]])
-      
+
       [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
@@ -252,7 +267,8 @@ return function(top, options)
 
       var startSec = currentTimeInSeconds()
 
-      var cooldownCycles = 10000
+      var cooldownCycles = 1000
+      if(totalCycles/10<cooldownCycles) then cooldownCycles=totalCycles/10; end
       var cooldownTime = false
 
       var cyclesToDoneSignal = -1
@@ -275,7 +291,6 @@ return function(top, options)
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
         m:calculateReady()
-
         m:process(nil,nil)
 
         V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
@@ -339,12 +354,13 @@ return function(top, options)
 
       cstdio.printf("Executed cycles: %d, Cycles to Done:%d\n", cycle, cyclesToDoneSignal)
 
+      writeS
+
       if round==ROUNDS-1 then
         m:free()
         cstdlib.free(m)
       end
 
-      writeS
 
       var errored = V.checkPorts(false);
 

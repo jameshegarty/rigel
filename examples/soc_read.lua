@@ -4,8 +4,11 @@ local SOC = require "soc"
 local harness = require "harnessSOC"
 require "types".export()
 local SDF = require "sdf"
+local Zynq = require "zynq"
 
-regs = SOC.axiRegs({},SDF{1,30*14*9}):instantiate()
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc.extern=true
+local regs = SOC.axiRegs({},SDF{1,30*14*9},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 PosToAddr = G.Module{ "PosToAddr", ar(u16,2),
   function(loc)
@@ -19,7 +22,7 @@ ReadStencilDMA = G.Module{ "ReadStencilDMA", Handshake(ar(u16,2)),
   function(loc)
     local locb = G.HS{G.BroadcastSeq{{3,3},0}}(loc) -- duplicate input (x,y) 9 times
     local addrStream = G.HS{PosToAddr}(locb)
-    local pxStream = G.AXIRead{"frame_128.raw",128*64}(addrStream)
+    local pxStream = G.AXIRead{"frame_128.raw",128*64,noc.read}(addrStream)
     local pxArr = G.HS{G.Broadcast{1}}(pxStream) -- convert to array with 1 element
     return G.HS{G.Deser{3*3}}(pxArr) -- Deserialize 9 reads into 9 element array
   end}
@@ -32,7 +35,7 @@ ConvTop = G.Module{ "ConvTop",
     local stencil = G.Map{ReadStencilDMA}(posScaled)
     local shifted = G.HS{G.Map{G.Map{G.Rshift{3}}}}(stencil)
     local fin = G.HS{G.Map{G.Reduce{G.Add}}}(shifted)
-    return G.AXIWriteBurst{"out/soc_read"}(fin)
+    return G.AXIWriteBurst{"out/soc_read",noc.write}(fin)
   end}
 
-harness{regs.start, ConvTop, regs.done}
+harness({regs.start, ConvTop, regs.done},nil,{regs})

@@ -327,7 +327,7 @@ C.rshift = memoize(function(A,const)
   if const~=nil then
     -- shift by a const
     J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
-    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,nil,
+    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
                         function(inp) return S.rshift(inp,S.constant(const,A)) end)
     return mod
   else
@@ -349,7 +349,7 @@ C.addMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
+  local mod = RM.lift(J.sanitize("generators_addMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -370,7 +370,7 @@ C.removeMSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype,nil,
+  local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype, 0,
                       function(inp) return S.cast(inp,otype) end)
   return mod
 end)
@@ -461,17 +461,15 @@ C.packTap = memoize(function(A,ty,global)
 end)
 
 -----------------------------
-C.packTapBroad = memoize(function(A,ty,global,N)
+C.packTapBroad = memoize(function(A,ty,tap,N)
   assert(types.isType(A))
   assert(types.isType(ty))
   assert(type(N)=="number")
-  assert(rigel.isGlobal(global))
-  
-  local tt = types.array2d(ty,N)
-  local G = {}
-  G[global]=1
-  return RM.lift( "PackTap_"..tostring(A).."_"..tostring(ty), A, types.tuple{A,types.array2d(ty,N)}, 0,
-    function(sinp) return S.tuple{sinp,S.cast(S.tuple(J.broadcast(S.readSideChannel(global.systolicValue),N)),tt)} end, nil,"C.packTap",nil,G)
+  assert(R.isFunction(tap))
+
+  local G = require "generators"
+  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),A,SDF{1,1},function(i)
+                    return R.concat{i,G.Broadcast{N}(tap())} end}
 end)
 
 -----------------------------
@@ -1651,7 +1649,7 @@ C.plusConst = memoize(function(ty, value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
 
   local globals = {}
-  value:appendGlobals(globals)
+  value:appendRequires(globals)
   
   local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + value:toSystolic(ty) end, function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
   return plus100mod
@@ -1662,9 +1660,10 @@ function C.plus100(ty) return C.plusConst(ty,100) end
 __linearpipelinecnt = 0
 -- convert an array of rigel modules into a straight pipeline
 -- pipeline starts at index 1, ends at index N
-function C.linearPipeline(t,modulename,rate)
+function C.linearPipeline( t, modulename, rate, instances, X )
   err(modulename==nil or type(modulename)=="string","linearPipeline: modulename must be string")
   err( rate==nil or SDF.isSDF(rate),"linearPipeline: rate should be nil or SDF" )
+  assert(X==nil)
   
   if modulename==nil then
     modulename="linearpipeline"..tostring(__linearpipelinecnt)
@@ -1681,7 +1680,7 @@ function C.linearPipeline(t,modulename,rate)
     out = R.apply("linearPipe"..k,v,out)
   end
 
-  return RM.lambda(modulename,inp,out)
+  return RM.lambda( modulename, inp, out, instances )
 end
 
 -- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
@@ -1831,12 +1830,13 @@ C.oddEvenMergeSort = memoize(
   end)
 
 C.StridedReader = memoize(
-  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr)
+  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr,readFn)
     -- stride,offset is given as # of items
     local G = require "generators"
     local SOC = require "soc"
     assert(totalBytes%(itemBytes*stride)==0)
     assert(itemBytes%8==0)
+    assert( R.isFunction(readFn) )
     
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
@@ -1847,7 +1847,7 @@ C.StridedReader = memoize(
         cnt = G.HS{G.Mul{stride*itemBytes}}(cnt)
         local addr = G.HS{G.Add{offset*itemBytes}}(cnt)
         --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
-        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr)(addr)
+        return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr,readFn)(addr)
       end}
 
     return res
@@ -1855,7 +1855,7 @@ C.StridedReader = memoize(
 
 -- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
-  function(filename,W,H,ty,V) -- Nbits: # of bits to read in parallel
+  function(filename,W,H,ty,V,noc) -- Nbits: # of bits to read in parallel
     local G = require "generators"
     local SOC = require "soc"
     assert( (ty:verilogBits()*V)%64==0)
@@ -1872,7 +1872,7 @@ C.AXIReadPar = memoize(
         local out = {}
         for i=0,N-1 do
           print("IMPBI",inpb[i],i,inpb)
-          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr)(inpb[i])
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc["read"..J.sel(i==0,"",tostring(i))])(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
           SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
@@ -1905,21 +1905,24 @@ C.tokenCounterReg = memoize(
     J.err( types.isType(A),"tokenCounterReg: a must be type" )
     J.err( A:is("Handshake"),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
     J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
-
+    J.err( R.isFunction(regGlobal),"tokenCounterReg: reg should be fn")
+    
     if N==nil then
       N = math.pow(2,32)-1
     end
       
     local G = require "generators"
 
-    return G.Module{A,
+    local res = G.Module{"TokenCounterReg_"..tostring(A).."_"..tostring(regGlobal).."_"..tostring(N),A,
       function(inp)
         local inpb = G.FanOut{2}(inp)
         local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
         local cnt = G.HS{RM.counter(types.uint(32),N)}(ct)
         cnt = G.HS{G.Add{1}}(cnt)
-        return R.statements{inpb[0],R.writeGlobal("wg",regGlobal,cnt)}
+        return R.statements{inpb[0],regGlobal(cnt)}
       end}
+    
+    return res
   end)
 
 -- name: name of new (renamed) module
@@ -2031,5 +2034,59 @@ endmodule
 
   return RM.liftVerilog(name,Mod.inputType,Mod.outputType,vstr,Mod.globals,Mod.globalMetadata,Mod.sdfInput,Mod.sdfOutput, {Mod})
 end
+
+-- given a rigel module, create a systolic stub for it
+function C.automaticSystolicStub(mod)
+  local fns = {}
+  local delays = {}
+  for fnname,fn in pairs(mod.functions) do
+    local inp = S.parameter(fnname.."_input",types.lower(fn.inputType))
+
+    local out
+    if fn.outputType~=types.null() then
+      out = S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType))
+    end
+    
+    fns[fnname] = S.lambda(fnname,inp,out,fnname)
+    delays[fnname]=0
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      local inp
+      if fn.outputType==types.null() then
+        inp = S.parameter(fnname.."_ready_downstream",types.null() )
+      else
+        inp = S.parameter(fnname.."_ready_downstream",types.extractReady(fn.outputType) )
+      end
+
+      local out
+      if fn.inputType~=types.null() then
+        out = S.constant(types.extractReady(fn.inputType):fakeValue(),types.extractReady(fn.inputType))
+      end
+      
+      fns[fnname.."_ready"] = S.lambda(fnname.."_ready",inp,out,fnname.."_ready")
+      delays[fnname.."_ready"]=0
+    end
+  end
+
+  local instances = {}
+  local externalInstances = {}
+  for ic,_ in pairs(mod.requires) do
+    local inst = ic.instance:toSystolicInstance()
+    if externalInstances[inst]==nil then externalInstances[inst]={} end
+    externalInstances[inst][ic.functionName]=1
+    instances[inst]=1
+
+    local fn = ic.instance.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      externalInstances[inst][ic.functionName.."_ready"]=1
+    end
+  end
   
+  if mod.stateful then
+    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
+  end
+  
+  return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+end
+
 return C

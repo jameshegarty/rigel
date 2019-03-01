@@ -6,8 +6,11 @@ local SOC = require "soc"
 local C = require "examplescommon"
 local SDF = require "sdf"
 require "types".export()
+local Zynq = require "zynq"
 
-regs = SOC.axiRegs({},SDF{1,1024}):instantiate()
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc.extern=true
+regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local W,H = 128,64
 
@@ -21,7 +24,7 @@ end}
 fn = Module{"Top",
   function(inp)
     local o = regs.start(inp)
-    o = SOC.readBurst("frame_128.raw",128,64,u(8),8)(o)
+    o = SOC.readBurst("frame_128.raw",128,64,u(8),8,nil,nil,noc.read)(o)
 
     local ob = FanOut{2}(o)
     local ob0 = R.selectStream("ob0",ob,0)
@@ -33,13 +36,13 @@ fn = Module{"Top",
     local posSeqOut = HS{ PosSeq{{W/8,H},1} }(ob1)
     local addrGenOut = HS{AddrGen}(posSeqOut)
 
-    local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8)
+    local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8,nil,noc.write)
     print("WRITEMOD",WRITEMOD.inputType)
     print("OB0type",ob0.type)
     o = WRITEMOD(addrGenOut,ob0)
     o = TriggerCounter{(W*H)/8}(o)
     o = regs.done(o)
     return o
-  end}
+  end,{regs}}
 
 harness(fn)

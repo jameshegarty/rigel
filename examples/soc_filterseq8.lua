@@ -9,9 +9,11 @@ local SDF = require "sdf"
 local types = require "types"
 local J = require "common"
 types.export()
+local Zynq = require "zynq"
 
-local Regs = SOC.axiRegs({},SDF{1,1024})
-regs = Regs:instantiate()
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc.extern=true
+local regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 IdxGT = G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
 
@@ -32,7 +34,7 @@ IdxToBool = G.Module{"IdxToBool", function(i) return R.concat{i[0],G.GT{0}(i[1])
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
-    local readStream = G.AXIReadBurstSeq{"frame_128.raw",{128,64},u(8),8}(i)
+    local readStream = G.AXIReadBurstSeq{"frame_128.raw",{128,64},u(8),8,noc.read}(i)
     --    print(readStream.fn)
     print("READSTRAM",readStream.rate)
     local rs = G.FanOut{2}(readStream)
@@ -59,10 +61,10 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     offset = G.HS{G.Deser{8}}(offset)
     
     
-    local res = G.AXIWriteBurstSeq{"out/soc_filterseq8",{368,1},8}(offset)
+    local res = G.AXIWriteBurstSeq{"out/soc_filterseq8",{368,1},8,noc.write}(offset)
     print("RES",res.rate)
 --    print(res.fn)
     return res
   end}
 
-harness{regs.start, OffsetModule, regs.done}
+harness({regs.start, OffsetModule, regs.done},nil,{regs})

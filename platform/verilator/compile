@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # print all commands
-# set -x
+set -x
 
 # early exit on errors (so that verilator warnings are errors)
 set -e

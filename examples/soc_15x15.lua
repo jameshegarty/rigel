@@ -8,8 +8,11 @@ local RM = require "modules"
 require "types".export()
 local types = require "types"
 local SDF = require "sdf"
+local Zynq = require "zynq"
 
-regs = SOC.axiRegs({},SDF{1,256}):instantiate()
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc.extern=true
+regs = SOC.axiRegs({},SDF{1,256},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 ------------
 inp = R.input( types.uint(8) )
@@ -19,9 +22,9 @@ p200 = RM.lambda( "p200", inp, b )
 ------------
 hsfn = RM.makeHandshake(p200)
 
-harness{
+harness({
   regs.start,
-  SOC.readBurst("15x15.raw",15,15,u(8),0),
+  SOC.readBurst("15x15.raw",15,15,u(8),0,nil,nil,noc.read),
   hsfn,
-  SOC.writeBurst("out/soc_15x15",15,15,u(8),0),
-  regs.done}
+  SOC.writeBurst("out/soc_15x15",15,15,u(8),0,nil,noc.write),
+  regs.done},nil,{regs})

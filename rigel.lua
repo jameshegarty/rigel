@@ -66,69 +66,6 @@ darkroom.streamCount = types.streamCount
 darkroom.isStreaming = types.isStreaming
 darkroom.isBasic = types.isBasic
 
-rigelGlobalFunctions = {}
-rigelGlobalMT = {__index=rigelGlobalFunctions,
-                 __tostring = function(tab) return "Global "..tab.direction.." "..tab.name.." : "..tostring(tab.type) end}
-
--- direction is the direction of this signal on the top module:
--- 'output' means this is an output of the top module. 'input' means its an input to the top module.
--- we can't write to an 'output' global twice!
-local darkroomNewGlobal = J.memoize(function( name, direction, typeof, X )
-  err( type(name)=="string", "newGlobal: name must be string" )
-  err( direction=="input" or direction=="output","newGlobal: direction must be 'input' or 'output'" )
-  err( types.isType(typeof), "newGlobal: type must be rigel type" )
-  assert(X==nil)
-  
-  err( darkroom.isBasic(typeof) or darkroom.isHandshake(typeof) or darkroom.isHandshakeTrigger(typeof), "NYI - globals must be basic type or handshake")
-
-  local t = {name=name,direction=direction,type=typeof}
-
-  if darkroom.isHandshakeAny(typeof) then
-    t.systolicValue = S.newSideChannel( name, direction, darkroom.lower(typeof), t )
-    local flip = "input"
-    if direction=="input" then flip="output" end
-    t.systolicValueReady = S.newSideChannel( name.."_ready", flip, darkroom.extractReady(typeof), t )
-  else
-    t.systolicValue = S.newSideChannel( name, direction, darkroom.extractData(typeof), t )
-  end
-
-  return setmetatable(t,rigelGlobalMT)
-end)
-
-function darkroom.newGlobal( name, direction, typeof, initValue )
-  local g = darkroomNewGlobal(name,direction,typeof)
-
-  err( initValue==nil or typeof:checkLuaValue(initValue), "newGlobal: init value must be valid value of type" )
-
-  local function fl(x) if x=="input" then return "output" else return "input" end end
-
-  if g.initValue==nil then
-    g.initValue=initValue
-  else
-    assert(g.initValue==initValue)
-  end
-
-  if g.flip==nil then
-    g.flip = darkroomNewGlobal(name,fl(direction),typeof)
-    g[direction]=g
-    g[fl(direction)]=g.flip
-    
-    if g.flip.initValue==nil then
-      g.flip.initValue=initValue
-    else
-      assert(g.flip.initValue==initValue)
-    end
-
-    g.flip.flip=g
-    g.flip[g.flip.direction]=g.flip
-    g.flip[fl(g.flip.direction)]=g
-  end
-
-  return g
-end
-
-function darkroom.isGlobal(g) return getmetatable(g)==rigelGlobalMT end
-
 local function discoverName(x)
   local y = 1
   while true do
@@ -162,6 +99,7 @@ local function typeToKey(t)
   for k,v in pairs(t) do
     if type(k)=="number" then
       local outk
+      
       if type(v)=="number" then
         outk="number"
       elseif type(v)=="boolean" then
@@ -174,8 +112,6 @@ local function typeToKey(t)
         outk="type"
       elseif darkroom.isFunction(v) then
         outk="rigelFunction"
-      elseif darkroom.isGlobal(v) then
-        outk="global"
       elseif SDF.isSDF(v) then
         outk="rate"
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
@@ -194,6 +130,8 @@ local function typeToKey(t)
         else
           J.err("NYI - typeToKey "..tostring(v))
         end
+      elseif type(v)=="table" and #t==J.keycount(t) and J.foldl(J.andop,false,J.map(v,darkroom.isInstance)) then
+        outk="instanceList"
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -300,7 +238,7 @@ function functionGeneratorFunctions:complete(arglist)
   if self:checkArgs(arglist)==false then
     print("Function generator '"..self.name.."' is missing arguments!")
     for k,v in pairs(self.requiredArgs) do
-      if self.curriedArgs[k]==nil then print("Argument '"..k.."'") end
+      if self.curriedArgs[k]==nil then print("Requires argument '"..k.."'") end
     end
     assert(false)
   end
@@ -331,17 +269,8 @@ local function buildAndCheckSystolicModule(tab, isModule)
   err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
   local sm = rawget(tab,"makeSystolic")()
   if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
-  J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Module: "..tostring(tab))
-  
-  for k,_ in pairs(tab.globals) do
-    err( sm.sideChannels[k.systolicValue]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global "..k.name )
-    err( k.systolicValueReady==nil or sm.sideChannels[k.systolicValueReady]~=nil, "makeSystolic: systolic module '"..sm.name.."' lacks side channel for global ready "..k.name )
-  end
-  
-  for k,_ in pairs(sm.sideChannels) do
-    err( tab.globals[k.global]~=nil, "makeSystolic: rigel module '"..tab.name.."' lacks global for side channel "..k.name )
-  end
-  
+  J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Returned '"..tostring(sm).."'. Module: "..tostring(tab))
+    
   if isModule==false then
     err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
     
@@ -350,20 +279,62 @@ local function buildAndCheckSystolicModule(tab, isModule)
       err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(sm.functions.process.output.type).."' but should be '"..tostring(darkroom.lower(tab.outputType)).."'" )
     end
 
+    if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
+      err( sm.functions.ready~=nil, "module ready function missing?")
+
+      if tab.inputType~=types.null() and darkroom.extractReady(tab.inputType)~=sm.functions.ready.output.type then
+        err(false, "module '"..tab.name.."' systolic ready output type wrong. is '"..tostring(sm.functions.ready.output.type).."', but should be '"..tostring(darkroom.extractReady(tab.inputType)).."'.")
+      end
+    end
+    
     err( darkroom.lower(tab.inputType)==sm.functions.process.inputParameter.type, "module input type wrong?" )
     
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
   else
-    -- NYI
+    
+    for fn,_ in ipairs(tab.functions) do
+      err( sm.functions[fn.name]~=nil,"Systolic module is missing function '"..fn.name.."'")
+    end
+    
     err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
+  end
+
+  for inst,lst in pairs(sm.externalInstances) do
+    for _,fnname in ipairs(lst) do
+      local found = false
+
+      for ic,_ in pairs(tab.requires) do if ic.instance.name==inst.name and ic.functionName==fnname then found=true end end
+      for ic,_ in pairs(tab.provides) do if ic.instance.name==inst.name and ic.functionName==fnname then found=true end end
+      err( found, "makeSystolic(): systolic module '"..sm.name.."' refers to external instance '"..inst.name.."', but rigel module doesn't?")
+    end
+  end
+
+  for ic,_ in pairs(tab.requires) do
+    err( sm.externalInstances[ic.instance:toSystolicInstance()]~=nil, "Rigel module '"..tab.name.."' requires instance '"..ic.instance.name.."', but it's missing from systolic module? ")
+    err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName]~=nil, "Rigel module requires instance, but it's missing from systolic module? ")
+
+    local fn = ic.instance.module.functions[ic.functionName]
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      err( sm.externalInstances[ic.instance:toSystolicInstance()][ic.functionName.."_ready"]~=nil, "Rigel module '"..tab.name.."' requires instance callsite '"..ic.instance.name..":"..ic.functionName.."()', but its ready fn is missing from systolic module external list? ")
+    end
   end
   
   rawset(tab,"systolicModule", sm )
   return sm
 end
 
-darkroomFunctionFunctions = {}
-darkroomFunctionMT={
+function buildAndCheckTerraModule(tab)
+  err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
+  err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
+  local tm = rawget(tab,"makeTerra")()
+  err( terralib.types.istype(tm) and tm:isstruct(), "makeTerra for module '"..tab.name.."' returned something other than a terra struct? returned: "..tostring(tm))
+  
+  rawset(tab,"terraModule", tm )
+  return tm
+end
+
+local darkroomFunctionFunctions = {}
+local darkroomFunctionMT = {
 __index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
@@ -373,12 +344,7 @@ __index=function(tab,key)
   if key=="systolicModule" then
     return buildAndCheckSystolicModule(tab,false)
   elseif key=="terraModule" then
-    err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
-    err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
-    local tm = rawget(tab,"makeTerra")()
-
-    rawset(tab,"terraModule", tm )
-    return tm
+    return buildAndCheckTerraModule(tab)
   end
 end,
 __call=function(tab,...)
@@ -413,7 +379,7 @@ end,
 __tostring=function(mod)
   local res = {}
 
-  table.insert(res,"Function "..mod.name)
+  table.insert(res,"Rigel Function "..mod.name)
   table.insert(res,"  InputType: "..tostring(mod.inputType))
   table.insert(res,"  OutputType: "..tostring(mod.outputType))
 
@@ -430,20 +396,41 @@ __tostring=function(mod)
   end
 
   table.insert(res,"  Stateful: "..tostring(mod.stateful))
-  
-  if mod.globalsInternal~=nil then
-    table.insert(res,"  Globals (Internal):")
-    for k,v in pairs(mod.globalsInternal) do
-      table.insert(res,"    "..tostring(v.type).." "..v.name)
-    end
-  end
-  
+    
   table.insert(res,"  Metadata:")
   for k,v in pairs(mod.globalMetadata) do
     table.insert(res,"    "..tostring(k).." = "..tostring(v))
   end
 
+  table.insert(res,"  Requires:")
+  for ic,_ in pairs(mod.requires) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  table.insert(res,"  Provides:")
+  for ic,_ in pairs(mod.provides) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
   if mod.kind=="lambda" then
+    if J.keycount(mod.instanceMap)==0 then
+      table.insert(res,"  Internal Instances: (none)")
+    else
+      table.insert(res,"  Internal Instances:")
+      for inst,_ in pairs(mod.instanceMap) do
+        table.insert(res,"    "..inst.name..":"..inst.module.name)
+      end
+    end
+
+    if J.keycount(mod.externalInstances)==0 then
+      table.insert(res,"  External Instances: (none)")
+    else
+      table.insert(res,"  External Instances:")
+      for inst,_ in pairs(mod.externalInstances) do
+        table.insert(res,"    "..inst.name..":"..inst.module.name)
+      end
+    end
+
     mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
   end
   
@@ -507,14 +494,82 @@ function darkroomFunctionFunctions:toVerilog()
   return ntn..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() 
 end
 
-function darkroomFunctionFunctions:getGlobal(name)
-  for k,_ in pairs(self.globals) do
-    if k.name==name then return k end
-  end
-  --print("Could not find global '"..name.."'")
-end
+darkroomInstanceCallsiteMT = {
+__index = function(tab,key)
+  local v = rawget(tab, key)
+  if v ~= nil then return v end
 
-darkroomInstanceCallsiteMT = {}
+  if key=="systolicModule" then
+    -- create a shim, which makes this instance callsite look like a reguar systolic module
+    -- (so that MakeHandshake etc can operate over it)
+    local fn = tab.instance.module.functions[tab.functionName]
+    local systolicModule = Ssugar.moduleConstructor("InstanceCallsiteShim_"..tab.instance.name.."_"..tab.functionName)
+    local systolicInput = S.parameter( "inp", types.lower(fn.inputType) )
+    local inst = tab.instance:toSystolicInstance()
+    local systolicOutput = inst[tab.functionName](inst,systolicInput)
+    systolicModule:addExternal(inst,{[tab.functionName]=1})
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      systolicModule:addExternalFn(inst,tab.functionName.."_ready")
+    end
+    
+    local CE
+    if types.isHandshakeAny(fn.inputType)==false and types.isHandshakeAny(fn.outputType)==false then
+      CE = S.CE("process_CE")
+    end
+    
+    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,CE) )
+
+    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+      local systolicInputRdy, systolicOutputRdy
+      if fn.outputType==types.null() then
+        systolicInputRdy = S.parameter( "ready_downstream", types.null() )
+        systolicOutputRdy = inst[tab.functionName.."_ready"](inst)
+      else
+        systolicInputRdy = S.parameter( "ready_downstream", types.extractReady(fn.outputType) )
+        systolicOutputRdy = inst[tab.functionName.."_ready"](inst,systolicInputRdy)
+      end
+
+      systolicModule:addFunction( S.lambda("ready", systolicInputRdy, systolicOutputRdy, "ready") )
+    end
+    
+    systolicModule = systolicModule:toModule()
+    tab.systolicModule = systolicModule
+
+    return systolicModule
+  elseif key=="terraModule" then
+    local MT = require "modulesTerra"
+    tab.terraModule = MT.instanceCallsiteShim(tab)
+    return tab.terraModule
+  elseif key=="terraCalculateReady" then
+    local MT = require "modulesTerra"
+    tab.terraCalculateReady = MT.instanceCallsiteCalculateReady(tab)
+    return tab.terraCalculateReady
+  elseif key=="terraReady" then
+    local MT = require "modulesTerra"
+    tab.terraReady = MT.instanceCallsiteReady(tab)
+    return tab.terraReady
+  elseif key=="terraFn" then
+    local MT = require "modulesTerra"
+    tab.terraFn = MT.instanceCallsiteTerraFn(tab)
+    return tab.terraFn
+  elseif key=="requires" then
+    local fn = tab.instance.module.functions[tab.functionName]
+    tab.requires = {}
+    for ic,_ in pairs(fn.requires) do
+      tab.requires[ic]=1
+    end
+    tab.requires[tab]=1
+    
+    return tab.requires
+  end
+  
+  -- make this appear like as if it's the original function
+  --assert(tab.instance.module.functions[functionName]~=nil)
+  return tab.instance.module.functions[tab.functionName][key]
+end,
+__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."()" end
+}
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
 
 darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
@@ -548,12 +603,13 @@ function darkroom.newFunction(tab,X)
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
+
+  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.null() and tab.outputType==types.null()), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
   
   if tab.globalMetadata==nil then tab.globalMetadata={} end
-  if rawget(tab,"globals")==nil then rawset(tab,"globals",{}) end -- if we don't use rawset/rawget, this messes up the metatable? some kind of compiler bug?
 
   assert(getmetatable(tab)==nil)
   if tab.systolicModule~=nil then
@@ -563,6 +619,12 @@ function darkroom.newFunction(tab,X)
 
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
 
+  if tab.requires==nil then tab.requires={} end
+  if tab.provides==nil then tab.provides={} end
+
+  for ic,_ in pairs(tab.requires) do err( darkroom.isInstanceCallsite(ic), "Require list should be instance callsites" ) end
+  for ic,_ in pairs(tab.provides) do err( darkroom.isInstanceCallsite(ic), "Provide list should be instance callsites" ) end
+
   assert(getmetatable(tab)==nil)
   setmetatable( tab, darkroomFunctionMT )
 
@@ -571,14 +633,35 @@ end
 
 local darkroomModuleFunctions = {}
 
-function darkroomModuleFunctions:getGlobal(name)
-  for k,_ in pairs(self.globals) do
-    if k.name==name then return k end
-  end
-end
-
 darkroomModuleMT = {
-__tostring = function(tab) return "Module "..tab.name end,
+__tostring = function(tab)
+  local res = {}
+  table.insert(res,"Rigel Module "..tab.name)
+
+  table.insert(res,"  Functions:")
+  for fnname,fn in pairs(tab.functions) do
+    table.insert(res,"    "..fnname.." : "..tostring(fn.inputType).."->"..tostring(fn.outputType))
+  end
+
+  table.insert(res,"  Stateful: "..tostring(tab.stateful))
+    
+  table.insert(res,"  Metadata:")
+  for k,v in pairs(tab.globalMetadata) do
+    table.insert(res,"    "..tostring(k).." = "..tostring(v))
+  end
+
+  table.insert(res,"  Requires:")
+  for ic,_ in pairs(tab.requires) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  table.insert(res,"  Provides:")
+  for ic,_ in pairs(tab.provides) do
+    table.insert(res,"    "..ic.instance.name..":"..ic.functionName.."()")
+  end
+
+  return table.concat(res,"\n")
+end,
 __index=function(tab,key)
   local v = rawget(tab, key)
   if v ~= nil then return v end
@@ -587,6 +670,8 @@ __index=function(tab,key)
 
   if key=="systolicModule" then
     return buildAndCheckSystolicModule(tab,true)
+  elseif key=="terraModule" then
+    return buildAndCheckTerraModule(tab)
   end
 end
 }
@@ -603,24 +688,27 @@ function darkroomModuleFunctions:instantiate( name, X )
   return res
 end
 
-function darkroom.newModule( name, functionList, stateful, makeSystolic, terraModule, X )
+function darkroom.newModule( name, functionList, stateful, makeSystolic, makeTerra, X )
   err( type(name)=="string", "newModule: name must be string" )
   err( type(functionList)=="table", "newModule: function list must be table (map from fn name to fn)")
-  err( type(makeSystolic)=="function", "newModule: makeSystolic should be function")
+  err( makeSystolic==nil or type(makeSystolic)=="function", "newModule: makeSystolic should be function")
   err( type(stateful)=="boolean","newModule: stateful should be boolean" )
+  err( makeTerra==nil or type(makeTerra)=="function","newModule: makeTerra should be function, but is: "..tostring(makeTerra))
   err( X==nil, "newModule: too many arguments" )
 
   -- collect globals of all fns
-  local globals = {}
+  local requires = {}
+  local provides = {}
   local globalMetadata = {}
   for k,fn in pairs(functionList) do
     err( type(k)=="string", "newModule: function name should be string?")
     err( darkroom.isPlainFunction(fn), "newModule: function should be plain Rigel function")
-    for g,_ in pairs(fn.globals) do globals[g] = 1 end
+    for ic,_ in pairs(fn.requires) do requires[ic]=1 end
+    for ic,_ in pairs(fn.provides) do provides[ic]=1 end
     for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
   end
   
-  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,terraModule=terraModule, globals = globals, globalMetadata=globalMetadata, stateful=stateful}
+  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,makeTerra=makeTerra, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides}
   return setmetatable( tab, darkroomModuleMT )
 end
 
@@ -769,10 +857,6 @@ darkroomIRMT.__tostring = function(tab)
         res = "local "..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
       end
     end
-  elseif tab.kind=="readGlobal" then
-    res = "local "..tab.name.." = readGlobal('"..tab.name.."',"..tab.global.name..")"
-  elseif tab.kind=="writeGlobal" then
-    res = "local "..tab.name.." = writeGlobal('"..tab.name.."',"..tab.global.name..","..tab.inputs[1].name..")"
   elseif tab.kind=="selectStream" then
     res = tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
   elseif tab.kind=="statements" then
@@ -805,10 +889,13 @@ darkroomIRMT.__tostring = function(tab)
   return res
 end
 
+local darkroomInstanceFunctions = {}
 local darkroomInstanceMT = {
   __index = function( tab, key )
     local v = rawget(tab, key)
     if v ~= nil then return v end
+    v = darkroomInstanceFunctions[key]
+    if v~=nil then return v end
 
     if tab.module.functions[key]~=nil then
       return darkroom.newInstanceCallsite( tab, key )
@@ -816,6 +903,19 @@ local darkroomInstanceMT = {
   end,
   __tostring = function(tab) return "Instance "..tab.name end}
 
+-- we want there to be a 1-1 correspondence between systolic instances and rigel instances
+darkroomInstanceFunctions.toSystolicInstance = J.memoize(function(tab,X)
+  assert(X==nil)
+  err( S.isModule(tab.module.systolicModule), "Missing systolic module for instance '"..tab.name.."' of module '"..tab.module.name.."'")
+  return tab.module.systolicModule:instantiate(tab.name)
+end)
+
+-- get a reference to the instance in terra
+darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
+  local MT = require "modulesTerra"
+  return MT.terraReference(tab)
+end)
+  
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
@@ -841,12 +941,12 @@ end
 
 function darkroomIRFunctions:calcSDF( )
   local res
-  if self.kind=="input" or self.kind=="constant" or self.kind=="readGlobal" then
+  if self.kind=="input" or self.kind=="constant" then
     err( SDF.isSDF(self.rate),"input missing SDF?")
     res = self.rate
   elseif self.kind=="applyMethod" then
     if #self.inputs==0 or self.inputs[1].type==types.null() then
-      err( self.inst.module.functions[self.fnname].sdfExact==true, "nullary applyMethod should have sdfExact==true")
+      err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "nullary applyMethod should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
       err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
@@ -856,8 +956,6 @@ function darkroomIRFunctions:calcSDF( )
     else
       assert(false)
     end
-  elseif self.kind=="writeGlobal" then
-    res = self.inputs[1].rate
   elseif self.kind=="apply" then
     if #self.inputs==1 then
       res =  self.fn:sdfTransfer(self.inputs[1].rate, "APPLY "..self.name.." "..self.loc)
@@ -1039,12 +1137,6 @@ function darkroomIRFunctions:typecheck()
     else
       err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
     end
-  elseif n.kind=="readGlobal" then
-    -- this is actually ok: we may be making an internal connection here
-    --err( n.global.direction=="input", "Error, attempted to read a global output ("..n.global.name..")" )
-  elseif n.kind=="writeGlobal" then
-    err( n.global.direction=="output", "Error, attempted to write a global input ("..n.global.name..")" )
-    err( n.inputs[1].type==n.global.type, "Error, input to writeGlobal is incorrect type. is "..tostring(n.inputs[1].type).." but should be "..tostring(n.global.type)..", "..n.loc )
   else
     print("Rigel Typecheck NYI ",n.kind)
     assert(false)
@@ -1120,10 +1212,6 @@ function darkroomIRFunctions:codegenSystolic( module )
         return inputs[1]
       elseif n.kind=="selectStream" then
         return {S.index(inputs[1][1],n.i)}
-      elseif n.kind=="readGlobal" then
-        return {S.readSideChannel(n.global.systolicValue)}
-      elseif n.kind=="writeGlobal" then
-        return {S.writeSideChannel(n.global.systolicValue,inputs[1][1])}
       else
         print(n.kind)
         assert(false)
@@ -1150,24 +1238,7 @@ function darkroom.input( ty, sdfRate )
   return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, rate=SDF(sdfRate), loc=getloc()} )
 end
 
-function darkroom.readGlobal( name, g, X )
-  err( type(name)=="string", "rigel.readGlobal: name must be string" )
-  err( darkroom.isGlobal(g),"readGlobal: input must be rigel global" )
-  err( g.direction=="input","readGlobal: global must be an input")
-  err(X==nil,"readGlobal: too many arguments")
-  return darkroom.newIR{kind="readGlobal",name=name,global=g,type=g.type,loc=getloc(),inputs={},rate=SDF{1,1}}
-end
-
-function darkroom.writeGlobal( name, g, input, X )
-  err( type(name)=="string", "rigel.writeGlobal: name must be string" )
-  err( darkroom.isGlobal(g),"writeGlobal: first argument must be rigel global, but is: "..tostring(g) )
-  err( darkroom.isIR(input),"writeGlobal: second argument must be rigel value" )
-  err( g.direction=="output","writeGlobal: global must be an output")
-  err(X==nil,"writeGlobal: too many arguments")
-  return darkroom.newIR{kind="writeGlobal",name=name,global=g,loc=getloc(),inputs={input},type=types.null()}
-end
-
-function darkroom.instantiate( name, mod, X )
+darkroom.instantiate = function( name, mod, X )
   err( type(name)=="string", "instantiate: name must be string")
   err( darkroom.isModule(mod), "instantiate: module must be a Rigel module" )
   err( X==nil, "darkroom.instantiate: too many arguments" )
@@ -1326,8 +1397,6 @@ function darkroom.handshakeMode(output)
         HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.fn.inputType) or darkroom.isHandshakeAny(n.fn.outputType)
       elseif n.kind=="applyMethod" then
         HANDSHAKE_MODE = HANDSHAKE_MODE or darkroom.isHandshakeAny(n.inst.module.functions[n.fnname].inputType) or darkroom.isHandshakeAny(n.inst.module.functions[n.fnname].outputType)
-      elseif n.kind=="writeGlobal" then
-        HANDSHAKE_MODE = HANDSHAKE_MODE or n.global.type:is("Handshake")
       end
     end)
   return HANDSHAKE_MODE

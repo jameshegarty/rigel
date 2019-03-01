@@ -71,10 +71,11 @@ end
 local convolvefntaps = C.convolveTaps( types.uint(8), TConvWidth, 6 )
 
 -- DUMB_DOWNSAMPLE: instead of doing the convolution at internalT/4 throughput when downsampling, do it at internalT throughput.
-function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DOWNSAMPLE,X)
+function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DOWNSAMPLE,taps,X)
   assert(type(ConvWidth)=="number")
   assert(type(nofifo)=="boolean")
   assert(type(DUMB_DOWNSAMPLE)=="boolean")
+  assert(R.isFunction(taps))
   assert(X==nil)
   
   local DATA_TYPE = types.array2d(A,internalT)
@@ -134,7 +135,7 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
   --local st_tap_inp = R.apply( "broad", RM.makeHandshake(C.broadcast(TAP_TYPE,convT)), tapinp )
   --st_tap_inp = R.concat("sttapinp",{out,st_tap_inp})
   --st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
-  out = R.apply("PT", RM.makeHandshake(C.packTapBroad(types.array2d(st_type,convT),TAP_TYPE,soc.taps,convT)), out)
+  out = R.apply("PT", RM.makeHandshake(C.packTapBroad(types.array2d(st_type,convT),TAP_TYPE,taps,convT)), out)
   out = R.apply("SOA",RM.makeHandshake(RM.SoAtoAoS(convT,1,{st_type,TAP_TYPE})),out)
   out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), out)
   

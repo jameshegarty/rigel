@@ -1,1 +1,1 @@
-return {coeffs=4}
+return {regs_coeffs=4}

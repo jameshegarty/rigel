@@ -297,17 +297,12 @@ UniformFunctions.simplify = J.memoize(function(self)
         return Uniform.addMSBs(inputs[1],n.msbs)
       elseif n.kind=="sel" then
         return Uniform.sel(inputs[1],inputs[2],inputs[3])
-      elseif n.kind=="const" or n.kind=="var" or n.kind=="global" then
+      elseif n.kind=="const" or n.kind=="var" or n.kind=="instanceCallsite" then
         return n
       else
         print("simplify missing passthrough?",n.kind)
         assert(false)
       end
-
---    end)
-
-  --print("SIMPLIFY",self,res)
---  return res
 end)
 
 Uniform.binop = J.memoize(function(op,lhs,rhs)
@@ -370,8 +365,8 @@ Uniform.isNumber = J.memoize(
       return true
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
-    elseif n.kind=="global" then
-      return n.global.type:isNumber()
+    elseif n.kind=="instanceCallsite" then
+      return n.instanceCallsite.outputType:isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()
@@ -509,8 +504,8 @@ function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
       return tostring(t.value)
-    elseif t.kind=="global" then
-      return t.global.name
+    elseif t.kind=="instanceCallsite" then
+      return t.instanceCallsite.instance.name..":"..t.instanceCallsite.functionName.."()"
     elseif t.kind=="binop" and t.op=="max" then
       return "max("..tostringInner(t.inputs[1])..","..tostringInner(t.inputs[2])..")"
     elseif t.kind=="binop" then
@@ -535,8 +530,8 @@ end
 function UniformFunctions:toEscapedString()
   if self.kind=="const" then
     return tostring(self.value)
-  elseif self.kind=="global" then
-    return [["]]..self.global.name..[["]]
+  elseif self.kind=="instanceCallsite" then
+    return [["]]..self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName..[["]]
   else
     J.err(false,"Uniform toEscapedString() NYI - "..self.kind)
   end
@@ -552,16 +547,15 @@ function UniformFunctions:toUnescapedString()
   end
 end
 
--- 'tab' should be a map of globals, to which we will append any globals required to execute this uniform
---       ie: if we include the uniform somewhere in this module, it may need to read some values (globals)
+-- 'tab' should be a map of instance callsites, to which we will append any callsites required to execute this uniform
+--       ie: if we include the uniform somewhere in this module, it may need to read some values (instance callsite)
 --           use this fn to get that list of things it requires
 -- this will mutate 'tab'!
-function UniformFunctions:appendGlobals(tab)
+function UniformFunctions:appendRequires(tab)
   self:visitEach(
     function(n)
-      if n.kind=="global" then
-        assert(tab[n.global]==nil)
-        tab[n.global] = 1
+      if n.kind=="instanceCallsite" then
+        tab[n.instanceCallsite] = 1
       end
     end)
 end
@@ -571,8 +565,8 @@ function UniformFunctions:toVerilog(ty)
   J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
   assert(self:canRepresentUsing(ty))
 
-  if self.kind=="global" then
-    return self.global.name
+  if self.kind=="instanceCallsite" then
+    return self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName
   elseif self.kind=="const" then
     return S.valueToVerilog( self.value, ty )
   elseif self.kind=="binop" then
@@ -612,8 +606,8 @@ Uniform.canRepresentUsing = J.memoize(
     if n.kind=="const" then
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
-    elseif n.kind=="global" then
-      return n.global.type:canSafelyConvertTo(ty)
+    elseif n.kind=="instanceCallsite" then
+      return n.instanceCallsite.outputType:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
@@ -659,8 +653,26 @@ function UniformFunctions:toVerilogPortList()
 
   self:visitEach(
     function(n)
-      if n.kind=="global" then
-        table.insert( res, S.declarePort( n.global.type, n.global.name, true ) )
+      if n.kind=="instanceCallsite" then
+        local fn = n.instanceCallsite.instance.module.functions[n.instanceCallsite.functionName]
+        table.insert( res, S.declarePort( fn.outputType, n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName, true ) )
+      end
+    end)
+
+  local rr = table.concat(res,",")
+  if #res>0 then rr = rr.."," end
+  return rr
+end
+
+-- convert to a verilog string with a port list passthrough, ie ".XXX(XXX),"
+function UniformFunctions:toVerilogPassthrough()
+  local res = {}
+
+  self:visitEach(
+    function(n)
+      if n.kind=="instanceCallsite" then
+        local nm = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
+        table.insert(res,"."..nm.."("..nm..")")
       end
     end)
 
@@ -683,9 +695,8 @@ UniformTopMT.__call = J.memoize(function(tab,arg,X)
 
   if Uniform.isUniform(arg) then
 return arg
-  elseif R.isGlobal(arg) then
-    J.err( arg.direction=="input", "Uniform: global uniform must be an input" )
-return Uniform.new{kind="global",global=arg,inputs={}}
+  elseif R.isInstanceCallsite(arg) then
+return Uniform.new{kind="instanceCallsite",instanceCallsite=arg,inputs={}}
   elseif type(arg)=="number" then
 return Uniform.const(arg)
   elseif type(arg)=="boolean" then

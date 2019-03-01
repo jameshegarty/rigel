@@ -1,1 +1,1 @@
-return {lastPx=33,offset=200}
+return {regs_lastPx=33,regs_offset=200}

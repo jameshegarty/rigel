@@ -92,7 +92,7 @@ end
 
 types._array={}
 
-function types.array2d( _type, w, h )
+function types.array2d( _type, w, h, X )
   err( types.isType(_type), "first index to array2d must be Rigel type" )
   err( types.isBasic(_type), "array2d: input type must be basic, but is: "..tostring(_type) )
   err( type(w)=="number", "types.array2d: second argument must be numeric width but is "..tostring(type(w)) )
@@ -102,6 +102,7 @@ function types.array2d( _type, w, h )
   assert(h==math.floor(h))
   err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
   err( w*h>0,"types.array2d: w*h must be >0" )
+  err( X==nil, "types.array2d: too many arguments" )
   
   -- dedup the arrays
   local ty = setmetatable( {kind="array", over=_type, size={w,h}}, TypeMT )
@@ -823,6 +824,7 @@ end
 local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   err(types.isType(A),kind.."Framed: argument should be type, but is: "..tostring(A))
   err(types.isBasic(A),kind.."Framed: argument should be basic type, but is: "..tostring(A))
+  err( A:verilogBits()>0,"Framed: type must have >0 bits, but is: "..tostring(A) )
   err( type(mixed)=="boolean", kind.."Framed: mixed should be boolean, but is: "..tostring(mixed))
   err( type(dims)=="table", kind.."Framed: dims should be table")
   err( X==nil, kind.."Framed: too many arguments")
@@ -1134,16 +1136,15 @@ function types.hasReady(a)
 end
 
 function types.extractReady(a)
-  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isV(a) or types.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") then return types.bool()
+  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isV(a) or types.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") or types.isHandshakeTmuxed(a) then return types.bool()
   elseif types.isHandshakeTuple(a) then
     return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
-  elseif types.isHandshakeArray(a) then
+  elseif types.isHandshakeArray(a) or a:is("HandshakeArrayFramed") then
     return types.array2d(types.bool(),a.params.W*a.params.H)
   elseif types.isHandshakeArrayOneHot(a) then
     return types.uint(8)
   else 
-    print("COULD NOT EXTRACT READY",a)
-    assert(false) 
+    J.err(false, "COULD NOT EXTRACT READY: "..tostring(a) )
   end
 end
 

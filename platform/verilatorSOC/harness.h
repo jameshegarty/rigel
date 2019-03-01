@@ -201,7 +201,7 @@ bool checkSlaveWriteResponse(
   }else if( *BVALID && *BRESP==0){
     return true;
   }else if( *BVALID ){
-    printf("Slave %d returned strange respose? ", *BRESP);
+    printf("Slave %d returned strange write respose? %d", id, *BRESP);
     exit(1);
   }
 
@@ -236,7 +236,7 @@ bool checkSlaveReadResponse(
     *dataOut = *RDATA;
     return true;
   }else if( *RVALID ){
-    printf("Slave %d returned strange respose? ", *RRESP);
+    printf("Slave %d returned strange read respose? %d", id, *RRESP);
     exit(1);
   }
 
@@ -399,7 +399,7 @@ void masterReadDataLatchFlops(
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
         
     if(verbose){
-      printf("MAXI%d Service Read Addr(base rel):%d data:%d/0x%x remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
+      printf("MAXI%d Service Read Addr(base rel):%d data:%lu/0x%lx remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
     }
       
     t->burst--;
@@ -490,12 +490,9 @@ void masterWriteDataDriveOutputs(
   unsigned char* BRESP,
   unsigned char* BVALID){
 
-  //  *AWREADY = true;
   *WREADY = QSize(&writeQ[port])>0;
   *BVALID = slaveState->BVALID;
   *BRESP = slaveState->BRESP;
-
-  //  printf("WREADY=%d\n",*WREADY);
 }
 
 // return error flag (true if error)
@@ -514,6 +511,8 @@ bool masterWriteDataLatchFlops(
   const unsigned char* AWLEN,
   const unsigned char* AWSIZE,
   const unsigned char* AWBURST){
+
+  //static int BVALIDS_SENT=0;
   
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -530,10 +529,12 @@ bool masterWriteDataLatchFlops(
     masterBytesWritten[port] += 8; // for debug
           
     if(t->burst==0){
+      // write transaction is done
       QPop(&writeQ[port]);
       slaveState->BVALID = true;
       slaveState->BRESP = 0;
-
+      //BVALIDS_SENT++;
+      //printf("BVALIDS_SENT %d\n",BVALIDS_SENT);
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
         return true;
@@ -543,11 +544,6 @@ bool masterWriteDataLatchFlops(
     }
 
     cyclesSinceWrite[port] = 0;
-    //  }else if( QSize(&writeQ[port])<=0 && *WVALID){
-    //printf("WREADY=%d AWREADY=%d AWVALID=%d\n",*WREADY,*AWREADY,*AWVALID);
-    //    printf("Error: attempted to write data, but there was no outstanding write addresses! (master port %d)\n",port);
-    //    slaveState->BVALID = false;
-    //    exit(1);
   }else{
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
 
@@ -602,7 +598,7 @@ void masterWriteReqLatchFlops(
     t.addr = *AWADDR;
     t.burst = *AWLEN+1;
 
-    if(verbose ){
+    if( verbose ){
       printf("MAXI%d Write Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
     }
 

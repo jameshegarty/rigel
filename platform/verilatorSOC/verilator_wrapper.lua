@@ -1,4 +1,42 @@
-module VerilatorWrapper(
+local AXI = require "axi"
+local J = require "common"
+
+-- this is just a script that autogenerates mpsoc_iptop_LL.sv using AXI.lua port defn
+
+function assnExtToRigel(idx,src)
+  local str = {}
+  local iidx = J.invertTable(idx)
+  for i=#iidx,0,-1 do table.insert(str,src..string.upper(iidx[i]) ) end
+  return table.concat(str,",")
+end
+
+function assnRigelToExt(vtab,dest,src)
+  local str = ""
+  for k,v in pairs(vtab) do
+    str = str.."assign "..dest..string.upper(k).." = "..src.."["..v..[[];
+]]
+  end
+  return str
+end
+
+local READ_PORTS = ""
+
+for i=1,2 do
+  local PORT = "ZynqNOC_read"
+  if i>1 then PORT=PORT..tostring(i-1) end
+    
+  READ_PORTS = READ_PORTS..[[wire         ]]..PORT..[[_ready_downstream;
+   assign MAXI]]..(i-1)..[[_RREADY = ]]..PORT..[[_ready_downstream;
+   wire   ]]..PORT..[[_ready;
+   assign ]]..PORT..[[_ready = MAXI]]..(i-1)..[[_ARREADY;
+   wire [55:0] ]]..PORT..[[_input; // read request
+   ]]..assnRigelToExt(AXI.ReadAddressVSelect,"MAXI"..(i-1).."_",PORT.."_input")..[[
+   wire [79:0] ]]..PORT..[[;    // read response
+   assign ]]..PORT..[[ = {MAXI]]..(i-1)..[[_RVALID,]]..assnExtToRigel(AXI.ReadDataIdx,"MAXI"..(i-1).."_")..[[};
+]]
+end
+
+print([[module VerilatorWrapper(
   input         IP_CLK,
   input         IP_ARESET_N,
 
@@ -100,20 +138,10 @@ module VerilatorWrapper(
     output [1:0]  MAXI1_AWBURST
 );
 
-   wire [138:0] ZynqNOC_write_input; // write issue
-   assign MAXI0_WDATA = ZynqNOC_write_input[116:53];
-assign MAXI0_AWBURST = ZynqNOC_write_input[37:36];
-assign MAXI0_WLAST = ZynqNOC_write_input[125:125];
-assign MAXI0_AWID = ZynqNOC_write_input[51:40];
-assign MAXI0_AWSIZE = ZynqNOC_write_input[39:38];
-assign MAXI0_AWADDR = ZynqNOC_write_input[31:0];
-assign MAXI0_AWVALID = ZynqNOC_write_input[52];
-assign MAXI0_WID = ZynqNOC_write_input[137:126];
-assign MAXI0_WSTRB = ZynqNOC_write_input[124:117];
-assign MAXI0_WVALID = ZynqNOC_write_input[138];
-assign MAXI0_AWLEN = ZynqNOC_write_input[35:32];
+   wire []]..tostring(AXI.WriteIssue(64):verilogBits()-1)..[[:0] ZynqNOC_write_input; // write issue
+   ]]..assnRigelToExt(AXI.WriteIssueVSelect(64),"MAXI0_","ZynqNOC_write_input")..[[
    wire [14:0]  ZynqNOC_write; // write response
-   assign ZynqNOC_write = {MAXI0_BVALID,MAXI0_BID,MAXI0_BRESP};
+   assign ZynqNOC_write = {MAXI0_BVALID,]]..assnExtToRigel(AXI.WriteResponseIdx,"MAXI0_")..[[};
    wire         ZynqNOC_readSink_ready;
    assign ZynqNOC_readSink_ready = SAXI0_RREADY;
    wire         ZynqNOC_readSource_ready_downstream;
@@ -129,50 +157,17 @@ assign MAXI0_AWLEN = ZynqNOC_write_input[35:32];
    assign SAXI0_AWREADY = ZynqNOC_writeSource_ready_downstream[0];
    assign SAXI0_WREADY = ZynqNOC_writeSource_ready_downstream[1];
    wire [102:0] ZynqNOC_writeSource;  // issue write to slave
-   assign ZynqNOC_writeSource[52:0] = {SAXI0_AWVALID,SAXI0_AWID,SAXI0_AWSIZE,SAXI0_AWBURST,SAXI0_AWLEN,SAXI0_AWADDR};
-   assign ZynqNOC_writeSource[102:53] = {SAXI0_WVALID,SAXI0_WID,SAXI0_WLAST,SAXI0_WSTRB,SAXI0_WDATA};
-   wire [14:0] ZynqNOC_writeSink_input; // return write result from slave
-   assign SAXI0_BVALID = ZynqNOC_writeSink_input[14];
-assign SAXI0_BID = ZynqNOC_writeSink_input[13:2];
-assign SAXI0_BRESP = ZynqNOC_writeSink_input[1:0];
-   wire [55:0] ZynqNOC_readSource;  // issue read to slave
-   assign ZynqNOC_readSource = {SAXI0_ARVALID,SAXI0_ARPROT,SAXI0_ARID,SAXI0_ARBURST,SAXI0_ARSIZE,SAXI0_ARLEN,SAXI0_ARADDR};
+   assign ZynqNOC_writeSource[]]..tostring(AXI.WriteAddress:verilogBits())..[[:0] = {SAXI0_AWVALID,]]..assnExtToRigel(AXI.WriteAddressIdx,"SAXI0_")..[[};
+   assign ZynqNOC_writeSource[]]..tostring(AXI.WriteAddress:verilogBits()+AXI.WriteData(32):verilogBits()+1)..[[:]]..tostring(AXI.WriteAddress:verilogBits()+1)..[[] = {SAXI0_WVALID,]]..assnExtToRigel(AXI.WriteDataIdx,"SAXI0_")..[[};
+   wire []]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[[:0] ZynqNOC_writeSink_input; // return write result from slave
+   ]]..assnRigelToExt(AXI.WriteResponseVSelect(32),"SAXI0_","ZynqNOC_writeSink_input")..[[
+   wire []]..tostring(AXI.ReadAddress:verilogBits()-1)..[[:0] ZynqNOC_readSource;  // issue read to slave
+   assign ZynqNOC_readSource = {SAXI0_ARVALID,]]..assnExtToRigel(AXI.ReadAddressIdx,"SAXI0_")..[[};
    wire [47:0] ZynqNOC_readSink_input;  // slave read response
-   assign SAXI0_RVALID = ZynqNOC_readSink_input[47];
-assign SAXI0_RLAST = ZynqNOC_readSink_input[32:32];
-assign SAXI0_RDATA = ZynqNOC_readSink_input[31:0];
-assign SAXI0_RRESP = ZynqNOC_readSink_input[34:33];
-assign SAXI0_RID = ZynqNOC_readSink_input[46:35];
+   ]]..assnRigelToExt(AXI.ReadDataVSelect(32),"SAXI0_","ZynqNOC_readSink_input")..[[
 
-   wire         ZynqNOC_read_ready_downstream;
-   assign MAXI0_RREADY = ZynqNOC_read_ready_downstream;
-   wire   ZynqNOC_read_ready;
-   assign ZynqNOC_read_ready = MAXI0_ARREADY;
-   wire [55:0] ZynqNOC_read_input; // read request
-   assign MAXI0_ARLEN = ZynqNOC_read_input[35:32];
-assign MAXI0_ARADDR = ZynqNOC_read_input[31:0];
-assign MAXI0_ARPROT = ZynqNOC_read_input[54:52];
-assign MAXI0_ARVALID = ZynqNOC_read_input[55];
-assign MAXI0_ARID = ZynqNOC_read_input[51:40];
-assign MAXI0_ARSIZE = ZynqNOC_read_input[37:36];
-assign MAXI0_ARBURST = ZynqNOC_read_input[39:38];
-   wire [79:0] ZynqNOC_read;    // read response
-   assign ZynqNOC_read = {MAXI0_RVALID,MAXI0_RID,MAXI0_RRESP,MAXI0_RLAST,MAXI0_RDATA};
-wire         ZynqNOC_read1_ready_downstream;
-   assign MAXI1_RREADY = ZynqNOC_read1_ready_downstream;
-   wire   ZynqNOC_read1_ready;
-   assign ZynqNOC_read1_ready = MAXI1_ARREADY;
-   wire [55:0] ZynqNOC_read1_input; // read request
-   assign MAXI1_ARLEN = ZynqNOC_read1_input[35:32];
-assign MAXI1_ARADDR = ZynqNOC_read1_input[31:0];
-assign MAXI1_ARPROT = ZynqNOC_read1_input[54:52];
-assign MAXI1_ARVALID = ZynqNOC_read1_input[55];
-assign MAXI1_ARID = ZynqNOC_read1_input[51:40];
-assign MAXI1_ARSIZE = ZynqNOC_read1_input[37:36];
-assign MAXI1_ARBURST = ZynqNOC_read1_input[39:38];
-   wire [79:0] ZynqNOC_read1;    // read response
-   assign ZynqNOC_read1 = {MAXI1_RVALID,MAXI1_RID,MAXI1_RRESP,MAXI1_RLAST,MAXI1_RDATA};
+   ]]..READ_PORTS..[[
 
    Top top(.CLK(IP_CLK), .reset(~IP_ARESET_N), .*);
 
-endmodule
+endmodule]])

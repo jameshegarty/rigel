@@ -9,7 +9,7 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local soc = require "soc"
 
-R.SDF=false
+--R.SDF=false
 
 internalT = 4 -- internal throughput
 outputT = 8
@@ -38,7 +38,9 @@ end
 
 --local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth ):makeConst() XXX
 local TAP_TYPE = types.array2d( types.uint(8), ConvWidth, ConvWidth )
-soc.taps = R.newGlobal("taps","input",TAP_TYPE,P.G)
+--soc.taps = R.newGlobal("taps","input",TAP_TYPE,P.G)
+local taps = soc.regStub{taps={TAP_TYPE,P.G}}:instantiate("taps")
+taps.extern = true
 
 local DATA_TYPE = types.array2d(A,8)
 local HST = DATA_TYPE
@@ -64,7 +66,7 @@ local statements = {}
 
 for depth=1,TARGET_DEPTH do
 
-  local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO, true )
+  local PI = P.pyramidIterTaps( depth, depth>1, internalT, curW, curH, ConvWidth, NOFIFO, true, taps.taps )
 
 --  local out0, out1 = RS.fanOut{input=out,branches=2}
 

@@ -18,22 +18,100 @@ local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
 local ready = macro(function(i) return `i._2 end)
 
-function rigelGlobalFunctions:terraValue()
-  if self.terraValueVar==nil then
-    local v
-    self.terraValueVar = global( self.type:toTerraType(), v, self.name.."_"..self.direction )
-  end
-  return self.terraValueVar
-end
-
-function rigelGlobalFunctions:terraReady()
-  if self.terraReadyVar==nil then
-    self.terraReadyVar = global( bool, false, self.name.."_"..self.direction )
-  end
-  return self.terraReadyVar
-end
-
 local MT = {}
+
+-- just putting this here to keep terra code out of rigel.lua
+function MT.terraReference(inst)
+  return global( &inst.module.terraModule, nil, inst.name )
+end
+
+function MT.instanceCallsiteCalculateReady(tab)
+  --  return `[tab.instance:terraReference()].methods.[tab.functionName.."_calculateReady"]
+  -- closure
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  err(tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]~=nil, tab.functionName.."_calculateReady() is missing on terra module")
+  
+  if fn.inputType==types.null() then
+    return terra(inp:types.extractReady(fn.outputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
+    end
+  elseif fn.outputType==types.null() and fn.inputType~=types.null() then
+    return terra()
+      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()])
+    end
+  else
+    return terra(inp:types.extractReady(fn.outputType):toTerraType())
+      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
+    end
+  end
+end
+
+-- REMEMBER: This should be READ ONLY
+function MT.instanceCallsiteReady(tab)
+  local fn = tab.instance.module.functions[tab.functionName]
+  err(types.isHandshakeAny(fn.inputType),tab.instance.name..":"..tab.functionName.."() does not have a upstream ready bit. input type: "..tostring(fn.inputType))
+  local qt = `[tab.instance:terraReference()].[tab.functionName.."_ready"]
+  return qt
+end
+
+function MT.instanceCallsiteTerraFn(tab)
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  err( tab.instance.module.terraModule.methods[tab.functionName]~=nil, tab.instance.name..":"..tab.functionName.."() terra fn is missing?" )
+  
+  if fn.inputType==types.null() then
+    return terra(out:&types.lower(fn.outputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],out)
+    end
+  elseif fn.outputType==types.null() then
+    return terra(inp:&types.lower(fn.inputType):toTerraType())
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp)
+    end
+  else
+    return terra( inp:&types.lower(fn.inputType):toTerraType(), out:&types.lower(fn.outputType):toTerraType() )
+      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp,out)
+    end
+  end
+end
+
+function MT.instanceCallsiteShim(tab)
+  local struct InstanceCallsiteShim {}
+  InstanceCallsiteShim.name="InstanceCallsiteShim_"..tab.instance.name.."_"..tab.functionName
+  local fn = tab.instance.module.functions[tab.functionName]
+
+  if fn.inputType==types.null() then
+    terra InstanceCallsiteShim:process( out : &rigel.lower(fn.outputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](out)
+    end
+
+    if types.isHandshakeAny(fn.outputType) then
+      terra InstanceCallsiteShim:calculateReady( readyDownstream:bool )
+        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"](readyDownstream)
+      end
+    end
+  elseif fn.outputType==types.null() then
+  
+    if types.isHandshakeAny(fn.inputType) then
+      table.insert( InstanceCallsiteShim.entries, {field="ready",type=bool})
+      terra InstanceCallsiteShim:calculateReady()
+        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"]()
+        self.ready = [tab.instance:terraReference()].[tab.functionName.."_ready"]
+      end
+    end
+
+    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](inp)
+    end
+  else
+    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType(), out : &rigel.lower(fn.outputType):toTerraType() )
+      [tab.instance:terraReference()]:[tab.functionName](inp,out)
+    end
+  end
+
+  
+  return MT.new(InstanceCallsiteShim)
+end
 
 function MT.new(Module)
   if Module.methods.init==nil then terra Module:init() end end
@@ -41,7 +119,7 @@ function MT.new(Module)
   if Module.methods.reset==nil then terra Module:reset() end end
   if Module.methods.stats==nil then terra Module:stats(n:&int8) end end
 
-  err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
+  --err( Module.methods.process~=nil or (Module.methods.load~=nil and Module.methods.store~=nil) or (Module.methods.start~=nil and Module.methods.done~=nil), "at least one process/load/store/start/done must be given!")
   assert(Module.methods.init~=nil)
   assert(Module.methods.stats~=nil)
   assert(Module.methods.free~=nil)
@@ -316,7 +394,7 @@ function MT.mapFramed(res,f,W,H,vectorized)
   
   if f.inputType:is("Handshake") and f.outputType==types.null() then
     terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
-      self.fn:process(inp,out)
+      self.fn:process(inp)
     end
 
     terra MapFramed:calculateReady()
@@ -1240,14 +1318,14 @@ end
 
 
 function MT.fifo( inputType, outputType, A, size, nostall, W, H, T, csimOnly)
-  local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), ready:bool, readyDownstream:bool }
+  local struct Fifo { fifo : simmodules.fifo(A:toTerraType(),size,"fifofifo"), store_ready:bool, readyDownstream:bool }
   terra Fifo:reset() self.fifo:reset() end
   terra Fifo:stats(name:&int8)  end
   terra Fifo:store( inp : &rigel.lower(inputType):toTerraType())
-    if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.ready,valid(inp)) end
+    if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.store_ready,valid(inp)) end
     -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
     -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
-    if valid(inp) and self.ready then 
+    if valid(inp) and self.store_ready then 
       if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE, valid input\n") end
       self.fifo:pushBack(&data(inp)) 
     end
@@ -1266,8 +1344,8 @@ function MT.fifo( inputType, outputType, A, size, nostall, W, H, T, csimOnly)
       if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, not ready. FIFO size: %d\n", size, self.fifo:size()) end
     end
   end
-  terra Fifo:calculateStoreReady() self.ready = (self.fifo:full()==false) end
-  terra Fifo:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
+  terra Fifo:store_calculateReady() self.store_ready = (self.fifo:full()==false) end
+  terra Fifo:load_calculateReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
 
   return MT.new(Fifo)
 end
@@ -1839,21 +1917,11 @@ function MT.lambdaCompile(fn)
   
   local mself = symbol( &Module, "module self" )
   
-  if fn.instances~=nil then
-    for _,inst in pairs(fn.instances) do 
-      err(inst.module.terraModule~=nil, "Missing terra module for "..inst.module.name)
-      table.insert( Module.entries, {field=inst.name, type=inst.module.terraModule} )
-    end 
-  end
+  for inst,_ in pairs(fn.instanceMap) do 
+    err(inst.module.terraModule~=nil, "Missing terra module for "..inst.module.name)
+    table.insert( Module.entries, {field=inst.name, type=inst.module.terraModule} )
+  end 
 
-  -- sort of a hack: for handshaked, internal globals, we can't guarantee we'll generate code the runs in the correct order (producers before consumers)
-  -- so, instead, have all internal handshaked globals feed into FIFOs
-  for globalname,v in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( v.type ) then
-      table.insert( Module.entries, {field="GLOBALFIFO_"..globalname, type=simmodules.fifo( types.extractData(v.type):toTerraType(), 8, "GLOBALFIFO_"..globalname)} )
-    end
-  end
-  
   -- terra requires that we predeclare all instances
   fn.output:visitEach(
     function(n, inputs)
@@ -1868,12 +1936,11 @@ function MT.lambdaCompile(fn)
       end
     end)
 
-  for globalname,v in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( v.type ) then
-      table.insert( resetStats, quote mself.["GLOBALFIFO_"..globalname]:reset() end )
-    end
+
+  for inst,_ in pairs(fn.instanceMap) do 
+    table.insert( initStats, quote [inst:terraReference()] = &mself.[inst.name] end )
   end
-    
+
   local readyOutput
     
   -- build ready calculation
@@ -1944,19 +2011,25 @@ return {`mself.[n.name].ready}
             res = {`mself.[n.name].ready}
           end
         elseif n.kind=="applyMethod" then
-          if n.fnname=="load" then 
-            -- load has nothing upstream, so whatever
-            table.insert( readyStats, quote mself.[n.inst.name]:calculateLoadReady(arg) end ) 
-          elseif n.fnname=="store" then
-            -- ready value may change throughout the cycle (as loads happen etc). So we store the agreed upon value and use that
-            table.insert( readyStats, quote mself.[n.inst.name]:calculateStoreReady() end ) 
-            res = {`mself.[n.inst.name].ready}
-          elseif n.fnname=="start" then
-            table.insert( readyStats, quote mself.[n.inst.name]:calculateStartReady(arg) end ) 
-            res = {`mself.[n.inst.name].startReady}
-          elseif n.fnname=="done" then
-            table.insert( readyStats, quote mself.[n.inst.name]:calculateDoneReady() end ) 
-            res = {`mself.[n.inst.name].doneReady}
+          local applyfn = n.inst.module.functions[n.fnname]
+
+          local inst
+          if fn.externalInstances[n.inst]~=nil then
+            inst = n.inst:terraReference()
+          else
+            inst = `mself.[n.inst.name]
+          end
+          
+          if types.isHandshakeAny(applyfn.inputType) and applyfn.outputType==types.null() then
+            table.insert( readyStats, quote inst:[n.fnname.."_calculateReady"]() end ) 
+            res = {`inst.[n.fnname.."_ready"]}
+          elseif types.isHandshakeAny(applyfn.outputType) then
+            table.insert( readyStats, quote inst:[n.fnname.."_calculateReady"](arg) end ) 
+            if types.isHandshakeAny(applyfn.inputType) then
+              res = {`inst.[n.fnname.."_ready"]}
+            else
+              res = {`0} -- has to return something, but should not be read
+            end
           else
             assert(false)
           end
@@ -2041,26 +2114,30 @@ return {`mself.[n.name].ready}
         
         res = {out,rvready}
       elseif n.kind=="applyMethod" then
-        if n.fnname=="load" or n.fnname=="start" then
-          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-          table.insert( initStats, quote mself.[n.inst.name]:init() end )
-          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
 
-          table.insert( stats, quote mself.[n.inst.name]:[n.fnname]( out ) end)
+        local inst
+        if fn.externalInstances[n.inst]~=nil then
+          inst = n.inst:terraReference()
+        else
+          inst = `mself.[n.inst.name]
+          -- only call these inside the module that actually owns it
+          table.insert( statStats, quote inst:stats([n.name]) end )
+          table.insert( resetStats, quote inst:reset() end )
+          table.insert( initStats, quote inst:init() end )
+          table.insert( freeStats, quote inst:free() end )
+        end
+
+        local instfn = n.inst.module.functions[n.fnname]
+        if instfn.inputType==types.null() then
+          table.insert( stats, quote inst:[n.fnname]( out ) end)
 
           if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
 
           res = {out}
-        elseif n.fnname=="store" or n.fnname=="done" then
-          table.insert( statStats, quote mself.[n.inst.name]:stats([n.name]) end )
-          table.insert( resetStats, quote mself.[n.inst.name]:reset() end )
-          table.insert( initStats, quote mself.[n.inst.name]:init() end )
-          table.insert( freeStats, quote mself.[n.inst.name]:free() end )
-
+        elseif instfn.outputType==types.null() then
           if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
 
-          table.insert(stats, quote  mself.[n.inst.name]:[n.fnname]( [inputs[1]] ) end )
+          table.insert(stats, quote  inst:[n.fnname]( [inputs[1]] ) end )
           res = {`nil}
         else
           assert(false)
@@ -2105,31 +2182,10 @@ return {`mself.[n.name].ready}
   RVReadyOutput = out[2]
   out = out[1]
 
-  -- sort of a hack: if we have an input/output pair of globals that are tied off within this module,
-  -- copy their value in this function.
-  -- why don't we just use one variable? We have two variables to work around ordering issues with Handshake globals.
-  -- instead of codegening global transactions in correct producer-consumer order (would be hard), we instead insert FIFOs between
-  -- all Handshaked globals, and put them between the inputs&outputs. Then, we can codegen in any order.
-  local tiedownGlobalsPre = {}
-  local tiedownGlobalsPost = {}
-  local tiedownGlobalsReadyPre = {}
-
-  for globalname,g in pairs(fn.globalsInternal) do
-    if types.isHandshakeAny( g.type ) then
-      local fifo = `mself.["GLOBALFIFO_"..g.name]
-      table.insert(tiedownGlobalsPre, quote [g.input:terraValue()] = {@fifo:peekFront(0),fifo:hasData()}; if [g.input:terraReady()] and fifo:hasData() then fifo:popFront() end end)
-      table.insert(tiedownGlobalsPost, quote if valid([g.output:terraValue()]) and (fifo:full()==false) then fifo:pushBack(&data([g.output:terraValue()])) end end)
-
-      table.insert(tiedownGlobalsReadyPre, quote [g.output:terraReady()] = (fifo:full()==false) end)
-    else
-      table.insert(tiedownGlobalsPost, quote [g.input:terraValue()] = [g.output:terraValue()] end)
-    end
-  end
-  
   if fn.input==nil then
-    terra Module.methods.process( [mself], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
+    terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
   else
-    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [tiedownGlobalsPre];[stats];[tiedownGlobalsPost] end
+    terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
   end
 
   if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
@@ -2140,24 +2196,21 @@ return {`mself.[n.name].ready}
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
     if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
-    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [tiedownGlobalsReadyPre]; [readyStats]; TMP; end
+    terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
   elseif rigel.streamCount(fn.inputType)>0 then
     -- has a handshake input, but not a handshake output
     assert(fn.outputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; mself.ready = [readyOutput]; end
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
   elseif rigel.handshakeMode(fn.output) then
     assert(fn.outputType==types.null())
     assert(fn.inputType==types.null())
-    terra Module.methods.calculateReady( [mself] ) [tiedownGlobalsReadyPre]; [readyStats]; end
+    terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 
   terra Module.methods.reset( [mself] ) [resetStats] end
   terra Module.methods.init( [mself] ) [initStats] end
   terra Module.methods.free( [mself] ) [freeStats] end
   terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
-
-  --if DARKROOM_VERBOSE then Module.methods.process:printpretty(true,false) end
-  --if Module.methods.calculateReady~=nil then Module.methods.calculateReady:printpretty(true,false) end
 
   return Module
 end

@@ -129,8 +129,6 @@ end
 
 -- takes an array of values to a hash where the values are keys
 function common.invertTable(t)
---  for k,v in pairs(t) do assert(type(k)=="number") end
-
   local out = {}
   for k,v in pairs(t) do
     assert(out[v]==nil)  -- no duplicates
@@ -424,6 +422,8 @@ end
 
 common.stripkeys = common.mapToArray
 
+-- takes in a table t, strips the values and
+-- makes an array out of the keys
 function common.invertAndStripKeys(t)
   local r = {}
   for k,v in pairs(t) do table.insert(r,k) end
@@ -444,13 +444,16 @@ function common.sort( a, f )
 end
 
 -- fn(a,b)
+-- if #t==0, then returns base
+-- if #t==1, then returns t[1]
+-- if #t==2, then returns fn(t[1],t[2])
 function common.foldl( fn, base, t )
-  common.err(type(fn)=="function","foldl: first argument must be function")
+  common.err( type(fn)=="function","foldl: first argument must be function")
   common.err( type(t)=="table", "foldl: input must be table")
   common.err( #t==common.keycount(t), "foldl: table must be lua array" ) -- should be only numeric keys
   
   if #t==0 then return base end
-
+  if #t==1 then return t[1] end
 --  assert(type(base)==type(t[1]))
 
   local res = base

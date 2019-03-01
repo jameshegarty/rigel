@@ -359,10 +359,9 @@ function RS.HS(t,handshakeTrigger)
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
       return t
---    elseif (R.isBasic(t.inputType) and R.isV(t.outputType)) or (t.outputType:isTuple() and #t.outputType.list>1 and t.outputType.list[2]:isBool()) then
     elseif (R.isBasic(t.inputType) or t.inputType:is("StaticFramed")) and (R.isV(t.outputType) or t.outputType:is("VFramed")) then
       return RM.liftHandshake(RM.liftDecimate(t))
-    elseif (R.isBasic(t.inputType) and R.isBasic(t.outputType)) or ((t.inputType:is("StaticFramed") or t.inputType==types.null()) and t.outputType:is("StaticFramed")) then
+    elseif (R.isBasic(t.inputType) and R.isBasic(t.outputType)) or ((t.inputType:is("StaticFramed") or t.inputType==types.null()) and (t.outputType:is("StaticFramed") or t.outputType==types.null())) then
       if handshakeTrigger==nil then handshakeTrigger = true end
       return RM.makeHandshake(t,nil,handshakeTrigger)
     else

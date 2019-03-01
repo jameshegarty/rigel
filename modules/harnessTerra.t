@@ -86,7 +86,17 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     end
 
     local setTap = quote end
-    if tapType~=nil then setTap = quote [soc.taps:terraValue()] = [tapType:valueToTerra(tapValue)] end end
+
+    if J.keycount( hsfn.requires )==1 then
+      for ic,_ in pairs(hsfn.requires) do
+        assert(ic.functionName=="taps")
+        setTap = quote var taptmp : ic.instance.module.terraModule
+                       [ic.instance:terraReference()] = &taptmp end
+      end
+    else
+      assert( J.keycount( hsfn.requires )==0 )
+    end
+
 
     local terra dosim() 
       if DARKROOM_VERBOSE then cstdio.printf("Start CPU Sim\n") end

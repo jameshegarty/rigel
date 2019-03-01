@@ -1,1 +1,1 @@
-return {startCnt=16384,endCnt=4096}
+return {regs_startCnt=16384,regs_endCnt=4096}

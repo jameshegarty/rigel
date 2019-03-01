@@ -164,7 +164,8 @@ function(args)
   return RM.SoAtoAoS( args.type.list[1].size[1], args.type.list[1].size[2], typelist )
 end)
 
-generators.HS = R.newFunctionGenerator("generators","HS",{"rigelFunction","type","rate"},{},
+-- bool is "HandshakeTrigger" option
+generators.HS = R.newFunctionGenerator("generators","HS",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
   local mod
@@ -183,7 +184,7 @@ function(args)
   J.err( R.isFunctionGenerator(mod)==false, "generators.HS: input rigel function is a generator, not a module (arguments must be missing)" )
   J.err( R.isPlainFunction(mod), "generators.HS: input Rigel function didn't yield a plain Rigel function? (is "..tostring(mod)..")" )
     
-  return RS.HS(mod)
+  return RS.HS(mod,args.bool)
 end)
 
 generators.Linebuffer = R.newFunctionGenerator("generators","Linebuffer",{"type","size","number","bounds","rate"},{},
@@ -312,7 +313,7 @@ function(args)
       if R.isFunctionGenerator(mod) then
         mod = mod{args.type:framedOver(),args.rate}
       end
-      J.err( R.isPlainFunction(mod), "generators.Map: input didn't yield a plain Rigel function? "..tostring(mod))
+      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: input didn't yield a plain Rigel function? "..tostring(mod))
 
       -- fully serial
       return RM.mapFramed( mod, size[1], size[2], false )
@@ -325,7 +326,7 @@ function(args)
       if R.isFunctionGenerator(mod) then
         mod = mod{args.type:framedOver(),args.rate}
       end
-      J.err( R.isPlainFunction(mod), "generators.Map: function didn't yield a plain Rigel function? "..tostring(mod))
+      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: function didn't yield a plain Rigel function? "..tostring(mod))
 
       local omixed = args.bool
       local ow,oh
@@ -350,7 +351,7 @@ function(args)
         oh=64
       end
 
-      J.err( R.isPlainFunction(mod), "generators.Map: input didn't yield a plain rigel function? (2)")
+      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: input didn't yield a plain rigel function? (2)")
       
       -- fully serial
       return RM.mapFramed( mod, size[1], size[2], args.type.params.mixed, ow, oh, omixed )
@@ -451,13 +452,13 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.AXIReadBurstSeq = R.newFunctionGenerator("generators","AXIReadBurstSeq",{"type","string","size","rate","number"},{},
+generators.AXIReadBurstSeq = R.newFunctionGenerator("generators","AXIReadBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
 function(args)
   -- note: type here should be explicitly passed by the user! This is the type of data we want
-  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false)
+  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false, nil, args.rigelFunction )
 end)
 
-generators.AXIWriteBurstSeq = R.newFunctionGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number"},{},
+generators.AXIWriteBurstSeq = R.newFunctionGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
 function(args)
   J.err( R.isHandshake(args.type), "AXIWriteBurstSeq: input must be handshaked, but is: "..tostring(args.type))
   local ty
@@ -467,10 +468,10 @@ function(args)
     ty = R.extractData(args.type)
   end
   
-  return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, false)
+  return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, false, args.rigelFunction )
 end)
 
-generators.Module = R.newFunctionGenerator("generators","Module",{"luaFunction","type"},{"string","rate"},
+generators.Module = R.newFunctionGenerator("generators","Module",{"luaFunction","type"},{"string","rate","instanceList"},
 function(args)
   if args.string==nil then
     args.string = "unnamedModuleGen"..__unnamedID
@@ -481,36 +482,35 @@ function(args)
   local out = args.luaFunction(input)
   J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
-  return RM.lambda( args.string, input, out )
+  return RM.lambda( args.string, input, out, args.instanceList )
 end)
 
 generators.Generator = generators.Module
 
 -- rigelFunction: the fn to call to perform the AXI read
-generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate"},{"number"},
+generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number"},
 function(args)
   local numb = args.number
   if numb==nil then
     numb = math.ceil((args.size[1]*args.size[2]*Uniform(args.rate[1][1]):toNumber())/Uniform(args.rate[1][2]):toNumber())
     print("AXIReadBurst V:",numb)
   end
-  
-  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true )
+  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true, nil, args.rigelFunction )
 end)
 
-generators.AXIRead = R.newFunctionGenerator("generators","AXIRead",{"string","type","number","rate"},{},
+generators.AXIRead = R.newFunctionGenerator("generators","AXIRead",{"string","type","number","rate","rigelFunction"},{},
 function(args)
   if args.type:is("Handshake") then
-    return SOC.read( args.string, args.number, types.uint(8) )
+    return SOC.read( args.string, args.number, types.uint(8), args.rigelFunction )
   else
     J.err( false, "AXIRead: unsupported input type: "..tostring(args.type))
   end
 end)
 
-generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate"},{"size","number"},
+generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate","rigelFunction"},{"size","number"},
 function(args)
   if args.type:is("HandshakeFramed") then
-    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true )
+    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true, args.rigelFunction )
   else
     J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end
