@@ -413,9 +413,22 @@ __tostring=function(mod)
   end
 
   if mod.kind=="lambda" then
-    table.insert(res,"  Instances:")
-    for _,inst in pairs(mod.instances) do
-      table.insert(res,"    "..inst.name..":"..inst.module.name)
+    if J.keycount(mod.instanceMap)==0 then
+      table.insert(res,"  Internal Instances: (none)")
+    else
+      table.insert(res,"  Internal Instances:")
+      for inst,_ in pairs(mod.instanceMap) do
+        table.insert(res,"    "..inst.name..":"..inst.module.name)
+      end
+    end
+
+    if J.keycount(mod.externalInstances)==0 then
+      table.insert(res,"  External Instances: (none)")
+    else
+      table.insert(res,"  External Instances:")
+      for inst,_ in pairs(mod.externalInstances) do
+        table.insert(res,"    "..inst.name..":"..inst.module.name)
+      end
     end
 
     mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)

@@ -3893,16 +3893,6 @@ local function collectInstances( moduleName, output, instances )
     end
   end
 
-  --[=[
-  for ic,_ in pairs(providesMap) do
-    if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
-    externalInstances[ic.instance][ic.functionName]=1
-    local fn = ic.instance.module.functions[ic.functionName]
-    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-      externalInstances[ic.instance][ic.functionName.."_ready"]=1
-    end
-    end]=]
-
   -- purely checking
   for inst,_ in pairs(instanceMap) do
     for ic,_ in pairs(inst.module.requires) do
@@ -3922,8 +3912,16 @@ local function collectInstances( moduleName, output, instances )
       err( false, "The instance '"..inst.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
     end
   end
-  
-  return J.invertAndStripKeys(instanceMap), providesMap, requiresMap, externalInstances
+
+  for einst,_ in pairs(externalInstances) do
+    err( instanceMap[einst]==nil, "External instance '"..einst.name.."' is somehow also in instance list?")
+  end
+
+  for inst,_ in pairs(instanceMap) do
+    err( externalInstances[inst]==nil, "Instance '"..inst.name.."' is somehow also in external instance list?")
+  end
+
+  return instanceMap, providesMap, requiresMap, externalInstances
 end
 
 -- function definition
@@ -3944,7 +3942,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
 
   -- collect instances (user doesn't have to explicitly give all instances)
-  local instances, providesList, requiresList, externalInstances = collectInstances( name, output, instances )
+  local instanceMap, providesList, requiresList, externalInstances = collectInstances( name, output, instances )
+  instances=nil -- now invalid
   
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output)
@@ -3954,7 +3953,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instances=instances, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances, globalMetadata={} }
+  local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances, globalMetadata={} }
 
   if input==nil then
     res.inputType = types.null()
@@ -4114,22 +4113,19 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       process:setCE(CE)
     end
 
-    if fn.instances~=nil then
-      for _,inst in pairs(fn.instances) do
-        err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
-        -- even though this isn't external here, it may be refered to in other modules (ie some ports may be externalized), so we need to use the same instance
-        local I = module:add( inst:toSystolicInstance() )
+
+    for inst,_ in pairs(fn.instanceMap) do
+      err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
+      -- even though this isn't external here, it may be refered to in other modules (ie some ports may be externalized), so we need to use the same instance
+      local I = module:add( inst:toSystolicInstance() )
         
-        if inst.module.stateful then
-          module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
-        end
+      if inst.module.stateful then
+        module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
       end
     end
 
-    if fn.externalInstances~=nil then
-      for inst,fnmap in pairs(fn.externalInstances) do
-        local I = module:addExternal( inst:toSystolicInstance(), fnmap )
-      end
+    for inst,fnmap in pairs(fn.externalInstances) do
+      local I = module:addExternal( inst:toSystolicInstance(), fnmap )
     end
     
     local out = fn.output:codegenSystolic( module )
@@ -4421,14 +4417,6 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     return systolicModule
   end
 
-  --[=[
-  if res.outputType==nil then
-    --err( S.isModule(res.systolicModule), "modules.lift: outputType is missing, and so is the systolic module?")
-    res.systolicModule = res.makeSystolic()
-    res.outputType = res.systolicModule:lookupFunction("process").output.type
-    err( types.isType(res.outputType), "modules.lift: systolic module did not return a valid type")
-  end
-  ]=]
   J.err(types.isType(res.outputType),"modules.lift: missing outputType")
 
   local res = rigel.newFunction( res )

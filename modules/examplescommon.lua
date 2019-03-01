@@ -1913,7 +1913,7 @@ C.tokenCounterReg = memoize(
       
     local G = require "generators"
 
-    return G.Module{A,
+    local res = G.Module{"TokenCounterReg_"..tostring(A).."_"..tostring(regGlobal).."_"..tostring(N),A,
       function(inp)
         local inpb = G.FanOut{2}(inp)
         local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
@@ -1921,6 +1921,8 @@ C.tokenCounterReg = memoize(
         cnt = G.HS{G.Add{1}}(cnt)
         return R.statements{inpb[0],regGlobal(cnt)}
       end}
+    
+    return res
   end)
 
 -- name: name of new (renamed) module

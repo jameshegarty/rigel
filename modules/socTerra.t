@@ -32,7 +32,7 @@ function SOCMT.regStub(tab)
 end
 
 function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X )
-  local struct AxiRegsN { startReg:bool, doneReady:bool, startReady:bool, doneReg:bool, RDATAReady:bool }
+  local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, RDATAReady:bool }
 
   for k,v in pairs(tab) do
     local ty = v[1]
@@ -119,7 +119,7 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
 
     @out = SELF.startReg
 
-    if SELF.startReg and SELF.startReady then
+    if SELF.startReg and SELF.start_ready then
       cstdio.printf("socTerra.axiRegs: trigger pipeline start\n")
       SELF.startReg = false
     end
@@ -157,13 +157,13 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
     readSink.terraFn(&RDATA)
   end
 
-  terra AxiRegsN:calculateDoneReady()
-    self.doneReady = true
+  terra AxiRegsN:done_calculateReady()
+    self.done_ready = true
     self.RDATAReady = readSink.terraReady
   end
 
-  terra AxiRegsN:calculateStartReady(readyDownstream:bool)
-    self.startReady = readyDownstream
+  terra AxiRegsN:start_calculateReady(readyDownstream:bool)
+    self.start_ready = readyDownstream
     [regReady]
   end
 
