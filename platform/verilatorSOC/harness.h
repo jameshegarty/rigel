@@ -399,7 +399,7 @@ void masterReadDataLatchFlops(
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
         
     if(verbose){
-      printf("MAXI%d Service Read Addr(base rel):%d data:%d/0x%x remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
+      printf("MAXI%d Service Read Addr(base rel):%d data:%lu/0x%lx remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
     }
       
     t->burst--;

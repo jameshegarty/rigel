@@ -91,8 +91,6 @@ return function(top, options)
   local MAX_READ_PORT = noc.module.readPorts-1
   local MAX_WRITE_PORT = noc.module.writePorts-1
 
-  print("PORTS",MAX_READ_PORT,MAX_WRITE_PORT)
-  
   for i=0,noc.module.readPorts-1 do
     local I = J.sel(i==0,"",tostring(i))
       MREAD_SLAVEOUT[i] = {
@@ -119,22 +117,21 @@ return function(top, options)
     MWRITE_SLAVEOUT[i] = {
       `[&uint8](&NOC.["write"..I.."_ready"][0]),
       `[&uint8](&NOC.["write"..I.."_ready"][1]),
-        `&NOC.["MAXI"..i.."_BRESP"],
-        `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
+      `&NOC.["MAXI"..i.."_BRESP"],
+      `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
     }
 
-      MWRITE_SLAVEIN[i] = {
-        `&NOC.["MAXI"..i.."_AWADDR"],
-        `[&uint8](&NOC.["MAXI"..i.."_AWVALID"]),
-        `&NOC.["MAXI"..i.."_WDATA"],
-        `[&uint8](&NOC.["MAXI"..i.."_WVALID"]),
-        `[&uint8](&NOC.["MAXI"..i.."_BREADY"]),
-        `&NOC.["MAXI"..i.."_WSTRB"],
-        `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
-        `&NOC.["MAXI"..i.."_AWLEN"],
-        `&NOC.["MAXI"..i.."_AWSIZE"],
-        `&NOC.["MAXI"..i.."_AWBURST"]}
-
+    MWRITE_SLAVEIN[i] = {
+      `&NOC.["MAXI"..i.."_AWADDR"],
+      `[&uint8](&NOC.["MAXI"..i.."_AWVALID"]),
+      `&NOC.["MAXI"..i.."_WDATA"],
+      `[&uint8](&NOC.["MAXI"..i.."_WVALID"]),
+      `[&uint8](&NOC.["MAXI"..i.."_BREADY"]),
+      `&NOC.["MAXI"..i.."_WSTRB"],
+      `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
+      `&NOC.["MAXI"..i.."_AWLEN"],
+      `&NOC.["MAXI"..i.."_AWSIZE"],
+      `&NOC.["MAXI"..i.."_AWBURST"]}
   end
 
   local clearOutputs = {}
@@ -147,7 +144,13 @@ return function(top, options)
   for i=0,noc.module.writePorts-1 do
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
       local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
-      table.insert( writeS, quote V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()],bytes) end )
+      table.insert( writeS, quote
+                    var addr = [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]
+                    if addr+bytes>MEMSIZE then
+                      cstdio.printf("ERROR: requested to read file outside of memory segment? addr:%d bytes:%d\n",addr,bytes)
+                      cstdlib.exit(1)
+                    end
+                    V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, bytes ) end )
 
       table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
     end
@@ -198,15 +201,12 @@ return function(top, options)
     if string.sub(k,0,8)=="Register" then
       local addr = string.sub(k,10)
 
-      print("REG",addr,v)
       local bytes = #v/2
       local addr = tonumber("0x"..addr)
-      print("BYTES",bytes,"addr",addr)
 
       for b=0,math.ceil(bytes/4)-1 do
         local dat = string.sub(v,b*8+1,(b+1)*8)
         local data = tonumber("0x"..dat)
-        print("DAT",dat,data)
         table.insert(setTaps,quote setReg([IP_CLK],[IP_ARESET_N],[m],[addr+b*4],data) end)
       end
     end
@@ -354,12 +354,13 @@ return function(top, options)
 
       cstdio.printf("Executed cycles: %d, Cycles to Done:%d\n", cycle, cyclesToDoneSignal)
 
+      writeS
+
       if round==ROUNDS-1 then
         m:free()
         cstdlib.free(m)
       end
 
-      writeS
 
       var errored = V.checkPorts(false);
 

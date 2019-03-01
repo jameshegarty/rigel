@@ -111,11 +111,11 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     local I = tostring(i-1)
     
     ZynqNOCTerra.methods["read"..J.sel(i==1,"",i-1)] = terra( self:&ZynqNOCTerra, inp : &types.lower(AXI.ReadAddress64):toTerraType(), out : &types.lower(AXI.ReadData64):toTerraType() )
-      @AXIT.RVALID64(out) = self.MAXI0_RVALID;
-      @AXIT.RDATA64(out) = self.MAXI0_RDATA;
-      @AXIT.RLAST64(out) = self.MAXI0_RLAST;
-      @AXIT.RRESP64(out) = self.MAXI0_RRESP;
-      @AXIT.RID64(out) = self.MAXI0_RID;
+      @AXIT.RVALID64(out) = self.["MAXI"..I.."_RVALID"];
+      @AXIT.RDATA64(out) = self.["MAXI"..I.."_RDATA"];
+      @AXIT.RLAST64(out) = self.["MAXI"..I.."_RLAST"];
+      @AXIT.RRESP64(out) = self.["MAXI"..I.."_RRESP"];
+      @AXIT.RID64(out) = self.["MAXI"..I.."_RID"];
 
       self.["MAXI"..I.."_ARVALID"] = @AXIT.ARVALID64(inp);
       self.["MAXI"..I.."_ARADDR"] = @AXIT.ARADDR64(inp);

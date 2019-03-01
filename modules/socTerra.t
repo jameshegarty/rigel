@@ -36,31 +36,36 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
 
   for k,v in pairs(tab) do
     local ty = v[1]
-    print("ADDENTRY",k,v,ty,v[1])
-    table.insert( AxiRegsN.entries,{field=k,type=ty:toTerraType()})
+    print("ADDENTRY",k,v,ty,v[1],ty:toTerraType())
+    table.insert( AxiRegsN.entries,{field=k.."_value",type=ty:toTerraType()})
   end
 
-  local self = symbol(&AxiRegsN)
+  local SELF = symbol(&AxiRegsN)
   
   for k,v in pairs(tab) do
     local ty = v[1]
-    AxiRegsN.methods[k] = terra([self],out:&ty:toTerraType()) @out=self.[k] end
+    AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())
+--    cstdio.printf("READ %d %d\n",[SELF],out)
+    @out=SELF.[k.."_value"]
+--    cstdio.printf("READ_DONE %d %d\n",[SELF],out)
+  end
+--    AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())  end
   end
   
   terra AxiRegsN:reset()
+--cstdio.printf("REGSRESET\n")
     self.startReg = false
     self.doneReg = false
-
+--cstdio.printf("REGSRESET AA\n")
     readSource.terraCalculateReady(true)
     writeSource.terraCalculateReady(array(true,true))
+--    cstdio.printf("REGSRESETDONE\n")
   end
 
   local regSet = {}
   local regReady = {}
 
   local W = symbol(types.lower(AXI.WriteIssue(32)):toTerraType(),"W")
-
-  
   
   for k,v in pairs(tab) do
     local addr = mod.globalMetadata["AddrOfRegister_regs_"..k]
@@ -75,20 +80,21 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
         table.insert(regSet,
           quote
             if @AXIT.AWADDR32(&W)==[addr+i*4] then
-              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
-              @([&uint](&self.[k])+i) = @AXIT.WDATA32(&W)
+--              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
+              @([&uint](&SELF.[k.."_value"])+i) = @AXIT.WDATA32(&W)
             end
           end)
+
       end
     end
   end
 
-  AxiRegsN.methods.start = terra( [self], out : &bool )
+  AxiRegsN.methods.start = terra( [SELF], out : &bool )
     var [W] 
     writeSource.terraFn(&W)
   
     if @[AXIT.AWVALID(32)](&W) then
-      cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
+      --cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
 
       var BRESP : types.lower(AXI.WriteResponse(32)):toTerraType()
       @AXIT.BRESP32(&BRESP) = 0
@@ -97,19 +103,19 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
 
       var addr = @AXIT.AWADDR32(&W)
       if addr==0xa0000000 then
-        self.startReg = true
-        self.doneReg = false
+        SELF.startReg = true
+        SELF.doneReg = false
         cstdio.printf("socTerra.axiRegs: pipeline start requested, waiting on ready\n")
       else
         [regSet]
       end
     end
 
-    @out = self.startReg
+    @out = SELF.startReg
 
-    if self.startReg and self.startReady then
+    if SELF.startReg and SELF.startReady then
       cstdio.printf("socTerra.axiRegs: trigger pipeline start\n")
-      self.startReg = false
+      SELF.startReg = false
     end
   end
 
@@ -169,14 +175,11 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
 
   terra ReadBurst:reset()
     self.nextByteToRead = [totalBytes:toTerra()]
-    --[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = true
-    --self.ready = true
     self.bytesRead = 0
   end
 
   terra ReadBurst:process( trigger:&bool, dataOut:&R.lower(outputType):toTerraType() )
     if @trigger and self.nextByteToRead >= [totalBytes:toTerra()] then
-      --cstdio.printf("READ BURST START\n")
       self.nextByteToRead = 0
       self.bytesRead = 0
     end
@@ -195,12 +198,10 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
       
       if self.ready then
         self.nextByteToRead = self.nextByteToRead + 128
-        --cstdio.printf("READBURST: inc addr %d\n",self.nextByteToRead)
       end
     elseif self.nextByteToRead<[totalBytes:toTerra()] and readFn.terraReady==false then
       cstdio.printf("readBurst: want to read, but ARREADY is false\n")
     elseif self.nextByteToRead>=[totalBytes:toTerra()] then
-      --valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR"):terraValue()]) = false
       valid(AR) = false
     else
       cstdio.printf("UNKNOWN READ BURST COND? %d\n",self.nextByteToRead)
@@ -211,7 +212,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
     if valid(RDATA) then
       cstring.memcpy( &data(dataOut), AXIT.RDATA64(&RDATA), [R.extractData(outputType):sizeof()] )
       valid(dataOut) = true
-
+      
       if self.readyDownstream then
         self.bytesRead = self.bytesRead+8
 
@@ -275,7 +276,6 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
 
       if (self.nextAddrToWrite>0) and writeFn.terraReady[1] then
         self.writeFirst=false
---        self.writtenBytes = self.writtenBytes + 8
       end
     elseif valid(dataIn) and self.nextAddrToWrite>0 then
       @AXIT.WVALID64(&W) = true
@@ -290,7 +290,6 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
 
     if self.nextAddrToWrite<[Nbytes:toTerra()] then
       var addr = self.nextAddrToWrite+[baseAddress:toTerra()]
-      --cstdio.printf("SEND ADDR %d %d, addrReady:%d\n",addr,self.nextAddrToWrite,self.addrReadyDownstream)
       
       @AXIT.AWVALID64(&W) = true
       @AXIT.AWADDR64(&W) = addr
@@ -312,7 +311,6 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
     if @AXIT.BVALID64(&BRESP) then
       if self.readyDownstream then
         self.writtenBytes = self.writtenBytes + 128
-        --cstdio.printf("BRESP %d %d\n",self.writtenBytes,self.writtenBytes/128)
 
         if self.writtenBytes>self.nextAddrToWrite then
           cstdio.printf("WROTE TOO MUCH? writtenBytes:%d  nextAddrToWrite:%d totalBytes:%d\n",self.writtenBytes, self.nextAddrToWrite,[Nbytes:toTerra()])
@@ -335,10 +333,8 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
     -- ready needs to be true at the start of time (b/c WDATA may not be true until it sees addresses)
     -- but ready needs to be false once we've seen 1 valid, but not written it to bus
     writeFn.terraCalculateReady(readyDownstream)
-    --cstdio.printf("WR FN RDY %d %d\n",writeFn.terraReady[0],writeFn.terraReady[1])
     self.ready = (writeFn.terraReady[1] or self.nextAddrToWrite==[Nbytes:toTerra()]) and (self.writeFirst==false);
     self.addrReadyDownstream = writeFn.terraReady[0]
-    --cstdio.printf("socTerra: addrReadyDownstream %d\n",self.addrReadyDownstream)
     self.readyDownstream = readyDownstream
   end
 

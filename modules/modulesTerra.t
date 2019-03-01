@@ -1903,7 +1903,10 @@ function MT.lambdaCompile(fn)
   if fn.instances~=nil then
     for _,inst in pairs(fn.instances) do 
       err(inst.module.terraModule~=nil, "Missing terra module for "..inst.module.name)
-      table.insert( Module.entries, {field=inst.name, type=inst.module.terraModule} )
+
+      if fn.externalInstances[inst]==nil then
+        table.insert( Module.entries, {field=inst.name, type=inst.module.terraModule} )
+      end
     end 
   end
 
@@ -1920,6 +1923,17 @@ function MT.lambdaCompile(fn)
         table.insert( Module.entries, {field=n.name, type=n.fn.terraModule} )
       end
     end)
+
+  if fn.instances~=nil then
+    for _,inst in pairs(fn.instances) do 
+      if fn.externalInstances[inst]==nil then
+        table.insert( initStats, quote
+--                      cstdio.printf(["INIT INST GLOBAL "..inst.name])
+                      [inst:terraReference()] = &mself.[inst.name]
+end )
+      end
+    end
+  end
 
   local readyOutput
     
@@ -1987,6 +2001,7 @@ return {`mself.[n.name].ready}
             table.insert( readyStats, quote mself.[n.name]:calculateReady() end )
             res = {`mself.[n.name].ready}
           else
+--print("READYSTAT",n.name,n.fn.name)
             table.insert( readyStats, quote mself.[n.name]:calculateReady(arg) end )
             res = {`mself.[n.name].ready}
           end
@@ -2094,12 +2109,12 @@ return {`mself.[n.name].ready}
           inst = n.inst:terraReference()
         else
           inst = `mself.[n.inst.name]
+          -- only call these inside the module that actually owns it
+          table.insert( statStats, quote inst:stats([n.name]) end )
+          table.insert( resetStats, quote inst:reset() end )
+          table.insert( initStats, quote inst:init() end )
+          table.insert( freeStats, quote inst:free() end )
         end
-        
-        table.insert( statStats, quote inst:stats([n.name]) end )
-        table.insert( resetStats, quote inst:reset() end )
-        table.insert( initStats, quote inst:init() end )
-        table.insert( freeStats, quote inst:free() end )
 
         local instfn = n.inst.module.functions[n.fnname]
         if instfn.inputType==types.null() then
