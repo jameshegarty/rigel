@@ -18,6 +18,8 @@ local darkroom = {}
 darkroom.SDF = true
 darkroom.default_nettype_none = true
 
+darkroom.path = ...
+
 DEFAULT_FIFO_SIZE = 2048*16*16
 
 if os.getenv("v") then

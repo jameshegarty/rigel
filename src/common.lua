@@ -667,6 +667,13 @@ function common.fileExists(name)
    if f~=nil then io.close(f) return true else return false end
 end
 
+function common.fileToString(file)
+  local f = assert(io.open(file, "rb"))
+  local content = f:read("*all")
+  f:close()
+  return content
+end
+
 -- uniquify a table
 local __uniqCache = {}
 function common.uniq(t)
