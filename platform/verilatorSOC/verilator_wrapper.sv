@@ -9,6 +9,8 @@ module VerilatorWrapper(
     input  [3:0]  SAXI0_ARLEN,
     input  [2:0]  SAXI0_ARPROT,
     input   [1:0] SAXI0_ARSIZE,
+    input   [3:0] SAXI0_ARCACHE,
+    input         SAXI0_ARLOCK,
     output        SAXI0_ARREADY,
     input [11:0]  SAXI0_ARID,
     input [31:0]  SAXI0_AWADDR,
@@ -43,6 +45,8 @@ module VerilatorWrapper(
     input [11:0]  MAXI0_RID,
     output [2:0]  MAXI0_ARPROT,
     output [11:0] MAXI0_ARID,
+    output [3:0] MAXI0_ARCACHE,
+    output  MAXI0_ARLOCK,
     input         MAXI0_RVALID,
     output        MAXI0_RREADY,
     input [1:0]   MAXI0_RRESP,
@@ -76,6 +80,8 @@ module VerilatorWrapper(
     input [11:0]  MAXI1_RID,
     output [2:0]  MAXI1_ARPROT,
     output [11:0] MAXI1_ARID,
+    output [3:0] MAXI1_ARCACHE,
+    output MAXI1_ARLOCK,
     input         MAXI1_RVALID,
     output        MAXI1_RREADY,
     input [1:0]   MAXI1_RRESP,
@@ -135,8 +141,8 @@ assign MAXI0_AWLEN = ZynqNOC_write_input[35:32];
    assign SAXI0_BVALID = ZynqNOC_writeSink_input[14];
 assign SAXI0_BID = ZynqNOC_writeSink_input[13:2];
 assign SAXI0_BRESP = ZynqNOC_writeSink_input[1:0];
-   wire [55:0] ZynqNOC_readSource;  // issue read to slave
-   assign ZynqNOC_readSource = {SAXI0_ARVALID,SAXI0_ARPROT,SAXI0_ARID,SAXI0_ARBURST,SAXI0_ARSIZE,SAXI0_ARLEN,SAXI0_ARADDR};
+   wire [60:0] ZynqNOC_readSource;  // issue read to slave
+   assign ZynqNOC_readSource = {SAXI0_ARVALID,SAXI0_ARLOCK,SAXI0_ARCACHE,SAXI0_ARPROT,SAXI0_ARID,SAXI0_ARBURST,SAXI0_ARSIZE,SAXI0_ARLEN,SAXI0_ARADDR};
    wire [47:0] ZynqNOC_readSink_input;  // slave read response
    assign SAXI0_RVALID = ZynqNOC_readSink_input[47];
 assign SAXI0_RLAST = ZynqNOC_readSink_input[32:32];
@@ -148,13 +154,15 @@ assign SAXI0_RID = ZynqNOC_readSink_input[46:35];
    assign MAXI0_RREADY = ZynqNOC_read_ready_downstream;
    wire   ZynqNOC_read_ready;
    assign ZynqNOC_read_ready = MAXI0_ARREADY;
-   wire [55:0] ZynqNOC_read_input; // read request
-   assign MAXI0_ARLEN = ZynqNOC_read_input[35:32];
-assign MAXI0_ARADDR = ZynqNOC_read_input[31:0];
-assign MAXI0_ARPROT = ZynqNOC_read_input[54:52];
-assign MAXI0_ARVALID = ZynqNOC_read_input[55];
-assign MAXI0_ARID = ZynqNOC_read_input[51:40];
+   wire [60:0] ZynqNOC_read_input; // read request
+   assign MAXI0_ARADDR = ZynqNOC_read_input[31:0];
+assign MAXI0_ARVALID = ZynqNOC_read_input[60];
+assign MAXI0_ARCACHE = ZynqNOC_read_input[58:55];
+assign MAXI0_ARLEN = ZynqNOC_read_input[35:32];
+assign MAXI0_ARLOCK = ZynqNOC_read_input[59:59];
 assign MAXI0_ARSIZE = ZynqNOC_read_input[37:36];
+assign MAXI0_ARID = ZynqNOC_read_input[51:40];
+assign MAXI0_ARPROT = ZynqNOC_read_input[54:52];
 assign MAXI0_ARBURST = ZynqNOC_read_input[39:38];
    wire [79:0] ZynqNOC_read;    // read response
    assign ZynqNOC_read = {MAXI0_RVALID,MAXI0_RID,MAXI0_RRESP,MAXI0_RLAST,MAXI0_RDATA};
@@ -162,13 +170,15 @@ wire         ZynqNOC_read1_ready_downstream;
    assign MAXI1_RREADY = ZynqNOC_read1_ready_downstream;
    wire   ZynqNOC_read1_ready;
    assign ZynqNOC_read1_ready = MAXI1_ARREADY;
-   wire [55:0] ZynqNOC_read1_input; // read request
-   assign MAXI1_ARLEN = ZynqNOC_read1_input[35:32];
-assign MAXI1_ARADDR = ZynqNOC_read1_input[31:0];
-assign MAXI1_ARPROT = ZynqNOC_read1_input[54:52];
-assign MAXI1_ARVALID = ZynqNOC_read1_input[55];
-assign MAXI1_ARID = ZynqNOC_read1_input[51:40];
+   wire [60:0] ZynqNOC_read1_input; // read request
+   assign MAXI1_ARADDR = ZynqNOC_read1_input[31:0];
+assign MAXI1_ARVALID = ZynqNOC_read1_input[60];
+assign MAXI1_ARCACHE = ZynqNOC_read1_input[58:55];
+assign MAXI1_ARLEN = ZynqNOC_read1_input[35:32];
+assign MAXI1_ARLOCK = ZynqNOC_read1_input[59:59];
 assign MAXI1_ARSIZE = ZynqNOC_read1_input[37:36];
+assign MAXI1_ARID = ZynqNOC_read1_input[51:40];
+assign MAXI1_ARPROT = ZynqNOC_read1_input[54:52];
 assign MAXI1_ARBURST = ZynqNOC_read1_input[39:38];
    wire [79:0] ZynqNOC_read1;    // read response
    assign ZynqNOC_read1 = {MAXI1_RVALID,MAXI1_RID,MAXI1_RRESP,MAXI1_RLAST,MAXI1_RDATA};

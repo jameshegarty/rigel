@@ -594,6 +594,8 @@ function TypeFunctions:fakeValue()
     return false
   elseif self:isNamed() then
     return self.structure:fakeValue()
+  elseif self==types.null() then
+    return nil
   else
     err(false, "could not create fake value for "..tostring(self))
   end
@@ -626,6 +628,8 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="boolean", "bool must be lua bool")
   elseif self:isNamed() then
     return self.structure:checkLuaValue(v)
+  elseif self==types.null() then
+    return v==nil
   else
     print("NYI - :checkLuaValue with type ",self)
     assert(false)

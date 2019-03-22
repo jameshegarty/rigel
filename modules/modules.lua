@@ -56,7 +56,7 @@ end
 modules.compose = memoize(function( name, f, g, generatorStr )
   err( type(name)=="string", "first argument to compose must be name of function")
   err( rigel.isFunction(f), "compose: second argument should be rigel module")
-  err( rigel.isFunction(g), "compose: third argument should be rigel module")
+  err( rigel.isPlainFunction(g), "compose: third argument should be plain rigel function, but is: "..tostring(g))
 
   name = J.verilogSanitize(name)
 
@@ -3698,6 +3698,8 @@ local function lambdaSDFNormalize( input, output, X )
       end
     end)
 
+  err( (input~=nil)==(newInput~=nil),"lambdaSDFNormalize: declared input was not actually used in function?" )
+  
   return newInput, newOutput
 end
 
@@ -3858,8 +3860,10 @@ local function collectInstances( moduleName, output, instances )
       providesMap[instanceCallsite]=1
     end
 
-    for fnname, fn in pairs(inst.module.functions) do
-      providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
+    if rigel.isModule(inst.module) then
+      for fnname, fn in pairs(inst.module.functions) do
+        providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
+      end
     end
   end
 
@@ -3948,7 +3952,11 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output)
     local sdfMaxRate = output:sdfExtremeRate(true)
-    err( Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue(),"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'") 
+
+    if (Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue())==false then
+      output:visitEach(function(n) print(tostring(n)) end)
+      err( false,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'")
+    end
   end
 
   name = J.verilogSanitize(name)

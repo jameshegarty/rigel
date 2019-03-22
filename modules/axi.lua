@@ -10,7 +10,7 @@ vbase = J.memoize(function(ty,idx)
 end)
 
 local function vrange(ty,idx,base)
-  return tostring(vbase(ty,idx+1)+base-1)..":"..tostring(vbase(ty,idx)+base)
+  return "["..tostring(vbase(ty,idx+1)+base-1)..":"..tostring(vbase(ty,idx)+base).."]"
 end
 
 AXI.ReadAddress = types.Handshake(types.tuple{
@@ -19,11 +19,14 @@ AXI.ReadAddress = types.Handshake(types.tuple{
   types.bits(2), -- ARSIZE
   types.bits(2), -- ARBURST
   types.bits(12), -- ARID
-  types.bits(3) -- ARPROT
+  types.bits(3), -- ARPROT
+  types.bits(4), -- ARCACHE
+  types.bool() -- ARLOCK
 })
+
 AXI.ReadAddress64 = AXI.ReadAddress
-AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5}
-AXI.ReadAddressVSelect = {arvalid=tostring(types.extractData(AXI.ReadAddress):verilogBits())}
+AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5,arcache=6,arlock=7}
+AXI.ReadAddressVSelect = {arvalid="["..tostring(types.extractData(AXI.ReadAddress):verilogBits()).."]"}
 for k,v in pairs(AXI.ReadAddressIdx) do AXI.ReadAddressVSelect[k] = vrange(types.extractData(AXI.ReadAddress),AXI.ReadAddressIdx[k],0) end
 
 AXI.ReadData = J.memoize(function(bits)
@@ -41,7 +44,7 @@ AXI.ReadData32 = AXI.ReadData(32)
 AXI.ReadDataIdx={rdata=0,rlast=1,rresp=2,rid=3}
 AXI.ReadDataVSelect = J.memoize(function(bits)
     assert(type(bits)=="number")
-    local tab = {rvalid=tostring(types.extractData(AXI.ReadData(bits)):verilogBits())}
+    local tab = {rvalid="["..tostring(types.extractData(AXI.ReadData(bits)):verilogBits()).."]"}
     for k,v in pairs(AXI.ReadDataIdx) do tab[k] = vrange(types.extractData(AXI.ReadData(bits)),AXI.ReadDataIdx[k],0) end
     return tab
 end)
@@ -73,7 +76,7 @@ AXI.WriteIssue64 = AXI.WriteIssue(64)
 
 -- verilog bit select
 AXI.WriteIssueVSelect = J.memoize(function(bits)
-    local tab = {awvalid=tostring(AXI.WriteAddress:verilogBits()),wvalid=tostring(AXI.WriteAddress:verilogBits()+1+AXI.WriteData(bits):verilogBits())}
+    local tab = {awvalid="["..tostring(AXI.WriteAddress:verilogBits()).."]",wvalid="["..tostring(AXI.WriteAddress:verilogBits()+1+AXI.WriteData(bits):verilogBits()).."]"}
     for k,v in pairs(AXI.WriteAddressIdx) do tab[k] = vrange(AXI.WriteAddress,AXI.WriteAddressIdx[k],0) end
     for k,v in pairs(AXI.WriteDataIdx) do tab[k] = vrange(AXI.WriteData(bits),AXI.WriteDataIdx[k],AXI.WriteAddress:verilogBits()+1) end
     return tab
@@ -91,7 +94,7 @@ AXI.WriteResponse64 = AXI.WriteResponse(64)
 
 AXI.WriteResponseIdx = {bresp=0,bid=1}
 AXI.WriteResponseVSelect = J.memoize(function(bits)
-    local tab = {bvalid=tostring(types.extractData(AXI.WriteResponse(bits)):verilogBits())}
+    local tab = {bvalid="["..tostring(types.extractData(AXI.WriteResponse(bits)):verilogBits()).."]"}
     for k,v in pairs(AXI.WriteResponseIdx) do tab[k] = vrange(types.extractData(AXI.WriteResponse(bits)),AXI.WriteResponseIdx[k],0) end
     return tab
 end)

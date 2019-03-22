@@ -18,7 +18,8 @@ local darkroom = {}
 darkroom.SDF = true
 darkroom.default_nettype_none = true
 
-darkroom.path = ...
+-- path to root of rigel repo
+darkroom.path = string.sub(debug.getinfo(1).source,2,#debug.getinfo(1).source-9)
 
 DEFAULT_FIFO_SIZE = 2048*16*16
 
@@ -496,6 +497,91 @@ function darkroomFunctionFunctions:toVerilog()
   return ntn..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() 
 end
 
+-- verilog header
+function darkroomFunctionFunctions:vHeader()
+  local v = {"module "..self.name.." (input wire CLK, input wire reset "}
+  if types.isHandshakeAny(self.inputType) then
+    table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] process_input, output wire ready")
+  else
+    assert(false)
+  end
+
+  if types.isHandshakeAny(self.outputType) then
+    table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] process_output, input wire ready_downstream")
+  else
+    assert(false)
+  end
+
+  for ic,_ in pairs(self.requires) do
+    if types.isHandshakeAny(ic.inputType) then
+      table.insert(v,", output wire ["..(types.lower(ic.inputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName.."_input, input wire "..ic.instance.name.."_"..ic.functionName.."_ready")
+    else
+      assert(false)
+    end
+
+    if types.isHandshakeAny(ic.outputType) then
+      table.insert(v,", input wire ["..(types.lower(ic.outputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName..", output wire "..ic.instance.name.."_"..ic.functionName.."_ready_downstream")
+    else
+      assert(false)
+    end
+
+  end
+  
+  assert(J.keycount(self.provides)==0)
+  
+  table.insert(v,[[);
+parameter INSTANCE_NAME="INST";]])
+  return table.concat(v,"")
+end
+
+-- verilog value of input data (if handshaked)
+function darkroomFunctionFunctions:vInputData()
+  assert(types.isHandshakeAny(self.inputType))
+  return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
+end
+
+-- verilog value of input valid (if handshaked)
+function darkroomFunctionFunctions:vInputValid()
+  assert(types.isHandshakeAny(self.inputType))
+  return "process_input["..(types.lower(self.inputType):verilogBits()-1)..":"..types.extractData(self.inputType):verilogBits().."]"
+end
+
+-- verilog value of input ready (upstream ready) (if handshaked)
+function darkroomFunctionFunctions:vInputReady()
+  assert(types.isHandshakeAny(self.inputType))
+  return "ready"
+end
+
+-- verilog value of output data (if handshaked)
+function darkroomFunctionFunctions:vOutputData()
+  assert(types.isHandshakeAny(self.outputType))
+  return "process_output["..(types.extractData(self.outputType):verilogBits()-1)..":0]"
+end
+
+-- verilog value of output valid (if handshaked)
+function darkroomFunctionFunctions:vOutputValid()
+  assert(types.isHandshakeAny(self.outputType))
+  return "process_output["..(types.lower(self.outputType):verilogBits()-1)..":"..types.extractData(self.outputType):verilogBits().."]"
+end
+
+-- verilog value of output ready (upstream ready) (if handshaked)
+function darkroomFunctionFunctions:vOutputReady()
+  assert(types.isHandshakeAny(self.outputType))
+  return "ready_downstream"
+end
+
+function darkroomFunctionFunctions:instantiate(name,X)
+  err( name==nil or type(name)=="string", "functon instantiate: input should be string")
+  err( X==nil, "function instantiate: too many arguments" )
+  
+  if name==nil then
+    name = "UnnamedFunctionInstance"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID + 1
+  end
+  local res = darkroom.instantiate(name, self )
+  return res
+end
+
 darkroomInstanceCallsiteMT = {
 __index = function(tab,key)
   local v = rawget(tab, key)
@@ -570,7 +656,7 @@ __index = function(tab,key)
   --assert(tab.instance.module.functions[functionName]~=nil)
   return tab.instance.module.functions[tab.functionName][key]
 end,
-__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."()" end
+__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."() -- "..tostring(tab.inputType).."->"..tostring(tab.outputType) end
 }
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
 
@@ -624,7 +710,7 @@ function darkroom.newFunction(tab,X)
   if tab.requires==nil then tab.requires={} end
   if tab.provides==nil then tab.provides={} end
 
-  for ic,_ in pairs(tab.requires) do err( darkroom.isInstanceCallsite(ic), "Require list should be instance callsites" ) end
+  for ic,_ in pairs(tab.requires) do err( darkroom.isInstanceCallsite(ic), "Require list should be instance callsites, but is: "..tostring(ic) ) end
   for ic,_ in pairs(tab.provides) do err( darkroom.isInstanceCallsite(ic), "Provide list should be instance callsites" ) end
 
   assert(getmetatable(tab)==nil)
@@ -917,7 +1003,99 @@ darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
   local MT = require "modulesTerra"
   return MT.terraReference(tab)
 end)
-  
+
+function darkroomInstanceFunctions:vInput()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_input"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vInputData()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_input["..(types.extractData(self.module.inputType):verilogBits()-1)..":0]"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vInputValid()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_input["..(types.lower(self.module.inputType):verilogBits()-1).."]"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vInputReady()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_ready"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vOutput()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_output"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vOutputData()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_output["..(types.extractData(self.module.outputType):verilogBits()-1)..":0]"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vOutputValid()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_process_output["..(types.lower(self.module.outputType):verilogBits()-1).."]"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:vOutputReady()
+  if darkroom.isPlainFunction(self.module) then
+    return self.name.."_ready_downstream"
+  else
+    assert(false)
+  end
+end
+
+function darkroomInstanceFunctions:toVerilog()
+  if darkroom.isPlainFunction(self.module) then
+    assert(types.isHandshakeAny(self.module.inputType))
+    local vstr = {}
+    table.insert(vstr,"wire ["..(types.lower(self.module.inputType):verilogBits()-1)..":0] "..self.name.."_process_input;\n")
+    table.insert(vstr,"wire "..self.name.."_ready;\n")
+    assert(types.isHandshakeAny(self.module.outputType))
+    table.insert(vstr,"wire ["..(types.lower(self.module.outputType):verilogBits()-1)..":0] "..self.name.."_process_output;\n")
+    table.insert(vstr,"wire "..self.name.."_ready_downstream;\n")
+    table.insert(vstr,self.module.name.." "..self.name.."(.CLK(CLK),.reset(reset)")
+    table.insert(vstr,",.process_input("..self.name.."_process_input),.ready("..self.name.."_ready)")
+    table.insert(vstr,",.process_output("..self.name.."_process_output),.ready_downstream("..self.name.."_ready_downstream)")
+
+    for ic,_ in pairs(self.module.requires) do
+      print("REQUIRES",ic)
+      table.insert(vstr,",."..ic.instance.name.."_"..ic.functionName.."_input("..ic.instance.name.."_"..ic.functionName.."_input)")
+      table.insert(vstr,",."..ic.instance.name.."_"..ic.functionName.."_ready("..ic.instance.name.."_"..ic.functionName.."_ready)")
+      table.insert(vstr,",."..ic.instance.name.."_"..ic.functionName.."("..ic.instance.name.."_"..ic.functionName..")")
+      table.insert(vstr,",."..ic.instance.name.."_"..ic.functionName.."_ready_downstream("..ic.instance.name.."_"..ic.functionName.."_ready_downstream)")
+    end
+    
+    table.insert(vstr,");\n")
+    return table.concat(vstr,"")
+  else
+    assert(false)
+  end
+end
+
 function darkroom.isInstance(t) return getmetatable(t)==darkroomInstanceMT end
 function darkroom.newIR(tab)
   assert( type(tab) == "table" )
@@ -1242,7 +1420,7 @@ end
 
 darkroom.instantiate = function( name, mod, X )
   err( type(name)=="string", "instantiate: name must be string")
-  err( darkroom.isModule(mod), "instantiate: module must be a Rigel module" )
+  err( darkroom.isModule(mod) or darkroom.isFunction(mod), "instantiate: module must be a Rigel module or function" )
   err( X==nil, "darkroom.instantiate: too many arguments" )
 
   local t = {name=name, module=mod }

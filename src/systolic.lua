@@ -459,7 +459,7 @@ function systolic.bitSlice( expr, low, high, X )
 end
 
 function systolic.constant( v, ty )
-  err( types.isType(ty), "constant type must be a type")
+  err( types.isType(ty), "constant type must be a type, but is: "..tostring(ty))
   err( types.isBasic(ty),"constant type must be basic, but is: "..tostring(ty))
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
@@ -1637,7 +1637,9 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
-  J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
+
+  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '"..i.."' is: "..tostring(n) ) end )
+  
   err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 

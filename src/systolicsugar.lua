@@ -61,7 +61,9 @@ setReset=function(self,I) self.type:checkLuaValue(I); self.resetValue=I; return 
 --------------------------------------------------------------------
 
 systolicFunctionConstructor = {}
-systolicFunctionConstructorMT={__index=systolicFunctionConstructor}
+systolicFunctionConstructorMT={
+  __index=systolicFunctionConstructor,
+  __tostring=function(tab) return "SystolicFunctionConstructor "..tab.name end}
 
 function sugar.isFunctionConstructor(t) return getmetatable(t)==systolicFunctionConstructorMT end
 
@@ -89,7 +91,7 @@ function systolicFunctionConstructor:getCE()
 end
 function systolicFunctionConstructor:setOutput( o, oname ) 
   err( self.isComplete==false, "function is already complete"); 
-  assert(systolic.isAST(o)); 
+  err( systolic.isAST(o),":setOutput(), output is not a systolic ast, but is: "..tostring(o)); 
   err(o.type==types.null() or type(oname)=="string", "output must be given a name")
   self.output = o;
   self.outputName = oname
