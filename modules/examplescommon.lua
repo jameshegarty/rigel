@@ -443,6 +443,7 @@ C.triggerToConstant = memoize(function(ty,value)
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
+C.const = C.triggerToConstant
 -----------------------------
 -- take in 1 trigger, and write out N triggers (aka trigger upsample)
 C.triggerUp = memoize(function(N)
@@ -2098,18 +2099,16 @@ function C.automaticSystolicStub( mod )
   if mod.instanceMap~=nil then
     for inst,_ in pairs(mod.instanceMap) do
       assert(R.isInstance(inst))
+      print("ADD INSTANCE",inst)
       local sinst = inst:toSystolicInstance()
       instances[sinst]=1
 
       for _,fn in pairs(sinst.module.functions) do
---        if fn.inputParameter.type~=types.null() then
-          if R.isFunction(mod) then
-            -- systolic requires we tie these functions down
-            fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
-          else
-            assert(false) -- NYI
-          end
---        end
+        if R.isFunction(mod) then
+          fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+        else
+          assert(false) -- NYI
+        end
       end
     end
   end

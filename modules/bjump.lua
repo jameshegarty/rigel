@@ -14,25 +14,13 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   J.err( type(itemsPerBlock)=="number", "itemsPerBlock should be number")
   J.err( type(sets)=="number", "sets should be number")
 
-  print("READFN",readFn)
-  
-  --[=[local res = {inputType=types.Handshake(types.uint(32))}
-  res.outputType = types.Handshake(ty)
-  res.stateful = true
-  res.sdfInput = SDF{1,1}
-  res.sdfOutput = SDF{1,1}
-  res.name = "Bjump_AXICachedRead"
-  res.requires={}
-  res.requires[readFn]=1
-
-    assert(ty:verilogBits()*itemsPerBlock==64*8)]=]
-
   assert(ty:verilogBits()==32)
 
   local INP = R.input(types.Handshake(types.uint(32)))
   print("INP",INP)
   local readFnInst = readFn:instantiate("read")
-  local res = RM.lambda("Bjump_AXICachedRead",INP,RM.makeHandshake(C.bitcast(types.uint(32),ty))(INP),{readFnInst})
+  local out = R.statements{RM.makeHandshake(C.bitcast(types.uint(32),ty))(INP),readFnInst(RM.makeHandshake(C.const(types.uint(32),0))())}
+  local res = RM.lambda("Bjump_AXICachedRead",INP,out,{readFnInst})
   
   local bsg_defines = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_defines.v")
   local bsg_mem_1rw_sync_mask_write_bit_synth = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.v",{bsg_defines})
@@ -87,22 +75,16 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
 
   local bsg_cache = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache.v",{bsg_cache_pkt,bsg_cache_dma_pkt,bsg_mem_1rw_sync_mask_write_bit,bsg_mem_1rw_sync_mask_write_byte,bsg_cache_miss,bsg_cache_dma,bsg_cache_sbuf,bsg_mux_segmented,bsg_mux})
 
-  res.instanceMap={}
---  res.instanceMap[bsg_cache_to_axi:instantiate()] = 1
+
   res.instanceMap[bsg_cache:instantiate()] = 1
   res.instanceMap[bsg_cache_pkt:instantiate()] = 1
-  res.instanceMap[readFnInst] = 1
   
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
     local vstr = {}
     print("RPATH",R.path)
-    --    table.insert(vstr,J.fileToString(R.path.."modules/bsg_ip_cores/bsg_cache/bsg_cache.v"))
     
     table.insert(vstr,CACHE)
-
-    --local RIN = readFn.instance.name.."_"..readFn.functionName.."_input"
-    --local ROUT = readFn.instance.name.."_"..readFn.functionName
 
     table.insert(vstr,res:vHeader())
 

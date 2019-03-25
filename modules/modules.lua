@@ -3711,42 +3711,49 @@ local function checkFIFOs(output)
       if n.kind=="input" then
         -- HACK: if we have multiple stream inputs, just give the user the benefit of the doubt? (& count them as fifoed)
         res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and n.fn.kind=="broadcastStream" then
-        res = J.broadcast( false, n.type.params.W*n.type.params.H )
-      elseif n.kind=="apply" and (n.fn.kind=="packTuple" or n.fn.kind=="toHandshakeArrayOneHot") then
-        assert(#arg==1)
-        assert(#arg[1]==types.streamCount(n.fn.inputType) )
-        for i=1,types.streamCount(n.fn.inputType) do
-          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(n.fn.inputType)).." input streams) "..n.loc)
-        end
+      elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
+        local fn = n.fn
+        if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then fn = n.inst.module end
+        
+        if fn.kind=="broadcastStream" then
+          res = J.broadcast( false, n.type.params.W*n.type.params.H )
+        elseif fn.kind=="packTuple" or fn.kind=="toHandshakeArrayOneHot" then
+          assert(#arg==1)
+          assert(#arg[1]==types.streamCount(fn.inputType) )
+          for i=1,types.streamCount(fn.inputType) do
+            J.err( fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(fn.inputType)).." input streams) "..n.loc)
+          end
 
-        -- Is this right???? if we got this far, we did have a fifo along this brach...
-        res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and rigel.isFunctionGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
-        res = {true}
-      elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
-        res = {true}
+          -- Is this right???? if we got this far, we did have a fifo along this brach...
+          res = J.broadcast(true,types.streamCount(n.type))
+        elseif n.kind=="apply" and rigel.isFunctionGenerator(fn.generator) and fn.generator.name=="FIFO" then
+          res = {true}
+        elseif n.kind=="apply" and fn.generator=="C.fifo" then
+          res = {true}
+        else
+          assert(#arg==#n.inputs)
+          
+          if #n.inputs==0 then
+            -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
+            res = J.broadcast(true,types.streamCount(n.type))
+          else
+            if types.streamCount(fn.inputType) ~= types.streamCount(fn.outputType) then
+              -- hack: tooooo hard to figure this out, so be conservative
+              res = J.broadcast( false, types.streamCount(fn.outputType) )
+            else
+              res = arg[1]
+            end
+          end
+        end
       elseif n.kind=="applyMethod" then
+        assert(rigel.isModule(n.inst.module))
+        
         if n.fnname=="load" and n.inst.module.kind=="fifo" then
           res = {true}
         elseif types.streamCount(n.inst.module.functions[n.fnname].outputType)==0 then
           res = {}
         else
           res = {false} -- HACK: this isn't really correct...
-        end
-      elseif n.kind=="apply" then
-        assert(#arg==#n.inputs)
-
-        if #n.inputs==0 then
-          -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
-          res = J.broadcast(true,types.streamCount(n.type))
-        else
-          if types.streamCount(n.fn.inputType) ~= types.streamCount(n.fn.outputType) then
-            -- hack: tooooo hard to figure this out, so be conservative
-            res = J.broadcast( false, types.streamCount(n.fn.outputType) )
-          else
-            res = arg[1]
-          end
         end
       elseif n.kind=="selectStream" then
         assert(#arg==1)
@@ -3812,7 +3819,13 @@ local function collectInstances( moduleName, output, instances )
     function(n)
       if n.kind=="applyMethod" then
         requiredInstanceMap[n.inst] = 1
-        requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+        if rigel.isModule(n.inst.module) then
+          requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+        elseif rigel.isPlainFunction(n.inst.module) then
+          -- just ignore this: there's no reason to make plain functions external
+        else
+          assert(false)
+        end
       elseif n.kind=="apply" then
         for instanceCallsite,_ in pairs(n.fn.requires) do
           requiredInstanceMap[instanceCallsite.instance] = 1
@@ -3840,10 +3853,16 @@ local function collectInstances( moduleName, output, instances )
       if requiresMap[instanceCallsite]==nil then tiedDown=false end
     end
 
-    for fnname, fn in pairs(inst.module.functions) do
-      if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+    if rigel.isModule(inst.module) then
+      for fnname, fn in pairs(inst.module.functions) do
+        if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+      end
+    elseif rigel.isPlainFunction(inst.module) then
+      -- just ignore this: there's no reason to make plain functions external
+    else
+      assert(false)
     end
-
+    
     if tiedDown and (inst.extern~=true) then
       instanceMap[inst] = 1
     end
@@ -3864,6 +3883,10 @@ local function collectInstances( moduleName, output, instances )
       for fnname, fn in pairs(inst.module.functions) do
         providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
       end
+    elseif rigel.isPlainFunction(inst.module) then
+      -- just ignore this: there's no reason to make plain functions external
+    else
+      assert(false)
     end
   end
 
@@ -3891,9 +3914,18 @@ local function collectInstances( moduleName, output, instances )
   for ic,_ in pairs(requiresMap) do
     if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
     externalInstances[ic.instance][ic.functionName]=1
-    local fn = ic.instance.module.functions[ic.functionName]
-    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-      externalInstances[ic.instance][ic.functionName.."_ready"]=1
+
+    if rigel.isModule(ic.instance.module) then
+      local fn = ic.instance.module.functions[ic.functionName]
+      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+        externalInstances[ic.instance][ic.functionName.."_ready"]=1
+      end
+    elseif rigel.isPlainFunction(ic.instance.module) then
+      if types.isHandshakeAny(ic.instance.module.inputType) or types.isHandshakeAny(ic.instance.module.outputType) then
+        externalInstances[ic.instance][ic.functionName.."_ready"]=1
+      end
+    else
+      assert(false)
     end
   end
 
@@ -3913,7 +3945,7 @@ local function collectInstances( moduleName, output, instances )
   -- checking
   for _,inst in ipairs(instances) do
     if externalInstances[inst]~=nil then
-      err( false, "The instance '"..inst.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
+      err( false, "The instance '"..inst.name.."' of module '"..inst.module.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
     end
   end
 
@@ -3923,6 +3955,22 @@ local function collectInstances( moduleName, output, instances )
 
   for inst,_ in pairs(instanceMap) do
     err( externalInstances[inst]==nil, "Instance '"..inst.name.."' is somehow also in external instance list?")
+  end
+
+  local usedInstances = {}
+  output:visitEach(
+    function(n)
+      if n.kind=="applyMethod" then
+        usedInstances[n.inst] = 1
+      end
+    end)
+
+  for inst,_ in pairs(instanceMap) do
+    err( usedInstances[inst]~=nil, "Instance '"..inst.name.."' was not used?")
+  end
+
+  for inst,_ in pairs(usedInstances) do
+    err( instanceMap[inst]~=nil or externalInstances[inst]~=nil, "Instance '"..inst.name.."' was used, but is not in instance map?")
   end
 
   return instanceMap, providesMap, requiresMap, externalInstances
@@ -3993,8 +4041,15 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.fn.name )
         res.stateful = res.stateful or n.fn.stateful
       elseif n.kind=="applyMethod" then
-        err( type(n.inst.module.functions[n.fnname].stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
-        res.stateful = res.stateful or n.inst.module.functions[n.fnname].stateful
+        if rigel.isModule(n.inst.module) then
+          err( type(n.inst.module.functions[n.fnname].stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
+          res.stateful = res.stateful or n.inst.module.functions[n.fnname].stateful
+        elseif rigel.isPlainFunction(n.inst.module) then
+          err( type(n.inst.module.stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
+          res.stateful = res.stateful or n.inst.module.stateful
+        else
+          assert(false)
+        end
       end
     end)
 
@@ -4039,8 +4094,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           res.globalMetadata[k] = v
         end
       end
-  end)
-  
+    end)
+
   -- NOTE: notice that this will overwrite the previous metadata values
   if globalMetadata~=nil then
     for k,v in pairs(globalMetadata) do

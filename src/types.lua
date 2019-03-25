@@ -782,7 +782,7 @@ function types.valueToType(v)
 end
 
 function types.isBasic(A)
-  assert(types.isType(A))
+  err(types.isType(A),"isBasic: input should be type, but is: "..tostring(A))
   if A:isArray() then
     return types.isBasic(A:arrayOver()) 
   elseif A:isTuple() then

@@ -42,6 +42,7 @@ env:
   - TARGET=verilator
   - TARGET=verilatorSOC
   - TARGET=terra
+  - TARGET=bjump
   - TARGET=unit
   - TARGET=coverage
 #  - TARGET=axiverilog

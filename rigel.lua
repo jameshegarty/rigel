@@ -668,11 +668,18 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
   local res = { instance=instance, functionName=functionName }
   --if functionName=="load" or functionName=="start" then
 
-  err( instance.module.functions[functionName]~=nil, "newInstanceCallsite: function '"..functionName.."' not found on module '"..instance.module.name.."'" )
+  if darkroom.isPlainFunction(instance.module) then
+    res.inputType = instance.module.inputType
+    res.outputType = instance.module.outputType
+  elseif darkroom.isModule(instance.module) then
+    err( instance.module.functions[functionName]~=nil, "newInstanceCallsite: function '"..functionName.."' not found on module '"..instance.module.name.."'" )
 
-  res.inputType = instance.module.functions[functionName].inputType
-  res.outputType = instance.module.functions[functionName].outputType
-
+    res.inputType = instance.module.functions[functionName].inputType
+    res.outputType = instance.module.functions[functionName].outputType
+  else
+    assert(false)
+  end
+  
   return setmetatable( res, darkroomInstanceCallsiteMT )
 end)
 
@@ -985,11 +992,18 @@ local darkroomInstanceMT = {
     v = darkroomInstanceFunctions[key]
     if v~=nil then return v end
 
-    if tab.module.functions[key]~=nil then
+    if darkroom.isModule(tab.module) and tab.module.functions[key]~=nil then
       return darkroom.newInstanceCallsite( tab, key )
     end
   end,
-  __tostring = function(tab) return "Instance "..tab.name end}
+  __call = function(tab,inp,X)
+    if darkroom.isPlainFunction(tab.module) then
+      return darkroom.applyMethod("INSTCALL",tab,"process",inp,X)
+    else
+      assert(false)
+    end
+  end,
+  __tostring = function(tab) return "Instance "..tab.name..":"..tab.module.name end}
 
 -- we want there to be a 1-1 correspondence between systolic instances and rigel instances
 darkroomInstanceFunctions.toSystolicInstance = J.memoize(function(tab,X)
@@ -1124,7 +1138,27 @@ function darkroomIRFunctions:calcSDF( )
   if self.kind=="input" or self.kind=="constant" then
     err( SDF.isSDF(self.rate),"input missing SDF?")
     res = self.rate
+  elseif self.kind=="apply" or (self.kind=="applyMethod" and darkroom.isPlainFunction(self.inst.module)) then
+
+    local fn = self.fn
+    if self.kind=="applyMethod" and darkroom.isPlainFunction(self.inst.module) then
+      fn = self.inst.module
+    end
+    
+    if #self.inputs==1 then
+      res =  fn:sdfTransfer(self.inputs[1].rate, "APPLY "..self.name.." "..self.loc)
+      if DARKROOM_VERBOSE then print("APPLY",self.name,fn.kind,"rate",res) end
+    elseif #self.inputs==0 then
+      err( SDF.isSDF(self.rate),"nullary apply missing SDF?")
+      res = self.rate
+    else
+      -- ??
+      assert(false)
+    end
   elseif self.kind=="applyMethod" then
+    -- spaghetti code: see case in 'apply' above
+    assert( darkroom.isModule(self.inst.module) )
+
     if #self.inputs==0 or self.inputs[1].type==types.null() then
       err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "nullary applyMethod should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
@@ -1134,17 +1168,6 @@ function darkroomIRFunctions:calcSDF( )
     elseif #self.inputs==1 then
       res =  self.inst.module.functions[self.fnname]:sdfTransfer(self.inputs[1].rate, "APPLYMETHOD "..self.name.." "..self.loc)
     else
-      assert(false)
-    end
-  elseif self.kind=="apply" then
-    if #self.inputs==1 then
-      res =  self.fn:sdfTransfer(self.inputs[1].rate, "APPLY "..self.name.." "..self.loc)
-      if DARKROOM_VERBOSE then print("APPLY",self.name,self.fn.kind,"rate",res) end
-    elseif #self.inputs==0 then
-      err( SDF.isSDF(self.rate),"nullary apply missing SDF?")
-      res = self.rate
-    else
-      -- ??
       assert(false)
     end
   elseif self.kind=="concat" or self.kind=="concatArray2d" then
@@ -1255,18 +1278,24 @@ darkroomIRFunctions.sdfExtremeRate = J.memoize(
 
 function darkroomIRFunctions:typecheck()
   local n = self
-  if n.kind=="apply" then
-    err( n.fn.registered==false or n.fn.registered==nil, "Error, applying registered type! "..n.fn.name)
+  if n.kind=="apply" or (n.kind=="applyMethod" and darkroom.isPlainFunction(n.inst.module)) then
+    local fn = n.fn
+    if n.kind=="applyMethod" and darkroom.isPlainFunction(n.inst.module) then fn=n.inst.module end
+    
+    err( fn.registered==false or fn.registered==nil, "Error, applying registered type! "..fn.name)
     if #n.inputs==0 then
-      err( n.fn.inputType==types.null(), "Missing function argument, "..n.loc)
+      err( fn.inputType==types.null(), "Missing function argument, "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
-      err( n.inputs[1].type==n.fn.inputType, "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(n.fn.inputType)..", "..n.loc)
+      err( n.inputs[1].type==fn.inputType, "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(fn.inputType)..", "..n.loc)
     end
-    n.type = n.fn.outputType
+    n.type = fn.outputType
   elseif n.kind=="applyMethod" then
+    -- spaghetti code: see case in 'apply' above
+    assert( darkroom.isModule(n.inst.module) )
+          
     err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
-
+    
     if n.inputs[1]==nil then
       err( n.inst.module.functions[n.fnname].inputType==types.null(), "Error, method '"..n.fnname.."' was passed no input, but expected an input")
     else
@@ -1466,7 +1495,7 @@ function darkroom.applyMethod( name, inst, fnname, input, X )
   err( type(name)=="string", "name must be string")
   err( darkroom.isInstance(inst), "applyMethod: second argument should be instance" )
   err( type(fnname)=="string", "fnname must be string")
-  err( input==nil or darkroom.isIR( input ), "applyMethod: last argument should be rigel value or nil" )
+  err( input==nil or darkroom.isIR( input ), "applyMethod: last argument should be rigel value or nil, but is: "..tostring(input) )
   err( X==nil, "applyMethod: too many arguments")
 
   return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )
