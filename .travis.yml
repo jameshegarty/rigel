@@ -15,13 +15,13 @@ before_install:
   
   #terra
   - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip; fi
-  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; unzip terra-Linux-x86_64-332a506.zip; fi
-  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then unzip terra-Linux-x86_64-332a506.zip; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra; fi
 
   # this installs correct version of glibc for terra binary
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-  - sudo apt-get -y update
-  - sudo apt-get -y install libstdc++6-4.7-dev
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get -y update; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get -y install libstdc++6-4.7-dev; fi
 
 #for coveralls
   - if [[ $TARGET = "unit" ]] || [[ $TARGET = "coverage" ]]; then sudo apt-get install luarocks; fi
