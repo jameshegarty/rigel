@@ -7,11 +7,11 @@ before_install:
   - sudo apt-get install luajit
 
   # verilator
-  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]]; sudo apt-get install verilator; fi
-  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]];export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator; fi
+  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]]; then sudo apt-get install verilator; fi
+  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]]; then export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator; fi
 
   # bjump requires more recent verilator
-  - if [[ $TARGET = "bjump" ]]; wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make;sudo make install; cd ..; fi
+  - if [[ $TARGET = "bjump" ]]; then wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make;sudo make install; cd ..; fi
   
   #terra
   - wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
