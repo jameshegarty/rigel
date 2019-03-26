@@ -430,14 +430,15 @@ end)
 generators.Ser = R.newFunctionGenerator("generators","Ser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
-  print("generators.ser",args.type,args.number)
-  --return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
-  if args.type:is("HandshakeFramed") then
-    return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
-  else
-    J.err(args.type:arrayLength()[1]%args.number==0,"G.Ser: number of cycles must divide array size")
-    return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
-  end
+  return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
+end)
+
+generators.SerSeq = R.newFunctionGenerator("generators","SerSeq",{"type","number","rate"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
+
+  J.err(args.type:arrayLength()[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
+  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
 end)
 
 generators.Deser = R.newFunctionGenerator("generators","Deser",{"type","number","rate"},{},

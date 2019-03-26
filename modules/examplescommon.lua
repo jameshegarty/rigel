@@ -2099,7 +2099,7 @@ function C.automaticSystolicStub( mod )
   if mod.instanceMap~=nil then
     for inst,_ in pairs(mod.instanceMap) do
       assert(R.isInstance(inst))
-      print("ADD INSTANCE",inst)
+
       local sinst = inst:toSystolicInstance()
       instances[sinst]=1
 

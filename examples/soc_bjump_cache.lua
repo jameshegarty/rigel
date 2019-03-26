@@ -32,7 +32,7 @@ local PosToAddr = G.Module{"PosToAddr",ar(u16,2),
 
 local SlowRead = C.compose("SlowRead",SOC.read("1080p.raw",1920*1080,ar(u8,4),noc.read,false),RM.liftHandshake(RM.reduceThroughput(types.uint(32),8)))
 local SlowReadBurst = C.compose("SlowReadBurst",SOC.read("1080p.raw",1920*1080,ar(u8,4*8),noc.read,false),RM.liftHandshake(RM.reduceThroughput(types.uint(32),8)))
-local BurstRead = C.compose("BurstRead",G.HS{G.Ser{8}},SlowReadBurst)
+local BurstRead = C.compose("BurstRead",G.HS{G.SerSeq{8}},SlowReadBurst)
 
 local CachedReadModule = G.Module{ "CachedReadModule", R.HandshakeTrigger,
   function(i)
