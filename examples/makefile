@@ -9,14 +9,16 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_SOC))
 
-SRCS_BJUMP = soc_bjump_cache.lua 
+SRCS_BJUMP = soc_bjump_cache.lua  soc_bjump_cache_nocache.lua
 
 BJUMP = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_BJUMP))
 BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_BJUMP))
 BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_BJUMP))
 BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_BJUMP))
-BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_BJUMP))	
+BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_BJUMP))
+BJUMP += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_BJUMP))	
 
 ZU9VIVADOSOCBITS = $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SRCS_SOC))
 

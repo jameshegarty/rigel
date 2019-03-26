@@ -31,9 +31,10 @@ function(args)
 end)
 
 -- a broadcast is basically the same as a upsample, but has no W,H
+-- number: vector width
 generators.BroadcastSeq = R.newFunctionGenerator("generators","BroadcastSeq",{"type","number","size","rate"},{},
 function(args)
-  J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
+  J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported typqe: "..tostring(args.type))
   return RM.upsampleXSeq(args.type,args.number,args.size[1]*args.size[2])
 end)
 
@@ -429,8 +430,14 @@ end)
 generators.Ser = R.newFunctionGenerator("generators","Ser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
+  print("generators.ser",args.type,args.number)
   --return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
-  return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
+  if args.type:is("HandshakeFramed") then
+    return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
+  else
+    J.err(args.type:arrayLength()[1]%args.number==0,"G.Ser: number of cycles must divide array size")
+    return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
+  end
 end)
 
 generators.Deser = R.newFunctionGenerator("generators","Deser",{"type","number","rate"},{},

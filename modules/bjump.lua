@@ -15,7 +15,9 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   J.err( type(sets)=="number", "sets should be number")
 
   assert(ty:verilogBits()==32)
-
+  J.err( types.extractData(readFn.inputType):verilogBits()==32, "bjump cache: readFn should take in 32 bit address, but input type is: "..tostring(readFn.inputType) )
+  J.err( types.extractData(readFn.outputType):verilogBits()==32, "bjump cache: readFn should return 32 bits, but output type is: "..tostring(readFn.outputType) )
+  
   local INP = R.input(types.Handshake(types.uint(32)))
   print("INP",INP)
   local readFnInst = readFn:instantiate("read")
@@ -76,8 +78,11 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   local bsg_cache = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache.v",{bsg_cache_pkt,bsg_cache_dma_pkt,bsg_mem_1rw_sync_mask_write_bit,bsg_mem_1rw_sync_mask_write_byte,bsg_cache_miss,bsg_cache_dma,bsg_cache_sbuf,bsg_mux_segmented,bsg_mux})
 
 
+  local bsg_flow_convert = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_flow_convert.v",{})
+  
   res.instanceMap[bsg_cache:instantiate()] = 1
   res.instanceMap[bsg_cache_pkt:instantiate()] = 1
+  res.instanceMap[bsg_flow_convert:instantiate()] = 1
   
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -103,13 +108,16 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   wire dma_pkt_v;
   wire dma_pkt_yumi;
 
-  wire []]..(ty:verilogBits()-1)..[[:0] dma_data_i;
-  wire dma_data_v_i;
-  wire dma_data_ready_o;
+  //wire []]..(ty:verilogBits()-1)..[[:0] dma_data_i;
+  //wire dma_data_v_i;
+  //wire dma_data_ready_o;
 
   wire []]..(ty:verilogBits()-1)..[[:0] dma_data_o;
   wire dma_data_v_o;
-  wire dma_data_yumi_i;
+  //wire dma_data_yumi_i;
+
+  wire v_o;
+  wire yumi_i;
 
   bsg_cache #(
     .addr_width_p(32),
@@ -124,28 +132,37 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
     .ready_o(]]..res:vInputReady()..[[),
 
     .data_o(]]..res:vOutputData()..[[),
-    .v_o(]]..res:vOutputValid()..[[),
-    .yumi_i(]]..res:vOutputReady()..[[),
+    .v_o(v_o),
+    .yumi_i(yumi_i),
 
     .dma_pkt_o(dma_pkt),
-    .dma_pkt_v_o(]]..readFnInst:vInputValid()..[[),
-    .dma_pkt_yumi_i(]]..readFnInst:vInputReady()..[[),
+    .dma_pkt_v_o(dma_pkt_v),
+    .dma_pkt_yumi_i(dma_pkt_yumi),
  
     .dma_data_i(]]..readFnInst:vOutputData()..[[),
     .dma_data_v_i(]]..readFnInst:vOutputValid()..[[),
     .dma_data_ready_o(]]..readFnInst:vOutputReady()..[[),
 
-    .dma_data_o(),
-    .dma_data_v_o(),
-    .dma_data_yumi_i(),
+    .dma_data_o(dma_data_o),
+    .dma_data_v_o(dma_data_v_o),
+    .dma_data_yumi_i(1'b0),
 
     .v_we_o()
  );
 
+  bsg_flow_convert #(.send_v_then_yumi_p(1),.recv_v_and_ready_p(1)) flow_convert2(
+    .v_i(v_o),.fc_o(yumi_i),.v_o(]]..res:vOutputValid()..[[),.fc_i(]]..res:vOutputReady()..[[));
+
+  bsg_flow_convert #(.send_v_then_yumi_p(1),.recv_v_and_ready_p(1)) flow_convert(
+    .v_i(dma_pkt_v),.fc_o(dma_pkt_yumi),.v_o(]]..readFnInst:vInputValid()..[[),.fc_i(]]..readFnInst:vInputReady()..[[));
+
 always @(posedge CLK) begin
-  $display("cache addr %d v_i %d ready %d",cache_pkt.addr,]]..res:vInputValid()..[[,]]..res:vInputReady()..[[);
-  $display("dma addr %d valid %d ready %d",]]..readFnInst:vInputData()..[[,]]..readFnInst:vInputValid()..[[,]]..readFnInst:vInputReady()..[[);
-  $display("dmaresp data %x valid %d ready %d",]]..readFnInst:vOutputData()..[[,]]..readFnInst:vOutputValid()..[[,]]..readFnInst:vOutputReady()..[[);
+//  $display("data v %d yumi %d ready_downstream %d",v_o,yumi_i,]]..res:vOutputReady()..[[);
+
+//  $display("cache addr %d v_i %d ready %d",cache_pkt.addr,]]..res:vInputValid()..[[,]]..res:vInputReady()..[[);
+//   $display("dma addr %d dmapkt %x dma_pkt_v %d dma_pkt_yumi %d dmavalid %d ready %d",]]..readFnInst:vInputData()..[[,dma_pkt,dma_pkt_v,dma_pkt_yumi,]]..readFnInst:vInputValid()..[[,]]..readFnInst:vInputReady()..[[);
+//  $display("dmaresp data %x valid %d ready %d",]]..readFnInst:vOutputData()..[[,]]..readFnInst:vOutputValid()..[[,]]..readFnInst:vOutputReady()..[[);
+//  $display("dma_data_v_o %d",dma_data_v_o);
 end
 
   assign ]]..readFnInst:vInputData()..[[ = dma_pkt[31:0];

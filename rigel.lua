@@ -1287,7 +1287,7 @@ function darkroomIRFunctions:typecheck()
       err( fn.inputType==types.null(), "Missing function argument, "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
-      err( n.inputs[1].type==fn.inputType, "Input type mismatch. Is "..tostring(n.inputs[1].type).." but should be "..tostring(fn.inputType)..", "..n.loc)
+      err( n.inputs[1].type==fn.inputType, "Input type mismatch to function '"..fn.name.."'. Is "..tostring(n.inputs[1].type).." but should be "..tostring(fn.inputType)..", "..n.loc)
     end
     n.type = fn.outputType
   elseif n.kind=="applyMethod" then

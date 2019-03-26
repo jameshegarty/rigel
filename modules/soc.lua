@@ -1681,15 +1681,17 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
   return res
 end)
 
--- This works like C pointer deallocation:
+-- if Cstyle==true, This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- readType: this is the output type we want
 -- NOTE: do not memoize! this thing allocates a port
-SOC.read = function( filename, fileBytes, readType, readFn, X )
+SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
   J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "read: type must be type")
   J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
   J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned, but is: "..tostring(readType))
+  if Cstyle==nil then Cstyle=true end
+  J.err( type(Cstyle)=="boolean","SOC.read: Cstyle should be bool")
   --  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned, but is: "..tostring(readType))
   J.err( R.isFunction(readFn), "soc.read: readFn should be rigel function, but is: "..tostring(readFn))
   J.err( X==nil, "SOC.read: too many arguments" )
@@ -1704,7 +1706,9 @@ SOC.read = function( filename, fileBytes, readType, readFn, X )
   local readBytesPerBurst
 
   -- scale by type size
-  out = RM.makeHandshake(C.multiplyConst(types.uint(32),readType:verilogBits()/8))(out)
+  if Cstyle then
+    out = RM.makeHandshake(C.multiplyConst(types.uint(32),readType:verilogBits()/8))(out)
+  end
   
   if readType:verilogBits()/8 > 8*16 then
     -- longer than 1 burst, need to do multiple bursts
