@@ -2146,7 +2146,6 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
     s.verilog = J.fileToString(R.path..filename)
     s.verilog = s.verilog:gsub([[`include "[%w_\.]*"]],"")
     s.verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..s.verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */"
-    print("S.VERILOG",s.verilog)
     return s
   end
 

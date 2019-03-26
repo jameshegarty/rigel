@@ -34,7 +34,7 @@ end)
 -- number: vector width
 generators.BroadcastSeq = R.newFunctionGenerator("generators","BroadcastSeq",{"type","number","size","rate"},{},
 function(args)
-  J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported typqe: "..tostring(args.type))
+  J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
   return RM.upsampleXSeq(args.type,args.number,args.size[1]*args.size[2])
 end)
 
