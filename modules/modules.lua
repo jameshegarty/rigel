@@ -1421,14 +1421,15 @@ broadcastWide = memoize(function( A, T, scale )
 end)
 
 -- this has type V->RV
-modules.upsampleXSeq = memoize(function( A, T, scale, X )
+modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
   err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
   err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
-  err( type(scale)=="number","upsampleXSeq: scale must be number")
+  --err( type(scale)=="number","upsampleXSeq: scale must be number")
+  local scale = Uniform(scale_orig)
   local COUNTER_BITS = 24
   local COUNTER_MAX = math.pow(2,COUNTER_BITS)-1
-  err( scale<COUNTER_MAX, "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
+  err( scale:lt(COUNTER_MAX):assertAlwaysTrue(), "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
   err(X==nil, "upsampleXSeq: too many arguments")
   
   if T==1 or T==0 then
@@ -1445,7 +1446,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
     end
     
     res.delay=0
-    res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale))
+    res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale_orig))
 
     if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, res.inputType ) end
 
@@ -4589,7 +4590,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
         externalInstances[sinst][ic.functionName.."_ready"] = 1
       end
       
-      table.insert(instances,sinst)
+      --table.insert(instances,sinst)
     end
 
     if dependencies~=nil then
@@ -5030,8 +5031,9 @@ modules.triggeredCounter = memoize(function(TY, N, stride)
 end)
 
 -- this output one trigger token after N inputs
-modules.triggerCounter = memoize(function(N)
-  err(type(N)=="number", "triggerCounter: N must be number")
+modules.triggerCounter = memoize(function(N_orig)
+    --err(type(N)=="number", "triggerCounter: N must be number")
+  local N = Uniform(N_orig)
 
   local res = {kind="triggerCounter"}
   res.inputType = types.null()
@@ -5040,8 +5042,10 @@ modules.triggerCounter = memoize(function(N)
   res.sdfOutput = SDF{1,N}
   res.stateful=true
   res.delay=0
-  res.name = "TriggerCounter_"..tostring(N)
-
+  res.name = J.sanitize("TriggerCounter_"..tostring(N_orig))
+  res.requires = {}
+  N:appendRequires(res.requires)
+  
   if terralib~=nil then res.terraModule = MT.triggerCounter(res,N) end
 
   function res.makeSystolic()
@@ -5049,7 +5053,8 @@ modules.triggerCounter = memoize(function(N)
     
     local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.sumwrap(types.uint(32),N-1) ):CE(true):setReset(0):instantiate("phase") )
     
-    local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
+    --local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
+    local done = S.eq( sPhase:get(),Uniform(N-1):toSystolic(types.uint(32)) ):disablePipelining()
     
     local pipelines = {}
     table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(32)) ) )

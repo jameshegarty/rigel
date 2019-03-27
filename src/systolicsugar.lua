@@ -150,9 +150,9 @@ end
 
 -- externalFnMap: if this is nil, add this instance as an internal instances
 --                otherwise, externalFnLst should be a map of fnnames (ie externalFnMap[inst][fnname])
-function systolicModuleConstructor:add( inst, externalFnMap, X )
+function systolicModuleConstructor:add( inst, X )
   err(X==nil,"systolicsugar: too many arguments")
-  err( externalFnMap==nil or type(externalFnMap)=="table","systolicsugar: external fn list should be table of strings" )
+
   err( systolic.isInstance(inst), "must be an instance" )
 
   checkReserved(inst.name)
@@ -164,18 +164,34 @@ function systolicModuleConstructor:add( inst, externalFnMap, X )
   self.__instanceMap[inst] = 1
   self.__usedInstanceNames[inst.name] = inst
 
-  if externalFnMap~=nil then
-    self.__externalInstances[inst] = externalFnMap
-  end
-
   table.insert(self.__instances,inst)
   return inst
 end
 
 function systolicModuleConstructor:addExternal( inst, fnmap, X )
-  assert(type(fnmap)=="table")
-  for fnname,_ in pairs(fnmap) do assert(type(fnname)=="string") end
-  return self:add( inst, fnmap, X )
+  err( fnmap==nil or type(fnmap)=="table","systolicsugar: external fn list should be table of strings" )
+  err(X==nil,"systolicsugar: too many arguments")
+  err( systolic.isInstance(inst), "must be an instance" )
+
+  checkReserved(inst.name)
+
+  -- we can refer to an external inst multiple times, that is ok
+--  if self.__usedInstanceNames[inst.name]~=nil then
+--    print("Error, instance name "..inst.name.." already in use")
+--    assert(false)
+--  end
+
+  if self.__externalInstances[inst]==nil then
+    self.__externalInstances[inst] = fnmap
+  else
+    for k,v in pairs(fnmap) do
+      self.__externalInstances[inst][k]=1
+    end
+  end
+  
+  self.__usedInstanceNames[inst.name] = inst
+
+  return inst
 end
 
 -- add reference to external fn on an instance

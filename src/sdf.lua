@@ -28,7 +28,18 @@ function SDFFunctions:equals(other)
   J.err( sdf.isSDF(other), "SDF:equals(), other table isn't an SDF" )
   if #self ~= #other then return false end
   for k,v in ipairs(self) do
-    if v[1]~=other[k][1] or v[2]~=other[k][2] then return false end
+    local Uniform = require "uniform"
+
+    -- given A/B==C/D, check (A*D)==(B*C) (it's simpler?)
+
+    if (Uniform(v[1])*Uniform(other[k][2])):eq(Uniform(v[2])*Uniform(other[k][1])):assertAlwaysTrue()==false then
+      return false
+    end
+    --if type(v[1])~="number" or type(other[k][1])~="number" then
+    --  print("SDF EQ",v[1],v[2],other[k][1],other[k][2])
+    --end
+    
+    --if v[1]~=other[k][1] or v[2]~=other[k][2] then return false end
   end
   return true
 end

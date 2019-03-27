@@ -446,8 +446,11 @@ end)
 C.const = C.triggerToConstant
 -----------------------------
 -- take in 1 trigger, and write out N triggers (aka trigger upsample)
-C.triggerUp = memoize(function(N)
-  J.err(type(N)=="number","triggerUp: input must be number")
+C.triggerUp = memoize(function(N_orig)
+    --J.err(type(N)=="number","triggerUp: input must be number")
+  local N = Uniform(N_orig)
+  err( N:isNumber(),"triggerUp: input must be number")
+  
   local inp = R.input(R.HandshakeTrigger)
   local val = RM.makeHandshake( RM.constSeq({0},types.uint(8),1,1,1), nil, true )(inp)
   val = RM.upsampleXSeq(types.uint(8),1,N)(val)
@@ -2088,7 +2091,7 @@ function C.automaticSystolicStub( mod )
     local inst = ic.instance:toSystolicInstance()
     if externalInstances[inst]==nil then externalInstances[inst]={} end
     externalInstances[inst][ic.functionName]=1
-    instances[inst]=1
+    --instances[inst]=1
 
     local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then

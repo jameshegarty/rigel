@@ -656,7 +656,7 @@ __index = function(tab,key)
   --assert(tab.instance.module.functions[functionName]~=nil)
   return tab.instance.module.functions[tab.functionName][key]
 end,
-__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."() -- "..tostring(tab.inputType).."->"..tostring(tab.outputType) end
+__tostring = function(tab) return "InstanceCallsite "..tab.instance.name..":"..tab.functionName.."() -- "..tostring(tab.inputType).."->"..tostring(tab.outputType).." "..tostring(tab.sdfInput).."->"..tostring(tab.sdfOutput) end
 }
 darkroomInstanceCallsiteMT.__call = darkroomFunctionMT.__call
 

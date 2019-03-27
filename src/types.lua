@@ -1185,7 +1185,7 @@ end
 
 if terralib~=nil then require("typesTerra") end
 
-for i=1,32 do
+for i=1,64 do
   types["u"..tostring(i)] = types.uint(i)
 end
 
@@ -1194,7 +1194,7 @@ function types.export(t)
 
   rawset(t,"u",types.uint)
 
-  for i=1,32 do
+  for i=1,64 do
     rawset(t,"u"..i,types["u"..i])
   end
   
@@ -1204,6 +1204,7 @@ function types.export(t)
   rawset(t,"ar",types.array2d)
   rawset(t,"tup",types.tuple)
   rawset(t,"Handshake",types.Handshake)
+  rawset(t,"HandshakeTrigger",types.HandshakeTrigger)
 end
 
 return types

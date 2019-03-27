@@ -10,6 +10,13 @@ if type(metadata.outputs)=="table" then
   metadata.outputBitsPerPixel = metadata.outputs[1].bitsPerPixel
   metadata.outputWidth = metadata.outputs[1].W
   metadata.outputHeight = metadata.outputs[1].H
+
+  -- value is in a register
+  if type(metadata.outputWidth)=="string" then
+    local addr = metadata.registers[metadata.outputWidth]
+    if addr==nil then print("Could not find register for cycles"); assert(false) end
+    metadata.outputWidth = tonumber("0x"..metadata.registerValues[addr])
+  end
 end
 
 ffi.cdef[[

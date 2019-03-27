@@ -117,6 +117,11 @@ int main(int argc, char** argv) {
   int simCycles = atoi(argv[1]);
   int simCyclesSlack = simCycles/10;
 
+  if(simCycles<=0){
+    std::cout << "requested sim cycles is <= 0? is: " << simCycles << std::endl;
+    exit(1);
+  }
+  
   int curArg = 2;
 
   unsigned int MEMBASE = 0;

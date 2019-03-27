@@ -1226,10 +1226,9 @@ assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awvalid..[=[ = process_
 assign ready = ZynqNOC_write_ready;
 
 //always @(posedge CLK) begin
-//  $display("AWADDR_READY=%d AWVALID=%d",IP_MAXI]=]..port..[=[_AWADDR_RV_ready,IP_MAXI]=]..port..[=[_AWADDR_RV[32]);
+//  $display("AWADDR_READY=%d WDATA_READY=%d AWVALID=%d",ZynqNOC_write_ready[0],ZynqNOC_write_ready[1],process_input[32]);
 //end
 
-//assign IP_MAXI]=]..port..[=[_WDATA_RV = process_input[]=]..(Nbits+32+1)..[=[:33];
 assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wdata..[=[ = process_input[]=]..(Nbits+32)..[=[:33];
 assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wvalid..[=[ = process_input[]=]..(Nbits+32+1)..[=[];
 
@@ -1686,9 +1685,9 @@ end)
 -- readType: this is the output type we want
 -- NOTE: do not memoize! this thing allocates a port
 SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
-  J.err( type(filename)=="string","read: filename must be string, but is: "..tostring(filename))
-  J.err( types.isType(readType), "read: type must be type")
-  J.err( types.isBasic(readType), "read: type must be basic type, but is: "..tostring(readType))
+  J.err( type(filename)=="string","SOC.read: filename must be string, but is: "..tostring(filename))
+  J.err( types.isType(readType), "SOC.read: type must be type, but is: "..tostring(readType))
+  J.err( types.isBasic(readType), "SOC.read: type must be basic type, but is: "..tostring(readType))
   J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned, but is: "..tostring(readType))
   if Cstyle==nil then Cstyle=true end
   J.err( type(Cstyle)=="boolean","SOC.read: Cstyle should be bool")
@@ -1820,7 +1819,7 @@ end)
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- syncAddrData: addr/data come in as one stream (default false)
-SOC.write = J.memoize(function( filename, W, H, writeType, V, syncAddrData, writeFn, X)
+SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData, writeFn, X)
   J.err( type(filename)=="string","SOC.write: filename must be string")
   J.err( types.isType(writeType), "SOC.write: type must be type")
   J.err( writeType:verilogBits()%8==0, "SOC.write: NYI - type must be byte aligned")
@@ -1830,6 +1829,7 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, syncAddrData, writ
   if syncAddrData==nil then syncAddrData=false end
   assert( type(syncAddrData)=="boolean" )
   J.err( R.isFunction(writeFn), "soc.write: writeFn should be rigel function, but is: "..tostring(writeFn))
+  local W = Uniform(W_orig)
   if V==nil then V=1 end
   
   local globalMetadata={}
@@ -1852,8 +1852,10 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, syncAddrData, writ
     local tmp = G.FanOut{2}(inp)
     
     inpAddr = R.selectStream( "inpAddr", tmp, 0 )
+    inpAddr = G.FIFO{128}(inpAddr)
     inpAddr = G.HS{G.Index{0}}(inpAddr)
     inpData = R.selectStream( "inpData", tmp, 1 )
+    inpData = G.FIFO{128}(inpData)
     inpData = G.HS{G.Index{1}}(inpData)
   else
     inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
@@ -1898,7 +1900,8 @@ SOC.write = J.memoize(function( filename, W, H, writeType, V, syncAddrData, writ
   local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  SOC.currentAddr = SOC.currentAddr+Uniform(W*H):maximum()
+  print("SOCCA",SOC.currentAddr,W,H)
+  SOC.currentAddr = SOC.currentAddr+Uniform(Uniform(W)*Uniform(H)):maximum()
   assert(type(SOC.currentAddr)=="number")
   
   return res
