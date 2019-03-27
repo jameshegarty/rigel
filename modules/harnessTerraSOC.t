@@ -42,8 +42,13 @@ local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 
 return function(top, options)
   
-  local simCycles = (top.sdfInput[1][2]):toNumber()/(top.sdfInput[1][1]):toNumber()
-  if options~=nil and options.cycles~=nil then simCycles = options.cycles end
+  local simCycles
+  if options~=nil and options.cycles~=nil then
+    simCycles = options.cycles
+  else
+    simCycles = (top.sdfInput[1][2]):toNumber()/(top.sdfInput[1][1]):toNumber()
+  end
+  
   local extraCycles = math.max(math.floor(simCycles/10),1024)
   
   local Module = top:toTerra()
@@ -143,16 +148,16 @@ return function(top, options)
 
   for i=0,noc.module.writePorts-1 do
     if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
-      local bytes = (top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8
+      local bytes = Uniform((top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8)
       table.insert( writeS, quote
                     var addr = [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]
-                    if addr+bytes>MEMSIZE then
-                      cstdio.printf("ERROR: requested to read file outside of memory segment? addr:%d bytes:%d\n",addr,bytes)
+                    if addr+[bytes:toTerra()]>MEMSIZE then
+                      cstdio.printf("ERROR: requested to read file outside of memory segment? addr:%d bytes:%d\n",addr,[bytes:toTerra()])
                       cstdlib.exit(1)
                     end
-                    V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, bytes ) end )
+                    V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, [bytes:toTerra()] ) end )
 
-      table.insert( clearOutputs, quote for ii=0,[bytes],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
+      table.insert( clearOutputs, quote for ii=0,[bytes:toTerra()],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
     end
   end
 

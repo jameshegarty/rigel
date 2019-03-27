@@ -440,7 +440,7 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     print(z3call)
     --print(debug.traceback())
 
-    f = assert (io.popen (z3call))
+    local f = assert (io.popen (z3call))
 
     local res = ""
     for line in f:lines() do
@@ -493,7 +493,7 @@ function UniformFunctions:maximum()
     print("Z3CALL")
     print(z3call)
 
-    f = assert (io.popen (z3call))
+    local f = assert (io.popen (z3call))
 
     local res = ""
     for line in f:lines() do

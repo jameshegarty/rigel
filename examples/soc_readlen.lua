@@ -49,4 +49,4 @@ TestDMA.globalMetadata.MAXI0_write_W = 128
 TestDMA.globalMetadata.MAXI0_write_H = 64
 TestDMA.globalMetadata.MAXI0_write_bitsPerPixel = 8
 
-harness({regs.start, TestDMA, regs.done},nil,{regs})
+harness({regs.start, TestDMA, regs.done},{cycles=1124},{regs})
