@@ -1475,7 +1475,9 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
 
     return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
   else
-    return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
+    err( scale:isConst(), "upsampleXSeq: NYI - runtime configurable scale" )
+    local scaleV = scale:toNumber()
+    return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV), modules.liftHandshake(modules.changeRate(A,1,T*scaleV,T)), modules.makeHandshake(broadcastWide(A,T,scaleV)))
   end
 end)
 
@@ -2422,7 +2424,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
 modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
-  err( type(inputRate)=="number", "changeRate: inputRate should be number")
+  err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
   err( inputRate>0, "changeRate: inputRate must be >0")
   err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
   err( type(outputRate)=="number", "changeRate: outputRate should be number, but is: "..tostring(outputRate))

@@ -524,14 +524,6 @@ function(args)
   end
 end)
 
-generators.WriteGlobal = R.newFunctionGenerator("generators","WriteGlobal",{"global"},{},
-function(args)
-  local WG = generators.Module{"WG",function(i) return R.writeGlobal("go",args.global,i) end}
-  WG = WG{args.global.type}
-  assert(R.isPlainFunction(WG))
-  return WG
-end)
-
 generators.Reshape = R.newFunctionGenerator("generators","Reshape",{"type","rate"},{},
 function(args)
 

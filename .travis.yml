@@ -6,6 +6,9 @@ before_install:
   # luajit
   - sudo apt-get install luajit
 
+  # z3
+  - if [[ $TARGET = "verilatorSOC" ]]; then sudo apt-get install z3; fi
+    
   # verilator
   - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get install verilator; fi
   - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "unit" ]]; then export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator; fi

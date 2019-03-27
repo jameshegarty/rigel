@@ -376,7 +376,18 @@ Uniform.isNumber = J.memoize(
     end
   end)
 
+Uniform.isInteger = J.memoize(
+  function(n)
+    if n.kind=="const" then
+      return type(n.value)=="number" and (n.value==math.floor(n.value))
+    else
+      print("NYI isInteger "..tostring(n.kind))
+      assert(false)
+    end
+  end)
+
 function UniformFunctions:isNumber() return Uniform.isNumber(self) end
+function UniformFunctions:isInteger() return Uniform.isInteger(self) end
 function UniformFunctions:isBool() return not Uniform.isNumber(self) end
 
 -- This should be avoided!!
@@ -384,6 +395,11 @@ function UniformFunctions:toNumber()
   assert(self:isNumber())
   J.err(self.kind=="const",":toNumber(): not a const? "..tostring(self))
   return self.value
+end
+
+-- is this uniform exactly one value?
+function UniformFunctions:isConst()
+  return self.kind=="const"
 end
 
 Uniform.addMSBs = J.memoize(
@@ -691,7 +707,7 @@ local UniformTopMT = {}
 setmetatable(Uniform,UniformTopMT)
 
 Uniform.const = J.memoize(
-  function(value,X)
+  function( value, X )
     assert( X==nil )
     return Uniform.new{kind="const",value=value,inputs={}}
   end)
