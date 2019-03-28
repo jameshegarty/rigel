@@ -52,8 +52,15 @@ elseif arg[2]=="__OUTPUTS" or arg[2]=="__OUTPUTS_ZYNQ" then
       if regAddress==nil then print("Could not find register"); assert(false) end
       str = str.." reg:0x"..string.format("%x",regAddress).." "
     end
+
+    local W = v.W
+    if type(W)=="string" then
+      local regAddress = metadata.registers[W]
+      if regAddress==nil then print("Could not find register"); assert(false) end
+      W = tonumber("0x"..metadata.registerValues[regAddress])
+    end
     
-    str = str.." "..v.W.." "..v.H.." "..v.bitsPerPixel.." "
+    str = str.." "..W.." "..v.H.." "..v.bitsPerPixel.." "
   end
   print(str)
 elseif arg[2]=="__REGISTERS" then
@@ -80,6 +87,17 @@ elseif arg[2]=="INPUT_FILES" then
     i = i + 1
   end
   print(str)
+elseif arg[2]=="cycles" then
+  if type(metadata.cycles)=="number" then
+    print(metadata.cycles)
+  elseif type(metadata.cycles)=="string" then
+    -- register lookup
+    local addr = metadata.registers[metadata.cycles]
+    if addr==nil then print("Could not find register for cycles"); assert(false) end
+    print(tonumber("0x"..metadata.registerValues[addr]))
+  else
+    assert(false)
+  end
 else
   if type(metadata[arg[2]])=="table" then
     print(table.concat(metadata[arg[2]]," "))

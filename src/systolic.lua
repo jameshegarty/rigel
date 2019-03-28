@@ -459,7 +459,7 @@ function systolic.bitSlice( expr, low, high, X )
 end
 
 function systolic.constant( v, ty )
-  err( types.isType(ty), "constant type must be a type")
+  err( types.isType(ty), "constant type must be a type, but is: "..tostring(ty))
   err( types.isBasic(ty),"constant type must be basic, but is: "..tostring(ty))
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
@@ -518,11 +518,14 @@ function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
 end
 
-function systolicASTFunctions:checkInstances( instMap )
+function systolicASTFunctions:checkInstances( name, instMap, externalInstances )
   self:visitEach( 
     function(n)
       if n.kind=="call" then
-        err( instMap[n.inst]~=nil, "Error, instance "..n.inst.name.." is not a member of this module, "..n.inst.loc )
+        err( instMap[n.inst]~=nil or externalInstances[n.inst]~=nil, "Error, instance '"..n.inst.name.."' is not a member of module '"..name.."', "..n.inst.loc )
+        if externalInstances[n.inst]~=nil then
+          err(externalInstances[n.inst][n.fnname]~=nil,"Error, external instance '"..n.inst.name.."' is missing fn call '"..n.fnname.."' in module  '"..name.."', "..n.inst.loc )
+        end
       end
     end)
 end
@@ -1629,35 +1632,38 @@ function userModuleFunctions:getDelay( fnname )
 end
 
 -- 'verilog' input is a string of verilog code. When this is provided, this module just becomes a wrapper. verilogDelay must be provided as well.
--- 'externalInstances' should be a subset of 'instances'... this is a map from systolicInstance->StringList
---                     of functions we require on this instance
+-- 'externalInstances' is a map of instances that are external... this is a map from systolicInstance->StringList
+--    of functions we require on this instance
+--    NOTE that 'externalInstances' and 'instances' should not overlap!
 function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
-  J.map(fns, function(n) err( systolic.isFunction(n), "functions must be systolic functions" ) end )
+
+  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '"..i.."' is: "..tostring(n) ) end )
+  
   err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 
+  local instanceMap = J.invertTable(instances)
+  
   if externalInstances==nil then externalInstances={} end
   for inst,fnmap in pairs(externalInstances) do
     err(systolic.isInstance(inst),"systolic.module.new: external instances map should be systolic instances")
     err( type(fnmap)=="table", "systolic.module.new: external instances should be fn name list")
     for fnname,_ in pairs(fnmap) do err( type(fnname)=="string","systolic.module.new: external fn map should have fnname keys") end
 
-    -- make sure this is in instance list too
-    local found = false
-    for _,iinst in ipairs(instances) do if inst==iinst then found=true end end
-    err( found, "External instance '"..inst.name.."' is not in instance list?" )
+    -- make sure this is NOT in instance list too
+    --local found = false
+    --for _,iinst in ipairs(instances) do if inst==iinst then found=true end end
+    err( instanceMap[inst]==nil, "External instance '"..inst.name.."' should not be in instance list of module '"..name.."'!" )
   end
 
   for _,inst in ipairs(instances) do
-    if externalInstances[inst]==nil then
-      err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
-      inst.final="added to module '"..name.."' "..debug.traceback()
-    end
+    err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
+    inst.final="added to module '"..name.."' "..debug.traceback()
   end
 
   err( onlyWire==nil or type(onlyWire)=="boolean", "onlyWire must be nil or bool")
@@ -1729,10 +1735,10 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays()
   t.instances = J.concat(t.instances, delayRegisters)
-
+  local instanceMap = J.invertTable(t.instances)
+  
   t.ast = t.ast:CSE()
 
-  local instanceMap = J.invertTable(t.instances)
   local usedInstanceNames = {}
   for _,inst in ipairs(t.instances) do
     err(usedInstanceNames[inst.name]==nil,"Instance name '"..inst.name.."' used multiple times!")
@@ -1740,19 +1746,31 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     assert(instanceMap[inst]~=nil)
 
     -- make sure external references of this instance are provided for in this module
-    if t.externalInstances[inst]==nil then
-      for einst,lst in pairs(inst.module.externalInstances) do
-        if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
-          t.externalInstances[einst] = lst
-          err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times! ")
-          usedInstanceNames[einst.name]=1
-        end
+    for einst,lst in pairs(inst.module.externalInstances) do
+      if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
+        t.externalInstances[einst] = lst
+        err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times! ")
+        usedInstanceNames[einst.name]=1
       end
     end
+  
   end
 
+  -- by default, if we're missing an instance, just make it external
+  t.ast:visitEach( 
+    function(n)
+      if n.kind=="call" then
+        if instanceMap[n.inst]==nil and externalInstances[n.inst]==nil then
+          externalInstances[n.inst]={}
+          externalInstances[n.inst][n.fnname]=1
+        elseif externalInstances[n.inst]~=nil then
+          externalInstances[n.inst][n.fnname]=1
+        end
+      end
+    end)
+  
   -- check that the instances refered to by this module are actually in the module
-  t.ast:checkInstances( instanceMap )
+  t.ast:checkInstances( name, instanceMap, externalInstances )
   t.ast:checkWiring(t) -- check for dangling fns
 
   return t

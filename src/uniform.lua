@@ -27,9 +27,9 @@ function UniformFunctions:toSMT(includeProperties)
       local res
       if n.kind=="const" then
         res = tostring(n.value)
-      elseif n.kind=="global" then
-        table.insert(stats,"(declare-const "..n.global.name.." Int)")
-        res = n.global.name
+      elseif n.kind=="instanceCallsite" then
+        res = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
+        table.insert(stats,"(declare-const "..res.." Int)")
       elseif n.kind=="var" then
         table.insert(stats,"(declare-const "..n.name.." Int)")
         res = n.name
@@ -102,7 +102,7 @@ function UniformFunctions:applySimplifications()
       if simplificationMap[n]~=nil then
         --print("REPLACE",n,"=>",simplificationMap[n])
         return simplificationMap[n]
-      elseif n.kind=="global" or n.kind=="const" or n.kind=="var" then
+      elseif n.kind=="instanceCallsite" or n.kind=="const" or n.kind=="var" then
         return n
       elseif n.kind=="binop" then
         return Uniform.binop(n.op,inputs[1],inputs[2])
@@ -124,185 +124,185 @@ end
 
 DEEP_SIMPLIFY = true
 UniformFunctions.simplify = J.memoize(function(self)
-
---  local res = self:visitEach(
---    function(n,inputs)
   local n = self
   local inputs = {}                                      
 
   for k,v in ipairs(self.inputs) do inputs[k] = self.inputs[k]:simplify() end
   
   if n.kind=="binop" and inputs[1].kind=="const" and inputs[2].kind=="const" then
-        if n.op=="eq" then
-          return Uniform(inputs[1].value==inputs[2].value)
-        elseif n.op=="gt" then
-          return Uniform(inputs[1].value>inputs[2].value)
-        elseif n.op=="ge" then
-          return Uniform(inputs[1].value>=inputs[2].value)
-        elseif n.op=="le" then
-          return Uniform(inputs[1].value<=inputs[2].value)
-        elseif n.op=="lt" then
-          return Uniform(inputs[1].value<inputs[2].value)
-        elseif n.op=="mul" then
-          local prod = inputs[1].value*inputs[2].value
-          assert(inputs[1].type==inputs[2].type)
-          local ty = inputs[1].type
-          return Uniform(prod,ty)
-        elseif n.op=="add" then
-          local sum = inputs[1].value+inputs[2].value
-          assert(inputs[1].type==inputs[2].type)
-          local ty = inputs[1].type
-          return Uniform(sum,ty)
-        elseif n.op=="sub" then
-          assert(inputs[1].type==inputs[2].type)
-          local ty = inputs[1].type
-          return Uniform(inputs[1].value-inputs[2].value,ty)
-        elseif n.op=="div" then
-          local res = inputs[1].value/inputs[2].value
-          if res == math.floor(res) then
-            return Uniform(res)
-          else
-            local nn,dd = J.simplify(inputs[1].value,inputs[2].value)
-            return Uniform.binop("div",nn,dd)
-          end
-        elseif n.op=="mod" then
-          return Uniform(inputs[1].value%inputs[2].value)
-        elseif n.op=="max" then
-          return Uniform(math.max(inputs[1].value,inputs[2].value))
-        elseif n.op=="and" then
-          return Uniform(inputs[1].value and inputs[2].value)
-        elseif n.op=="or" then
-          return Uniform(inputs[1].value or inputs[2].value)
-        else
-          print("NYI - const op "..tostring(n.op))
-          assert(false)
-        end
-      elseif n.kind=="unary" and inputs[1].kind=="const" then
-        if n.op=="ceil" then
-          return Uniform(math.ceil(inputs[1].value))
-        elseif n.op=="floor" then
-          return Uniform(math.floor(inputs[1].value))
-        else
-          print("NYI - const op "..tostring(n.op))
-          assert(false)
-        end
-      elseif n.kind=="sel" and inputs[1].kind=="const" then
-        if inputs[1].value then
-          return inputs[2]
-        else
-          return inputs[3]
-        end
-      elseif n.kind=="sel" and DEEP_SIMPLIFY then
-        if inputs[1]:assertAlwaysTrue() then
-          -- cond is always true: we can simplify
-          return inputs[2]
-        elseif inputs[1]:assertAlwaysFalse() then
-          return inputs[3]
-        else
-          return Uniform.sel(inputs[1],inputs[2],inputs[3])
-        end
-      elseif n.kind=="binop" and n.op=="max" and
-        inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
-        -- max(0,X:uint)->X
-        return inputs[2]
-      elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==1 then
-        -- 1*X->X
---        assert(false)
-        return inputs[2]
-      elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==1 then
-        -- X*1->X
---        assert(false)
-        return inputs[1]
-      elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==0 then
-        return Uniform(0)
-      elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==0 then
-        return Uniform(0)
-      elseif n.kind=="binop" and n.op=="add" and inputs[1].kind=="const" and inputs[1].value==0 then
-        return inputs[2]
-      elseif n.kind=="binop" and n.op=="add" and inputs[2].kind=="const" and inputs[2].value==0 then
-        return inputs[1]
-      elseif (n.kind=="binop" and n.op=="mul") and
-        (inputs[1].kind=="binop" and inputs[1].op=="mul") and
-        (inputs[1].inputs[2].kind=="const") and
-        (inputs[2].kind=="const") then
-          --(* (* X C) D) = (* X (C*D) )
---          assert(false)
-          return Uniform.binop("mul",inputs[1].inputs[1],Uniform(inputs[2].value*inputs[1].inputs[2].value))
-      elseif (n.kind=="binop" and n.op=="mul") and
-        (inputs[2].kind=="binop" and inputs[2].op=="mul") and
-        (inputs[2].inputs[1].kind=="const") and
-        (inputs[1].kind=="const") then
-          --(* C (* D X) ) = (* (C*D) X )
---          assert(false)
-          return Uniform.binop("mul",inputs[2].inputs[2],Uniform(inputs[1].value*inputs[2].inputs[1].value))
-      elseif (n.kind=="binop" and n.op=="div") and
-        (inputs[1].kind=="binop" and inputs[1].op=="div") and
-        (inputs[1].inputs[2].kind=="const") and
-        (inputs[2].kind=="const") then
-          --(/ (/ X D) C) = (/ X (C*D) )
-          --assert(false)
-          return Uniform.binop("div",inputs[1].inputs[1],Uniform(inputs[2].value*inputs[1].inputs[2].value))
-      elseif (n.kind=="binop" and n.op=="div") and
-        (inputs[1].kind=="binop" and inputs[1].op=="mul") and
-        (inputs[1].inputs[2].kind=="const") and
-        (inputs[2].kind=="const") then
-          --(/ (* X D) C) = (* X (D/C) )
-
-          local D,C = inputs[1].inputs[2].value, inputs[2].value
-
-          if D==C then
-            local res =  inputs[1].inputs[1]
-            return res
-          elseif D<C then
-            local V = C/D
-            assert(V==math.floor(V))
-            local res = Uniform.binop("div",inputs[1].inputs[1],Uniform(V))
-
-            print("DSM",self,res)
-            assert(false)
-            return res
-          elseif C>D then
-            assert(false)
-          end
-
-      elseif (n.kind=="binop" and n.op=="mul") and
-        (inputs[1].kind=="binop" and inputs[1].op=="div") and
-        (inputs[1].inputs[2].kind=="const") and
-        (inputs[2].kind=="const") then
-          --(* (/ X D) C) = (* X (C/D) )
-
-          local D,C = inputs[1].inputs[2].value, inputs[2].value
-
-          if D==C then
-            local res =  inputs[1].inputs[1]
-            return res
-          elseif D<C then
-            assert(false)
-          elseif C>D then
-            assert(false)
-          end
-      elseif (n.kind=="binop" and n.op=="div") and (inputs[1]==inputs[2]) then
-        return Uniform(1)
-      elseif n.kind=="addMSBs" and inputs[1].kind=="const" then
-        return Uniform.const( n.type, inputs[1].value )
-      end
-
-      
-      ---------- passthroughs (no simplification)
-      if n.kind=="binop" then
-        return Uniform.binop(n.op,inputs[1],inputs[2])
-      elseif n.kind=="unary" then
-        return Uniform.unary(n.op,inputs[1])
-      elseif n.kind=="addMSBs" then
-        return Uniform.addMSBs(inputs[1],n.msbs)
-      elseif n.kind=="sel" then
-        return Uniform.sel(inputs[1],inputs[2],inputs[3])
-      elseif n.kind=="const" or n.kind=="var" or n.kind=="instanceCallsite" then
-        return n
+    -- constant propagate
+    if n.op=="eq" then
+      return Uniform(inputs[1].value==inputs[2].value)
+    elseif n.op=="gt" then
+      return Uniform(inputs[1].value>inputs[2].value)
+    elseif n.op=="ge" then
+      return Uniform(inputs[1].value>=inputs[2].value)
+    elseif n.op=="le" then
+      return Uniform(inputs[1].value<=inputs[2].value)
+    elseif n.op=="lt" then
+      return Uniform(inputs[1].value<inputs[2].value)
+    elseif n.op=="mul" then
+      local prod = inputs[1].value*inputs[2].value
+      assert(inputs[1].type==inputs[2].type)
+      local ty = inputs[1].type
+      return Uniform(prod,ty)
+    elseif n.op=="add" then
+      local sum = inputs[1].value+inputs[2].value
+      assert(inputs[1].type==inputs[2].type)
+      local ty = inputs[1].type
+      return Uniform(sum,ty)
+    elseif n.op=="sub" then
+      assert(inputs[1].type==inputs[2].type)
+      local ty = inputs[1].type
+      return Uniform(inputs[1].value-inputs[2].value,ty)
+    elseif n.op=="div" then
+      local res = inputs[1].value/inputs[2].value
+      if res == math.floor(res) then
+        return Uniform(res)
       else
-        print("simplify missing passthrough?",n.kind)
-        assert(false)
+        local nn,dd = J.simplify(inputs[1].value,inputs[2].value)
+        return Uniform.binop("div",nn,dd)
       end
+    elseif n.op=="mod" then
+      return Uniform(inputs[1].value%inputs[2].value)
+    elseif n.op=="max" then
+      return Uniform(math.max(inputs[1].value,inputs[2].value))
+    elseif n.op=="and" then
+      return Uniform(inputs[1].value and inputs[2].value)
+    elseif n.op=="or" then
+      return Uniform(inputs[1].value or inputs[2].value)
+    else
+      print("NYI - const op "..tostring(n.op))
+      assert(false)
+    end
+  elseif n.kind=="unary" and inputs[1].kind=="const" then
+    if n.op=="ceil" then
+      return Uniform(math.ceil(inputs[1].value))
+    elseif n.op=="floor" then
+      return Uniform(math.floor(inputs[1].value))
+    else
+      print("NYI - const op "..tostring(n.op))
+      assert(false)
+    end
+  elseif n.kind=="sel" and inputs[1].kind=="const" then
+    if inputs[1].value then
+      return inputs[2]
+    else
+      return inputs[3]
+    end
+  elseif n.kind=="sel" and DEEP_SIMPLIFY then
+    if inputs[1]:assertAlwaysTrue() then
+      -- cond is always true: we can simplify
+      return inputs[2]
+    elseif inputs[1]:assertAlwaysFalse() then
+      return inputs[3]
+    else
+      return Uniform.sel(inputs[1],inputs[2],inputs[3])
+    end
+  elseif n.kind=="binop" and n.op=="max" and
+    inputs[1].kind=="const" and inputs[1].value==0 and inputs[2]:isUint() then
+    -- max(0,X:uint)->X
+    return inputs[2]
+  elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==1 then
+    -- 1*X->X
+    return inputs[2]
+  elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==1 then
+    -- X*1->X
+    return inputs[1]
+  elseif n.kind=="binop" and n.op=="div" and inputs[2].kind=="const" and inputs[2].value==1 then
+    -- X/1->X
+    return inputs[1]
+  elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==0 then
+    return Uniform(0)
+  elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==0 then
+    return Uniform(0)
+  elseif n.kind=="binop" and n.op=="add" and inputs[1].kind=="const" and inputs[1].value==0 then
+    return inputs[2]
+  elseif n.kind=="binop" and n.op=="add" and inputs[2].kind=="const" and inputs[2].value==0 then
+    return inputs[1]
+  elseif (n.kind=="binop" and n.op=="mul") and
+    (inputs[1].kind=="binop" and inputs[1].op=="mul") and
+    (inputs[1].inputs[2].kind=="const") and
+  (inputs[2].kind=="const") then
+    --(* (* X C) D) = (* X (C*D) )
+    --          assert(false)
+    return Uniform.binop("mul",inputs[1].inputs[1],Uniform(inputs[2].value*inputs[1].inputs[2].value))
+  elseif (n.kind=="binop" and n.op=="mul") and
+    (inputs[2].kind=="binop" and inputs[2].op=="mul") and
+    (inputs[2].inputs[1].kind=="const") and
+  (inputs[1].kind=="const") then
+    --(* C (* D X) ) = (* (C*D) X )
+    --          assert(false)
+    return Uniform.binop("mul",inputs[2].inputs[2],Uniform(inputs[1].value*inputs[2].inputs[1].value))
+  elseif (n.kind=="binop" and n.op=="div") and
+    (inputs[1].kind=="binop" and inputs[1].op=="div") and
+    (inputs[1].inputs[2].kind=="const") and
+  (inputs[2].kind=="const") then
+    --(/ (/ X D) C) = (/ X (C*D) )
+    --assert(false)
+    return Uniform.binop("div",inputs[1].inputs[1],Uniform(inputs[2].value*inputs[1].inputs[2].value))
+  elseif (n.kind=="binop" and n.op=="div") and
+    (inputs[1].kind=="binop" and inputs[1].op=="mul") and
+    (inputs[1].inputs[2].kind=="const") and
+    (inputs[2].kind=="const") then
+    --(/ (* X D) C) = (* X (D/C) )
+    
+    local D,C = inputs[1].inputs[2].value, inputs[2].value
+    
+    if D==C then
+      local res =  inputs[1].inputs[1]
+      return res
+    elseif D<C then
+      --(/ (* X D) C) = (* X (D/C) ) = (/ X (C/D) )
+      local V = C/D
+      assert(V==math.floor(V))
+      local res = Uniform.binop("div",inputs[1].inputs[1],Uniform(V))
+      
+      print("DSM",self,res)
+      --assert(false)
+      return res
+    elseif C>D then
+      assert(false)
+    end
+    
+  elseif (n.kind=="binop" and n.op=="mul") and
+    (inputs[1].kind=="binop" and inputs[1].op=="div") and
+    (inputs[1].inputs[2].kind=="const") and
+    (inputs[2].kind=="const") then
+    --(* (/ X D) C) = (* X (C/D) )
+      
+    local D,C = inputs[1].inputs[2].value, inputs[2].value
+      
+    if D==C then
+      local res =  inputs[1].inputs[1]
+      return res
+    elseif D<C then
+      assert(false)
+    elseif C>D then
+      assert(false)
+    end
+  elseif (n.kind=="binop" and n.op=="div") and (inputs[1]==inputs[2]) then
+    return Uniform(1)
+  elseif n.kind=="addMSBs" and inputs[1].kind=="const" then
+    return Uniform.const( n.type, inputs[1].value )
+  end
+  
+      
+  ---------- passthroughs (no simplification)
+  if n.kind=="binop" then
+    return Uniform.binop(n.op,inputs[1],inputs[2])
+  elseif n.kind=="unary" then
+    return Uniform.unary(n.op,inputs[1])
+  elseif n.kind=="addMSBs" then
+    return Uniform.addMSBs(inputs[1],n.msbs)
+  elseif n.kind=="sel" then
+    return Uniform.sel(inputs[1],inputs[2],inputs[3])
+  elseif n.kind=="const" or n.kind=="var" or n.kind=="instanceCallsite" then
+    return n
+  else
+    print("simplify missing passthrough?",n.kind)
+    assert(false)
+  end
 end)
 
 Uniform.binop = J.memoize(function(op,lhs,rhs)
@@ -376,7 +376,18 @@ Uniform.isNumber = J.memoize(
     end
   end)
 
+Uniform.isInteger = J.memoize(
+  function(n)
+    if n.kind=="const" then
+      return type(n.value)=="number" and (n.value==math.floor(n.value))
+    else
+      print("NYI isInteger "..tostring(n.kind))
+      assert(false)
+    end
+  end)
+
 function UniformFunctions:isNumber() return Uniform.isNumber(self) end
+function UniformFunctions:isInteger() return Uniform.isInteger(self) end
 function UniformFunctions:isBool() return not Uniform.isNumber(self) end
 
 -- This should be avoided!!
@@ -384,6 +395,11 @@ function UniformFunctions:toNumber()
   assert(self:isNumber())
   J.err(self.kind=="const",":toNumber(): not a const? "..tostring(self))
   return self.value
+end
+
+-- is this uniform exactly one value?
+function UniformFunctions:isConst()
+  return self.kind=="const"
 end
 
 Uniform.addMSBs = J.memoize(
@@ -424,7 +440,7 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     print(z3call)
     --print(debug.traceback())
 
-    f = assert (io.popen (z3call))
+    local f = assert (io.popen (z3call))
 
     local res = ""
     for line in f:lines() do
@@ -469,6 +485,7 @@ function UniformFunctions:maximum()
     table.insert(z3str,"(assert (<= MAXIMUSVAR "..smtexpr.."))")
     table.insert(z3str, "(maximize MAXIMUSVAR)")
     table.insert(z3str, "(check-sat)")
+    table.insert(z3str, "(get-objectives)")
     --table.insert(z3str, "(get-model)")
     z3str = table.concat(z3str,"\n")
     local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
@@ -476,7 +493,7 @@ function UniformFunctions:maximum()
     print("Z3CALL")
     print(z3call)
 
-    f = assert (io.popen (z3call))
+    local f = assert (io.popen (z3call))
 
     local res = ""
     for line in f:lines() do
@@ -490,7 +507,8 @@ function UniformFunctions:maximum()
     if string.match(res,"sat") then
       local num = string.match (res, "%d+")
       print("Z3MAX:",num)
-      return num
+      J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr?")
+      return tonumber(num)
     else
       assert(false)
     end
@@ -532,6 +550,8 @@ function UniformFunctions:toEscapedString()
     return tostring(self.value)
   elseif self.kind=="instanceCallsite" then
     return [["]]..self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName..[["]]
+  elseif self.kind=="binop" then
+    return self.inputs[1]:toEscapedString()..self.op..self.inputs[2]:toEscapedString()
   else
     J.err(false,"Uniform toEscapedString() NYI - "..self.kind)
   end
@@ -584,8 +604,10 @@ function UniformFunctions:toSystolic(ty)
   return self:visitEach(
     function(n,inputs)
 
-      if n.kind=="global" then
-        return S.readSideChannel(n.global.systolicValue)
+      if n.kind=="instanceCallsite" then
+        --return S.readSideChannel(n.global.systolicValue)
+        local sinst = (n.instanceCallsite.instance:toSystolicInstance())
+        return sinst[n.instanceCallsite.functionName](sinst)
       elseif n.kind=="const" then
         return S.constant( n.value, types.valueToType(n.value) )
       elseif n.kind=="binop" then
@@ -685,7 +707,7 @@ local UniformTopMT = {}
 setmetatable(Uniform,UniformTopMT)
 
 Uniform.const = J.memoize(
-  function(value,X)
+  function( value, X )
     assert( X==nil )
     return Uniform.new{kind="const",value=value,inputs={}}
   end)

@@ -594,6 +594,8 @@ function TypeFunctions:fakeValue()
     return false
   elseif self:isNamed() then
     return self.structure:fakeValue()
+  elseif self==types.null() then
+    return nil
   else
     err(false, "could not create fake value for "..tostring(self))
   end
@@ -626,6 +628,8 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="boolean", "bool must be lua bool")
   elseif self:isNamed() then
     return self.structure:checkLuaValue(v)
+  elseif self==types.null() then
+    return v==nil
   else
     print("NYI - :checkLuaValue with type ",self)
     assert(false)
@@ -778,7 +782,7 @@ function types.valueToType(v)
 end
 
 function types.isBasic(A)
-  assert(types.isType(A))
+  err(types.isType(A),"isBasic: input should be type, but is: "..tostring(A))
   if A:isArray() then
     return types.isBasic(A:arrayOver()) 
   elseif A:isTuple() then
@@ -1181,7 +1185,7 @@ end
 
 if terralib~=nil then require("typesTerra") end
 
-for i=1,32 do
+for i=1,64 do
   types["u"..tostring(i)] = types.uint(i)
 end
 
@@ -1190,7 +1194,7 @@ function types.export(t)
 
   rawset(t,"u",types.uint)
 
-  for i=1,32 do
+  for i=1,64 do
     rawset(t,"u"..i,types["u"..i])
   end
   
@@ -1200,6 +1204,7 @@ function types.export(t)
   rawset(t,"ar",types.array2d)
   rawset(t,"tup",types.tuple)
   rawset(t,"Handshake",types.Handshake)
+  rawset(t,"HandshakeTrigger",types.HandshakeTrigger)
 end
 
 return types

@@ -629,6 +629,11 @@ void loadFile( char* filename, unsigned char* memory, unsigned int addrOffset ){
 }
 
 void saveFile( const char* filename, unsigned char* memory, unsigned int addrOffset, unsigned int bytes ){
+  if(bytes==0){
+    printf("Error saving file '%s'! Has 0 byte size?\n",filename);
+    exit(1);
+  }
+  
   FILE* outfile = fopen( filename, "wb" );
   if(outfile==NULL){printf("could not open output '%s'\n", filename );}
   fwrite( memory+addrOffset, bytes, 1, outfile);

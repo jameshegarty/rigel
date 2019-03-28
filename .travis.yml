@@ -6,19 +6,28 @@ before_install:
   # luajit
   - sudo apt-get install luajit
 
+  # z3
+  - if [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "terra" ]]; then wget https://github.com/Z3Prover/z3/releases/download/z3-4.7.1/z3-4.7.1-x64-ubuntu-14.04.zip; fi
+  - if [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "terra" ]]; then unzip z3-4.7.1-x64-ubuntu-14.04.zip; fi
+  - if [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "terra" ]]; then export PATH=$PATH:$PWD/z3-4.7.1-x64-ubuntu-14.04/bin; fi
+  - if [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "terra" ]]; then z3 --version; fi
+    
   # verilator
-  - sudo apt-get install verilator
-  - export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator
+  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get install verilator; fi
+  - if [[ $TARGET = "verilator" ]] || [[ $TARGET = "verilatorSOC" ]] || [[ $TARGET = "unit" ]]; then export PKG_CONFIG_PATH=/home/travis/build/jameshegarty/rigel/platform/verilator; fi
 
+  # bjump requires more recent verilator
+  - if [[ $TARGET = "bjump" ]]; then wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make -j2;sudo make install; cd ..; fi
+  
   #terra
-  - wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
-  - unzip terra-Linux-x86_64-332a506.zip
-  - sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then unzip terra-Linux-x86_64-332a506.zip; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra; fi
 
   # this installs correct version of glibc for terra binary
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-  - sudo apt-get -y update
-  - sudo apt-get -y install libstdc++6-4.7-dev
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get -y update; fi
+  - if [[ $TARGET = "terra" ]] || [[ $TARGET = "unit" ]]; then sudo apt-get -y install libstdc++6-4.7-dev; fi
 
 #for coveralls
   - if [[ $TARGET = "unit" ]] || [[ $TARGET = "coverage" ]]; then sudo apt-get install luarocks; fi
@@ -42,6 +51,7 @@ env:
   - TARGET=verilator
   - TARGET=verilatorSOC
   - TARGET=terra
+  - TARGET=bjump
   - TARGET=unit
   - TARGET=coverage
 #  - TARGET=axiverilog

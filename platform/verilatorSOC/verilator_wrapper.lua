@@ -13,7 +13,7 @@ end
 function assnRigelToExt(vtab,dest,src)
   local str = ""
   for k,v in pairs(vtab) do
-    str = str.."assign "..dest..string.upper(k).." = "..src.."["..v..[[];
+    str = str.."assign "..dest..string.upper(k).." = "..src..v..[[;
 ]]
   end
   return str
@@ -29,9 +29,9 @@ for i=1,2 do
    assign MAXI]]..(i-1)..[[_RREADY = ]]..PORT..[[_ready_downstream;
    wire   ]]..PORT..[[_ready;
    assign ]]..PORT..[[_ready = MAXI]]..(i-1)..[[_ARREADY;
-   wire [55:0] ]]..PORT..[[_input; // read request
+   wire []]..(AXI.ReadAddress:verilogBits()-1)..[[:0] ]]..PORT..[[_input; // read request
    ]]..assnRigelToExt(AXI.ReadAddressVSelect,"MAXI"..(i-1).."_",PORT.."_input")..[[
-   wire [79:0] ]]..PORT..[[;    // read response
+   wire []]..(AXI.ReadData64:verilogBits()-1)..[[:0] ]]..PORT..[[;    // read response
    assign ]]..PORT..[[ = {MAXI]]..(i-1)..[[_RVALID,]]..assnExtToRigel(AXI.ReadDataIdx,"MAXI"..(i-1).."_")..[[};
 ]]
 end
@@ -47,6 +47,8 @@ print([[module VerilatorWrapper(
     input  [3:0]  SAXI0_ARLEN,
     input  [2:0]  SAXI0_ARPROT,
     input   [1:0] SAXI0_ARSIZE,
+    input   [3:0] SAXI0_ARCACHE,
+    input         SAXI0_ARLOCK,
     output        SAXI0_ARREADY,
     input [11:0]  SAXI0_ARID,
     input [31:0]  SAXI0_AWADDR,
@@ -81,6 +83,8 @@ print([[module VerilatorWrapper(
     input [11:0]  MAXI0_RID,
     output [2:0]  MAXI0_ARPROT,
     output [11:0] MAXI0_ARID,
+    output [3:0] MAXI0_ARCACHE,
+    output  MAXI0_ARLOCK,
     input         MAXI0_RVALID,
     output        MAXI0_RREADY,
     input [1:0]   MAXI0_RRESP,
@@ -114,6 +118,8 @@ print([[module VerilatorWrapper(
     input [11:0]  MAXI1_RID,
     output [2:0]  MAXI1_ARPROT,
     output [11:0] MAXI1_ARID,
+    output [3:0] MAXI1_ARCACHE,
+    output MAXI1_ARLOCK,
     input         MAXI1_RVALID,
     output        MAXI1_RREADY,
     input [1:0]   MAXI1_RRESP,

@@ -31,6 +31,7 @@ function(args)
 end)
 
 -- a broadcast is basically the same as a upsample, but has no W,H
+-- number: vector width
 generators.BroadcastSeq = R.newFunctionGenerator("generators","BroadcastSeq",{"type","number","size","rate"},{},
 function(args)
   J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
@@ -429,8 +430,15 @@ end)
 generators.Ser = R.newFunctionGenerator("generators","Ser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
-  --return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
   return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
+end)
+
+generators.SerSeq = R.newFunctionGenerator("generators","SerSeq",{"type","number","rate"},{},
+function(args)
+  J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
+
+  J.err(args.type:arrayLength()[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
+  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
 end)
 
 generators.Deser = R.newFunctionGenerator("generators","Deser",{"type","number","rate"},{},
@@ -514,14 +522,6 @@ function(args)
   else
     J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end
-end)
-
-generators.WriteGlobal = R.newFunctionGenerator("generators","WriteGlobal",{"global"},{},
-function(args)
-  local WG = generators.Module{"WG",function(i) return R.writeGlobal("go",args.global,i) end}
-  WG = WG{args.global.type}
-  assert(R.isPlainFunction(WG))
-  return WG
 end)
 
 generators.Reshape = R.newFunctionGenerator("generators","Reshape",{"type","rate"},{},

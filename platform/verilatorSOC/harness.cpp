@@ -117,6 +117,11 @@ int main(int argc, char** argv) {
   int simCycles = atoi(argv[1]);
   int simCyclesSlack = simCycles/10;
 
+  if(simCycles<=0){
+    std::cout << "requested sim cycles is <= 0? is: " << simCycles << std::endl;
+    exit(1);
+  }
+  
   int curArg = 2;
 
   unsigned int MEMBASE = 0;
@@ -181,6 +186,7 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
+  unsigned int cyclesToDoneSignal;
   const int ROUNDS = 2;
   for(int round=0; round<ROUNDS; round++){
     printf("ROUND %d\n",round);
@@ -260,7 +266,7 @@ int main(int argc, char** argv) {
     double startSec = CurrentTimeInSeconds();
 
     bool doneBitSet = false;
-    unsigned int cyclesToDoneSignal = -1;
+    cyclesToDoneSignal = -1;
     int cooldownCycles = 1000; // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
     if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
     bool cooldownPrinted = false;
@@ -437,6 +443,18 @@ int main(int argc, char** argv) {
   }
   fprintf(regFile,"}");
   fclose(regFile);
+
+
+  if(outfile!=NULL){
+    std::string cyclesFilename = std::string(outfile)+std::string(".verilatorSOC.cycles.txt");
+    FILE* cyclesFile = fopen(cyclesFilename.c_str(),"w");
+    if (cyclesFile == NULL){
+      printf("Error opening file '%s'!\n",cyclesFilename.c_str());
+      exit(1);
+    }
+    fprintf(cyclesFile, "%d", (int)cyclesToDoneSignal);
+    fclose(cyclesFile);
+  }
   
   top->final();
   delete top;

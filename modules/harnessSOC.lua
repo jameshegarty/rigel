@@ -67,7 +67,7 @@ return function(fn,t,instances)
         local wlist = {}
         
         table.insert(wlist,"filename='"..fn.globalMetadata["MAXI"..i.."_write_filename"].."'")
-        if fn.globalMetadata["MAXI"..i.."_write_W"]~=nil then table.insert(wlist,"W="..fn.globalMetadata["MAXI"..i.."_write_W"]) end
+        if fn.globalMetadata["MAXI"..i.."_write_W"]~=nil then table.insert(wlist,"W="..Uniform(fn.globalMetadata["MAXI"..i.."_write_W"]):simplify():toEscapedString()) end
         if fn.globalMetadata["MAXI"..i.."_write_H"]~=nil then table.insert(wlist,"H="..fn.globalMetadata["MAXI"..i.."_write_H"]) end
         if fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]~=nil then table.insert(wlist,"bitsPerPixel="..fn.globalMetadata["MAXI"..i.."_write_bitsPerPixel"]) end
         if fn.globalMetadata["MAXI"..i.."_write_V"]~=nil then table.insert(wlist,"V="..fn.globalMetadata["MAXI"..i.."_write_V"]) end

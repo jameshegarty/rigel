@@ -443,10 +443,14 @@ C.triggerToConstant = memoize(function(ty,value)
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
+C.const = C.triggerToConstant
 -----------------------------
 -- take in 1 trigger, and write out N triggers (aka trigger upsample)
-C.triggerUp = memoize(function(N)
-  J.err(type(N)=="number","triggerUp: input must be number")
+C.triggerUp = memoize(function(N_orig)
+    --J.err(type(N)=="number","triggerUp: input must be number")
+  local N = Uniform(N_orig)
+  err( N:isNumber(),"triggerUp: input must be number")
+  
   local inp = R.input(R.HandshakeTrigger)
   local val = RM.makeHandshake( RM.constSeq({0},types.uint(8),1,1,1), nil, true )(inp)
   val = RM.upsampleXSeq(types.uint(8),1,N)(val)
@@ -2036,35 +2040,48 @@ endmodule
 end
 
 -- given a rigel module, create a systolic stub for it
-function C.automaticSystolicStub(mod)
+function C.automaticSystolicStub( mod )
   local fns = {}
   local delays = {}
-  for fnname,fn in pairs(mod.functions) do
-    local inp = S.parameter(fnname.."_input",types.lower(fn.inputType))
 
-    local out
-    if fn.outputType~=types.null() then
-      out = S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType))
-    end
+  local modFunctions
+  if R.isModule(mod) then
+    modFunctions = mod.functions
+  elseif R.isFunction(mod) then
+    modFunctions = {process=mod}
+  else
+    assert(false)
+  end
+
+  for fnname,fn in pairs(modFunctions) do
     
-    fns[fnname] = S.lambda(fnname,inp,out,fnname)
+    --fns[fnname] = S.lambda(fnname,inp,out,J.sel(R.isFunction(mod),fnname.."_output",fnname))
+    fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
+    if fn.outputType~=types.null() then
+      fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),J.sel(R.isFunction(mod),fnname.."_output",fnname))
+    end
     delays[fnname]=0
 
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       local inp
+      local readyDownstreamFnName = fnname.."_ready_downstream"
+      if R.isFunction(mod) then readyDownstreamFnName = "ready_downstream" end -- hack for historic reasons
+      
       if fn.outputType==types.null() then
-        inp = S.parameter(fnname.."_ready_downstream",types.null() )
+        inp = S.parameter(readyDownstreamFnName,types.null() )
       else
-        inp = S.parameter(fnname.."_ready_downstream",types.extractReady(fn.outputType) )
+        inp = S.parameter(readyDownstreamFnName,types.extractReady(fn.outputType) )
       end
 
       local out
       if fn.inputType~=types.null() then
         out = S.constant(types.extractReady(fn.inputType):fakeValue(),types.extractReady(fn.inputType))
       end
-      
-      fns[fnname.."_ready"] = S.lambda(fnname.."_ready",inp,out,fnname.."_ready")
-      delays[fnname.."_ready"]=0
+
+      local readyFnName = fnname.."_ready"
+      if R.isFunction(mod) then readyFnName = "ready" end -- hack for historic reasons
+      fns[readyFnName] = S.lambda(readyFnName,inp,out,readyFnName)
+      delays[readyFnName]=0
     end
   end
 
@@ -2074,19 +2091,68 @@ function C.automaticSystolicStub(mod)
     local inst = ic.instance:toSystolicInstance()
     if externalInstances[inst]==nil then externalInstances[inst]={} end
     externalInstances[inst][ic.functionName]=1
-    instances[inst]=1
+    --instances[inst]=1
 
     local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       externalInstances[inst][ic.functionName.."_ready"]=1
     end
   end
+
+  if mod.instanceMap~=nil then
+    for inst,_ in pairs(mod.instanceMap) do
+      assert(R.isInstance(inst))
+
+      local sinst = inst:toSystolicInstance()
+      instances[sinst]=1
+
+      for _,fn in pairs(sinst.module.functions) do
+        if R.isFunction(mod) then
+          fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+        else
+          assert(false) -- NYI
+        end
+      end
+    end
+  end
   
   if mod.stateful then
     fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
   end
+
+  for k,v in pairs(fns) do
+    if Ssugar.isFunctionConstructor(v) then
+      fns[k] = v:complete()
+    end
+  end
   
   return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
 end
+
+-- this will import a Verilog file as a module... the module is basically a stub,
+-- this basically only serves to include the source when we lower to verilog
+-- dependencyList is a list of modules we depend on
+C.VerilogFile = J.memoize(function(filename,dependencyList)
+  if dependencyList==nil then dependencyList={} end
+    
+  local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename) }
+  res.instanceMap={}
+  for _,d in pairs(dependencyList) do
+    assert(R.isModule(d))
+    res.instanceMap[d:instantiate()]=1
+  end
+  
+  res = R.newFunction(res)
+  
+  local function makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    s.verilog = J.fileToString(R.path..filename)
+    s.verilog = s.verilog:gsub([[`include "[%w_\.]*"]],"")
+    s.verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..s.verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */"
+    return s
+  end
+
+  return R.newModule(J.sanitize(filename),{process=res},false,makeSystolic,nil)
+end)
 
 return C

@@ -488,7 +488,8 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
   
 end
 
-function MT.upsampleXSeq(res,A, T, scale, ITYPE )
+function MT.upsampleXSeq(res,A, T, scale_orig, ITYPE )
+  local scale = Uniform(scale_orig)
   local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:uint, ready:bool }
   terra UpsampleXSeq:reset() self.phase=0; end
   terra UpsampleXSeq:stats(name:&int8)  end
@@ -504,7 +505,7 @@ function MT.upsampleXSeq(res,A, T, scale, ITYPE )
     end
 
     self.phase = self.phase + 1
-    if self.phase==scale then self.phase=0 end
+    if self.phase==[scale:toTerra()] then self.phase=0 end
   end
   terra UpsampleXSeq:calculateReady()  self.ready = (self.phase==0) end
 
@@ -537,14 +538,15 @@ function MT.triggeredCounter(res,TY,N,stride,X)
   return MT.new(TriggeredCounter)
 end
 
-function MT.triggerCounter(res,N,X)
+function MT.triggerCounter( res, N_orig, X )
   assert(X==nil)
+  local N = Uniform(N_orig)
   
   local struct TriggerCounter { phase:int, ready:bool }
   terra TriggerCounter:reset() self.phase=0; end
   terra TriggerCounter:process( out : &rigel.lower(res.outputType):toTerraType() )
     self.phase = self.phase + 1
-    if self.phase==N then
+    if self.phase==[N:toTerra()] then
       self.phase=0
       @out = true
     else

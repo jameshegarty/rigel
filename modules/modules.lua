@@ -56,7 +56,7 @@ end
 modules.compose = memoize(function( name, f, g, generatorStr )
   err( type(name)=="string", "first argument to compose must be name of function")
   err( rigel.isFunction(f), "compose: second argument should be rigel module")
-  err( rigel.isFunction(g), "compose: third argument should be rigel module")
+  err( rigel.isPlainFunction(g), "compose: third argument should be plain rigel function, but is: "..tostring(g))
 
   name = J.verilogSanitize(name)
 
@@ -1421,14 +1421,15 @@ broadcastWide = memoize(function( A, T, scale )
 end)
 
 -- this has type V->RV
-modules.upsampleXSeq = memoize(function( A, T, scale, X )
+modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
   err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
   err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
-  err( type(scale)=="number","upsampleXSeq: scale must be number")
+  --err( type(scale)=="number","upsampleXSeq: scale must be number")
+  local scale = Uniform(scale_orig)
   local COUNTER_BITS = 24
   local COUNTER_MAX = math.pow(2,COUNTER_BITS)-1
-  err( scale<COUNTER_MAX, "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
+  err( scale:lt(COUNTER_MAX):assertAlwaysTrue(), "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
   err(X==nil, "upsampleXSeq: too many arguments")
   
   if T==1 or T==0 then
@@ -1445,7 +1446,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
     end
     
     res.delay=0
-    res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale))
+    res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale_orig))
 
     if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, res.inputType ) end
 
@@ -1474,7 +1475,9 @@ modules.upsampleXSeq = memoize(function( A, T, scale, X )
 
     return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
   else
-    return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scale), modules.liftHandshake(modules.changeRate(A,1,T*scale,T)), modules.makeHandshake(broadcastWide(A,T,scale)))
+    err( scale:isConst(), "upsampleXSeq: NYI - runtime configurable scale" )
+    local scaleV = scale:toNumber()
+    return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV), modules.liftHandshake(modules.changeRate(A,1,T*scaleV,T)), modules.makeHandshake(broadcastWide(A,T,scaleV)))
   end
 end)
 
@@ -2421,7 +2424,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
 modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
-  err( type(inputRate)=="number", "changeRate: inputRate should be number")
+  err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
   err( inputRate>0, "changeRate: inputRate must be >0")
   err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
   err( type(outputRate)=="number", "changeRate: outputRate should be number, but is: "..tostring(outputRate))
@@ -3698,6 +3701,8 @@ local function lambdaSDFNormalize( input, output, X )
       end
     end)
 
+  err( (input~=nil)==(newInput~=nil),"lambdaSDFNormalize: declared input was not actually used in function?" )
+  
   return newInput, newOutput
 end
 
@@ -3709,42 +3714,49 @@ local function checkFIFOs(output)
       if n.kind=="input" then
         -- HACK: if we have multiple stream inputs, just give the user the benefit of the doubt? (& count them as fifoed)
         res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and n.fn.kind=="broadcastStream" then
-        res = J.broadcast( false, n.type.params.W*n.type.params.H )
-      elseif n.kind=="apply" and (n.fn.kind=="packTuple" or n.fn.kind=="toHandshakeArrayOneHot") then
-        assert(#arg==1)
-        assert(#arg[1]==types.streamCount(n.fn.inputType) )
-        for i=1,types.streamCount(n.fn.inputType) do
-          J.err( n.fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(n.fn.inputType)).." input streams) "..n.loc)
-        end
+      elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
+        local fn = n.fn
+        if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then fn = n.inst.module end
+        
+        if fn.kind=="broadcastStream" then
+          res = J.broadcast( false, n.type.params.W*n.type.params.H )
+        elseif fn.kind=="packTuple" or fn.kind=="toHandshakeArrayOneHot" then
+          assert(#arg==1)
+          assert(#arg[1]==types.streamCount(fn.inputType) )
+          for i=1,types.streamCount(fn.inputType) do
+            J.err( fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(fn.inputType)).." input streams) "..n.loc)
+          end
 
-        -- Is this right???? if we got this far, we did have a fifo along this brach...
-        res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="apply" and rigel.isFunctionGenerator(n.fn.generator) and n.fn.generator.name=="FIFO" then
-        res = {true}
-      elseif n.kind=="apply" and n.fn.generator=="C.fifo" then
-        res = {true}
+          -- Is this right???? if we got this far, we did have a fifo along this brach...
+          res = J.broadcast(true,types.streamCount(n.type))
+        elseif n.kind=="apply" and rigel.isFunctionGenerator(fn.generator) and fn.generator.name=="FIFO" then
+          res = {true}
+        elseif n.kind=="apply" and fn.generator=="C.fifo" then
+          res = {true}
+        else
+          assert(#arg==#n.inputs)
+          
+          if #n.inputs==0 then
+            -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
+            res = J.broadcast(true,types.streamCount(n.type))
+          else
+            if types.streamCount(fn.inputType) ~= types.streamCount(fn.outputType) then
+              -- hack: tooooo hard to figure this out, so be conservative
+              res = J.broadcast( false, types.streamCount(fn.outputType) )
+            else
+              res = arg[1]
+            end
+          end
+        end
       elseif n.kind=="applyMethod" then
+        assert(rigel.isModule(n.inst.module))
+        
         if n.fnname=="load" and n.inst.module.kind=="fifo" then
           res = {true}
         elseif types.streamCount(n.inst.module.functions[n.fnname].outputType)==0 then
           res = {}
         else
           res = {false} -- HACK: this isn't really correct...
-        end
-      elseif n.kind=="apply" then
-        assert(#arg==#n.inputs)
-
-        if #n.inputs==0 then
-          -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
-          res = J.broadcast(true,types.streamCount(n.type))
-        else
-          if types.streamCount(n.fn.inputType) ~= types.streamCount(n.fn.outputType) then
-            -- hack: tooooo hard to figure this out, so be conservative
-            res = J.broadcast( false, types.streamCount(n.fn.outputType) )
-          else
-            res = arg[1]
-          end
         end
       elseif n.kind=="selectStream" then
         assert(#arg==1)
@@ -3810,7 +3822,13 @@ local function collectInstances( moduleName, output, instances )
     function(n)
       if n.kind=="applyMethod" then
         requiredInstanceMap[n.inst] = 1
-        requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+        if rigel.isModule(n.inst.module) then
+          requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
+        elseif rigel.isPlainFunction(n.inst.module) then
+          -- just ignore this: there's no reason to make plain functions external
+        else
+          assert(false)
+        end
       elseif n.kind=="apply" then
         for instanceCallsite,_ in pairs(n.fn.requires) do
           requiredInstanceMap[instanceCallsite.instance] = 1
@@ -3838,10 +3856,16 @@ local function collectInstances( moduleName, output, instances )
       if requiresMap[instanceCallsite]==nil then tiedDown=false end
     end
 
-    for fnname, fn in pairs(inst.module.functions) do
-      if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+    if rigel.isModule(inst.module) then
+      for fnname, fn in pairs(inst.module.functions) do
+        if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
+      end
+    elseif rigel.isPlainFunction(inst.module) then
+      -- just ignore this: there's no reason to make plain functions external
+    else
+      assert(false)
     end
-
+    
     if tiedDown and (inst.extern~=true) then
       instanceMap[inst] = 1
     end
@@ -3858,8 +3882,14 @@ local function collectInstances( moduleName, output, instances )
       providesMap[instanceCallsite]=1
     end
 
-    for fnname, fn in pairs(inst.module.functions) do
-      providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
+    if rigel.isModule(inst.module) then
+      for fnname, fn in pairs(inst.module.functions) do
+        providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
+      end
+    elseif rigel.isPlainFunction(inst.module) then
+      -- just ignore this: there's no reason to make plain functions external
+    else
+      assert(false)
     end
   end
 
@@ -3887,9 +3917,18 @@ local function collectInstances( moduleName, output, instances )
   for ic,_ in pairs(requiresMap) do
     if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
     externalInstances[ic.instance][ic.functionName]=1
-    local fn = ic.instance.module.functions[ic.functionName]
-    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-      externalInstances[ic.instance][ic.functionName.."_ready"]=1
+
+    if rigel.isModule(ic.instance.module) then
+      local fn = ic.instance.module.functions[ic.functionName]
+      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+        externalInstances[ic.instance][ic.functionName.."_ready"]=1
+      end
+    elseif rigel.isPlainFunction(ic.instance.module) then
+      if types.isHandshakeAny(ic.instance.module.inputType) or types.isHandshakeAny(ic.instance.module.outputType) then
+        externalInstances[ic.instance][ic.functionName.."_ready"]=1
+      end
+    else
+      assert(false)
     end
   end
 
@@ -3909,7 +3948,7 @@ local function collectInstances( moduleName, output, instances )
   -- checking
   for _,inst in ipairs(instances) do
     if externalInstances[inst]~=nil then
-      err( false, "The instance '"..inst.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
+      err( false, "The instance '"..inst.name.."' of module '"..inst.module.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
     end
   end
 
@@ -3919,6 +3958,22 @@ local function collectInstances( moduleName, output, instances )
 
   for inst,_ in pairs(instanceMap) do
     err( externalInstances[inst]==nil, "Instance '"..inst.name.."' is somehow also in external instance list?")
+  end
+
+  local usedInstances = {}
+  output:visitEach(
+    function(n)
+      if n.kind=="applyMethod" then
+        usedInstances[n.inst] = 1
+      end
+    end)
+
+  for inst,_ in pairs(instanceMap) do
+    err( usedInstances[inst]~=nil, "Instance '"..inst.name.."' was not used?")
+  end
+
+  for inst,_ in pairs(usedInstances) do
+    err( instanceMap[inst]~=nil or externalInstances[inst]~=nil, "Instance '"..inst.name.."' was used, but is not in instance map?")
   end
 
   return instanceMap, providesMap, requiresMap, externalInstances
@@ -3948,7 +4003,11 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output)
     local sdfMaxRate = output:sdfExtremeRate(true)
-    err( Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue(),"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'") 
+
+    if (Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue())==false then
+      output:visitEach(function(n) print(tostring(n)) end)
+      err( false,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'")
+    end
   end
 
   name = J.verilogSanitize(name)
@@ -3985,8 +4044,15 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
         err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.fn.name )
         res.stateful = res.stateful or n.fn.stateful
       elseif n.kind=="applyMethod" then
-        err( type(n.inst.module.functions[n.fnname].stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
-        res.stateful = res.stateful or n.inst.module.functions[n.fnname].stateful
+        if rigel.isModule(n.inst.module) then
+          err( type(n.inst.module.functions[n.fnname].stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
+          res.stateful = res.stateful or n.inst.module.functions[n.fnname].stateful
+        elseif rigel.isPlainFunction(n.inst.module) then
+          err( type(n.inst.module.stateful)=="boolean", "Missing stateful annotation, fn "..n.fnname )
+          res.stateful = res.stateful or n.inst.module.stateful
+        else
+          assert(false)
+        end
       end
     end)
 
@@ -4031,8 +4097,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           res.globalMetadata[k] = v
         end
       end
-  end)
-  
+    end)
+
   -- NOTE: notice that this will overwrite the previous metadata values
   if globalMetadata~=nil then
     for k,v in pairs(globalMetadata) do
@@ -4526,7 +4592,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
         externalInstances[sinst][ic.functionName.."_ready"] = 1
       end
       
-      table.insert(instances,sinst)
+      --table.insert(instances,sinst)
     end
 
     if dependencies~=nil then
@@ -4967,8 +5033,9 @@ modules.triggeredCounter = memoize(function(TY, N, stride)
 end)
 
 -- this output one trigger token after N inputs
-modules.triggerCounter = memoize(function(N)
-  err(type(N)=="number", "triggerCounter: N must be number")
+modules.triggerCounter = memoize(function(N_orig)
+    --err(type(N)=="number", "triggerCounter: N must be number")
+  local N = Uniform(N_orig)
 
   local res = {kind="triggerCounter"}
   res.inputType = types.null()
@@ -4977,8 +5044,10 @@ modules.triggerCounter = memoize(function(N)
   res.sdfOutput = SDF{1,N}
   res.stateful=true
   res.delay=0
-  res.name = "TriggerCounter_"..tostring(N)
-
+  res.name = J.sanitize("TriggerCounter_"..tostring(N_orig))
+  res.requires = {}
+  N:appendRequires(res.requires)
+  
   if terralib~=nil then res.terraModule = MT.triggerCounter(res,N) end
 
   function res.makeSystolic()
@@ -4986,7 +5055,8 @@ modules.triggerCounter = memoize(function(N)
     
     local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.sumwrap(types.uint(32),N-1) ):CE(true):setReset(0):instantiate("phase") )
     
-    local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
+    --local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
+    local done = S.eq( sPhase:get(),Uniform(N-1):toSystolic(types.uint(32)) ):disablePipelining()
     
     local pipelines = {}
     table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(32)) ) )
