@@ -1079,13 +1079,14 @@ function SOC.AXIWrapRV(mod,port)
   return WrapMod
 end
 
-SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase, readFn, X )
+SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig, readFn, X )
   J.err( type(port)=="number", "axiReadBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
   J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
   J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
   J.err( X==nil, "axiReadBytes: too many arguments" )
-  J.err( type(addressBase)=="number", "axiReadBytes: addressBase must be number")
+
+  local addressBase = Uniform(addressBase_orig)
   
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
@@ -1104,6 +1105,8 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase, read
     output wire []=]..(types.lower(readFn.inputType):verilogBits()-1)..[=[:0] ]=]..RPORT..[=[_input,
     input wire []=]..(types.lower(readFn.outputType):verilogBits()-1)..[=[:0] ]=]..RPORT..[=[,
 
+    ]=]..addressBase:toVerilogPortList()..[=[
+
     output wire ]=]..RPORT..[=[_ready_downstream,
     input wire ]=]..RPORT..[=[_ready,
   
@@ -1120,7 +1123,7 @@ assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.arsize..[=[ = 2'b11; // 
 assign ]=]..RPORT.."_input"..AXI.ReadAddressVSelect.arburst..[=[ = 2'b01; // burst mode
 
 assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.arvalid..[=[ = process_input[32];
-assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.araddr..[=[ = process_input[31:0] + 32'd]=]..addressBase..[=[;
+assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.araddr..[=[ = process_input[31:0] + ]=]..addressBase:toVerilog(types.uint(32))..[=[;
 assign ready = ]=]..RPORT..[=[_ready;
 
 assign process_output[63:0] = ]=]..RPORT..AXI.ReadDataVSelect(64).rdata..[=[;
@@ -1135,6 +1138,7 @@ endmodule
 ]=]
 
   local requires = {[readFn]=1}
+  addressBase:appendRequires(requires)
   local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)), vstr, requires, globalMetadata, {{1,burstCount}}, {{1,1}} )
 
   if terralib~=nil then
@@ -1208,6 +1212,8 @@ end
     output wire ZynqNOC_write_ready_downstream, 
     input wire [1:0] ZynqNOC_write_ready,
   
+    ]=]..addressBase:toVerilogPortList()..[=[
+
     input wire []=]..(32+Nbits+1)..[=[:0] process_input,
     output wire [1:0] ready,
 
@@ -1240,6 +1246,7 @@ endmodule
 ]=]
 
   local requires = {[writeFn]=1}
+  addressBase:appendRequires(requires)
   
   -- input format is {addr,data}
   local res = RM.liftVerilog( ModuleName, inputType, R.HandshakeTrigger, vstr, requires, globalMetadata, {{1,1},{1,1}},{{1,1}})
@@ -1684,7 +1691,7 @@ end)
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- readType: this is the output type we want
 -- NOTE: do not memoize! this thing allocates a port
-SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
+SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, addressBase_orig, X )
   J.err( type(filename)=="string","SOC.read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "SOC.read: type must be type, but is: "..tostring(readType))
   J.err( types.isBasic(readType), "SOC.read: type must be basic type, but is: "..tostring(readType))
@@ -1696,9 +1703,17 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
   J.err( X==nil, "SOC.read: too many arguments" )
   
   local globalMetadata={}
-  assert(type(SOC.currentAddr)=="number")
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = SOC.currentAddr
 
+  local address
+  if addressBase_orig~=nil then
+    address = Uniform(addressBase_orig)
+  else
+    assert(type(SOC.currentAddr)=="number")
+    address = SOC.currentAddr
+  end
+
+  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = address
+  
   local inp = R.input(R.Handshake(types.uint(32)))
   local out = inp
 
@@ -1720,7 +1735,7 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
     readBytesPerBurst = readType:verilogBits()/8
   end
   
-  out = SOC.axiReadBytes( filename, readBytesPerBurst, SOC.currentMAXIReadPort, SOC.currentAddr, readFn )(out)
+  out = SOC.axiReadBytes( filename, readBytesPerBurst, SOC.currentMAXIReadPort, address, readFn )(out)
 
   local N = readType:verilogBits()/64
   
@@ -1739,11 +1754,14 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, X )
     assert(false)
   end
 
-  local res = RM.lambda("Read_port"..SOC.currentMAXIReadPort.."_addr"..SOC.currentAddr.."_"..tostring(readType),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda( "Read_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(readType), inp, out, nil, nil, nil, globalMetadata )
   
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
-  SOC.currentAddr = SOC.currentAddr+fileBytes
-  assert(type(SOC.currentAddr)=="number")
+
+  if addressBase_orig==nil then
+    SOC.currentAddr = SOC.currentAddr+fileBytes
+    assert(type(SOC.currentAddr)=="number")
+  end
   
   return res
 end
@@ -1819,7 +1837,7 @@ end)
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- syncAddrData: addr/data come in as one stream (default false)
-SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData, writeFn, X)
+SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData, writeFn, addressBase_orig, X)
   J.err( type(filename)=="string","SOC.write: filename must be string")
   J.err( types.isType(writeType), "SOC.write: type must be type")
   J.err( writeType:verilogBits()%8==0, "SOC.write: NYI - type must be byte aligned")
@@ -1831,10 +1849,17 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   J.err( R.isFunction(writeFn), "soc.write: writeFn should be rigel function, but is: "..tostring(writeFn))
   local W = Uniform(W_orig)
   if V==nil then V=1 end
+
+  local address
+  if addressBase_orig~=nil then
+    address = Uniform(addressBase_orig)
+  else
+    assert(type(SOC.currentAddr)=="number")
+    address = SOC.currentAddr
+  end
   
   local globalMetadata={}
-  assert(type(SOC.currentAddr)=="number")
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = SOC.currentAddr
+  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = address
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
   globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_V"] = V
@@ -1885,7 +1910,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   end
 
   print("INP",inpAddr.type,inpData.type)
-  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, SOC.currentAddr, writeFn )(inpAddr,inpData)
+  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, address, writeFn )(inpAddr,inpData)
 
   local N = writeType:verilogBits()/64
   
@@ -1897,12 +1922,16 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     assert(false)
   end
 
-  local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("Write_port"..SOC.currentMAXIWritePort.."_addr"..tostring(address).."_"..tostring(writeType),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  print("SOCCA",SOC.currentAddr,W,H)
-  SOC.currentAddr = SOC.currentAddr+Uniform(Uniform(W)*Uniform(H)):maximum()
-  assert(type(SOC.currentAddr)=="number")
+
+  if addressBase_orig==nil then
+    SOC.currentAddr = SOC.currentAddr+Uniform(Uniform(W)*Uniform(H)):maximum()
+    assert(type(SOC.currentAddr)=="number")
+  else
+    SOC.currentAddr = Uniform(Uniform(SOC.currentAddr):max(address+(Uniform(W)*Uniform(H)))):maximum()
+  end
   
   return res
 end)
