@@ -1024,10 +1024,17 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,X)
   err( csimOnly==nil or type(csimOnly)=="boolean", "C.fifo: csimOnly must be boolean")
   err( VRLoad==nil or type(VRLoad)=="boolean","C.fifo: VRLoad should be boolean")
   err( X==nil, "C.fifo: too many arguments" )
-  err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
+  --err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
 
-  local inp = R.input(R.Handshake(ty))
-  local regs = {R.instantiate("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
+  local inp, regs
+  if ty:verilogBits()==0 then
+    inp = R.input(types.HandshakeTrigger)
+    regs = {R.instantiate("f1",RM.triggerFIFO())}
+  else
+    inp = R.input(R.Handshake(ty))
+    regs = {R.instantiate("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
+  end
+  
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
   return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
@@ -1677,7 +1684,7 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: "..tostring(t[1]) )
+  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: "..tostring(t[1]) )
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 
@@ -1690,12 +1697,14 @@ end
 
 -- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
 C.handshakeToHandshakeFramed = memoize(
-  function(A,mixed,dims,X)
+  function( A, mixed, dims, X )
     err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
+    err( type(mixed)=="boolean", "handshakeToHandshakeFramed: mixed should be bool")
     assert(X==nil)
     err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
     local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
-    res.name=J.sanitize("HandshakeToHandshakeFramed_"..tostring(A))
+    local nm = "HandshakeToHandshakeFramed_"..tostring(A).."_mixed"..tostring(mixed).."_dims"..tostring(dims)
+    res.name=J.sanitize(nm)
 
     function res.makeSystolic()
       local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)

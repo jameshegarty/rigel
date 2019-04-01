@@ -23,12 +23,14 @@ local IP_inv = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, type
 
 local PTop = G.Module{"PTop",
   function(i)
-    local st = G.FanOut{2}(regs:start())
+    local st = G.FanOut{2}(regs:start(i))
     local done_plus200, done_inv = IP_plus200(st[0]), IP_inv(st[1])
-
+    done_plus200 = G.FIFO{128}(done_plus200)
+    done_inv = G.FIFO{128}(done_inv)
+    
     -- zynq noc master ports are 32bit, but our slave is 64, so resize
-    local noc_read0_32 = Pulpino.AXIReadBusResize(noc.read0,64,32)
-    local noc_write0_32 = Pulpino.AXIWriteBusResize(noc.write0,64,32)
+    local noc_read0_32 = Pulpino.AXIReadBusResize(noc.read0,32,64)
+    local noc_write0_32 = Pulpino.AXIWriteBusResize(noc.write0,32,64)
     
     return R.statements{
       regs:done(G.FanIn(done_plus200,done_inv)),
