@@ -72,6 +72,7 @@ function types.uint( prec, X )
   types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
   return types._uint[prec]
 end
+types.u = types.uint
 
 types._int={}
 function types.int( prec, X )

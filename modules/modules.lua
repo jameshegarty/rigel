@@ -166,8 +166,15 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
   local res = {kind="packTuple", disableFIFOCheck = disableFIFOCheck}
   
   J.map(typelist, function(t) rigel.expectBasic(t) end )
-  res.inputType = rigel.HandshakeTuple(typelist)
-  res.outputType = rigel.Handshake( types.tuple(typelist) )
+
+  if typelist[1]==types.null() then
+    -- handshake trigger mode
+    res.inputType = types.HandshakeTriggerArray(#typelist)
+    res.outputType = types.HandshakeTrigger
+  else
+    res.inputType = rigel.HandshakeTuple(typelist)
+    res.outputType = rigel.Handshake( types.tuple(typelist) )
+  end
   res.stateful = false
   res.sdfOutput = SDF{1,1}
   res.sdfInput = SDF(J.map(typelist, function(n)  return {1,1} end))
@@ -931,9 +938,6 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
 
-  print("MAPFRAMED","inputType",fn.inputType,w,h,mixed)
-  print("MAPFRAMED","outputType",fn.outputType, outputW, outputH, outputMixed)
-  
   res.inputType = fn.inputType:addDim(w,h,mixed)
 
   -- tokens: # of parallel data tokens we process (which is what SDF tells us)
@@ -966,8 +970,6 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
 
     if outputMixed then outTok = outTok/fn.outputType:FV() end
   end
-
-  print("MAPFRAMED_RESTYPE",res.inputType, res.outputType)
   
   if fn.inputType:is("Handshake") then
     -- sanity check: make sure # of tokens we say we're making is consistant with SDF
@@ -4105,7 +4107,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       J.err(type(k)=="string","global metadata key must be string")
 
       if res.globalMetadata[k]~=nil and res.globalMetadata[k]~=v then
-        print("WARNING: overwriting metadata '"..k.."' with previous value '"..tostring(res.globalMetadata[k]).."' ("..type(res.globalMetadata[k])..") with overridden value '"..tostring(v).."' ("..type(v)..")")
+        --print("WARNING: overwriting metadata '"..k.."' with previous value '"..tostring(res.globalMetadata[k]).."' ("..type(res.globalMetadata[k])..") with overridden value '"..tostring(v).."' ("..type(v)..")")
       end
       
       res.globalMetadata[k]=v
