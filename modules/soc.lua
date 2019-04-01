@@ -56,9 +56,9 @@ end)
 
 SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, writeSink, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
-  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function")
+  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function, but is: "..tostring(readSource))
   J.err( R.isFunction(readSink), "SOC.axiRegs: readSink should be rigel function")
-  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function")
+  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function, but is: "..tostring(writeSource))
   J.err( R.isFunction(writeSink), "SOC.axiRegs: writeSink should be rigel function")
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
@@ -1647,11 +1647,10 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
 
   local outputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalOutputBits = W*H*ty:verilogBits()
-  print("DesiredTotalOutputBits",desiredTotalOutputBits,"outputBits",outputBits)
+
   local CR = C.generalizedChangeRate( 64,0,128*8, outputBits, desiredTotalOutputBits,1 )
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
-  print("TIB,TOB",totalBits,ChangeRateModule.inputType,ChangeRateModule.outputType)
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
   assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )

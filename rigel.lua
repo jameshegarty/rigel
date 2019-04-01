@@ -353,8 +353,16 @@ end,
 __call=function(tab,...)
   local rawarg = {...}
 
+  -- spaghetti: we may be calling an instanceCallsite with lua syntax 'mod:fn()'
+  --    which passes instance as first arg. So we need to throw that out.
+  if darkroom.isInstanceCallsite(tab) then
+    local ra = {}
+    for k,v in ipairs(rawarg) do if k>1 then table.insert(ra,v) end end
+      rawarg = ra
+  end
+  
   for _,arg in pairs(rawarg) do
-    J.err( arg==nil or darkroom.isIR(arg),"applying a module to something other than a rigel value? Is '"..tostring(arg).."'")
+    J.err( arg==nil or darkroom.isIR(arg),"Input argument to rigel function '"..tab.name.."' must be a rigel value, but is:'"..tostring(arg).."'")
 
     -- discover variable name from lua
     if arg~=nil and arg.defaultName then
@@ -900,8 +908,6 @@ function darkroomIRMT.__index(tab,key)
   end
 
   if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") or tab.type:is("HandshakeTriggerArray")) then
-    print("TY",tab.type)
-    --assert(false)
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
@@ -1160,7 +1166,7 @@ function darkroomIRFunctions:calcSDF( )
     assert( darkroom.isModule(self.inst.module) )
 
     if #self.inputs==0 or self.inputs[1].type==types.null() then
-      err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "nullary applyMethod should have sdfExact==true")
+      err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "null input applyMethod '"..self.fnname.."' should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
       err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
@@ -1185,7 +1191,7 @@ function darkroomIRFunctions:calcSDF( )
         else
           local rateList = ""
           for _,v in ipairs(self.inputs) do rateList = rateList..","..tostring(v.rate) end
-          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF "..self.kind.." rate mismatch "..rateList.." "..self.loc)
+          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF "..self.kind.." rate mismatch \n"..rateList.."\n"..tostring(self).." "..self.loc)
         end
       end
       res = {IR}
@@ -1308,6 +1314,12 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="concat" then
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeTuple( J.map(n.inputs, function(v,k) err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type)); return darkroom.extractData(v.type) end) )
+    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
+      -- there's no reason for HandshakeTuple to exist...
+      for k,v in ipairs(n.inputs) do
+        err(types.isHandshakeTrigger(v.type),"concat: is one input is HandshakeTrigger, all inputs must be HandshakeTrigger")
+      end
+      n.type = types.HandshakeTriggerArray(#n.inputs)
     elseif darkroom.isBasic(n.inputs[1].type) then
       n.type = types.tuple( J.map(n.inputs, function(v) err(darkroom.isBasic(v.type),"concat: if one input is basic, all inputs must be basic"); return v.type end) )
     else
