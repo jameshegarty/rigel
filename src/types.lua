@@ -1144,7 +1144,7 @@ function types.extractReady(a)
   if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isV(a) or types.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") or types.isHandshakeTmuxed(a) then return types.bool()
   elseif types.isHandshakeTuple(a) then
     return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
-  elseif types.isHandshakeArray(a) or a:is("HandshakeArrayFramed") then
+  elseif types.isHandshakeArray(a) or a:is("HandshakeArrayFramed") or a:is("HandshakeTriggerArray") then
     return types.array2d(types.bool(),a.params.W*a.params.H)
   elseif types.isHandshakeArrayOneHot(a) then
     return types.uint(8)

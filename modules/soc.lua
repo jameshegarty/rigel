@@ -1281,6 +1281,8 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
   globalMetadata["MAXI"..port.."_write_H"] = 1
   globalMetadata["MAXI"..port.."_write_bitsPerPixel"] = 8
 
+  local moduleNameSuffix=J.sanitize("_file"..tostring(filename).."_Nbytes"..tostring(Nbytes_orig).."_port"..tostring(port).."_address"..tostring(address_orig))
+  
   local vstr = [=[module DRAMWriterInner(
     //AXI port
     input wire ACLK,
@@ -1526,7 +1528,7 @@ DRAMWriterInner inner(
 
 endmodule
 
-module DRAMWriter(
+module DRAMWriter]=]..moduleNameSuffix..[=[(
     //AXI port
     input wire CLK,
     input wire reset,
@@ -1579,7 +1581,7 @@ endmodule
   address:appendRequires(requires)
   Nbytes:appendRequires(requires)
   
-  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
+  local res = RM.liftVerilog( "DRAMWriter"..moduleNameSuffix, R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
 
   if terralib~=nil then
     res.makeTerra = nil

@@ -3,6 +3,7 @@ local types = require "types"
 local AXI = require "axi"
 local SDF = require "sdf"
 local J = require "common"
+local C = require "examplescommon"
 
 local Pulpino = {}
 
@@ -15,21 +16,48 @@ Pulpino.AXIReadBusResize = J.memoize(function(readFn,masterSize,slaveSize,X)
 
   assert( readFn.inputType==AXI.ReadAddress )
   J.err( readFn.outputType==AXI.ReadData(slaveSize), "Pulpino.AXIReadBusResize: readFn (slave) output type should be "..tostring(slaveSize)..", but is :"..tostring(readFn.outputType) )
-  
-  local sdfIn, sdfOut
-  if masterSize>slaveSize then
-    sdfIn = SDF{1,1}
-    sdfOut=SDF{slaveSize,masterSize}
-  else -- slaveSize>masterSize
-    sdfIn = SDF{masterSize,slaveSize}
-    sdfOut=SDF{1,1}
+
+  -- if slaveSize>masterSize, we can service requests at full rate
+  local sdfIn, sdfOut = SDF{1,1}, SDF{1,1}
+  if slaveSize<masterSize then
+    sdfIn, sdfOut = SDF{slaveSize,masterSize}, SDF{slaveSize,masterSize}
   end
   
   local res = R.newFunction{ name="Pulpino_AXIReadBusResize_masterSize_"..tostring(masterSize).."_slaveSize_"..tostring(slaveSize), inputType=AXI.ReadAddress, outputType=AXI.ReadData(masterSize), sdfInput=sdfIn, sdfOutput=sdfOut, stateful=false }
 
+  res.makeSystolic = function()
+    local s = C.automaticSystolicStub(res)
+    return s
+  end
+    
   return res
 end)
+
+Pulpino.AXIWriteBusResize = J.memoize(function(writeFn,masterSize,slaveSize,X)
+  J.err( R.isFunction(writeFn), "Pulpino.AXIWriteBusResize: write function should be rigel function, but is: "..tostring(writeFn) )
+  J.err(type(masterSize)=="number","Pulpino.AXIWriteBusResize: masterSize should be number, but is: "..tostring(masterSize))
+  J.err(type(slaveSize)=="number","Pulpino.AXIWriteBusResize: slaveSize should be number, but is: "..tostring(slaveSize))
+  assert(masterSize~=slaveSize)
+
+  assert( writeFn.inputType==AXI.WriteIssue(slaveSize) )
+  J.err( writeFn.outputType==AXI.WriteResponse(slaveSize), "Pulpino.AXIWriteBusResize: writeFn (slave) output type should be "..tostring(slaveSize)..", but is :"..tostring(writeFn.outputType) )
+
+  -- if slaveSize>masterSize, we can service requests at full rate
+  local sdfIn, sdfOut = SDF{1,1}, SDF{1,1}
+  if slaveSize<masterSize then
+    sdfIn, sdfOut = SDF{slaveSize,masterSize}, SDF{slaveSize,masterSize}
+  end
   
+  local res = R.newFunction{ name="Pulpino_AXIWriteBusResize_masterSize_"..tostring(masterSize).."_slaveSize_"..tostring(slaveSize), inputType=AXI.WriteIssue(masterSize), outputType=AXI.WriteResponse(masterSize), sdfInput=sdfIn, sdfOutput=sdfOut, stateful=false }
+
+  res.makeSystolic = function()
+    local s = C.automaticSystolicStub(res)
+    return s
+  end
+
+  return res
+end)
+
 -- NMaster and NSlave are the number of masters/slaves we want to connect
 --   (not the # of ports on the interface)
 Pulpino.AXIInterconnect = J.memoize(function(NMaster,NSlave,X)
