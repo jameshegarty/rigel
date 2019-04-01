@@ -1677,6 +1677,7 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
+  err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: "..tostring(t[1]) )
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 
