@@ -26,11 +26,9 @@ local PTop = G.Module{"PTop",
     local st = G.FanOut{2}(regs:start())
     local done_plus200, done_inv = IP_plus200(st[0]), IP_inv(st[1])
 
-    local zynqReadSource64 = Pulpino.AXIReadBusResize(32,64)()
-
     -- zynq noc master ports are 32bit, but our slave is 64, so resize
-    local noc_read0_32 = Pulpino.AxiReadBusResize(32,noc.read0)
-    local noc_write0_32 = Pulpino.AxiReadBusResize(32,noc.write0)
+    local noc_read0_32 = Pulpino.AXIReadBusResize(noc.read0,64,32)
+    local noc_write0_32 = Pulpino.AXIWriteBusResize(noc.write0,64,32)
     
     return R.statements{
       regs:done(G.FanIn(done_plus200,done_inv)),
