@@ -1782,18 +1782,19 @@ setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
 regModuleMT={__index=regModuleFunctions}
 
 function regModuleFunctions:instanceToVerilogStart( instance )
-
+  local decl = declareReg(self.type, instance.name, self.initial)
+  
   if self.resetValue~=nil then
-    return "  wire "..instance.name.."_RESET;\n"
+    return decl.."  wire "..instance.name.."_RESET;\n"
   else
-    return ""
+    return decl
   end
 end
 
 function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, validVar, CEVar )
 
   if fnname=="delay" or fnname=="set" then
-    local decl = declareReg(self.type, instance.name, self.initial)
+    local decl = ""
     
     err( type(inputVar)=="string", "reg:set() or reg:delay() expected an input!")
 
