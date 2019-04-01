@@ -347,9 +347,10 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, port, baseAddress_orig, writeFn
   return MT.new(WriteBurst)
 end
 
-function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase, readFn )
-  assert(type(addressBase)=="number")
+function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
   assert(R.isFunction(readFn))
+
+  local addressBase = Uniform(addressBase_orig)
   
   local inputType = R.Handshake(types.uint(32))
   local outputType = R.Handshake(types.bits(64))
@@ -369,7 +370,7 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase, readFn )
     var RDATA : types.lower(AXI.ReadData64):toTerraType()
 
     if valid(dataIn) and self.ready then
-      var addr = data(dataIn)+[addressBase]
+      var addr = data(dataIn)+[addressBase:toTerra()]
       --valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = true
       --data([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = addr
       --[mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
