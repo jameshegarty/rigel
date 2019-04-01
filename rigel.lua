@@ -358,8 +358,8 @@ __call=function(tab,...)
 
   -- spaghetti: we may be calling an instanceCallsite with lua syntax 'mod:fn()'
   --    which passes instance as first arg. So we need to throw that out.
-  if darkroom.isInstanceCallsite(tab) and #rawarg>1 and darkroom.isInstanceCallsite(rawarg[1]) then
-    err(tab==rawarg[1],"calling a method using mod:fn() syntax, but the module doesn't match??")
+  if darkroom.isInstanceCallsite(tab) and #rawarg>0 and darkroom.isInstance(rawarg[1]) then
+    err(tab.instance==rawarg[1],"calling a method using mod:fn() syntax, but the module doesn't match??")
     local ra = {}
     for k,v in ipairs(rawarg) do if k>1 then table.insert(ra,v) end end
     rawarg = ra
