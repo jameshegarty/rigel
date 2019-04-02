@@ -157,7 +157,10 @@ functionGeneratorMT.__call=function(tab,...)
 
   if darkroom.isIR(rawarg[1]) then
     local arg
-    if #rawarg>1 then
+    if #rawarg>1 and rawarg[1].type:is("HandshakeTrigger") then
+      -- sort of a hack: handshake trigger can only be made into arrays
+      arg = darkroom.concatArray2d(nil,rawarg,#rawarg)
+    elseif #rawarg>1 then
       -- collapse multi args into tuple
       arg = darkroom.concat(nil, rawarg)
     else
@@ -353,8 +356,17 @@ end,
 __call=function(tab,...)
   local rawarg = {...}
 
+  -- spaghetti: we may be calling an instanceCallsite with lua syntax 'mod:fn()'
+  --    which passes instance as first arg. So we need to throw that out.
+  if darkroom.isInstanceCallsite(tab) and #rawarg>0 and darkroom.isInstance(rawarg[1]) then
+    err(tab.instance==rawarg[1],"calling a method using mod:fn() syntax, but the module doesn't match??")
+    local ra = {}
+    for k,v in ipairs(rawarg) do if k>1 then table.insert(ra,v) end end
+    rawarg = ra
+  end
+  
   for _,arg in pairs(rawarg) do
-    J.err( arg==nil or darkroom.isIR(arg),"applying a module to something other than a rigel value? Is '"..tostring(arg).."'")
+    J.err( arg==nil or darkroom.isIR(arg),"Input argument to rigel function '"..tab.name.."' must be a rigel value, but is:'"..tostring(arg).."'")
 
     -- discover variable name from lua
     if arg~=nil and arg.defaultName then
@@ -368,7 +380,10 @@ __call=function(tab,...)
   end
 
   local arg
-  if #rawarg>1 then
+  if #rawarg>1 and rawarg[1].type:is("HandshakeTrigger") then
+    -- sort of a hack: handshake trigger can only be made into arrays
+    arg = darkroom.concatArray2d(nil,rawarg,#rawarg)
+  elseif #rawarg>1 then
     arg = darkroom.concat(nil,rawarg)
   else
     arg = rawarg[1]
@@ -515,13 +530,18 @@ function darkroomFunctionFunctions:vHeader()
   for ic,_ in pairs(self.requires) do
     if types.isHandshakeAny(ic.inputType) then
       table.insert(v,", output wire ["..(types.lower(ic.inputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName.."_input, input wire "..ic.instance.name.."_"..ic.functionName.."_ready")
+    elseif ic.inputType==types.null() then
     else
+      print("NYI - require of: "..tostring(ic))
       assert(false)
     end
 
     if types.isHandshakeAny(ic.outputType) then
       table.insert(v,", input wire ["..(types.lower(ic.outputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName..", output wire "..ic.instance.name.."_"..ic.functionName.."_ready_downstream")
+    elseif types.isBasic(ic.outputType) then
+      table.insert(v,", input wire ["..(types.lower(ic.outputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName)
     else
+      print("NYI - require of: "..tostring(ic))
       assert(false)
     end
 
@@ -530,7 +550,8 @@ function darkroomFunctionFunctions:vHeader()
   assert(J.keycount(self.provides)==0)
   
   table.insert(v,[[);
-parameter INSTANCE_NAME="INST";]])
+parameter INSTANCE_NAME="INST";
+]])
   return table.concat(v,"")
 end
 
@@ -650,6 +671,8 @@ __index = function(tab,key)
     tab.requires[tab]=1
     
     return tab.requires
+  elseif key=="name" then
+    return tab.instance.name.."_"..tab.functionName
   end
   
   -- make this appear like as if it's the original function
@@ -900,8 +923,6 @@ function darkroomIRMT.__index(tab,key)
   end
 
   if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") or tab.type:is("HandshakeTriggerArray")) then
-    print("TY",tab.type)
-    --assert(false)
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
@@ -1160,7 +1181,7 @@ function darkroomIRFunctions:calcSDF( )
     assert( darkroom.isModule(self.inst.module) )
 
     if #self.inputs==0 or self.inputs[1].type==types.null() then
-      err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "nullary applyMethod should have sdfExact==true")
+      err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "null input applyMethod '"..self.fnname.."' on module '"..self.inst.module.name.."' should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
       err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
@@ -1185,7 +1206,7 @@ function darkroomIRFunctions:calcSDF( )
         else
           local rateList = ""
           for _,v in ipairs(self.inputs) do rateList = rateList..","..tostring(v.rate) end
-          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF "..self.kind.." rate mismatch "..rateList.." "..self.loc)
+          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF "..self.kind.." rate mismatch \n"..rateList.."\n"..tostring(self).." "..self.loc)
         end
       end
       res = {IR}
@@ -1297,7 +1318,7 @@ function darkroomIRFunctions:typecheck()
     err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
     
     if n.inputs[1]==nil then
-      err( n.inst.module.functions[n.fnname].inputType==types.null(), "Error, method '"..n.fnname.."' was passed no input, but expected an input")
+      err( n.inst.module.functions[n.fnname].inputType==types.null(), "Error, method '"..n.fnname.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' was passed no input, but expected an input (of type "..tostring(n.inst.module.functions[n.fnname].inputType)..")")
     else
       err( n.inst.module.functions[n.fnname].inputType==n.inputs[1].type, "Error, input to function '"..n.fnname.."' should have type '"..tostring(n.inst.module.functions[n.fnname].inputType).."', but was passed type '"..tostring(n.inputs[1].type).."'")
     end
@@ -1308,6 +1329,9 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="concat" then
     if darkroom.isHandshake(n.inputs[1].type) then
       n.type = darkroom.HandshakeTuple( J.map(n.inputs, function(v,k) err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type)); return darkroom.extractData(v.type) end) )
+    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
+      -- there's no reason for HandshakeTuple to exist...
+      err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
     elseif darkroom.isBasic(n.inputs[1].type) then
       n.type = types.tuple( J.map(n.inputs, function(v) err(darkroom.isBasic(v.type),"concat: if one input is basic, all inputs must be basic"); return v.type end) )
     else
@@ -1322,6 +1346,11 @@ function darkroomIRFunctions:typecheck()
       n.type = types.HandshakeArrayFramed( darkroom.extractData(n.inputs[1].type), n.inputs[1].type.params.mixed, n.inputs[1].type.params.dims, n.W, n.H )
     elseif darkroom.isBasic(n.inputs[1].type) then
       n.type = types.array2d( n.inputs[1].type, n.W, n.H )
+    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
+      for k,v in ipairs(n.inputs) do
+        err(types.isHandshakeTrigger(v.type),"concat: is one input is HandshakeTrigger, all inputs must be HandshakeTrigger")
+      end
+      n.type = types.HandshakeTriggerArray(#n.inputs)
     else
       err(false,"concatArray2d: unsupported input type "..tostring(n.inputs[1].type))
     end
@@ -1408,7 +1437,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         return {S.tuple( J.map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="concatArray2d" then
         local outtype
-        if darkroom.isHandshakeArray(n.type) then
+        if darkroom.isHandshakeArray(n.type) or n.type:is("HandshakeTriggerArray")then
           outtype = n.type.structure
         else
           outtype = types.array2d(darkroom.lower(n.type:arrayOver()),n.W,n.H)
@@ -1562,6 +1591,13 @@ function darkroom.concatArray2d( name, t, W, H, X )
   err( type(H)=="number", "H must be number")
 
   local r = {kind="concatArray2d", name=name, loc=getloc(), inputs={}, W=W, H=H}
+
+  if name==nil then
+    r.defaultName=true
+    r.name="concatArray2d"..darkroom.__unnamedID
+    darkroom.__unnamedID = darkroom.__unnamedID+1
+  end
+  
   J.map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end

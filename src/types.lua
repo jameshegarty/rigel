@@ -72,6 +72,7 @@ function types.uint( prec, X )
   types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
   return types._uint[prec]
 end
+types.u = types.uint
 
 types._int={}
 function types.int( prec, X )
@@ -1042,7 +1043,9 @@ function types.HandshakeTriggerArray(W,H)
   return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
 end
 
-function types.HandshakeTuple(tab)
+function types.HandshakeTuple(tab,VR,X)
+  assert(X==nil)
+  if VR==nil then VR=false end
   err( type(tab)=="table" and J.keycount(tab)==#tab,"HandshakeTuple: argument should be table of types")
 
   local s = {}
@@ -1053,7 +1056,12 @@ function types.HandshakeTuple(tab)
     table.insert(ty,types.tuple{v,types.bool()})
   end
 
-  return types.named("HandshakeTuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab} )
+  return types.named("Handshake"..J.sel(VR,"VR","").."Tuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab,VR=VR} )
+end
+
+function types.HandshakeVRTuple(tab,X)
+  assert(X==nil)
+  return types.HandshakeTuple(tab,true)
 end
 
 -- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
@@ -1085,6 +1093,7 @@ function types.isHandshakeTmuxed(a)
 end
 
 function types.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+function types.isHandshakeVR( a ) return a:isNamed() and a.generator=="Handshake" and a.params.VR end
 function types.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
 function types.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
 function types.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end
@@ -1143,7 +1152,7 @@ function types.extractReady(a)
   if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isV(a) or types.isRV(a) or a:is("HandshakeFramed") or a:is("RVFramed") or types.isHandshakeTmuxed(a) then return types.bool()
   elseif types.isHandshakeTuple(a) then
     return types.array2d(types.bool(),#a.params.list) -- we always use arrays for ready bits. no reason not to.
-  elseif types.isHandshakeArray(a) or a:is("HandshakeArrayFramed") then
+  elseif types.isHandshakeArray(a) or a:is("HandshakeArrayFramed") or a:is("HandshakeTriggerArray") then
     return types.array2d(types.bool(),a.params.W*a.params.H)
   elseif types.isHandshakeArrayOneHot(a) then
     return types.uint(8)

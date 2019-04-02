@@ -166,8 +166,15 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
   local res = {kind="packTuple", disableFIFOCheck = disableFIFOCheck}
   
   J.map(typelist, function(t) rigel.expectBasic(t) end )
-  res.inputType = rigel.HandshakeTuple(typelist)
-  res.outputType = rigel.Handshake( types.tuple(typelist) )
+
+  if typelist[1]==types.null() then
+    -- handshake trigger mode
+    res.inputType = types.HandshakeTriggerArray(#typelist)
+    res.outputType = types.HandshakeTrigger
+  else
+    res.inputType = rigel.HandshakeTuple(typelist)
+    res.outputType = rigel.Handshake( types.tuple(typelist) )
+  end
   res.stateful = false
   res.sdfOutput = SDF{1,1}
   res.sdfInput = SDF(J.map(typelist, function(n)  return {1,1} end))
@@ -192,11 +199,19 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
     local activePorts={}
     for k,v in pairs(typelist) do  table.insert(activePorts,k) end
       
-    local outv = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
-      
+    local inputValues
+    if typelist[1]~=types.null() then -- NOT HandshakeTrigger mode
+      inputValues = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
+    end
+    
     -- valid bit is the AND of all the inputs
-    local validInList = J.map(activePorts,function(i) return S.index(S.index(sinp,i-1),1) end)
-    local validInFullList = J.map(typelist,function(i,k) return S.index(S.index(sinp,k-1),1) end)
+    local validInList
+    if typelist[1]==types.null() then -- HandshakeTrigger mode
+      validInList = J.map(J.range(0,#typelist-1),function(i) return S.index(sinp,i) end)
+    else
+      validInList = J.map(J.range(0,#typelist-1),function(i) return S.index(S.index(sinp,i),1) end)
+    end
+
     local validOut = J.foldt(validInList,function(a,b) return S.__and(a,b) end,"X")
   
     local pipelines={}
@@ -208,15 +223,25 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
     local readyOutList = {}
     for i=1,#typelist do
       -- if this stream doesn't have data, let it run regardless.
-      local valid_i = S.index(S.index(sinp,i-1),1)
+      local valid_i
+      if typelist[1]==types.null() then -- HandshakeTrigger mode
+        valid_i = S.index(sinp,i-1)
+      else
+        valid_i = S.index(S.index(sinp,i-1),1)
+      end
       table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
     end
   
     local readyOut = S.cast(S.tuple(readyOutList), types.array2d(types.bool(),#typelist) )
     
-    if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
+    --if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
     
-    local out = S.tuple{outv, validOut}
+    local out
+    if typelist[1]==types.null() then -- HandshakeTrigger mode
+      out = validOut
+    else
+      out = S.tuple{inputValues, validOut}
+    end
     systolicModule:addFunction( S.lambda("process", sinp, out, "process_output", pipelines) )
     
     systolicModule:addFunction( S.lambda("ready", downstreamReady, readyOut, "ready" ) )
@@ -931,9 +956,6 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
 
-  print("MAPFRAMED","inputType",fn.inputType,w,h,mixed)
-  print("MAPFRAMED","outputType",fn.outputType, outputW, outputH, outputMixed)
-  
   res.inputType = fn.inputType:addDim(w,h,mixed)
 
   -- tokens: # of parallel data tokens we process (which is what SDF tells us)
@@ -966,8 +988,6 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
 
     if outputMixed then outTok = outTok/fn.outputType:FV() end
   end
-
-  print("MAPFRAMED_RESTYPE",res.inputType, res.outputType)
   
   if fn.inputType:is("Handshake") then
     -- sanity check: make sure # of tokens we say we're making is consistant with SDF
@@ -3126,6 +3146,25 @@ return res
   assert(false)
 end)
 
+modules.triggerFIFO = memoize(function()
+
+  local SDFRate = SDF{1,1}
+  local storeFunction = rigel.newFunction{name="store", inputType=types.HandshakeTrigger,  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+  local loadFunction = rigel.newFunction{name="load", inputType=types.null(), outputType=types.HandshakeTrigger, sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+
+  local name = "TriggerFIFO"
+  local res = rigel.newModule( name, {store=storeFunction, load=loadFunction}, true )
+  res.kind="fifo"
+
+  function res.makeSystolic()
+    local C = require "examplescommon"
+    local s = C.automaticSystolicStub(res)
+    return s
+  end
+  
+  return res
+end)
+
 modules.dram = memoize(function( A, delay, filename, X )
   rigel.expectBasic(A)
   assert(X==nil)
@@ -3663,9 +3702,10 @@ end)
 -- this takes in a darkroom IR graph and normalizes the input SDF rate so that
 -- it obeys our constraints: (1) neither input or output should have bandwidth (token count) > 1
 -- and (2) no node should have SDF rate > 1
-local function lambdaSDFNormalize( input, output, X )
+local function lambdaSDFNormalize( input, output, name, X )
   assert( X==nil, "lambdaSDFNormalize: too many arguments")
-
+  assert( type(name)=="string")
+  
   local sdfMaxRate = output:sdfExtremeRate(true)
 
   if input~=nil and input.sdfRate~=nil then
@@ -3701,7 +3741,7 @@ local function lambdaSDFNormalize( input, output, X )
       end
     end)
 
-  err( (input~=nil)==(newInput~=nil),"lambdaSDFNormalize: declared input was not actually used in function?" )
+  err( (input~=nil)==(newInput~=nil),"lambdaSDFNormalize: declared input was not actually used anywhere in function '"..name.."'?" )
   
   return newInput, newOutput
 end
@@ -3753,10 +3793,8 @@ local function checkFIFOs(output)
         
         if n.fnname=="load" and n.inst.module.kind=="fifo" then
           res = {true}
-        elseif types.streamCount(n.inst.module.functions[n.fnname].outputType)==0 then
-          res = {}
         else
-          res = {false} -- HACK: this isn't really correct...
+          res = J.broadcast(false, types.streamCount(n.inst.module.functions[n.fnname].outputType) )
         end
       elseif n.kind=="selectStream" then
         assert(#arg==1)
@@ -4001,7 +4039,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   instances=nil -- now invalid
   
   if rigel.SDF then
-    input, output = lambdaSDFNormalize(input,output)
+    input, output = lambdaSDFNormalize(input,output,name)
     local sdfMaxRate = output:sdfExtremeRate(true)
 
     if (Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue())==false then
@@ -4105,7 +4143,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       J.err(type(k)=="string","global metadata key must be string")
 
       if res.globalMetadata[k]~=nil and res.globalMetadata[k]~=v then
-        print("WARNING: overwriting metadata '"..k.."' with previous value '"..tostring(res.globalMetadata[k]).."' ("..type(res.globalMetadata[k])..") with overridden value '"..tostring(v).."' ("..type(v)..")")
+        --print("WARNING: overwriting metadata '"..k.."' with previous value '"..tostring(res.globalMetadata[k]).."' ("..type(res.globalMetadata[k])..") with overridden value '"..tostring(v).."' ("..type(v)..")")
       end
       
       res.globalMetadata[k]=v
@@ -4391,8 +4429,8 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
               err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format of ready function. This node: kind='"..n.kind.."' "..tostring(n).." input index "..tostring(k).."/"..(#n.inputs).." (with input type "..tostring(i.type)..", and input name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
             elseif rigel.isHandshakeTrigger(i.type) then
-              assert(#res==1)
-              assert(res[1].type:isBool())
+              --assert(#res==1)
+              assert(res[k].type:isBool())
             elseif i:outputStreams()>1 or rigel.isHandshakeArray(i.type) then
 
               err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
@@ -4512,13 +4550,13 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
--- dependencies: this is a list of rigel modules, which this verilog instantiates (IE, we need to make sure to
---               include these in the final file)
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, dependencies, X )
+-- requires: this is a map of instance callsites (for external requirements)
+-- instanceMap: this is a map of rigel instances of modules this depends on
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, instanceMap, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
-  err( type(vstr)=="string", "liftVerilog: verilog string must be string")
+  err( type(vstr)=="string" or type(vstr)=="function", "liftVerilog: verilog string must be string or function that produces string")
   err( requires==nil or type(requires)=="table", "liftVerilog: requires must be table")
   err( globalMetadata==nil or type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
   if sdfInput==nil then sdfInput=SDF{1,1} end
@@ -4527,7 +4565,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
   
-  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
+  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap }
   res.stateful = true
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
@@ -4547,16 +4585,16 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
     end
   end
     
-  if dependencies~=nil then
-    for k,v in ipairs(dependencies) do
-      assert(rigel.isFunction(v))
+  if instanceMap~=nil then
+    for inst,_ in pairs(instanceMap) do
+      assert(rigel.isInstance(inst))
 
-      for r,_ in pairs(v.requires) do
+      for r,_ in pairs(inst.module.requires) do
         assert(rigel.isInstanceCallsite(r))
         res.requires[r]=1
       end
 
-      for kk,vv in pairs(v.globalMetadata) do
+      for kk,vv in pairs(inst.module.globalMetadata) do
         res.globalMetadata[kk] = vv
       end
       
@@ -4564,44 +4602,14 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
   end
 
   function res.makeSystolic()
-    local fns = {}
-
-    local inp = S.parameter("process_input",rigel.lower(inputType))
-    local outv = rigel.lower(outputType):fakeValue()
-    fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
-    
-    if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
-      local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType))
-      fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
-    else
-      print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
-      assert(false)
-    end
-    
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
-
-    local instances = {}
-    local externalInstances = {}
-    for ic,_ in pairs(res.requires) do
-      local sinst = ic.instance:toSystolicInstance()
-      if externalInstances[sinst]==nil then externalInstances[sinst]={} end
-      externalInstances[sinst][ic.functionName] = 1
-
-      local fn = ic.instance.module.functions[ic.functionName]
-      if types.isHandshakeAny(fn.outputType) or types.isHandshakeAny(fn.inputType) then
-        externalInstances[sinst][ic.functionName.."_ready"] = 1
-      end
-      
-      --table.insert(instances,sinst)
+    if type(vstr)=="function" then
+      vstr = vstr(res)
     end
 
-    if dependencies~=nil then
-      for k,v in ipairs(dependencies) do
-        table.insert(instances,v.systolicModule:instantiate("INST"..tostring(k)))
-      end
-    end
-
-    return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},externalInstances)
+    local C = require "examplescommon"
+    local s = C.automaticSystolicStub(res)
+    s.verilog = vstr
+    return s
   end
   
   return rigel.newFunction(res)

@@ -56,10 +56,19 @@ end)
 
 SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, writeSink, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
-  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function")
+
+  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function, but is: "..tostring(readSource))
+  J.err( readSource.inputType==types.null() and readSource.outputType==AXI.ReadAddress, "SOC.axiRegs: readSource should have type nil->AXI.ReadAddress")
+
   J.err( R.isFunction(readSink), "SOC.axiRegs: readSink should be rigel function")
-  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function")
+  J.err( readSink.inputType==AXI.ReadData32 and readSink.outputType==types.null(), "SOC.axiRegs: readSink should have type AXI.ReadData32->nil")
+
+  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function, but is: "..tostring(writeSource))
+  J.err( writeSource.inputType==types.null() and writeSource.outputType==AXI.WriteIssue32, "SOC.axiRegs: writeSource should have type nil->AXI.WriteIssue32, but is: "..tostring(writeSource.inputType).."->"..tostring(writeSource.outputType))
+  
   J.err( R.isFunction(writeSink), "SOC.axiRegs: writeSink should be rigel function")
+  J.err( writeSink.inputType==AXI.WriteResponse32 and readSink.outputType==types.null(), "SOC.axiRegs: writeSink should have type AXI.WriteResponse32->nil")
+  
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
   local port = SOC.currentSAXIPort
@@ -685,29 +694,6 @@ module ]=]..ModuleName..[=[(
   input wire CLK,
   input wire reset,
 
-/*  input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
-  output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
-
-  input wire [32:0] IP_SAXI]=]..port..[=[_AWADDR,
-  output wire IP_SAXI]=]..port..[=[_AWADDR_ready,
-
-  output wire [32:0] IP_SAXI]=]..port..[=[_RDATA,
-  input wire IP_SAXI]=]..port..[=[_RDATA_ready,
-
-  input wire [32:0] IP_SAXI]=]..port..[=[_WDATA,
-  output wire IP_SAXI]=]..port..[=[_WDATA_ready,
-
-  output wire [2:0] IP_SAXI]=]..port..[=[_BRESP,
-  input wire IP_SAXI]=]..port..[=[_BRESP_ready,
-
-  input wire [11:0] IP_SAXI]=]..port..[=[_ARID,
-  input wire [11:0] IP_SAXI]=]..port..[=[_AWID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_BID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_RID,
-  output wire IP_SAXI]=]..port..[=[_RLAST,
-  output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
-  input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,*/
-
   input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] ZynqNOC_readSource,
   output wire ZynqNOC_readSource_ready_downstream,
 
@@ -1049,41 +1035,19 @@ endmodule
   return res
 end)
 
--- Rigel usually uses HandshakeRV protocol, but AXI expects HandshakeVR
-function SOC.AXIWrapRV(mod,port)
-  local portList={}
-  portList["IP_MAXI"..port.."_ARADDR_RV"]=1
-  portList["IP_MAXI"..port.."_AWADDR_RV"]=1
-  portList["IP_MAXI"..port.."_WDATA_RV"]=1
-
-  local G = require "generators"
-  
-  local WrapMod = G.Module{mod.name.."_RV_to_VR",mod.inputType,
-    function(i)
-      local pipelines = {mod(i)}
-
-      for glob,_ in pairs(mod.globals) do
-        if portList[glob.name]~=nil then
-          local newGlob = R.newGlobal(string.sub(glob.name,1,#glob.name-3),glob.direction,types.HandshakeVR(glob.type.params.A),glob.initValue)
-          local fifoout = C.fifo(glob.type.params.A,1,false,false,true)(R.readGlobal("read_"..glob.name,glob.flip))
-          print("FIFOOUT",fifoout)
-          table.insert(pipelines,R.writeGlobal("write_"..glob.name,newGlob,fifoout) )
-        end
-      end
-
-      return R.statements(pipelines)
-    end}
-
-  print(WrapMod)
-  
-  return WrapMod
-end
-
-SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig, readFn, X )
+SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig, readFn_orig, X )
   J.err( type(port)=="number", "axiReadBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiReadBytes: port out of range" )
   J.err( type(Nbytes)=="number","axiReadBytes: Nbytes must be number" )
+
+  local readFn = readFn_orig
   J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
+
+  if readFn.inputType==AXI.ReadAddress and readFn.outputType==AXI.ReadData64 then
+    readFn = C.LiftVRtoRV(readFn)
+  end
+  
+  J.err( readFn.inputType == types.Handshake(AXI.ReadAddressTuple), "axiReadBytes expected HandshakeRV input type, but was: "..tostring(readFn.inputType) )
   J.err( X==nil, "axiReadBytes: too many arguments" )
 
   local addressBase = Uniform(addressBase_orig)
@@ -1096,39 +1060,21 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig,
   local burstCount = math.ceil(Nbytes/8)
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
 
-  local RPORT = readFn.instance.name.."_"..readFn.functionName
+  local readFnInst = readFn:instantiate("ReadFn")
   
-  local vstr = [=[module ]=]..ModuleName..[=[(
-    input wire CLK,
-    input wire reset,
-  
-    output wire []=]..(types.lower(readFn.inputType):verilogBits()-1)..[=[:0] ]=]..RPORT..[=[_input,
-    input wire []=]..(types.lower(readFn.outputType):verilogBits()-1)..[=[:0] ]=]..RPORT..[=[,
+  local function vstr(res)
+    return res:vHeader()..readFnInst:toVerilog()..[=[
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen.." = 4'd"..(burstCount-1)..[=[; // length of burst
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[ = 2'b11; // number of bytes per transfer
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arburst..[=[ = 2'b01; // burst mode
 
-    ]=]..addressBase:toVerilogPortList()..[=[
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arvalid..[=[ = process_input[32];
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.araddr..[=[ = process_input[31:0] + ]=]..addressBase:toVerilog(types.uint(32))..[=[;
+assign ready = ]=]..readFnInst:vInputReady()..[=[;
 
-    output wire ]=]..RPORT..[=[_ready_downstream,
-    input wire ]=]..RPORT..[=[_ready,
-  
-    input wire [32:0] process_input,
-    output wire ready,
-
-    output wire [64:0] process_output,
-    input wire ready_downstream
-);
-parameter INSTANCE_NAME="inst";
-
-assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.arlen.." = 4'd"..(burstCount-1)..[=[; // length of burst
-assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.arsize..[=[ = 2'b11; // number of bytes per transfer
-assign ]=]..RPORT.."_input"..AXI.ReadAddressVSelect.arburst..[=[ = 2'b01; // burst mode
-
-assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.arvalid..[=[ = process_input[32];
-assign ]=]..RPORT..[=[_input]=]..AXI.ReadAddressVSelect.araddr..[=[ = process_input[31:0] + ]=]..addressBase:toVerilog(types.uint(32))..[=[;
-assign ready = ]=]..RPORT..[=[_ready;
-
-assign process_output[63:0] = ]=]..RPORT..AXI.ReadDataVSelect(64).rdata..[=[;
-assign process_output[64] = ]=]..RPORT..AXI.ReadDataVSelect(64).rvalid..[=[;
-assign ]=]..RPORT..[=[_ready_downstream = ready_downstream;
+assign process_output[63:0] = ]=]..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rdata..[=[;
+assign process_output[64] = ]=]..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rvalid..[=[;
+assign ]=]..readFnInst:vOutputReady()..[=[ = ready_downstream;
 
 //always @(posedge CLK) begin
 //  $display("piv %d pi %d",process_input[32],process_input[31:0]);
@@ -1136,14 +1082,16 @@ assign ]=]..RPORT..[=[_ready_downstream = ready_downstream;
 
 endmodule
 ]=]
-
-  local requires = {[readFn]=1}
+  end
+  
+  local requires = {}
   addressBase:appendRequires(requires)
-  local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)), vstr, requires, globalMetadata, {{1,burstCount}}, {{1,1}} )
+  local instanceMap = {[readFnInst]=1}
+  local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)), vstr, requires, globalMetadata, {{1,burstCount}}, {{1,1}}, instanceMap )
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase, readFn )
+    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase, readFn_orig )
   end
 
   --return SOC.AXIWrapRV(res,port)
@@ -1281,6 +1229,8 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
   globalMetadata["MAXI"..port.."_write_H"] = 1
   globalMetadata["MAXI"..port.."_write_bitsPerPixel"] = 8
 
+  local moduleNameSuffix=J.sanitize("_file"..tostring(filename).."_Nbytes"..tostring(Nbytes_orig).."_port"..tostring(port).."_address"..tostring(address_orig))
+  
   local vstr = [=[module DRAMWriterInner(
     //AXI port
     input wire ACLK,
@@ -1526,7 +1476,7 @@ DRAMWriterInner inner(
 
 endmodule
 
-module DRAMWriter(
+module DRAMWriter]=]..moduleNameSuffix..[=[(
     //AXI port
     input wire CLK,
     input wire reset,
@@ -1579,7 +1529,7 @@ endmodule
   address:appendRequires(requires)
   Nbytes:appendRequires(requires)
   
-  local res = RM.liftVerilog( "DRAMWriter", R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
+  local res = RM.liftVerilog( "DRAMWriter"..moduleNameSuffix, R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1647,11 +1597,10 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
 
   local outputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalOutputBits = W*H*ty:verilogBits()
-  print("DesiredTotalOutputBits",desiredTotalOutputBits,"outputBits",outputBits)
+
   local CR = C.generalizedChangeRate( 64,0,128*8, outputBits, desiredTotalOutputBits,1 )
   local ChangeRateModule, totalBits = CR[1], CR[2]
   
-  print("TIB,TOB",totalBits,ChangeRateModule.inputType,ChangeRateModule.outputType)
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
   assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )

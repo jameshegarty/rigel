@@ -13,7 +13,7 @@ local function vrange(ty,idx,base)
   return "["..tostring(vbase(ty,idx+1)+base-1)..":"..tostring(vbase(ty,idx)+base).."]"
 end
 
-AXI.ReadAddress = types.Handshake(types.tuple{
+AXI.ReadAddressTuple = types.tuple{
   types.bits(32), -- ARADDR
   types.bits(4), -- ARLEN
   types.bits(2), -- ARSIZE
@@ -22,7 +22,9 @@ AXI.ReadAddress = types.Handshake(types.tuple{
   types.bits(3), -- ARPROT
   types.bits(4), -- ARCACHE
   types.bool() -- ARLOCK
-})
+}
+
+AXI.ReadAddress = types.HandshakeVR(AXI.ReadAddressTuple)
 
 AXI.ReadAddress64 = AXI.ReadAddress
 AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5,arcache=6,arlock=7}
@@ -31,7 +33,7 @@ for k,v in pairs(AXI.ReadAddressIdx) do AXI.ReadAddressVSelect[k] = vrange(types
 
 AXI.ReadData = J.memoize(function(bits)
     assert(type(bits)=="number")
-    return types.Handshake(types.tuple{
+    return types.HandshakeVR(types.tuple{
                              types.bits(bits), -- RDATA
                              types.bool(), -- RLAST
                              types.bits(2), -- RRESP
@@ -71,8 +73,9 @@ end)
 
 AXI.WriteDataIdx = {wdata=0,wstrb=1,wlast=2,wid=3}
 
-AXI.WriteIssue = J.memoize(function(bits) return types.HandshakeTuple{AXI.WriteAddress,AXI.WriteData(bits)} end)
+AXI.WriteIssue = J.memoize(function(bits) return types.HandshakeVRTuple{AXI.WriteAddress,AXI.WriteData(bits)} end)
 AXI.WriteIssue64 = AXI.WriteIssue(64)
+AXI.WriteIssue32 = AXI.WriteIssue(32)
 
 -- verilog bit select
 AXI.WriteIssueVSelect = J.memoize(function(bits)
@@ -84,13 +87,14 @@ end)
 
 AXI.WriteResponse = J.memoize(function(bits)
     assert(type(bits)=="number")
-    return types.Handshake(types.tuple{
+    return types.HandshakeVR(types.tuple{
                              types.bits(2), -- BRESP
                              types.bits(12) -- BID
     })
 end)
 
 AXI.WriteResponse64 = AXI.WriteResponse(64)
+AXI.WriteResponse32 = AXI.WriteResponse(32)
 
 AXI.WriteResponseIdx = {bresp=0,bid=1}
 AXI.WriteResponseVSelect = J.memoize(function(bits)

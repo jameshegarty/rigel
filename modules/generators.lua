@@ -84,8 +84,13 @@ end)
 
 generators.FanIn = R.newFunctionGenerator("generators","FanIn",{"type","rate"},{"bool"},
 function(args)
-  J.err( R.isHandshakeTuple(args.type), "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
-  return RM.packTuple(args.type.params.list,args.bool)
+  if R.isHandshakeTuple(args.type) then
+    return RM.packTuple(args.type.params.list,args.bool)
+  elseif R.isHandshakeTriggerArray(args.type) then
+    return RM.packTuple(J.broadcast(types.null(),args.type.params.W*args.type.params.H),args.bool)
+  else
+    J.err(false, "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
+  end
 end)
 
 generators.FIFO = R.newFunctionGenerator("generators","FIFO",{"type","number","rate"},{"bool"},

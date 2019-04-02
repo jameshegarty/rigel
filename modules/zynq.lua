@@ -58,10 +58,10 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts)
   if writePorts==nil then writePorts=1 end
 
   local SimpleNOCFns = {}
-  SimpleNOCFns.readSource = R.newFunction{name="ReadSource",inputType=types.null(),outputType=AXI.ReadAddress,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  SimpleNOCFns.readSource = R.newFunction{name="ReadSource",inputType=types.null(),outputType=AXI.ReadAddress,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, sdfExact=true}
   SimpleNOCFns.readSink = R.newFunction{name="ReadSink",inputType=AXI.ReadData(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
   
-  SimpleNOCFns.writeSource = R.newFunction{name="WriteSource",inputType=types.null(),outputType=AXI.WriteIssue(32),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  SimpleNOCFns.writeSource = R.newFunction{name="WriteSource",inputType=types.null(),outputType=AXI.WriteIssue(32),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, sdfExact=true}
   SimpleNOCFns.writeSink = R.newFunction{name="WriteSink",inputType=AXI.WriteResponse(32),outputType=types.null(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
 
   for i=1,readPorts do

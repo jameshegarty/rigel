@@ -1,3 +1,9 @@
 [submodule "modules/bsg_ip_cores"]
 	path = modules/bsg_ip_cores
 	url = https://bitbucket.org/taylor-bsg/bsg_ip_cores.git
+[submodule "modules/axi_node"]
+	path = modules/axi_node
+	url = https://github.com/pulp-platform/axi_node.git
+[submodule "modules/axi_size_conv"]
+	path = modules/axi_size_conv
+	url = https://github.com/pulp-platform/axi_size_conv.git
