@@ -8,3 +8,18 @@ jobs:
       - run: ls
       - run: sudo apt-get install luajit
       - run: cd examples; ls; make verilog
+      - run: test -e out/${TARGET}_done_LOL.txt || exit
+  verilator:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit
+      - run: sudo apt-get install verilator
+      - run: cd examples; ls; make verilator
+workflows:
+  version: 2
+  dostuff:
+    jobs:
+      - build
+      - verilator
