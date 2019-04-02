@@ -1,9 +1,8 @@
 version: 2
 jobs:
   verilog:
-    build:
-      docker:
-        - image: stable-git
+    docker:
+      - image: stable-git
     steps:
       - run: sudo apt-get install luajit
       - run: cd examples
