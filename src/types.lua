@@ -1043,7 +1043,9 @@ function types.HandshakeTriggerArray(W,H)
   return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
 end
 
-function types.HandshakeTuple(tab)
+function types.HandshakeTuple(tab,VR,X)
+  assert(X==nil)
+  if VR==nil then VR=false end
   err( type(tab)=="table" and J.keycount(tab)==#tab,"HandshakeTuple: argument should be table of types")
 
   local s = {}
@@ -1054,7 +1056,12 @@ function types.HandshakeTuple(tab)
     table.insert(ty,types.tuple{v,types.bool()})
   end
 
-  return types.named("HandshakeTuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab} )
+  return types.named("Handshake"..J.sel(VR,"VR","").."Tuple("..table.concat(s,",")..")", types.tuple(ty), "HandshakeTuple", {list=tab,VR=VR} )
+end
+
+function types.HandshakeVRTuple(tab,X)
+  assert(X==nil)
+  return types.HandshakeTuple(tab,true)
 end
 
 -- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
@@ -1086,6 +1093,7 @@ function types.isHandshakeTmuxed(a)
 end
 
 function types.isHandshake( a ) return a:isNamed() and a.generator=="Handshake" end
+function types.isHandshakeVR( a ) return a:isNamed() and a.generator=="Handshake" and a.params.VR end
 function types.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
 function types.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
 function types.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end

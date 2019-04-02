@@ -4550,13 +4550,13 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
--- dependencies: this is a list of rigel modules, which this verilog instantiates (IE, we need to make sure to
---               include these in the final file)
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, dependencies, X )
+-- requires: this is a map of instance callsites (for external requirements)
+-- instanceMap: this is a map of rigel instances of modules this depends on
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, instanceMap, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
-  err( type(vstr)=="string", "liftVerilog: verilog string must be string")
+  err( type(vstr)=="string" or type(vstr)=="function", "liftVerilog: verilog string must be string or function that produces string")
   err( requires==nil or type(requires)=="table", "liftVerilog: requires must be table")
   err( globalMetadata==nil or type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
   if sdfInput==nil then sdfInput=SDF{1,1} end
@@ -4565,7 +4565,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
   
-  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name }
+  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap }
   res.stateful = true
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
@@ -4585,16 +4585,16 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
     end
   end
     
-  if dependencies~=nil then
-    for k,v in ipairs(dependencies) do
-      assert(rigel.isFunction(v))
+  if instanceMap~=nil then
+    for inst,_ in pairs(instanceMap) do
+      assert(rigel.isInstance(inst))
 
-      for r,_ in pairs(v.requires) do
+      for r,_ in pairs(inst.module.requires) do
         assert(rigel.isInstanceCallsite(r))
         res.requires[r]=1
       end
 
-      for kk,vv in pairs(v.globalMetadata) do
+      for kk,vv in pairs(inst.module.globalMetadata) do
         res.globalMetadata[kk] = vv
       end
       
@@ -4602,44 +4602,14 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
   end
 
   function res.makeSystolic()
-    local fns = {}
-
-    local inp = S.parameter("process_input",rigel.lower(inputType))
-    local outv = rigel.lower(outputType):fakeValue()
-    fns.process = S.lambda("process",inp,S.constant(outv,rigel.lower(outputType)),"process_output")
-    
-    if rigel.hasReady(inputType) and rigel.hasReady(outputType) then
-      local rinp =  S.parameter("ready_downstream",rigel.extractReady(res.outputType))
-      fns.ready = S.lambda( "ready", rinp, S.constant(rigel.extractReady(res.inputType):fakeValue(),rigel.extractReady(res.inputType)), "ready")
-    else
-      print("liftVerilog: unsupported input/output type? inputType: "..tostring(inputType)..", outputType:"..tostring(outputType))
-      assert(false)
-    end
-    
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
-
-    local instances = {}
-    local externalInstances = {}
-    for ic,_ in pairs(res.requires) do
-      local sinst = ic.instance:toSystolicInstance()
-      if externalInstances[sinst]==nil then externalInstances[sinst]={} end
-      externalInstances[sinst][ic.functionName] = 1
-
-      local fn = ic.instance.module.functions[ic.functionName]
-      if types.isHandshakeAny(fn.outputType) or types.isHandshakeAny(fn.inputType) then
-        externalInstances[sinst][ic.functionName.."_ready"] = 1
-      end
-      
-      --table.insert(instances,sinst)
+    if type(vstr)=="function" then
+      vstr = vstr(res)
     end
 
-    if dependencies~=nil then
-      for k,v in ipairs(dependencies) do
-        table.insert(instances,v.systolicModule:instantiate("INST"..tostring(k)))
-      end
-    end
-
-    return S.module.new(name,fns,instances,true,nil,vstr,{process=0,ready=0},externalInstances)
+    local C = require "examplescommon"
+    local s = C.automaticSystolicStub(res)
+    s.verilog = vstr
+    return s
   end
   
   return rigel.newFunction(res)

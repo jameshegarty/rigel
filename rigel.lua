@@ -530,13 +530,18 @@ function darkroomFunctionFunctions:vHeader()
   for ic,_ in pairs(self.requires) do
     if types.isHandshakeAny(ic.inputType) then
       table.insert(v,", output wire ["..(types.lower(ic.inputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName.."_input, input wire "..ic.instance.name.."_"..ic.functionName.."_ready")
+    elseif ic.inputType==types.null() then
     else
+      print("NYI - require of: "..tostring(ic))
       assert(false)
     end
 
     if types.isHandshakeAny(ic.outputType) then
       table.insert(v,", input wire ["..(types.lower(ic.outputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName..", output wire "..ic.instance.name.."_"..ic.functionName.."_ready_downstream")
+    elseif types.isBasic(ic.outputType) then
+      table.insert(v,", input wire ["..(types.lower(ic.outputType):verilogBits()-1)..":0] "..ic.instance.name.."_"..ic.functionName)
     else
+      print("NYI - require of: "..tostring(ic))
       assert(false)
     end
 
@@ -545,7 +550,8 @@ function darkroomFunctionFunctions:vHeader()
   assert(J.keycount(self.provides)==0)
   
   table.insert(v,[[);
-parameter INSTANCE_NAME="INST";]])
+parameter INSTANCE_NAME="INST";
+]])
   return table.concat(v,"")
 end
 
@@ -665,6 +671,8 @@ __index = function(tab,key)
     tab.requires[tab]=1
     
     return tab.requires
+  elseif key=="name" then
+    return tab.instance.name.."_"..tab.functionName
   end
   
   -- make this appear like as if it's the original function

@@ -2164,5 +2164,30 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
 
   return R.newModule(J.sanitize(filename),{process=res},false,makeSystolic,nil)
 end)
+ 
+-- you should only use this if it's safe! (on the output of fns)
+C.VRtoRVRaw = J.memoize(function(A)
+  err( types.isBasic(A), "expected basic type" )
+  local res = {inputType=types.HandshakeVR(A),outputType=types.Handshake(A),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+  res.name = J.sanitize("VRtoRVRaw_"..tostring(A))
+
+  function res.makeSystolic()
+    local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
+    local r = S.parameter("ready_downstream",types.bool())
+    sm:addFunction( S.lambda("ready", r, r, "ready") )
+    local I = S.parameter("process_input", R.lower(types.Handshake(A)) )
+    sm:addFunction( S.lambda("process",I,I,"process_output") )
+    return sm
+  end
+
+  return rigel.newFunction(res)
+end)
+
+-- fn should be HSVR, and this wraps to return a plain HS function
+C.LiftVRtoRV = J.memoize(function(fn)
+  err( types.isHandshakeVR(fn.inputType), "LiftVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
+  err( types.isHandshakeVR(fn.outputType), "LiftVRtoRV: fn output should be HandshakeVR" )
+  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"LiftVRtoRV_"..fn.name)
+end)
 
 return C
