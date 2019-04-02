@@ -7,5 +7,5 @@ jobs:
       - checkout
       - run: ls
       - run: sudo apt-get install luajit
-      - run: cd rigel/examples
+      - run: cd examples
       - run: make verilog
