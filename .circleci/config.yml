@@ -1,0 +1,7 @@
+version: 2
+jobs:
+  verilog:
+    steps:
+      - run: sudo apt-get install luajit
+      - run: cd examples
+      - run: make verilog
