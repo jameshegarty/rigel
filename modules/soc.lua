@@ -56,10 +56,19 @@ end)
 
 SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, writeSink, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
+
   J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function, but is: "..tostring(readSource))
+  J.err( readSource.inputType==types.null() and readSource.outputType==AXI.ReadAddress, "SOC.axiRegs: readSource should have type nil->AXI.ReadAddress")
+
   J.err( R.isFunction(readSink), "SOC.axiRegs: readSink should be rigel function")
+  J.err( readSink.inputType==AXI.ReadData32 and readSink.outputType==types.null(), "SOC.axiRegs: readSink should have type AXI.ReadData32->nil")
+
   J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function, but is: "..tostring(writeSource))
+  J.err( writeSource.inputType==types.null() and writeSource.outputType==AXI.WriteIssue32, "SOC.axiRegs: writeSource should have type nil->AXI.WriteIssue32, but is: "..tostring(writeSource.inputType).."->"..tostring(writeSource.outputType))
+  
   J.err( R.isFunction(writeSink), "SOC.axiRegs: writeSink should be rigel function")
+  J.err( writeSink.inputType==AXI.WriteResponse32 and readSink.outputType==types.null(), "SOC.axiRegs: writeSink should have type AXI.WriteResponse32->nil")
+  
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
   local port = SOC.currentSAXIPort
@@ -684,29 +693,6 @@ endmodule
 module ]=]..ModuleName..[=[(
   input wire CLK,
   input wire reset,
-
-/*  input wire [32:0] IP_SAXI]=]..port..[=[_ARADDR,
-  output wire IP_SAXI]=]..port..[=[_ARADDR_ready,
-
-  input wire [32:0] IP_SAXI]=]..port..[=[_AWADDR,
-  output wire IP_SAXI]=]..port..[=[_AWADDR_ready,
-
-  output wire [32:0] IP_SAXI]=]..port..[=[_RDATA,
-  input wire IP_SAXI]=]..port..[=[_RDATA_ready,
-
-  input wire [32:0] IP_SAXI]=]..port..[=[_WDATA,
-  output wire IP_SAXI]=]..port..[=[_WDATA_ready,
-
-  output wire [2:0] IP_SAXI]=]..port..[=[_BRESP,
-  input wire IP_SAXI]=]..port..[=[_BRESP_ready,
-
-  input wire [11:0] IP_SAXI]=]..port..[=[_ARID,
-  input wire [11:0] IP_SAXI]=]..port..[=[_AWID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_BID,
-  output wire [11:0] IP_SAXI]=]..port..[=[_RID,
-  output wire IP_SAXI]=]..port..[=[_RLAST,
-  output wire [1:0] IP_SAXI]=]..port..[=[_RRESP,
-  input wire [3:0] IP_SAXI]=]..port..[=[_WSTRB,*/
 
   input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] ZynqNOC_readSource,
   output wire ZynqNOC_readSource_ready_downstream,

@@ -75,6 +75,7 @@ AXI.WriteDataIdx = {wdata=0,wstrb=1,wlast=2,wid=3}
 
 AXI.WriteIssue = J.memoize(function(bits) return types.HandshakeVRTuple{AXI.WriteAddress,AXI.WriteData(bits)} end)
 AXI.WriteIssue64 = AXI.WriteIssue(64)
+AXI.WriteIssue32 = AXI.WriteIssue(32)
 
 -- verilog bit select
 AXI.WriteIssueVSelect = J.memoize(function(bits)
@@ -93,6 +94,7 @@ AXI.WriteResponse = J.memoize(function(bits)
 end)
 
 AXI.WriteResponse64 = AXI.WriteResponse(64)
+AXI.WriteResponse32 = AXI.WriteResponse(32)
 
 AXI.WriteResponseIdx = {bresp=0,bid=1}
 AXI.WriteResponseVSelect = J.memoize(function(bits)
