@@ -15,7 +15,7 @@ jobs:
     steps:
       - checkout
       - run: sudo apt-get install luajit
-      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make -j2;sudo make install; cd ..;
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilator
       - run: test -e out/verilator_done.txt || exit
   verilatorSOC:
