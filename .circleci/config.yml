@@ -14,7 +14,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit flex
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilator
       - run: test -e out/verilator_done.txt || exit
@@ -23,8 +23,8 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
-      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make -j2;sudo make install; cd ..;
+      - run: sudo apt-get install luajit flex
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilatorSOC
       - run: test -e out/verilatorSOC_done.txt || exit      
   bjump:
@@ -32,8 +32,8 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
-      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator*;./configure;make -j2;sudo make install; cd ..;
+      - run: sudo apt-get install luajit flex
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make bjump
       - run: test -e out/bjump_done.txt || exit      
   unit:
@@ -52,7 +52,7 @@ jobs:
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: echo $PATH
-      - run: sudo ln -s /home/travis/build/jameshegarty/rigel/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: ls;sudo ln -s terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
 workflows:
   version: 2
