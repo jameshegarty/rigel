@@ -1091,7 +1091,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase, readFn )
+    res.terraModule = SOCMT.axiReadBytes( res, Nbytes, port, addressBase, readFn_orig )
   end
 
   --return SOC.AXIWrapRV(res,port)
