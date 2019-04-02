@@ -7,5 +7,4 @@ jobs:
       - checkout
       - run: ls
       - run: sudo apt-get install luajit
-      - run: cd examples
-      - run: make verilog
+      - run: cd examples; ls; make verilog
