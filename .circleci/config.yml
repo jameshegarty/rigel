@@ -4,6 +4,8 @@ jobs:
     docker:
       - image: circleci/python:3.7.1
     steps:
+      - checkout
+      - run: ls
       - run: sudo apt-get install luajit
-      - run: cd examples
+      - run: cd rigel/examples
       - run: make verilog
