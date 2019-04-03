@@ -5,9 +5,8 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: ls
       - run: sudo apt-get install luajit
-      - run: cd examples; ls; make wrapper verilog
+      - run: cd examples; make wrapper verilog
       - run: test -e out/verilog_done.txt || exit
       - run: test -e out/wrapper_done.txt || exit
   verilator:
@@ -17,7 +16,7 @@ jobs:
       - checkout
       - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
-      - run: cd examples; ls; make verilator
+      - run: cd examples; make verilator
       - run: test -e out/verilator_done.txt || exit
   verilatorSOC:
     docker:
@@ -28,17 +27,18 @@ jobs:
       - run: sudo apt-get update 
       - run: sudo apt-get install luajit flex bison z3
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
-      - run: cd examples; ls; make verilatorSOC
+      - run: cd examples; make verilatorSOC
+      - run: pwd
       - run: test -e out/verilatorSOC_done.txt || exit      
   bjump:
     docker:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: git submodule update
+      - run: git submodule update --init --recursive
       - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
-      - run: cd examples; ls; make bjump
+      - run: cd examples; make bjump
       - run: test -e out/bjump_done.txt || exit      
   unit:
     docker:
