@@ -53,7 +53,7 @@ jobs:
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: echo $PATH
-      - run: ls;sudo ln -s terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: ls;pwd;sudo ln -s terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: ls -la terra-Linux-x86_64-332a506/bin/terra
       - run: ls -la /usr/bin
       - run: which terra
