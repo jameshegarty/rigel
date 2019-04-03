@@ -44,6 +44,9 @@ jobs:
       - checkout
       - run: sudo apt-get install luajit
       - run: sudo apt-get install verilator
+      - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
+      - run: unzip terra-Linux-x86_64-332a506.zip
+      - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd unittests; make
   terra:
     docker:
@@ -52,11 +55,7 @@ jobs:
       - checkout
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
-      - run: echo $PATH
-      - run: ls;pwd;sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
-      - run: ls -la terra-Linux-x86_64-332a506/bin/terra
-      - run: ls -la /usr/bin
-      - run: which terra
+      - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
 workflows:
   version: 2
@@ -67,3 +66,4 @@ workflows:
       - verilatorSOC
       - unit
       - terra
+      - bjump
