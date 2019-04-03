@@ -27,6 +27,8 @@ jobs:
       - run: sudo apt-get update 
       - run: sudo apt-get install luajit flex bison z3
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: verilator --version
+      - run: which verilator
       - run: cd examples; make verilatorSOC
       - run: test -e examples/out/verilatorSOC_done.txt || exit      
   bjump:
@@ -57,7 +59,7 @@ jobs:
       - checkout
       # updated needed for z3
       - run: sudo apt-get update
-      - run: sudo apt-get install z3
+      - run: sudo apt-get install z3 luajit
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
