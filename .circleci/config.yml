@@ -7,14 +7,15 @@ jobs:
       - checkout
       - run: ls
       - run: sudo apt-get install luajit
-      - run: cd examples; ls; make wrapper
+      - run: cd examples; ls; make wrapper verilog
       - run: test -e out/verilog_done.txt || exit
+      - run: test -e out/wrapper_done.txt || exit
   verilator:
     docker:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit flex
+      - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilator
       - run: test -e out/verilator_done.txt || exit
@@ -23,7 +24,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit flex
+      - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilatorSOC
       - run: test -e out/verilatorSOC_done.txt || exit      
@@ -32,7 +33,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit flex
+      - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make bjump
       - run: test -e out/bjump_done.txt || exit      
@@ -53,6 +54,9 @@ jobs:
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: echo $PATH
       - run: ls;sudo ln -s terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: ls -la terra-Linux-x86_64-332a506/bin/terra
+      - run: ls -la /usr/bin
+      - run: which terra
       - run: cd examples; make terra
 workflows:
   version: 2
