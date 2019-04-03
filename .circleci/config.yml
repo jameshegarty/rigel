@@ -24,7 +24,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit flex bison
+      - run: sudo apt-get install luajit flex bison z3
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make verilatorSOC
       - run: test -e out/verilatorSOC_done.txt || exit      
