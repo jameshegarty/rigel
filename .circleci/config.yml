@@ -33,6 +33,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
+      - run: get submodule update
       - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: cd examples; ls; make bjump
