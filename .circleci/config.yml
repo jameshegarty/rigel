@@ -32,6 +32,7 @@ jobs:
       #- run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       #- run: verilator --version
       #- run: which verilator
+      #teswt
       - run: sudo apt-get install luajit verilator z3
       - run:
           command: cd examples; make verilatorSOC
