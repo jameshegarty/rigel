@@ -1,0 +1,81 @@
+version: 2
+jobs:
+  verilog:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit
+      - run: cd examples; make wrapper verilog
+      - run: test -e examples/out/verilog_done.txt || exit
+      - run: test -e examples/out/wrapper_done.txt || exit
+  verilator:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit verilator
+#      - run: sudo apt-get install luajit flex bison
+#      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: cd examples; make verilator
+      - run: test -e examples/out/verilator_done.txt || exit
+  verilatorSOC:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      # updated needed for z3
+      - run: sudo apt-get update 
+      #- run: sudo apt-get install luajit flex bison z3
+      #- run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      #- run: verilator --version
+      #- run: which verilator
+      #teswt
+      - run: sudo apt-get install luajit verilator z3
+      - run: cd examples; make verilatorSOC
+      - run: test -e examples/out/verilatorSOC_done.txt || exit      
+  bjump:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: git submodule update --init --recursive
+      #- run: sudo apt-get install luajit flex bison
+      #- run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: sudo apt-get install luajit verilator
+      - run: cd examples; make bjump
+      - run: test -e examples/out/bjump_done.txt || exit      
+  unit:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit
+      - run: sudo apt-get install verilator
+      - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
+      - run: unzip terra-Linux-x86_64-332a506.zip
+      - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: cd unittests; make
+  terra:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      # updated needed for z3
+      - run: sudo apt-get update
+      - run: sudo apt-get install z3 luajit
+      - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
+      - run: unzip terra-Linux-x86_64-332a506.zip
+      - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: cd examples; make terra
+      - run: test -e examples/out/terra_done.txt || exit
+workflows:
+  version: 2
+  dostuff:
+    jobs:
+      - verilog
+      - verilator
+      - verilatorSOC
+      - unit
+      - terra
+      - bjump
