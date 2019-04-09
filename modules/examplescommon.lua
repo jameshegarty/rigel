@@ -2136,7 +2136,12 @@ function C.automaticSystolicStub( mod )
     end
   end
   
-  return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+  --return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+  local res = Ssugar.moduleConstructor(mod.name)
+  for inst,_ in pairs(instances) do res:add(inst) end
+  for k,v in pairs(fns) do res:addFunction(v) end
+  for k,v in pairs(externalInstances) do res:addExternal(k,v) end
+  return res
 end
 
 -- this will import a Verilog file as a module... the module is basically a stub,

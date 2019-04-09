@@ -237,14 +237,6 @@ function systolicModuleConstructor:onlyWire(v) err( self.isComplete==false, "mod
 function systolicModuleConstructor:verilog(v) err( self.isComplete==false, "module is already complete"); self.__options.verilog=v; return self end
 function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "module is already complete"); self.__options.parameters=p; return self end
 
-function systolicModuleConstructor:addSideChannel(sc,X)
-  err(X==nil,"systolicsugar: too many arguments")
-  err( self.isComplete==false, "module is already complete");
-  err( systolic.isSideChannel(sc),":addSideChannel must be side channel")
-  self.__sideChannels[sc] = 1
-  return self
-end
-
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
     local fns = J.map(self.__functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)

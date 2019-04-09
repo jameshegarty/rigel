@@ -517,12 +517,16 @@ function darkroomFunctionFunctions:vHeader()
   local v = {"module "..self.name.." (input wire CLK, input wire reset "}
   if types.isHandshakeAny(self.inputType) then
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] process_input, output wire ready")
+  elseif types.isBasic(self.inputType) then
+    table.insert(v,", input wire ["..(self.inputType:verilogBits()-1)..":0] process_input")
   else
     assert(false)
   end
 
   if types.isHandshakeAny(self.outputType) then
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] process_output, input wire ready_downstream")
+  elseif types.isBasic(self.outputType) then
+    table.insert(v,", output wire ["..(self.outputType:verilogBits()-1)..":0] process_output")
   else
     assert(false)
   end
@@ -1548,7 +1552,12 @@ function darkroom.constant( name, value, ty, X )
     err( ty==nil, "rigel.constant: too many arguments" )
   end
   
-  err( types.isType(res.type), "rigel.constant: type must be rigel type" )
+  --err( types.isType(res.type), "rigel.constant: type must be rigel type" )
+  if res.type==nil then
+    -- user just called constant(val), try to guess type
+    res.type = types.valueToType(res.value)
+  end
+  
   res.type:checkLuaValue(res.value)
 
   return darkroom.newIR( res )

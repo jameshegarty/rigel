@@ -2914,27 +2914,31 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
 
     local pready = S.parameter("ready_downstream", types.bool())
     local CE = pready
-    
+
+    -- some modules may not require a CE (pure functions)
+    local processCE = CE
+    if f.systolicModule.functions.process.CE==nil then processCE=nil end
+      
     local outvalid
     local out
     if f.inputType==types.null() and f.outputType==types.null() and nilhandshake==true then
       assert(false) -- NYI
     elseif f.inputType==types.null() and nilhandshake==true then
       outvalid = SR:pushPop( pinp, S.constant(true,types.bool()), CE)
-      out = S.tuple({inner:process(nil,pinp,CE), outvalid})
+      out = S.tuple({inner:process(nil,pinp,processCE), outvalid})
     elseif f.inputType==types.null() and nilhandshake==false then
       outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
       --table.insert(pipelines,inner:process(nil,pinp,CE))
-      out = S.tuple({inner:process(nil,S.constant(true,types.bool()),CE), outvalid})
+      out = S.tuple({inner:process(nil,S.constant(true,types.bool()),processCE), outvalid})
     elseif f.outputType==types.null() and nilhandshake==true then
       outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = outvalid
-      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), CE))
+      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
     elseif f.outputType==types.null() and nilhandshake==false then
-      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), CE))
+      table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
     else
       outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
-      out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), CE), outvalid})
+      out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), processCE), outvalid})
     end
     
     if DARKROOM_VERBOSE then
@@ -4515,7 +4519,13 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
       for k,v in pairs(systolicInstances) do systolicModule:add(v) end
     end
 
-    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,S.CE("process_CE")) )
+    local CE
+    if systolicOutput~=nil and systolicOutput:isPure()==false then
+      CE = S.CE("process_CE")
+      print("MODULE",name,"NOT PURE")
+    end
+    
+    systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,CE) )
 
     systolicModule:complete()
     return systolicModule

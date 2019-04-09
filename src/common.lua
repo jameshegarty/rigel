@@ -95,7 +95,7 @@ function common.appendSet(dest,src)
   end
 end
 
-function common.joinSet(dest,src)
+function common.joinSet(dest,src, allowDuplicates)
   local t = {}
 
   for k,v in pairs(dest) do
@@ -103,7 +103,7 @@ function common.joinSet(dest,src)
   end
 
   for k,v in pairs(src) do
-    if t[k]~=nil then
+    if allowDuplicates~=true and t[k]~=nil then
       print("duplicate",k)
       assert(false)
     end

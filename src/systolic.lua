@@ -532,7 +532,7 @@ end
 
 -- does this need a valid bit?
 function systolicASTFunctions:isPure( validbit )
-  assert( systolicAST.isSystolicAST(validbit) )
+  --assert( systolicAST.isSystolicAST(validbit) )
 
   return self:visitEach(
     function( n, inputs )
@@ -540,7 +540,8 @@ function systolicASTFunctions:isPure( validbit )
         assert(#inputs>=1)
         return n.func:isPure() and inputs[1]
       elseif n.kind=="parameter" then
-        return n.key~=validbit.key -- explicitly used valid bit
+        --if validbit~=nil and n.key==validbit.key then assert(false) end
+        return (validbit==nil or n.key~=validbit.key) -- explicitly used valid bit. Not sure why this is needed?
       elseif n.kind=="delay" then
         return false
       elseif n.kind=="fndefn" then
@@ -851,11 +852,11 @@ function systolicASTFunctions:checkWiring(module)
         end
 
         if fn.CE==nil and n.inputs[3]~=nil then
-          err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' "..inst.loc)
+          err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' inside module '"..module.name.."' "..inst.loc)
         end
 
         if fn.CE~=nil then
-          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..inst.name.."' (of module "..inst.module.name..") "..inst.loc)
+          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..inst.name.."' (of module "..inst.module.name..") inside module '"..module.name.."' "..inst.loc)
 
           if CEState[inst]==nil then CEState[inst]={} end
           if CEState[inst][fn.CE.name]==nil then
@@ -914,7 +915,7 @@ function systolicASTFunctions:checkWiring(module)
         end
 
         if fn.CE~=nil and (CEState[inst]==nil or CEState[inst][fn.CE.name]==nil) then
-          err( state[inst][fnname]~=nil and state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."'")
+          err( state[inst][fnname]~=nil and state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' ' in module '"..module.name.."'")
         end
         
         if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then

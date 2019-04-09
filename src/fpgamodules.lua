@@ -26,7 +26,7 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
   local ot = S.select(S.eq(S.index(swinp,0),limit:toSystolic(ty)),
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
@@ -75,7 +75,7 @@ modules.incIfWrap=memoize(function( ty, limit_orig, inc, X )
   
   local nextValue = S.select( S.eq(S.index(swinp,0), limit:toSystolic(ty) ), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
   local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 
@@ -87,7 +87,7 @@ modules.max = memoize(function(ty,hasCE)
   local swinp = S.parameter("process_input", types.tuple{ty,ty})
   local CE = S.CE("CE")
   if hasCE==false then CE=nil end
-  return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil,CE)},{})
+  return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil)},{})
 end)
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
@@ -950,7 +950,7 @@ modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
   local sbinp = systolic.parameter("setby_inp",setbyTypeB)
   local setbyvalidparam = systolic.parameter("setby_valid",types.bool())
   local setbyvalid = setbyvalidparam
-  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null(),CEVar)
+  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null())
 
   if hasSet then
     setbyvalid = systolic.__or(setbyvalid,setvalid)
