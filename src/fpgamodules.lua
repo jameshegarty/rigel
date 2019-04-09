@@ -30,18 +30,15 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function(inc,ty,hasCE)
+modules.incIf=memoize(function( inc, ty, X )
   if inc==nil then inc=1 end
   if ty==nil then ty=types.uint(16) end
-  if hasCE==nil then hasCE=true end
-  assert(type(hasCE)=="boolean")
+  assert(X==nil)
 
   local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
   
   local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-  local CE = S.CE("CE")
-  if hasCE==false then CE=nil end
-  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{})
+  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 -- this will never wrap around (this just stops at top value)
@@ -915,6 +912,7 @@ modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
   err( types.isType(ty), "systolic.module.regBy, type must be type" )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
+  assert( setby.functions.process:isPure() )
   assert( CE==nil or type(CE)=="boolean" )
   if init~=nil then ty:checkLuaValue(init) end
   if resetValue~=nil then ty:checkLuaValue(resetValue) end

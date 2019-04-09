@@ -243,6 +243,7 @@ function systolicModuleConstructor:complete()
     self.module = systolic.module.new( self.__name, fns, self.__instances, self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__externalInstances )
     self.isComplete = true
   end
+  return self.module
 end
 
 -- convert to plain module
@@ -255,7 +256,7 @@ function systolicModuleConstructor:setDelay( fnname, delay, X )
   err(X==nil,"systolicsugar: too many arguments")
   assert(type(fnname)=="string")
   assert(type(delay)=="number")
-  self.__options.verilogDelay = self.options.verilogDelay or {}
+  self.__options.verilogDelay = self.__options.verilogDelay or {}
   self.__options.verilogDelay[fnname]=delay
 end
 

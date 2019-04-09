@@ -765,7 +765,7 @@ endmodule
 
   res.makeSystolic = function()
     local res = C.automaticSystolicStub(res)
-    res.verilog = table.concat(vstring)
+    res:verilog(table.concat(vstring))
     return res
   end
   

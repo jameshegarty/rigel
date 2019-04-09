@@ -2118,7 +2118,11 @@ function C.automaticSystolicStub( mod )
 
       for _,fn in pairs(sinst.module.functions) do
         if R.isFunction(mod) then
-          fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+          if fn.inputParameter.type==types.null() then
+            fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+          else
+            fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+          end
         else
           assert(false) -- NYI
         end
@@ -2136,11 +2140,15 @@ function C.automaticSystolicStub( mod )
     end
   end
   
-  --return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+--  local res =  S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+
   local res = Ssugar.moduleConstructor(mod.name)
+  res:onlyWire(true)
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
+  for k,v in pairs(delays) do res:setDelay(k,v) end
   for k,v in pairs(externalInstances) do res:addExternal(k,v) end
+  
   return res
 end
 
@@ -2161,9 +2169,10 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
   
   local function makeSystolic()
     local s = C.automaticSystolicStub(res)
-    s.verilog = J.fileToString(R.path..filename)
-    s.verilog = s.verilog:gsub([[`include "[%w_\.]*"]],"")
-    s.verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..s.verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */"
+    local verilog = J.fileToString(R.path..filename)
+    verilog = verilog:gsub([[`include "[%w_\.]*"]],"")
+    verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */"
+    s:verilog(verilog)
     return s
   end
 

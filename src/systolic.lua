@@ -193,7 +193,7 @@ function systolic.valueToVerilog( value, ty )
   elseif ty:isNamed() then
     return systolic.valueToVerilog(value,ty.structure)
   else
-    print("valueToVerilog",ty)
+    print("valueToVerilog",ty,value)
     assert(false)
   end
 end
@@ -461,6 +461,7 @@ end
 function systolic.constant( v, ty )
   err( types.isType(ty), "constant type must be a type, but is: "..tostring(ty))
   err( types.isBasic(ty),"constant type must be basic, but is: "..tostring(ty))
+  err( ty~=types.null(),"constant with null type?")
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
@@ -591,12 +592,14 @@ function systolicASTFunctions:disablePipeliningSingle()
 end
 
 -- replace the explicit delay nodes with registers
-function systolicASTFunctions:removeDelays( )
+function systolicASTFunctions:removeDelays( module )
   local pipelineRegisters = {}
 
   local delayCache = {}
   local nilCE = {}
   local function getDelayed( node, delay, validbit, cebit )
+    err(delay==0 or cebit~=nil,"delay in module '"..module.name.."' is missing CE. This is probably not what you want? delay:"..tostring(delay))
+    
     -- if node is a constant, we don't need to put it in a register.
     if node.kind=="null" or node.type:verilogBits()<=0 or node.kind=="constant" or node==cebit then return node end
     
@@ -724,6 +727,11 @@ function systolicASTFunctions:calculateDelays()
     end)
 
   return delaysAtInput
+end
+
+function systolicASTFunctions:getDelay()
+  local delaysAtInput = self:calculateDelays()
+  return delaysAtInput[self]+self:internalDelay()
 end
 
 function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains )
@@ -1734,7 +1742,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
 
   local delayRegisters
-  t.ast, delayRegisters = t.ast:removeDelays()
+  t.ast, delayRegisters = t.ast:removeDelays(t)
   t.instances = J.concat(t.instances, delayRegisters)
   local instanceMap = J.invertTable(t.instances)
   

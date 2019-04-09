@@ -143,7 +143,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
           table.insert( arrList, r )
         end
       end
-      systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output",nil,nil,S.CE("process_CE")) )
+      systolicModule:addFunction( S.lambda("process", sinp, S.cast(S.tuple(arrList),rigel.lower(res.outputType)), "process_output") )
       return systolicModule
     end
 
@@ -902,7 +902,10 @@ modules.map = memoize(function( f, W, H, X )
         end 
       end
       
-      local CE = S.CE("process_CE")
+      local CE
+      if f.systolicModule.functions.process.CE~=nil then
+        CE = S.CE("process_CE")
+      end
       
       systolicModule:addFunction( S.lambda("process", inp, S.cast( S.tuple( out ), res.outputType ), "process_output", nil, nil, CE ) )
       if f.stateful then
@@ -3274,8 +3277,13 @@ modules.reduce = memoize(function( f, W, H )
                              local I = systolicModule:add(f.systolicModule:instantiate("inner"..i))
                              i = i + 1
                              return I:process(S.tuple{a,b}) end, nil )
+
+      local CE
+      if f.systolicModule.functions.process.CE~=nil then
+        CE = S.CE("process_CE")
+      end
       
-      systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, S.CE("process_CE") ) )
+      systolicModule:addFunction( S.lambda( "process", sinp, expr, "process_output", nil, nil, CE ) )
       
       return systolicModule
     end
@@ -4216,10 +4224,6 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
     end
     
-    if HANDSHAKE_MODE==false then 
-      local CE = S.CE("CE")
-      process:setCE(CE)
-    end
 
 
     for inst,_ in pairs(fn.instanceMap) do
@@ -4237,6 +4241,11 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
     end
     
     local out = fn.output:codegenSystolic( module )
+
+    if HANDSHAKE_MODE==false and (out[1]:isPure()==false or out[1]:getDelay()>0) then 
+      local CE = S.CE("CE")
+      process:setCE(CE)
+    end
 
     assert(systolic.isAST(out[1]))
 
@@ -4520,9 +4529,13 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     end
 
     local CE
-    if systolicOutput~=nil and systolicOutput:isPure()==false then
-      CE = S.CE("process_CE")
-      print("MODULE",name,"NOT PURE")
+    if systolicOutput~=nil then
+      if (systolicOutput:isPure()==false or systolicOutput:getDelay()>0) then
+        CE = S.CE("process_CE")
+      else
+--        print("ELIDE CE",name,delay)
+--        print("MODULE",name,"NOT PURE")
+      end
     end
     
     systolicModule:addFunction( S.lambda("process", systolicInput, systolicOutput, "process_output",nil,nil,CE) )
@@ -4618,7 +4631,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
 
     local C = require "examplescommon"
     local s = C.automaticSystolicStub(res)
-    s.verilog = vstr
+    s:verilog(vstr)
     return s
   end
   

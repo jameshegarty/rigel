@@ -36,7 +36,6 @@ void step(VERILATORCLASS* top){
 }
 
 void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int data){
-
   bool srVerbose = false; // verbose just for this fn
   
   //////////////////////////////////////////////////////////////
@@ -66,6 +65,7 @@ void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int d
     step(top);
     if(srVerbose || verbose){ printf("Waiting for ready\n"); printSlave(S0LIST); }
     if(i>5){printf("timeout waiting for slave ready\n");exit(1);}
+    i++;
   }
   
   top->SAXI0_WDATA = data;
@@ -252,16 +252,17 @@ int main(int argc, char** argv) {
       resetSlave(S0LIST);
     }
     
-    
     setReg(top,verbose,0xA0000000+4,0); // clear done bit
     setReg(top,verbose,0xA0000000,1); // set start bit
-    
+
     // now we're ready to service memory requests
     activateMasterRead( M0READ_SLAVEOUT );
     activateMasterWrite( M0WRITE_SLAVEOUT );
     activateMasterRead( M1READ_SLAVEOUT );
     activateMasterWrite( M1WRITE_SLAVEOUT );
-    
+
+    printf("ready to start\n");
+        
     int lastPct = -1;
     double startSec = CurrentTimeInSeconds();
 
