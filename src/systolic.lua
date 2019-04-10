@@ -1042,13 +1042,10 @@ function systolicASTFunctions:CSE(repo)
     end)
 end
 
-function systolicASTFunctions:toVerilog( module )
-  assert( systolic.isModule(module))
-  --local clockedLogic = {}
-  local declarations = {}
+function systolicASTFunctions:toVerilogInner( module, declarations )
   local wired = {} -- set of variable names that have been put in decls (wires) already
   
-  local finalOut = self:visitEach(
+  return self:visitEach(
     function(n, args)
       local finalResult
       local argwire = J.map(args, function(nn) assert(type(nn[2])=="boolean");return nn[2] end)
@@ -1356,7 +1353,15 @@ function systolicASTFunctions:toVerilog( module )
         return {finalResult, wire}
       end
     end)
+end
 
+function systolicASTFunctions:toVerilog( module )
+  assert( systolic.isModule(module))
+
+  local declarations = {}
+
+  self:toVerilogInner(module,declarations)
+  
   declarations = J.map(declarations, function(i) return "  "..i end )
   local fin = table.concat(declarations,"\n").."\n"
 

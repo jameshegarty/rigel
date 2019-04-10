@@ -109,7 +109,7 @@ end
 
 function systolicFunctionConstructor:addPipeline( p ) 
   err( self.isComplete==false, "function is already complete"); 
-  assert(systolic.isAST(p)); 
+  err( systolic.isAST(p), "systolicFunctionConstructor:addPipeline(), input should be systolic AST, but is: "..tostring(p) )
   table.insert( self.pipelines, p )
 end
 
@@ -157,7 +157,7 @@ function systolicModuleConstructor:add( inst, X )
 
   checkReserved(inst.name)
   if self.__usedInstanceNames[inst.name]~=nil then
-    print("Error, instance name "..inst.name.." already in use")
+    print("Error, instance name '"..inst.name.."' of module '"..inst.module.name.."' already in use")
     assert(false)
   end
 

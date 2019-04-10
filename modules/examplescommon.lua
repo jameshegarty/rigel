@@ -2136,7 +2136,7 @@ function C.automaticSystolicStub( mod )
 
   for k,v in pairs(fns) do
     if Ssugar.isFunctionConstructor(v) then
-      fns[k] = v:complete()
+--      fns[k] = v:complete()
     end
   end
   

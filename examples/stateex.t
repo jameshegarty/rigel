@@ -1,28 +1,39 @@
 local types = require "types"
 local C = require "examplescommon"
 local R = require "rigel"
+local harness = require "harnessSOC"
+local Zynq = require "zynq"
+local SOC = require "soc"
+local SDF = require "sdf"
+local G = require "generators"
 import "state"
 
-state counter(I:types.uint(32),O:types.uint(32))
+state StateExample(I:types.uint(8),O:types.uint(8))
 --1
 --  while R.c(true) do
-  while C.GTConst(types.uint(32),16)(I) do
-    if C.eq(types.uint(32))(I,R.c(0,types.u32)) then
-      yield R.c(255,types.u32) --2
+  while R.c("mytrue",true,types.bool()) do
+    if C.GTConst(types.uint(8),16)(I) then
+      yield R.c(255,types.u8) --2
 
       --while R.c(true) do [R.c(128,types.u32)] end
       
-      if R.c("mytrue",true,types.bool()) then
-        yield R.c(128,types.u32) --3
+      if C.eq(types.uint(8))(I,R.c(0,types.u8)) then
+        yield R.c(128,types.u8) --3
       else
-        yield R.c(64,types.u32) --4 
+        yield R.c(64,types.u8) --4 
       end
     else
-      yield R.c(0,types.u32) --5
+      yield R.c(0,types.u8) --5
     end
   end
 end
 
-print("COUNTER",counter)
+print("COUNTER",StateExample)
 
-print("counter",counter:toVerilog())
+print("counter",StateExample:toVerilog())
+
+noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+noc.extern=true
+local regs = SOC.axiRegs({},SDF{1,128*64},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
+
+harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{StateExample}}, G.AXIWriteBurst{"out/soc_simple",noc.write}, regs.done},nil,{regs})

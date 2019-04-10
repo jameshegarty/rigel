@@ -23,7 +23,7 @@ function parseBB(lex,input,compilerState,X)
   while true do
     if lex:matches("if") then
       lex:expect("if")
-      local ifcond = lex:luaexpr()
+      local ifcond = J.memoize(lex:luaexpr())
       lex:expect("then")
       local truePhi = {kind="phi",inputs={{input,ifcond}},desc="ifTruePhi", line=lex:cur().linenumber}
       local TrueBB = parseBB(lex,truePhi,compilerState)
@@ -36,7 +36,7 @@ function parseBB(lex,input,compilerState,X)
       input = phi
     elseif lex:matches("while") then
       lex:expect("while")
-      local whilecond = lex:luaexpr()
+      local whilecond = J.memoize(lex:luaexpr())
       lex:expect("do")
       -- have a node which is the entry point of the loop, which we can then attach the back edge to
       local whileEntryPoint = {kind="phi",inputs={{input,whilecond}}, line=lex:cur().linenumber, desc="whileentry"}
@@ -94,6 +94,15 @@ specializeNode = J.memoize(function( node, env, compilerState, X )
     node.expr = node.expr(env)
     J.err(R.isIR(node.expr), "yield return must be Rigel value, but is: "..tostring(node.expr))
     J.err(node.expr.type==compilerState.outputType, "yield return type must match function output type ("..tostring(compilerState.outputType).."), but type is: "..tostring(node.expr.type))
+
+    local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true}
+    local s = C.automaticSystolicStub(res)
+    local cs = node.expr:codegenSystolic(s)
+    s = s:complete()
+    local decls={}
+    local fin = cs[1]:toVerilogInner(s,decls)
+    node.verilogOut = fin[1]
+    node.verilogDecls = decls
   elseif node.kind=="expr" then
     node.expr = node.expr(env)
     J.err(R.isIR(node.expr), "basic block return must be Rigel value, but is: "..tostring(node.expr))
@@ -154,15 +163,9 @@ function extractTraces(node, traces, nodeSeen)
       
   if node.kind=="yield" or node.kind=="start" then
     node.traces = mergeTraces(node.traces,traces)
-
-    --for k,v in pairs(traces) do
-    --  print(node.kind,"TRACE",k)
-    --end
-    
     --yield nodes are terminating - they ignore the input traces when passing up
   elseif node.kind=="phi" or node.kind=="expr" then
     for k,v in ipairs(node.inputs) do
-      --print("PHI INPUT",k,v[1].kind)
 
       local itrace = traces
       if v[2]~=nil then
@@ -176,7 +179,6 @@ function extractTraces(node, traces, nodeSeen)
 
           itrace = mergeTraces(itrace,thisTrace)
         end
-        --itrace = mergeTraces(itrace,tv)
       end
 
       extractTraces(v[1],itrace,nodeSeen)
@@ -219,6 +221,31 @@ function compile(code,compilerState)
   end
 end
 
+function parseDecl(decl)
+  assert(decl:sub(1,9)=="  assign ")
+  decl = decl:sub(10)
+  --print("DECL"..decl)
+  decl = J.explode(" = ",decl)
+  print(decl[1],decl[2])
+  return decl
+end
+
+function mergeDecls(decls)
+  local str = ""
+  local seen = {}
+  for _,decl in ipairs(decls) do
+    if seen[decl[1]]==nil then
+      str = str..decl[1].." = "..decl[2].."\n"
+      seen[decl[1]] = decl[2]
+    else  
+      if seen[decl[1]]~=decl[2] then
+        J.err(false,"Signal '"..decl[1].."' is set twice! first:'"..seen[decl[1]].."' second:'"..decl[2].."'")
+      end
+    end
+  end
+  return str
+end
+
 return{
   name = "state";
   entrypoints = {"state"};
@@ -250,7 +277,8 @@ return{
       local Itype = ItypeFn(env)
       print("INPUTTYPE:",Itype)
       J.err(types.isType(Itype),"input type must be rigel type, but is: "..tostring(Itype))
-
+      compilerState.inputType=Itype
+      
       local Otype = OtypeFn(env)
       print("OUTPUTTYPE:",Otype)
       J.err(types.isType(Otype),"output type must be rigel type, but is: "..tostring(Otype))
@@ -258,6 +286,9 @@ return{
       env[Iname] = R.input(Itype)
 
       compilerState.stateMap={} -- map from state id to yield node
+
+      local res = R.newFunction{inputType=Itype,outputType=Otype,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=fname,delay=0,stateful=true}
+      compilerState.module = res
 
       local nodeList = {}
       collectNodes( code, nodeList )
@@ -272,63 +303,102 @@ return{
       
       compile( code, compilerState )
       
-      local res = R.newFunction{inputType=Itype,outputType=Otype,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=fname,delay=0,stateful=true}
 
       function res.makeSystolic()
         local s = C.automaticSystolicStub(res)
-        s.verilog = {}
-        table.insert(s.verilog,res:vHeader())
-        table.insert(s.verilog,[[  reg [31:0] STATE;
+
+        local verilog = {}
+        table.insert(verilog,res:vHeader())
+        table.insert(verilog,[[  reg [31:0] STATE;
   wire [31:0] NEXT_STATE;
+  wire []]..(types.lower(Otype):verilogBits()-1)..[[:0] process_output_next;
+  reg []]..(types.lower(Otype):verilogBits()-1)..[[:0] process_output_reg;
+
   always @ (posedge CLK) begin
     if reset==1'b1 then begin
       STATE <= 32'd1;
+      
     end else begin
       STATE <= NEXT_STATE;
+      process_output_reg <= process_output_next;
     end
   end
 ]])
 
-        table.insert(s.verilog,[[  always_comb begin
+        local declMap = {}
+        local condV = {}
+        local condDecl = {}
+        
+        for k,node in pairs(compilerState.stateMap) do
+          condV[k] = {}
+          condDecl[k] = {}
+
+          for tk,tv in pairs(node.traces) do
+            condV[k][tk] = ""
+            --condDecl[k][tk]=""
+            local first = true
+            for cond,_ in pairs(tv.conds) do
+              local tempMod = C.automaticSystolicStub(res)
+              tempMod.__name = J.sanitize(tempMod.__name.."_"..k.."_"..tk.."_"..tostring(cond))
+              local cs = cond:codegenSystolic(tempMod)
+              J.err(cs[1]:internalDelay()==0,"Condition should be async")
+              tempMod:lookupFunction("process"):addPipeline(cs[1])
+              tempMod = tempMod:complete()
+
+              local decls={}
+              local fin = cs[1]:toVerilogInner(tempMod,decls)
+
+              for _,v in pairs(decls) do
+                table.insert(condDecl[k],parseDecl(v) )
+              end
+              
+              for _,inst in pairs(tempMod.instances) do
+                if inst.module.instanceToVerilogStart~=nil and (tempMod.externalInstances[inst]==nil) then
+                  local sst = inst.module:instanceToVerilogStart( inst )
+                  if sst~=nil then declMap[sst]=1 end
+                end
+              end
+              
+              if first then
+                condV[k][tk] = condV[k][tk]..fin[1]
+                first = false
+              else
+                condV[k][tk] = condV[k][tk].." && "..fin[1]
+              end
+            end
+          end
+        end
+
+        for d,_ in pairs(declMap) do
+          table.insert(verilog,d)
+        end
+        
+        table.insert(verilog,[[  always_comb begin
 ]])
 
         for k,node in pairs(compilerState.stateMap) do
-          table.insert(s.verilog,"if (STATE==32'd"..k..[[) begin
+          table.insert(verilog,"if (STATE==32'd"..k..[[) begin
 ]])
+          table.insert(verilog, mergeDecls(condDecl[k]) )
+
           for tk,tv in pairs(node.traces) do
-
-            local condS = {}
-            for cond,_ in pairs(tv.conds) do
-              local cs = cond:codegenSystolic(s)
-              J.err(cs[1]:internalDelay()==0,"Condition should be async")
-              --print("CONDDELAY",cs[1],cs[1]:internalDelay())
-              table.insert(condS, cs[1] )
-            end
-
-            s=s:complete()
-            local condV = ""
-            --for cond,_ in pairs(tv.conds) do
-            for _,cond in ipairs(condS) do
-              --local condS = cond:codegenSystolic(s)
-              --print(condS[1])
-              condV = condV..cond:toVerilog(s)
-            end
-            table.insert(s.verilog,[[  if (]]..condV..[[) begin
+            table.insert(verilog,[[  if (]]..condV[k][tk]..[[) begin
 ]])
-            table.insert(s.verilog,[[    NEXT_STATE <= 32'd]]..tostring(tk)..";\n")
-            table.insert(s.verilog,[[  end
+            table.insert(verilog,[[    process_output_next = ]]..compilerState.stateMap[tk].verilogOut..";\n")
+            table.insert(verilog,[[    NEXT_STATE = 32'd]]..tostring(tk)..";\n")
+            table.insert(verilog,[[  end
 ]])
           end
-          table.insert(s.verilog,"end else")
+          table.insert(verilog,"end else")
         end
       
-        table.insert(s.verilog,"  end end")
+        table.insert(verilog,"  end end")
         
-table.insert(s.verilog,[[
+table.insert(verilog,[[
 
 endmodule]])
 
-        s.verilog = table.concat(s.verilog,"")
+        s:verilog(table.concat(verilog,""))
         return s
       end
       return res
