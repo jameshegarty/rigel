@@ -515,6 +515,11 @@ end
 -- verilog header
 function darkroomFunctionFunctions:vHeader()
   local v = {"module "..self.name.." (input wire CLK, input wire reset "}
+
+  if self.stateful or self.delay>0 then
+    table.insert(v,", input wire CE")
+  end
+  
   if types.isHandshakeAny(self.inputType) then
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] process_input, output wire ready")
   elseif types.isBasic(self.inputType) then

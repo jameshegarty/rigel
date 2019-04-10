@@ -3,6 +3,7 @@ local types = require "types"
 local J = require "common"
 local C = require "examplescommon"
 local SDF = require "sdf"
+local S = require "systolic"
 
 function parseBB(lex,input,compilerState,X)
   assert(type(input)=="table")
@@ -287,7 +288,7 @@ return{
 
       compilerState.stateMap={} -- map from state id to yield node
 
-      local res = R.newFunction{inputType=Itype,outputType=Otype,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=fname,delay=0,stateful=true}
+      local res = R.newFunction{inputType=Itype,outputType=Otype,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=fname,delay=1,stateful=true}
       compilerState.module = res
 
       local nodeList = {}
@@ -306,7 +307,8 @@ return{
 
       function res.makeSystolic()
         local s = C.automaticSystolicStub(res)
-
+        s:lookupFunction("process"):setCE(S.CE("CE"))
+          
         local verilog = {}
         table.insert(verilog,res:vHeader())
         table.insert(verilog,[[  reg [31:0] STATE;
@@ -315,14 +317,16 @@ return{
   reg []]..(types.lower(Otype):verilogBits()-1)..[[:0] process_output_reg;
 
   always @ (posedge CLK) begin
-    if reset==1'b1 then begin
+    if (reset==1'b1) begin
       STATE <= 32'd1;
-      
-    end else begin
+    end else if (CE) begin
       STATE <= NEXT_STATE;
       process_output_reg <= process_output_next;
     end
+
+//    $display("STATE: %d, NEXT_STATE:%d",STATE,NEXT_STATE);
   end
+  assign process_output = process_output_reg;
 ]])
 
         local declMap = {}
@@ -345,6 +349,18 @@ return{
               tempMod:lookupFunction("process"):addPipeline(cs[1])
               tempMod = tempMod:complete()
 
+              for _,inst in pairs(tempMod.instances) do
+                --table.insert(s.instances,inst)
+                --if s.__usedInstanceNames[inst.name]==nil then
+                local sinst = inst.module:instantiate("DEPINST_"..tostring(J.keycount(s.__instanceMap)))
+                s:add( sinst )
+
+                local fn = inst.module.functions.process
+                print("INPUTTYPE",fn.inputParameter.type,inst.module)
+                s:lookupFunction("process"):addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+                --end
+              end
+              
               local decls={}
               local fin = cs[1]:toVerilogInner(tempMod,decls)
 
@@ -372,11 +388,15 @@ return{
         for d,_ in pairs(declMap) do
           table.insert(verilog,d)
         end
-        
+
+        local first = true
         table.insert(verilog,[[  always_comb begin
 ]])
 
         for k,node in pairs(compilerState.stateMap) do
+          if first==false then table.insert(verilog," else ") end
+          first=false
+          
           table.insert(verilog,"if (STATE==32'd"..k..[[) begin
 ]])
           table.insert(verilog, mergeDecls(condDecl[k]) )
@@ -389,14 +409,16 @@ return{
             table.insert(verilog,[[  end
 ]])
           end
-          table.insert(verilog,"end else")
+          table.insert(verilog,"end")
         end
       
-        table.insert(verilog,"  end end")
+        table.insert(verilog,"  end")
         
 table.insert(verilog,[[
 
-endmodule]])
+endmodule
+
+]])
 
         s:verilog(table.concat(verilog,""))
         return s
