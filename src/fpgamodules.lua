@@ -309,6 +309,10 @@ modules.fifonoop = memoize(function(ty)
   local popFront = fifo:addFunction( S.lambda("load",S.parameter("pfnil",types.null()),internalData,"load_output") )
   local popFront_ready = fifo:addFunction( S.lambda("load_ready",internalReady,nil,"load_ready") )
 
+  -- size
+  local size = fifo:addFunction( Ssugar.lambdaConstructor("size" ) )
+  size:setOutput(S.constant(0,types.uint(1)),"size")
+  
   -- reset
   local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )
 

@@ -56,7 +56,13 @@ function parseBB(lex,input,compilerState,X)
       lex:expect("[")
       local expr = lex:luaexpr()
       lex:expect("]")
-      input = { kind="expr", expr=expr, inputs={{input,cond}}, line=lex:cur().linenumber }
+      input = { kind="expr", expr=expr, inputs={{input}}, line=lex:cur().linenumber }
+    elseif lex:lookaheadmatches(":") then
+      local instname = lex:expect(lex.name).value
+      print("PARSE INST",instname)
+      lex:expect(":")
+      local expr = lex:luaexpr()
+      table.insert(compilerState.instances,{instname,expr})
     else
      -- print("BREAK")
       break
@@ -80,7 +86,7 @@ local specializeNode
 specializeNode = J.memoize(function( node, env, compilerState, X )
   assert(X==nil)
     
-  print("Specialize",node.kind,node.state,node,env,compilerState)
+  --print("Specialize",node.kind,node.state,node,env,compilerState)
 
   for k,v in ipairs(node.inputs) do
     if v[2]~=nil then node.inputs[k][2] = v[2](env) end
@@ -96,7 +102,7 @@ specializeNode = J.memoize(function( node, env, compilerState, X )
     J.err(R.isIR(node.expr), "yield return must be Rigel value, but is: "..tostring(node.expr))
     J.err(node.expr.type==compilerState.outputType, "yield return type must match function output type ("..tostring(compilerState.outputType).."), but type is: "..tostring(node.expr.type))
 
-    local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true}
+    local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true,instanceMap=compilerState.instanceMap}
     local s = C.automaticSystolicStub(res)
     local cs = node.expr:codegenSystolic(s)
     s = s:complete()
@@ -121,12 +127,17 @@ end)
 -- note that this is exponential, intentionally - we want to find all dynamic paths
 function extractTraces(node, traces, nodeSeen)
 
+  --print("TRACE",node.kind,node.desc,node.line,node,"INPUTS:",#node.inputs)
+
+  --[=[
+-- doesn't work: there may be a common node that is hit along multiple dynamic paths
   if nodeSeen[node]~=nil then
     print("you have an infinite loop somewhere, with no yields to break it?")
-    print("NODE: ",node.kind, "linenumber:",node.line)
+    print("NODE: ",node.kind, "linenumber:",node.line,node.desc)
     assert(false)
   end
   nodeSeen[node] = 1
+  ]=]
   
   local function mergeTraces(a,b)
     assert(a~=nil)
@@ -164,6 +175,7 @@ function extractTraces(node, traces, nodeSeen)
       
   if node.kind=="yield" or node.kind=="start" then
     node.traces = mergeTraces(node.traces,traces)
+--    print("TRACEDONE")
     --yield nodes are terminating - they ignore the input traces when passing up
   elseif node.kind=="phi" or node.kind=="expr" then
     for k,v in ipairs(node.inputs) do
@@ -193,8 +205,10 @@ end
 function compile(code,compilerState)
   for k,node in pairs(compilerState.stateMap) do
     -- for each input to the terminating state node, propagate its traces up to inputs
+    assert(node.kind=="yield" or node.kind=="start")
     local nodeSeen = {}
     for k,v in ipairs(node.inputs) do
+      print("TRACE INPUT",k)
       local trace = {}
       local bbs={}
       local conds={}
@@ -223,11 +237,12 @@ function compile(code,compilerState)
 end
 
 function parseDecl(decl)
-  assert(decl:sub(1,9)=="  assign ")
+  if decl == "" then return {"",""} end
+  J.err(decl:sub(1,9)=="  assign ","Decl not as expected? '"..decl.."'")
   decl = decl:sub(10)
   --print("DECL"..decl)
   decl = J.explode(" = ",decl)
-  print(decl[1],decl[2])
+  --print(decl[1],decl[2])
   return decl
 end
 
@@ -270,7 +285,7 @@ return{
     
     lex:expect(")")
     local startNode = {kind="start",inputs={},state=1,traces={}}
-    local compilerState={stateId=2}
+    local compilerState={stateId=2,instances={},instanceMap={}}
     local code = parseBB(lex,startNode,compilerState)
     lex:expect("end")
     return function(env_fn)
@@ -291,6 +306,19 @@ return{
       local res = R.newFunction{inputType=Itype,outputType=Otype,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=fname,delay=1,stateful=true}
       compilerState.module = res
 
+      for k,inst in pairs(compilerState.instances) do
+        local rmod = inst[2](env)
+        --print("INST",inst[1],rinst)
+        J.err(R.isModule(rmod),"instance module is not a Rigel module? Is :"..tostring(rmod))
+        local rinst =  rmod:instantiate(inst[1])
+        compilerState.instances[k][2] = rinst
+        J.err(env[inst[1]]==nil,"instance name '' was already set in environment?")
+        env[inst[1]] = rinst
+        compilerState.instanceMap[rinst]=1
+      end
+
+      res.instanceMap = compilerState.instanceMap
+      
       local nodeList = {}
       collectNodes( code, nodeList )
       for node,_ in pairs(nodeList) do specializeNode( node, env, compilerState ) end
@@ -303,9 +331,10 @@ return{
       end
       
       compile( code, compilerState )
-      
 
       function res.makeSystolic()
+        S.DISABLE_WIRING_ERRORS = true
+
         local s = C.automaticSystolicStub(res)
         s:lookupFunction("process"):setCE(S.CE("CE"))
           
@@ -339,7 +368,7 @@ return{
 
           for tk,tv in pairs(node.traces) do
             condV[k][tk] = ""
-            --condDecl[k][tk]=""
+
             local first = true
             for cond,_ in pairs(tv.conds) do
               local tempMod = C.automaticSystolicStub(res)
@@ -350,15 +379,12 @@ return{
               tempMod = tempMod:complete()
 
               for _,inst in pairs(tempMod.instances) do
-                --table.insert(s.instances,inst)
-                --if s.__usedInstanceNames[inst.name]==nil then
                 local sinst = inst.module:instantiate("DEPINST_"..tostring(J.keycount(s.__instanceMap)))
                 s:add( sinst )
-
-                local fn = inst.module.functions.process
-                print("INPUTTYPE",fn.inputParameter.type,inst.module)
-                s:lookupFunction("process"):addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
-                --end
+                if sinst.module.functions.reset~=nil then
+                  print("REST",s:lookupFunction("reset"))
+                  s:lookupFunction("reset"):addPipeline(sinst:reset())
+                end
               end
               
               local decls={}
@@ -421,6 +447,10 @@ endmodule
 ]])
 
         s:verilog(table.concat(verilog,""))
+
+        s = s:complete()
+
+        S.DISABLE_WIRING_ERRORS = nil
         return s
       end
       return res

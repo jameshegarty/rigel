@@ -354,7 +354,7 @@ __index = function(tab,key)
     if fn~=nil then
       return function(self, inp, valid, ce, X)
         assert(systolic.isInstance(self))
-        err(tab.final==false, "Attempting to modify a finalized instance!")
+        err(systolic.DISABLE_WIRING_ERRORS==true or tab.final==false, "Attempting to modify a finalized instance!")
         if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         err( valid==nil or systolicAST.isSystolicAST(valid), "valid must be a systolic ast or nil" )
@@ -1514,7 +1514,7 @@ function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
     if self.onlyWire and fn.implicitValid then
       -- when in onlyWire mode, it's ok to have an undriven valid bit
     else
-      err( type(validvar)=="string", "function '"..fnname.."' on instance '"..instance.name.."' is missing validvar?"..tostring(validvar) )
+      err( type(validvar)=="string", "function '"..fnname.."' on instance '"..instance.name.."' of module '"..self.name.."' is missing validvar? pure:"..tostring(fn:isPure()).." onlyWire:"..tostring(self.onlyWire).." implicitValid:"..tostring(fn.implicitValid).." is: "..tostring(validvar) )
       local wirename = instance.name.."_"..fn.valid.name
       table.insert(decl,"  assign "..wirename.." = "..validvar..";")
     end      
@@ -1676,7 +1676,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   end
 
   for _,inst in ipairs(instances) do
-    err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
+    err(systolic.DISABLE_WIRING_ERRORS==true or inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
     inst.final="added to module '"..name.."' "..debug.traceback()
   end
 

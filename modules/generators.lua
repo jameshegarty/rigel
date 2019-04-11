@@ -145,6 +145,19 @@ function(args)
   end
 end)
 
+generators.LT = R.newFunctionGenerator("generators","LT",{"type","rate"},{"number"},
+function(args)
+  if args.number~=nil then
+    J.err( args.type:isUint() or args.type:isInt(), "generators.LT: type should be int or uint, but is: "..tostring(args.type) )
+    return C.LTConst(args.type, args.number )
+  else
+    J.err( args.type:isTuple(), "generators.LT: type should be tuple, but is:"..tostring(args.type) )
+    J.err( args.type.list[1]==args.type.list[2], "generators.LT: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+
+    return C.LT( args.type.list[1], args.type.list[1] )
+  end
+end)
+
 generators.And = R.newFunctionGenerator("generators","And",{"type","rate"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.And: type should be tuple, but is: "..tostring(args.type) )

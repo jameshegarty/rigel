@@ -289,11 +289,11 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
     local srcFn = systolicModule:lookupFunction(fnname)
 
     local VALID
-    if onlyWire then
+    if onlyWire and srcFn.implicitValid==false then
       VALID = srcFn:getValid()
     end
 
-    local fn = Ssugar.lambdaConstructor( fnname, srcFn:getInput().type, srcFn:getInput().name, srcFn:getValid().name )
+    local fn = Ssugar.lambdaConstructor( fnname, srcFn:getInput().type, srcFn:getInput().name, J.sel(srcFn.implicitValid,nil,srcFn:getValid().name) )
     fn:setOutput( inner[fnname]( inner, srcFn:getInput(), VALID ), srcFn:getOutputName() )
     fn:setCE(srcFn:getCE())
     res:addFunction(fn)
@@ -3002,7 +3002,8 @@ end
 -- W,H,T: used for debugging (calculating last cycle)
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, X )
+-- VRStore: make the store function be HandshakeVR
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, X )
   rigel.expectBasic(A)
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
@@ -3013,13 +3014,22 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   assert(csimOnly==nil or type(csimOnly)=="boolean")
   if VRLoad==nil then VRLoad=false end
   err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
+  if VRStore==nil then VRStore=false end
+  err( type(VRStore)=="boolean","fifo: VRStore should be boolean")
 
   if SDFRate==nil then SDFRate=SDF{1,1} end
   err( SDF.isSDF(SDFRate),"modules.fifo: SDFRate must be nil or SDF rate")
   
   assert(X==nil)
 
-  local storeFunction = {name="store", inputType=rigel.Handshake(A),  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+  local storeFunction = {name="store", outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+
+  if VRStore then
+    storeFunction.inputType = types.HandshakeVR(A)
+  else
+    storeFunction.inputType = types.Handshake(A)
+  end
+
   local loadFunction = {name="load", inputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
   
   if VRLoad then
@@ -3037,6 +3047,9 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
 
   local storeRigelFn = rigel.newFunction(storeFunction)
   local loadRigelFn = rigel.newFunction(loadFunction)
+
+  local addrBits = (math.ceil(math.log(size)/math.log(2)))+1
+  local sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=false}
 
   local terraModule
   if terralib~=nil then terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
@@ -3118,9 +3131,12 @@ return mod
           load:setOutput( res, "load_output" )
         end
         --------------
-        local reset = systolicModule:addFunction( Ssugar.lambdaConstructor( "reset" ) )
+        local reset = systolicModule:addFunction( Ssugar.lambdaConstructor( "reset",nil,nil,"reset" ) )
         reset:addPipeline(fifo:pushBackReset())
-        reset:addPipeline(fifo:popFrontReset())      
+        reset:addPipeline(fifo:popFrontReset())
+        --------------
+        local sizeFn = systolicModule:addFunction( Ssugar.lambdaConstructor( "size" ) )
+        sizeFn:setOutput( fifo:size(), "size" )
         --------------
         -- debug
         if W~=nil then
@@ -3137,15 +3153,15 @@ return mod
         end
         --------------
         
-        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset"}, false )
-        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset"})
-        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset"},{true,false})
+        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset","size"}, false )
+        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset","size"})
+        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset","size"},{true,false})
         
         return systolicModule
       end
     end
 
-    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn}, true, makeSystolic, function() return terraModule end )
+    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, true, makeSystolic, function() return terraModule end )
     res.kind="fifo"
 return res
   end

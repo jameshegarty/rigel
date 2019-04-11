@@ -284,7 +284,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
       err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
       err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(sm.functions.process.output.type).."' but should be '"..tostring(darkroom.lower(tab.outputType)).."'" )
     end
-
+    
     if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
       err( sm.functions.ready~=nil, "module ready function missing?")
 
@@ -298,8 +298,10 @@ local function buildAndCheckSystolicModule(tab, isModule)
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
   else
     
-    for fn,_ in ipairs(tab.functions) do
-      err( sm.functions[fn.name]~=nil,"Systolic module is missing function '"..fn.name.."'")
+    for fnname,fn in pairs(tab.functions) do
+      err( sm.functions[fnname]~=nil,"Systolic module is missing function '"..fnname.."'")
+      err( fn.outputType==types.null() or sm.functions[fnname].output.type==types.lower(fn.outputType),"Systolic module output type is incorrect for function '"..fnname.."'")
+      err( sm.functions[fnname].inputParameter.type==types.lower(fn.inputType),"Systolic module output type is incorrect for function '"..fnname.."'")
     end
     
     err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
