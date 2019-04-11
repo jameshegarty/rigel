@@ -88,18 +88,31 @@ local function exprToCode(node,compilerState)
   local s = C.automaticSystolicStub(res)
   local cs = node.expr:codegenSystolic(s)
 
-  local readySystolic
+  local readyinp,readyout,readyPipelines
   if R.handshakeMode(node.expr) then
     print("HANDSHAKEMODE",node.expr)
     --assert(false)
-    readySystolic = node.expr:codegenSystolicReady(s)
+    readyinp,readyout,readyPipelines = node.expr:codegenSystolicReady(s)
   end
     
   s = s:complete()
   local decls={}
   local fin = cs[1]:toVerilogInner(s,decls)
 
-  return fin[1], decls
+  local readyVOut
+  if R.handshakeMode(node.expr) then
+    if readyout~=nil then
+      readyVOut = readyout:toVerilogInner(s,decls)
+    end
+
+    for _,p in ipairs(readyPipelines) do
+      local tout = p:toVerilogInner(s,decls)
+      print("READYOUT? ",tout[1],tout[2])
+--      assert(tout==nil)
+    end
+  end
+  
+  return fin[1], decls, readyVOut
 end
 
 local specializeNode
@@ -251,12 +264,9 @@ function compile(code,compilerState)
 end
 
 function parseDecl(decl)
-  if decl == "" then return {"",""} end
   J.err(decl:sub(1,9)=="  assign ","Decl not as expected? '"..decl.."'")
   decl = decl:sub(10)
-  --print("DECL"..decl)
   decl = J.explode(" = ",decl)
-  --print(decl[1],decl[2])
   return decl
 end
 
@@ -392,6 +402,7 @@ return{
               tempMod:lookupFunction("process"):addPipeline(cs[1])
               tempMod = tempMod:complete()
 
+              --[=[
               for _,inst in pairs(tempMod.instances) do
                 local sinst = inst.module:instantiate("DEPINST_"..tostring(J.keycount(s.__instanceMap)))
                 s:add( sinst )
@@ -399,13 +410,15 @@ return{
                   print("REST",s:lookupFunction("reset"))
                   s:lookupFunction("reset"):addPipeline(sinst:reset())
                 end
-              end
+                end]=]
               
               local decls={}
               local fin = cs[1]:toVerilogInner(tempMod,decls)
 
               for _,v in pairs(decls) do
-                table.insert(condDecl[k],parseDecl(v) )
+                if v~="" then
+                  table.insert(condDecl[k],parseDecl(v) )
+                end
               end
               
               for _,inst in pairs(tempMod.instances) do

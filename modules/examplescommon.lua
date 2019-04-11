@@ -2127,10 +2127,17 @@ function C.automaticSystolicStub( mod )
 
       for _,fn in pairs(sinst.module.functions) do
         if R.isFunction(mod) then
+          print("INSTFN",sinst.name,sinst.module.name,fn.name)
           if fn.inputParameter.type==types.null() then
             fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
           else
             fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+
+--            local readyFnName = fn.name.."_ready"
+--            if sinst[readyFnName]~=nil then
+              --              assert(false)
+--              fns.process:addPipeline(sinst[readyFnName](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+--            end
           end
         else
           assert(false) -- NYI
@@ -2208,7 +2215,7 @@ C.VRtoRVRaw = J.memoize(function(A)
 end)
 
 -- fn should be HSVR, and this wraps to return a plain HS function
-C.LiftVRtoRV = J.memoize(function(fn)
+C.ConvertVRtoRV = J.memoize(function(fn)
   err( types.isHandshakeVR(fn.inputType), "LiftVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
   err( types.isHandshakeVR(fn.outputType), "LiftVRtoRV: fn output should be HandshakeVR" )
   return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"LiftVRtoRV_"..fn.name)
