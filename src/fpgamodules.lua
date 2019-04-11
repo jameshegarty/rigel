@@ -293,10 +293,10 @@ end)
 
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
-modules.fifonoop = memoize(function(ty)
+modules.fifonoop = memoize(function(ty,addrBits)
   assert(types.isType(ty))
 
-  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty))):onlyWire(true)
+  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty).."_addrbits"..tostring(addrBits))):onlyWire(true)
 
   local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
   local internalReady = systolic.parameter("load_ready_downstream",types.bool())
@@ -311,7 +311,7 @@ modules.fifonoop = memoize(function(ty)
 
   -- size
   local size = fifo:addFunction( Ssugar.lambdaConstructor("size" ) )
-  size:setOutput(S.constant(0,types.uint(1)),"size")
+  size:setOutput(S.constant(0,types.uint(addrBits)),"size")
   
   -- reset
   local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )

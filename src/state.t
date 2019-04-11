@@ -82,6 +82,26 @@ local function collectNodes(node, nodeList)
   end
 end
 
+-- returns outvar, decls list, readyOut (optional)
+local function exprToCode(node,compilerState)
+  local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true,instanceMap=compilerState.instanceMap}
+  local s = C.automaticSystolicStub(res)
+  local cs = node.expr:codegenSystolic(s)
+
+  local readySystolic
+  if R.handshakeMode(node.expr) then
+    print("HANDSHAKEMODE",node.expr)
+    --assert(false)
+    readySystolic = node.expr:codegenSystolicReady(s)
+  end
+    
+  s = s:complete()
+  local decls={}
+  local fin = cs[1]:toVerilogInner(s,decls)
+
+  return fin[1], decls
+end
+
 local specializeNode
 specializeNode = J.memoize(function( node, env, compilerState, X )
   assert(X==nil)
@@ -102,14 +122,8 @@ specializeNode = J.memoize(function( node, env, compilerState, X )
     J.err(R.isIR(node.expr), "yield return must be Rigel value, but is: "..tostring(node.expr))
     J.err(node.expr.type==compilerState.outputType, "yield return type must match function output type ("..tostring(compilerState.outputType).."), but type is: "..tostring(node.expr.type))
 
-    local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true,instanceMap=compilerState.instanceMap}
-    local s = C.automaticSystolicStub(res)
-    local cs = node.expr:codegenSystolic(s)
-    s = s:complete()
-    local decls={}
-    local fin = cs[1]:toVerilogInner(s,decls)
-    node.verilogOut = fin[1]
-    node.verilogDecls = decls
+    
+    node.verilogOut, node.verilogDecls = exprToCode(node,compilerState)
   elseif node.kind=="expr" then
     node.expr = node.expr(env)
     J.err(R.isIR(node.expr), "basic block return must be Rigel value, but is: "..tostring(node.expr))

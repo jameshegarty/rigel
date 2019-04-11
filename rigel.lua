@@ -300,7 +300,11 @@ local function buildAndCheckSystolicModule(tab, isModule)
     
     for fnname,fn in pairs(tab.functions) do
       err( sm.functions[fnname]~=nil,"Systolic module is missing function '"..fnname.."'")
-      err( fn.outputType==types.null() or sm.functions[fnname].output.type==types.lower(fn.outputType),"Systolic module output type is incorrect for function '"..fnname.."'")
+
+      if fn.outputType~=types.null() then
+        err( sm.functions[fnname].output.type==types.lower(fn.outputType),"Systolic module output type is incorrect for function '"..fnname.."' on module '"..tab.name.."' type is:"..tostring(sm.functions[fnname].output.type)..", but should be:"..tostring(types.lower(fn.outputType)))
+      end
+
       err( sm.functions[fnname].inputParameter.type==types.lower(fn.inputType),"Systolic module output type is incorrect for function '"..fnname.."'")
     end
     
@@ -1390,6 +1394,204 @@ function darkroomIRFunctions:typecheck()
     print("Rigel Typecheck NYI ",n.kind)
     assert(false)
   end
+end
+
+function darkroomIRFunctions:codegenSystolicReady( module )
+  local readyinp
+  local readyout
+
+  -- if we have nil->Handshake(A) types, we have to drive these ready chains somehow (and they're not connected to input)
+  local readyPipelines={}
+
+  -- remember, we're visiting the graph in reverse here.
+  -- if the node takes I inputs, we return a lua array of size I
+  -- for each input i in I:
+  -- if that input has 1 input stream, we out[i] is a systolic bool value
+  -- if that input has N input streams, we out[i] is a systolic array of bool values
+  -- if that input is 0 streams, out[i] is nil
+  
+  self:visitEachReverse(
+    function(n, args)
+      
+      local input
+      
+      -- why do we need to support multiple readers of a HS stream? (ie ANDing the ready bits?)
+      -- A stream may be read by multi selectStreams, which is OK.
+      -- However: why can't we just special-case expect all multiple readers to be selectStreams? It seems like this should work.
+      -- Note 1: Take a look at modulesTerra.lambda... it basically implements this that way
+      -- Note 2: one issue is that it's very important that this function returns a systolic value of the correct type for
+      --         every intermediate! We can return/examine any intermediate, and it must have the right type!
+      --         don't try to special case by having this function return intermediates as lua arrays of bools or something.
+      
+      for k,i in pairs(args) do
+        local parentKey = i[2]
+        local value = i[1]
+        local thisi = value[parentKey]
+        
+        if types.isHandshake(n.type) or types.isHandshakeTrigger(n.type) or n.type:is("HandshakeFramed") then
+          assert(systolicAST.isSystolicAST(thisi))
+          assert(thisi.type:isBool())
+          
+          if input==nil then
+            input = thisi
+          else
+            input = S.__and(input,thisi)
+          end
+        elseif n:outputStreams()>1 or types.isHandshakeArray(n.type) then
+          assert(systolicAST.isSystolicAST(thisi))
+          
+          if types.isHandshakeTmuxed(n.type) or types.isHandshakeArrayOneHot(n.type) then
+            assert(J.keycount(args)==1) -- NYI
+            input = thisi
+          else
+            assert(thisi.type:isArray() and thisi.type:arrayOver():isBool())
+            
+            if input==nil then
+              input = thisi
+            else
+              local r = {}
+              for i=0,n:outputStreams()-1 do
+                r[i+1] = S.__and(S.index(input,i),S.index(thisi,i))
+              end
+              input = S.cast(S.tuple(r),types.array2d(types.bool(),n:outputStreams()))
+            end
+          end
+        else
+          --err(false,"no output streams? why is this getting a ready bit? "..n.loc)
+          -- this is OK - fifo:store() for example has nil output
+        end
+      end
+      
+      if J.keycount(args)==0 then
+        -- this is the output of the pipeline
+        assert(readyinp==nil)
+        assert(n:parentCount(self)==0)
+        
+        if n:outputStreams()==1 then
+          readyinp = S.parameter( "ready_downstream", types.bool() )
+          input = readyinp
+        elseif n:outputStreams()>1 then
+          readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
+          input = readyinp
+        else
+          -- this is ok: ready bit may be totally internal to the module
+          readyinp = S.parameter( "ready_downstream", types.null() )
+          input = readyinp
+        end
+      else
+        -- if any downstream nodes are selectStream, they'd better all be selectStream, and the count had better match
+        local anySS = false
+        local allSS = true
+        for dsNode,_ in n:parents(self) do
+          if dsNode.kind=="selectStream" then
+            anySS = true
+          else
+            allSS = false
+          end
+        end
+        
+        err( anySS==allSS,"If any consumers are selectStream, all consumers must be selectStream "..n.loc )
+        err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects "..tostring(n:outputStreams()).." stream readers, but only "..tostring(J.keycount(args)).." were found. "..n.loc )
+        
+        if n:outputStreams()>=1 and n:parentCount(self)>1 then
+          err(allSS,"Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Handshaked nodes with multiple consumers should use broadcastStream. "..n.loc)
+        end
+      end
+      
+      local res
+      
+      if n.kind=="input" then
+        assert(readyout==nil)
+        readyout = input
+      elseif n.kind=="apply" then
+        res = {module:lookupInstance(n.name):ready(input)}
+        if n.fn.inputType==types.null() then
+          table.insert(readyPipelines, res[1])
+        end
+      elseif n.kind=="applyMethod" then
+        local inst = module:lookupInstance(n.inst.name)
+        res = {inst[n.fnname.."_ready"](inst, input)}
+        
+        if n.inst.module.functions[n.fnname].inputType==types.null() then
+          -- eg fifo:load_ready()... nothing else will drive this, so we need to add it
+          table.insert(readyPipelines,res[1])
+        end
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
+        
+        -- tuple has N input streams, N output streams
+        
+        res = {}
+        local i=0
+        for i=0,n:outputStreams()-1 do
+          table.insert(res, S.index(input,i) )
+        end
+      elseif n.kind=="statements" then
+        res = {input}
+        for i=2,#n.inputs do
+          if n.inputs[i]:outputStreams()==1 then
+            res[i] = S.constant(true,types.bool())
+          elseif n.inputs[i]:outputStreams()>1 then
+            local r = {}
+            for ii=1,n.inputs[i]:outputStreams() do table.insert(r,S.constant(true,types.bool())) end
+            res[i] = S.cast(S.concat(r), types.array2d(types.bool(),n.inputs[i]:outputStreams()) ) 
+          else
+            -- res[i]=nil
+          end
+        end
+        
+      elseif n.kind=="selectStream" then
+        
+        res = {}
+        
+        res[1] = {}
+        for i=1,n.inputs[1]:outputStreams() do
+          if i-1==n.i then
+            res[1][i] = input
+          else
+            res[1][i] = S.constant(true,types.bool())
+          end
+        end
+        
+        res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
+      else
+        print("missing ready wiring of op - "..n.kind)
+        assert(false)
+      end
+      
+      -- now, validate that the output is what we expect
+      err( #n.inputs==0 or type(res)=="table","res should be table "..n.kind.." inputs "..tostring(#n.inputs))
+      
+      for k,i in ipairs(n.inputs) do
+        if types.isHandshake(i.type) or i.type:is("HandshakeFramed") then
+          err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
+          err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format of ready function. This node: kind='"..n.kind.."' "..tostring(n).." input index "..tostring(k).."/"..(#n.inputs).." (with input type "..tostring(i.type)..", and input name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
+        elseif types.isHandshakeTrigger(i.type) then
+          --assert(#res==1)
+          assert(res[k].type:isBool())
+        elseif i:outputStreams()>1 or types.isHandshakeArray(i.type) then
+          
+          err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
+          if types.isHandshakeTmuxed(i.type) then
+            err( res[k].type:isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+          elseif types.isHandshakeArrayOneHot(i.type) then
+            err( res[k].type==types.uint(8),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+          else
+            err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
+          end
+        elseif i:outputStreams()==0 then
+          err(res[k]==nil or res[k].type==types.null(), "incorrect ready bit output format kind:'"..n.kind.."' - "..n.loc)
+        else
+          print("NYI "..tostring(i.type))
+          assert(false)
+        end
+      end
+      -- end validate
+      
+      return res
+    end, true)
+  
+  return readyinp, readyout, readyPipelines
 end
 
 function darkroomIRFunctions:codegenSystolic( module )
