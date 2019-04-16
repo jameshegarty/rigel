@@ -10,6 +10,7 @@ import "state"
 
 state StateExample(I:types.uint(8),O:types.uint(8))
 --1
+--yield R.c(8,types.u8)
   while R.c("mytrue",true,types.bool()) do
     if C.GTConst(types.uint(8),16)(I) then
       yield R.c(255,types.u8) --2
@@ -21,6 +22,13 @@ state StateExample(I:types.uint(8),O:types.uint(8))
       end
     else
       yield R.c(0,types.u8) --5
+      
+      if C.GTConst(types.uint(8),8)(I) then
+        yield R.c(16,types.u8) --3
+      else
+        yield R.c(8,types.u8) --4 
+      end
+
     end
   end
 end

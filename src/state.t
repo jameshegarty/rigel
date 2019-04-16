@@ -90,46 +90,9 @@ local function collectNodes(node, nodeList)
   end
 end
 
--- returns outvar, decls list, readyOut (optional)
---[=[
-local function exprToCode( node, compilerState )
-  local res = R.newFunction{inputType=compilerState.inputType,outputType=compilerState.outputType,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},name=compilerState.module.name.."_YIELD"..tostring(node.state),delay=0,stateful=true,instanceMap=compilerState.instanceMap}
-  local s = C.automaticSystolicStub(res)
-  local cs = node.expr:codegenSystolic(s)
-
-  local readyinp,readyout,readyPipelines
-  if R.handshakeMode(node.expr) then
-    print("HANDSHAKEMODE",node.expr)
-    --assert(false)
-    readyinp,readyout,readyPipelines = node.expr:codegenSystolicReady(s)
-  end
-    
-  s = s:complete()
-  local decls={}
-  local fin = cs[1]:toVerilogInner(s,decls)
-
-  local readyVOut
-  if R.handshakeMode(node.expr) then
-    if readyout~=nil then
-      readyVOut = readyout:toVerilogInner(s,decls)
-    end
-
-    for _,p in ipairs(readyPipelines) do
-      local tout = p:toVerilogInner(s,decls)
-      print("READYOUT? ",tout[1],tout[2])
---      assert(tout==nil)
-    end
-  end
-  
-  return fin[1], decls, readyVOut
-end
-]=]
-
 local specializeNode
 specializeNode = J.memoize(function( node, env, compilerState, condMap, X )
   assert(X==nil)
-    
-  --print("Specialize",node.kind,node.state,node,env,compilerState)
 
   for k,v in ipairs(node.inputs) do
     if v.cond~=nil then
@@ -147,9 +110,6 @@ specializeNode = J.memoize(function( node, env, compilerState, condMap, X )
     node.expr = node.expr(env)
     J.err(R.isIR(node.expr), "yield return must be Rigel value, but is: "..tostring(node.expr))
     J.err(node.expr.type==compilerState.outputType, "yield return type must match function output type ("..tostring(compilerState.outputType).."), but type is: "..tostring(node.expr.type))
-
-    
-    --node.verilogOut, node.verilogDecls = exprToCode(node,compilerState)
   elseif node.kind=="expr" then
     node.expr = node.expr(env)
     J.err(R.isIR(node.expr), "basic block return must be Rigel value, but is: "..tostring(node.expr))
@@ -225,7 +185,6 @@ function extractTraces( node, traces )
   end
 
   local function appendToTrace(trcs, endState, bb, condId, pathNode)
-    --local newTrcs = J.deepcopy(trcs)
     local newTrcs = trcs -- careful!
     if newTrcs[endState]==nil then newTrcs[endState]={bbs={},condIdMap={},path={}} end
     if bb~=nil then assert(R.isIR(bb)); newTrcs[endState].bbs[bb]=1 end 
@@ -337,8 +296,6 @@ function codegenConds(s,condMap)
 
   local condvec = R.concat(condMap)
   
---  for condId, condRigel in pairs(condMap) do
---    print("ADD COND",condId,condRigel)
   local cs = condvec:codegenSystolic(s)
   J.err(cs[1]:internalDelay()==0,"Condition should be async")
   s:lookupFunction("process"):addPipeline(cs[1])
@@ -382,20 +339,21 @@ function codegenBBs( compilerState, startState, endState, bbs, yieldOut )
 
   local wireDecls, instanceDecls = mod:complete():toVerilogNoheader()
   return cleanupDecls(wireDecls)
-  --return table.concat(decls,"\n"), tostring(yieldOut)
-  --return mod:toVerilog(), tostring(yieldOut)
---  return "", yieldS:toVerilogInner(mod)[1]
 end
 
 function andConds(condIdMap)
-  local str = ""
-  local first = true
-  for condid,_ in pairs(condIdMap) do
-    if first==false then str = str.." & " end
-    first=false
-    str = str.."COND_VEC["..(condid-1).."]"
+  if J.keycount(condIdMap)==0 then
+    return "1'b1"
+  else
+    local str = ""
+    local first = true
+    for condid,_ in pairs(condIdMap) do
+      if first==false then str = str.." & " end
+      first=false
+      str = str.."COND_VEC["..(condid-1).."]"
+    end
+    return str
   end
-  return str
 end
 
 return{
@@ -417,7 +375,6 @@ return{
     local Oname = lex:expect(lex.name).value
     lex:expect(":")
     local OtypeFn = lex:luaexpr()
-    --J.err(types.isType(Otype),"output type must be rigel type")
     
     lex:expect(")")
     local startNode = {kind="start",inputs={},state=1,traces={}}
@@ -445,7 +402,6 @@ return{
 
       for k,inst in pairs(compilerState.instances) do
         local rmod = inst[2](env)
-        --print("INST",inst[1],rinst)
         J.err(R.isModule(rmod),"instance module is not a Rigel module? Is :"..tostring(rmod))
         local rinst =  rmod:instantiate(inst[1])
         compilerState.instances[k][2] = rinst
@@ -489,7 +445,7 @@ return{
       STATE <= NEXT_STATE;
     end
 
-    $display("reset %d CE %d STATE: %d, NEXT_STATE:%d process_valid %d process_input %d process_output %d",reset,CE,STATE,NEXT_STATE,process_valid,process_input,process_output);
+    //$display("STATEDISP reset %d CE %d STATE: %d, NEXT_STATE:%d process_valid %d process_input %d process_output %d",reset,CE,STATE,NEXT_STATE,process_valid,process_input,process_output);
   end
 
 ]])

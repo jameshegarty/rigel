@@ -17,6 +17,7 @@ jobs:
       - run: sudo apt-get install luajit verilator
 #      - run: sudo apt-get install luajit flex bison
 #      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: verilator --version
       - run: cd examples; make verilator
       - run: test -e examples/out/verilator_done.txt || exit
   verilatorSOC:
