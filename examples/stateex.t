@@ -33,4 +33,6 @@ noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 local regs = SOC.axiRegs({},SDF{1,128*64},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
-harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{StateExample}}, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})
+harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{StateExample}}, G.Map{G.FIFO{128}}, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})
+
+--harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{C.plusConst(types.u8,0)}}, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})

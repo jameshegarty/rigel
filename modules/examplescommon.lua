@@ -1663,7 +1663,7 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function(ty, value_orig)
+C.plusConst = memoize(function(ty, value_orig, async)
   err(types.isType(ty),"plus100: expected type input")
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
@@ -1671,7 +1671,13 @@ C.plusConst = memoize(function(ty, value_orig)
   local globals = {}
   value:appendRequires(globals)
   
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + value:toSystolic(ty) end, function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,10) ,
+                              function(plus100inp)
+                                local res = plus100inp + value:toSystolic(ty)
+                                if async==true then res = res:disablePipelining() end
+                                return res
+                              end,
+                              function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
   return plus100mod
 end)
 
@@ -2081,6 +2087,7 @@ function C.automaticSystolicStub( mod )
     end
     delays[fnname]=0
 
+
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       local inp
       local readyDownstreamFnName = fnname.."_ready_downstream"
@@ -2104,6 +2111,13 @@ function C.automaticSystolicStub( mod )
     end
   end
 
+  if modFunctions.process~=nil then
+    if types.isBasic(modFunctions.process.inputType) and types.isBasic(modFunctions.process.outputType) and mod.stateful then
+      fns.process:setCE(S.CE("CE"))
+      fns.process:setValid("process_valid")
+    end
+  end
+  
   local instances = {}
   local externalInstances = {}
   for ic,_ in pairs(mod.requires) do
@@ -2127,7 +2141,7 @@ function C.automaticSystolicStub( mod )
 
       for _,fn in pairs(sinst.module.functions) do
         if R.isFunction(mod) then
-          print("INSTFN",sinst.name,sinst.module.name,fn.name)
+--          print("INSTFN",mod.name, sinst.name,sinst.module.name,fn.name)
           if fn.inputParameter.type==types.null() then
             fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
           else
@@ -2216,9 +2230,9 @@ end)
 
 -- fn should be HSVR, and this wraps to return a plain HS function
 C.ConvertVRtoRV = J.memoize(function(fn)
-  err( types.isHandshakeVR(fn.inputType), "LiftVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
-  err( types.isHandshakeVR(fn.outputType), "LiftVRtoRV: fn output should be HandshakeVR" )
-  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"LiftVRtoRV_"..fn.name)
+  err( types.isHandshakeVR(fn.inputType), "ConvertVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
+  err( types.isHandshakeVR(fn.outputType), "ConvertVRtoRV: fn output should be HandshakeVR" )
+  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"ConvertVRtoRV_"..fn.name)
 end)
 
 -- placed at the front of a pipeline to feed it invalid input

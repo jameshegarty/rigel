@@ -1022,8 +1022,7 @@ endmodule
   local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, requires, globalMetadata,{{1,(Nbytes/8)}},{{1,1}}, instanceMap )
 
   if terralib~=nil then
-    res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn )
+    res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn ) end
   end
   
   return res

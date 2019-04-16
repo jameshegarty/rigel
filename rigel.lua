@@ -523,7 +523,7 @@ function darkroomFunctionFunctions:vHeader()
   local v = {"module "..self.name.." (input wire CLK, input wire reset "}
 
   if (types.isBasic(self.inputType) or types.isBasic(self.outputType)) and (self.stateful or self.delay>0) then
-    table.insert(v,", input wire CE")
+    table.insert(v,", input wire CE, input wire process_valid")
   end
 
   if types.isHandshakeAny(self.inputType) then

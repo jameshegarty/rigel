@@ -26,11 +26,12 @@ state FlowControl(I:AXI.ReadAddress64,O:AXI.ReadData64)
   while R.c(true,types.bool()) do
     if G.LT{7}(fifo:size()) then
       [fifo:store(noc.read(I))]
+      yield fifo:load() -- 2
     else
       [C.Stall(AXI.ReadAddressTuple,true)(I)]
       [fifo:store(noc.read(C.Invalid(AXI.ReadAddressTuple,true)()))]
+      yield fifo:load() -- 3
     end
-    yield fifo:load()
   end
 end
 

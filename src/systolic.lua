@@ -256,6 +256,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
 
   -- a (possibly unnecessary) sanity check
   for k,v in pairs(pipelines) do
+    err( systolicAST.isSystolicAST(v) )
     err(v~=output,"pipeline "..k.." is the same as the output!")
     for kk,vv in pairs(pipelines) do err(v~=vv or k==kk, "Pipeline "..k.." is the same as pipeline "..kk) end
   end
@@ -354,7 +355,7 @@ __index = function(tab,key)
     if fn~=nil then
       return function(self, inp, valid, ce, X)
         assert(systolic.isInstance(self))
-        err(systolic.DISABLE_WIRING_ERRORS==true or tab.final==false, "Attempting to modify a finalized instance!")
+        err( tab.final==false, "Attempting to modify a finalized instance!")
         if inp==nil then inp = systolic.null() end -- give this a stub value that evaluates to nil
         err( systolicAST.isSystolicAST(inp), "input must be a systolic ast or nil" )
         err( valid==nil or systolicAST.isSystolicAST(valid), "valid must be a systolic ast or nil" )
@@ -382,7 +383,11 @@ __index = function(tab,key)
   return v
 end,
 __tostring = function(tab)
-  return "SystolicInstance "..tab.name..":"..tab.module.name
+  local tmt = getmetatable(tab)
+  setmetatable(tab,nil)
+  local str = "SystolicInstance "..tab.name..":"..tab.module.name.." ("..tostring(tab)..")"
+  setmetatable(tab,tmt)
+  return str
 end
 }
 
@@ -407,9 +412,59 @@ __call = function(tab, delayvalue)
     return systolicAST.new({kind="delay",delay=delayvalue,inputs={tab},type=tab.type,loc=getloc()})
   end
 end,
-  __newindex = function(table, key, value)
-                    error("Attempt to modify systolic AST node")
-                  end}
+__newindex = function(table, key, value)
+                   error("Attempt to modify systolic AST node")
+end,
+__tostring = function(tab)
+  local decls = {}
+
+  local fin = tab:visitEach(function(n,args)
+    local res
+    if n.kind=="call" then
+--      res = n.inst.name..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
+      res = tostring(n.inst)..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
+    elseif n.kind=="parameter" then
+      res = n.name
+    elseif n.kind=="constant" then
+      res = "constant("..tostring(n.value)..","..tostring(n.type)..")"
+    elseif n.kind=="slice" then
+      res = args[1].."[]"
+    elseif n.kind=="bitSlice" then
+      res = args[1].."[]"
+    elseif n.kind=="cast" then
+      res = "cast("..args[1]..")"
+    elseif n.kind=="binop" then
+      res = args[1]..n.op..args[2]
+    elseif n.kind=="unary" then
+      res = n.op..args[1]
+    elseif n.kind=="select" then
+      res = args[1].."?"..args[2]..":"..args[3]
+    elseif n.kind=="null" then
+      res = "null"
+    elseif n.kind=="tuple" then
+      res = "concat("
+      for k,v in ipairs(args) do res = v.."," end
+      res = res..")"
+    elseif n.kind=="fndefn" then
+      res = "FNOUT = "..tostring(args[1]).."\nPipelines:"
+      for k,v in ipairs(args) do if k>1 then res = res..v.."\n" end end
+      res = res.."\n"
+    elseif n.kind=="module" then
+      res = "Module\n"
+      for k,v in ipairs(args) do res = res.."ModuleFn:\n"..v.."\n" end
+    elseif n.kind=="delay" then
+      res = "delay("..args[1]..")"
+    else
+      print("NYI - tostring of systolicAST "..tostring(n.kind))
+      assert(false)
+    end
+
+    return res
+  end)
+  
+  return fin
+end
+}
 
 function systolicASTFunctions:init()
   setmetatable(self,nil)
@@ -450,7 +505,7 @@ end
 
 -- low,high are inclusive
 function systolic.bitSlice( expr, low, high, X )
-  err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast")
+  err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast, but is: "..tostring(expr))
   err( type(low)=="number", "bitSlice: low must be number")
   err( type(high)=="number", "bitSlice: high must be number")
   err( high>=low, "bitSlice: high<low, (low="..tostring(low)..",high="..tostring(high)..")" )
@@ -844,7 +899,7 @@ end
 function systolicASTFunctions:checkWiring(module)
   local state = {}
   local CEState = {}
-  
+
   self:process(
     function(n, args)
       if n.kind=="call" then
@@ -856,7 +911,9 @@ function systolicASTFunctions:checkWiring(module)
         
         if fn:isPure()==false and fn.inputParameter.type==types.null() then
           -- it's ok to have multiple calls to a pure function w/ no inputs
-          err( state[inst][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' "..inst.loc)
+          if state[inst][fnname]~=nil then
+            err( state[inst][fnname]==nil, "multiple calls to a function! function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' inside module '"..module.name.."' Instance location traceback:"..inst.loc.." \n\n Call trace:"..n.loc.." \n\nPrevious call trace:"..tostring(state[inst][fnname][4]) )
+          end
         end
 
         if fn.CE==nil and n.inputs[3]~=nil then
@@ -874,15 +931,14 @@ function systolicASTFunctions:checkWiring(module)
           end
         end
 
-        state[inst][fnname]={n.inputs[1],n.inputs[2],n.inputs[3]}
+        state[inst][fnname]={n.inputs[1],n.inputs[2],n.inputs[3],n.loc}
       end
     end)
 
   -- this is kind of a hack: since we don't need to actually explicitly wire external requirements
   -- (their signal names will just match up in Verilog), we only really need to surpress the
   -- undriven function warnings...
-  for _,inst in ipairs(module.instances) do
-
+  for inst,_ in pairs(module.instanceMap) do
     if module.externalInstances[inst]==nil then
       -- for internal instances, collect their 'requires' calls
       err(inst.module.externalInstances~=nil,inst.module.name.." MISSING EXTERNAL INSTS?")
@@ -895,16 +951,15 @@ function systolicASTFunctions:checkWiring(module)
       end
     end
   end
-  
-  local instanceMap = J.invertTable(module.instances)
-  for _,inst in ipairs(module.instances) do
+
+  for inst,_ in pairs(module.instanceMap) do
     if state[inst]==nil then state[inst]={} end
 
     -- if module is external, so don't check wiring here - not everything has to be tied down at this point
     if module.externalInstances[inst]==nil then
       if inst.module.kind=="user" then
         for einst,nameMap in pairs(inst.module.externalInstances) do
-          if instanceMap[einst]==nil then -- obviously, if this module contains the module we need, it's ok
+          if module.instanceMap[einst]==nil then -- obviously, if this module contains the module we need, it's ok
             err( module.externalInstances[einst]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on '"..einst.name.."' that is not passed up?")
             
             -- at this point, we know einst isn't internal to this module, so all its ports must be ported out
@@ -914,7 +969,7 @@ function systolicASTFunctions:checkWiring(module)
           end
         end
       end
-      
+
       for fnname,fn in pairs (inst.module.functions) do
         err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
         
@@ -1043,6 +1098,8 @@ function systolicASTFunctions:CSE(repo)
 end
 
 function systolicASTFunctions:toVerilogInner( module, declarations )
+--  assert( systolic.isModule(module))
+  
   local wired = {} -- set of variable names that have been put in decls (wires) already
   
   return self:visitEach(
@@ -1411,7 +1468,7 @@ function userModuleMT.__tostring(tab)
   end
 
   table.insert(res,"Internal Instances:")
-  for _,inst in ipairs(tab.instances) do
+  for inst,_ in ipairs(tab.instanceMap) do
     if tab.externalInstances[inst]==nil then
       table.insert(res,"  "..inst.name)
     end
@@ -1547,6 +1604,27 @@ function userModuleFunctions:lower()
   return mod
 end
 
+function userModuleFunctions:toVerilogNoheader()
+  local instanceDecls = {}
+  for inst,_ in pairs(self.instanceMap) do
+    if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then
+      local sst = inst.module:instanceToVerilogStart( inst )
+      if sst~=nil then table.insert(instanceDecls, sst ) end
+    end
+  end
+
+  local wireDecls = {}
+  --table.insert( t, self.ast:toVerilog(self) )
+  local res = self.ast:toVerilogInner(self,wireDecls)
+
+  print("TOVERILOGNOHEADER")
+  for k,v in pairs(wireDecls) do
+    print(k,v)
+  end
+  
+  return wireDecls, instanceDecls
+end
+
 function userModuleFunctions:toVerilog()
   if self.verilog==nil then
     local t = {}
@@ -1596,7 +1674,7 @@ function userModuleFunctions:toVerilog()
       end
     end
 
-    for _,inst in pairs(self.instances) do
+    for inst,_ in pairs(self.instanceMap) do
       if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then
         local sst = inst.module:instanceToVerilogStart( inst )
         if sst~=nil then table.insert(t, sst ) end
@@ -1617,7 +1695,7 @@ function userModuleFunctions:getDependenciesLL()
   local dep = {}
   local depMap = {}
 
-  for _,i in pairs(self.instances) do
+  for i,_ in pairs(self.instanceMap) do
     local deplist = i.module:getDependenciesLL()
     for _,D in pairs(deplist) do
       if depMap[D[1]]==nil then table.insert(dep, D) end
@@ -1662,6 +1740,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 
   local instanceMap = J.invertTable(instances)
+  instances=nil
   
   if externalInstances==nil then externalInstances={} end
   for inst,fnmap in pairs(externalInstances) do
@@ -1675,8 +1754,8 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     err( instanceMap[inst]==nil, "External instance '"..inst.name.."' should not be in instance list of module '"..name.."'!" )
   end
 
-  for _,inst in ipairs(instances) do
-    err(systolic.DISABLE_WIRING_ERRORS==true or inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
+  for inst,_ in ipairs(instanceMap) do
+    err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
     inst.final="added to module '"..name.."' "..debug.traceback()
   end
 
@@ -1729,7 +1808,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  local t = {name=name,kind="user",instances=instances,functions=fns, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, externalInstances=externalInstances}
+  local t = {name=name,kind="user",instanceMap=instanceMap,functions=fns, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, externalInstances=externalInstances}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
@@ -1748,20 +1827,22 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
 
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays(t)
-  t.instances = J.concat(t.instances, delayRegisters)
-  local instanceMap = J.invertTable(t.instances)
+
+  for _,inst in ipairs(delayRegisters) do t.instanceMap[inst] = 1 end
+  --t.instances = J.concat(t.instances, delayRegisters)
+  --local instanceMap = J.invertTable(t.instances)
   
   t.ast = t.ast:CSE()
 
   local usedInstanceNames = {}
-  for _,inst in ipairs(t.instances) do
+  for inst,_ in pairs(t.instanceMap) do
     err(usedInstanceNames[inst.name]==nil,"Instance name '"..inst.name.."' used multiple times!")
     usedInstanceNames[inst.name]=1
-    assert(instanceMap[inst]~=nil)
+    assert(t.instanceMap[inst]~=nil)
 
     -- make sure external references of this instance are provided for in this module
     for einst,lst in pairs(inst.module.externalInstances) do
-      if instanceMap[einst]==nil and t.externalInstances[einst]==nil then
+      if t.instanceMap[einst]==nil and t.externalInstances[einst]==nil then
         t.externalInstances[einst] = lst
         err(usedInstanceNames[einst.name]==nil,"Instance name '"..einst.name.."' used multiple times! ")
         usedInstanceNames[einst.name]=1
@@ -1774,7 +1855,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   t.ast:visitEach( 
     function(n)
       if n.kind=="call" then
-        if instanceMap[n.inst]==nil and externalInstances[n.inst]==nil then
+        if t.instanceMap[n.inst]==nil and externalInstances[n.inst]==nil then
           externalInstances[n.inst]={}
           externalInstances[n.inst][n.fnname]=1
         elseif externalInstances[n.inst]~=nil then
@@ -1784,7 +1865,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end)
   
   -- check that the instances refered to by this module are actually in the module
-  t.ast:checkInstances( name, instanceMap, externalInstances )
+  t.ast:checkInstances( name, t.instanceMap, externalInstances )
   t.ast:checkWiring(t) -- check for dangling fns
 
   return t

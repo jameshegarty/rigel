@@ -46,7 +46,7 @@ function common.to_string( tbl )
     end
 end
 
-function common.serialize(tbl) print(to_string(tbl)) end
+function common.serialize(tbl) print(common.to_string(tbl)) end
 
 
 function common.deepcopy(object)
