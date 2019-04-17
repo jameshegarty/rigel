@@ -296,6 +296,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
     err( darkroom.lower(tab.inputType)==sm.functions.process.inputParameter.type, "module input type wrong?" )
     
     err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
+
   else
     
     for fnname,fn in pairs(tab.functions) do
@@ -524,23 +525,27 @@ end
 
 -- verilog header
 function darkroomFunctionFunctions:vHeader()
-  local v = {"module "..self.name.." (input wire CLK, input wire reset "}
+  local v = {"module "..self.name.." (input wire CLK"}
 
-  
+  if self.stateful then
+    table.insert(v, ", input wire reset")
+  end
 
-  if types.isHandshakeAny(self.inputType) then
+  if self.inputType==types.null() then
+  elseif types.isHandshakeAny(self.inputType) then
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] process_input, output wire ready")
   elseif types.isBasic(self.inputType) then
     table.insert(v,", input wire ["..(self.inputType:verilogBits()-1)..":0] process_input")
 
-    if self.stateful or self.delay>0 then
+    if self.stateful or (self.delay~=nil and self.delay>0) then
       table.insert(v,", input wire CE, input wire process_valid")
     end
   else
     assert(false)
   end
 
-  if types.isHandshakeAny(self.outputType) then
+  if self.outputType==types.null() then
+  elseif types.isHandshakeAny(self.outputType) then
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] process_output, input wire ready_downstream")
   elseif types.isBasic(self.outputType) then
     table.insert(v,", output wire ["..(self.outputType:verilogBits()-1)..":0] process_output")

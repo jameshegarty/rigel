@@ -68,7 +68,7 @@ function parseBB(lex,input,compilerState,X)
       input = { kind="expr", expr=expr, inputs={{value=input}}, line=lex:cur().linenumber }
     elseif lex:lookaheadmatches(":") then
       local instname = lex:expect(lex.name).value
-      print("PARSE INST",instname)
+
       lex:expect(":")
       local expr = lex:luaexpr()
       table.insert(compilerState.instances,{instname,expr})
@@ -154,53 +154,10 @@ function extractTraces( node, traces )
   local function printPath(p)
     for k,v in ipairs(p) do print(v.kind,"DESC",v.desc,v.expr,"LINE",v.line) end
   end
-  --[=[
-  local function mergeTraces(a,b)
-    print("Merge",J.keycount(a))
-    assert(a~=nil)
-    assert(b~=nil)
-
-    checkTraces(a)
-    checkTraces(b)
-          
-    local tr = {}
-    for endState,v in pairs(a) do
-      tr[endState] = copyTrace(v)
-
-    end
-
-    for endState,v in pairs(b) do
-      if tr[endState]~=nil then
-        print( "There are multiple overlapping dynamic paths into end state "..tostring(endState) )
-        print("Path 1:")
-        printPath(tr[endState].path)
-        print("Path 2:")
-        printPath(v.path)
-        assert(false)
-      end
-      
-      tr[endState] = copyTrace(v)
-    end
-
-    print("mergedone")
-    return tr
-    end]=]
-
-  --[=[
-  local function appendToTrace(trcs, endState, bb, condId, pathNode)
-    local newTrcs = trcs -- careful!
-    if newTrcs[endState]==nil then newTrcs[endState]={bbs={},condIdMap={},path={}} end
-    if bb~=nil then assert(R.isIR(bb)); newTrcs[endState].bbs[bb]=1 end 
-    if condId~=nil then assert(type(condId)=="number"); newTrcs[endState].condIdMap[condId]=1 end
-    assert(type(pathNode)=="table")
-    table.insert( newTrcs[endState].path, pathNode )
-    return newTrcs
-    end]=]
 
   if node.kind=="yield" or node.kind=="start" then
     -- yield nodes are terminating - they ignore the input traces when passing up
     -- accumulate all the nodes that end up hitting this start state
-    --node.traces = mergeTraces(node.traces,traces)
     node.traces = J.joinTables( node.traces, traces )
   elseif node.kind=="phi" or node.kind=="expr" then
     for k,v in ipairs(node.inputs) do
@@ -208,8 +165,6 @@ function extractTraces( node, traces )
       local upTraces = copyTraces(traces)
       for _,trace in ipairs(upTraces) do
         -- careful! we're playing fast and loose with table format here
-        --upTraces = appendToTrace( upTraces, endState, node.expr, v.condId, node )
-        --appendToTrace( trace, node.expr, v.condId, node )
         if node.expr~=nil then assert(R.isIR(node.expr)); trace.bbs[node.expr]=1 end 
         if v.condId~=nil then assert(type(v.condId)=="number"); trace.condIdMap[v.condId]=1 end
         table.insert( trace.path, node )
@@ -315,70 +270,17 @@ end
 -- wires up all BB statements and yield output, and codegens to verilog
 -- * if a module wasn't driven along this dynamic path, this should given an error
 -- returns wireDecls, yieldOutVerilog
---[=[function codegenBBs( compilerState, startState, endState, bbs, yieldOut )
-  local mod = C.automaticSystolicStub( compilerState.module )
-  mod:setName("CodegenBBHACK"..tostring(startState).."_"..tostring(endState))
-  mod:lookupFunction("process"):clearPipelines()
-  
-  -- hack: make fresh copies of the instances to prevent wiring error checking
-  local newInstMap = {}
-  local newUsedNames = {}
-  for k,v in pairs(mod.__usedNames) do newUsedNames[k]=v end
-  for inst,_ in pairs(mod.__instanceMap) do
-    local ni = inst.module:instantiate(inst.name)
-    newInstMap[ni] = 1
-    newUsedNames[inst.name] = ni
-    
-    if ni.module.functions.reset~=nil then
-      print("RESETINP",mod:lookupFunction("reset"):getValid())
-      local NIR = ni.reset( ni, nil, mod:lookupFunction("reset"):getValid() )
-      mod:lookupFunction("reset"):addPipeline( NIR )
-      print("WIRE RESET",ni.name,NIR)
-    end
-  end
-  mod.__instanceMap = newInstMap
-  mod.__usedNames = newUsedNames
-  
-  local yieldS = yieldOut:codegenSystolic(mod)
-  mod:lookupFunction("process"):setOutput(yieldS[1],"process_output")
-
---  for k,v in pairs(mod.__functions) do
---    print("FUNCTION",k,v.name)
---  end
-  
-  if R.handshakeMode(yieldOut) then
-    local yieldReadyInp, yieldReadyOut, yieldReadyPipelines = yieldOut:codegenSystolicReady(mod)
-    print("YIELDREADYS",yieldReadyInp,yieldReadyOut)
-    for k,v in pairs(yieldReadyPipelines) do
-      print("YIELDREADYPIPE",v)
-      mod:lookupFunction("ready"):addPipeline(v)
-    end
-    if yieldReadyOut~=nil then mod:lookupFunction("ready"):setOutput(yieldReadyOut,"ready") end
-  end
-
-  for bb,_ in pairs(bbs) do
-    print("ADD BB",bb)
-    local bbS = bb:codegenSystolic(mod)
-    mod:lookupFunction("process"):addPipeline(bbS[1])
-
-  end
-  
-  local wireDecls, instanceDecls = mod:complete():toVerilogNoheader()
-  return cleanupDecls(wireDecls)
-  end]=]
-
 function codegenBBs( compilerState, startState, traceId, bbs, yieldOut )
-  --local inp = R.input(compilerState.inputType)
-
   local pipes={}
   table.insert(pipes,yieldOut)
   for bb,_ in pairs(bbs) do table.insert(pipes,bb) end
 
-  local rmod = RM.lambda("BBGEN_"..tostring(startState).."_"..tostring(traceId), compilerState.rigelInput, R.statements(pipes) )
-
-  print(rmod)
+  local rmod = RM.lambda("BBGEN_"..tostring(startState).."_"..tostring(traceId), compilerState.rigelInput, R.statements(pipes), J.invertAndStripKeys(compilerState.instanceMap) )
+  --rmod.instanceMap = compilerState.instanceMap
+  
+--  print(rmod)
   local wireDecls, instanceDecls = rmod:toVerilogNoHeader()
-  return cleanupDecls(wireDecls,"    "), instanceDecls
+  return cleanupDecls(wireDecls,"    "), rmod.systolicModule.instanceMap, rmod.requires
 end
 
 
@@ -426,12 +328,12 @@ return{
     return function(env_fn)
       local env = env_fn()
       local Itype = ItypeFn(env)
-      print("INPUTTYPE:",Itype)
+--      print("INPUTTYPE:",Itype)
       J.err(types.isType(Itype),"input type must be rigel type, but is: "..tostring(Itype))
       compilerState.inputType=Itype
       
       local Otype = OtypeFn(env)
-      print("OUTPUTTYPE:",Otype)
+--      print("OUTPUTTYPE:",Otype)
       J.err(types.isType(Otype),"output type must be rigel type, but is: "..tostring(Otype))
       compilerState.outputType=Otype
       compilerState.rigelInput = R.input(Itype)
@@ -460,21 +362,63 @@ return{
       local condMap = {}
       for node,_ in pairs(nodeList) do specializeNode( node, env, compilerState, condMap ) end
 
+      --[=[
       for node,_ in pairs(nodeList) do
         print("NODE",node.kind,node.desc,node,"LINE",node.line)
         for _,inp in ipairs(node.inputs) do
           print("    input ",inp.value.kind,inp.value.desc,inp.value,"line",inp.value.line,"cond",inp[2])
         end
       end
+      ]=]
       
       compile( code, compilerState )
 
+      local extraInstances = {}
+
+        local bbdecls={}
+        for startState,node in pairs(compilerState.stateMap) do
+          bbdecls[startState]={}
+          for traceId,trace in ipairs(node.traces) do
+            local instanceMap, requires
+            bbdecls[startState][traceId], instanceMap, requires = codegenBBs( compilerState, startState, traceId, trace.bbs, compilerState.stateMap[trace.endState].expr )
+            --for k,v in pairs(instDecl) do instanceDecls[v]=1 end
+            for inst,_ in pairs(instanceMap) do
+--              print("EXTRA INST",inst)
+              extraInstances[inst.name] = inst
+            end
+            
+            for ic,_ in pairs(requires) do res.requires[ic] = 1 end
+          end
+        end
+
       function res.makeSystolic()
-        S.DISABLE_WIRING_ERRORS = true
+--        S.DISABLE_WIRING_ERRORS = true
+
+
+
+        local seenInstances = {}
+        for inst,_ in pairs(res.instanceMap) do
+          seenInstances[inst.name] = 1
+        end
 
         local s = C.automaticSystolicStub(res)
 
-        
+        for name,sinst in pairs(extraInstances) do
+          if seenInstances[name]==nil then
+            s.__instanceMap[sinst] = 1
+
+            for _,fn in pairs(sinst.module.functions) do
+              if fn.inputParameter.type==types.null() then
+                s.__functions.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+              else
+                s.__functions.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+              end
+            end
+          end
+        end
+
+--        C.tiedownInstances(s)
+
         local verilog = {}
         table.insert(verilog,res:vHeader())
         table.insert(verilog,[[  reg [31:0] STATE;
@@ -492,27 +436,17 @@ return{
 
 ]])
 
-        local instanceDecls = {}
         local condWireDecls, condOutput, condVecBits = codegenConds(s,condMap)
         for inst,_ in pairs(s.__instanceMap) do
           if inst.module.instanceToVerilogStart~=nil and (s.__externalInstances[inst]==nil) then
             local sst = inst.module:instanceToVerilogStart( inst )
---            if sst~=nil then table.insert(verilog,sst) end
-            if sst~=nil then instanceDecls[sst]=1 end
+            if sst~=nil then table.insert(verilog,sst) end
+--            if sst~=nil then instanceDecls[sst]=1 end
           end
         end
 
-        local bbdecls={}
-        for startState,node in pairs(compilerState.stateMap) do
-          bbdecls[startState]={}
-          for traceId,trace in ipairs(node.traces) do
-            local instDecl
-            bbdecls[startState][traceId], instDecl = codegenBBs( compilerState, startState, traceId, trace.bbs, compilerState.stateMap[trace.endState].expr )
-            for k,v in pairs(instDecl) do instanceDecls[v]=1 end
-          end
-        end
 
-        for k,v in pairs(instanceDecls) do table.insert(verilog,k) end
+--        for k,v in pairs(instanceDecls) do table.insert(verilog,k) end
         
         local first = true
         table.insert(verilog,"wire ["..tostring(condVecBits-1)..":0] COND_VEC;\n")

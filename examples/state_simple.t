@@ -24,23 +24,23 @@ state StateExample(I:types.uint(8),O:types.uint(8))
       yield R.c(0,types.u8) --5
       
       if C.GTConst(types.uint(8),8)(I) then
-        yield R.c(16,types.u8) --3
+        yield R.c(16,types.u8) --6
       else
-        yield R.c(8,types.u8) --4 
+        yield R.c(8,types.u8) --7
       end
 
     end
   end
 end
 
-print("COUNTER",StateExample)
+--print("COUNTER",StateExample)
 
-print("counter",StateExample:toVerilog())
+--print("counter",StateExample:toVerilog())
 
 noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
 noc.extern=true
 local regs = SOC.axiRegs({},SDF{1,128*64},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
-harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{StateExample}}, G.Map{G.FIFO{128}}, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})
+harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{StateExample}}, G.Map{G.FIFO{128}}, G.AXIWriteBurst{"out/state_simple",noc.write}, regs.done},nil,{regs})
 
 --harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, noc.read }, G.Map{G.HS{C.plusConst(types.u8,0)}}, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})

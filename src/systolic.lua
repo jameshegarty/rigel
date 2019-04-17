@@ -1617,10 +1617,10 @@ function userModuleFunctions:toVerilogNoHeader()
   --table.insert( t, self.ast:toVerilog(self) )
   local res = self.ast:toVerilogInner(self,wireDecls)
 
-  print("TOVERILOGNOHEADER")
-  for k,v in pairs(wireDecls) do
-    print(k,v)
-  end
+--  print("TOVERILOGNOHEADER")
+--  for k,v in pairs(wireDecls) do
+--    print(k,v)
+--  end
   
   return wireDecls, instanceDecls
 end

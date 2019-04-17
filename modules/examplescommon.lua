@@ -2124,7 +2124,6 @@ function C.automaticSystolicStub( mod )
     local inst = ic.instance:toSystolicInstance()
     if externalInstances[inst]==nil then externalInstances[inst]={} end
     externalInstances[inst][ic.functionName]=1
-    --instances[inst]=1
 
     local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
@@ -2141,17 +2140,11 @@ function C.automaticSystolicStub( mod )
 
       for _,fn in pairs(sinst.module.functions) do
         if R.isFunction(mod) then
---          print("INSTFN",mod.name, sinst.name,sinst.module.name,fn.name)
+
           if fn.inputParameter.type==types.null() then
             fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
           else
             fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
-
---            local readyFnName = fn.name.."_ready"
---            if sinst[readyFnName]~=nil then
-              --              assert(false)
---              fns.process:addPipeline(sinst[readyFnName](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
---            end
           end
         else
           assert(false) -- NYI
@@ -2161,17 +2154,8 @@ function C.automaticSystolicStub( mod )
   end
   
   if mod.stateful then
-    --fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
     fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
   end
-
-  for k,v in pairs(fns) do
-    if Ssugar.isFunctionConstructor(v) then
---      fns[k] = v:complete()
-    end
-  end
-  
---  local res =  S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
 
   local res = Ssugar.moduleConstructor(mod.name)
   res:onlyWire(true)
@@ -2247,6 +2231,7 @@ C.Invalid = J.memoize(function(A,VR)
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
     local verilog = res:vHeader()
+    verilog = verilog.."  assign process_output["..A:verilogBits().."] = 1'b0;\n"
     verilog = verilog.."endmodule\n\n"
     s:verilog(verilog)
     return s
@@ -2264,6 +2249,7 @@ C.Stall = J.memoize(function(A,VR)
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
     local verilog = res:vHeader()
+    verilog = verilog.."  assign ready = 1'b0;\n"
     verilog = verilog.."endmodule\n\n"
     s:verilog(verilog)
     return s

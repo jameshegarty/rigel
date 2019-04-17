@@ -28,19 +28,17 @@ state FlowControl(I:AXI.ReadAddress64,O:AXI.ReadData64)
   while R.c(true,types.bool()) do
     if G.LT{7}(fifo:size()) then
       [fifo:store(noc.read(I))]
---      yield fifo:load() -- 2
     else
       [C.Stall(AXI.ReadAddressTuple,true)(I)]
---      [fifo:store(noc:read(C.Invalid(AXI.ReadAddressTuple,true)()))]
-
+      [fifo:store(noc:read(C.Invalid(AXI.ReadAddressTuple,true)()))]
     end
     yield fifo:load() -- 2
   end
 end
 
 --l-ocal FC = FlowControl(noc.read)
-print(FlowControl)
-print(FlowControl:toVerilog())
+--print(FlowControl)
+--print(FlowControl:toVerilog())
 
 
-harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, FlowControl }, G.AXIWriteBurst{"out/stateex",noc.write}, regs.done},nil,{regs})
+harness({regs.start, G.AXIReadBurst{ "frame_128.raw", {128,64}, types.u(8), 0, FlowControl }, G.HS{G.Map{G.Add{200}}}, G.AXIWriteBurst{"out/state_flowcontrol",noc.write}, regs.done},nil,{regs})
