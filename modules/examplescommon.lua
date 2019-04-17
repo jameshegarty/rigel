@@ -2079,8 +2079,6 @@ function C.automaticSystolicStub( mod )
   end
 
   for fnname,fn in pairs(modFunctions) do
-    
-    --fns[fnname] = S.lambda(fnname,inp,out,J.sel(R.isFunction(mod),fnname.."_output",fnname))
     fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
     if fn.outputType~=types.null() then
       fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),J.sel(R.isFunction(mod),fnname.."_output",fnname))
@@ -2106,7 +2104,9 @@ function C.automaticSystolicStub( mod )
 
       local readyFnName = fnname.."_ready"
       if R.isFunction(mod) then readyFnName = "ready" end -- hack for historic reasons
-      fns[readyFnName] = S.lambda(readyFnName,inp,out,readyFnName)
+      --      fns[readyFnName] = S.lambda(readyFnName,inp,out,readyFnName)
+      fns[readyFnName] = Ssugar.lambdaConstructor(readyFnName,inp.type,readyFnName.."_downstream")
+      if out~=nil then fns[readyFnName]:setOutput(out,readyFnName) end
       delays[readyFnName]=0
     end
   end
@@ -2225,6 +2225,8 @@ C.VRtoRVRaw = J.memoize(function(A)
     return sm
   end
 
+  function res.makeTerra() return CT.VRtoRVRaw(A) end
+  
   return rigel.newFunction(res)
 end)
 
@@ -2241,7 +2243,7 @@ C.Invalid = J.memoize(function(A,VR)
   err( types.isBasic(A), "C.Stall: expected basic type" )
   local otype = types.Handshake(A)
   if VR==true then otype = types.HandshakeVR(A) end
-  local res = R.newFunction{ name="Invalid_"..tostring(A), inputType=types.null(), outputType=otype, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+  local res = R.newFunction{ name=J.sanitize("Invalid_"..tostring(A)), inputType=types.null(), outputType=otype, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
     local verilog = res:vHeader()
@@ -2258,7 +2260,7 @@ C.Stall = J.memoize(function(A,VR)
   err( types.isBasic(A), "C.Stall: expected basic type" )
   local itype = types.Handshake(A)
   if VR==true then itype = types.HandshakeVR(A) end
-  local res = R.newFunction{ name="Stall_"..tostring(A), inputType=itype, outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+  local res = R.newFunction{ name=J.sanitize("Stall_"..tostring(A)), inputType=itype, outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
     local verilog = res:vHeader()

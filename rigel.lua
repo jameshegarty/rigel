@@ -518,18 +518,24 @@ function darkroomFunctionFunctions:toVerilog()
   return ntn..self.systolicModule:getDependencies()..self.systolicModule:toVerilog() 
 end
 
+function darkroomFunctionFunctions:toVerilogNoHeader()
+  return self.systolicModule:toVerilogNoHeader()
+end
+
 -- verilog header
 function darkroomFunctionFunctions:vHeader()
   local v = {"module "..self.name.." (input wire CLK, input wire reset "}
 
-  if (types.isBasic(self.inputType) or types.isBasic(self.outputType)) and (self.stateful or self.delay>0) then
-    table.insert(v,", input wire CE, input wire process_valid")
-  end
+  
 
   if types.isHandshakeAny(self.inputType) then
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] process_input, output wire ready")
   elseif types.isBasic(self.inputType) then
     table.insert(v,", input wire ["..(self.inputType:verilogBits()-1)..":0] process_input")
+
+    if self.stateful or self.delay>0 then
+      table.insert(v,", input wire CE, input wire process_valid")
+    end
   else
     assert(false)
   end
@@ -737,7 +743,7 @@ function darkroom.newFunction(tab,X)
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.null() and tab.outputType==types.null()), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
+  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or tab.inputType==types.null(), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
@@ -1613,7 +1619,7 @@ function darkroomIRFunctions:codegenSystolic( module )
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)).." (Rigel type: "..tostring(n.fn.inputType)..")" )
 
         if n.fn.outputType==types.null() then
-          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.kind.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         else
           err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process").output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end

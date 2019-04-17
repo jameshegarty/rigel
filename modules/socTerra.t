@@ -170,18 +170,22 @@ function SOCMT.axiRegs(mod,tab, readSource, readSink, writeSource, writeSink, X 
   return MT.new(AxiRegsN)
 end
 
-function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, readFn )
+function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, rigelReadFn )
   --assert(type(baseAddress)=="number")
   local baseAddress = Uniform(baseAddress_orig)
   local totalBytes = Uniform(totalBytes_orig)
   assert( (totalBytes % 128):eq(0):assertAlwaysTrue() )
 
   local outputType = R.Handshake(types.bits(64))
-  local struct ReadBurst { nextByteToRead:uint, ready:bool, bytesRead:uint, readyDownstream:bool }
+  local struct ReadBurst { readFn:rigelReadFn.terraModule, nextByteToRead:uint, ready:bool, bytesRead:uint, readyDownstream:bool }
+
+  terra ReadBurst:init() self.readFn:init() end
+  terra ReadBurst:free() self.readFn:free() end
 
   terra ReadBurst:reset()
     self.nextByteToRead = [totalBytes:toTerra()]
     self.bytesRead = 0
+    self.readFn:reset()
   end
 
   terra ReadBurst:process( trigger:&bool, dataOut:&R.lower(outputType):toTerraType() )
@@ -205,7 +209,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
       if self.ready then
         self.nextByteToRead = self.nextByteToRead + 128
       end
-    elseif self.nextByteToRead<[totalBytes:toTerra()] and readFn.terraReady==false then
+    elseif self.nextByteToRead<[totalBytes:toTerra()] and self.readFn.ready==false then
       cstdio.printf("readBurst: want to read, but ARREADY is false\n")
     elseif self.nextByteToRead>=[totalBytes:toTerra()] then
       valid(AR) = false
@@ -213,7 +217,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
       cstdio.printf("UNKNOWN READ BURST COND? %d\n",self.nextByteToRead)
     end
 
-    readFn.terraFn(&AR,&RDATA)
+    self.readFn:process(&AR,&RDATA)
       
     if valid(RDATA) then
       cstring.memcpy( &data(dataOut), AXIT.RDATA64(&RDATA), [R.extractData(outputType):sizeof()] )
@@ -234,8 +238,8 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, port, baseAddress_orig, read
   end
 
   terra ReadBurst:calculateReady(readyDownstream:bool)
-    readFn.terraCalculateReady(readyDownstream)
-    self.ready = readFn.terraReady
+    self.readFn:calculateReady(readyDownstream)
+    self.ready = self.readFn.ready
     self.readyDownstream = readyDownstream
   end
 

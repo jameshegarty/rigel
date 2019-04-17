@@ -4,6 +4,7 @@ local J = require "common"
 local C = require "examplescommon"
 local SDF = require "sdf"
 local S = require "systolic"
+local RM = require "modules"
 
 function parseBB(lex,input,compilerState,X)
   assert(type(input)=="table")
@@ -121,7 +122,7 @@ specializeNode = J.memoize(function( node, env, compilerState, condMap, X )
   return node
 end)
 
--- traces={ endStateId={bbs={[rigelExpr]=1}, conds={[rigelCondExpr]=1}, path={nodes}} }
+-- traces={ {bbs={[rigelExpr]=1}, conds={[rigelCondExpr]=1}, path={nodes}, endState=X} }
 -- collecting traces is a backward pass... yield states pass to the input nodes,
 --   and along the way we append any BBs or conditions they hit.
 -- note that this is exponential, intentionally - we want to find all dynamic paths
@@ -136,12 +137,13 @@ function extractTraces( node, traces )
   end
 
   local function copyTrace(trace)
-    local newTrace = {bbs={},condIdMap={},path={}}
+    local newTrace = {bbs={},condIdMap={},path={},endState=trace.endState}
     for bb,_ in pairs(trace.bbs) do newTrace.bbs[bb]=1 end
     for condId,_ in pairs(trace.condIdMap) do newTrace.condIdMap[condId]=1 end
     for _,n in ipairs(trace.path) do table.insert(newTrace.path,n) end
     return newTrace
   end
+
   
   local function copyTraces(traces)
     local newTraces = {}
@@ -152,7 +154,7 @@ function extractTraces( node, traces )
   local function printPath(p)
     for k,v in ipairs(p) do print(v.kind,"DESC",v.desc,v.expr,"LINE",v.line) end
   end
-  
+  --[=[
   local function mergeTraces(a,b)
     print("Merge",J.keycount(a))
     assert(a~=nil)
@@ -182,8 +184,9 @@ function extractTraces( node, traces )
 
     print("mergedone")
     return tr
-  end
+    end]=]
 
+  --[=[
   local function appendToTrace(trcs, endState, bb, condId, pathNode)
     local newTrcs = trcs -- careful!
     if newTrcs[endState]==nil then newTrcs[endState]={bbs={},condIdMap={},path={}} end
@@ -192,19 +195,24 @@ function extractTraces( node, traces )
     assert(type(pathNode)=="table")
     table.insert( newTrcs[endState].path, pathNode )
     return newTrcs
-  end
+    end]=]
 
   if node.kind=="yield" or node.kind=="start" then
     -- yield nodes are terminating - they ignore the input traces when passing up
     -- accumulate all the nodes that end up hitting this start state
-    node.traces = mergeTraces(node.traces,traces)
+    --node.traces = mergeTraces(node.traces,traces)
+    node.traces = J.joinTables( node.traces, traces )
   elseif node.kind=="phi" or node.kind=="expr" then
     for k,v in ipairs(node.inputs) do
 
       local upTraces = copyTraces(traces)
-      for endState,_ in pairs(traces) do
+      for _,trace in ipairs(upTraces) do
         -- careful! we're playing fast and loose with table format here
-        upTraces = appendToTrace( upTraces, endState, node.expr, v.condId, node )
+        --upTraces = appendToTrace( upTraces, endState, node.expr, v.condId, node )
+        --appendToTrace( trace, node.expr, v.condId, node )
+        if node.expr~=nil then assert(R.isIR(node.expr)); trace.bbs[node.expr]=1 end 
+        if v.condId~=nil then assert(type(v.condId)=="number"); trace.condIdMap[v.condId]=1 end
+        table.insert( trace.path, node )
       end
 
       extractTraces( v.value, upTraces )
@@ -221,12 +229,9 @@ function compile(code,compilerState)
     assert(node.kind=="yield" or node.kind=="start")
     local nodeSeen = {}
     for k,v in ipairs(node.inputs) do
-      print("TRACE INPUT",k)
-      local traces = {}
       local condIdMap={}
       if v.cond~=nil then condIdMap[v.condId]=1 end
-      traces[node.state] = {bbs={},condIdMap=condIdMap,path={}}
-
+      local traces = {{bbs={},condIdMap=condIdMap,path={},endState=node.state}}
       extractTraces( v.value, traces )
     end
   end
@@ -260,13 +265,13 @@ function parseDecl(decl)
   end
 end
 
-function mergeDecls(decls)
+function mergeDecls(decls,indent)
   local str = ""
   local seen = {}
   for _,decl in ipairs(decls) do
     if seen[decl[1]]==nil then
       J.err(type(decl[1])=="string" and type(decl[2])=="string","mergeDecls, decls should be strings? "..tostring(decl[1])..", "..tostring(decl[2]))
-      str = str.."  "..decl[1].." = "..decl[2].."\n"
+      str = str..indent..decl[1].." = "..decl[2].."\n"
       seen[decl[1]] = decl[2]
     else  
       if seen[decl[1]]~=decl[2] then
@@ -277,13 +282,13 @@ function mergeDecls(decls)
   return str
 end
 
-function cleanupDecls(decls)
+function cleanupDecls(decls,indent)
   local fd = {}
   for _,v in pairs(decls) do
     if v~="" and v:sub(1,11)~="// function" then table.insert(fd,parseDecl(v) ) end
   end
 
-  return mergeDecls(fd)
+  return mergeDecls(fd,indent)
 end
 
 -- condMap is a mad of all conds from condId->rigelExpr
@@ -303,14 +308,14 @@ function codegenConds(s,condMap)
   local decls={}
   local fin = cs[1]:toVerilogInner(s,decls)
 
-  return cleanupDecls(decls), fin[1], cs[1].type:verilogBits()
+  return cleanupDecls(decls,"  "), fin[1], cs[1].type:verilogBits()
 end
 
 -- This constructs a fresh module with the instances on it,
 -- wires up all BB statements and yield output, and codegens to verilog
 -- * if a module wasn't driven along this dynamic path, this should given an error
 -- returns wireDecls, yieldOutVerilog
-function codegenBBs( compilerState, startState, endState, bbs, yieldOut )
+--[=[function codegenBBs( compilerState, startState, endState, bbs, yieldOut )
   local mod = C.automaticSystolicStub( compilerState.module )
   mod:setName("CodegenBBHACK"..tostring(startState).."_"..tostring(endState))
   mod:lookupFunction("process"):clearPipelines()
@@ -337,9 +342,45 @@ function codegenBBs( compilerState, startState, endState, bbs, yieldOut )
   local yieldS = yieldOut:codegenSystolic(mod)
   mod:lookupFunction("process"):setOutput(yieldS[1],"process_output")
 
+--  for k,v in pairs(mod.__functions) do
+--    print("FUNCTION",k,v.name)
+--  end
+  
+  if R.handshakeMode(yieldOut) then
+    local yieldReadyInp, yieldReadyOut, yieldReadyPipelines = yieldOut:codegenSystolicReady(mod)
+    print("YIELDREADYS",yieldReadyInp,yieldReadyOut)
+    for k,v in pairs(yieldReadyPipelines) do
+      print("YIELDREADYPIPE",v)
+      mod:lookupFunction("ready"):addPipeline(v)
+    end
+    if yieldReadyOut~=nil then mod:lookupFunction("ready"):setOutput(yieldReadyOut,"ready") end
+  end
+
+  for bb,_ in pairs(bbs) do
+    print("ADD BB",bb)
+    local bbS = bb:codegenSystolic(mod)
+    mod:lookupFunction("process"):addPipeline(bbS[1])
+
+  end
+  
   local wireDecls, instanceDecls = mod:complete():toVerilogNoheader()
   return cleanupDecls(wireDecls)
+  end]=]
+
+function codegenBBs( compilerState, startState, traceId, bbs, yieldOut )
+  --local inp = R.input(compilerState.inputType)
+
+  local pipes={}
+  table.insert(pipes,yieldOut)
+  for bb,_ in pairs(bbs) do table.insert(pipes,bb) end
+
+  local rmod = RM.lambda("BBGEN_"..tostring(startState).."_"..tostring(traceId), compilerState.rigelInput, R.statements(pipes) )
+
+  print(rmod)
+  local wireDecls, instanceDecls = rmod:toVerilogNoHeader()
+  return cleanupDecls(wireDecls,"    "), instanceDecls
 end
+
 
 function andConds(condIdMap)
   if J.keycount(condIdMap)==0 then
@@ -393,7 +434,8 @@ return{
       print("OUTPUTTYPE:",Otype)
       J.err(types.isType(Otype),"output type must be rigel type, but is: "..tostring(Otype))
       compilerState.outputType=Otype
-      env[Iname] = R.input(Itype)
+      compilerState.rigelInput = R.input(Itype)
+      env[Iname] = compilerState.rigelInput
 
       compilerState.stateMap={} -- map from state id to yield node
 
@@ -441,7 +483,7 @@ return{
   always @ (posedge CLK) begin
     if (reset==1'b1) begin
       STATE <= 32'd1;
-    end else if (CE && process_valid) begin
+    end else ]]..J.sel(types.isHandshakeAny(Itype) or types.isHandshakeAny(Otype),"","if (CE && process_valid)")..[[ begin
       STATE <= NEXT_STATE;
     end
 
@@ -450,13 +492,27 @@ return{
 
 ]])
 
+        local instanceDecls = {}
         local condWireDecls, condOutput, condVecBits = codegenConds(s,condMap)
         for inst,_ in pairs(s.__instanceMap) do
           if inst.module.instanceToVerilogStart~=nil and (s.__externalInstances[inst]==nil) then
             local sst = inst.module:instanceToVerilogStart( inst )
-            if sst~=nil then table.insert(verilog,sst) end
+--            if sst~=nil then table.insert(verilog,sst) end
+            if sst~=nil then instanceDecls[sst]=1 end
           end
         end
+
+        local bbdecls={}
+        for startState,node in pairs(compilerState.stateMap) do
+          bbdecls[startState]={}
+          for traceId,trace in ipairs(node.traces) do
+            local instDecl
+            bbdecls[startState][traceId], instDecl = codegenBBs( compilerState, startState, traceId, trace.bbs, compilerState.stateMap[trace.endState].expr )
+            for k,v in pairs(instDecl) do instanceDecls[v]=1 end
+          end
+        end
+
+        for k,v in pairs(instanceDecls) do table.insert(verilog,k) end
         
         local first = true
         table.insert(verilog,"wire ["..tostring(condVecBits-1)..":0] COND_VEC;\n")
@@ -470,14 +526,14 @@ return{
           table.insert(verilog,"if (STATE==32'd"..startState..[[) begin
 ]])
 
-          for endState,trace in pairs(node.traces) do
+          for traceId,trace in ipairs(node.traces) do
             table.insert(verilog,[[  if (]]..andConds(trace.condIdMap)..[[) begin
 ]])
 
-            local bbdecl = codegenBBs( compilerState, startState, endState, trace.bbs, compilerState.stateMap[endState].expr )
-            table.insert(verilog,bbdecl)
+--            local bbdecl, instanceDecls = codegenBBs( compilerState, startState, traceId, trace.bbs, compilerState.stateMap[trace.endState].expr )
+            table.insert(verilog,bbdecls[startState][traceId])
 --            table.insert(verilog,[[    process_output = ]]..yieldOut..";\n")
-            table.insert(verilog,[[    NEXT_STATE = 32'd]]..tostring(endState)..";\n")
+            table.insert(verilog,[[    NEXT_STATE = 32'd]]..tostring(trace.endState)..";\n")
             table.insert(verilog,[[  end
 ]])
           end

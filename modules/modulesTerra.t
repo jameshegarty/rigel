@@ -2142,7 +2142,10 @@ return {`mself.[n.name].ready}
           table.insert(stats, quote  inst:[n.fnname]( [inputs[1]] ) end )
           res = {`nil}
         else
-          assert(false)
+          table.insert( stats, quote inst:[n.fnname]( [inputs[1]], out ) end)
+          res = {out}
+--          print("NYI - terra method call on fn with type "..tostring(instfn.inputType).." -> "..tostring(instfn.outputType).." inside module "..fn.name )
+--          assert(false)
         end
       elseif n.kind=="constant" then
         table.insert( stats, quote (@out) = [n.type:valueToTerra(n.value)] end )

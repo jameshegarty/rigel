@@ -421,10 +421,10 @@ __tostring = function(tab)
   local fin = tab:visitEach(function(n,args)
     local res
     if n.kind=="call" then
---      res = n.inst.name..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
-      res = tostring(n.inst)..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
+      res = n.inst.name..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
+--      res = tostring(n.inst)..":"..n.fnname.."("..args[1]..","..tostring(args[2])..","..tostring(args[3])..")"
     elseif n.kind=="parameter" then
-      res = n.name
+      res = "parameter:"..n.name
     elseif n.kind=="constant" then
       res = "constant("..tostring(n.value)..","..tostring(n.type)..")"
     elseif n.kind=="slice" then
@@ -1604,7 +1604,7 @@ function userModuleFunctions:lower()
   return mod
 end
 
-function userModuleFunctions:toVerilogNoheader()
+function userModuleFunctions:toVerilogNoHeader()
   local instanceDecls = {}
   for inst,_ in pairs(self.instanceMap) do
     if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then

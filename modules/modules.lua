@@ -3769,7 +3769,9 @@ local function lambdaSDFNormalize( input, output, name, X )
       end
     end)
 
-  err( (input~=nil)==(newInput~=nil),"lambdaSDFNormalize: declared input was not actually used anywhere in function '"..name.."'?" )
+  if (input~=nil)~=(newInput~=nil) then
+    print("lambdaSDFNormalize warning: declared input was not actually used anywhere in function '"..name.."'?" )
+  end
   
   return newInput, newOutput
 end
