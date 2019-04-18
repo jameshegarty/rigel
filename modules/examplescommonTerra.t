@@ -343,6 +343,18 @@ function CT.plusConsttfn(ty,value_orig)
   end
 end
 
+function CT.VRtoRVRaw(A)
+  err( types.isBasic(A), "expected basic type" )
+  local struct VRtoRVRaw {ready:bool}
+
+  terra VRtoRVRaw:process( inp:&rigel.lower(types.HandshakeVR(A)):toTerraType(), out:&rigel.lower(types.Handshake(A)):toTerraType())
+    @out = @inp
+  end
+
+  terra VRtoRVRaw:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
+  return MT.new(VRtoRVRaw)
+end
+
 function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
   local struct HandshakeToHandshakeFramed {ready:bool}
   terra HandshakeToHandshakeFramed:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())

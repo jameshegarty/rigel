@@ -36,7 +36,6 @@ void step(VERILATORCLASS* top){
 }
 
 void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int data){
-
   bool srVerbose = false; // verbose just for this fn
   
   //////////////////////////////////////////////////////////////
@@ -66,6 +65,7 @@ void setReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int d
     step(top);
     if(srVerbose || verbose){ printf("Waiting for ready\n"); printSlave(S0LIST); }
     if(i>5){printf("timeout waiting for slave ready\n");exit(1);}
+    i++;
   }
   
   top->SAXI0_WDATA = data;
@@ -252,16 +252,17 @@ int main(int argc, char** argv) {
       resetSlave(S0LIST);
     }
     
-    
     setReg(top,verbose,0xA0000000+4,0); // clear done bit
     setReg(top,verbose,0xA0000000,1); // set start bit
-    
+
     // now we're ready to service memory requests
     activateMasterRead( M0READ_SLAVEOUT );
     activateMasterWrite( M0WRITE_SLAVEOUT );
     activateMasterRead( M1READ_SLAVEOUT );
     activateMasterWrite( M1WRITE_SLAVEOUT );
-    
+
+    printf("ready to start\n");
+        
     int lastPct = -1;
     double startSec = CurrentTimeInSeconds();
 
@@ -287,9 +288,9 @@ int main(int argc, char** argv) {
         if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
         
         masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
-        if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEIN )){goto WRITEOUT;}
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN )){goto WRITEOUT;}
         masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
-        if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
+        if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
         
         // get data out
         masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
@@ -342,7 +343,7 @@ int main(int argc, char** argv) {
         if(pct>lastPct){
           double t = CurrentTimeInSeconds() - startSec;
           setlocale(LC_NUMERIC,"");
-          printf("Sim %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+          printf("Sim round %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
           lastPct = pct;
         }
         

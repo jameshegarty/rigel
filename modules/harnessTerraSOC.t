@@ -157,7 +157,7 @@ return function(top, options)
                     end
                     V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, [bytes:toTerra()] ) end )
 
-      table.insert( clearOutputs, quote for ii=0,[bytes:toTerra()],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0x0df0adba; end end )
+      table.insert( clearOutputs, quote for ii=0,[bytes:toTerra()],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0xbaadf00d; end end )
     end
   end
 
@@ -254,7 +254,7 @@ return function(top, options)
       var cycle = 0
 
       [setTaps]
-      [clearOutputs]
+      if round==0 then [clearOutputs] end
       [readS]
 
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
@@ -306,9 +306,12 @@ return function(top, options)
         if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
 
-        V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,[MWRITE_SLAVEIN[0]]);
+        if V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,round==1,[MWRITE_SLAVEIN[0]]) then
+          cstdlib.exit(1)
+        end
+        
 
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,round==1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
         V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]);
 

@@ -765,7 +765,7 @@ endmodule
 
   res.makeSystolic = function()
     local res = C.automaticSystolicStub(res)
-    res.verilog = table.concat(vstring)
+    res:verilog(table.concat(vstring))
     return res
   end
   
@@ -790,27 +790,39 @@ end)
 
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
-SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,readFn,X)
+SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,readFn_orig,X)
   J.err( type(port)=="number", "axiBurstReadN: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
   --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
   local Nbytes = Uniform(Nbytes_orig)
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
   local address = Uniform(address_orig)
-  J.err( R.isFunction(readFn), "axiBurstReadN: readFn should be rigel function, but is: "..tostring(readFn))
+  J.err( R.isFunction(readFn_orig), "axiBurstReadN: readFn should be rigel function, but is: "..tostring(readFn_orig))
   J.err( X==nil, "axiBurstReadN: too many arguments" )
+
+  local readFn = readFn_orig
+  J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
+
+  if readFn.inputType==AXI.ReadAddress and readFn.outputType==AXI.ReadData64 then
+    readFn = C.ConvertVRtoRV(readFn)
+  end
   
+  J.err( readFn.inputType == types.Handshake(AXI.ReadAddressTuple), "axiReadBytes expected HandshakeRV input type, but was: "..tostring(readFn.inputType) )
+  J.err( readFn.outputType == types.Handshake(AXI.ReadDataTuple(64)), "axiReadBytes expected HandshakeRV output type, but was: "..tostring(readFn.outputType) )
+
   local globalMetadata = {}
   globalMetadata["MAXI"..port.."_read_filename"] = filename
   globalMetadata["MAXI"..port.."_read_address"] = address
 
   local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes_orig).."_"..tostring(port).."_"..tostring(address_orig))
 
-  local RPORT = readFn.instance.name.."_"..readFn.functionName
-  local RIN = readFn.instance.name.."_"..readFn.functionName.."_input"
-  local ROUT = readFn.instance.name.."_"..readFn.functionName
+  local readFnInst = readFn:instantiate("ReadFn")
+  --local RPORT = readFn.instance.name.."_"..readFn.functionName
+  --local RIN = readFn.instance.name.."_"..readFn.functionName.."_input"
+  --local ROUT = readFn.instance.name.."_"..readFn.functionName
   
-  local vstr = [=[module ]=]..ModuleName..[=[_inner(
+  local function vstr(res)
+    return [=[module ]=]..ModuleName..[=[_inner(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -975,26 +987,7 @@ parameter INSTANCE_NAME="inst";
 
 endmodule
 
-module ]=]..ModuleName..[=[(
-  input wire CLK,
-  input wire reset,
-
-  output wire []=]..(readFn.inputType:verilogBits()-1)..[=[:0] ]=]..RPORT..[=[_input,
-  input wire []=]..(readFn.outputType:verilogBits()-1)..[=[:0] ]=]..RPORT..[=[,
-
-  output wire ]=]..RPORT..[=[_ready_downstream,
-  input wire ]=]..RPORT..[=[_ready,
-
-  ]=]..address:toVerilogPortList()..[=[
-  ]=]..Nbytes:toVerilogPortList()..[=[
-
-  input wire process_input,
-  output wire ready,
-    
-  input wire ready_downstream,
-  output wire [64:0] process_output
-);
-parameter INSTANCE_NAME="inst";
+]=]..res:vHeader()..readFnInst:toVerilog()..[=[
 
   ]=]..ModuleName..[=[_ported inner(
     .CLK(CLK),
@@ -1006,30 +999,30 @@ parameter INSTANCE_NAME="inst";
     ]=]..address:toVerilogPassthrough()..[=[
     ]=]..Nbytes:toVerilogPassthrough()..[=[
 
-    .IP_MAXI_ARADDR({]=]..RIN..AXI.ReadAddressVSelect.arvalid..","..RIN..AXI.ReadAddressVSelect.araddr..[=[}),
-    .IP_MAXI_ARADDR_ready(]=]..RPORT..[=[_ready),
-    .IP_MAXI_ARLEN(]=]..RIN..AXI.ReadAddressVSelect.arlen..[=[),
-    .IP_MAXI_ARSIZE(]=]..RIN..AXI.ReadAddressVSelect.arsize..[=[),
-    .IP_MAXI_ARBURST(]=]..RIN..AXI.ReadAddressVSelect.arburst..[=[),
+    .IP_MAXI_ARADDR({]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arvalid..","..readFnInst:vInput()..AXI.ReadAddressVSelect.araddr..[=[}),
+    .IP_MAXI_ARADDR_ready(]=]..readFnInst:vInputReady()..[=[),
+    .IP_MAXI_ARLEN(]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen..[=[),
+    .IP_MAXI_ARSIZE(]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[),
+    .IP_MAXI_ARBURST(]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arburst..[=[),
 
-    .IP_MAXI_RDATA({]=]..ROUT..AXI.ReadDataVSelect(64).rvalid..","..ROUT..AXI.ReadDataVSelect(64).rdata..[=[}),
-    .IP_MAXI_RDATA_ready(]=]..RPORT..[=[_ready_downstream),
-    .IP_MAXI_RLAST(]=]..ROUT..AXI.ReadDataVSelect(64).rlast..[=[),
-    .IP_MAXI_RRESP(]=]..ROUT..AXI.ReadDataVSelect(64).rresp..[=[)
+    .IP_MAXI_RDATA({]=]..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rvalid..","..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rdata..[=[}),
+    .IP_MAXI_RDATA_ready(]=]..readFnInst:vOutputReady()..[=[),
+    .IP_MAXI_RLAST(]=]..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rlast..[=[),
+    .IP_MAXI_RRESP(]=]..readFnInst:vOutput()..AXI.ReadDataVSelect(64).rresp..[=[)
 );
 
 endmodule
 ]=]
-
-  local requires = {[readFn]=1}
+  end
+  
+  local requires = {}
   address:appendRequires(requires)
   Nbytes:appendRequires(requires)
-  
-  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, requires, globalMetadata,{{1,(Nbytes/8)}},{{1,1}})
+  local instanceMap = {[readFnInst]=1}
+  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, requires, globalMetadata,{{1,(Nbytes/8)}},{{1,1}}, instanceMap )
 
   if terralib~=nil then
-    res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn )
+    res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn ) end
   end
   
   return res
@@ -1044,10 +1037,11 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig,
   J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
 
   if readFn.inputType==AXI.ReadAddress and readFn.outputType==AXI.ReadData64 then
-    readFn = C.LiftVRtoRV(readFn)
+    readFn = C.ConvertVRtoRV(readFn)
   end
   
   J.err( readFn.inputType == types.Handshake(AXI.ReadAddressTuple), "axiReadBytes expected HandshakeRV input type, but was: "..tostring(readFn.inputType) )
+  J.err( readFn.outputType == types.Handshake(AXI.ReadDataTuple(64)), "axiReadBytes expected HandshakeRV output type, but was: "..tostring(readFn.outputType) )
   J.err( X==nil, "axiReadBytes: too many arguments" )
 
   local addressBase = Uniform(addressBase_orig)

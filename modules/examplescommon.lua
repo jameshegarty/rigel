@@ -239,6 +239,15 @@ C.GTConst = memoize(function(A,constValue)
   return partial
 end)
 
+C.LTConst = memoize(function(A,constValue)
+  err( types.isType(A), "C.LTConst: A must be type")
+  
+  local partial = RM.lift( J.sanitize("LT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 1,
+                           function(sinp) return S.lt(sinp,S.constant(constValue,A)) end )
+
+  return partial
+end)
+
 C.Not = RM.lift( "Not", types.bool(), types.bool(), 0, function(sinp) return S.__not(sinp) end )
 C.And = RM.lift( "And", types.tuple{types.bool(),types.bool()}, types.bool(), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
 
@@ -1654,7 +1663,7 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function(ty, value_orig)
+C.plusConst = memoize(function(ty, value_orig, async)
   err(types.isType(ty),"plus100: expected type input")
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
@@ -1662,7 +1671,13 @@ C.plusConst = memoize(function(ty, value_orig)
   local globals = {}
   value:appendRequires(globals)
   
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , 10, function(plus100inp) return plus100inp + value:toSystolic(ty) end, function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,10) ,
+                              function(plus100inp)
+                                local res = plus100inp + value:toSystolic(ty)
+                                if async==true then res = res:disablePipelining() end
+                                return res
+                              end,
+                              function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
   return plus100mod
 end)
 
@@ -2064,13 +2079,12 @@ function C.automaticSystolicStub( mod )
   end
 
   for fnname,fn in pairs(modFunctions) do
-    
-    --fns[fnname] = S.lambda(fnname,inp,out,J.sel(R.isFunction(mod),fnname.."_output",fnname))
     fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
     if fn.outputType~=types.null() then
       fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),J.sel(R.isFunction(mod),fnname.."_output",fnname))
     end
     delays[fnname]=0
+
 
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
       local inp
@@ -2090,18 +2104,26 @@ function C.automaticSystolicStub( mod )
 
       local readyFnName = fnname.."_ready"
       if R.isFunction(mod) then readyFnName = "ready" end -- hack for historic reasons
-      fns[readyFnName] = S.lambda(readyFnName,inp,out,readyFnName)
+      --      fns[readyFnName] = S.lambda(readyFnName,inp,out,readyFnName)
+      fns[readyFnName] = Ssugar.lambdaConstructor(readyFnName,inp.type,readyFnName.."_downstream")
+      if out~=nil then fns[readyFnName]:setOutput(out,readyFnName) end
       delays[readyFnName]=0
     end
   end
 
+  if modFunctions.process~=nil then
+    if types.isBasic(modFunctions.process.inputType) and types.isBasic(modFunctions.process.outputType) and mod.stateful then
+      fns.process:setCE(S.CE("CE"))
+      fns.process:setValid("process_valid")
+    end
+  end
+  
   local instances = {}
   local externalInstances = {}
   for ic,_ in pairs(mod.requires) do
     local inst = ic.instance:toSystolicInstance()
     if externalInstances[inst]==nil then externalInstances[inst]={} end
     externalInstances[inst][ic.functionName]=1
-    --instances[inst]=1
 
     local fn = ic.instance.module.functions[ic.functionName]
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
@@ -2118,7 +2140,12 @@ function C.automaticSystolicStub( mod )
 
       for _,fn in pairs(sinst.module.functions) do
         if R.isFunction(mod) then
-          fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+
+          if fn.inputParameter.type==types.null() then
+            fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+          else
+            fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+          end
         else
           assert(false) -- NYI
         end
@@ -2127,16 +2154,17 @@ function C.automaticSystolicStub( mod )
   end
   
   if mod.stateful then
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"reset_out",{},S.parameter("reset",types.bool()))
+    fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
   end
 
-  for k,v in pairs(fns) do
-    if Ssugar.isFunctionConstructor(v) then
-      fns[k] = v:complete()
-    end
-  end
+  local res = Ssugar.moduleConstructor(mod.name)
+  res:onlyWire(true)
+  for inst,_ in pairs(instances) do res:add(inst) end
+  for k,v in pairs(fns) do res:addFunction(v) end
+  for k,v in pairs(delays) do res:setDelay(k,v) end
+  for k,v in pairs(externalInstances) do res:addExternal(k,v) end
   
-  return S.module.new( mod.name,fns,J.invertAndStripKeys(instances),true,nil,"",delays, externalInstances)
+  return res
 end
 
 -- this will import a Verilog file as a module... the module is basically a stub,
@@ -2156,9 +2184,10 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
   
   local function makeSystolic()
     local s = C.automaticSystolicStub(res)
-    s.verilog = J.fileToString(R.path..filename)
-    s.verilog = s.verilog:gsub([[`include "[%w_\.]*"]],"")
-    s.verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..s.verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */"
+    local verilog = J.fileToString(R.path..filename)
+    verilog = verilog:gsub([[`include "[%w_\.]*"]],"")
+    verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */\n\n"
+    s:verilog(verilog)
     return s
   end
 
@@ -2180,14 +2209,52 @@ C.VRtoRVRaw = J.memoize(function(A)
     return sm
   end
 
+  function res.makeTerra() return CT.VRtoRVRaw(A) end
+  
   return rigel.newFunction(res)
 end)
 
 -- fn should be HSVR, and this wraps to return a plain HS function
-C.LiftVRtoRV = J.memoize(function(fn)
-  err( types.isHandshakeVR(fn.inputType), "LiftVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
-  err( types.isHandshakeVR(fn.outputType), "LiftVRtoRV: fn output should be HandshakeVR" )
-  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"LiftVRtoRV_"..fn.name)
+C.ConvertVRtoRV = J.memoize(function(fn)
+  err( types.isHandshakeVR(fn.inputType), "ConvertVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
+  err( types.isHandshakeVR(fn.outputType), "ConvertVRtoRV: fn output should be HandshakeVR" )
+  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"ConvertVRtoRV_"..fn.name)
+end)
+
+-- placed at the front of a pipeline to feed it invalid input
+C.Invalid = J.memoize(function(A,VR)
+  err( types.isType(A), "C.Invalid: input should be type, but is: "..tostring(A) )
+  err( types.isBasic(A), "C.Stall: expected basic type" )
+  local otype = types.Handshake(A)
+  if VR==true then otype = types.HandshakeVR(A) end
+  local res = R.newFunction{ name=J.sanitize("Invalid_"..tostring(A)), inputType=types.null(), outputType=otype, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    local verilog = res:vHeader()
+    verilog = verilog.."  assign process_output["..A:verilogBits().."] = 1'b0;\n"
+    verilog = verilog.."endmodule\n\n"
+    s:verilog(verilog)
+    return s
+  end
+  return res
+end)
+
+-- this is placed at the output of a pipeline to stall it (sets ready=false)
+C.Stall = J.memoize(function(A,VR)
+  err( types.isType(A), "C.Stall: input should be type, but is: "..tostring(A) )
+  err( types.isBasic(A), "C.Stall: expected basic type" )
+  local itype = types.Handshake(A)
+  if VR==true then itype = types.HandshakeVR(A) end
+  local res = R.newFunction{ name=J.sanitize("Stall_"..tostring(A)), inputType=itype, outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false}
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    local verilog = res:vHeader()
+    verilog = verilog.."  assign ready = 1'b0;\n"
+    verilog = verilog.."endmodule\n\n"
+    s:verilog(verilog)
+    return s
+  end
+  return res
 end)
 
 return C

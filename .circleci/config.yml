@@ -14,9 +14,11 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit verilator
-#      - run: sudo apt-get install luajit flex bison
-#      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+#      - run: sudo apt-get install luajit verilator
+      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit flex bison
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: verilator --version
       - run: cd examples; make verilator
       - run: test -e examples/out/verilator_done.txt || exit
   verilatorSOC:
@@ -69,6 +71,17 @@ jobs:
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
       - run: test -e examples/out/terra_done.txt || exit
+  state:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit verilator
+      - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
+      - run: unzip terra-Linux-x86_64-332a506.zip
+      - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
+      - run: cd examples; make state
+      - run: test -e examples/out/state_done.txt || exit
 workflows:
   version: 2
   dostuff:
@@ -79,3 +92,4 @@ workflows:
       - unit
       - terra
       - bjump
+      - state

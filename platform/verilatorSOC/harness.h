@@ -501,6 +501,7 @@ bool masterWriteDataLatchFlops(
   unsigned char* memory,
   SlaveState* slaveState,
   int port,
+  bool checkDataEqual, // in second round, we want to make sure pipeline does exactly the same thing
   const unsigned int* AWADDR,
   const unsigned char* AWVALID,
   const unsigned long* WDATA,
@@ -517,10 +518,16 @@ bool masterWriteDataLatchFlops(
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
 
+    if(checkDataEqual && (*(unsigned long*)(&memory[t->addr]) != *WDATA) ){
+      printf("Write Error in second round: Data is different than first round! pipeline behavior may have changed! addr %d/%#x orig: %#018lx new: %#018lx\n",t->addr,t->addr,*(unsigned long*)(&memory[t->addr]),*WDATA);
+      *(unsigned long*)(&memory[t->addr]) = *WDATA;
+      return true;
+    }
+    
     *(unsigned long*)(&memory[t->addr]) = *WDATA;
 
     if(verbose){
-      printf("MAXI%d Accept Write, Addr(base rel): %d/%#x data: %d/%#x remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, *WDATA, t->burst, QSize(&writeQ[port]) );
+      printf("MAXI%d Accept Write, Addr(base rel): %d/%#0lx data: %d/%#018lx remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, *WDATA, t->burst, QSize(&writeQ[port]) );
     }
     
     t->burst--;

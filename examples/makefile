@@ -10,6 +10,15 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_SOC))
 
+SRCS_STATE = state_simple.t state_flowcontrol.t
+
+STATE = $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_STATE))
+STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_STATE))
+STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_STATE))
+STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_STATE))
+STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_STATE))
+STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_STATE))	
+
 SRCS_BJUMP = soc_bjump_cache.lua  soc_bjump_cache_nocache.lua
 
 BJUMP = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_BJUMP))
@@ -272,6 +281,10 @@ bjump: $(BJUMP)
 	touch $(BUILDDIR)/bjump_done.txt
 	date
 
+state: $(STATE)
+	touch $(BUILDDIR)/state_done.txt
+	date
+
 pulpino: $(PULPINO)
 	touch $(BUILDDIR)/pulpino_done.txt
 	date
@@ -317,8 +330,20 @@ $(BUILDDIR)/%.metadata.lua: %.lua
 	mkdir -p $(BUILDDIR)/$*_build
 	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
 
+$(BUILDDIR)/%.metadata.lua: %.t
+	$(TERRA) $< metadata
+	# keep copy for future reference
+	mkdir -p $(BUILDDIR)/$*_build
+	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
+
 $(BUILDDIR)/%.v: %.lua
 	$(LUA) $< verilator
+	# keep copy for future reference
+	mkdir -p $(BUILDDIR)/$*_build
+	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
+
+$(BUILDDIR)/%.v: %.t
+	$(TERRA) $< verilator
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
 	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build

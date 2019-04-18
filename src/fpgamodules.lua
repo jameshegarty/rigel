@@ -26,22 +26,19 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
   local ot = S.select(S.eq(S.index(swinp,0),limit:toSystolic(ty)),
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function(inc,ty,hasCE)
+modules.incIf=memoize(function( inc, ty, X )
   if inc==nil then inc=1 end
   if ty==nil then ty=types.uint(16) end
-  if hasCE==nil then hasCE=true end
-  assert(type(hasCE)=="boolean")
+  assert(X==nil)
 
   local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
   
   local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-  local CE = S.CE("CE")
-  if hasCE==false then CE=nil end
-  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,CE)},{})
+  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 -- this will never wrap around (this just stops at top value)
@@ -75,7 +72,7 @@ modules.incIfWrap=memoize(function( ty, limit_orig, inc, X )
   
   local nextValue = S.select( S.eq(S.index(swinp,0), limit:toSystolic(ty) ), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
   local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil,S.CE("CE"))},{})
+  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 
@@ -87,7 +84,7 @@ modules.max = memoize(function(ty,hasCE)
   local swinp = S.parameter("process_input", types.tuple{ty,ty})
   local CE = S.CE("CE")
   if hasCE==false then CE=nil end
-  return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil,CE)},{})
+  return S.module.new( "maxmodule", {process=S.lambda("process",swinp,S.select(S.gt(S.index(swinp,0),S.index(swinp,1)),S.index(swinp,0),S.index(swinp,1)):disablePipelining(),"process_output",nil,nil)},{})
 end)
 ------------
 local swinp = S.parameter("process_input", types.tuple{types.bool(),types.bool()})
@@ -296,10 +293,10 @@ end)
 
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
-modules.fifonoop = memoize(function(ty)
+modules.fifonoop = memoize(function(ty,addrBits)
   assert(types.isType(ty))
 
-  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty))):onlyWire(true)
+  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty).."_addrbits"..tostring(addrBits))):onlyWire(true)
 
   local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
   local internalReady = systolic.parameter("load_ready_downstream",types.bool())
@@ -312,6 +309,10 @@ modules.fifonoop = memoize(function(ty)
   local popFront = fifo:addFunction( S.lambda("load",S.parameter("pfnil",types.null()),internalData,"load_output") )
   local popFront_ready = fifo:addFunction( S.lambda("load_ready",internalReady,nil,"load_ready") )
 
+  -- size
+  local size = fifo:addFunction( Ssugar.lambdaConstructor("size" ) )
+  size:setOutput(S.constant(0,types.uint(addrBits)),"size")
+  
   -- reset
   local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )
 
@@ -915,6 +916,7 @@ modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
   err( types.isType(ty), "systolic.module.regBy, type must be type" )
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
+  assert( setby.functions.process:isPure() )
   assert( CE==nil or type(CE)=="boolean" )
   if init~=nil then ty:checkLuaValue(init) end
   if resetValue~=nil then ty:checkLuaValue(resetValue) end
@@ -950,7 +952,7 @@ modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
   local sbinp = systolic.parameter("setby_inp",setbyTypeB)
   local setbyvalidparam = systolic.parameter("setby_valid",types.bool())
   local setbyvalid = setbyvalidparam
-  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null(),CEVar)
+  local setbyout = inner:process(systolic.tuple{R:get(),sbinp},systolic.null())
 
   if hasSet then
     setbyvalid = systolic.__or(setbyvalid,setvalid)

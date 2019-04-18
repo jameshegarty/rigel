@@ -31,7 +31,8 @@ return function(fn,t,instances)
   if backend==nil then backend = arg[1] end
   if backend==nil then backend = "verilog" end
 
-  local filename = string.gsub(arg[0],".lua","") --arg[0]
+  local filename = string.gsub(arg[0],"%.lua","") --arg[0]
+  filename = string.gsub(filename,"%.t","")
   print("FILENAME",filename)
   
   if backend=="verilog" or backend=="verilator" then

@@ -31,15 +31,20 @@ AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5,arcache=
 AXI.ReadAddressVSelect = {arvalid="["..tostring(types.extractData(AXI.ReadAddress):verilogBits()).."]"}
 for k,v in pairs(AXI.ReadAddressIdx) do AXI.ReadAddressVSelect[k] = vrange(types.extractData(AXI.ReadAddress),AXI.ReadAddressIdx[k],0) end
 
+AXI.ReadDataTuple = J.memoize(function(bits)
+  return types.tuple{
+    types.bits(bits), -- RDATA
+    types.bool(), -- RLAST
+    types.bits(2), -- RRESP
+    types.bits(12), -- RID
+  }
+end)
+  
 AXI.ReadData = J.memoize(function(bits)
     assert(type(bits)=="number")
-    return types.HandshakeVR(types.tuple{
-                             types.bits(bits), -- RDATA
-                             types.bool(), -- RLAST
-                             types.bits(2), -- RRESP
-                             types.bits(12), -- RID
-    })
+    return types.HandshakeVR(AXI.ReadDataTuple(bits))
 end)
+
 AXI.ReadData64 = AXI.ReadData(64)
 AXI.ReadData32 = AXI.ReadData(32)
 
