@@ -1,1 +1,1 @@
-return {regs_offset=200}
+return {InstanceCallsite_regs_offset=200}

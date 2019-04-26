@@ -10,10 +10,10 @@ types.export()
 
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({offset={u(8),200},lastPx={u(8),0,"input"}},SDF{1,8192}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local Regs = SOC.axiRegs({offset={u(8),200},lastPx={u(8),0,"input"}},SDF{1,8192},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink)
-local regs = Regs:instantiate("regs")
 
 local AddReg = G.Module{"AddReg",function(i) return G.Add(i,regs.offset()) end}
 
@@ -28,6 +28,4 @@ local RegInOut = G.Module{types.HandshakeTrigger,SDF{1,8192},
     return R.statements{doneFlag,writeRegStatement}
   end}
 
-print("REGINOUT",RegInOut)
-print("Regs",Regs)
 harness({regs.start,RegInOut,regs.done},nil,{regs})

@@ -10,9 +10,9 @@ local types = require "types"
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+regs = SOC.axiRegs({},SDF{1,240}):instantiate("regs")
+noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,240},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 ------------
 inp = R.input( types.uint(8) )

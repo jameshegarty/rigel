@@ -1,1 +1,1 @@
-return {regs_coeffs=4}
+return {InstanceCallsite_regs_coeffs=4}

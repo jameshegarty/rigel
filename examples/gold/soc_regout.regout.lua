@@ -1,1 +1,1 @@
-return {regs_lastPx=33,regs_offset=200}
+return {InstanceCallsite_regs_lastPx=33,InstanceCallsite_regs_offset=200}

@@ -221,8 +221,8 @@ systolicFunctionFunctions = {}
 systolicFunctionMT={__index=systolicFunctionFunctions}
 
 function systolicFunctionMT.__tostring(tab)
-  local res = {}
-  table.insert(res,"\t\tInputParameter: "..tab.inputParameter.name.." : "..tostring(tab.inputParameter.type) )
+  local res = {"\t\tSystolic Function "..tab.name}
+  table.insert(res,"\t\tInputParameter "..tab.inputParameter.name.." : "..tostring(tab.inputParameter.type) )
 
   if tab.output~=nil then
     table.insert(res,"\t\tOutputType: "..tostring(tab.output.type))
@@ -896,7 +896,7 @@ function systolicASTFunctions:calculateStallDomains()
 end
 
 -- check that all fns that need to be wired are wired exactly once
-function systolicASTFunctions:checkWiring(module)
+function systolicASTFunctions:checkWiring( module, providesMap )
   local state = {}
   local CEState = {}
 
@@ -935,55 +935,53 @@ function systolicASTFunctions:checkWiring(module)
       end
     end)
 
-  -- this is kind of a hack: since we don't need to actually explicitly wire external requirements
-  -- (their signal names will just match up in Verilog), we only really need to surpress the
-  -- undriven function warnings...
-  for inst,_ in pairs(module.instanceMap) do
-    if module.externalInstances[inst]==nil then
-      -- for internal instances, collect their 'requires' calls
-      err(inst.module.externalInstances~=nil,inst.module.name.." MISSING EXTERNAL INSTS?")
-      for einst,nameMap in pairs(inst.module.externalInstances) do
-        if state[einst]==nil then state[einst]={} end
+  local function tiedownInst(inst)
+    -- for internal instances, collect their 'requires' calls
+    err(inst.module.externalInstances~=nil,inst.module.name.." MISSING EXTERNAL INSTS?")
+    for einst,nameMap in pairs(inst.module.externalInstances) do
+      if state[einst]==nil then state[einst]={} end
 
-        for fnname,_ in pairs(nameMap) do
-          state[einst][fnname]={"DATABIT"}
-        end
+      for fnname,_ in pairs(nameMap) do
+        state[einst][fnname]={"DATABIT"}
       end
     end
   end
 
+  -- this is kind of a hack: since we don't need to actually explicitly wire external requirements
+  -- (their signal names will just match up in Verilog), we only really need to surpress the
+  -- undriven function warnings...
+  for inst,_ in pairs(module.instanceMap) do tiedownInst(inst) end
+  for inst,_ in pairs(module.externalInstances) do tiedownInst(inst) end
+
   for inst,_ in pairs(module.instanceMap) do
     if state[inst]==nil then state[inst]={} end
 
-    -- if module is external, so don't check wiring here - not everything has to be tied down at this point
-    if module.externalInstances[inst]==nil then
-      if inst.module.kind=="user" then
-        for einst,nameMap in pairs(inst.module.externalInstances) do
-          if module.instanceMap[einst]==nil then -- obviously, if this module contains the module we need, it's ok
-            err( module.externalInstances[einst]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on '"..einst.name.."' that is not passed up?")
-            
-            -- at this point, we know einst isn't internal to this module, so all its ports must be ported out
-            for fnname,_ in pairs(nameMap) do
-              err( module.externalInstances[einst][fnname]~=nil,"module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on "..einst.name..":"..fnname.."() that is not passed up?")
-            end
+    if inst.module.kind=="user" then
+      for einst,nameMap in pairs(inst.module.externalInstances) do
+        if module.instanceMap[einst]==nil then -- obviously, if this module contains the module we need, it's ok
+          err( module.externalInstances[einst]~=nil,"systolic module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on '"..einst.name.."' that is not passed up?")
+          
+          -- at this point, we know einst isn't internal to this module, so all its ports must be ported out
+          for fnname,_ in pairs(nameMap) do
+            err( module.externalInstances[einst][fnname]~=nil,"systolic module '"..module.name.."' instance '"..inst.name.."' of module '"..inst.module.name.."' has external dependency on "..einst.name..":"..fnname.."() that is not passed up?")
           end
         end
       end
-
-      for fnname,fn in pairs (inst.module.functions) do
-        err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
-        
-        if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
-          err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
-        end
-
-        if fn.CE~=nil and (CEState[inst]==nil or CEState[inst][fn.CE.name]==nil) then
-          err( state[inst][fnname]~=nil and state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' ' in module '"..module.name.."'")
-        end
-        
-        if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-          err( state[inst][fnname]~=nil, "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') inside module '"..module.name.."'? input type: "..tostring(fn.inputParameter.type).." output:"..tostring(fn.output))
-        end
+    end
+    
+    for fnname,fn in pairs (inst.module.functions) do
+      err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
+      
+      if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
+        err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")
+      end
+      
+      if fn.CE~=nil and (CEState[inst]==nil or CEState[inst][fn.CE.name]==nil) then
+        err( state[inst][fnname]~=nil and state[inst][fnname][3]~=nil, "undriven CE '"..fn.CE.name.."', function '"..fnname.."' on instance '"..inst.name.."' of module '"..inst.module.name.."' ' in module '"..module.name.."'")
+      end
+      
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
+        err( state[inst][fnname]~=nil or (providesMap[inst]~=nil and providesMap[inst][fnname]~=nil), "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') inside module '"..module.name.."'? input type: "..tostring(fn.inputParameter.type).." output:"..tostring(fn.output))
       end
     end
   end
@@ -1469,9 +1467,7 @@ function userModuleMT.__tostring(tab)
 
   table.insert(res,"Internal Instances:")
   for inst,_ in ipairs(tab.instanceMap) do
-    if tab.externalInstances[inst]==nil then
-      table.insert(res,"  "..inst.name)
-    end
+    table.insert(res,"  "..inst.name)
   end
 
   table.insert(res,"External Instances:")
@@ -1484,20 +1480,24 @@ function userModuleMT.__tostring(tab)
   return table.concat(res,"\n")
 end
 
-function userModuleFunctions:instanceToVerilogStart( instance )
+function userModuleFunctions:instanceToVerilogStart( instance, providesMap )
   local wires = {}
   local arglist = {}
     
   local CESeen = {}
   for fnname,fn in pairs(self.functions) do
-
+    -- 'hack': if this function is being ported out externally, we don't want to wire it here!
+    -- so surpress the wiring instructions
+    local doDecl = true
+    if providesMap~=nil and providesMap[fnname]~=nil then doDecl=false end
+      
     -- if onlyWire==true, don't try to be clever - always wire the valid bit if it exists.
     if fn:isPure()==false or self.onlyWire then
       if self.onlyWire and fn.implicitValid then
         -- when in onlyWire mode, it's ok to have an undriven valid bit
       else
         local wirename = instance.name.."_"..fn.valid.name
-        table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" )
+        if doDecl then table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" ) end
         table.insert( arglist, ", ."..fn.valid.name.."("..wirename..")") 
       end      
     end
@@ -1505,20 +1505,20 @@ function userModuleFunctions:instanceToVerilogStart( instance )
     -- CESeen: prevent listing the CE twice if it's used twice
     if fn.CE~=nil and CESeen[fn.CE.name]==nil then
       local wirename = instance.name.."_"..fn.CE.name
-      table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" )
+      if doDecl then table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" ) end
       table.insert( arglist, ", ."..fn.CE.name.."("..wirename..")") 
       CESeen[fn.CE.name] = 1
     end
     
     if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
       local wirename = instance.name.."_"..fn.inputParameter.name
-      table.insert(wires, "  "..systolic.declareWire(fn.inputParameter.type, wirename ).."\n")
+      if doDecl then table.insert(wires, "  "..systolic.declareWire(fn.inputParameter.type, wirename ).."\n") end
       table.insert(arglist,", ."..fn.inputParameter.name.."("..wirename..")")
     end
 
     if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
       local wirename = instance.name.."_"..fn.outputName
-      table.insert(wires, "  "..systolic.declareWire(fn.output.type, wirename ).."\n")
+      if doDecl then table.insert(wires, "  "..systolic.declareWire(fn.output.type, wirename ).."\n") end
       table.insert(arglist,", ."..fn.outputName.."("..wirename..")")
     end
   end
@@ -1614,13 +1614,8 @@ function userModuleFunctions:toVerilogNoHeader()
   end
 
   local wireDecls = {}
-  --table.insert( t, self.ast:toVerilog(self) )
-  local res = self.ast:toVerilogInner(self,wireDecls)
 
---  print("TOVERILOGNOHEADER")
---  for k,v in pairs(wireDecls) do
---    print(k,v)
---  end
+  local res = self.ast:toVerilogInner(self,wireDecls)
   
   return wireDecls, instanceDecls
 end
@@ -1663,7 +1658,20 @@ function userModuleFunctions:toVerilog()
         end
       end
     end
-    
+
+    -- add ports for provided functions
+    for inst,fnmap in pairs(self.providesMap) do
+      for fnname,_ in pairs(fnmap) do
+        local fn = inst.module.functions[fnname]
+        if fn.inputParameter.type~=types.null() then
+          table.insert( portlist, {inst.name.."_"..fn.inputParameter.name, fn.inputParameter.type, true} )
+        end
+        if fn.output~=nil and fn.output.type~=types.null() then
+          table.insert( portlist, {inst.name.."_"..fn.outputName, fn.output.type, false} )
+        end
+      end
+    end
+        
     table.insert(t,table.concat(J.map(portlist,function(n) return systolic.declarePort(n[2],n[1],n[3]) end),", "))
     table.insert(t,");\n")
 
@@ -1676,7 +1684,7 @@ function userModuleFunctions:toVerilog()
 
     for inst,_ in pairs(self.instanceMap) do
       if inst.module.instanceToVerilogStart~=nil and (self.externalInstances[inst]==nil) then
-        local sst = inst.module:instanceToVerilogStart( inst )
+        local sst = inst.module:instanceToVerilogStart( inst, self.providesMap[inst] )
         if sst~=nil then table.insert(t, sst ) end
       end
     end
@@ -1727,7 +1735,10 @@ end
 -- 'externalInstances' is a map of instances that are external... this is a map from systolicInstance->StringList
 --    of functions we require on this instance
 --    NOTE that 'externalInstances' and 'instances' should not overlap!
-function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, X )
+-- 'providesMap' is a map of function instances that will be wired up later (higher up in the heirarchy)
+--    this is a map of format 'instance'->StringList (of functions that should be externalized)
+--    'instances' in the map should be in instance list of this module? but may not all be
+function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, providesMap, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
   err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
@@ -1749,11 +1760,16 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     for fnname,_ in pairs(fnmap) do err( type(fnname)=="string","systolic.module.new: external fn map should have fnname keys") end
 
     -- make sure this is NOT in instance list too
-    --local found = false
-    --for _,iinst in ipairs(instances) do if inst==iinst then found=true end end
     err( instanceMap[inst]==nil, "External instance '"..inst.name.."' should not be in instance list of module '"..name.."'!" )
   end
 
+  if providesMap==nil then providesMap={} end
+  for inst,fnmap in pairs(providesMap) do
+    err(systolic.isInstance(inst),"systolic.module.new: provides map key should be systolic instances")
+    err( type(fnmap)=="table", "systolic.module.new: provides map value should be fn name list")
+    for fnname,_ in pairs(fnmap) do err( type(fnname)=="string","systolic.module.new: provides map should have fnname keys") end
+  end
+  
   for inst,_ in ipairs(instanceMap) do
     err(inst.final==false, "Instance was already added to another module? "..tostring(inst.final));
     inst.final="added to module '"..name.."' "..debug.traceback()
@@ -1808,7 +1824,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     end
   end
 
-  local t = {name=name,kind="user",instanceMap=instanceMap,functions=fns, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, externalInstances=externalInstances}
+  local t = {name=name,kind="user",instanceMap=instanceMap,functions=fns, isComplete=false, onlyWire=onlyWire, verilogDelay=verilogDelay, parameters=parameters, verilog=verilog, externalInstances=externalInstances, providesMap=providesMap}
   setmetatable(t,userModuleMT)
 
   t.ast = t:lower()
@@ -1829,8 +1845,6 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   t.ast, delayRegisters = t.ast:removeDelays(t)
 
   for _,inst in ipairs(delayRegisters) do t.instanceMap[inst] = 1 end
-  --t.instances = J.concat(t.instances, delayRegisters)
-  --local instanceMap = J.invertTable(t.instances)
   
   t.ast = t.ast:CSE()
 
@@ -1866,7 +1880,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   
   -- check that the instances refered to by this module are actually in the module
   t.ast:checkInstances( name, t.instanceMap, externalInstances )
-  t.ast:checkWiring(t) -- check for dangling fns
+  t.ast:checkWiring( t, providesMap ) -- check for dangling fns
 
   return t
 end

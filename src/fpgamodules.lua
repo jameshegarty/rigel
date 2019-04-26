@@ -21,12 +21,15 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
   assert(X==nil)
 
   local name = J.sanitize("sumwrap_"..tostring(ty).."_to"..tostring(limit_orig))
-  
+
+  local mod = Ssugar.moduleConstructor(name)
   local swinp = S.parameter("process_input", types.tuple{ty,ty})
-  local ot = S.select(S.eq(S.index(swinp,0),limit:toSystolic(ty)),
+  local ot = S.select(S.eq(S.index(swinp,0),limit:toSystolic(ty,mod)),
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
-  return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
+  mod:addFunction(S.lambda("process",swinp,ot,"process_output",nil,nil))
+  --return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
+  return mod
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
@@ -66,13 +69,17 @@ modules.incIfWrap=memoize(function( ty, limit_orig, inc, X )
   err(types.isType(ty), "incIfWrap: type must be rigel type")
   local limit = Uniform(limit_orig)
   err( X==nil, "incIfWrap: too many arguments" )
-  
+
+  local mod = Ssugar.moduleConstructor(J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)))
   local incv = inc or 1
   local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
   
-  local nextValue = S.select( S.eq(S.index(swinp,0), limit:toSystolic(ty) ), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
+  local nextValue = S.select( S.eq(S.index(swinp,0), limit:toSystolic(ty,mod) ), S.constant(0,ty), S.index(swinp,0)+S.constant(incv,ty) )
   local ot = S.select( S.index(swinp,1), nextValue, S.index(swinp,0) ):disablePipelining()
-  return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
+  --return S.module.new( J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
+
+  mod:addFunction(S.lambda("process",swinp,ot,"process_output",nil,nil))
+  return mod
 end)
 
 
@@ -914,6 +921,9 @@ end
 
 modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
   err( types.isType(ty), "systolic.module.regBy, type must be type" )
+
+  if Ssugar.isModuleConstructor(setby) then setby = setby:complete() end
+  
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
   assert( setby.functions.process:isPure() )

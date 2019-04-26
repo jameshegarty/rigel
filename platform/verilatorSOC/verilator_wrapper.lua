@@ -148,29 +148,32 @@ print([[module VerilatorWrapper(
    ]]..assnRigelToExt(AXI.WriteIssueVSelect(64),"MAXI0_","ZynqNOC_write_input")..[[
    wire [14:0]  ZynqNOC_write; // write response
    assign ZynqNOC_write = {MAXI0_BVALID,]]..assnExtToRigel(AXI.WriteResponseIdx,"MAXI0_")..[[};
-   wire         ZynqNOC_readSink_ready;
-   assign ZynqNOC_readSink_ready = SAXI0_RREADY;
-   wire         ZynqNOC_readSource_ready_downstream;
-   assign SAXI0_ARREADY = ZynqNOC_readSource_ready_downstream;
-   wire         ZynqNOC_writeSink_ready;
-   assign ZynqNOC_writeSink_ready= SAXI0_BREADY;
    wire ZynqNOC_write_ready_downstream;  
    assign MAXI0_BREADY = ZynqNOC_write_ready_downstream;
    wire [1:0] ZynqNOC_write_ready;  
    assign ZynqNOC_write_ready = {MAXI0_WREADY,MAXI0_AWREADY};  
-   wire [1:0] ZynqNOC_writeSource_ready_downstream; 
-   //assign ZynqNOC_writeSource_ready_downstream = {SAXI0_WREADY,SAXI0_AWREADY};
-   assign SAXI0_AWREADY = ZynqNOC_writeSource_ready_downstream[0];
-   assign SAXI0_WREADY = ZynqNOC_writeSource_ready_downstream[1];
-   wire [102:0] ZynqNOC_writeSource;  // issue write to slave
-   assign ZynqNOC_writeSource[]]..tostring(AXI.WriteAddress:verilogBits())..[[:0] = {SAXI0_AWVALID,]]..assnExtToRigel(AXI.WriteAddressIdx,"SAXI0_")..[[};
-   assign ZynqNOC_writeSource[]]..tostring(AXI.WriteAddress:verilogBits()+AXI.WriteData(32):verilogBits()+1)..[[:]]..tostring(AXI.WriteAddress:verilogBits()+1)..[[] = {SAXI0_WVALID,]]..assnExtToRigel(AXI.WriteDataIdx,"SAXI0_")..[[};
-   wire []]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[[:0] ZynqNOC_writeSink_input; // return write result from slave
-   ]]..assnRigelToExt(AXI.WriteResponseVSelect(32),"SAXI0_","ZynqNOC_writeSink_input")..[[
-   wire []]..tostring(AXI.ReadAddress:verilogBits()-1)..[[:0] ZynqNOC_readSource;  // issue read to slave
-   assign ZynqNOC_readSource = {SAXI0_ARVALID,]]..assnExtToRigel(AXI.ReadAddressIdx,"SAXI0_")..[[};
-   wire [47:0] ZynqNOC_readSink_input;  // slave read response
-   ]]..assnRigelToExt(AXI.ReadDataVSelect(32),"SAXI0_","ZynqNOC_readSink_input")..[[
+
+   ////////////////
+   wire         regs_read_ready_downstream;
+   assign regs_read_ready_downstream = SAXI0_RREADY;
+   wire         regs_read_ready;
+   assign SAXI0_ARREADY = regs_read_ready;
+   wire []]..tostring(AXI.ReadAddress:verilogBits()-1)..[[:0] regs_read_input;  // issue read to slave
+   assign regs_read_input = {SAXI0_ARVALID,]]..assnExtToRigel(AXI.ReadAddressIdx,"SAXI0_")..[[};
+   wire [47:0] regs_read;  // slave read response
+   ]]..assnRigelToExt(AXI.ReadDataVSelect(32),"SAXI0_","regs_read")..[[
+
+   wire         regs_write_ready_downstream;
+   assign regs_write_ready_downstream = SAXI0_BREADY;
+   wire [1:0] regs_write_ready; 
+   assign SAXI0_AWREADY = regs_write_ready[0];
+   assign SAXI0_WREADY = regs_write_ready[1];
+   wire [102:0] regs_write_input;  // issue write to slave
+   assign regs_write_input[]]..tostring(AXI.WriteAddress:verilogBits())..[[:0] = {SAXI0_AWVALID,]]..assnExtToRigel(AXI.WriteAddressIdx,"SAXI0_")..[[};
+   assign regs_write_input[]]..tostring(AXI.WriteAddress:verilogBits()+AXI.WriteData(32):verilogBits()+1)..[[:]]..tostring(AXI.WriteAddress:verilogBits()+1)..[[] = {SAXI0_WVALID,]]..assnExtToRigel(AXI.WriteDataIdx,"SAXI0_")..[[};
+   wire []]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[[:0] regs_write; // return write result from slave
+   ]]..assnRigelToExt(AXI.WriteResponseVSelect(32),"SAXI0_","regs_write")..[[
+   /////////////////////
 
    ]]..READ_PORTS..[[
 

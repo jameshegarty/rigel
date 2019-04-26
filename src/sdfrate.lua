@@ -137,9 +137,17 @@ function SDFRate.fracEq(a,b)
   assert(SDFRate.isFrac(a))
   assert(SDFRate.isFrac(b))
 
+  local a1,a2 = SDFRate.simplify(a[1],a[2])
+  local b1,b2 = SDFRate.simplify(b[1],b[2])
+
+  local n,d = a1*b2, a2*b1
+  --assert( Uniform(n):isUint() )
+  --assert( Uniform(d):isUint() )
+
+  return n:eq(d):assertAlwaysTrue()
   -- never do non-integer comparisons! (0.07*300 ~= 21)!
-  local n,d = a[1]*b[2], a[2]*b[1]
-  return n==d
+  --local n,d = a[1]*b[2], a[2]*b[1]
+  --return n==d
 end
 
 function SDFRate.sum(tab)

@@ -8,13 +8,14 @@ local SDF = require "sdf"
 require "types".export()
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local W,H = 128,64
 
-AddrGen = Module{function(inp)
+AddrGen = Module{SDF{1,1},function(inp)
   local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
   local resx = AddMSBs{16}(x)
   local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )

@@ -8,9 +8,10 @@ local Zynq = require "zynq"
 
 local cycles = tonumber(string.match(arg[0],"%d+"))
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,cycles},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local Conv = G.Module{ "ConvTop", SDF{1,cycles},
   function(i)

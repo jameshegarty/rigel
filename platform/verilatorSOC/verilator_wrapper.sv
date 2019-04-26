@@ -120,35 +120,38 @@ assign MAXI0_WVALID = ZynqNOC_write_input[138];
 assign MAXI0_AWLEN = ZynqNOC_write_input[35:32];
    wire [14:0]  ZynqNOC_write; // write response
    assign ZynqNOC_write = {MAXI0_BVALID,MAXI0_BID,MAXI0_BRESP};
-   wire         ZynqNOC_readSink_ready;
-   assign ZynqNOC_readSink_ready = SAXI0_RREADY;
-   wire         ZynqNOC_readSource_ready_downstream;
-   assign SAXI0_ARREADY = ZynqNOC_readSource_ready_downstream;
-   wire         ZynqNOC_writeSink_ready;
-   assign ZynqNOC_writeSink_ready= SAXI0_BREADY;
    wire ZynqNOC_write_ready_downstream;  
    assign MAXI0_BREADY = ZynqNOC_write_ready_downstream;
    wire [1:0] ZynqNOC_write_ready;  
    assign ZynqNOC_write_ready = {MAXI0_WREADY,MAXI0_AWREADY};  
-   wire [1:0] ZynqNOC_writeSource_ready_downstream; 
-   //assign ZynqNOC_writeSource_ready_downstream = {SAXI0_WREADY,SAXI0_AWREADY};
-   assign SAXI0_AWREADY = ZynqNOC_writeSource_ready_downstream[0];
-   assign SAXI0_WREADY = ZynqNOC_writeSource_ready_downstream[1];
-   wire [102:0] ZynqNOC_writeSource;  // issue write to slave
-   assign ZynqNOC_writeSource[52:0] = {SAXI0_AWVALID,SAXI0_AWID,SAXI0_AWSIZE,SAXI0_AWBURST,SAXI0_AWLEN,SAXI0_AWADDR};
-   assign ZynqNOC_writeSource[102:53] = {SAXI0_WVALID,SAXI0_WID,SAXI0_WLAST,SAXI0_WSTRB,SAXI0_WDATA};
-   wire [14:0] ZynqNOC_writeSink_input; // return write result from slave
-   assign SAXI0_BVALID = ZynqNOC_writeSink_input[14];
-assign SAXI0_BID = ZynqNOC_writeSink_input[13:2];
-assign SAXI0_BRESP = ZynqNOC_writeSink_input[1:0];
-   wire [60:0] ZynqNOC_readSource;  // issue read to slave
-   assign ZynqNOC_readSource = {SAXI0_ARVALID,SAXI0_ARLOCK,SAXI0_ARCACHE,SAXI0_ARPROT,SAXI0_ARID,SAXI0_ARBURST,SAXI0_ARSIZE,SAXI0_ARLEN,SAXI0_ARADDR};
-   wire [47:0] ZynqNOC_readSink_input;  // slave read response
-   assign SAXI0_RVALID = ZynqNOC_readSink_input[47];
-assign SAXI0_RLAST = ZynqNOC_readSink_input[32:32];
-assign SAXI0_RDATA = ZynqNOC_readSink_input[31:0];
-assign SAXI0_RRESP = ZynqNOC_readSink_input[34:33];
-assign SAXI0_RID = ZynqNOC_readSink_input[46:35];
+
+   ////////////////
+   wire         regs_read_ready_downstream;
+   assign regs_read_ready_downstream = SAXI0_RREADY;
+   wire         regs_read_ready;
+   assign SAXI0_ARREADY = regs_read_ready;
+   wire [60:0] regs_read_input;  // issue read to slave
+   assign regs_read_input = {SAXI0_ARVALID,SAXI0_ARLOCK,SAXI0_ARCACHE,SAXI0_ARPROT,SAXI0_ARID,SAXI0_ARBURST,SAXI0_ARSIZE,SAXI0_ARLEN,SAXI0_ARADDR};
+   wire [47:0] regs_read;  // slave read response
+   assign SAXI0_RVALID = regs_read[47];
+assign SAXI0_RLAST = regs_read[32:32];
+assign SAXI0_RDATA = regs_read[31:0];
+assign SAXI0_RRESP = regs_read[34:33];
+assign SAXI0_RID = regs_read[46:35];
+
+   wire         regs_write_ready_downstream;
+   assign regs_write_ready_downstream = SAXI0_BREADY;
+   wire [1:0] regs_write_ready; 
+   assign SAXI0_AWREADY = regs_write_ready[0];
+   assign SAXI0_WREADY = regs_write_ready[1];
+   wire [102:0] regs_write_input;  // issue write to slave
+   assign regs_write_input[52:0] = {SAXI0_AWVALID,SAXI0_AWID,SAXI0_AWSIZE,SAXI0_AWBURST,SAXI0_AWLEN,SAXI0_AWADDR};
+   assign regs_write_input[102:53] = {SAXI0_WVALID,SAXI0_WID,SAXI0_WLAST,SAXI0_WSTRB,SAXI0_WDATA};
+   wire [14:0] regs_write; // return write result from slave
+   assign SAXI0_BVALID = regs_write[14];
+assign SAXI0_BID = regs_write[13:2];
+assign SAXI0_BRESP = regs_write[1:0];
+   /////////////////////
 
    wire         ZynqNOC_read_ready_downstream;
    assign MAXI0_RREADY = ZynqNOC_read_ready_downstream;

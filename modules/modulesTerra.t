@@ -2016,7 +2016,7 @@ return {`mself.[n.name].ready}
           local applyfn = n.inst.module.functions[n.fnname]
 
           local inst
-          if fn.externalInstances[n.inst]~=nil then
+          if fn.requires[n.inst]~=nil then
             inst = n.inst:terraReference()
           else
             inst = `mself.[n.inst.name]
@@ -2118,7 +2118,7 @@ return {`mself.[n.name].ready}
       elseif n.kind=="applyMethod" then
 
         local inst
-        if fn.externalInstances[n.inst]~=nil then
+        if fn.requires[n.inst]~=nil then
           inst = n.inst:terraReference()
         else
           inst = `mself.[n.inst.name]
@@ -2187,7 +2187,7 @@ return {`mself.[n.name].ready}
   RVReadyOutput = out[2]
   out = out[1]
 
-  if fn.input==nil then
+  if fn.input==nil or fn.inputType==types.null() then
     terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
   else
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end

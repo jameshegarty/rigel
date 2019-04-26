@@ -27,6 +27,7 @@ AXI.ReadAddressTuple = types.tuple{
 AXI.ReadAddress = types.HandshakeVR(AXI.ReadAddressTuple)
 
 AXI.ReadAddress64 = AXI.ReadAddress
+AXI.ReadAddress32 = AXI.ReadAddress
 AXI.ReadAddressIdx={araddr=0,arlen=1,arsize=2,arburst=3,arid=4,arprot=5,arcache=6,arlock=7}
 AXI.ReadAddressVSelect = {arvalid="["..tostring(types.extractData(AXI.ReadAddress):verilogBits()).."]"}
 for k,v in pairs(AXI.ReadAddressIdx) do AXI.ReadAddressVSelect[k] = vrange(types.extractData(AXI.ReadAddress),AXI.ReadAddressIdx[k],0) end

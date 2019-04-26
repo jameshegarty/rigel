@@ -9,9 +9,10 @@ types.export()
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,128*64}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,128*64},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
