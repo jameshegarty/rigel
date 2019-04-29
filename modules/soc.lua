@@ -133,7 +133,6 @@ output wire ]]..k..[[_ready,
 
   local verbose = false
   
---  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.HandshakeTrigger,
 local vstring = {[=[
 module ict106_axilite_conv #
   (

@@ -20,13 +20,13 @@ local ready = macro(function(i) return `i._2 end)
 
 local MT = {}
 
+--[=[
 -- just putting this here to keep terra code out of rigel.lua
 function MT.terraReference(inst)
   return global( &inst.module.terraModule, nil, inst.name )
 end
 
 function MT.instanceCallsiteCalculateReady(tab)
-  --  return `[tab.instance:terraReference()].methods.[tab.functionName.."_calculateReady"]
   -- closure
   local fn = tab.instance.module.functions[tab.functionName]
 
@@ -112,7 +112,7 @@ function MT.instanceCallsiteShim(tab)
   
   return MT.new(InstanceCallsiteShim)
 end
-
+]=]
 function MT.new(Module)
   if Module.methods.init==nil then terra Module:init() end end
   if Module.methods.free==nil then terra Module:free() end end

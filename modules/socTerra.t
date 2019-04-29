@@ -14,8 +14,6 @@ local valid = macro(function(i) return `i._1 end)
 
 local SOCMT = {}
 
---SOCMT.doneHack = global(bool)
-
 function SOCMT.regStub(tab)
   local struct RegStub {}
 
@@ -37,7 +35,7 @@ function SOCMT.axiRegs( mod, tab, X )
 
   for k,v in pairs(tab) do
     local ty = v[1]
-    --print("ADDENTRY",k,v,ty,v[1],ty:toTerraType())
+
     table.insert( AxiRegsN.entries,{field=k.."_value",type=ty:toTerraType()})
 
     if v[3]=="input" then
@@ -105,10 +103,8 @@ function SOCMT.axiRegs( mod, tab, X )
     if @[AXIT.AWVALID(32)](writeInp) then
       --cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
 
-      --var BRESP : types.lower(AXI.WriteResponse(32)):toTerraType()
       @AXIT.BRESP32(BRESP) = 0
       @AXIT.BVALID32(BRESP) = true
-      --[writeSink.terraFn](&BRESP)
 
       var addr = @AXIT.AWADDR32(writeInp)
       if addr==0xa0000000 then
@@ -378,7 +374,6 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
   end
 
   terra ReadBytes:reset()
-    --[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = false
     self.ready = true
     self.readFnInst:reset()
   end
@@ -389,11 +384,7 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
 
     if valid(dataIn) and self.ready then
       var addr = data(dataIn)+[addressBase:toTerra()]
-      --valid([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = true
-      --data([mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraValue()]) = addr
-      --[mod:getGlobal("IP_MAXI"..port.."_ARLEN"):terraValue()] = [burstCount-1]
-      --[mod:getGlobal("IP_MAXI"..port.."_ARSIZE"):terraValue()] = 3
-      --[mod:getGlobal("IP_MAXI"..port.."_ARBURST"):terraValue()] = 1
+
       valid(AR) = true
       @AXIT.ARADDR(&AR) = addr
       @AXIT.ARLEN(&AR) = [burstCount-1]
@@ -418,10 +409,7 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
   end
 
   terra ReadBytes:calculateReady(readyDownstream:bool)
-  --self.ARADDRReady = [mod:getGlobal("IP_MAXI"..port.."_ARADDR_RV"):terraReady()]
     self.readFnInst:calculateReady(readyDownstream)
-    --self.ARADDRReady = readFn.terraReady
-    --[mod:getGlobal("IP_MAXI"..port.."_RDATA"):terraReady()] = readyDownstream
     self.readyDownstream = readyDownstream
     self.ready = self.readFnInst.ready
   end
@@ -445,7 +433,6 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
 
   terra WriteBytes:reset()
-    --[mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()] = false
     self.ready[0] = false
     self.ready[1] = false
     self.writeFnInst:reset()
@@ -468,27 +455,13 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
     @AXIT.WVALID64(&W) = valid((@dataIn)._1)
     @AXIT.WDATA64(&W) = data((@dataIn)._1)
     @AXIT.WSTRB64(&W) = 255
-    
-    --data([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = data((@dataIn)._0) + [uint]([addressBase:toTerra()])
-    --valid([mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraValue()]) = valid((@dataIn)._0)
-    --[mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraValue()] = (@dataIn)._1
-
-    --[mod:getGlobal("IP_MAXI"..port.."_AWLEN"):terraValue()] = (burstCount-1)
-    --[mod:getGlobal("IP_MAXI"..port.."_AWSIZE"):terraValue()] = 3
-    --[mod:getGlobal("IP_MAXI"..port.."_AWBURST"):terraValue()] = 1
-    --[mod:getGlobal("IP_MAXI"..port.."_WSTRB"):terraValue()] = 255
 
     self.writeFnInst:process(&W,&BRESP)
-    --@dataOut = valid([mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraValue()])
     @dataOut = @AXIT.BVALID64(&BRESP)
   end
 
   terra WriteBytes:calculateReady(readyDownstream:bool)
-    --cstdio.printf("READBUSRT CALCReADY\n")
-  --[mod:getGlobal("IP_MAXI"..port.."_BRESP"):terraReady()] = readyDownstream
     self.writeFnInst:calculateReady(readyDownstream)
-    --self.ready[0] = [mod:getGlobal("IP_MAXI"..port.."_AWADDR_RV"):terraReady()]
-    --self.ready[1] = [mod:getGlobal("IP_MAXI"..port.."_WDATA_RV"):terraReady()]
     self.ready = self.writeFnInst.ready
   end
 

@@ -729,42 +729,6 @@ function UniformFunctions:isUint()
   return self:isNumber() and self:ge(0):assertAlwaysTrue()
 end
 
---[=[
--- convert to a verilog string of the input ports required for any globals
-function UniformFunctions:toVerilogPortList()
-  local res = {}
-
-  self:visitEach(
-    function(n)
-      if n.kind=="instanceCallsite" then
-        local fn = n.instanceCallsite.instance.module.functions[n.instanceCallsite.functionName]
-        table.insert( res, S.declarePort( fn.outputType, n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName, true ) )
-      end
-    end)
-
-  local rr = table.concat(res,",")
-  if #res>0 then rr = rr.."," end
-  return rr
-end
-
--- convert to a verilog string with a port list passthrough, ie ".XXX(XXX),"
-function UniformFunctions:toVerilogPassthrough()
-  local res = {}
-
-  self:visitEach(
-    function(n)
-      if n.kind=="instanceCallsite" then
-        local nm = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
-        table.insert(res,"."..nm.."("..nm..")")
-      end
-    end)
-
-  local rr = table.concat(res,",")
-  if #res>0 then rr = rr.."," end
-  return rr
-end
-]=]
-
 local UniformTopMT = {}
 setmetatable(Uniform,UniformTopMT)
 
