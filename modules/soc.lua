@@ -750,7 +750,7 @@ endmodule
   -- hack
   if terralib~=nil then
     res.makeTerra=nil
-    res.terraModule = SOCMT.axiRegs(res,tab,readSource, readSink, writeSource, writeSink)
+    res.terraModule = SOCMT.axiRegs( res, tab )
   end
 
   for k,v in pairs(addToModuleHack) do
@@ -1156,7 +1156,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase, writeFn )
+    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase, writeFn_orig )
   end
 
   return res
@@ -1479,7 +1479,7 @@ endmodule
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, port, address, writeFn )
+    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, address, writeFn )
   end
 
   return res
@@ -1507,8 +1507,8 @@ end)
 SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, addressOverride, readFn_orig, X )
   J.err( type(filename)=="string","readBurst: filename must be string")
 
-  W = Uniform(W_orig)
-  H = Uniform(H_orig)
+  local W = Uniform(W_orig)
+  local H = Uniform(H_orig)
   J.err( types.isType(ty), "readBurst: type must be type, but is: "..tostring(ty))
   J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: "..tostring(ty))
   J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: "..tostring(ty))

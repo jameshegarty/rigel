@@ -160,7 +160,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     self.SAXI0_ARREADY = inp
   end
 
-  terra ZynqNOCTerra:readSource(out:&types.lower(AXI.ReadAddress):toTerraType())
+  terra ZynqNOCTerra:readSource(out:&types.lower(AXI.ReadAddress32):toTerraType())
     @AXIT.ARVALID32(out) = self.SAXI0_ARVALID;
     @AXIT.ARADDR32(out) = self.SAXI0_ARADDR;
     @AXIT.ARLEN32(out) = self.SAXI0_ARLEN;

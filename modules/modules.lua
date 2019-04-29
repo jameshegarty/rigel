@@ -4410,9 +4410,10 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
-function modules.moduleLambda( name, functionList, instanceList )
+function modules.moduleLambda( name, functionList, instanceList, X )
   err( type(name)=="string", "moduleLambda: name must be string")
-
+  assert(X==nil)
+  
     -- collect globals of all fns
   local requires = {}
   local provides = {}
@@ -4439,8 +4440,9 @@ function modules.moduleLambda( name, functionList, instanceList )
 
     instanceMap[inst] = 1
   end
-  
-  local tab = {name=name,functions=functionList, makeSystolic=makeSystolic,makeTerra=makeTerra, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides, instanceMap=instanceMap, stateful=stateful }
+
+  --makeSystolic=makeSystolic,makeTerra=makeTerra, 
+  local tab = {name=name,functions=functionList, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides, instanceMap=instanceMap, stateful=stateful }
 
   return rigel.newModule(tab)
 end
