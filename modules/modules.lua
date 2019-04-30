@@ -3897,14 +3897,19 @@ local function collectProvidesRequires( moduleName, output, instanceMap )
 
   local function addDependencies(mod)
     for inst,fnmap in pairs(mod.requires) do
-      for fn,_ in pairs(fnmap) do
-        J.deepsetweak(requires,{inst,fn},1)
+      if requires[inst]==nil then requires[inst] = {} end
+      for fnname,_ in pairs(fnmap) do
+        local fn = inst.module.functions[fnname]
+        J.err( requires[inst][fnname]==nil or fn.inputType==types.null(), "Multiple modules require the same function? "..inst.name..":"..fnname)
+        requires[inst][fnname] = 1
       end
     end
 
     for inst,fnmap in pairs(mod.provides) do
-      for fn,_ in pairs(fnmap) do
-        J.deepsetweak(provides,{inst,fn},1)
+      if provides[inst]==nil then provides[inst] = {} end
+      for fnname,_ in pairs(fnmap) do
+        J.err( requires[inst][fnname]==nil, "Multiple modules provide the same function? "..inst.name..":"..fnname)
+        provides[inst][fnname] = 1
       end
     end
   end
@@ -3912,7 +3917,7 @@ local function collectProvidesRequires( moduleName, output, instanceMap )
   for inst,_ in pairs(instanceMap) do
     addDependencies(inst.module)
     
-    if rigel.isModule(inst.module) then
+     if rigel.isModule(inst.module) then
       -- all fns in this module should be added to provides list
       for fnname,fn in pairs(inst.module.functions) do
         J.deepsetweak(provides,{inst,fnname},1)
@@ -3925,8 +3930,9 @@ local function collectProvidesRequires( moduleName, output, instanceMap )
     function(n)
       if n.kind=="applyMethod" then
         -- *** just because we called one fn on an inst, doesn't mean we need to include the whole thing
-        --addDependencies(n.inst.module)
-        J.deepsetweak(requires,{n.inst,n.fnname},1)
+        if requires[n.inst]==nil then requires[n.inst]={} end
+        J.err( requires[n.inst][n.fnname]==nil, "Multiple modules require the same function? "..n.inst.name..":"..n.fnname)
+        requires[n.inst][n.fnname] = 1
       elseif n.kind=="apply" then
         addDependencies(n.fn)
       end

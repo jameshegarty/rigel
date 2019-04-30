@@ -81,7 +81,7 @@ function SOCMT.axiRegs( mod, tab, X )
   local writeInp = symbol(&types.lower(AXI.WriteIssue(32)):toTerraType(),"writeInp")
   
   for k,v in pairs(tab) do
-    local addr = mod.globalMetadata["AddrOfRegister_InstanceCallsite_regs_"..k]
+    local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..k]
     local ty = v[1]
 
     if v[3]=="input" then

@@ -91,8 +91,8 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    globalMetadata["AddrOfRegister_".."InstanceCallsite_regs_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
-    globalMetadata["TypeOfRegister_".."InstanceCallsite_regs_"..k] = v[1]
+    globalMetadata["AddrOfRegister_".."InstCall_regs_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
+    globalMetadata["TypeOfRegister_".."InstCall_regs_"..k] = v[1]
 
     if v[3]=="input" then
       functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}

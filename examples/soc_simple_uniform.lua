@@ -26,7 +26,7 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
 -- tell the system how much memory we want
 SOC.currentAddr = 0x3000c000
 print(OffsetModule)
-OffsetModule.globalMetadata["InstanceCallsite_ZynqNOC_write_write_W"]=128
-OffsetModule.globalMetadata["InstanceCallsite_ZynqNOC_write_write_H"]=64
+OffsetModule.globalMetadata["InstCall_ZynqNOC_write_write_W"]=128
+OffsetModule.globalMetadata["InstCall_ZynqNOC_write_write_H"]=64
 
 harness({regs.start, OffsetModule, regs.done},nil,{regs})

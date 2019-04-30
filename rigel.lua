@@ -396,7 +396,7 @@ __call=function(tab,...)
     arg = rawarg[1]
   end
   
-  local res = darkroom.apply("unnamed"..darkroom.__unnamedID, tab, arg)
+  local res = darkroom.apply("un"..darkroom.__unnamedID.."_"..tab.name:sub(1,20), tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
@@ -696,7 +696,7 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
 
   local G = require "generators"
   
-  local res = G.Module{"InstanceCallsite_"..instance.name.."_"..functionName,fn.inputType, fn.sdfInput,
+  local res = G.Module{"InstCall_"..instance.name.."_"..functionName,fn.inputType, fn.sdfInput,
                        function(i)
                          local res = darkroom.applyMethod("callinstfn",instance,functionName,i)
                          return res
