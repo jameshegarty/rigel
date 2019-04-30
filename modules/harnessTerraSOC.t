@@ -209,6 +209,10 @@ return function(top, options)
 
   local terra setReg([IP_CLK], [IP_ARESET_N],m:&Module, addr:uint, writeData:uint)
 
+    stepSlaves()
+    m:calculateReady()
+    m:process(nil)
+
     Locale.enableCommas()
 
     var srVerbose = true
