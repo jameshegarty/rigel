@@ -208,10 +208,6 @@ end
 
 ------------------------------
 -- add axi harness
---local globals = {}
---if metadata.tapBits>0 then
---  globals[R.newGlobal("taps","input",types.bits(metadata.tapBits),0)] = 1
---end
 
 local hsfnSdfInput = {{1,1}}
 local hsfnSdfOutput = {{1,1}}
@@ -232,20 +228,12 @@ end
 local HSFN_VERILOG = ""
 if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
 
-local hsfnorig = RM.liftVerilog( metadata.topModule, R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), HSFN_VERILOG, globals, {}, hsfnSdfInput, hsfnSdfOutput)
+local hsfnorig = RM.liftVerilogTab{ name=metadata.topModule, inputType=R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), outputType=R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), vstr=HSFN_VERILOG, sdfInput=hsfnSdfInput, sdfOutput=hsfnSdfOutput}
 local hsfn = axiRateWrapper(hsfnorig,metadata)
---local iRatio, oRatio = R.extractData(hsfn.inputType):verilogBits()/R.extractData(hsfnorig.inputType):verilogBits(), R.extractData(hsfn.outputType):verilogBits()/R.extractData(hsfnorig.outputType):verilogBits()
 
---local inputCount = (metadata.inputWidth*metadata.inputHeight)/(iRatio*metadata.inputV)
---local outputCount = (metadata.outputWidth*metadata.outputHeight)/(oRatio*metadata.outputV)
 local inputBytes, outputBytes
-hsfn, inputBytes, outputBytes = harnessAxi( hsfn, metadata) --inputCount, outputCount, metadata.underflowTest, hsfn.inputType, metadata.earlyOverride )
+hsfn, inputBytes, outputBytes = harnessAxi( hsfn, metadata)
 ------------------------------
-
---local baseTypeI = inputType
---local baseTypeO = rigel.extractData(f.outputType)
---J.err(metadata.inputBitsPerPixel*metadata.inputP==64, "axi input must be 64 bits")
---J.err(metadata.outputBitsPerPixel*metadata.outputP==64, "axi output must be 64 bits")
 
 J.err(R.extractData(hsfn.inputType):verilogBits()==64, "axi input must be 64 bits")
 J.err(R.extractData(hsfn.outputType):verilogBits()==64, "axi output must be 64 bits")
@@ -259,25 +247,15 @@ end
 
 axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME","harnessaxi")
 
---local inputCount = (metadata.inputWidth*metadata.inputHeight)/metadata.inputP
---local outputCount = (metadata.outputWidth*metadata.outputHeight)/metadata.outputP
-  
 -- input/output tokens are one axi bus transaction => they are 8 bytes
---local inputBytes = J.upToNearest(128,inputCount*8)
---local outputBytes = J.upToNearest(128,outputCount*8)
 assert(inputBytes%128==0)
 assert(outputBytes%128==0)
---local inputBytes = inputCount*8
---local outputBytes = outputCount*8
 
 axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
 -- extra 128 bytes is for the extra AXI burst that contains cycle count
 axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
 
 local maxUtilization = 1
-
---axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
-
 
 verilogStr = (hsfn:toVerilog())..readAll(PLATFORMDIR.."/axi/ict106_axilite_conv.v")
 if TOPLEVEL=="axi" then

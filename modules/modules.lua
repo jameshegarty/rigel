@@ -308,6 +308,7 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
       res:addFunction( S.lambda(fnname.."_reset", resetSrcFn:getInput(), inner[fnname.."_reset"]( inner, resetSrcFn:getInput() ), resetSrcFn:getOutputName(), nil, resetSrcFn:getValid() ) )
     end
 
+    res:setDelay(fnname,systolicModule:getDelay(fnname))
   end
 end
 
@@ -477,7 +478,7 @@ modules.waitOnInput = memoize(function( f, X )
   return rigel.newFunction(res)
 end)
 
-local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger )
+local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger, X )
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule=systolicModule:toModule() end
   assert( S.isModule(systolicModule) )
   assert(type(handshakeTrigger)=="boolean")
@@ -515,6 +516,7 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
     elseif pout.type:isBool() then
       pout_valid = pout
     else
+      print("liftDecimateDystolic of "..systolicModule.name.." NYI type "..tostring(pout.type))
       assert(false)
     end
     local validout = pout_valid
@@ -535,7 +537,13 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
       -- stateless modules don't have a reset
       res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool())) )
     end
-    res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
+
+    if srcFn.inputParameter.type==types.null() and handshakeTrigger==false then
+      -- if fn has null input, ready shouldn't return anything
+      res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), nil, prefix.."ready", {} ) )
+    else
+      res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
+    end
   end
 
   passthroughSystolic( res, systolicModule, inner, passthroughFns )
@@ -712,14 +720,14 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     else
       out = pout
     end
-    
+
     local readyOut
-    if hasReadyInput[K] then
+    if hasReadyInput[K] and systolicModule.functions[prefix.."ready"].output~=nil and systolicModule.functions[prefix.."ready"].output.type~=types.null() then
       readyOut = systolic.__and(inner[prefix.."ready"](inner),downstreamReady)
     else
       readyOut = inner[prefix.."ready"](inner)
     end
-    
+
     local pipelines = {}
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
@@ -734,6 +742,8 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
     
     res:addFunction( S.lambda(prefix.."ready", downstreamReady, readyOut, prefix.."ready" ) )
+
+    res:setDelay(fnname,systolicModule:getDelay(fnname))
   end
 
   assert(res:lookupFunction("reset")~=nil)
@@ -747,8 +757,11 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 end
 
 -- takes V->RV to Handshake->Handshake
-modules.liftHandshake = memoize(function( f, X )
+-- if input type is null, and handshakeTrigger==true, we produce input type HandshakeTrigger
+-- if input type is null, and handshakeTrigger==false, we produce input type null
+modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err( X==nil, "liftHandshake: too many arguments" )
+    
   local res = {kind="liftHandshake", fn=f}
   err( rigel.isV(f.inputType) or rigel.isVTrigger(f.inputType) or f.inputType:is("VFramed"), "liftHandshake: expected V or VTrigger or VFramed input type")
   err( rigel.isRV(f.outputType) or rigel.isRVTrigger(f.outputType) or f.outputType:is("RVFramed"),"liftHandshake: expected RV or RVTrigger or RVFramed output type")
@@ -3925,14 +3938,15 @@ end
 local function checkInstTables( moduleName, output, instanceMap, provides, requires, userInstanceMap)
   -- purely checking
   for inst,_ in pairs(instanceMap) do
-    for ic,_ in pairs(inst.module.requires) do
-      err( instanceMap[ic.instance]~=nil or requires[ic]~=nil, "Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."(), but this is not in requires list or internal instance list?" )
-      err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName]~=nil) or instanceMap[ic.instance]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in external or internal instances list?" )
-      local fn = ic.instance.module.functions[ic.functionName]
-      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-        err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName.."_ready"]~=nil) or (instanceMap[ic.instance]~=nil),"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."_ready(), but this is not in external or internal instances list?" )
+    for rinst,rfnmap in pairs(inst.module.requires) do
+      for rfn,_ in pairs(rfnmap) do
+        err( instanceMap[rinst]~=nil or (requires[rinst]~=nil and requires[rinst][rfn]~=nil), "Instance '"..inst.name.."' requires "..rinst.name..":"..rfn.."(), but this is not in requires list or internal instance list?" )
+        --err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName]~=nil) or instanceMap[ic.instance]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in external or internal instances list?" )
+        --local fn = ic.instance.module.functions[ic.functionName]
+        --if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+         -- err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName.."_ready"]~=nil) or (instanceMap[ic.instance]~=nil),"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."_ready(), but this is not in external or internal instances list?" )
+        --end
       end
-      
     end
   end
 
@@ -4007,7 +4021,8 @@ local function collectInstances( moduleName, output, userInstanceMap )
   for inst,_ in pairs(userInstanceMap) do instanceMap[inst]=1 end
   
   for inst,fnmap in pairs(finalRequires) do
-    if J.keycount(fnmap)==0 and J.keycount(finalProvides[inst])==0 then
+    -- anything explicitly added has all requirements satisfied...
+    if (J.keycount(fnmap)==0 and J.keycount(finalProvides[inst])==0) or userInstanceMap[inst]~=nil then
       -- tied down. add to Instance Map
       instanceMap[inst] = 1
     else
@@ -4028,10 +4043,13 @@ local function collectInstances( moduleName, output, userInstanceMap )
     end
   end
 
-
   checkInstTables( moduleName, output, instanceMap, finalFinalProvides, finalFinalRequires, userInstanceMap )
   
   return instanceMap, finalFinalProvides, finalFinalRequires
+end
+
+function modules.lambdaTab(tab)
+  return modules.lambda(tab.name,tab.input,tab.output,tab.instanceList, tab.generatorStr, tab.generatorParams, tab.globalMetadata)
 end
 
 -- function definition
@@ -4113,6 +4131,10 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       end
     end)
 
+  for inst,_ in pairs(res.instanceMap) do
+    res.stateful = res.stateful or inst.module.stateful
+  end
+  
   if input~=nil and input.type~=types.null() and rigel.isStreaming(input.type)==false and rigel.isStreaming(output.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
@@ -4237,6 +4259,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       local I = module:add( inst:toSystolicInstance() )
         
       if inst.module.stateful then
+        J.err(module:lookupFunction("reset")~=nil,"module '"..fn.name.."' instantiates a stateful module '"..inst.module.name.."', but is not itself stateful? stateful="..tostring(res.stateful) )
         module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
       end
     end
@@ -4481,7 +4504,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
     
   if instanceMap~=nil then
     for inst,_ in pairs(instanceMap) do
-      assert(rigel.isInstance(inst))
+      J.err(rigel.isInstance(inst),"liftVerilog: instance map should be map of instances, but is: "..tostring(inst))
 
       for inst,fnlist in pairs(inst.module.requires) do
         for fn,_ in pairs(fnlist) do
@@ -4791,7 +4814,7 @@ modules.triggerCounter = memoize(function(N_orig)
     return systolicModule
   end
 
-  return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res) ))
+  return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res), true ))
   
 end)
 

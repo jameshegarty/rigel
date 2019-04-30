@@ -276,42 +276,49 @@ local function buildAndCheckSystolicModule(tab, isModule)
   local sm = rawget(tab,"makeSystolic")()
   if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
   J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Returned '"..tostring(sm).."'. Module: "..tostring(tab))
-    
+
+  local systolicFns = sm.functions
+  local rigelFns = tab.functions
   if isModule==false then
-    err( sm.functions.process~=nil, "systolic process function is missing ("..tostring(sm.name)..")")
-    
-    if tab.outputType~=types.null() then
-      err( sm.functions.process.output~=nil, "module output is not null (is "..tostring(tab.outputType).."), but systolic output is missing")
-      err( darkroom.lower(tab.outputType)==sm.functions.process.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(sm.functions.process.output.type).."' but should be '"..tostring(darkroom.lower(tab.outputType)).."'" )
-    end
-    
-    if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
-      err( sm.functions.ready~=nil, "module ready function missing?")
-
-      if tab.inputType~=types.null() and darkroom.extractReady(tab.inputType)~=sm.functions.ready.output.type then
-        err(false, "module '"..tab.name.."' systolic ready output type wrong. is '"..tostring(sm.functions.ready.output.type).."', but should be '"..tostring(darkroom.extractReady(tab.inputType)).."'.")
-      end
-    end
-    
-    err( darkroom.lower(tab.inputType)==sm.functions.process.inputParameter.type, "module input type wrong?" )
-    
-    err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
-
-  else
-    
-    for fnname,fn in pairs(tab.functions) do
-      err( sm.functions[fnname]~=nil,"Systolic module is missing function '"..fnname.."'")
-
-      if fn.outputType~=types.null() then
-        err( sm.functions[fnname].output.type==types.lower(fn.outputType),"Systolic module output type is incorrect for function '"..fnname.."' on module '"..tab.name.."' type is:"..tostring(sm.functions[fnname].output.type)..", but should be:"..tostring(types.lower(fn.outputType)))
-      end
-
-      err( sm.functions[fnname].inputParameter.type==types.lower(fn.inputType),"Systolic module output type is incorrect for function '"..fnname.."'")
-    end
-    
-    err( tab.stateful==(sm.functions.reset~=nil),  "missing reset() from systolic module? Module '"..tab.name.."'")
+    systolicFns={["process"]=sm.functions.process}
+    rigelFns = {["process"]=tab}
   end
 
+  --err( J.keycount(systolicFns)==J.keycount(rigelFns),"systolic module and rigel module fn lists don't match? module '"..tab.name.."' systolic: "..table.concat(J.invertAndStripKeys(systolicFns),",").." rigel: "..table.concat(J.invertAndStripKeys(rigelFns),","))
+  
+  for fnname,rigelFn in pairs(rigelFns) do
+    local systolicFn = systolicFns[fnname]
+
+    err( systolicFn~=nil, "systolic module function is missing ("..tostring(sm.name)..")")
+    
+    if rigelFn.outputType~=types.null() then
+      err( systolicFn.output~=nil, "module output is not null (is "..tostring(rigelFn.outputType).."), but systolic output is missing")
+      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."'" )
+    end
+    
+    if types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType) then
+      local readyName = fnname.."_ready"
+      if isModule==false then readyName="ready" end
+      
+      err( sm.functions[readyName]~=nil, "module ready function missing?")
+
+      if rigelFn.inputType~=types.null() and darkroom.extractReady(rigelFn.inputType)~=sm.functions[readyName].output.type then
+        err(false, "module '"..tab.name.."' systolic ready output type wrong. Systolic ready output type is '"..tostring(sm.functions[readyName].output.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.inputType)).."', because Rigel function input type is '"..tostring(rigelFn.inputType).."'.")
+      end
+
+      if types.isHandshakeAny(rigelFn.inputType)==false and sm.functions[readyName].output~=nil then
+        err(sm.functions[readyName].output.type==types.null(),"Systolic module '"..tab.name.."' function '"..readyName.."' (input type "..tostring(rigelFn.inputType)..") shouldn't return anything, but returns type: "..tostring(sm.functions[readyName].output.type))
+      end
+      
+    end
+
+
+    err( darkroom.lower(rigelFn.inputType)==systolicFn.inputParameter.type, "module input type wrong?" )
+    
+  end
+
+  err( (sm.functions.reset~=nil)==tab.stateful, "Modules must have reset iff the module is stateful (module "..tab.name.."). stateful:"..tostring(tab.stateful).." hasReset:"..tostring(sm.functions.reset~=nil))
+  
   for inst,lst in pairs(sm.externalInstances) do
     for _,fnname in ipairs(lst) do
       local found = false
@@ -1664,7 +1671,9 @@ function darkroomIRFunctions:codegenSystolicReady( module )
             err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
           end
         elseif i:outputStreams()==0 then
-          err(res[k]==nil or res[k].type==types.null(), "incorrect ready bit output format kind:'"..n.kind.."' - "..n.loc)
+          if res[k]~=nil then
+            err( res[k].type==types.null(), "incorrect ready bit format. input "..tostring(k).." outputStreams()==0, however ready type is '"..tostring(res[k].type).."'. kind:'"..n.kind.."' node: "..tostring(n).." input node: "..tostring(i).." - "..n.loc)
+          end
         else
           print("NYI "..tostring(i.type))
           assert(false)

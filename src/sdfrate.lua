@@ -78,7 +78,9 @@ function SDFRate.isFrac(a)
   
   if Uniform.isUniform(a[1]) or Uniform.isUniform(a[2]) then
     local a1,a2=Uniform(a[1]), Uniform(a[2])
-    if a1:isNumber() and a2:isNumber() and a2:gt(0):assertAlwaysTrue() then
+    local n,d = SDFRate.simplify(a1,a2)
+
+    if n:isNumber() and d:isNumber() and d:gt(0):assertAlwaysTrue() then
       return true
     else
       print("Error: input is not a valid fraction, because N or D are not integer, or D is 0: "..tostring(a1).."/"..tostring(a2))

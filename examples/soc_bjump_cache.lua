@@ -18,9 +18,9 @@ local bjump = require "bjump"
 
 local NOCACHE = string.find(arg[0],"nocache")
 
+local W,H = 128,64
 local regs = SOC.axiRegs({},SDF{1,W*H*8*8}):instantiate("regs")
 
-local W,H = 128,64
 noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 

@@ -40,6 +40,7 @@ function UniformFunctions:toSMT(includeProperties)
           res = "(/ "..inputs[1].." "..tostring(math.pow(2,n.inputs[2].value))..")"
         else
           if opToZ3[n.op]==nil then print("OP",n.op) end
+          assert(n.op~="^") -- not implemented in some versions of z3
           res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
         end
       elseif n.kind=="unary" then
@@ -219,12 +220,23 @@ UniformFunctions.simplify = J.memoize(function(self)
   elseif n.kind=="binop" and n.op=="mul" and inputs[1]==inputs[2] then
     -- X*X->X^2
     return Uniform.binop("^",inputs[1],Uniform.const(2))
+  elseif n.kind=="binop" and n.op=="^" and inputs[2].kind=="const" and inputs[2].value==1 then
+    -- X^1 -> X
+    return inputs[1]
   elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="binop" and inputs[2].op=="^" and inputs[1]==inputs[2].inputs[1] then
     -- X*(X^N)->X^(N+1)
     return Uniform.binop("^",inputs[1],Uniform.const(inputs[2].inputs[2].value+1))
   elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[2]==inputs[1].inputs[1] then
     -- (X^N)*X->X^(N+1)
     return Uniform.binop("^",inputs[2],Uniform.const(inputs[1].inputs[2].value+1))
+  elseif n.kind=="binop" and n.op=="div" and inputs[2].kind=="binop" and inputs[2].op=="^" and inputs[1]==inputs[2].inputs[1] then
+    -- X/X^N -> 1/X^(N-1)
+    return Uniform.binop("div",Uniform.const(1),Uniform.binop("^",inputs[1],inputs[2].inputs[2].value-1))
+  elseif n.kind=="binop" and n.op=="div" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[1].inputs[1]==inputs[2] then
+    -- X^N/X -> X^(N-1)
+    assert(false)
+  elseif n.kind=="binop" and n.op=="div" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[2].kind=="binop" and inputs[2].op=="^" then
+    -- X^N/X^M
   elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==0 then
     return Uniform(0)
   elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==0 then
@@ -434,7 +446,7 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     assert(type(self.value)=="boolean")
     return self.value==alwaysTrue
   else
-    print(":assert() - "..tostring(self))
+
     local z3str = {}
     --table.insert(z3str,"(set-logic QF_LIA)")
     table.insert(z3str,"(define-fun max ((x Int) (y Int)) Int (ite (< x y) y x))")
@@ -449,8 +461,6 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     z3str = table.concat(z3str,"\n")
     local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
-    print("Z3CALL")
-    print(z3call)
     --print(debug.traceback())
 
     local f = assert (io.popen (z3call))
@@ -463,15 +473,17 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
 
     f:close()
 
-    print("Z3RESULT:"..res.."END")
-
     if string.match(res,"unsat") then
       --      print(debug.traceback())
-      print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
+      --print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
       return true
     else
-      print(debug.traceback())
+      print(":assertAlways() - "..tostring(self))
+      print("Z3CALL assertAlways()")
+      print(z3call)
+      print("Z3RESULT:"..res.."END")
       print("ASSERT_ALWAYS("..tostring(alwaysTrue).." return false")
+      print(debug.traceback())
       return false
     end
   end
@@ -503,8 +515,8 @@ function UniformFunctions:maximum()
     z3str = table.concat(z3str,"\n")
     local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
-    print("Z3CALL")
-    print(z3call)
+    --print("Z3CALL")
+    --print(z3call)
 
     local f = assert (io.popen (z3call))
 
@@ -515,11 +527,11 @@ function UniformFunctions:maximum()
 
     f:close()
 
-    print("Z3RESULT:"..res.."END")
+    --print("Z3RESULT:"..res.."END")
 
     if string.match(res,"sat") then
       local num = string.match (res, "%d+")
-      print("Z3MAX:",num)
+      --print("Z3MAX:",num)
       J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr?")
       return tonumber(num)
     else

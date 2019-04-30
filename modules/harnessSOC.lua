@@ -66,7 +66,6 @@ return function(fn,t,instances)
 
     local outputList = {}
     for k,v in pairs(fn.globalMetadata) do
-
       if k:sub(#k-14)=="_write_filename" then
         local prefix = k:sub(1,#k-15)
         local wlist = {}
@@ -76,7 +75,7 @@ return function(fn,t,instances)
         if fn.globalMetadata[prefix.."_write_bitsPerPixel"]~=nil then table.insert(wlist,"bitsPerPixel="..fn.globalMetadata[prefix.."_write_bitsPerPixel"]) end
         if fn.globalMetadata[prefix.."_write_V"]~=nil then table.insert(wlist,"V="..fn.globalMetadata[prefix.."_write_V"]) end
 
-        J.err(fn.globalMetadata[prefix.."_write_address"]~=nil,"Error: AXI write port "..tostring(i).." was given a filename, but no address?")
+        J.err(fn.globalMetadata[prefix.."_write_address"]~=nil,"Error: AXI write port "..prefix.." was given a filename, but no address?")
         table.insert( wlist, "address="..Uniform(fn.globalMetadata[prefix.."_write_address"]):toEscapedString() )
 
         table.insert(outputList, "{"..table.concat(wlist,",").."}")
