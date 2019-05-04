@@ -3217,6 +3217,23 @@ modules.triggerFIFO = memoize(function()
   function res.makeSystolic()
     local C = require "examplescommon"
     local s = C.automaticSystolicStub(res)
+
+    local vstr = res:vHeader()..[=[
+  reg [31:0] cnt;
+  always @(posedge CLK) begin
+    if (reset==1'b1) begin
+      cnt <= 32'd0;
+    end else if (store_ready==1'b1 && store_input==1'b1) begin
+      cnt <= cnt+32'd1;
+    end else if ( load_ready_downstream==1'b1 && cnt>32'd0) begin
+      cnt <= cnt-32'd1;
+    end
+  end
+  assign store_ready = cnt<32'd4294967295;
+  assign load_output = (cnt>32'd0);
+endmodule
+]=]
+    s:verilog(vstr)
     return s
   end
   

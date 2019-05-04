@@ -49,7 +49,7 @@ function SDFMT.__tostring(tab)
   setmetatable(tab,nil)
   local tabstr=tostring(tab)
   setmetatable(tab,mt)
-  return SDFRate.tostring(tab)..tabstr
+  return SDFRate.tostring(tab) --..tabstr
 end
 
 

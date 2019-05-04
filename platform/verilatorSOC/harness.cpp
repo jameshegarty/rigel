@@ -15,17 +15,17 @@ double CurrentTimeInSeconds() {
 
 #define S0LIST 0,&top->IP_CLK,&top->IP_ARESET_N,&top->SAXI0_ARADDR,&top->SAXI0_ARVALID,&top->SAXI0_ARREADY,&top->SAXI0_AWADDR,&top->SAXI0_AWVALID,&top->SAXI0_AWREADY,&top->SAXI0_RDATA,&top->SAXI0_RVALID,&top->SAXI0_RREADY,&top->SAXI0_BRESP,&top->SAXI0_BVALID,&top->SAXI0_BREADY,&top->SAXI0_RRESP,&top->SAXI0_WVALID,&top->SAXI0_WREADY
 
-#define M0READ_SLAVEOUT &top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RRESP,&top->MAXI0_RLAST
-#define M0READ_SLAVEIN &top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_RREADY,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST
+#define M0READ_SLAVEOUT &top->MAXI0_ARREADY,&top->MAXI0_RDATA,&top->MAXI0_RVALID,&top->MAXI0_RRESP,&top->MAXI0_RLAST,&top->MAXI0_RID
+#define M0READ_SLAVEIN &top->MAXI0_ARADDR,&top->MAXI0_ARVALID,&top->MAXI0_RREADY,&top->MAXI0_ARLEN,&top->MAXI0_ARSIZE,&top->MAXI0_ARBURST,&top->MAXI0_ARID
 
-#define M0WRITE_SLAVEOUT &top->MAXI0_AWREADY,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID
-#define M0WRITE_SLAVEIN &top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST
+#define M0WRITE_SLAVEOUT &top->MAXI0_AWREADY,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID,&top->MAXI0_BID
+#define M0WRITE_SLAVEIN &top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST,&top->MAXI0_AWID
 
-#define M1READ_SLAVEOUT &top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RRESP,&top->MAXI1_RLAST
-#define M1READ_SLAVEIN &top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_RREADY,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST
+#define M1READ_SLAVEOUT &top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RRESP,&top->MAXI1_RLAST,&top->MAXI0_RID
+#define M1READ_SLAVEIN &top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_RREADY,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST,&top->MAXI0_ARID
 
-#define M1WRITE_SLAVEOUT &top->MAXI1_AWREADY,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID
-#define M1WRITE_SLAVEIN &top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST
+#define M1WRITE_SLAVEOUT &top->MAXI1_AWREADY,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID,&top->MAXI0_BID
+#define M1WRITE_SLAVEIN &top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST,&top->MAXI0_AWID
 
 
 void step(VERILATORCLASS* top){
@@ -273,6 +273,7 @@ int main(int argc, char** argv) {
     bool cooldownPrinted = false;
     
     while (!Verilated::gotFinish() && (doneBitSet==false || cooldownCycles>0 || cycle<totalCycles)) {
+    //while (!Verilated::gotFinish() && cycle<totalCycles) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in

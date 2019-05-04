@@ -107,7 +107,7 @@ output wire ]]..k..[[_ready,
       regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = "..k.."_input["..tostring(v[1]:verilogBits()).."];\n"
       regPortAssigns = regPortAssigns.."assign DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."] = "..k.."_input["..tostring(v[1]:verilogBits()-1)..":0]; // register write\n"
     else
-      table.insert(portPassthrough,"."..k.."("..k..")")
+      table.insert(portPassthrough,"."..k.."("..k.."_output)")
           
       functionList[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
       
@@ -133,7 +133,18 @@ output wire ]]..k..[[_ready,
 
   local verbose = false
   
-local vstring = {[=[
+
+
+  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+
+  local res = RM.moduleLambda( ModuleName, functionList )
+  res.globalMetadata = globalMetadata
+
+  res.makeSystolic = function()
+    local s = C.automaticSystolicStub(res)
+
+        local vstring={[=[
 module ict106_axilite_conv #
   (
    parameter integer C_AXI_ID_WIDTH              = 12,
@@ -521,8 +532,6 @@ always @(posedge ACLK) begin
 end
 ]=])
 
---typedef bit [NREG*W-1:0] DATATYPE;
---assign CONFIG_DATA = DATATYPE'(data);
 
 for i=0,NREG-1 do
   table.insert(vstring,"assign CONFIG_DATA["..(i*32+31)..":"..(i*32).."] = data["..i.."];\n")
@@ -672,50 +681,23 @@ assign done_ready = 1'b1;
 
 endmodule
 
-module ]=]..ModuleName..[=[(
-  input wire CLK,
-  input wire reset,
-
-  input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] read_input,
-  output wire read_ready,
-
-  output wire []=]..tostring(AXI.ReadData(32):verilogBits()-1)..[=[:0] read,
-  input wire read_ready_downstream,
-
-  input wire []=]..tostring(AXI.WriteIssue(32):verilogBits()-1)..[=[:0] write_input,
-  output wire [1:0] write_ready,
-
-  output wire []=]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[=[:0] write,
-  input wire write_ready_downstream,
-
-  // global drivers  
-  ]=]..regPorts..[=[
-
-  // done signal
-  input wire done_input,
-  output wire done_ready,
-
-  // start signal
-  input wire start_ready_downstream,
-  output wire start
-);
-parameter INSTANCE_NAME="inst";
+]=]..res:vHeader()..[=[
 
 ]=]..ModuleName..[=[_ported ported(.CLK(CLK),
 .reset(reset),
 .done_input(done_input),
 .done_ready(done_ready),
 .start_ready_inp(start_ready_downstream),
-.start_output(start),
+.start_output(start_output),
 ]=]..portPassthrough..[=[
 .IP_SAXI_ARADDR({read_input]=]..AXI.ReadAddressVSelect.arvalid..[=[,read_input]=]..AXI.ReadAddressVSelect.araddr..[=[}),
 .IP_SAXI_ARID(read_input]=]..AXI.ReadAddressVSelect.arid..[=[),
 .IP_SAXI_ARADDR_ready(read_ready),
 
-.IP_SAXI_RDATA({read]=]..AXI.ReadDataVSelect(32).rvalid..[=[,read]=]..AXI.ReadDataVSelect(32).rdata..[=[}),
-.IP_SAXI_RRESP(read]=]..AXI.ReadDataVSelect(32).rresp..[=[),
-.IP_SAXI_RID(read]=]..AXI.ReadDataVSelect(32).rid..[=[),
-.IP_SAXI_RLAST(read]=]..AXI.ReadDataVSelect(32).rlast..[=[),
+.IP_SAXI_RDATA({read_output]=]..AXI.ReadDataVSelect(32).rvalid..[=[,read_output]=]..AXI.ReadDataVSelect(32).rdata..[=[}),
+.IP_SAXI_RRESP(read_output]=]..AXI.ReadDataVSelect(32).rresp..[=[),
+.IP_SAXI_RID(read_output]=]..AXI.ReadDataVSelect(32).rid..[=[),
+.IP_SAXI_RLAST(read_output]=]..AXI.ReadDataVSelect(32).rlast..[=[),
 .IP_SAXI_RDATA_ready(read_ready_downstream),
 
 .IP_SAXI_AWADDR({write_input]=]..AXI.WriteIssueVSelect(32).awvalid..[=[,write_input]=]..AXI.WriteIssueVSelect(32).awaddr..[=[}),
@@ -726,40 +708,22 @@ parameter INSTANCE_NAME="inst";
 .IP_SAXI_WSTRB(write_input]=]..AXI.WriteIssueVSelect(32).wstrb..[=[),
 .IP_SAXI_WDATA_ready(write_ready[1]),
 
-.IP_SAXI_BRESP({write]=]..AXI.WriteResponseVSelect(32).bvalid..[=[,write]=]..AXI.WriteResponseVSelect(32).bresp..[=[}),
-.IP_SAXI_BID(write]=]..AXI.WriteResponseVSelect(32).bid..[=[),
+.IP_SAXI_BRESP({write_output]=]..AXI.WriteResponseVSelect(32).bvalid..[=[,write_output]=]..AXI.WriteResponseVSelect(32).bresp..[=[}),
+.IP_SAXI_BID(write_output]=]..AXI.WriteResponseVSelect(32).bid..[=[),
 .IP_SAXI_BRESP_ready(write_ready_downstream)
 );
 
 endmodule
 ]=])
 
-  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-
-  local res = RM.moduleLambda( ModuleName, functionList )
-  res.globalMetadata = globalMetadata
-
-  res.makeSystolic = function()
-    local res = C.automaticSystolicStub(res)
-    res:verilog(table.concat(vstring))
-    return res
+    s:verilog(table.concat(vstring))
+    return s
   end
   
   -- hack
   if terralib~=nil then
     res.makeTerra=nil
     res.terraModule = SOCMT.axiRegs( res, tab )
-  end
-
-  for k,v in pairs(addToModuleHack) do
-    assert(res[k]==nil)
-    res[k] = R.readGlobal("readGlobal_"..k,v)
-  end
-
-  for k,v in pairs(outputsToModuleHack) do
-    assert(res[k]==nil)
-    res[k] = v
   end
 
   return res
@@ -812,8 +776,8 @@ SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,
     input wire [1:0] M_AXI_RRESP,
     input wire M_AXI_RVALID,
     input wire M_AXI_RLAST,
-    output wire [3:0] M_AXI_ARLEN,
-    output wire [1:0] M_AXI_ARSIZE,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()-1)..[=[:0] M_AXI_ARLEN,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits()-1)..[=[:0] M_AXI_ARSIZE,
     output wire [1:0] M_AXI_ARBURST,
     
     //Control config
@@ -828,8 +792,8 @@ SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,
     output wire [63:0] DATA
 );
 
-assign M_AXI_ARLEN = 4'b1111;
-assign M_AXI_ARSIZE = 2'b11;
+assign M_AXI_ARLEN = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits())..[=['b1111;
+assign M_AXI_ARSIZE = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits())..[=['b11;
 assign M_AXI_ARBURST = 2'b01;
 parameter IDLE = 0, RWAIT = 1;
     
@@ -909,8 +873,8 @@ module ]=]..ModuleName..[=[_ported(
     input wire [1:0] IP_MAXI_RRESP,
 
     input wire IP_MAXI_RLAST,
-    output wire [3:0] IP_MAXI_ARLEN,
-    output wire [1:0] IP_MAXI_ARSIZE,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()-1)..[=[:0] IP_MAXI_ARLEN,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits()-1)..[=[:0] IP_MAXI_ARSIZE,
     output wire [1:0] IP_MAXI_ARBURST,
     
     //Control config
@@ -1033,8 +997,8 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig,
   
   local function vstr(res)
     return res:vHeader()..res:vInstances()..[=[
-assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen.." = 4'd"..(burstCount-1)..[=[; // length of burst
-assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[ = 2'b11; // number of bytes per transfer
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen.." = "..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()).."'d"..(burstCount-1)..[=[; // length of burst
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[ = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits())..[=['b11; // number of bytes per transfer
 assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arburst..[=[ = 2'b01; // burst mode
 
 assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arvalid..[=[ = process_input[32];
@@ -1123,8 +1087,8 @@ end
 
   local function vstr(res)
     return res:vHeader()..writeFnInst:toVerilog()..addressBase:toVerilogInstance()..[=[
-assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awlen..[=[ = 4'd]=]..(burstCount-1)..[=[; // length of burst
-assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awsize..[=[ = 2'b11; // number of bytes per transfer
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awlen..[=[ = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits())..[=['d]=]..(burstCount-1)..[=[; // length of burst
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awsize..[=[ = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits())..[=['b11; // number of bytes per transfer
 assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awburst..[=[ = 2'b01; // burst mode
 assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wstrb..[=[ = 8'b]=]..strb..[=[; // burst mode
 
@@ -1214,8 +1178,8 @@ SOC.axiBurstWriteNInner = J.memoize(function( filename, Nbytes, address, writeFn
     input wire M_AXI_BVALID,
     output wire M_AXI_BREADY,
     
-    output wire [3:0] M_AXI_AWLEN,
-    output wire [1:0] M_AXI_AWSIZE,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits()-1)..[=[:0] M_AXI_AWLEN,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits()-1)..[=[:0] M_AXI_AWSIZE,
     output wire [1:0] M_AXI_AWBURST,
     
     //Control config
@@ -1233,8 +1197,8 @@ SOC.axiBurstWriteNInner = J.memoize(function( filename, Nbytes, address, writeFn
     output wire done
 );
 
-assign M_AXI_AWLEN = 4'b1111;
-assign M_AXI_AWSIZE = 2'b11;
+assign M_AXI_AWLEN = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits())..[=['b1111;
+assign M_AXI_AWSIZE = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits())..[=['b11;
 assign M_AXI_AWBURST = 2'b01;
 assign M_AXI_WSTRB = 8'b11111111;
 
@@ -1343,8 +1307,8 @@ module DRAMWriter_ported]=]..moduleNameSuffix..[=[(
     input wire [2:0] IP_MAXI_BRESP,
     output wire IP_MAXI_BRESP_ready,
     
-    output wire [3:0] IP_MAXI_AWLEN,
-    output wire [1:0] IP_MAXI_AWSIZE,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits()-1)..[=[:0] IP_MAXI_AWLEN,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits()-1)..[=[:0] IP_MAXI_AWSIZE,
     output wire [1:0] IP_MAXI_AWBURST,
     
     //Control config
@@ -1543,7 +1507,7 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
 
   local CR = C.generalizedChangeRate( 64,0,128*8, outputBits, desiredTotalOutputBits,1 )
   local ChangeRateModule, totalBits = CR[1], CR[2]
-  
+
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
   assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )

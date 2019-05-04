@@ -119,7 +119,8 @@ return function(top, options)
         `&NOC.["MAXI"..i.."_RDATA"],
         `[&uint8](&NOC.["MAXI"..i.."_RVALID"]),
         `&NOC.["MAXI"..i.."_RRESP"],
-        `[&uint8](&NOC.["MAXI"..i.."_RLAST"])
+        `[&uint8](&NOC.["MAXI"..i.."_RLAST"]),
+        `&NOC.["MAXI"..i.."_RID"]
       }
 
       MREAD_SLAVEIN[i] = {
@@ -128,7 +129,8 @@ return function(top, options)
         `[&uint8](&NOC.["MAXI"..i.."_RREADY"]),
         `&NOC.["MAXI"..i.."_ARLEN"],
         `&NOC.["MAXI"..i.."_ARSIZE"],
-        `&NOC.["MAXI"..i.."_ARBURST"]
+        `&NOC.["MAXI"..i.."_ARBURST"],
+        `&NOC.["MAXI"..i.."_ARID"]
       }
   end
   
@@ -139,7 +141,8 @@ return function(top, options)
       `[&uint8](&NOC.["write"..I.."_ready"][0]),
       `[&uint8](&NOC.["write"..I.."_ready"][1]),
       `&NOC.["MAXI"..i.."_BRESP"],
-      `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
+      `[&uint8](&NOC.["MAXI"..i.."_BVALID"]),
+      `&NOC.["MAXI"..i.."_BID"]
     }
 
     MWRITE_SLAVEIN[i] = {
@@ -152,7 +155,8 @@ return function(top, options)
       `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
       `&NOC.["MAXI"..i.."_AWLEN"],
       `&NOC.["MAXI"..i.."_AWSIZE"],
-      `&NOC.["MAXI"..i.."_AWBURST"]}
+      `&NOC.["MAXI"..i.."_AWBURST"],
+      `&NOC.["MAXI"..i.."_AWID"]}
   end
 
   local clearOutputs = {}

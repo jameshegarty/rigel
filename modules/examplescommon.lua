@@ -2081,7 +2081,7 @@ function C.automaticSystolicStub( mod )
   for fnname,fn in pairs(modFunctions) do
     fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
     if fn.outputType~=types.null() then
-      fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),J.sel(R.isFunction(mod),fnname.."_output",fnname))
+      fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),fnname.."_output")
     end
     delays[fnname]=0
 

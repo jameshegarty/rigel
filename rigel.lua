@@ -533,11 +533,14 @@ end
 
 function darkroomFunctionFunctions:vHeaderInOut(fnname)
   if fnname==nil then fnname="process" end
+  assert(type(fnname)=="string")
   
-  local v = {}
+  local v = {"\n/* function "..fnname.."*/\n"}
   if self.inputType==types.null() then
   elseif types.isHandshakeAny(self.inputType) then
-    table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] "..fnname.."_input, output wire ["..(types.extractReady(self.inputType):verilogBits()-1)..":0] ready")
+    local readyName = "ready"
+    if fnname~="process" then readyName=fnname.."_ready" end
+    table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] "..fnname.."_input, output wire ["..(types.extractReady(self.inputType):verilogBits()-1)..":0] "..readyName)
   elseif types.isBasic(self.inputType) then
     table.insert(v,", input wire ["..(self.inputType:verilogBits()-1)..":0] "..fnname.."_input")
 
@@ -550,7 +553,10 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
 
   if self.outputType==types.null() then
   elseif types.isHandshakeAny(self.outputType) then
-    table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] ready_downstream")
+    local readyName = "ready_downstream"
+    if fnname~="process" then readyName=fnname.."_ready_downstream" end
+    
+    table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
   elseif types.isBasic(self.outputType) then
     table.insert(v,", output wire ["..(self.outputType:verilogBits()-1)..":0] "..fnname.."_output")
   else
@@ -565,6 +571,8 @@ function darkroomFunctionFunctions:vHeaderRequires()
   for inst,fnmap in pairs(self.requires) do
     for fnname,_ in pairs(fnmap) do
       local fn = inst.module.functions[fnname]
+
+      --table.insert(v,"/* HEADER REQUIRES "..inst.name..":"..fnname.."*/")
       
       if types.isHandshakeAny(fn.inputType) then
         table.insert(v,", output wire ["..(types.lower(fn.inputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_input, input wire ["..(types.extractReady(fn.inputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_ready")
@@ -575,9 +583,9 @@ function darkroomFunctionFunctions:vHeaderRequires()
       end
       
       if types.isHandshakeAny(fn.outputType) then
-        table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname..", output wire "..inst.name.."_"..fnname.."_ready_downstream")
+        table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output, output wire "..inst.name.."_"..fnname.."_ready_downstream")
       elseif types.isBasic(fn.outputType) then
-        table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname)
+        table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
       else
         print("NYI - require of: "..tostring(inst))
         assert(false)
@@ -629,8 +637,10 @@ function darkroomModuleFunctions:vHeader()
   for fnname,fn in pairs(self.functions) do
     table.insert(v,fn:vHeaderInOut(fnname))
   end
+
+  table.insert(v,darkroomFunctionFunctions.vHeaderRequires(self))
   
-    table.insert(v,[[);
+  table.insert(v,[[);
 parameter INSTANCE_NAME="INST";
 ]])
   return table.concat(v,"")
@@ -695,8 +705,8 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
   assert(fn~=nil)
 
   local G = require "generators"
-  
-  local res = G.Module{"InstCall_"..instance.name.."_"..functionName,fn.inputType, fn.sdfInput,
+
+  local res = G.Module{"InstCall_"..instance.name.."_"..functionName, fn.inputType, fn.sdfInput,
                        function(i)
                          local res = darkroom.applyMethod("callinstfn",instance,functionName,i)
                          return res
@@ -1219,7 +1229,7 @@ function darkroomInstanceFunctions:toVerilog()
         end
 
         if fn.outputType~=types.null() then
-          table.insert(vstr,",."..inst.name.."_"..fnname.."("..inst.name.."_"..fnname..")")
+          table.insert(vstr,",."..inst.name.."_"..fnname.."_output("..inst.name.."_"..fnname.."_output)")
           if types.isHandshakeAny(fn.outputType) then 
             table.insert(vstr,",."..inst.name.."_"..fnname.."_ready_downstream("..inst.name.."_"..fnname.."_ready_downstream)")
           end
