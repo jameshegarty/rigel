@@ -21,11 +21,11 @@ double CurrentTimeInSeconds() {
 #define M0WRITE_SLAVEOUT &top->MAXI0_AWREADY,&top->MAXI0_WREADY,&top->MAXI0_BRESP,&top->MAXI0_BVALID,&top->MAXI0_BID
 #define M0WRITE_SLAVEIN &top->MAXI0_AWADDR,&top->MAXI0_AWVALID,&top->MAXI0_WDATA,&top->MAXI0_WVALID,&top->MAXI0_BREADY,&top->MAXI0_WSTRB,&top->MAXI0_WLAST,&top->MAXI0_AWLEN,&top->MAXI0_AWSIZE,&top->MAXI0_AWBURST,&top->MAXI0_AWID
 
-#define M1READ_SLAVEOUT &top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RRESP,&top->MAXI1_RLAST,&top->MAXI0_RID
-#define M1READ_SLAVEIN &top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_RREADY,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST,&top->MAXI0_ARID
+#define M1READ_SLAVEOUT &top->MAXI1_ARREADY,&top->MAXI1_RDATA,&top->MAXI1_RVALID,&top->MAXI1_RRESP,&top->MAXI1_RLAST,&top->MAXI1_RID
+#define M1READ_SLAVEIN &top->MAXI1_ARADDR,&top->MAXI1_ARVALID,&top->MAXI1_RREADY,&top->MAXI1_ARLEN,&top->MAXI1_ARSIZE,&top->MAXI1_ARBURST,&top->MAXI1_ARID
 
-#define M1WRITE_SLAVEOUT &top->MAXI1_AWREADY,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID,&top->MAXI0_BID
-#define M1WRITE_SLAVEIN &top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST,&top->MAXI0_AWID
+#define M1WRITE_SLAVEOUT &top->MAXI1_AWREADY,&top->MAXI1_WREADY,&top->MAXI1_BRESP,&top->MAXI1_BVALID,&top->MAXI1_BID
+#define M1WRITE_SLAVEIN &top->MAXI1_AWADDR,&top->MAXI1_AWVALID,&top->MAXI1_WDATA,&top->MAXI1_WVALID,&top->MAXI1_BREADY,&top->MAXI1_WSTRB,&top->MAXI1_WLAST,&top->MAXI1_AWLEN,&top->MAXI1_AWSIZE,&top->MAXI1_AWBURST,&top->MAXI1_AWID
 
 
 void step(VERILATORCLASS* top){
@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
 
   bool CLK = false;
 
+  bool errored = false;
+  
   unsigned int cyclesToDoneSignal;
   const int ROUNDS = 2;
   for(int round=0; round<ROUNDS; round++){
@@ -321,7 +323,7 @@ int main(int argc, char** argv) {
 
             // if done bit is set, we should really be done!
             // check that there aren't outstanding reads on the ports
-            bool errored = checkPorts(true);
+            errored |= checkPorts(true);
             if(errored){
               printf("Pipeline not actually done when done bit was set?\n");
               //              exit(1);
@@ -360,11 +362,11 @@ int main(int argc, char** argv) {
     
     printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);
     
-    bool errored = checkPorts(false);
+    errored |= checkPorts(false);
 
     if(doneBitSet==false){
       printf("Error: done bit not set at end of time?\n");
-      errored = true;
+      errored |= true;
     }
     
     if(errored){
@@ -460,4 +462,8 @@ int main(int argc, char** argv) {
   
   top->final();
   delete top;
+
+  if(errored){
+    exit(1);
+  }  
 }

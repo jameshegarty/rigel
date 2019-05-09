@@ -1538,6 +1538,9 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   if addressOverride==nil then
     SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
     assert(type(SOC.currentAddr)=="number")
+  else
+    assert(type(SOC.currentAddr)=="number")
+    SOC.currentAddr = math.max(SOC.currentAddr,address:maximum()+(totalBits:maximum()/8))
   end
   
   return res
@@ -1622,7 +1625,7 @@ SOC.read = function( filename, fileBytes, readType, readFn_orig, Cstyle, address
   return res
 end
                           
-SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig, X)
+SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig, addressOverride, X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
   J.err( type(W)=="number", "writeBurst: W must be number")
   J.err( type(H)=="number", "writeBurst: H must be number")
@@ -1636,6 +1639,9 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
 
   assert(type(SOC.currentAddr)=="number")
   local address = Uniform(SOC.currentAddr)
+  if addressOverride~=nil then
+    address = Uniform(addressOverride)
+  end
   
   local globalMetadata={}
   globalMetadata[writeFn_orig.name.."_write_W"] = W
@@ -1670,13 +1676,19 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
 
   out = ChangeRateModule(out)
 
-  out = SOC.axiBurstWriteN( filename, totalBits/8, SOC.currentAddr, writeFn_orig )(out)
+  out = SOC.axiBurstWriteN( filename, totalBits/8, address, writeFn_orig )(out)
 
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
-  assert(type(SOC.currentAddr)=="number")
+  if addressOverride==nil then
+    SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
+    assert(type(SOC.currentAddr)=="number")
+  else
+    assert(type(SOC.currentAddr)=="number")
+    SOC.currentAddr = math.max(SOC.currentAddr,address:maximum()+(totalBits:maximum()/8))
+  end
+  
   
   if framed then
     -- HACK

@@ -546,7 +546,11 @@ local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="ma
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
-      return tostring(t.value)
+      if type(t.value)=="number" then
+        return tostring(t.value).."/0x"..string.format("%x",t.value)
+      else
+        return tostring(t.value)
+      end
     elseif t.kind=="apply" then
       return t.instance.module.name.."()"
     elseif t.kind=="binop" and t.op=="max" then

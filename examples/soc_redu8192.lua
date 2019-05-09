@@ -16,8 +16,11 @@ noc.extern=true
 local Conv = G.Module{ "ConvTop", SDF{1,cycles},
   function(i)
     local p = G.AXIReadBurst{"frame_128.raw",{128,64},types.u8,noc.read}(i)
+    print("READBURST",p)
     local s = G.HS{G.Stencil{{3,0,3,0}}}(p)
+    print("STENCIL",s,s.type)
     s = G.Reshape(s)
+    print("REhhhSHAPE",s)
     local f = G.HS{G.Map{G.Map{G.Rshift{4}}}}(s)
     print("FTYPE",f.type)
     local o = G.HS{G.Map{G.Reduce{G.Add{true}}}}(f)

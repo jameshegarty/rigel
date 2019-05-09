@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct{unsigned int addr; unsigned int burst;} Transaction;
+typedef struct{unsigned int addr; unsigned int burst; unsigned short id;} Transaction;
 
 typedef struct{int front; int rear; int itemCount; unsigned char* data; unsigned int dataBytes;} Queue;
 
@@ -345,6 +345,7 @@ void masterReadDataDriveOutputs(
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
       
     *RDATA = *(unsigned long*)(&memory[t->addr]);
+    *RID = t->id;
     *RVALID = true;
   }else{
     *RVALID = false;
@@ -404,7 +405,8 @@ void masterReadReqLatchFlops(
     assert(*ARBURST==1);
     t.addr = *ARADDR;
     t.burst = *ARLEN+1;
-
+    t.id = *ARID;
+    
     if(verbose){
       printf("MAXI%d Read Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst );
       //std::cout << "MAXI" << port << " Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
@@ -426,10 +428,12 @@ void masterReadReqLatchFlops(
 typedef struct SlaveState{
   unsigned char BVALID;
   unsigned char BRESP;
+  unsigned short BID;
 } SlaveState;
 
 void initSlaveState(SlaveState* slaveState){
   slaveState->BVALID=false;
+  slaveState->BID=42;
 }
 
 // return data to master
@@ -443,6 +447,7 @@ void masterWriteDataDriveOutputs(
   *WREADY = QSize(&writeQ[port])>0;
   *BVALID = slaveState->BVALID;
   *BRESP = slaveState->BRESP;
+  *BID = slaveState->BID;
 }
 
 // return error flag (true if error)
@@ -481,8 +486,9 @@ bool masterWriteDataLatchFlops(
       QPop(&writeQ[port]);
       slaveState->BVALID = true;
       slaveState->BRESP = 0;
+      slaveState->BID = t->id;
       //BVALIDS_SENT++;
-      //printf("BVALIDS_SENT %d\n",BVALIDS_SENT);
+
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
         return true;
@@ -533,6 +539,7 @@ void masterWriteReqLatchFlops(
     Transaction t;
     t.addr = *AWADDR;
     t.burst = *AWLEN+1;
+    t.id = *AWID;
 
     if( verbose ){
       printf("MAXI%d Write Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
@@ -587,7 +594,7 @@ bool checkPorts(bool checkWriteOnly){
     if( QSize(&readQ[port])>0 && checkWriteOnly==false){
       //std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << " bytesRead: " << masterBytesRead[port] << std::endl;
       Transaction* t = (Transaction*)QPeek(&readQ[port]);
-      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d nextTransactionBurst:%d bytesRead: %d\n", port, QSize(&readQ[port]), t->burst, masterBytesRead[port] );
+      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d nextTransactionBurst:%d nextAddr:%x nextId:%d bytesRead: %d\n", port, QSize(&readQ[port]), t->burst, t->addr, t->id, masterBytesRead[port] );
       errored = true;
     }
     

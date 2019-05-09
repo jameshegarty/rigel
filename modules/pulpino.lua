@@ -152,23 +152,24 @@ Pulpino.AXIInterconnect = J.memoize(function( NMaster, NSlave, slavePorts, X )
     for k,v in pairs(slaveWriteInst) do table.insert(vstr,v:toVerilog()) end
 
 
+    --[==[
     table.insert(vstr,[=[
-
    always @(posedge CLK) begin
-      $display("read0_arvalid %d read0_rvalid %d read0_ready %d read0_ready_ds %d read0_addr %x",read_input[79],read_output[85],read_ready,read_ready_downstream,read_input[31:0]);
-      $display("read1_arvalid %d read1_rvalid %d read1_ready %d read1_ready_ds %d read0_addr %x",read1_input[79],read1_output[85],read1_ready,read1_ready_downstream,read1_input[31:0]);
+      $display("read_arvalid %d read_addr %x read_ready %d read_rvalid %d read_ready_ds %d" ,read_input[79],read_input[31:0],read_ready,read_output[85],read_ready_downstream);
+      $display("read1_arvalid %d read1_addr %x read1_ready %d read1_rvalid %d read1_ready_ds %d" ,read1_input[79],read1_input[31:0],read1_ready,read1_output[85],read1_ready_downstream);
       $display("zynq_read_arvalid %d zynq_read_arid %d zynq_read_ready %d zynq_read_addr %x",ZynqNOC_read_input[79],ZynqNOC_read_input[56:45],ZynqNOC_read_ready,ZynqNOC_read_input[31:0]);
-      $display("zynq_read_rvalid %d zynq_read_rid %d zynq_read_ready_ds %d",ZynqNOC_read_output[85],slaveRead1_process_output[78:67],ZynqNOC_read_ready_downstream);
+      $display("zynq_read_rvalid %d zynq_read_rid %d zynq_read_ready_ds %d zynq_read_data %x",ZynqNOC_read_output[85],slaveRead1_process_output[78:67],ZynqNOC_read_ready_downstream,ZynqNOC_read_output[63:0]);
 
-      $display("write0_awvalid %d write0_wvalid %d write0_ready %b write0_ready_ds %d write0_addr %x",write_input[79],write_input[159],write_ready,write_ready_downstream,write_input[31:0]);
-      $display("write1_awvalid %d write1_wvalid %d write1_ready %b write1_ready_ds %d write1_addr %x",write1_input[79],write1_input[159],write1_ready,write1_ready_downstream,write1_input[31:0]);
-      $display("zynq_write_awvalid %d zynq_write_wvalid %d zynq_write_ready %b zynq_write_ready_ds %d zynq_write_addr %x",ZynqNOC_write_input[79],ZynqNOC_write_input[159], ZynqNOC_write_ready, ZynqNOC_write_ready_downstream, slaveWrite1_process_input[31:0]);
+      $display("write_awvalid %d write_awid %d write_wvalid %d write_ready %b write_addr %x write_bvalid %d write_ready_ds %d ",write_input[79],write_input[55:45],write_input[159],write_ready,write_input[31:0],write_output[20],write_ready_downstream);
+      $display("write1_awvalid %d write1_awid %d write1_wvalid %d write1_ready %b write1_addr %x write1_bvalid %d write1_ready_ds %d ",write1_input[79],write1_input[55:45],write1_input[159],write1_ready,write1_input[31:0],write1_output[20],write1_ready_downstream);
+
+      $display("zynq_write_awvalid %d zynq_write_wvalid %d zynq_write_awid %d zynq_write_ready %b zynq_write_addr %x zynq_write_ready_ds %d zynq_bvalid %d zynq_bid %d",ZynqNOC_write_input[79],ZynqNOC_write_input[159], slaveWrite1_process_input[56:45], ZynqNOC_write_ready,  slaveWrite1_process_input[31:0], ZynqNOC_write_ready_downstream,slaveWrite1_process_output[20],slaveWrite1_process_output[13:2]);
 //      $display("slave_valid %d",slaveRead1_process_input[79]);
 
       
-   end
+      end]=])]==]
 
-  axi_node #(.N_MASTER_PORT(]=]..#slavePorts..[=[),.N_SLAVE_PORT(]=]..NMaster..[=[),.AXI_ID_IN(11),.AXI_ID_OUT(12),.N_REGION(1)) axi_node_inst(.clk(CLK),.rst_n(~reset),.test_en_i(1'b0)
+    table.insert(vstr,[=[  axi_node #(.N_MASTER_PORT(]=]..#slavePorts..[=[),.N_SLAVE_PORT(]=]..NMaster..[=[),.AXI_ID_IN(11),.AXI_ID_OUT(12),.N_REGION(1)) axi_node_inst(.clk(CLK),.rst_n(~reset),.test_en_i(1'b0)
 ]=])
 
     if slavePorts~=nil then
@@ -331,7 +332,7 @@ Pulpino.AXIInterconnect = J.memoize(function( NMaster, NSlave, slavePorts, X )
     end
     table.insert(vstr,"})\n")
 
-    table.insert(vstr,[[,.cfg_START_ADDR_i({32'h30008000}),.cfg_END_ADDR_i({32'h3000A000}),.cfg_connectivity_map_i(2'b11),.cfg_valid_rule_i(1'b1));
+    table.insert(vstr,[[,.cfg_START_ADDR_i({32'h30008000}),.cfg_END_ADDR_i({32'h3000E000}),.cfg_connectivity_map_i(2'b11),.cfg_valid_rule_i(1'b1));
 
 ]])
     

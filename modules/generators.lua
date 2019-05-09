@@ -310,6 +310,24 @@ function(args)
   return RM.posSeq( args.size[1], args.size[2], args.number, nil, true, true )
 end)
 
+
+-- take a regular Handshake module and lift to HandshakeFramed type
+generators.MapFramed = R.newFunctionGenerator("generators","MapFramed",{"type","rigelFunction","rate"},{},
+function(args)
+  assert(args.type:is("HandshakeFramed"))
+
+  local fn = args.rigelFunction
+  if R.isFunctionGenerator(fn) then
+    fn = fn{types.Handshake(args.type.params.A),args.rate}
+  else
+    assert(false)
+  end
+
+  J.err( R.isPlainFunction(fn), "generators.MapFramed: input didn't yield a plain rigel function? "..tostring(fn))
+
+  return RM.mapFramed( fn, args.type.params.dims[1][1], args.type.params.dims[1][2], true )
+end)
+
 -- size/bool: output size/mixed for framed types (needed if vector width/ SDF rate changes...)
 --       think of this like a combined map&flatten
 generators.Map = R.newFunctionGenerator("generators","Map",{"type","rigelFunction","rate"},{"size","bool"},
@@ -375,7 +393,7 @@ function(args)
       -- fully serial
       return RM.mapFramed( mod, size[1], size[2], args.type.params.mixed, ow, oh, omixed )
     else
-      J.err(false, "generators.Map: attempted to apply to value with unsupported type: "..tostring(args.type))
+      J.err(false, "generators.Map: attempted to apply to HandshakeFramed value with unsupported type: "..tostring(args.type))
     end
   elseif args.type:isArray() then
     local mod = args.rigelFunction
@@ -514,14 +532,14 @@ end)
 generators.Generator = generators.Module
 
 -- rigelFunction: the fn to call to perform the AXI read
-generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number"},
+generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number","address"},
 function(args)
   local numb = args.number
   if numb==nil then
     numb = math.ceil((args.size[1]*args.size[2]*Uniform(args.rate[1][1]):toNumber())/Uniform(args.rate[1][2]):toNumber())
     print("AXIReadBurst V:",numb)
   end
-  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true, nil, args.rigelFunction )
+  return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true, args.address, args.rigelFunction )
 end)
 
 generators.AXIRead = R.newFunctionGenerator("generators","AXIRead",{"string","type","number","rate","rigelFunction"},{},
@@ -533,10 +551,10 @@ function(args)
   end
 end)
 
-generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate","rigelFunction"},{"size","number"},
+generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate","rigelFunction"},{"size","number","address"},
 function(args)
   if args.type:is("HandshakeFramed") then
-    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true, args.rigelFunction )
+    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true, args.rigelFunction, args.address )
   else
     J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
   end
@@ -556,6 +574,7 @@ function(args)
       end
     elseif args.type:is("Handshake") then
       if args.type.params.A:channels()*ratio < 1 then
+        print("RESHAPE",args.type,args.rate)
         assert(false)
       else
         local res = generators.HS{generators.Ser{args.rate[1][2]/args.rate[1][1]},args.type,args.rate}

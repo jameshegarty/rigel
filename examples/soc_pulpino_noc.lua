@@ -32,11 +32,11 @@ local noc = Pulpino.AXIInterconnect(2,2,{{zynqNOC.read,zynqNOC.write}}):instanti
 
 print(ZynqNOC)
 
-local IP_plus200 = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8} },G.HS{G.Map{G.Add{200}}},G.AXIWriteBurst{"out/soc_simple_plus200",noc.write}},"IP_plus100")
+local IP_plus200 = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },G.MapFramed{G.FIFO{1024}},G.HS{G.Map{G.Add{200}}},G.AXIWriteBurst{"out/soc_simple_plus200",noc.write, R.Address(0x3000C000)} },"IP_plus100")
 
 local Inv = G.Module{"Inv",types.u(8),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
 
-local IP_inv = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8} },G.HS{G.Map{Inv}},G.AXIWriteBurst{"out/soc_simple_inv",noc.write1}},"IP_inv")
+local IP_inv = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },G.MapFramed{G.FIFO{1024}},G.HS{G.Map{Inv}},G.AXIWriteBurst{"out/soc_simple_inv",noc.write1, R.Address(0x3000D000)}},"IP_inv")
 
 local PTop = G.Module{"PTop",types.HandshakeTrigger,
   function(i)
@@ -55,7 +55,11 @@ print(PTop)
 print(noc.module)
 
 local Top = C.linearPipeline({regs.start,PTop,regs.done},"Top",nil,{regs,noc})
-print(Top)
 
+Top.globalMetadata.InstCall_PulpinoNOC_write1_write_filename=nil
+Top.globalMetadata.InstCall_PulpinoNOC_write_write_filename="out/soc_pulpino_noc"
+Top.globalMetadata.InstCall_PulpinoNOC_write_write_H=64
+
+print(Top)
 --harness({regs.start,PTop,regs.done},nil,{regs,noc})
 harness(Top)

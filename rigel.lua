@@ -33,6 +33,12 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
+local AddressMT = {}
+function darkroom.Address(num)
+  assert(type(num)=="number")
+  return setmetatable({num},AddressMT)
+end
+
 darkroom.VTrigger = types.VTrigger
 darkroom.RVTrigger = types.RVTrigger
 darkroom.HandshakeTrigger = types.HandshakeTrigger
@@ -117,6 +123,9 @@ local function typeToKey(t)
         outk="rigelFunction"
       elseif SDF.isSDF(v) then
         outk="rate"
+      elseif type(v)=="table" and getmetatable(v)==AddressMT then
+        outk="address"
+        v=v[1]
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
         outk="size"
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
