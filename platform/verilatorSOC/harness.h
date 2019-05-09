@@ -334,33 +334,57 @@ void printMasterWrite(
   printf("M%d_WREADY(in): %d\n",id, (int)*WREADY);
 }
 
+typedef struct SlaveState{
+  unsigned char BVALID;
+  unsigned char BRESP;
+  unsigned short BID;
+
+  // read
+  unsigned char RVALID;
+  unsigned short RID;
+  unsigned long RDATA;
+} SlaveState;
+
+void initSlaveState(SlaveState* slaveState){
+  slaveState->BVALID=false;
+  slaveState->BID=42;
+  slaveState->RVALID=false;
+  slaveState->RID=42;
+  slaveState->RDATA=42;
+}
+
 // return data to master
 void masterReadDataDriveOutputs(
   bool verbose,
   unsigned char* memory,
+  SlaveState* slaveState,
   int port,
   READ_SLAVEOUT_PORTS){
-
-  if( QSize(&readQ[port])>0){
-    Transaction* t = (Transaction*)QPeek(&readQ[port]);
       
-    *RDATA = *(unsigned long*)(&memory[t->addr]);
-    *RID = t->id;
-    *RVALID = true;
-  }else{
-    *RVALID = false;
-  }
+  *RDATA = slaveState->RDATA;
+  *RID = slaveState->RID;
+  *RVALID = slaveState->RVALID;
 }
 
 void masterReadDataLatchFlops(
   bool verbose,
   unsigned char* memory,
+  SlaveState* slaveState,
   int port,
   READ_SLAVEIN_PORTS_CONST){
 
+  if( QSize(&readQ[port])>0 ){
+    Transaction* t = (Transaction*)QPeek(&readQ[port]);
+    slaveState->RVALID = true;
+    slaveState->RID = t->id;
+    slaveState->RDATA = *(unsigned long*)(&memory[t->addr]);
+  }else{
+    slaveState->RVALID = false;
+  }
+  
   if( QSize(&readQ[port])>0 && *RREADY){
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
-        
+          
     if(verbose){
       printf("MAXI%d Service Read Addr(base rel):%d data:%lu/0x%lx remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
     }
@@ -423,17 +447,6 @@ void masterReadReqLatchFlops(
   }else{
     if(verbose){ printf("MAXI%d no read request!\n",port);}
   }
-}
-
-typedef struct SlaveState{
-  unsigned char BVALID;
-  unsigned char BRESP;
-  unsigned short BID;
-} SlaveState;
-
-void initSlaveState(SlaveState* slaveState){
-  slaveState->BVALID=false;
-  slaveState->BID=42;
 }
 
 // return data to master

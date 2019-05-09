@@ -279,10 +279,10 @@ int main(int argc, char** argv) {
       if(CLK){
         if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         // feed data in
-        masterReadDataDriveOutputs( verbose, memory, 0, M0READ_SLAVEOUT );
-        masterReadDataLatchFlops( verbose, memory, 0, M0READ_SLAVEIN );
-        masterReadDataDriveOutputs( verbose, memory, 1, M1READ_SLAVEOUT );
-        masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
+        masterReadDataDriveOutputs( verbose, memory, &slaveState0, 0, M0READ_SLAVEOUT );
+        masterReadDataLatchFlops( verbose, memory, &slaveState0, 0, M0READ_SLAVEIN );
+        masterReadDataDriveOutputs( verbose, memory, &slaveState1, 1, M1READ_SLAVEOUT );
+        masterReadDataLatchFlops( verbose, memory, &slaveState1, 1, M1READ_SLAVEIN );
         
         // it's possible the pipeline has 0 cycle delay (between read & write port). in which case, we need to eval the async stuff here.
         top->eval();
