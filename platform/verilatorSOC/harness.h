@@ -339,7 +339,7 @@ typedef struct SlaveState{
   unsigned char BVALID;
   unsigned char BRESP;
   unsigned short BID;
-};
+} SlaveState;
 
 void initSlaveState(SlaveState* slaveState){
   slaveState->BVALID=false;
