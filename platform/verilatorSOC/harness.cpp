@@ -273,91 +273,93 @@ int main(int argc, char** argv) {
     int cooldownCycles = 1000; // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
     if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
     bool cooldownPrinted = false;
-    
-    while (!Verilated::gotFinish() && (doneBitSet==false || cooldownCycles>0 || cycle<totalCycles)) {
-    //while (!Verilated::gotFinish() && cycle<totalCycles) {
-      if(CLK){
-        if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
-        // feed data in
-        masterReadDataDriveOutputs( verbose, memory, &slaveState0, 0, M0READ_SLAVEOUT );
-        masterReadDataLatchFlops( verbose, memory, &slaveState0, 0, M0READ_SLAVEIN );
-        masterReadDataDriveOutputs( verbose, memory, &slaveState1, 1, M1READ_SLAVEOUT );
-        masterReadDataLatchFlops( verbose, memory, &slaveState1, 1, M1READ_SLAVEIN );
-        
-        // it's possible the pipeline has 0 cycle delay (between read & write port). in which case, we need to eval the async stuff here.
-        top->eval();
-        
-        if(verbose){printMasterRead( 0, M0READ_SLAVEIN, M0READ_SLAVEOUT );}
-        if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
-        
-        masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
-        if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN )){goto WRITEOUT;}
-        masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
-        if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
-        
-        // get data out
-        masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
-        masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
-        masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEOUT );
-        masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );
-        
-        masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEOUT );
-        masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEIN );
-        masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEOUT );
-        masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEIN );
 
-        if(cycle%100==0){
-          slaveReadReq(0xA0000000+4,S0LIST);
-        }
+    top->IP_ARESET_N = true;
 
-        unsigned int db;
-        if( checkSlaveReadResponse(S0LIST,&db) ){
-          if(db==1){
-
-            if(doneBitSet==false){
-              printf("DONE BIT SET\n");
-              cyclesToDoneSignal=cycle;
-            }
-            
-            doneBitSet=true;
-
-            // if done bit is set, we should really be done!
-            // check that there aren't outstanding reads on the ports
-            errored |= checkPorts(true);
-            if(errored){
-              printf("Pipeline not actually done when done bit was set?\n");
-              //              exit(1);
-            }
-          }else{
-            doneBitSet=false;
-          }
-        }
-
-        if(doneBitSet && cooldownCycles>0){
-          if(!cooldownPrinted){
-            printf("Start Cooldown\n");
-            cooldownPrinted = true;
-          }
           
-          cooldownCycles--;
-        }
+    while (!Verilated::gotFinish() && (doneBitSet==false || cooldownCycles>0 || cycle<totalCycles)) {
+      top->IP_CLK = false;
+      top->eval();
+
+      masterReadDataDriveOutputs( verbose, memory, 0, M0READ_SLAVEOUT );
+      masterReadDataDriveOutputs( verbose, memory, 1, M1READ_SLAVEOUT );
+
+      masterWriteDataDriveOutputs( verbose, memory, &slaveState0, 0, M0WRITE_SLAVEOUT );
+      masterWriteDataDriveOutputs( verbose, memory, &slaveState1, 1, M1WRITE_SLAVEOUT );
+
+      masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEOUT );
+      masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEOUT );
         
-        int pct = (cycle*100)/totalCycles;
-        if(pct>lastPct){
-          double t = CurrentTimeInSeconds() - startSec;
-          setlocale(LC_NUMERIC,"");
-          printf("Sim round %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
-          lastPct = pct;
-        }
+      masterReadReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEOUT );
+      masterWriteReqDriveOutputs( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEOUT );
+
+      // some slave ready inputs may depend async on slave ready outputs
+      top->eval();
+
+      masterReadDataLatchFlops( verbose, memory, 0, M0READ_SLAVEIN );
+      masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
+      
+      if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN )){goto WRITEOUT;}
+      if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
+      
+      masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
+      masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );
+      masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1READ_SLAVEIN );
+      masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 1, M1WRITE_SLAVEIN );
+
+      top->IP_CLK = true;
+      top->eval();
+      
+      if(verbose){ std::cout << "------------------------------------ START CYCLE " << cycle <<  ", ROUND " << round << " (" << ((float)cycle/(float)(simCycles+simCyclesSlack))*100.f << "%) -----------------------" << std::endl;}
         
-        cycle++;
+      if(verbose){printMasterRead( 0, M0READ_SLAVEIN, M0READ_SLAVEOUT );}
+      if(verbose){printMasterWrite( 0, M0WRITE_SLAVEIN, M0WRITE_SLAVEOUT );}
+      
+      if(cycle%100==0){
+        slaveReadReq(0xA0000000+4,S0LIST);
       }
       
-      CLK = !CLK;
+      unsigned int db;
+      if( checkSlaveReadResponse(S0LIST,&db) ){
+        if(db==1){
+          
+          if(doneBitSet==false){
+            printf("DONE BIT SET\n");
+            cyclesToDoneSignal=cycle;
+          }
+          
+          doneBitSet=true;
+          
+          // if done bit is set, we should really be done!
+          // check that there aren't outstanding reads on the ports
+          errored |= checkPorts(true);
+          if(errored){
+            printf("Pipeline not actually done when done bit was set?\n");
+            //              exit(1);
+          }
+        }else{
+          doneBitSet=false;
+        }
+      }
       
-      top->IP_CLK = CLK;
-      top->IP_ARESET_N = true;
-      top->eval();
+      if(doneBitSet && cooldownCycles>0){
+        if(!cooldownPrinted){
+          printf("Start Cooldown\n");
+          cooldownPrinted = true;
+        }
+        
+        cooldownCycles--;
+      }
+      
+      int pct = (cycle*100)/totalCycles;
+      if(pct>lastPct){
+        double t = CurrentTimeInSeconds() - startSec;
+        setlocale(LC_NUMERIC,"");
+        printf("Sim round %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+        lastPct = pct;
+      }
+      
+      cycle++;
     }
     
     printf("Executed Cycles: %d, Cycles to Done: %d\n", (int)cycle, cyclesToDoneSignal);

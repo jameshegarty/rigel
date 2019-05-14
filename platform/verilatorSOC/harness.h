@@ -317,6 +317,7 @@ void printMasterRead(
   printf("M%d_ARADDR(out): %d/%#x\n",id,*ARADDR,*ARADDR);
   printf("M%d_ARVALID(out): %d\n",id, (int)*ARVALID);
   printf("M%d_ARREADY(in): %d\n",id, (int)*ARREADY);
+  printf("M%d_RVALID(in): %d\n",id, (int)*RVALID);
 }
 
 void printMasterWrite(
@@ -338,49 +339,31 @@ typedef struct SlaveState{
   unsigned char BVALID;
   unsigned char BRESP;
   unsigned short BID;
-
-  // read
-  unsigned char RVALID;
-  unsigned short RID;
-  unsigned long RDATA;
-} SlaveState;
+};
 
 void initSlaveState(SlaveState* slaveState){
   slaveState->BVALID=false;
   slaveState->BID=42;
-  slaveState->RVALID=false;
-  slaveState->RID=42;
-  slaveState->RDATA=42;
 }
 
 // return data to master
 void masterReadDataDriveOutputs(
   bool verbose,
   unsigned char* memory,
-  SlaveState* slaveState,
   int port,
   READ_SLAVEOUT_PORTS){
       
-  *RDATA = slaveState->RDATA;
-  *RID = slaveState->RID;
-  *RVALID = slaveState->RVALID;
+  Transaction* t = (Transaction*)QPeek(&readQ[port]);
+  *RVALID = (QSize(&readQ[port])>0);
+  *RID = t->id;
+  *RDATA = *(unsigned long*)(&memory[t->addr]);
 }
 
 void masterReadDataLatchFlops(
   bool verbose,
   unsigned char* memory,
-  SlaveState* slaveState,
   int port,
   READ_SLAVEIN_PORTS_CONST){
-
-  if( QSize(&readQ[port])>0 ){
-    Transaction* t = (Transaction*)QPeek(&readQ[port]);
-    slaveState->RVALID = true;
-    slaveState->RID = t->id;
-    slaveState->RDATA = *(unsigned long*)(&memory[t->addr]);
-  }else{
-    slaveState->RVALID = false;
-  }
   
   if( QSize(&readQ[port])>0 && *RREADY){
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
@@ -473,6 +456,10 @@ bool masterWriteDataLatchFlops(
   WRITE_SLAVEIN_PORTS_CONST){
 
   //static int BVALIDS_SENT=0;
+
+  if(*BREADY){ // bvalid was accepted
+    slaveState->BVALID = false;
+  }
   
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -506,8 +493,8 @@ bool masterWriteDataLatchFlops(
         printf("MAXI%d NYI - BREADY is false\n");
         return true;
       }
-    }else{
-      slaveState->BVALID = false;
+      //    }else{
+      //      slaveState->BVALID = false;
     }
 
     cyclesSinceWrite[port] = 0;
@@ -515,7 +502,7 @@ bool masterWriteDataLatchFlops(
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
 
     cyclesSinceWrite[port]++;
-    slaveState->BVALID = false;
+    //    slaveState->BVALID = false;
 
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -568,6 +555,8 @@ void masterWriteReqLatchFlops(
 
     //writeQ[port].push(t);
     QPush(&writeQ[port],(unsigned char*)&t);
+  }else{
+    if(verbose){printf("MAXI%d no write request\n",port);}
   }
 }
 
