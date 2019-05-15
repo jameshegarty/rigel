@@ -6,6 +6,8 @@ local clocale = terralib.includec("locale.h")
 local J = require "common"
 local Uniform = require "uniform"
 local Zynq = require "zynq"
+local types = require "types"
+local AXI = require "axi"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -65,7 +67,21 @@ return function(top, options)
 
   local verbose = false
 
-  local NOC = noc:terraReference()
+  -- auto-discover the noc from the requires list. No correctness checking!
+  local NOC
+  local noc
+  assert( J.keycount(top.requires)==1 )
+  for inst,_ in pairs(top.requires) do
+    noc=inst
+    NOC=inst:terraReference()
+  end
+
+  local regs
+  assert( J.keycount(top.provides)==1 )
+  for inst,_ in pairs(top.provides) do
+    regs = inst:terraReference()
+    print("REGS",regs)
+  end
   
   local S0LIST = {
     0,
@@ -103,7 +119,8 @@ return function(top, options)
         `&NOC.["MAXI"..i.."_RDATA"],
         `[&uint8](&NOC.["MAXI"..i.."_RVALID"]),
         `&NOC.["MAXI"..i.."_RRESP"],
-        `[&uint8](&NOC.["MAXI"..i.."_RLAST"])
+        `[&uint8](&NOC.["MAXI"..i.."_RLAST"]),
+        `&NOC.["MAXI"..i.."_RID"]
       }
 
       MREAD_SLAVEIN[i] = {
@@ -112,7 +129,8 @@ return function(top, options)
         `[&uint8](&NOC.["MAXI"..i.."_RREADY"]),
         `&NOC.["MAXI"..i.."_ARLEN"],
         `&NOC.["MAXI"..i.."_ARSIZE"],
-        `&NOC.["MAXI"..i.."_ARBURST"]
+        `&NOC.["MAXI"..i.."_ARBURST"],
+        `&NOC.["MAXI"..i.."_ARID"]
       }
   end
   
@@ -123,7 +141,8 @@ return function(top, options)
       `[&uint8](&NOC.["write"..I.."_ready"][0]),
       `[&uint8](&NOC.["write"..I.."_ready"][1]),
       `&NOC.["MAXI"..i.."_BRESP"],
-      `[&uint8](&NOC.["MAXI"..i.."_BVALID"])
+      `[&uint8](&NOC.["MAXI"..i.."_BVALID"]),
+      `&NOC.["MAXI"..i.."_BID"]
     }
 
     MWRITE_SLAVEIN[i] = {
@@ -136,32 +155,67 @@ return function(top, options)
       `[&uint8](&NOC.["MAXI"..i.."_WLAST"]),
       `&NOC.["MAXI"..i.."_AWLEN"],
       `&NOC.["MAXI"..i.."_AWSIZE"],
-      `&NOC.["MAXI"..i.."_AWBURST"]}
+      `&NOC.["MAXI"..i.."_AWBURST"],
+      `&NOC.["MAXI"..i.."_AWID"]}
   end
 
   local clearOutputs = {}
-  for i=0,noc.module.readPorts-1 do
-    if top.globalMetadata["MAXI"..i.."_read_filename"]~=nil then
-      table.insert( readS, quote V.loadFile([top.globalMetadata["MAXI"..i.."_read_filename"]], memory, [Uniform(top.globalMetadata["MAXI"..i.."_read_address"]-MEMBASE):toTerra()]) end )
+  for k,v in pairs(top.globalMetadata) do
+    if k:sub(#k-13)=="_read_filename" then
+      local prefix = k:sub(1,#k-14)
+
+      if top.globalMetadata[prefix.."_read_filename"]~=nil then
+        table.insert( readS, quote V.loadFile([top.globalMetadata[prefix.."_read_filename"]], memory, [Uniform(top.globalMetadata[prefix.."_read_address"]-MEMBASE):toTerra()]) end )
+      end
     end
   end
 
-  for i=0,noc.module.writePorts-1 do
-    if top.globalMetadata["MAXI"..i.."_write_filename"]~=nil then
-      local bytes = Uniform((top.globalMetadata["MAXI"..i.."_write_W"]*top.globalMetadata["MAXI"..i.."_write_H"]*top.globalMetadata["MAXI"..i.."_write_bitsPerPixel"])/8)
-      table.insert( writeS, quote
-                    var addr = [Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]
+  for k,v in pairs(top.globalMetadata) do
+    if k:sub(#k-14)=="_write_filename" then
+      local prefix = k:sub(1,#k-15)
+
+      if top.globalMetadata[prefix.."_write_filename"]~=nil then
+        local bytes = Uniform((top.globalMetadata[prefix.."_write_W"]*top.globalMetadata[prefix.."_write_H"]*top.globalMetadata[prefix.."_write_bitsPerPixel"])/8)
+        table.insert( writeS, quote
+                    var addr = [Uniform(top.globalMetadata[prefix.."_write_address"]-MEMBASE):toTerra()]
                     if addr+[bytes:toTerra()]>MEMSIZE then
                       cstdio.printf("ERROR: requested to read file outside of memory segment? addr:%d bytes:%d\n",addr,[bytes:toTerra()])
                       cstdlib.exit(1)
                     end
-                    V.saveFile([top.globalMetadata["MAXI"..i.."_write_filename"]..".terra.raw"], memory, addr, [bytes:toTerra()] ) end )
+                    V.saveFile([top.globalMetadata[prefix.."_write_filename"]..".terra.raw"], memory, addr, [bytes:toTerra()] ) end )
 
-      table.insert( clearOutputs, quote for ii=0,[bytes:toTerra()],4 do @[&uint32](memory+[Uniform(top.globalMetadata["MAXI"..i.."_write_address"]-MEMBASE):toTerra()]+ii)=0xbaadf00d; end end )
+        table.insert( clearOutputs, quote for ii=0,[bytes:toTerra()],4 do @[&uint32](memory+[Uniform(top.globalMetadata[prefix.."_write_address"]-MEMBASE):toTerra()]+ii)=0xbaadf00d; end end )
+      end
     end
   end
 
+  -- this is a total hack, just to save us having to rewrite some code...
+--print("SLAVES",types.lower(AXI.ReadAddress32),types.lower(AXI.ReadData(32)))
+  local terra stepSlaves()
+    regs:read_calculateReady(NOC.readSink_ready)
+    NOC:readSource_calculateReady(regs.read_ready)
+
+    var AR : types.lower(AXI.ReadAddress32):toTerraType()
+    var RDATA : types.lower(AXI.ReadData(32)):toTerraType()
+    NOC:readSource(&AR)
+    regs:read(&AR,&RDATA)
+    NOC:readSink(&RDATA)
+
+    regs:write_calculateReady(NOC.writeSink_ready)
+    NOC:writeSource_calculateReady(regs.write_ready)
+
+    var AW : types.lower(AXI.WriteIssue(32)):toTerraType()
+    var WriteResp : types.lower(AXI.WriteResponse(32)):toTerraType()
+    NOC:writeSource(&AW)
+    regs:write(&AW,&WriteResp)
+    NOC:writeSink(&WriteResp)
+  end
+
   local terra setReg([IP_CLK], [IP_ARESET_N],m:&Module, addr:uint, writeData:uint)
+
+    stepSlaves()
+    m:calculateReady()
+    m:process(nil)
 
     Locale.enableCommas()
 
@@ -180,21 +234,24 @@ return function(top, options)
     NOC.SAXI0_WVALID = true;
     
     --------------------------------------------------- step
+    stepSlaves()
     m:calculateReady()
-    m:process(nil,nil)
+    m:process(nil)
       
     var found = V.checkSlaveWriteResponse(S0LIST);
       
     NOC.SAXI0_AWVALID = false;
       
     --------------------------------------------------- step
+    stepSlaves()
     m:calculateReady()
-    m:process(nil,nil)
+    m:process(nil)
       
     while(found==false and V.checkSlaveWriteResponse(S0LIST)==false) do
       cstdio.printf("Waiting for S0 response\n");
+      stepSlaves()
       m:calculateReady()
-      m:process(nil,nil)
+      m:process(nil)
     end
   end
 
@@ -295,8 +352,9 @@ return function(top, options)
 
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
+        stepSlaves()
         m:calculateReady()
-        m:process(nil,nil)
+        m:process(nil)
 
         V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
 
@@ -382,9 +440,9 @@ return function(top, options)
       end
 
       -- write cycles to file
-      var f = cstdio.fopen([top.globalMetadata["MAXI0_write_filename"]..".terra.cycles.txt"], "w");
+      var f = cstdio.fopen([top.globalMetadata[noc.write.name.."_write_filename"]..".terra.cycles.txt"], "w");
       if f==nil then
-        cstdio.printf("Error opening file '%s'!\n",[top.globalMetadata["MAXI0_write_filename"]..".terra.cycles.txt"]);
+        cstdio.printf("Error opening file '%s'!\n",[top.globalMetadata[noc.write.name.."_write_filename"]..".terra.cycles.txt"]);
         cstdlib.exit(1);
       end
       cstdio.fprintf(f,"%d",cyclesToDoneSignal)

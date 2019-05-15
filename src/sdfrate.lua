@@ -78,7 +78,9 @@ function SDFRate.isFrac(a)
   
   if Uniform.isUniform(a[1]) or Uniform.isUniform(a[2]) then
     local a1,a2=Uniform(a[1]), Uniform(a[2])
-    if a1:isNumber() and a2:isNumber() and a2:gt(0):assertAlwaysTrue() then
+    local n,d = SDFRate.simplify(a1,a2)
+
+    if n:isNumber() and d:isNumber() and d:gt(0):assertAlwaysTrue() then
       return true
     else
       print("Error: input is not a valid fraction, because N or D are not integer, or D is 0: "..tostring(a1).."/"..tostring(a2))
@@ -137,9 +139,17 @@ function SDFRate.fracEq(a,b)
   assert(SDFRate.isFrac(a))
   assert(SDFRate.isFrac(b))
 
+  local a1,a2 = SDFRate.simplify(a[1],a[2])
+  local b1,b2 = SDFRate.simplify(b[1],b[2])
+
+  local n,d = a1*b2, a2*b1
+  --assert( Uniform(n):isUint() )
+  --assert( Uniform(d):isUint() )
+
+  return n:eq(d):assertAlwaysTrue()
   -- never do non-integer comparisons! (0.07*300 ~= 21)!
-  local n,d = a[1]*b[2], a[2]*b[1]
-  return n==d
+  --local n,d = a[1]*b[2], a[2]*b[1]
+  --return n==d
 end
 
 function SDFRate.sum(tab)

@@ -11,9 +11,10 @@ local J = require "common"
 types.export()
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 IdxGT = G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
 

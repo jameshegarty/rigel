@@ -87,11 +87,14 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
 
     local setTap = quote end
 
+    -- this is a hack to set the tap values on the fake register slave
     if J.keycount( hsfn.requires )==1 then
-      for ic,_ in pairs(hsfn.requires) do
-        assert(ic.functionName=="taps")
-        setTap = quote var taptmp : ic.instance.module.terraModule
-                       [ic.instance:terraReference()] = &taptmp end
+      for inst,fnmap in pairs(hsfn.requires) do
+        for fnname,_ in pairs(fnmap) do
+          assert(fnname=="taps")
+          setTap = quote var taptmp : inst.module.terraModule
+            [inst:terraReference()] = &taptmp end
+        end
       end
     else
       assert( J.keycount( hsfn.requires )==0 )

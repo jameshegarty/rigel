@@ -15,7 +15,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
                              SAXI0_ARLEN:uint8,
                              SAXI0_ARSIZE:uint8,
                              SAXI0_ARBURST:uint8,
-                             SAXI0_ARID:uint8,
+                             SAXI0_ARID:uint16,
                              SAXI0_ARPROT:uint8,
                              SAXI0_AWADDR:uint32,
                              SAXI0_AWVALID:bool,
@@ -23,12 +23,12 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
                              SAXI0_AWLEN:uint8,
                              SAXI0_AWBURST:uint8,
                              SAXI0_AWSIZE:uint8,
-                             SAXI0_AWID:uint8,
+                             SAXI0_AWID:uint16,
                              SAXI0_RDATA:uint32,
                              SAXI0_WDATA:uint32,
                              SAXI0_WSTRB:uint8,
                              SAXI0_WLAST:bool,
-                             SAXI0_WID:uint8,
+                             --SAXI0_WID:uint8,
                              SAXI0_RVALID:bool,
                              --SAXI0_RREADY:bool,
                              SAXI0_BRESP:uint8,
@@ -36,10 +36,10 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
                              --SAXI0_BREADY:bool,
                              SAXI0_RRESP:uint8,
                              SAXI0_RLAST:bool,
-                             SAXI0_RID:uint8,
+                             SAXI0_RID:uint16,
                              SAXI0_WVALID:bool,
                              SAXI0_WREADY:bool,
-                             SAXI0_BID:uint8,
+                             SAXI0_BID:uint16,
 
                              --MAXI0_ARREADY:bool,
 
@@ -49,17 +49,17 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
                              MAXI0_AWSIZE:uint8,
                              MAXI0_AWBURST:uint8,
                              MAXI0_AWVALID:bool,
-                             MAXI0_AWID:uint8,
+                             MAXI0_AWID:uint16,
                              MAXI0_WDATA:uint64,
                              MAXI0_WSTRB:uint8,
                              MAXI0_WLAST:bool,
-                             MAXI0_WID:uint8,
+                             MAXI0_WID:uint16,
                              MAXI0_WVALID:bool,
                              --MAXI0_WREADY:bool,
                              MAXI0_BRESP:uint8,
                              MAXI0_BVALID:bool,
                              MAXI0_BREADY:bool,
-                             MAXI0_BID:uint8,
+                             MAXI0_BID:uint16,
                              
                              readSink_ready:bool, -- SAXI0_RREADY (driven by TB)
                              writeSink_ready:bool, -- SAXI0_BREADY (driven by TB)
@@ -77,7 +77,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     local I = tostring(i-1)
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RDATA",type=uint64})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RVALID",type=bool})
-    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RID",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RID",type=uint16})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RRESP",type=uint8})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RLAST",type=bool})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARADDR",type=uint32})
@@ -85,7 +85,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_RREADY",type=bool})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARLEN",type=uint8})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARSIZE",type=uint8})
-    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARID",type=uint8})
+    table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARID",type=uint16})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARPROT",type=uint8})
     table.insert( ZynqNOCTerra.entries, {field="MAXI"..I.."_ARBURST",type=uint8})
   end
@@ -145,7 +145,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     self.MAXI0_WDATA = @AXIT.WDATA64(inp) 
     self.MAXI0_WSTRB = @AXIT.WSTRB64(inp) 
     self.MAXI0_WLAST = @AXIT.WLAST64(inp) 
-    self.MAXI0_WID = @AXIT.WID64(inp) 
+--    self.MAXI0_WID = @AXIT.WID64(inp) 
 
     @AXIT.BVALID64(out) = self.MAXI0_BVALID
     @AXIT.BRESP64(out) = self.MAXI0_BRESP
@@ -160,7 +160,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     self.SAXI0_ARREADY = inp
   end
 
-  terra ZynqNOCTerra:readSource(out:&types.lower(AXI.ReadAddress):toTerraType())
+  terra ZynqNOCTerra:readSource(out:&types.lower(AXI.ReadAddress32):toTerraType())
     @AXIT.ARVALID32(out) = self.SAXI0_ARVALID;
     @AXIT.ARADDR32(out) = self.SAXI0_ARADDR;
     @AXIT.ARLEN32(out) = self.SAXI0_ARLEN;
@@ -190,7 +190,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     @AXIT.WDATA32(out) = self.SAXI0_WDATA;
     @AXIT.WSTRB32(out) = self.SAXI0_WSTRB;
     @AXIT.WLAST32(out) = self.SAXI0_WLAST;
-    @AXIT.WID32(out) = self.SAXI0_WID;
+--    @AXIT.WID32(out) = self.SAXI0_WID;
   end
 
   terra ZynqNOCTerra:writeSource_calculateReady(inp:bool[2])

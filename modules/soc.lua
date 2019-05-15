@@ -49,26 +49,14 @@ SOC.regStub = J.memoize(function(tab)
     return S.module.new( name,fns,{},true,nil,"",delays)
   end
 
-  local res = R.newModule( name, fns, false, makeSystolic, function() return SOCMT.regStub(tab) end )
+  local res = R.newModule{ name=name, functions=fns, stateful=false, makeSystolic=makeSystolic, makeTerra=function() return SOCMT.regStub(tab) end }
 
   return res
 end)
 
-SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, writeSink, X )
+SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
 
-  J.err( R.isFunction(readSource), "SOC.axiRegs: readSource should be rigel function, but is: "..tostring(readSource))
-  J.err( readSource.inputType==types.null() and readSource.outputType==AXI.ReadAddress, "SOC.axiRegs: readSource should have type nil->AXI.ReadAddress")
-
-  J.err( R.isFunction(readSink), "SOC.axiRegs: readSink should be rigel function")
-  J.err( readSink.inputType==AXI.ReadData32 and readSink.outputType==types.null(), "SOC.axiRegs: readSink should have type AXI.ReadData32->nil")
-
-  J.err( R.isFunction(writeSource), "SOC.axiRegs: writeSource should be rigel function, but is: "..tostring(writeSource))
-  J.err( writeSource.inputType==types.null() and writeSource.outputType==AXI.WriteIssue32, "SOC.axiRegs: writeSource should have type nil->AXI.WriteIssue32, but is: "..tostring(writeSource.inputType).."->"..tostring(writeSource.outputType))
-  
-  J.err( R.isFunction(writeSink), "SOC.axiRegs: writeSink should be rigel function")
-  J.err( writeSink.inputType==AXI.WriteResponse32 and readSink.outputType==types.null(), "SOC.axiRegs: writeSink should have type AXI.WriteResponse32->nil")
-  
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
   local port = SOC.currentSAXIPort
@@ -79,6 +67,9 @@ SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, 
   
   local globalMetadata = {}
   local functionList = {}
+
+  functionList.read = R.newFunction{name="Read",inputType=AXI.ReadAddress32,outputType=AXI.ReadData32,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+  functionList.write = R.newFunction{name="Write",inputType=AXI.WriteIssue32, outputType=AXI.WriteResponse32, sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false}
 
   local addToModuleHack = {}
   local outputsToModuleHack = {}
@@ -100,15 +91,10 @@ SOC.axiRegs = J.memoize(function( tab, rate, readSource, readSink, writeSource, 
     
     assert(v[1]:verilogBits()%4==0) -- for hex
     globalMetadata["Register_"..string.format("%x",SOC.currentRegAddr)] = v[1]:valueToHex(v[2])
-    globalMetadata["AddrOfRegister_".."regs_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
-    globalMetadata["TypeOfRegister_".."regs_"..k] = v[1]
+    globalMetadata["AddrOfRegister_".."InstCall_regs_"..k] = SOC.currentRegAddr --string.format("%x",SOC.currentRegAddr)
+    globalMetadata["TypeOfRegister_".."InstCall_regs_"..k] = v[1]
 
-    
-    print("ADD GLOBAL",k)
     if v[3]=="input" then
-      --globals[R.newGlobal(k,"input",R.Handshake(v[1]))] = 1
-      --outputsToModuleHack[k] = R.newGlobal(k,"output",R.Handshake(v[1]) )
-      --      assert(false)
       functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
 
       table.insert(portPassthrough,"."..k.."_ready("..k.."_ready)")
@@ -121,10 +107,7 @@ output wire ]]..k..[[_ready,
       regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = "..k.."_input["..tostring(v[1]:verilogBits()).."];\n"
       regPortAssigns = regPortAssigns.."assign DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."] = "..k.."_input["..tostring(v[1]:verilogBits()-1)..":0]; // register write\n"
     else
-      --globals[R.newGlobal(k,"output",v[1])] = 1
-      --addToModuleHack[k] = R.newGlobal(k,"input",v[1])
-
-      table.insert(portPassthrough,"."..k.."("..k..")")
+      table.insert(portPassthrough,"."..k.."("..k.."_output)")
           
       functionList[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
       
@@ -150,8 +133,18 @@ output wire ]]..k..[[_ready,
 
   local verbose = false
   
---  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.HandshakeTrigger,
-local vstring = {[=[
+
+
+  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+
+  local res = RM.moduleLambda( ModuleName, functionList )
+  res.globalMetadata = globalMetadata
+
+  res.makeSystolic = function()
+    local s = C.automaticSystolicStub(res)
+
+        local vstring={[=[
 module ict106_axilite_conv #
   (
    parameter integer C_AXI_ID_WIDTH              = 12,
@@ -539,15 +532,13 @@ always @(posedge ACLK) begin
 end
 ]=])
 
---typedef bit [NREG*W-1:0] DATATYPE;
---assign CONFIG_DATA = DATATYPE'(data);
 
 for i=0,NREG-1 do
   table.insert(vstring,"assign CONFIG_DATA["..(i*32+31)..":"..(i*32).."] = data["..i.."];\n")
 end
 
-local RSOURCE = readSource.instance.name.."_"..readSource.functionName
-local RSINK = readSink.instance.name.."_"..readSink.functionName.."_input"
+local RSOURCE = "read"
+local RSINK = "read_input"
 
 table.insert(vstring,[=[//how many cycles does the operation take?
 always @(posedge ACLK) begin
@@ -690,113 +681,64 @@ assign done_ready = 1'b1;
 
 endmodule
 
-module ]=]..ModuleName..[=[(
-  input wire CLK,
-  input wire reset,
-
-  input wire []=]..tostring(AXI.ReadAddress:verilogBits()-1)..[=[:0] ZynqNOC_readSource,
-  output wire ZynqNOC_readSource_ready_downstream,
-
-  output wire []=]..tostring(AXI.ReadData(32):verilogBits()-1)..[=[:0] ZynqNOC_readSink_input,
-  input wire ZynqNOC_readSink_ready,
-
-  input wire []=]..tostring(AXI.WriteIssue(32):verilogBits()-1)..[=[:0] ZynqNOC_writeSource,
-  output wire [1:0] ZynqNOC_writeSource_ready_downstream,
-
-  output wire []=]..tostring(AXI.WriteResponse(32):verilogBits()-1)..[=[:0] ZynqNOC_writeSink_input,
-  input wire ZynqNOC_writeSink_ready,
-
-  // global drivers  
-  ]=]..regPorts..[=[
-
-  // done signal
-  input wire done_input,
-  output wire done_ready,
-
-  // start signal
-  input wire start_ready_downstream,
-  output wire start
-);
-parameter INSTANCE_NAME="inst";
+]=]..res:vHeader()..[=[
 
 ]=]..ModuleName..[=[_ported ported(.CLK(CLK),
 .reset(reset),
 .done_input(done_input),
 .done_ready(done_ready),
 .start_ready_inp(start_ready_downstream),
-.start_output(start),
+.start_output(start_output),
 ]=]..portPassthrough..[=[
-.IP_SAXI_ARADDR({]=]..RSOURCE..AXI.ReadAddressVSelect.arvalid..[=[,]=]..RSOURCE..AXI.ReadAddressVSelect.araddr..[=[}),
-.IP_SAXI_ARID(]=]..RSOURCE..AXI.ReadAddressVSelect.arid..[=[),
-.IP_SAXI_ARADDR_ready(ZynqNOC_readSource_ready_downstream),
+.IP_SAXI_ARADDR({read_input]=]..AXI.ReadAddressVSelect.arvalid..[=[,read_input]=]..AXI.ReadAddressVSelect.araddr..[=[}),
+.IP_SAXI_ARID(read_input]=]..AXI.ReadAddressVSelect.arid..[=[),
+.IP_SAXI_ARADDR_ready(read_ready),
 
-.IP_SAXI_RDATA({]=]..RSINK..AXI.ReadDataVSelect(32).rvalid..[=[,]=]..RSINK..AXI.ReadDataVSelect(32).rdata..[=[}),
-.IP_SAXI_RRESP(]=]..RSINK..AXI.ReadDataVSelect(32).rresp..[=[),
-.IP_SAXI_RID(]=]..RSINK..AXI.ReadDataVSelect(32).rid..[=[),
-.IP_SAXI_RLAST(]=]..RSINK..AXI.ReadDataVSelect(32).rlast..[=[),
-.IP_SAXI_RDATA_ready(ZynqNOC_readSink_ready),
+.IP_SAXI_RDATA({read_output]=]..AXI.ReadDataVSelect(32).rvalid..[=[,read_output]=]..AXI.ReadDataVSelect(32).rdata..[=[}),
+.IP_SAXI_RRESP(read_output]=]..AXI.ReadDataVSelect(32).rresp..[=[),
+.IP_SAXI_RID(read_output]=]..AXI.ReadDataVSelect(32).rid..[=[),
+.IP_SAXI_RLAST(read_output]=]..AXI.ReadDataVSelect(32).rlast..[=[),
+.IP_SAXI_RDATA_ready(read_ready_downstream),
 
-.IP_SAXI_AWADDR({ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).awvalid..[=[,ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).awaddr..[=[}),
-.IP_SAXI_AWID(ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).awid..[=[),
-.IP_SAXI_AWADDR_ready(ZynqNOC_writeSource_ready_downstream[0]),
+.IP_SAXI_AWADDR({write_input]=]..AXI.WriteIssueVSelect(32).awvalid..[=[,write_input]=]..AXI.WriteIssueVSelect(32).awaddr..[=[}),
+.IP_SAXI_AWID(write_input]=]..AXI.WriteIssueVSelect(32).awid..[=[),
+.IP_SAXI_AWADDR_ready(write_ready[0]),
 
-.IP_SAXI_WDATA({ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).wvalid..[=[,ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).wdata..[=[}),
-.IP_SAXI_WSTRB(ZynqNOC_writeSource]=]..AXI.WriteIssueVSelect(32).wstrb..[=[),
-.IP_SAXI_WDATA_ready(ZynqNOC_writeSource_ready_downstream[1]),
+.IP_SAXI_WDATA({write_input]=]..AXI.WriteIssueVSelect(32).wvalid..[=[,write_input]=]..AXI.WriteIssueVSelect(32).wdata..[=[}),
+.IP_SAXI_WSTRB(write_input]=]..AXI.WriteIssueVSelect(32).wstrb..[=[),
+.IP_SAXI_WDATA_ready(write_ready[1]),
 
-.IP_SAXI_BRESP({ZynqNOC_writeSink_input]=]..AXI.WriteResponseVSelect(32).bvalid..[=[,ZynqNOC_writeSink_input]=]..AXI.WriteResponseVSelect(32).bresp..[=[}),
-.IP_SAXI_BID(ZynqNOC_writeSink_input]=]..AXI.WriteResponseVSelect(32).bid..[=[),
-.IP_SAXI_BRESP_ready(ZynqNOC_writeSink_ready)
+.IP_SAXI_BRESP({write_output]=]..AXI.WriteResponseVSelect(32).bvalid..[=[,write_output]=]..AXI.WriteResponseVSelect(32).bresp..[=[}),
+.IP_SAXI_BID(write_output]=]..AXI.WriteResponseVSelect(32).bid..[=[),
+.IP_SAXI_BRESP_ready(write_ready_downstream)
 );
 
 endmodule
 ]=])
 
-
-  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  
-  local res = R.newModule( ModuleName, functionList, true, function() end )
-  res.globalMetadata = globalMetadata
-  res.requires[readSource]=1
-  res.requires[readSink]=1
-  res.requires[writeSource]=1
-  res.requires[writeSink]=1
-
-  res.makeSystolic = function()
-    local res = C.automaticSystolicStub(res)
-    res:verilog(table.concat(vstring))
-    return res
+    s:verilog(table.concat(vstring))
+    return s
   end
   
   -- hack
   if terralib~=nil then
     res.makeTerra=nil
-    res.terraModule = SOCMT.axiRegs(res,tab,readSource, readSink, writeSource, writeSink)
-  end
-
-  for k,v in pairs(addToModuleHack) do
-    assert(res[k]==nil)
-    res[k] = R.readGlobal("readGlobal_"..k,v)
-  end
-
-  for k,v in pairs(outputsToModuleHack) do
-    assert(res[k]==nil)
-    res[k] = v
+    res.terraModule = SOCMT.axiRegs( res, tab )
   end
 
   return res
 end)
 
+function SOC.axiBurstReadN( filename, Nbytes, address, readFn, X )
+  return SOC.axiBurstReadNInner( filename, Uniform(Nbytes), Uniform(address), readFn, X )
+end
+
 -- does a 128 byte burst
 -- uint25 addr -> bits(64)
-SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,readFn_orig,X)
-  J.err( type(port)=="number", "axiBurstReadN: port must be number" )
-  J.err( port>=0 and port<=SOC.ports,"axiBurstReadN: port out of range" )
-  --J.err( type(Nbytes)=="number","axiBurstReadN: Nbytes must be number" )
-  local Nbytes = Uniform(Nbytes_orig)
+SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,X)
+  assert(Uniform.isUniform(Nbytes))
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
-  local address = Uniform(address_orig)
+  assert(Uniform.isUniform(address))
   J.err( R.isFunction(readFn_orig), "axiBurstReadN: readFn should be rigel function, but is: "..tostring(readFn_orig))
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
@@ -811,10 +753,10 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,re
   J.err( readFn.outputType == types.Handshake(AXI.ReadDataTuple(64)), "axiReadBytes expected HandshakeRV output type, but was: "..tostring(readFn.outputType) )
 
   local globalMetadata = {}
-  globalMetadata["MAXI"..port.."_read_filename"] = filename
-  globalMetadata["MAXI"..port.."_read_address"] = address
+  globalMetadata[readFn_orig.name.."_read_filename"] = filename
+  globalMetadata[readFn_orig.name.."_read_address"] = address
 
-  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes_orig).."_"..tostring(port).."_"..tostring(address_orig))
+  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes).."_"..tostring(address))
 
   local readFnInst = readFn:instantiate("ReadFn")
   --local RPORT = readFn.instance.name.."_"..readFn.functionName
@@ -834,8 +776,8 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,re
     input wire [1:0] M_AXI_RRESP,
     input wire M_AXI_RVALID,
     input wire M_AXI_RLAST,
-    output wire [3:0] M_AXI_ARLEN,
-    output wire [1:0] M_AXI_ARSIZE,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()-1)..[=[:0] M_AXI_ARLEN,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits()-1)..[=[:0] M_AXI_ARSIZE,
     output wire [1:0] M_AXI_ARBURST,
     
     //Control config
@@ -850,8 +792,8 @@ SOC.axiBurstReadN = J.memoize(function(filename,Nbytes_orig,port,address_orig,re
     output wire [63:0] DATA
 );
 
-assign M_AXI_ARLEN = 4'b1111;
-assign M_AXI_ARSIZE = 2'b11;
+assign M_AXI_ARLEN = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits())..[=['b1111;
+assign M_AXI_ARSIZE = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits())..[=['b11;
 assign M_AXI_ARBURST = 2'b01;
 parameter IDLE = 0, RWAIT = 1;
     
@@ -931,20 +873,17 @@ module ]=]..ModuleName..[=[_ported(
     input wire [1:0] IP_MAXI_RRESP,
 
     input wire IP_MAXI_RLAST,
-    output wire [3:0] IP_MAXI_ARLEN,
-    output wire [1:0] IP_MAXI_ARSIZE,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()-1)..[=[:0] IP_MAXI_ARLEN,
+    output wire []=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits()-1)..[=[:0] IP_MAXI_ARSIZE,
     output wire [1:0] IP_MAXI_ARBURST,
     
     //Control config
     input wire process_input,
     output wire ready,
     
-//    input wire [31:0] CONFIG_START_ADDR,
-//    input wire [31:0] CONFIG_NBYTES,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
 
-    ]=]..address:toVerilogPortList()..[=[
-    ]=]..Nbytes:toVerilogPortList()..[=[
- 
     //RAM port
     input wire ready_downstream,
     output wire [64:0] process_output
@@ -976,8 +915,8 @@ parameter INSTANCE_NAME="inst";
     //Control config
     .CONFIG_VALID(process_input),
     .CONFIG_READY(ready),
-    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
-    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
+    .CONFIG_START_ADDR(CONFIG_START_ADDR),
+    .CONFIG_NBYTES(CONFIG_NBYTES),
     
     //RAM port
     .DATA_READY_DOWNSTREAM(ready_downstream),
@@ -987,7 +926,7 @@ parameter INSTANCE_NAME="inst";
 
 endmodule
 
-]=]..res:vHeader()..readFnInst:toVerilog()..[=[
+]=]..res:vHeader()..readFnInst:toVerilog()..address:toVerilogInstance()..Nbytes:toVerilogInstance()..[=[
 
   ]=]..ModuleName..[=[_ported inner(
     .CLK(CLK),
@@ -996,8 +935,8 @@ endmodule
     .ready(ready),
     .ready_downstream(ready_downstream),
     .process_output(process_output),
-    ]=]..address:toVerilogPassthrough()..[=[
-    ]=]..Nbytes:toVerilogPassthrough()..[=[
+    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
+    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
 
     .IP_MAXI_ARADDR({]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arvalid..","..readFnInst:vInput()..AXI.ReadAddressVSelect.araddr..[=[}),
     .IP_MAXI_ARADDR_ready(]=]..readFnInst:vInputReady()..[=[),
@@ -1015,14 +954,14 @@ endmodule
 ]=]
   end
   
-  local requires = {}
-  address:appendRequires(requires)
-  Nbytes:appendRequires(requires)
   local instanceMap = {[readFnInst]=1}
-  local res = RM.liftVerilog( ModuleName, R.HandshakeTrigger, R.Handshake(types.bits(64)), vstr, requires, globalMetadata,{{1,(Nbytes/8)}},{{1,1}}, instanceMap )
+  instanceMap = J.joinSet(instanceMap,address:getInstances())
+  instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
+  
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap }
 
   if terralib~=nil then
-    res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, port, address, readFn ) end
+    res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, address, readFn ) end
   end
   
   return res
@@ -1047,7 +986,7 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig,
   local addressBase = Uniform(addressBase_orig)
   
   local globalMetadata = {}
-  globalMetadata["MAXI"..port.."_read_filename"] = filename
+  globalMetadata[readFn_orig.name.."_read_filename"] = filename
 
   local ModuleName = J.sanitize("AXI_READ_BYTES_"..tostring(Nbytes).."_"..tostring(port))
 
@@ -1057,9 +996,9 @@ SOC.axiReadBytes = J.memoize(function( filename, Nbytes, port, addressBase_orig,
   local readFnInst = readFn:instantiate("ReadFn")
   
   local function vstr(res)
-    return res:vHeader()..readFnInst:toVerilog()..[=[
-assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen.." = 4'd"..(burstCount-1)..[=[; // length of burst
-assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[ = 2'b11; // number of bytes per transfer
+    return res:vHeader()..res:vInstances()..[=[
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arlen.." = "..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arlen+1]:verilogBits()).."'d"..(burstCount-1)..[=[; // length of burst
+assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arsize..[=[ = ]=]..(AXI.ReadAddressTuple.list[AXI.ReadAddressIdx.arsize+1]:verilogBits())..[=['b11; // number of bytes per transfer
 assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arburst..[=[ = 2'b01; // burst mode
 
 assign ]=]..readFnInst:vInput()..AXI.ReadAddressVSelect.arvalid..[=[ = process_input[32];
@@ -1078,10 +1017,10 @@ endmodule
 ]=]
   end
   
-  local requires = {}
-  addressBase:appendRequires(requires)
   local instanceMap = {[readFnInst]=1}
-  local res = RM.liftVerilog( ModuleName, R.Handshake(types.uint(32)), R.Handshake(types.bits(64)), vstr, requires, globalMetadata, {{1,burstCount}}, {{1,1}}, instanceMap )
+  instanceMap = J.joinSet(instanceMap,addressBase:getInstances())
+  
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.Handshake(types.uint(32)), outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,burstCount}}, sdfOutput={{1,1}}, instanceMap=instanceMap }
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1092,7 +1031,7 @@ endmodule
   return res
 end)
 
-SOC.axiWriteBytes = J.memoize(function( filename, NbytesPerCycle, port, addressBase_orig, writeFn, X)
+SOC.axiWriteBytes = J.memoize(function( filename, NbytesPerCycle, port, addressBase_orig, writeFn_orig, X)
   J.err( type(port)=="number", "axiWriteBytes: port must be number" )
   J.err( port>=0 and port<=SOC.ports,"axiWriteBytes: port out of range" )
   J.err( type(NbytesPerCycle)=="number","axiWriteBytes: NbytesPerCycle must be number" )
@@ -1100,12 +1039,12 @@ SOC.axiWriteBytes = J.memoize(function( filename, NbytesPerCycle, port, addressB
   if NbytesPerCycle>8 then
     J.err( NbytesPerCycle%8==0, "axiWriteBytes: NYI - NbytePerCycle must be 64 bit aligned")
   end
-  J.err( R.isFunction(writeFn), "axiWriteBytes: writeFn should be rigel function, but is: "..tostring(writeFn))
+  J.err( R.isFunction(writeFn_orig), "axiWriteBytes: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
   J.err( X==nil, "axiWriteBytes: too many arguments" )
   local addressBase = Uniform(addressBase_orig)
   
   local globalMetadata = {}
-  globalMetadata["MAXI"..port.."_write_filename"] = filename
+  globalMetadata[writeFn_orig.name.."_write_filename"] = filename
   
   local ModuleName = J.sanitize("AXI_WRITE_BYTES_"..tostring(NbytesPerCycle).."_"..tostring(port))
 
@@ -1122,10 +1061,12 @@ SOC.axiWriteBytes = J.memoize(function( filename, NbytesPerCycle, port, addressB
 
   local last
   local bursts = NbytesPerCycle/8
+
+  local writeFnInst = writeFn_orig:instantiate("writeFn")
   
   if NbytesPerCycle<=8 then
     --    last = "assign IP_MAXI"..port.."_WLAST = 1'b1;\n"
-    last = "assign ZynqNOC_write_input"..AXI.WriteIssueVSelect(64).wlast.." = 1'b1;\n"
+    last = "assign "..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wlast.." = 1'b1;\n"
   else
     last = [=[
 reg [3:0] last_count = 4'd]=]..bursts..[=[;
@@ -1143,89 +1084,83 @@ end
   end
 
   local inputType = R.HandshakeTuple{types.uint(32),types.bits(Nbits)}
-  print("INPUT_TYPE",inputType,inputType:verilogBits())
 
-  local vstr = [=[module ]=]..ModuleName..[=[(
-    input wire CLK,
-    input wire reset,
-  
-    output wire []=]..tostring(AXI.WriteIssue(64):verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
-    input wire []=]..tostring(AXI.WriteResponse(64):verilogBits()-1)..[=[:0] ZynqNOC_write, 
-    output wire ZynqNOC_write_ready_downstream, 
-    input wire [1:0] ZynqNOC_write_ready,
-  
-    ]=]..addressBase:toVerilogPortList()..[=[
+  local function vstr(res)
+    return res:vHeader()..writeFnInst:toVerilog()..addressBase:toVerilogInstance()..[=[
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awlen..[=[ = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits())..[=['d]=]..(burstCount-1)..[=[; // length of burst
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awsize..[=[ = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits())..[=['b11; // number of bytes per transfer
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awburst..[=[ = 2'b01; // burst mode
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wstrb..[=[ = 8'b]=]..strb..[=[; // burst mode
 
-    input wire []=]..(32+Nbits+1)..[=[:0] process_input,
-    output wire [1:0] ready,
-
-    output wire process_output,
-    input wire ready_downstream
-);
-parameter INSTANCE_NAME="inst";
-
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awlen..[=[ = 4'd]=]..(burstCount-1)..[=[; // length of burst
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awsize..[=[ = 2'b11; // number of bytes per transfer
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awburst..[=[ = 2'b01; // burst mode
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wstrb..[=[ = 8'b]=]..strb..[=[; // burst mode
-
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awaddr..[=[ = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awvalid..[=[ = process_input[32];
-assign ready = ZynqNOC_write_ready;
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awaddr..[=[ = process_input[31:0] + (]=]..addressBase:toVerilog(types.uint(32))..[=[);
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awvalid..[=[ = process_input[32];
+assign ready = ]=]..writeFnInst:vInputReady()..[=[;
 
 //always @(posedge CLK) begin
 //  $display("AWADDR_READY=%d WDATA_READY=%d AWVALID=%d",ZynqNOC_write_ready[0],ZynqNOC_write_ready[1],process_input[32]);
 //end
 
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wdata..[=[ = process_input[]=]..(Nbits+32)..[=[:33];
-assign ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wvalid..[=[ = process_input[]=]..(Nbits+32+1)..[=[];
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wdata..[=[ = process_input[]=]..(Nbits+32)..[=[:33];
+assign ]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wvalid..[=[ = process_input[]=]..(Nbits+32+1)..[=[];
 
 ]=]..last..[=[
-assign process_output = ZynqNOC_write]=]..AXI.WriteResponseVSelect(64).bvalid..[=[;
-assign ZynqNOC_write_ready_downstream = ready_downstream;
+assign process_output = ]=]..writeFnInst:vOutput()..AXI.WriteResponseVSelect(64).bvalid..[=[;
+assign ]=]..writeFnInst:vOutputReady()..[=[ = ready_downstream;
 
 endmodule
 ]=]
-
-  local requires = {[writeFn]=1}
-  addressBase:appendRequires(requires)
+  end
+  
+  local instanceMap = {[writeFnInst]=1}
+  instanceMap = J.joinSet(instanceMap,addressBase:getInstances())
   
   -- input format is {addr,data}
-  local res = RM.liftVerilog( ModuleName, inputType, R.HandshakeTrigger, vstr, requires, globalMetadata, {{1,1},{1,1}},{{1,1}})
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=inputType, outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1},{1,1}}, sdfOutput={{1,1}}, instanceMap=instanceMap}
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase, writeFn )
+    res.terraModule = SOCMT.axiWriteBytes( res, NbytesPerCycle, port, addressBase, writeFn_orig )
   end
 
-  --return SOC.AXIWrapRV(res,port)
   return res
 end)
 
-SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_orig, writeFn, X )
+function SOC.axiBurstWriteN( filename, Nbytes, address, writeFn, X )
+  return SOC.axiBurstWriteNInner( filename, Uniform(Nbytes), Uniform(address), writeFn, X )
+end
+
+SOC.axiBurstWriteNInner = J.memoize(function( filename, Nbytes, address, writeFn_orig, X )
   J.err( type(filename)=="string","axiBurstWriteN: filename must be string")
-  J.err( type(port)=="number", "axiBurstWriteN: port must be number" )
-  J.err( port>=0 and port<=SOC.ports,"axiBurstWriteN: port out of range" )
-  --J.err( type(Nbytes)=="number","axiBurstWriteN: Nbytes must be number, but is: "..tostring(Nbytes))
-  local Nbytes = Uniform(Nbytes_orig)
-  local address = Uniform(address_orig)
-  J.err( R.isFunction(writeFn), "axiBurstWriteN: writeFn should be rigel function, but is: "..tostring(writeFn))
+
+  assert( Uniform.isUniform(Nbytes) )
+  assert( Uniform.isUniform(address) )
+  
+  J.err( R.isFunction(writeFn_orig), "axiBurstWriteN: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
 
   J.err( Uniform(Nbytes%128):eq(0):assertAlwaysTrue(), "SOC.axiBurstWriteN: Nbytes ("..tostring(Nbytes)..") not 128-byte aligned")
 
+  local writeFn = writeFn_orig
+
+  J.err( writeFn.inputType == AXI.WriteIssue64, "axiBurstWriteN expected AXI.WriteIssue64 input type, but was: "..tostring(writeFn.inputType) )
+  J.err( writeFn.outputType == AXI.WriteResponse64, "axiReadBytes expected AXI.WriteResponse64 output type, but was: "..tostring(writeFn.outputType) )
+
+  local writeFnInst = writeFn:instantiate("writeFn")
+  
   local Nburst = Nbytes/128
   
   local globalMetadata = {}
-  globalMetadata["MAXI"..port.."_write_filename"] = filename
-  globalMetadata["MAXI"..port.."_write_address"] = address
-  globalMetadata["MAXI"..port.."_write_W"] = Nbytes
-  globalMetadata["MAXI"..port.."_write_H"] = 1
-  globalMetadata["MAXI"..port.."_write_bitsPerPixel"] = 8
+  globalMetadata[writeFn_orig.name.."_write_filename"] = filename
+  globalMetadata[writeFn_orig.name.."_write_address"] = address
+  globalMetadata[writeFn_orig.name.."_write_W"] = Nbytes
+  globalMetadata[writeFn_orig.name.."_write_H"] = 1
+  globalMetadata[writeFn_orig.name.."_write_bitsPerPixel"] = 8
 
-  local moduleNameSuffix=J.sanitize("_file"..tostring(filename).."_Nbytes"..tostring(Nbytes_orig).."_port"..tostring(port).."_address"..tostring(address_orig))
+  local moduleNameSuffix=J.sanitize("_file"..tostring(filename).."_Nbytes"..tostring(Nbytes).."_address"..tostring(address))
   
-  local vstr = [=[module DRAMWriterInner(
+  local function vstr(res)
+
+    return [=[module DRAMWriterInner]=]..moduleNameSuffix..[=[(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -1243,8 +1178,8 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
     input wire M_AXI_BVALID,
     output wire M_AXI_BREADY,
     
-    output wire [3:0] M_AXI_AWLEN,
-    output wire [1:0] M_AXI_AWSIZE,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits()-1)..[=[:0] M_AXI_AWLEN,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits()-1)..[=[:0] M_AXI_AWSIZE,
     output wire [1:0] M_AXI_AWBURST,
     
     //Control config
@@ -1262,8 +1197,8 @@ SOC.axiBurstWriteN = J.memoize(function( filename, Nbytes_orig, port, address_or
     output wire done
 );
 
-assign M_AXI_AWLEN = 4'b1111;
-assign M_AXI_AWSIZE = 2'b11;
+assign M_AXI_AWLEN = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits())..[=['b1111;
+assign M_AXI_AWSIZE = ]=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits())..[=['b11;
 assign M_AXI_AWBURST = 2'b01;
 assign M_AXI_WSTRB = 8'b11111111;
 
@@ -1356,7 +1291,7 @@ assign M_AXI_WDATA = DATA;
 
 endmodule // DRAMWriter
 
-module DRAMWriter_ported(
+module DRAMWriter_ported]=]..moduleNameSuffix..[=[(
     //AXI port
     input wire CLK,
     input wire reset,
@@ -1372,19 +1307,16 @@ module DRAMWriter_ported(
     input wire [2:0] IP_MAXI_BRESP,
     output wire IP_MAXI_BRESP_ready,
     
-    output wire [3:0] IP_MAXI_AWLEN,
-    output wire [1:0] IP_MAXI_AWSIZE,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awlen+1]:verilogBits()-1)..[=[:0] IP_MAXI_AWLEN,
+    output wire []=]..(AXI.WriteAddress.list[AXI.WriteAddressIdx.awsize+1]:verilogBits()-1)..[=[:0] IP_MAXI_AWSIZE,
     output wire [1:0] IP_MAXI_AWBURST,
     
     //Control config
 //    input wire CONFIG_VALID,
 //    output wire CONFIG_READY,
-//    input wire [31:0] CONFIG_START_ADDR,
-//    input wire [31:0] CONFIG_NBYTES,
+    input wire [31:0] CONFIG_START_ADDR,
+    input wire [31:0] CONFIG_NBYTES,
 
-    ]=]..address:toVerilogPortList()..[=[  
-    ]=]..Nbytes:toVerilogPortList()..[=[  
-    
     //RAM port
     input wire [64:0] process_input,
     output wire ready,
@@ -1426,7 +1358,7 @@ $display("FIRST BUFFER SET");
   end
 end
 
-DRAMWriterInner inner(
+DRAMWriterInner]=]..moduleNameSuffix..[=[ inner(
     //AXI port
     .ACLK(CLK),
     .ARESETN(~reset),
@@ -1452,8 +1384,8 @@ DRAMWriterInner inner(
     //Control config
     .CONFIG_VALID(firstBufferSet),
     .CONFIG_READY(CONFIG_READY),
-    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
-    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
+    .CONFIG_START_ADDR(CONFIG_START_ADDR),
+    .CONFIG_NBYTES(CONFIG_NBYTES),
     
     //RAM port
     .DATA( firstBufferSet? firstBuffer : process_input[63:0] ),
@@ -1470,64 +1402,47 @@ DRAMWriterInner inner(
 
 endmodule
 
-module DRAMWriter]=]..moduleNameSuffix..[=[(
-    //AXI port
-    input wire CLK,
-    input wire reset,
+]=]..res:vHeader()..writeFnInst:toVerilog()..address:toVerilogInstance()..Nbytes:toVerilogInstance()..[=[
 
-    output wire []=]..tostring(AXI.WriteIssue(64):verilogBits()-1)..[=[:0] ZynqNOC_write_input, 
-    input wire []=]..tostring(AXI.WriteResponse(64):verilogBits()-1)..[=[:0] ZynqNOC_write, 
-    output wire ZynqNOC_write_ready_downstream, 
-    input wire [1:0] ZynqNOC_write_ready,
-
-    ]=]..address:toVerilogPortList()..[=[  
-    ]=]..Nbytes:toVerilogPortList()..[=[  
-
-    //RAM port
-    input wire [64:0] process_input,
-    output wire ready,
-
-    output wire process_output,
-    input wire ready_downstream
-);
-parameter INSTANCE_NAME="inst";
-
-  DRAMWriter_ported ported(.CLK(CLK),
+  DRAMWriter_ported]=]..moduleNameSuffix..[=[ ported(.CLK(CLK),
     .reset(reset),
     .process_input(process_input),
     .ready(ready),
     .process_output(process_output),
     .ready_downstream(ready_downstream),
-    ]=]..address:toVerilogPassthrough()..[=[
-    ]=]..Nbytes:toVerilogPassthrough()..[=[
-    .IP_MAXI_AWADDR({ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awvalid..[=[,ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awaddr..[=[}),
-    .IP_MAXI_AWLEN(ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awlen..[=[),
-    .IP_MAXI_AWBURST(ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awburst..[=[),
-    .IP_MAXI_AWSIZE(ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).awsize..[=[),
-    .IP_MAXI_AWADDR_ready(ZynqNOC_write_ready[0]),
 
-    .IP_MAXI_WDATA({ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wvalid..[=[,ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wdata..[=[}),
-    .IP_MAXI_WSTRB(ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wstrb..[=[),
-    .IP_MAXI_WLAST(ZynqNOC_write_input]=]..AXI.WriteIssueVSelect(64).wlast..[=[),
-    .IP_MAXI_WDATA_ready(ZynqNOC_write_ready[1]),
+    .CONFIG_START_ADDR(]=]..address:toVerilog(types.uint(32))..[=[),
+    .CONFIG_NBYTES(]=]..Nbytes:toVerilog(types.uint(32))..[=[),
 
-    .IP_MAXI_BRESP({ZynqNOC_write]=]..AXI.WriteResponseVSelect(64).bvalid..[=[,ZynqNOC_write]=]..AXI.WriteResponseVSelect(64).bresp..[=[}),
+    .IP_MAXI_AWADDR({]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awvalid..[=[,]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awaddr..[=[}),
+    .IP_MAXI_AWLEN(]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awlen..[=[),
+    .IP_MAXI_AWBURST(]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awburst..[=[),
+    .IP_MAXI_AWSIZE(]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).awsize..[=[),
+    .IP_MAXI_AWADDR_ready(]=]..writeFnInst:vInputReady()..[=[[0]),
 
-    .IP_MAXI_BRESP_ready(ZynqNOC_write_ready_downstream)
+    .IP_MAXI_WDATA({]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wvalid..[=[,]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wdata..[=[}),
+    .IP_MAXI_WSTRB(]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wstrb..[=[),
+    .IP_MAXI_WLAST(]=]..writeFnInst:vInput()..AXI.WriteIssueVSelect(64).wlast..[=[),
+    .IP_MAXI_WDATA_ready(]=]..writeFnInst:vInputReady()..[=[[1]),
+
+    .IP_MAXI_BRESP({]=]..writeFnInst:vOutput()..AXI.WriteResponseVSelect(64).bvalid..[=[,]=]..writeFnInst:vOutput()..AXI.WriteResponseVSelect(64).bresp..[=[}),
+
+    .IP_MAXI_BRESP_ready(]=]..writeFnInst:vOutputReady()..[=[)
 );
 endmodule
 
 ]=]
-
-  local requires = {[writeFn]=1}
-  address:appendRequires(requires)
-  Nbytes:appendRequires(requires)
+  end
   
-  local res = RM.liftVerilog( "DRAMWriter"..moduleNameSuffix, R.Handshake(types.bits(64)), R.HandshakeTrigger, vstr, requires, globalMetadata,{{1,1}},{{1,Nbytes/8}})
+  local instanceMap = {[writeFnInst]=1}
+  instanceMap = J.joinSet(instanceMap,address:getInstances())
+  instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
+
+  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap }
 
   if terralib~=nil then
     res.makeTerra = nil
-    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, port, address, writeFn )
+    res.terraModule = SOCMT.axiBurstWriteN( res, Nbytes, address, writeFn )
   end
 
   return res
@@ -1552,24 +1467,22 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
-SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverride, readFn, X )
+SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, addressOverride, readFn_orig, X )
   J.err( type(filename)=="string","readBurst: filename must be string")
-  --J.err( type(W)=="number", "readBurst: W must be number")
-  --J.err( type(H)=="number", "readBurst: H must be number")
-  W = Uniform(W)
-  H = Uniform(H)
+
+  local W = Uniform(W_orig)
+  local H = Uniform(H_orig)
   J.err( types.isType(ty), "readBurst: type must be type, but is: "..tostring(ty))
   J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: "..tostring(ty))
   J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: "..tostring(ty))
-  --local nbytes = W*H*(ty:verilogBits()/8)
-  --J.err( nbytes%8==0,"NYI - readBurst requires 8-byte aligned size" )
-  --J.err( nbytes%128==0,"NYI - readBurst requires 128-byte aligned size" )
-  J.err( R.isFunction(readFn),"readBurst: readFn should be rigel function, but is: "..tostring(readFn))
+
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
   if V==nil then V=0 end
 
   J.err( framed==nil or type(framed)=="boolean", "framed must be nil or bool, but is: "..tostring(framed))
   J.err(X==nil, "readBurst: too many arguments")
+
+  J.err( R.isFunction(readFn_orig), "SOC.readBurst: readFn should be rigel function, but is: "..tostring(readFn_orig))
 
   local address
   if addressOverride~=nil then
@@ -1580,12 +1493,12 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
   end
   
   local globalMetadata={}
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_W"] = W
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_H"] = H
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_V"] = V
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_type"] = tostring(ty)
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_bitsPerPixel"] = ty:verilogBits()
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = address
+  globalMetadata[readFn_orig.name.."_read_W"] = W
+  globalMetadata[readFn_orig.name.."_read_H"] = H
+  globalMetadata[readFn_orig.name.."_read_V"] = V
+  globalMetadata[readFn_orig.name.."_read_type"] = tostring(ty)
+  globalMetadata[readFn_orig.name.."_read_bitsPerPixel"] = ty:verilogBits()
+  globalMetadata[readFn_orig.name.."_read_address"] = address
   
   local inp = R.input(R.HandshakeTrigger)
 
@@ -1594,12 +1507,12 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
 
   local CR = C.generalizedChangeRate( 64,0,128*8, outputBits, desiredTotalOutputBits,1 )
   local ChangeRateModule, totalBits = CR[1], CR[2]
-  
+
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
   assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )
 
-  local BRN = SOC.axiBurstReadN( filename, totalBits/8, SOC.currentMAXIReadPort, address, readFn )
+  local BRN = SOC.axiBurstReadN( filename, totalBits/8, address, readFn_orig )
   local out = BRN(inp)
 
   out = ChangeRateModule(out)
@@ -1618,13 +1531,16 @@ SOC.readBurst = J.memoize(function( filename, W, H, ty, V, framed, addressOverri
     out = C.handshakeToHandshakeFramed(out.type,V>0,{{W,H}})(out)
   end
   
-  local res = RM.lambda("ReadBurst_W"..tostring(W).."_H"..tostring(H).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
   
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
 
   if addressOverride==nil then
     SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
     assert(type(SOC.currentAddr)=="number")
+  else
+    assert(type(SOC.currentAddr)=="number")
+    SOC.currentAddr = math.max(SOC.currentAddr,address:maximum()+(totalBits:maximum()/8))
   end
   
   return res
@@ -1634,17 +1550,17 @@ end)
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- readType: this is the output type we want
 -- NOTE: do not memoize! this thing allocates a port
-SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, addressBase_orig, X )
+SOC.read = function( filename, fileBytes, readType, readFn_orig, Cstyle, addressBase_orig, X )
   J.err( type(filename)=="string","SOC.read: filename must be string, but is: "..tostring(filename))
   J.err( types.isType(readType), "SOC.read: type must be type, but is: "..tostring(readType))
   J.err( types.isBasic(readType), "SOC.read: type must be basic type, but is: "..tostring(readType))
   J.err( readType:verilogBits()%8==0, "SOC.read: NYI - type must be byte aligned, but is: "..tostring(readType))
   if Cstyle==nil then Cstyle=true end
   J.err( type(Cstyle)=="boolean","SOC.read: Cstyle should be bool")
-  --  J.err( readType:verilogBits()%64==0, "SOC.read: NYI - type must be 8 byte aligned, but is: "..tostring(readType))
-  J.err( R.isFunction(readFn), "soc.read: readFn should be rigel function, but is: "..tostring(readFn))
   J.err( X==nil, "SOC.read: too many arguments" )
-  
+
+  J.err( R.isFunction(readFn_orig), "SOC.readBurst: readFn should be rigel function, but is: "..tostring(readFn_orig))
+
   local globalMetadata={}
 
   local address
@@ -1655,7 +1571,7 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, addressBase_
     address = SOC.currentAddr
   end
 
-  globalMetadata["MAXI"..SOC.currentMAXIReadPort.."_read_address"] = address
+  globalMetadata[readFn_orig.name.."_read_address"] = address
   
   local inp = R.input(R.Handshake(types.uint(32)))
   local out = inp
@@ -1678,7 +1594,7 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, addressBase_
     readBytesPerBurst = readType:verilogBits()/8
   end
   
-  out = SOC.axiReadBytes( filename, readBytesPerBurst, SOC.currentMAXIReadPort, address, readFn )(out)
+  out = SOC.axiReadBytes( filename, readBytesPerBurst, SOC.currentMAXIReadPort, address, readFn_orig )(out)
 
   local N = readType:verilogBits()/64
   
@@ -1709,31 +1625,31 @@ SOC.read = function( filename, fileBytes, readType, readFn, Cstyle, addressBase_
   return res
 end
                           
-SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn, X)
+SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig, addressOverride, X)
   J.err( type(filename)=="string","writeBurst: filename must be string")
   J.err( type(W)=="number", "writeBurst: W must be number")
   J.err( type(H)=="number", "writeBurst: H must be number")
   J.err( types.isType(ty), "writeBurst: type must be type")
-  --J.err(ty:verilogBits()%8==0,"NYI - writeBurst currently required byte-aligned data")
-  --local nbytes = W*H*(ty:verilogBits()/8)
-  --J.err( nbytes%8==0,"NYI - writeBurst requires 8-byte aligned size (input bytes is: "..nbytes..")" )
   J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
   if V==nil then V=1 end
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean, but is: "..tostring(framed))
-  J.err( R.isFunction(writeFn), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn))
+  J.err( R.isFunction(writeFn_orig), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
   J.err(X==nil, "writeBurst: too many arguments")
 
   assert(type(SOC.currentAddr)=="number")
   local address = Uniform(SOC.currentAddr)
+  if addressOverride~=nil then
+    address = Uniform(addressOverride)
+  end
   
   local globalMetadata={}
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_V"] = V
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(ty)
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = ty:verilogBits()
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = address
+  globalMetadata[writeFn_orig.name.."_write_W"] = W
+  globalMetadata[writeFn_orig.name.."_write_H"] = H
+  globalMetadata[writeFn_orig.name.."_write_V"] = V
+  globalMetadata[writeFn_orig.name.."_write_type"] = tostring(ty)
+  globalMetadata[writeFn_orig.name.."_write_bitsPerPixel"] = ty:verilogBits()
+  globalMetadata[writeFn_orig.name.."_write_address"] = address
 
   local inputType = ty
   if V>0 then inputType = types.array2d(inputType,V) end
@@ -1760,13 +1676,19 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn, X)
 
   out = ChangeRateModule(out)
 
-  out = SOC.axiBurstWriteN( filename, totalBits/8, SOC.currentMAXIWritePort, SOC.currentAddr, writeFn )(out)
+  out = SOC.axiBurstWriteN( filename, totalBits/8, address, writeFn_orig )(out)
 
   local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
-  SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
-  assert(type(SOC.currentAddr)=="number")
+  if addressOverride==nil then
+    SOC.currentAddr = SOC.currentAddr+totalBits:maximum()/8
+    assert(type(SOC.currentAddr)=="number")
+  else
+    assert(type(SOC.currentAddr)=="number")
+    SOC.currentAddr = math.max(SOC.currentAddr,address:maximum()+(totalBits:maximum()/8))
+  end
+  
   
   if framed then
     -- HACK
@@ -1780,7 +1702,7 @@ end)
 -- This works like C pointer deallocation:
 -- input address N of type T actually reads at physical memory address N*sizeof(T)+base
 -- syncAddrData: addr/data come in as one stream (default false)
-SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData, writeFn, addressBase_orig, X)
+SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData, writeFn_orig, addressBase_orig, X)
   J.err( type(filename)=="string","SOC.write: filename must be string")
   J.err( types.isType(writeType), "SOC.write: type must be type")
   J.err( writeType:verilogBits()%8==0, "SOC.write: NYI - type must be byte aligned")
@@ -1789,7 +1711,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   end
   if syncAddrData==nil then syncAddrData=false end
   assert( type(syncAddrData)=="boolean" )
-  J.err( R.isFunction(writeFn), "soc.write: writeFn should be rigel function, but is: "..tostring(writeFn))
+  J.err( R.isFunction(writeFn_orig), "soc.write: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
   local W = Uniform(W_orig)
   if V==nil then V=1 end
 
@@ -1802,12 +1724,12 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   end
   
   local globalMetadata={}
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_address"] = address
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_W"] = W
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_H"] = H
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_V"] = V
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_type"] = tostring(writeType)
-  globalMetadata["MAXI"..SOC.currentMAXIWritePort.."_write_bitsPerPixel"] = writeType:verilogBits()
+  globalMetadata[writeFn_orig.name.."_write_address"] = address
+  globalMetadata[writeFn_orig.name.."_write_W"] = W
+  globalMetadata[writeFn_orig.name.."_write_H"] = H
+  globalMetadata[writeFn_orig.name.."_write_V"] = V
+  globalMetadata[writeFn_orig.name.."_write_type"] = tostring(writeType)
+  globalMetadata[writeFn_orig.name.."_write_bitsPerPixel"] = writeType:verilogBits()
 
   if V>0 then writeType=types.array2d(writeType,V) end
 
@@ -1852,8 +1774,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     writeBytesPerBurst = writeType:verilogBits()/8
   end
 
-  print("INP",inpAddr.type,inpData.type)
-  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, address, writeFn )(inpAddr,inpData)
+  local out = SOC.axiWriteBytes( filename, writeBytesPerBurst, SOC.currentMAXIWritePort, address, writeFn_orig )(inpAddr,inpData)
 
   local N = writeType:verilogBits()/64
   

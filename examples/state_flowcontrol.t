@@ -23,16 +23,16 @@ print("INST",noc.read)
 
 -- only issue requests for which we have pre-allocated storage
 state FlowControl(I:AXI.ReadAddress64,O:AXI.ReadData64)
-  fifo:RM.fifo(AXI.ReadDataTuple(64),8,nil,nil,nil,nil,nil,true,nil,true)
+  fifo:RM.fifo(AXI.ReadDataTuple(64),8,nil,nil,nil,nil,nil,true,nil,true,true)
 --1
   while R.c(true,types.bool()) do
-    if G.LT{7}(fifo:size()) then
-      [fifo:store(noc.read(I))]
+    if G.LT{7}(fifo.size()) then
+      [fifo.store(noc.read(I))]
     else
       [C.Stall(AXI.ReadAddressTuple,true)(I)]
-      [fifo:store(noc:read(C.Invalid(AXI.ReadAddressTuple,true)()))]
+      [fifo.store(noc.read(C.Invalid(AXI.ReadAddressTuple,true)()))]
     end
-    yield fifo:load() -- 2
+    yield fifo.load() -- 2
   end
 end
 

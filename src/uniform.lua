@@ -2,6 +2,7 @@ local types = require "types"
 local J = require "common"
 local R = require "rigel"
 local S = require "systolic"
+local Ssugar = require "systolicsugar"
 local IR = require("ir")
 
 local UniformFunctions = {}
@@ -18,7 +19,7 @@ function Uniform.new(tab)
   return setmetatable(tab,UniformMT)
 end
 
-local opToZ3={mul="*",mod="mod",eq="=",gt=">",lt="<",max="max",ge=">=",le="<=",div="/",sub="-",add="+",["and"]="and",["or"]="or"}
+local opToZ3={mul="*",mod="mod",eq="=",gt=">",lt="<",max="max",ge=">=",le="<=",div="/",sub="-",add="+",["and"]="and",["or"]="or",["^"]="^"}
 function UniformFunctions:toSMT(includeProperties)
   if includeProperties==nil then includeProperties = true end
   local stats = {}
@@ -27,8 +28,8 @@ function UniformFunctions:toSMT(includeProperties)
       local res
       if n.kind=="const" then
         res = tostring(n.value)
-      elseif n.kind=="instanceCallsite" then
-        res = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
+      elseif n.kind=="apply" then
+        res = n.instance.module.name
         table.insert(stats,"(declare-const "..res.." Int)")
       elseif n.kind=="var" then
         table.insert(stats,"(declare-const "..n.name.." Int)")
@@ -39,6 +40,7 @@ function UniformFunctions:toSMT(includeProperties)
           res = "(/ "..inputs[1].." "..tostring(math.pow(2,n.inputs[2].value))..")"
         else
           if opToZ3[n.op]==nil then print("OP",n.op) end
+          assert(n.op~="^") -- not implemented in some versions of z3
           res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
         end
       elseif n.kind=="unary" then
@@ -102,7 +104,7 @@ function UniformFunctions:applySimplifications()
       if simplificationMap[n]~=nil then
         --print("REPLACE",n,"=>",simplificationMap[n])
         return simplificationMap[n]
-      elseif n.kind=="instanceCallsite" or n.kind=="const" or n.kind=="var" then
+      elseif n.kind=="apply" or n.kind=="const" or n.kind=="var" then
         return n
       elseif n.kind=="binop" then
         return Uniform.binop(n.op,inputs[1],inputs[2])
@@ -212,6 +214,29 @@ UniformFunctions.simplify = J.memoize(function(self)
   elseif n.kind=="binop" and n.op=="div" and inputs[2].kind=="const" and inputs[2].value==1 then
     -- X/1->X
     return inputs[1]
+  elseif n.kind=="binop" and n.op=="div" and inputs[1]==inputs[2] then
+    -- X/X->1
+    return Uniform.const(1)
+  elseif n.kind=="binop" and n.op=="mul" and inputs[1]==inputs[2] then
+    -- X*X->X^2
+    return Uniform.binop("^",inputs[1],Uniform.const(2))
+  elseif n.kind=="binop" and n.op=="^" and inputs[2].kind=="const" and inputs[2].value==1 then
+    -- X^1 -> X
+    return inputs[1]
+  elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="binop" and inputs[2].op=="^" and inputs[1]==inputs[2].inputs[1] then
+    -- X*(X^N)->X^(N+1)
+    return Uniform.binop("^",inputs[1],Uniform.const(inputs[2].inputs[2].value+1))
+  elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[2]==inputs[1].inputs[1] then
+    -- (X^N)*X->X^(N+1)
+    return Uniform.binop("^",inputs[2],Uniform.const(inputs[1].inputs[2].value+1))
+  elseif n.kind=="binop" and n.op=="div" and inputs[2].kind=="binop" and inputs[2].op=="^" and inputs[1]==inputs[2].inputs[1] then
+    -- X/X^N -> 1/X^(N-1)
+    return Uniform.binop("div",Uniform.const(1),Uniform.binop("^",inputs[1],inputs[2].inputs[2].value-1))
+  elseif n.kind=="binop" and n.op=="div" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[1].inputs[1]==inputs[2] then
+    -- X^N/X -> X^(N-1)
+    assert(false)
+  elseif n.kind=="binop" and n.op=="div" and inputs[1].kind=="binop" and inputs[1].op=="^" and inputs[2].kind=="binop" and inputs[2].op=="^" then
+    -- X^N/X^M
   elseif n.kind=="binop" and n.op=="mul" and inputs[1].kind=="const" and inputs[1].value==0 then
     return Uniform(0)
   elseif n.kind=="binop" and n.op=="mul" and inputs[2].kind=="const" and inputs[2].value==0 then
@@ -297,7 +322,7 @@ UniformFunctions.simplify = J.memoize(function(self)
     return Uniform.addMSBs(inputs[1],n.msbs)
   elseif n.kind=="sel" then
     return Uniform.sel(inputs[1],inputs[2],inputs[3])
-  elseif n.kind=="const" or n.kind=="var" or n.kind=="instanceCallsite" then
+  elseif n.kind=="const" or n.kind=="var" or n.kind=="apply" then
     return n
   else
     print("simplify missing passthrough?",n.kind)
@@ -365,8 +390,8 @@ Uniform.isNumber = J.memoize(
       return true
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
-    elseif n.kind=="instanceCallsite" then
-      return n.instanceCallsite.outputType:isNumber()
+    elseif n.kind=="apply" then
+      return n.instance.module.outputType:isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()
@@ -421,7 +446,7 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     assert(type(self.value)=="boolean")
     return self.value==alwaysTrue
   else
-    print(":assert() - "..tostring(self))
+
     local z3str = {}
     --table.insert(z3str,"(set-logic QF_LIA)")
     table.insert(z3str,"(define-fun max ((x Int) (y Int)) Int (ite (< x y) y x))")
@@ -436,8 +461,6 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
     z3str = table.concat(z3str,"\n")
     local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
-    print("Z3CALL")
-    print(z3call)
     --print(debug.traceback())
 
     local f = assert (io.popen (z3call))
@@ -450,15 +473,17 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
 
     f:close()
 
-    print("Z3RESULT:"..res.."END")
-
     if string.match(res,"unsat") then
       --      print(debug.traceback())
-      print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
+      --print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
       return true
     else
-      print(debug.traceback())
+      print(":assertAlways() - "..tostring(self))
+      print("Z3CALL assertAlways()")
+      print(z3call)
+      print("Z3RESULT:"..res.."END")
       print("ASSERT_ALWAYS("..tostring(alwaysTrue).." return false")
+      print(debug.traceback())
       return false
     end
   end
@@ -490,8 +515,8 @@ function UniformFunctions:maximum()
     z3str = table.concat(z3str,"\n")
     local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
-    print("Z3CALL")
-    print(z3call)
+    --print("Z3CALL")
+    --print(z3call)
 
     local f = assert (io.popen (z3call))
 
@@ -502,11 +527,11 @@ function UniformFunctions:maximum()
 
     f:close()
 
-    print("Z3RESULT:"..res.."END")
+    --print("Z3RESULT:"..res.."END")
 
     if string.match(res,"sat") then
       local num = string.match (res, "%d+")
-      print("Z3MAX:",num)
+      --print("Z3MAX:",num)
       J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr?")
       return tonumber(num)
     else
@@ -517,13 +542,17 @@ function UniformFunctions:maximum()
   assert(false)
 end
 
-local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+",["and"]="&",["or"]="|",lshift="<<",rshift=">>"}
+local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="max",div="/",sub="-",add="+",["and"]="&",["or"]="|",lshift="<<",rshift=">>",["^"]="^"}
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
-      return tostring(t.value)
-    elseif t.kind=="instanceCallsite" then
-      return t.instanceCallsite.instance.name..":"..t.instanceCallsite.functionName.."()"
+      if type(t.value)=="number" then
+        return tostring(t.value).."/0x"..string.format("%x",t.value)
+      else
+        return tostring(t.value)
+      end
+    elseif t.kind=="apply" then
+      return t.instance.module.name.."()"
     elseif t.kind=="binop" and t.op=="max" then
       return "max("..tostringInner(t.inputs[1])..","..tostringInner(t.inputs[2])..")"
     elseif t.kind=="binop" then
@@ -548,8 +577,8 @@ end
 function UniformFunctions:toEscapedString()
   if self.kind=="const" then
     return tostring(self.value)
-  elseif self.kind=="instanceCallsite" then
-    return [["]]..self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName..[["]]
+  elseif self.kind=="apply" then
+    return [["]]..self.instance.module.name..[["]]
   elseif self.kind=="binop" then
     return self.inputs[1]:toEscapedString()..self.op..self.inputs[2]:toEscapedString()
   else
@@ -567,15 +596,42 @@ function UniformFunctions:toUnescapedString()
   end
 end
 
--- 'tab' should be a map of instance callsites, to which we will append any callsites required to execute this uniform
---       ie: if we include the uniform somewhere in this module, it may need to read some values (instance callsite)
---           use this fn to get that list of things it requires
--- this will mutate 'tab'!
-function UniformFunctions:appendRequires(tab)
+-- return map of rigel instances needed to implement this uniform
+function UniformFunctions:getInstances()
+  local instanceMap = {}
   self:visitEach(
     function(n)
-      if n.kind=="instanceCallsite" then
-        tab[n.instanceCallsite] = 1
+      if n.kind=="apply" then
+        instanceMap[n.instance] = 1
+      end
+    end)
+  return instanceMap
+end
+
+function UniformFunctions:appendRequires(requires)
+  self:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        for inst,fnmap in pairs(n.instance.module.requires) do
+          if requires[inst]==nil then requires[inst]={} end
+          for fnname,_ in pairs(fnmap) do
+            requires[inst][fnname] = 1
+          end
+        end
+      end
+    end)
+end
+
+function UniformFunctions:appendProvides(provides)
+  self:visitEach(
+    function(n)
+      if n.kind=="apply" then
+        for inst,fnmap in pairs(n.instance.module.provides) do
+          if provides[inst]==nil then provides[inst]={} end
+          for fnname,_ in pairs(fnmap) do
+            provides[inst][fnname] = 1
+          end
+        end
       end
     end)
 end
@@ -585,8 +641,8 @@ function UniformFunctions:toVerilog(ty)
   J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
   assert(self:canRepresentUsing(ty))
 
-  if self.kind=="instanceCallsite" then
-    return self.instanceCallsite.instance.name.."_"..self.instanceCallsite.functionName
+  if self.kind=="apply" then
+    return self.instance.name.."_process_output"
   elseif self.kind=="const" then
     return S.valueToVerilog( self.value, ty )
   elseif self.kind=="binop" then
@@ -596,18 +652,38 @@ function UniformFunctions:toVerilog(ty)
   end
 end
 
+function UniformFunctions:toVerilogInstance()
+  if self.kind=="apply" then
+    return self.instance:toVerilog()
+  end
+  return ""
+end
+
 local opToSystolic={mul="*",rshift=">>",lshift="<<",sub="-"}
-function UniformFunctions:toSystolic(ty)
+-- systolicModule: we can automatically append instance list fo a systolic module constructor if this is given
+function UniformFunctions:toSystolic( ty, systolicModule, X )
   J.err( types.isType(ty),"Uniform:toSystolic(): input must be type" )
   J.err(self:canRepresentUsing(ty),":toSystolic() Error: "..tostring(self).." can't be represented using type "..tostring(ty))
+  J.err( systolicModule==nil or Ssugar.isModuleConstructor(systolicModule), ":toSystolic() second arg should be module constructor" )
+  assert(X==nil)
   
   return self:visitEach(
     function(n,inputs)
 
-      if n.kind=="instanceCallsite" then
-        --return S.readSideChannel(n.global.systolicValue)
-        local sinst = (n.instanceCallsite.instance:toSystolicInstance())
-        return sinst[n.instanceCallsite.functionName](sinst)
+      if n.kind=="apply" then
+        local sinst = (n.instance:toSystolicInstance())
+
+        if systolicModule~=nil then
+          systolicModule:add(sinst)
+
+          for inst,fnmap in pairs(sinst.module.externalInstances) do
+            for fnname,_ in pairs(fnmap) do
+              systolicModule:addExternalFn(inst,fnname)
+            end
+          end
+        end
+        
+        return sinst:process()
       elseif n.kind=="const" then
         return S.constant( n.value, types.valueToType(n.value) )
       elseif n.kind=="binop" then
@@ -628,8 +704,8 @@ Uniform.canRepresentUsing = J.memoize(
     if n.kind=="const" then
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
-    elseif n.kind=="instanceCallsite" then
-      return n.instanceCallsite.outputType:canSafelyConvertTo(ty)
+    elseif n.kind=="apply" then
+      return n.instance.module.outputType:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
@@ -669,40 +745,6 @@ function UniformFunctions:isUint()
   return self:isNumber() and self:ge(0):assertAlwaysTrue()
 end
 
--- convert to a verilog string of the input ports required for any globals
-function UniformFunctions:toVerilogPortList()
-  local res = {}
-
-  self:visitEach(
-    function(n)
-      if n.kind=="instanceCallsite" then
-        local fn = n.instanceCallsite.instance.module.functions[n.instanceCallsite.functionName]
-        table.insert( res, S.declarePort( fn.outputType, n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName, true ) )
-      end
-    end)
-
-  local rr = table.concat(res,",")
-  if #res>0 then rr = rr.."," end
-  return rr
-end
-
--- convert to a verilog string with a port list passthrough, ie ".XXX(XXX),"
-function UniformFunctions:toVerilogPassthrough()
-  local res = {}
-
-  self:visitEach(
-    function(n)
-      if n.kind=="instanceCallsite" then
-        local nm = n.instanceCallsite.instance.name.."_"..n.instanceCallsite.functionName
-        table.insert(res,"."..nm.."("..nm..")")
-      end
-    end)
-
-  local rr = table.concat(res,",")
-  if #res>0 then rr = rr.."," end
-  return rr
-end
-
 local UniformTopMT = {}
 setmetatable(Uniform,UniformTopMT)
 
@@ -717,8 +759,9 @@ UniformTopMT.__call = J.memoize(function(tab,arg,X)
 
   if Uniform.isUniform(arg) then
 return arg
-  elseif R.isInstanceCallsite(arg) then
-return Uniform.new{kind="instanceCallsite",instanceCallsite=arg,inputs={}}
+  elseif R.isPlainFunction(arg) then
+    assert(arg.inputType==types.null())
+return Uniform.new{kind="apply",instance=arg:instantiate(),inputs={}}
   elseif type(arg)=="number" then
 return Uniform.const(arg)
   elseif type(arg)=="boolean" then

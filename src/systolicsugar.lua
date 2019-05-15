@@ -42,6 +42,7 @@ CE=function(self,I) self.hasCE=I; return self end}
 sugar.regByConstructor = moduleConstructor{
 new=function( ty, setby )
   assert( types.isType(ty) )
+  if sugar.isModuleConstructor(setby) then setby=setby:complete() end
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
@@ -148,7 +149,7 @@ function sugar.moduleConstructor( name, X )
   checkReserved(name)
 
   -- we need to put the options in their own table, b/c otherwise nil options will go to the __index metamethod
-  local t = { __name=name, __functions={}, isComplete=false, __usedNames={}, __instanceMap={}, __options={}, __sideChannels={}, __externalInstances={} }
+  local t = { __name=name, __functions={}, isComplete=false, __usedNames={}, __instanceMap={}, __options={}, __sideChannels={}, __externalInstances={}, __providesMap={} }
 
   return setmetatable( t, systolicModuleConstructorMT )
 end
@@ -186,11 +187,11 @@ function systolicModuleConstructor:addExternal( inst, fnmap, X )
 --  end
 
   if self.__externalInstances[inst]==nil then
-    self.__externalInstances[inst] = fnmap
-  else
-    for k,v in pairs(fnmap) do
-      self.__externalInstances[inst][k]=1
-    end
+    self.__externalInstances[inst] = {}
+  end
+  
+  for k,v in pairs(fnmap) do
+    self.__externalInstances[inst][k]=1
   end
   
   self.__usedNames[inst.name] = inst
@@ -208,6 +209,24 @@ function systolicModuleConstructor:addExternalFn( inst, fnname, X )
     self.__externalInstances[inst][fnname]=1
     return inst
   end
+end
+
+function systolicModuleConstructor:addProvidesFn( inst, fnname, X )
+  err( type(fnname)=="string","addProvidesFn: fnname should be string")
+  err(X==nil,"systolicsugar: too many arguments")
+  err( systolic.isInstance(inst), "must be an instance" )
+
+  checkReserved(inst.name)
+
+  if self.__providesMap[inst]==nil then
+    self.__providesMap[inst] = {}
+  end
+  
+  self.__providesMap[inst][fnname]=1
+  
+  self.__usedNames[inst.name] = inst
+
+  return inst
 end
 
 function systolicModuleConstructor:lookupInstance( instName,X )
@@ -249,7 +268,7 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
     local fns = J.map(self.__functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
-    self.module = systolic.module.new( self.__name, fns, J.invertAndStripKeys(self.__instanceMap), self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__externalInstances )
+    self.module = systolic.module.new( self.__name, fns, J.invertAndStripKeys(self.__instanceMap), self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__externalInstances, self.__providesMap )
     self.isComplete = true
   end
   return self.module

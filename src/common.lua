@@ -719,4 +719,28 @@ function common.flatten(arr)
   return t
 end
 
+function common.immutable(t)
+  -- keep a private access to original table
+  local _t = t
+  
+  -- create proxy
+  local t = {}
+  
+  -- create metatable
+  local mt = {
+    __index = function (t,k)
+      --print("*access to element " .. tostring(k))
+      return _t[k]   -- access the original table
+    end,
+    
+    __newindex = function (t,k,v)
+      print("*update of element " .. tostring(k) ..
+              " to " .. tostring(v))
+      assert(false)
+      _t[k] = v   -- update original table
+    end
+  }
+  return setmetatable(t, mt)
+end
+
 return common

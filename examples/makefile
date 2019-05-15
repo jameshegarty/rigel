@@ -10,7 +10,8 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_SOC))
 
-SRCS_STATE = state_simple.t state_flowcontrol.t
+# state_flowcontrol.t
+SRCS_STATE = state_simple.t
 
 STATE = $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_STATE))
 STATE += $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_STATE))

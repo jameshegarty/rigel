@@ -308,6 +308,7 @@ local function passthroughSystolic( res, systolicModule, inner, passthroughFns, 
       res:addFunction( S.lambda(fnname.."_reset", resetSrcFn:getInput(), inner[fnname.."_reset"]( inner, resetSrcFn:getInput() ), resetSrcFn:getOutputName(), nil, resetSrcFn:getValid() ) )
     end
 
+    res:setDelay(fnname,systolicModule:getDelay(fnname))
   end
 end
 
@@ -477,7 +478,7 @@ modules.waitOnInput = memoize(function( f, X )
   return rigel.newFunction(res)
 end)
 
-local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger )
+local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger, X )
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule=systolicModule:toModule() end
   assert( S.isModule(systolicModule) )
   assert(type(handshakeTrigger)=="boolean")
@@ -515,6 +516,7 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
     elseif pout.type:isBool() then
       pout_valid = pout
     else
+      print("liftDecimateDystolic of "..systolicModule.name.." NYI type "..tostring(pout.type))
       assert(false)
     end
     local validout = pout_valid
@@ -535,7 +537,13 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
       -- stateless modules don't have a reset
       res:addFunction( S.lambda(prefix.."reset", S.parameter("r",types.null()), inner[prefix.."reset"](inner), "ro", {},S.parameter(prefix.."reset",types.bool())) )
     end
-    res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
+
+    if srcFn.inputParameter.type==types.null() and handshakeTrigger==false then
+      -- if fn has null input, ready shouldn't return anything
+      res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), nil, prefix.."ready", {} ) )
+    else
+      res:addFunction( S.lambda(prefix.."ready", S.parameter(prefix.."readyinp",types.null()), S.constant(true,types.bool()), prefix.."ready", {} ) )
+    end
   end
 
   passthroughSystolic( res, systolicModule, inner, passthroughFns )
@@ -712,14 +720,14 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     else
       out = pout
     end
-    
+
     local readyOut
-    if hasReadyInput[K] then
+    if hasReadyInput[K] and systolicModule.functions[prefix.."ready"].output~=nil and systolicModule.functions[prefix.."ready"].output.type~=types.null() then
       readyOut = systolic.__and(inner[prefix.."ready"](inner),downstreamReady)
     else
       readyOut = inner[prefix.."ready"](inner)
     end
-    
+
     local pipelines = {}
     if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
     if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
@@ -734,6 +742,8 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     assert( systolicModule:getDelay(prefix.."ready")==0 ) -- ready bit calculation can't be pipelined! That wouldn't make any sense
     
     res:addFunction( S.lambda(prefix.."ready", downstreamReady, readyOut, prefix.."ready" ) )
+
+    res:setDelay(fnname,systolicModule:getDelay(fnname))
   end
 
   assert(res:lookupFunction("reset")~=nil)
@@ -747,8 +757,11 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 end
 
 -- takes V->RV to Handshake->Handshake
-modules.liftHandshake = memoize(function( f, X )
+-- if input type is null, and handshakeTrigger==true, we produce input type HandshakeTrigger
+-- if input type is null, and handshakeTrigger==false, we produce input type null
+modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err( X==nil, "liftHandshake: too many arguments" )
+    
   local res = {kind="liftHandshake", fn=f}
   err( rigel.isV(f.inputType) or rigel.isVTrigger(f.inputType) or f.inputType:is("VFramed"), "liftHandshake: expected V or VTrigger or VFramed input type")
   err( rigel.isRV(f.outputType) or rigel.isRVTrigger(f.outputType) or f.outputType:is("RVFramed"),"liftHandshake: expected RV or RVTrigger or RVFramed output type")
@@ -882,9 +895,9 @@ modules.map = memoize(function( f, W, H, X )
     res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
 
     res.requires = {}
-    for ic,_ in pairs(f.requires) do res.requires[ic]=1 end
+    for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
     res.provides = {}
-    for ic,_ in pairs(f.provides) do res.provides[ic]=1 end
+    for inst,fnmap in pairs(f.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
       
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -953,8 +966,10 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
     res.sdfOutput=SDF{1,1}
   end
   
-  res.requires={}
-  for k,_ in pairs(fn.requires) do res.requires[k]=1 end
+  res.requires = {}
+  for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
+  res.provides = {}
+  for inst,fnmap in pairs(fn.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
 
   res.globalMetadata = {}
   for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
@@ -1007,13 +1022,26 @@ modules.mapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputM
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
 
-    for ic,_ in pairs(res.requires) do
-      sm:addExternalFn(ic.instance:toSystolicInstance(),ic.functionName)
-      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-        sm:addExternalFn(ic.instance:toSystolicInstance(),ic.functionName.."_ready")
+    for inst,fnmap in pairs(res.requires) do
+      for fnname,_ in pairs(fnmap) do
+        sm:addExternalFn(inst:toSystolicInstance(),fnname)
+        local fn = inst.module.functions[fnname]
+        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+          sm:addExternalFn(inst:toSystolicInstance(),fnname.."_ready")
+        end
       end
     end
-    
+
+    for inst,fnmap in pairs(res.provides) do
+      for fnname,_ in pairs(fnmap) do
+        sm:addProvidesFn(inst:toSystolicInstance(),fnname)
+        local fn = inst.module.functions[fnname]
+        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+          sm:addProvidesFn(inst:toSystolicInstance(),fnname.."_ready")
+        end
+      end
+    end
+
     local inner = sm:add(fn.systolicModule:instantiate("inner"))
 
     local CE = S.CE("process_CE")
@@ -2893,10 +2921,10 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
   res.requires = {}
-  for ic,_ in pairs(f.requires) do res.requires[ic]=1 end
+  for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
   res.provides = {}
-  for ic,_ in pairs(f.provides) do res.provides[ic]=1 end
-  
+  for inst,fnmap in pairs(f.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
+
   if terralib~=nil then res.makeTerra = function() return MT.makeHandshake(res, f, tmuxRates, nilhandshake ) end end
 
   function res.makeSystolic()
@@ -3003,7 +3031,7 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, X )
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, X )
   rigel.expectBasic(A)
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
@@ -3019,6 +3047,8 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
 
   if SDFRate==nil then SDFRate=SDF{1,1} end
   err( SDF.isSDF(SDFRate),"modules.fifo: SDFRate must be nil or SDF rate")
+
+  if includeSizeFn==nil then includeSizeFn=false end
   
   assert(X==nil)
 
@@ -3049,8 +3079,11 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   local loadRigelFn = rigel.newFunction(loadFunction)
 
   local addrBits = (math.ceil(math.log(size)/math.log(2)))+1
-  local sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=false}
-
+  local sizeRigelFn
+  if includeSizeFn then
+    sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=false}
+  end
+  
   local terraModule
   if terralib~=nil then terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
 
@@ -3135,8 +3168,11 @@ return mod
         reset:addPipeline(fifo:pushBackReset())
         reset:addPipeline(fifo:popFrontReset())
         --------------
-        local sizeFn = systolicModule:addFunction( Ssugar.lambdaConstructor( "size" ) )
-        sizeFn:setOutput( fifo:size(), "size" )
+        if includeSizeFn then
+          local sizeFn = systolicModule:addFunction( Ssugar.lambdaConstructor( "size" ) )
+          sizeFn:setOutput( fifo:size(), "size" )
+        end
+        
         --------------
         -- debug
         if W~=nil then
@@ -3153,15 +3189,15 @@ return mod
         end
         --------------
         
-        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset","size"}, false )
-        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset","size"})
-        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset","size"},{true,false})
+        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset",J.sel(includeSizeFn,"size",nil)}, false )
+        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset",J.sel(includeSizeFn,"size",nil)})
+        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset",J.sel(includeSizeFn,"size",nil)},{true,false})
         
         return systolicModule
       end
     end
 
-    local res = rigel.newModule( name, {store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, true, makeSystolic, function() return terraModule end )
+    local res = rigel.newModule{ name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=true, makeSystolic=makeSystolic, makeTerra=function() return terraModule end }
     res.kind="fifo"
 return res
   end
@@ -3170,18 +3206,34 @@ return res
 end)
 
 modules.triggerFIFO = memoize(function()
-
   local SDFRate = SDF{1,1}
   local storeFunction = rigel.newFunction{name="store", inputType=types.HandshakeTrigger,  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
   local loadFunction = rigel.newFunction{name="load", inputType=types.null(), outputType=types.HandshakeTrigger, sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
 
   local name = "TriggerFIFO"
-  local res = rigel.newModule( name, {store=storeFunction, load=loadFunction}, true )
+  local res = rigel.newModule{ name=name, functions={store=storeFunction, load=loadFunction}, stateful=true }
   res.kind="fifo"
 
   function res.makeSystolic()
     local C = require "examplescommon"
     local s = C.automaticSystolicStub(res)
+
+    local vstr = res:vHeader()..[=[
+  reg [31:0] cnt;
+  always @(posedge CLK) begin
+    if (reset==1'b1) begin
+      cnt <= 32'd0;
+    end else if (store_ready==1'b1 && store_input==1'b1) begin
+      cnt <= cnt+32'd1;
+    end else if ( load_ready_downstream==1'b1 && cnt>32'd0) begin
+      cnt <= cnt-32'd1;
+    end
+  end
+  assign store_ready = cnt<32'd4294967295;
+  assign load_output = (cnt>32'd0);
+endmodule
+]=]
+    s:verilog(vstr)
     return s
   end
   
@@ -3854,178 +3906,86 @@ local function checkFIFOs(output)
     end)
 end
 
+-- this will go through the module/instances, and collect list of provided/required ports that are not tied down
+local function collectProvidesRequires( moduleName, output, instanceMap )
+  -- instance->fnlist
+  local provides = {}
+  local requires = {}
 
-local function collectInstances( moduleName, output, instances )
-  -- add instances to instance list that are fully resolved
-  -- (ie, all their dependencies and provided functions are fully tied down)
-  -- Note: this simple algorithm doesn't cover complex cases (mutual recursion between instances)
-  --       for those cases, user has to explicitly add instances to instance list
-
-  -- hashes of instance callsites this fn definitely provides/requires
-  local providesMap = {}
-  local requiresMap = {}
-
-  -- hash of all instances we may potentially need
-  local requiredInstanceMap = {}
-
-  -- hash of instances to add to this module
-  local instanceMap = {}
-
-  -- make sure we add the instances the user has explicitly added
-  for _,inst in ipairs(instances) do
-    instanceMap[inst] = 1
-
-    for instanceCallsite,_ in pairs(inst.module.requires) do
-      requiredInstanceMap[instanceCallsite.instance] = 1
-      requiresMap[instanceCallsite] = 1
+  local function addDependencies(mod)
+    for inst,fnmap in pairs(mod.requires) do
+      if requires[inst]==nil then requires[inst] = {} end
+      for fnname,_ in pairs(fnmap) do
+        local fn = inst.module.functions[fnname]
+        J.err( requires[inst][fnname]==nil or fn.inputType==types.null(), "Multiple modules require the same function? "..inst.name..":"..fnname)
+        requires[inst][fnname] = 1
+      end
     end
 
-    for instanceCallsite,_ in pairs(inst.module.provides) do
-      providesMap[instanceCallsite] = 1
+    for inst,fnmap in pairs(mod.provides) do
+      if provides[inst]==nil then provides[inst] = {} end
+      for fnname,_ in pairs(fnmap) do
+        J.err( requires[inst][fnname]==nil, "Multiple modules provide the same function? "..inst.name..":"..fnname)
+        provides[inst][fnname] = 1
+      end
     end
   end
 
-  -- collect other instances refered to by the fn
+  for inst,_ in pairs(instanceMap) do
+    addDependencies(inst.module)
+    
+     if rigel.isModule(inst.module) then
+      -- all fns in this module should be added to provides list
+      for fnname,fn in pairs(inst.module.functions) do
+        J.deepsetweak(provides,{inst,fnname},1)
+      end
+    end
+  end
+
+  -- collect other instances refered to by the fn code
   output:visitEach(
     function(n)
       if n.kind=="applyMethod" then
-        requiredInstanceMap[n.inst] = 1
-        if rigel.isModule(n.inst.module) then
-          requiresMap[rigel.newInstanceCallsite(n.inst,n.fnname)] = 1
-        elseif rigel.isPlainFunction(n.inst.module) then
-          -- just ignore this: there's no reason to make plain functions external
-        else
-          assert(false)
-        end
+        -- *** just because we called one fn on an inst, doesn't mean we need to include the whole thing
+        if requires[n.inst]==nil then requires[n.inst]={} end
+        J.err( requires[n.inst][n.fnname]==nil, "Multiple modules require the same function? "..n.inst.name..":"..n.fnname)
+        requires[n.inst][n.fnname] = 1
       elseif n.kind=="apply" then
-        for instanceCallsite,_ in pairs(n.fn.requires) do
-          requiredInstanceMap[instanceCallsite.instance] = 1
-          requiresMap[instanceCallsite] = 1
-        end
-
-        for instanceCallsite,_ in pairs(n.fn.provides) do
-          providesMap[instanceCallsite] = 1
-        end
+        addDependencies(n.fn)
       end
     end)
 
-  -- now we know what instances we may want, and have list of callsites tied down
-  -- go through and add anything fully resolved
+  return provides, requires
+end
 
-  for inst,_ in pairs(requiredInstanceMap) do
-    assert( rigel.isInstance(inst) )
-    local tiedDown = true
-
-    for instanceCallsite,_ in pairs(inst.module.requires) do
-      if requiresMap[instanceCallsite]==nil then tiedDown=false end
-    end
-
-    for instanceCallsite,_ in pairs(inst.module.provides) do
-      if requiresMap[instanceCallsite]==nil then tiedDown=false end
-    end
-
-    if rigel.isModule(inst.module) then
-      for fnname, fn in pairs(inst.module.functions) do
-        if requiresMap[rigel.newInstanceCallsite(inst,fnname)]==nil then tiedDown=false end
-      end
-    elseif rigel.isPlainFunction(inst.module) then
-      -- just ignore this: there's no reason to make plain functions external
-    else
-      assert(false)
-    end
-    
-    if tiedDown and (inst.extern~=true) then
-      instanceMap[inst] = 1
-    end
-  end
-
-  -- make sure we have all provides/requires up to date for our final instance list
-  for inst,_ in pairs(instanceMap) do
-    -- add these new instances to provides/dependencies list
-    for instanceCallsite,_ in pairs(inst.module.requires) do
-      requiresMap[instanceCallsite]=1
-    end
-
-    for instanceCallsite,_ in pairs(inst.module.provides) do
-      providesMap[instanceCallsite]=1
-    end
-
-    if rigel.isModule(inst.module) then
-      for fnname, fn in pairs(inst.module.functions) do
-        providesMap[rigel.newInstanceCallsite(inst,fnname)]=1
-      end
-    elseif rigel.isPlainFunction(inst.module) then
-      -- just ignore this: there's no reason to make plain functions external
-    else
-      assert(false)
-    end
-  end
-
-  -- now tie off matches between the provides & requires list
-  for instanceCallsite,_ in pairs(providesMap) do
-    -- was this internally tied down?
-    if requiresMap[instanceCallsite]~=nil then
-      --print(instanceCallsite.instance.name..":"..instanceCallsite.functionName.." tied down")
-      providesMap[instanceCallsite]=nil
-      requiresMap[instanceCallsite]=nil
-    end
-  end
-
-  for instanceCallsite,_ in pairs(requiresMap) do
-    -- was this internally tied down?
-    if providesMap[instanceCallsite]~=nil then
-      --print(instanceCallsite.instance.name..":"..instanceCallsite.functionName.." tied down")
-      requiresMap[instanceCallsite]=nil
-      providesMap[instanceCallsite]=nil
-    end
-  end
-
-  -- generate externalInstances table for systolic
-  local externalInstances = {}
-  for ic,_ in pairs(requiresMap) do
-    if externalInstances[ic.instance]==nil then externalInstances[ic.instance]={} end
-    externalInstances[ic.instance][ic.functionName]=1
-
-    if rigel.isModule(ic.instance.module) then
-      local fn = ic.instance.module.functions[ic.functionName]
-      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-        externalInstances[ic.instance][ic.functionName.."_ready"]=1
-      end
-    elseif rigel.isPlainFunction(ic.instance.module) then
-      if types.isHandshakeAny(ic.instance.module.inputType) or types.isHandshakeAny(ic.instance.module.outputType) then
-        externalInstances[ic.instance][ic.functionName.."_ready"]=1
-      end
-    else
-      assert(false)
-    end
-  end
-
+local function checkInstTables( moduleName, output, instanceMap, provides, requires, userInstanceMap)
   -- purely checking
   for inst,_ in pairs(instanceMap) do
-    for ic,_ in pairs(inst.module.requires) do
-      err( requiresMap[ic]~=nil, "Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in requires list?" )
-      err( externalInstances[ic.instance][ic.functionName]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in external instances list?" )
-      local fn = ic.instance.module.functions[ic.functionName]
-      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-        err( externalInstances[ic.instance][ic.functionName.."_ready"]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."_ready(), but this is not in external instances list?" )
+    for rinst,rfnmap in pairs(inst.module.requires) do
+      for rfn,_ in pairs(rfnmap) do
+        err( instanceMap[rinst]~=nil or (requires[rinst]~=nil and requires[rinst][rfn]~=nil), "Instance '"..inst.name.."' requires "..rinst.name..":"..rfn.."(), but this is not in requires list or internal instance list?" )
+        --err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName]~=nil) or instanceMap[ic.instance]~=nil,"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName..", but this is not in external or internal instances list?" )
+        --local fn = ic.instance.module.functions[ic.functionName]
+        --if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+         -- err( (externalInstances[ic.instance]~=nil and externalInstances[ic.instance][ic.functionName.."_ready"]~=nil) or (instanceMap[ic.instance]~=nil),"Instance '"..inst.name.."' requires "..ic.instance.name..":"..ic.functionName.."_ready(), but this is not in external or internal instances list?" )
+        --end
       end
-      
     end
   end
 
   -- checking
-  for _,inst in ipairs(instances) do
-    if externalInstances[inst]~=nil then
-      err( false, "The instance '"..inst.name.."' of module '"..inst.module.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(externalInstances[inst]),",") )
+  for inst,_ in pairs(userInstanceMap) do
+    if requires[inst]~=nil then
+      err( false, "The instance '"..inst.name.."' of module '"..inst.module.name.."' that the user explicitly included in module '"..moduleName.."' somehow ended up getting set as external? fnlist: "..table.concat(J.invertAndStripKeys(requires[inst]),",") )
     end
   end
 
-  for einst,_ in pairs(externalInstances) do
+  for einst,_ in pairs(requires) do
     err( instanceMap[einst]==nil, "External instance '"..einst.name.."' is somehow also in instance list?")
   end
 
   for inst,_ in pairs(instanceMap) do
-    err( externalInstances[inst]==nil, "Instance '"..inst.name.."' is somehow also in external instance list?")
+    err( requires[inst]==nil, "Instance '"..inst.name.."' is somehow also in external instance list?")
   end
 
   local usedInstances = {}
@@ -4033,23 +3993,91 @@ local function collectInstances( moduleName, output, instances )
     function(n)
       if n.kind=="applyMethod" then
         usedInstances[n.inst] = 1
+      elseif n.kind=="apply" then
       end
     end)
 
+  -- it's OK for the instance to not be used if user explicitly placed it there...
   for inst,_ in pairs(instanceMap) do
-    err( usedInstances[inst]~=nil, "Instance '"..inst.name.."' was not used?")
+    err( usedInstances[inst]~=nil or userInstanceMap[inst]~=nil, "Instance '"..inst.name.."' was not used? inside module '"..moduleName.."'")
   end
 
   for inst,_ in pairs(usedInstances) do
-    err( instanceMap[inst]~=nil or externalInstances[inst]~=nil, "Instance '"..inst.name.."' was used, but is not in instance map?")
+    err( instanceMap[inst]~=nil or requires[inst]~=nil, "Instance '"..inst.name.."' was used in function '"..moduleName.."', but is not in instance map or requires map?")
   end
 
-  return instanceMap, providesMap, requiresMap, externalInstances
+end
+
+local function collectInstances( moduleName, output, userInstanceMap )
+  assert( type(userInstanceMap)=="table" )
+  -- add instances to instance list that are fully resolved
+  -- (ie, all their dependencies and provided functions are fully tied down)
+
+  -- collect set of all provides/requires in the module (some may be tied down!)
+  local provides, requires = collectProvidesRequires( moduleName, output, userInstanceMap )
+
+  -- delete matched provides/requires connections, and add fully wired modules to instance map    
+  local finalRequires = {}
+  local finalProvides = {}
+  
+  -- clear matching connections
+  -- NOTE: even if we delete everything out of FN list, we keep an empty FN list around!
+  --       this is how we detect tied down instances
+  for instance,fnmap in pairs(requires) do
+    if finalRequires[instance]==nil then finalRequires[instance]={} end
+    for fn,_ in pairs(fnmap) do  -- add anything not tied down
+      if provides[instance]==nil or provides[instance][fn]==nil then finalRequires[instance][fn]=1 end
+    end
+  end
+
+  for instance,fnmap in pairs(provides) do
+    if finalProvides[instance]==nil then finalProvides[instance]={} end
+    for fn,_ in pairs(fnmap) do
+      if requires[instance]==nil or requires[instance][fn]==nil then finalProvides[instance][fn]=1 end
+    end
+  end
+
+  -- anything in final requires/provides that has no fns in list is tied down
+  local finalFinalRequires = {}
+  local finalFinalProvides = {}
+  local instanceMap = {}
+  for inst,_ in pairs(userInstanceMap) do instanceMap[inst]=1 end
+  
+  for inst,fnmap in pairs(finalRequires) do
+    -- anything explicitly added has all requirements satisfied...
+    if (J.keycount(fnmap)==0 and J.keycount(finalProvides[inst])==0) or userInstanceMap[inst]~=nil then
+      -- tied down. add to Instance Map
+      instanceMap[inst] = 1
+    else
+      for fn,_ in pairs(fnmap) do
+        J.deepsetweak(finalFinalRequires,{inst,fn},1)
+      end
+    end
+  end
+
+  for inst,fnmap in pairs(finalProvides) do
+    if J.keycount(fnmap)==0 and J.keycount(finalRequires[inst])==0 then
+      -- tied down. add to Instance Map
+      instanceMap[inst] = 1
+    else
+      for fn,_ in pairs(fnmap) do
+        J.deepsetweak(finalFinalProvides,{inst,fn},1)
+      end
+    end
+  end
+
+  checkInstTables( moduleName, output, instanceMap, finalFinalProvides, finalFinalRequires, userInstanceMap )
+  
+  return instanceMap, finalFinalProvides, finalFinalRequires
+end
+
+function modules.lambdaTab(tab)
+  return modules.lambda(tab.name,tab.input,tab.output,tab.instanceList, tab.generatorStr, tab.generatorParams, tab.globalMetadata)
 end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instances, generatorStr, generatorParams, globalMetadata, X )
+function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -4057,16 +4085,18 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
   err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
   err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
   err( rigel.isIR( output ), "modules.lambda: module '"..tostring(name).."' output should be Rigel value, but is: "..tostring(output) )
-  if instances==nil then instances={} end
-  err( type(instances)=="table", "lambda: instances must be nil or a table")
-  J.map( instances, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
+  if instanceList==nil then instanceList={} end
+  err( type(instanceList)=="table", "lambda: instances must be nil or a table")
+  J.map( instanceList, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
   err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
 
+  local instanceMap = J.invertTable(instanceList)
+  instanceList=nil -- now invalid
+
   -- collect instances (user doesn't have to explicitly give all instances)
-  local instanceMap, providesList, requiresList, externalInstances = collectInstances( name, output, instances )
-  instances=nil -- now invalid
+  local instanceMap, provides, requires, requiresWithReadys = collectInstances( name, output, instanceMap )
   
   if rigel.SDF then
     input, output = lambdaSDFNormalize(input,output,name)
@@ -4080,7 +4110,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requiresList, provides=providesList, externalInstances=externalInstances, globalMetadata={} }
+  local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requires, provides=provides, globalMetadata={} }
 
   if input==nil then
     res.inputType = types.null()
@@ -4124,6 +4154,10 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       end
     end)
 
+  for inst,_ in pairs(res.instanceMap) do
+    res.stateful = res.stateful or inst.module.stateful
+  end
+  
   if input~=nil and input.type~=types.null() and rigel.isStreaming(input.type)==false and rigel.isStreaming(output.type)==false then
     res.delay = output:visitEach(
       function(n, inputs)
@@ -4148,7 +4182,7 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
           assert(false)
         end
 
-        err( type(res)=="number",n.kind.." returned a non-numeric delay?")
+        err( type(res)=="number",n.kind.." returned a non-numeric delay? "..tostring(res))
         return res
       end)
   end
@@ -4242,22 +4276,58 @@ function modules.lambda( name, input, output, instances, generatorStr, generator
       reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
     end
     
-
-
     for inst,_ in pairs(fn.instanceMap) do
       err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
       -- even though this isn't external here, it may be refered to in other modules (ie some ports may be externalized), so we need to use the same instance
       local I = module:add( inst:toSystolicInstance() )
         
       if inst.module.stateful then
+        J.err(module:lookupFunction("reset")~=nil,"module '"..fn.name.."' instantiates a stateful module '"..inst.module.name.."', but is not itself stateful? stateful="..tostring(res.stateful) )
         module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
       end
     end
 
-    for inst,fnmap in pairs(fn.externalInstances) do
-      local I = module:addExternal( inst:toSystolicInstance(), fnmap )
+    for inst,fnmap in pairs(fn.requires) do
+      module:addExternal( inst:toSystolicInstance(), fnmap )
+
+      -- hack: systolic expects ready to be explicitly given! 
+      if rigel.isModule(inst.module) then
+        for fnname,_ in pairs(fnmap) do
+          local fn = inst.module.functions[fnname]
+
+          if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+            module:addExternalFn( inst:toSystolicInstance(), fnname.."_ready" )
+          end
+        end
+      elseif rigel.isPlainFunction(ic.instance.module) then
+        if types.isHandshakeAny(ic.instance.module.inputType) or types.isHandshakeAny(ic.instance.module.outputType) then
+          module:addExternalFn( inst:toSystolicInstance(), fnname.."_ready" )
+        end
+      else
+        assert(false)
+      end
     end
-    
+
+    for inst,fnmap in pairs(fn.provides) do
+      for fnname,_ in pairs(fnmap) do
+        module:addProvidesFn( inst:toSystolicInstance(), fnname )
+
+        -- hack...
+        if rigel.isModule(inst.module) then
+          local fn = inst.module.functions[fnname]
+          if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+            module:addProvidesFn( inst:toSystolicInstance(), fnname.."_ready" )
+          end
+        elseif rigel.isPlainFunction(inst.module) then
+          if types.isHandshakeAny(inst.module.inputType) or types.isHandshakeAny(inst.module.outputType) then
+            module:addProvidesFn( inst:toSystolicInstance(), fnname.."_ready" )
+          end
+        else
+          assert(false)
+        end
+      end
+    end
+
     local out = fn.output:codegenSystolic( module )
 
     if HANDSHAKE_MODE==false and (out[1]:isPure()==false or out[1]:getDelay()>0) then 
@@ -4306,7 +4376,7 @@ end
 -- makeSystolic: a lua function that returns the systolic implementation. 
 --      Input argument: systolic input value. Output: systolic output value, systolic instances table
 -- outputType, delay are optional, but will cause systolic to be built if they are missing!
-function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, requires, X )
+function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, instanceMap, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
@@ -4317,14 +4387,14 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( generatorStr==nil or type(generatorStr)=="string", "generatorStr must be nil or string")
   assert(X==nil)
 
-  if requires==nil then requires={} end
-  err( type(requires)=="table", "lift: requires map should be table")
+  if instanceMap==nil then instanceMap={} end
+  err( type(instanceMap)=="table", "lift:  instanceMap should be table")
   
   if sdfOutput==nil then sdfOutput = SDF{1,1} end
 
   name = J.verilogSanitize(name)
 
-  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, requires=requires }
+  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, instanceMap=instanceMap }
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
@@ -4386,14 +4456,54 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   return res
 end
 
+function modules.moduleLambda( name, functionList, instanceList, X )
+  err( type(name)=="string", "moduleLambda: name must be string")
+  assert(X==nil)
+  
+    -- collect globals of all fns
+  local requires = {}
+  local provides = {}
+  local globalMetadata = {}
+  local stateful = false
+  for k,fn in pairs(functionList) do
+    err( type(k)=="string", "newModule: function name should be string?")
+    err( rigel.isPlainFunction(fn), "newModule: function should be plain Rigel function")
+
+    for inst,fnlist in pairs(fn.requires) do for fn,_ in pairs(fnlist) do J.deepsetweak(requires,{inst,fn},1) end end
+    for inst,fnlist in pairs(fn.provides) do for fn,_ in pairs(fnlist) do J.deepsetweak(provides,{inst,fn},1) end end
+
+    for k,v in pairs(fn.globalMetadata) do assert(globalMetadata[k]==nil); globalMetadata[k]=v end
+    stateful = stateful or fn.stateful
+  end
+
+  if instanceList==nil then instanceList={} end
+  err( type(instanceList)=="table", "moduleLambda: instanceList should be table")
+  local instanceMap = {}
+  for _,inst in pairs(instanceList) do
+    err( rigel.isInstance(inst), "moduleLambda: entries in instanceList should be instances" )
+    for inst,fnlist in pairs(inst.module.requires) do for fn,_ in pairs(fnlist) do J.deepsetweak(requires,{inst,fn},1) end end
+    for inst,fnlist in pairs(inst.module.provides) do for fn,_ in pairs(fnlist) do J.deepsetweak(provides,{inst,fn},1) end end
+
+    instanceMap[inst] = 1
+  end
+
+  --makeSystolic=makeSystolic,makeTerra=makeTerra, 
+  local tab = {name=name,functions=functionList, globalMetadata=globalMetadata, stateful=stateful, requires=requires, provides=provides, instanceMap=instanceMap, stateful=stateful }
+
+  return rigel.newModule(tab)
+end
+
+function modules.liftVerilogTab(tab)
+  return modules.liftVerilog(tab.name,tab.inputType,tab.outputType,tab.vstr,tab.globalMetadata,tab.sdfInput,tab.sdfOutput,tab.instanceMap)
+end
+
 -- requires: this is a map of instance callsites (for external requirements)
 -- instanceMap: this is a map of rigel instances of modules this depends on
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requires, globalMetadata, sdfInput, sdfOutput, instanceMap, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
   err( type(vstr)=="string" or type(vstr)=="function", "liftVerilog: verilog string must be string or function that produces string")
-  err( requires==nil or type(requires)=="table", "liftVerilog: requires must be table")
   err( globalMetadata==nil or type(globalMetadata)=="table", "liftVerilog: global metadata must be table")
   if sdfInput==nil then sdfInput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfInput), "liftVerilog: sdfInput must be SDF rate, but is: "..tostring(sdfInput))
@@ -4407,12 +4517,6 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
   res.sdfOutput=SDF(sdfOutput)
 
   res.requires = {}
-  if requires~=nil then
-    for r,_ in pairs(requires) do
-      assert(rigel.isInstanceCallsite(r))
-      res.requires[r]=1
-    end
-  end
 
   res.globalMetadata = {}
   if globalMetadata~=nil then
@@ -4423,11 +4527,12 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, requi
     
   if instanceMap~=nil then
     for inst,_ in pairs(instanceMap) do
-      assert(rigel.isInstance(inst))
+      J.err(rigel.isInstance(inst),"liftVerilog: instance map should be map of instances, but is: "..tostring(inst))
 
-      for r,_ in pairs(inst.module.requires) do
-        assert(rigel.isInstanceCallsite(r))
-        res.requires[r]=1
+      for inst,fnlist in pairs(inst.module.requires) do
+        for fn,_ in pairs(fnlist) do
+          J.deepsetweak(res.requires,{inst,fn},1)
+        end
       end
 
       for kk,vv in pairs(inst.module.globalMetadata) do
@@ -4640,190 +4745,11 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   return rigel.newFunction(res)
 end)
 
-function modules.seqMap( f, W, H, T )
-  err( darkroom.isFunction(f), "fn must be a function")
-  err( type(W)=="number", "W must be a number")
-  err( type(H)=="number", "H must be a number")
-  err( type(T)=="number", "T must be a number")
-  darkroom.expectBasic(f.inputType)
-  darkroom.expectBasic(f.outputType)
-  local res = {kind="seqMap", W=W,H=H,T=T,inputType=types.null(),outputType=types.null()}
-  if terralib~=nil then res.terraModule = MT.seqMap(f, W, H, T) end
-  res.name = "SeqMap_"..f.name.."_"..W.."_"..H
-
-  function res.makeSystolic()
-    local systolicModule = S.module.new(res.name,{},{f.systolicModule:instantiate("inst")},{verilog = [[module sim();
-reg CLK = 0;
-integer i = 0;
-reg RST = 1;
-reg valid = 0;
-]]..f.systolicModule.name..[[ inst(.CLK(CLK),.CE(1'b1),.process_valid(valid),.reset(RST));
-   initial begin
-      // clock in reset bit
-      while(i<100) begin
-        CLK = 0; #10; CLK = 1; #10;
-        i = i + 1;
-      end
-
-      RST = 0;
-      valid = 1;
-
-      i=0;
-      while(i<]]..((W*H/T)+f.systolicModule:getDelay("process"))..[[) begin
-         CLK = 0; #10; CLK = 1; #10;
-         i = i + 1;
-      end
-      $finish();
-   end
-endmodule
-]]})
-
-    return systolicModule
-  end
-
-  return darkroom.newFunction(res)
-end
-
 local function readAll(file)
     local f = io.open(file, "rb")
     local content = f:read("*all")
     f:close()
     return content
-end
-
-function modules.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles, X )
-  err( rigel.isFunction(f), "fn must be a function")
-  err( types.isType(inputType), "inputType must be a type")
-  err( tapInputType==nil or types.isType(tapInputType), "tapInputType must be a type")
-  if tapInputType~=nil then tapInputType:checkLuaValue(tapValue) end
-  err( type(inputCount)=="number", "inputCount must be a number")
-  err( inputCount==math.floor(inputCount), "inputCount must be integer, but is "..tostring(inputCount) )
-  err( type(outputCount)=="number", "outputCount must be a number")
-  err( outputCount==math.floor(outputCount), "outputCount must be integer, but is "..tostring(outputCount) )
-  err( type(axi)=="boolean", "axi should be a bool")
-  err( X==nil, "seqMapHandshake: too many arguments" )
-
-  err( f.inputType==types.null() or rigel.isHandshake(f.inputType), "seqMapHandshake: input must be handshook or null")
-  rigel.expectHandshake(f.outputType)
-
-  if f.inputType~=types.null() and rigel.SDF then
-    local expectedOutputCount = (inputCount*f.sdfOutput[1][1]*f.sdfInput[1][2])/(f.sdfOutput[1][2]*f.sdfInput[1][1])
-    err(expectedOutputCount==outputCount, "Error, seqMapHandshake, SDF output tokens ("..tostring(expectedOutputCount)..") does not match stated output tokens ("..tostring(outputCount)..")")
-  end
-
-  local res = {kind="seqMapHandshake", tapInputType=tapInputType, tapValue=tapValue, inputCount=inputCount, outputCount=outputCount, inputType=types.null(),outputType=types.null()}
-  res.sdfInput = f.sdfInput
-  res.sdfOutput = f.sdfOutput
-
-  if readyRate==nil then readyRate=1 end
-
-  res.name = "SeqMapHandshake_"..f.name.."_"..inputCount.."_"..outputCount.."_rr"..readyRate
-
-  if terralib~=nil then res.terraModule = MT.seqMapHandshake( f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles) end
-
-  function res.makeSystolic()
-    local verilogStr
-
-    if axi then
-      local baseTypeI = inputType
-      local baseTypeO = rigel.extractData(f.outputType)
-      err(baseTypeI:verilogBits()==64, "axi input must be 64 bits but is "..baseTypeI:verilogBits())
-      err(baseTypeO:verilogBits()==64, "axi output must be 64 bits")
-
-      local axiv = readAll("../platform/axi/axi.v")
-      axiv = string.gsub(axiv,"___PIPELINE_MODULE_NAME",f.systolicModule.name)
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT_COUNT",inputCount)
-      axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_COUNT",outputCount)
-  
-      -- input/output tokens are one axi bus transaction => they are 8 bytes
-      local inputBytes = J.upToNearest(128,inputCount*8)
-      local outputBytes = J.upToNearest(128,outputCount*8)
-      axiv = string.gsub(axiv,"___PIPELINE_INPUT_BYTES",inputBytes)
-      -- extra 128 is for the extra AXI burst that contains metadata
-      axiv = string.gsub(axiv,"___PIPELINE_OUTPUT_BYTES",outputBytes)
-
-      local maxUtilization = 1
-
-      axiv = string.gsub(axiv,"___PIPELINE_WAIT_CYCLES",math.ceil(inputCount*maxUtilization)+1024) -- just give it 1024 cycles of slack
-
-      if tapInputType~=nil then
-        local tv = J.map( J.range(tapInputType:verilogBits()),function(i) return J.sel(math.random()>0.5,"1","0") end )
-        local tapreg = "reg ["..(tapInputType:verilogBits()-1)..":0] taps = "..tostring(tapInputType:verilogBits()).."'b"..table.concat(tv,"")..";\n"
-
-        axiv = string.gsub(axiv,"___PIPELINE_TAPS", tapreg.."\nalways @(posedge FCLK0) begin if(CONFIG_READY) taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n")
-        axiv = string.gsub(axiv,"___PIPELINE_INPUT","{taps,pipelineInput}")
-      else
-        axiv = string.gsub(axiv,"___PIPELINE_TAPS","")
-        axiv = string.gsub(axiv,"___PIPELINE_INPUT","pipelineInput")
-      end
-
-      verilogStr = readAll("../platform/axi/ict106_axilite_conv.v")..readAll("../platform/axi/conf.v")..readAll("../platform/axi/dramreader.v")..readAll("../platform/axi/dramwriter.v")..axiv
-    else
-      local rrlog2 = math.log(readyRate)/math.log(2)
-  
-      local readybit = "1'b1"
-      if rrlog2>0 then readybit = "ready_downstream==1" end
-  
-      local tapreg, tapRST = "",""
-      if tapInputType~=nil then 
-        tapreg = S.declareReg( tapInputType, "taps").."\n" 
-        tapRST = "if (RST) begin taps <= "..S.valueToVerilog(tapValue,tapInputType).."; end\n"
-      end
-
-      verilogStr = [[module sim();
-reg CLK = 0;
-integer i = 0;
-reg RST = 1;
-wire valid;
-reg []]..rrlog2..[[:0] ready_downstream = 1;
-reg [15:0] doneCnt = 0;
-wire ready;
-reg [31:0] totalClocks = 0;
-]]..tapreg..[[
-]]..S.declareWire( rigel.lower(f.outputType), "process_output" )..[[
-
-]]..f.systolicModule.name..[[ #(.INPUT_COUNT(]]..inputCount..[[),.OUTPUT_COUNT(]]..outputCount..[[)) inst (.CLK(CLK),.process_input(]]..J.sel(tapInputType~=nil,"{valid,taps}","valid")..[[),.reset(RST),.ready(ready),.ready_downstream(]]..readybit..[[),.process_output(process_output));
-   initial begin
-      // clock in reset bit
-      while(i<100) begin CLK = 0; #10; CLK = 1; #10; i = i + 1; end
-
-      RST = 0;
-      //valid = 1;
-      totalClocks = 0;
-      while(1) begin CLK = 0; #10; CLK = 1; #10; end
-   end
-
-  reg [31:0] validInCnt = 0; // we should only drive W*H valid bits in
-  reg [31:0] validCnt = 0;
-
-  assign valid = (RST==0 && validInCnt < ]]..inputCount..[[);
-
-  always @(posedge CLK) begin
-    ]]..J.sel(DARKROOM_VERBOSE,[[$display("------------------------------------------------- RST %d totalClocks %d validOutputs %d/]]..outputCount..[[ ready %d readyDownstream %d validInCnt %d/]]..inputCount..[[",RST,totalClocks,validCnt,ready,]]..readybit..[[,validInCnt);]],"")..[[
-    // we can't send more than W*H valid bits, or the AXI bus will lock up. Once we have W*H valid bits,
-    // keep simulating for N cycles to make sure we don't send any more
-]]..tapRST..[[
-    if(validCnt> ]]..outputCount..[[ ) begin $display("Too many valid bits!"); end // I think we have this _NOT_ finish so that it outputs an invalid file
-    if(validCnt>= ]]..outputCount..[[ && doneCnt==1024 ) begin $finish(); end
-    if(validCnt>= ]]..outputCount..[[ && ]]..readybit..[[) begin doneCnt <= doneCnt+1; end
-    if(RST==0 && ready) begin validInCnt <= validInCnt + 1; end
-    
-    // ignore the output when we're in reset mode - output is probably bogus
-    if(]]..readybit..[[ && process_output[]]..(rigel.lower(f.outputType):verilogBits()-1)..[[] && RST==1'b0) begin validCnt = validCnt + 1; end
-    ready_downstream <= ready_downstream + 1;
-    totalClocks <= totalClocks + 1;
-  end
-endmodule
-]]
-    end
-
-    local systolicModule = Ssugar.moduleConstructor(res.name):verilog(verilogStr)
-    systolicModule:add(f.systolicModule:instantiate("inst"))
-
-    return systolicModule
-  end
-
-  return rigel.newFunction(res)
 end
 
 -- this is a Handshake triggered counter.
@@ -4889,8 +4815,7 @@ modules.triggerCounter = memoize(function(N_orig)
   res.stateful=true
   res.delay=0
   res.name = J.sanitize("TriggerCounter_"..tostring(N_orig))
-  res.requires = {}
-  N:appendRequires(res.requires)
+  res.includeMap = N:getInstances()
   
   if terralib~=nil then res.terraModule = MT.triggerCounter(res,N) end
 
@@ -4900,7 +4825,7 @@ modules.triggerCounter = memoize(function(N_orig)
     local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.sumwrap(types.uint(32),N-1) ):CE(true):setReset(0):instantiate("phase") )
     
     --local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
-    local done = S.eq( sPhase:get(),Uniform(N-1):toSystolic(types.uint(32)) ):disablePipelining()
+    local done = S.eq( sPhase:get(),Uniform(N-1):toSystolic(types.uint(32),systolicModule) ):disablePipelining()
     
     local pipelines = {}
     table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(32)) ) )
@@ -4912,17 +4837,16 @@ modules.triggerCounter = memoize(function(N_orig)
     return systolicModule
   end
 
-  return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res) ))
+  return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res), true ))
   
 end)
 
 -- just counts from 0....N-1
-modules.counter = memoize(function(ty,N_orig)
+local counterInner = memoize(function(ty,N,X)
   err( types.isType(ty), "counter: type must be rigel type")                          
   err( ty:isUint() or ty:isInt(), "counter: type must be uint or int")
-  --err(type(N)=="number", "counter: N must be number")
-  local N = Uniform(N_orig)
-
+  assert(X==nil)
+  assert(Uniform.isUniform(N))
   J.err( N:ge(1):assertAlwaysTrue(), "modules.counter: N must be >= 1, but is: "..tostring(N) )
   
   local res = {kind="counter"}
@@ -4932,9 +4856,12 @@ modules.counter = memoize(function(ty,N_orig)
   res.sdfOutput = SDF{1,1}
   res.stateful=true
   res.delay=0
-  res.name = J.sanitize("Counter_"..tostring(ty).."_"..tostring(N_orig))
-  res.requires={}
+  res.name = J.sanitize("Counter_"..tostring(ty).."_"..tostring(N))
+  res.instanceMap=N:getInstances()
+  res.requires = {}
   N:appendRequires(res.requires)
+  res.provides = {}
+  N:appendProvides(res.provides)
   
   if terralib~=nil then res.terraModule = MT.counter(res,ty,N) end
 
@@ -4954,9 +4881,9 @@ modules.counter = memoize(function(ty,N_orig)
   end
 
   return rigel.newFunction(res)
-  
 end)
-
+modules.counter = function(ty,N_orig) return counterInner(ty,Uniform(N_orig)) end
+  
 modules.toVarlen = memoize(
   function(ty,cnt)
     err( types.isType(ty), "toVarlen: type must be rigel type" )

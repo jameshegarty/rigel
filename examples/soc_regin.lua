@@ -8,9 +8,10 @@ local SDF = require "sdf"
 require "types".export()
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({offset={u(32),200}},SDF{1,1024}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({offset={u(32),200}},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local AddReg = G.Module{u(8),function(i) return G.Add(i,G.RemoveMSBs{24}(regs.offset())) end}
 

@@ -9,9 +9,9 @@ local SDF = require "sdf"
 types.export()
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
@@ -22,6 +22,5 @@ local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     local arb = G.Arbitrate(R.concatArray2d("cca2",{G.StripFramed(rb0),G.StripFramed(rb1)},2))
     return G.AXIWriteBurstSeq{"out/soc_arbiter",{64,64},8,noc.write}(arb)
   end}
-
 
 harness({regs.start, OffsetModule, regs.done},nil,{regs})

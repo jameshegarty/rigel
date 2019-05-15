@@ -9,9 +9,10 @@ require "types".export()
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC(2):instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(2,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,1024},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate()
 
 local inp = R.input(R.HandshakeTrigger)
 local inp0, inp1 = RS.fanOut{input=inp,branches=2}

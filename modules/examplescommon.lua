@@ -1025,7 +1025,8 @@ end)
 
 -------------
 -- VRLoad: if true, make the load function be HandshakeVR
-C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,X)
+-- includeSizeFn: should module have a size fn?
+C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
   err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
@@ -1035,6 +1036,8 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,X)
   err( X==nil, "C.fifo: too many arguments" )
   --err( ty~=types.null(), "C.fifo: NYI - FIFO of 0 bit type" )
 
+  if includeSizeFn==nil then includeSizeFn=false end
+  
   local inp, regs
   if ty:verilogBits()==0 then
     inp = R.input(types.HandshakeTrigger)
@@ -1668,8 +1671,7 @@ C.plusConst = memoize(function(ty, value_orig, async)
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
 
-  local globals = {}
-  value:appendRequires(globals)
+  local instanceMap = value:getInstances()
   
   local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,10) ,
                               function(plus100inp)
@@ -1677,7 +1679,7 @@ C.plusConst = memoize(function(ty, value_orig, async)
                                 if async==true then res = res:disablePipelining() end
                                 return res
                               end,
-                              function() return CT.plusConsttfn(ty,value) end, nil,nil,globals )
+                              function() return CT.plusConsttfn(ty,value) end, nil,nil, instanceMap )
   return plus100mod
 end)
 
@@ -1892,15 +1894,13 @@ C.AXIReadPar = memoize(
     assert((W*H)%N==0)
 
     local startAddr = SOC.currentAddr
-    local startPort = SOC.currentMAXIReadPort
-    
+
     local totalBytes = W*H*(ty:verilogBits()/8)
     local res = G.Module{"AXIReadPar_"..tostring(W), types.HandshakeTrigger,
       function(inp)
         local inpb = G.FanOut{N}(inp)
         local out = {}
         for i=0,N-1 do
-          print("IMPBI",inpb[i],i,inpb)
           local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc["read"..J.sel(i==0,"",tostring(i))])(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
@@ -1913,16 +1913,16 @@ C.AXIReadPar = memoize(
         return G.HS{C.bitcast(out.type.params.A,types.array2d(ty,V))}(out)
       end}
 
-    res.globalMetadata["MAXI"..startPort.."_read_W"] = W
-    res.globalMetadata["MAXI"..startPort.."_read_H"] = H
-    res.globalMetadata["MAXI"..startPort.."_read_V"] = V
-    res.globalMetadata["MAXI"..startPort.."_read_type"] = tostring(ty)
-    res.globalMetadata["MAXI"..startPort.."_read_bitsPerPixel"] = ty:verilogBits()
-    res.globalMetadata["MAXI"..startPort.."_read_address"] = startAddr
+    res.globalMetadata[noc.read.name.."_read_W"] = W
+    res.globalMetadata[noc.read.name.."_read_H"] = H
+    res.globalMetadata[noc.read.name.."_read_V"] = V
+    res.globalMetadata[noc.read.name.."_read_type"] = tostring(ty)
+    res.globalMetadata[noc.read.name.."_read_bitsPerPixel"] = ty:verilogBits()
+    res.globalMetadata[noc.read.name.."_read_address"] = startAddr
 
     -- avoid double loading the image
     for i=1,N-1 do
-      res.globalMetadata["MAXI"..i.."_read_filename"] = nil
+      res.globalMetadata[noc.read1.name.."_read_filename"] = nil
     end
     
     return res
@@ -2081,7 +2081,7 @@ function C.automaticSystolicStub( mod )
   for fnname,fn in pairs(modFunctions) do
     fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
     if fn.outputType~=types.null() then
-      fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),J.sel(R.isFunction(mod),fnname.."_output",fnname))
+      fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),fnname.."_output")
     end
     delays[fnname]=0
 
@@ -2117,17 +2117,21 @@ function C.automaticSystolicStub( mod )
       fns.process:setValid("process_valid")
     end
   end
+
+  local res = Ssugar.moduleConstructor(mod.name)
   
   local instances = {}
   local externalInstances = {}
-  for ic,_ in pairs(mod.requires) do
-    local inst = ic.instance:toSystolicInstance()
-    if externalInstances[inst]==nil then externalInstances[inst]={} end
-    externalInstances[inst][ic.functionName]=1
+  for inst,fnlist in pairs(mod.requires) do
+    local sinst = inst:toSystolicInstance()
 
-    local fn = ic.instance.module.functions[ic.functionName]
-    if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-      externalInstances[inst][ic.functionName.."_ready"]=1
+    for fnname,_ in pairs(fnlist) do
+      res:addExternalFn(sinst,fnname)
+      
+      local fn = inst.module.functions[fnname]
+      if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
+        res:addExternalFn(sinst,fnname.."_ready")
+      end
     end
   end
 
@@ -2135,20 +2139,29 @@ function C.automaticSystolicStub( mod )
     for inst,_ in pairs(mod.instanceMap) do
       assert(R.isInstance(inst))
 
-      local sinst = inst:toSystolicInstance()
-      instances[sinst]=1
+      if R.isModule(inst.module) or R.isPlainFunction(inst.module) then
+        local sinst = inst:toSystolicInstance()
+        instances[sinst]=1
+        
+        for _,fn in pairs(sinst.module.functions) do
+          if S.isFunction(fn) then
 
-      for _,fn in pairs(sinst.module.functions) do
-        if R.isFunction(mod) then
-
-          if fn.inputParameter.type==types.null() then
-            fns.process:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+            local defaultFn
+            for _,v in pairs(fns) do defaultFn=v end
+            
+            if fn.inputParameter.type==types.null() then
+              defaultFn:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+            else
+              defaultFn:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+            end
           else
-            fns.process:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+            print("NYI - fn of type "..tostring(fn))
+            assert(false) -- NYI
           end
-        else
-          assert(false) -- NYI
         end
+      else
+        print("NYI - instance of "..tostring(inst.module))
+        assert(false)
       end
     end
   end
@@ -2157,12 +2170,11 @@ function C.automaticSystolicStub( mod )
     fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
   end
 
-  local res = Ssugar.moduleConstructor(mod.name)
+
   res:onlyWire(true)
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
   for k,v in pairs(delays) do res:setDelay(k,v) end
-  for k,v in pairs(externalInstances) do res:addExternal(k,v) end
   
   return res
 end
@@ -2191,7 +2203,7 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
     return s
   end
 
-  return R.newModule(J.sanitize(filename),{process=res},false,makeSystolic,nil)
+  return R.newModule{name=J.sanitize(filename),functions={process=res},stateful=false,makeSystolic=makeSystolic}
 end)
  
 -- you should only use this if it's safe! (on the output of fns)

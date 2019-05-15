@@ -6,9 +6,10 @@ require "types".export()
 local SDF = require "sdf"
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,30*14*9}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,30*14*9},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 PosToAddr = G.Module{ "PosToAddr", ar(u16,2),
   function(loc)

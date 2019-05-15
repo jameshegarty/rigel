@@ -20,13 +20,14 @@ local ready = macro(function(i) return `i._2 end)
 
 local MT = {}
 
+
 -- just putting this here to keep terra code out of rigel.lua
 function MT.terraReference(inst)
   return global( &inst.module.terraModule, nil, inst.name )
 end
 
+--[=[
 function MT.instanceCallsiteCalculateReady(tab)
-  --  return `[tab.instance:terraReference()].methods.[tab.functionName.."_calculateReady"]
   -- closure
   local fn = tab.instance.module.functions[tab.functionName]
 
@@ -112,7 +113,7 @@ function MT.instanceCallsiteShim(tab)
   
   return MT.new(InstanceCallsiteShim)
 end
-
+]=]
 function MT.new(Module)
   if Module.methods.init==nil then terra Module:init() end end
   if Module.methods.free==nil then terra Module:free() end end
@@ -393,7 +394,7 @@ function MT.mapFramed(res,f,W,H,vectorized)
   end
   
   if f.inputType:is("Handshake") and f.outputType==types.null() then
-    terra MapFramed:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+    terra MapFramed:process( inp : &res.inputType:toTerraType() )
       self.fn:process(inp)
     end
 
@@ -2010,13 +2011,18 @@ return {`mself.[n.name].ready}
             res = {`mself.[n.name].ready}
           else
             table.insert( readyStats, quote mself.[n.name]:calculateReady(arg) end )
-            res = {`mself.[n.name].ready}
+
+            if n.fn.inputType~=types.null() then
+              res = {`mself.[n.name].ready}
+            else
+              res = {`0} -- has to return something, but should not be read
+            end
           end
         elseif n.kind=="applyMethod" then
           local applyfn = n.inst.module.functions[n.fnname]
 
           local inst
-          if fn.externalInstances[n.inst]~=nil then
+          if fn.requires[n.inst]~=nil then
             inst = n.inst:terraReference()
           else
             inst = `mself.[n.inst.name]
@@ -2101,6 +2107,8 @@ return {`mself.[n.name].ready}
 
         if n.fn.inputType==types.null() then
           table.insert( stats, quote mself.[n.name]:process( out ) end )
+        elseif n.fn.outputType==types.null() then
+          table.insert( stats, quote mself.[n.name]:process( [inputs[1]] ) end )
         else
           table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
         end
@@ -2118,7 +2126,7 @@ return {`mself.[n.name].ready}
       elseif n.kind=="applyMethod" then
 
         local inst
-        if fn.externalInstances[n.inst]~=nil then
+        if fn.requires[n.inst]~=nil then
           inst = n.inst:terraReference()
         else
           inst = `mself.[n.inst.name]
@@ -2187,8 +2195,10 @@ return {`mself.[n.name].ready}
   RVReadyOutput = out[2]
   out = out[1]
 
-  if fn.input==nil then
+  if fn.input==nil or fn.inputType==types.null() then
     terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
+  elseif fn.outputType==types.null() then
+    terra Module.methods.process( [mself], [inputSymbol] ) [stats] end
   else
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
   end
@@ -2200,7 +2210,7 @@ return {`mself.[n.name].ready}
     terra Module.methods.calculateReady( [mself] ) var [RVReadyInput] = true; [RVReadyStats]; mself.ready = RVReadyOutput end
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
-    if fn.input~=nil then TMP = quote mself.ready = [readyOutput] end end
+    if fn.input~=nil and fn.input.type~=types.null() then TMP = quote mself.ready = [readyOutput] end end
     terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
   elseif rigel.streamCount(fn.inputType)>0 then
     -- has a handshake input, but not a handshake output

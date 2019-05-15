@@ -275,7 +275,7 @@ function codegenBBs( compilerState, startState, traceId, bbs, yieldOut )
   table.insert(pipes,yieldOut)
   for bb,_ in pairs(bbs) do table.insert(pipes,bb) end
 
-  local rmod = RM.lambda("BBGEN_"..tostring(startState).."_"..tostring(traceId), compilerState.rigelInput, R.statements(pipes), J.invertAndStripKeys(compilerState.instanceMap) )
+  local rmod = RM.lambdaTab{name="BBGEN_"..tostring(startState).."_"..tostring(traceId), input=compilerState.rigelInput, output=R.statements(pipes), instanceList=J.invertAndStripKeys(compilerState.instanceMap) }
   --rmod.instanceMap = compilerState.instanceMap
   
 --  print(rmod)
@@ -387,7 +387,12 @@ return{
               extraInstances[inst.name] = inst
             end
             
-            for ic,_ in pairs(requires) do res.requires[ic] = 1 end
+            for inst,fnmap in pairs(requires) do
+              if res.requires[inst]==nil then res.requires[inst]={} end
+              for fnname,_ in pairs(fnmap) do
+                res.requires[inst][fnname] = 1
+              end
+            end
           end
         end
 

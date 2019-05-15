@@ -1100,7 +1100,7 @@ function types.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator==
 function types.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
 
 -- is this any of the handshaked types?
-function types.isHandshakeAny( a ) return types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isHandshakeTuple(a) or types.isHandshakeArray(a) or types.isHandshakeTmuxed(a) or types.isHandshakeArrayOneHot(a) or a:is("HandshakeFramed") end
+function types.isHandshakeAny( a ) return types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isHandshakeTuple(a) or types.isHandshakeArray(a) or types.isHandshakeTmuxed(a) or types.isHandshakeArrayOneHot(a) or a:is("HandshakeFramed") or a:is("HandshakeTriggerArray") end
 
 function types.isV( a ) return a:isNamed() and a.generator=="V" end
 function types.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end

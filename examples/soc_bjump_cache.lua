@@ -19,9 +19,11 @@ local bjump = require "bjump"
 local NOCACHE = string.find(arg[0],"nocache")
 
 local W,H = 128,64
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,W*H*8*8}):instantiate("regs")
+
+noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,W*H*8*8},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
+
 
 local PosToAddr = G.Module{"PosToAddr",ar(u16,2),
   function(loc)

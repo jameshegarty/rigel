@@ -4,11 +4,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct{unsigned int addr; unsigned int burst;} Transaction;
+typedef struct{unsigned int addr; unsigned int burst; unsigned short id;} Transaction;
 
 typedef struct{int front; int rear; int itemCount; unsigned char* data; unsigned int dataBytes;} Queue;
 
 const unsigned int QUEUE_MAX = 1024*1024;
+
+#define READ_SLAVEOUT_PORTS unsigned char* ARREADY, unsigned long* RDATA,  unsigned char* RVALID, unsigned char* RRESP,  unsigned char* RLAST, unsigned short* RID
+#define READ_SLAVEOUT_PORTS_CONST const unsigned char* ARREADY, const unsigned long* RDATA,  const unsigned char* RVALID, const unsigned char* RRESP,  const unsigned char* RLAST, const unsigned short* RID
+#define READ_SLAVEIN_PORTS_CONST   const unsigned int* ARADDR, const unsigned char* ARVALID, const unsigned char* RREADY, const unsigned char* ARLEN, const unsigned char* ARSIZE, const unsigned char* ARBURST, const unsigned short* ARID
+
+
+#define WRITE_SLAVEOUT_PORTS unsigned char* AWREADY, unsigned char* WREADY, unsigned char* BRESP, unsigned char* BVALID, unsigned short* BID
+#define WRITE_SLAVEOUT_PORTS_CONST const unsigned char* AWREADY, const unsigned char* WREADY, const unsigned char* BRESP, const unsigned char* BVALID, const unsigned short* BID
+
+
+#define WRITE_SLAVEIN_PORTS_CONST const unsigned int* AWADDR, const unsigned char* AWVALID, const unsigned long* WDATA, const unsigned char* WVALID, const unsigned char* BREADY, const unsigned char* WSTRB, const unsigned char* WLAST, const unsigned char* AWLEN, const unsigned char* AWSIZE, const unsigned char* AWBURST, const unsigned short* AWID
+
 
 unsigned char* QPeek(Queue* q) {
   return q->data+(q->front*q->dataBytes);
@@ -110,7 +122,7 @@ void init(){
     cyclesSinceWrite[i]=0;
   }
 }
-  
+
 void printSlave(
   int id,
   unsigned char* IP_CLK,
@@ -275,38 +287,20 @@ bool slaveReadReq(
   return *ARREADY;
 }
 
-void activateMasterRead(
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RRESP,
-  unsigned char* RLAST){
+void activateMasterRead(READ_SLAVEOUT_PORTS){
   *ARREADY = true;
 }
 
-void activateMasterWrite(
-  unsigned char* AWREADY,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID){
+void activateMasterWrite(WRITE_SLAVEOUT_PORTS){
   *AWREADY = true;
   *WREADY = true;
 }
 
-void deactivateMasterRead(
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RRESP,
-  unsigned char* RLAST){
+void deactivateMasterRead(READ_SLAVEOUT_PORTS){
   *ARREADY = false;
 }
 
-void deactivateMasterWrite(
-  unsigned char* AWREADY,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID){
+void deactivateMasterWrite(WRITE_SLAVEOUT_PORTS){
   *AWREADY = false;
   *WREADY = false;
   *BVALID = false;
@@ -314,18 +308,8 @@ void deactivateMasterWrite(
 
 void printMasterRead(
   int id,
-  const unsigned int* ARADDR,
-  const unsigned char* ARVALID,
-  const unsigned char* RREADY,
-  const unsigned char* ARLEN,
-  const unsigned char* ARSIZE,
-  const unsigned char* ARBURST,
-  // out
-  const unsigned char* ARREADY,
-  const unsigned long* RDATA,
-  const unsigned char* RVALID,
-  const unsigned char* RRESP,
-  const unsigned char* RLAST){
+  READ_SLAVEIN_PORTS_CONST,
+  READ_SLAVEOUT_PORTS_CONST){
 
   printf("----------------------\n");
   //printf("IP_CLK(in): " << (int)IP_CLK);
@@ -333,25 +317,13 @@ void printMasterRead(
   printf("M%d_ARADDR(out): %d/%#x\n",id,*ARADDR,*ARADDR);
   printf("M%d_ARVALID(out): %d\n",id, (int)*ARVALID);
   printf("M%d_ARREADY(in): %d\n",id, (int)*ARREADY);
+  printf("M%d_RVALID(in): %d\n",id, (int)*RVALID);
 }
 
 void printMasterWrite(
   int id,
-  const unsigned int* AWADDR,
-  const unsigned char* AWVALID,
-  const unsigned long* WDATA,
-  const unsigned char* WVALID,
-  const unsigned char* BREADY,
-  const unsigned char* WSTRB,
-  const unsigned char* WLAST,
-  const unsigned char* AWLEN,
-  const unsigned char* AWSIZE,
-  const unsigned char* AWBURST,
-  // out
-  const unsigned char* AWREADY,
-  const unsigned char* WREADY,
-  const unsigned char* BRESP,
-  const unsigned char* BVALID){
+  WRITE_SLAVEIN_PORTS_CONST,
+  WRITE_SLAVEOUT_PORTS_CONST){
 
   printf("----------------------\n");
   printf("M%d_AWADDR(out): %d/%#x\n",id, *AWADDR, *AWADDR);
@@ -363,41 +335,39 @@ void printMasterWrite(
   printf("M%d_WREADY(in): %d\n",id, (int)*WREADY);
 }
 
+typedef struct SlaveState{
+  unsigned char BVALID;
+  unsigned char BRESP;
+  unsigned short BID;
+} SlaveState;
+
+void initSlaveState(SlaveState* slaveState){
+  slaveState->BVALID=false;
+  slaveState->BID=42;
+}
+
 // return data to master
 void masterReadDataDriveOutputs(
   bool verbose,
   unsigned char* memory,
   int port,
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RRESP,
-  unsigned char* RLAST){
-
-  if( QSize(&readQ[port])>0){
-    Transaction* t = (Transaction*)QPeek(&readQ[port]);
+  READ_SLAVEOUT_PORTS){
       
-    *RDATA = *(unsigned long*)(&memory[t->addr]);
-    *RVALID = true;
-  }else{
-    *RVALID = false;
-  }
+  Transaction* t = (Transaction*)QPeek(&readQ[port]);
+  *RVALID = (QSize(&readQ[port])>0);
+  *RID = t->id;
+  *RDATA = *(unsigned long*)(&memory[t->addr]);
 }
 
 void masterReadDataLatchFlops(
   bool verbose,
   unsigned char* memory,
   int port,
-  const unsigned int* ARADDR,
-  const unsigned char* ARVALID,
-  const unsigned char* RREADY,
-  const unsigned char* ARLEN,
-  const unsigned char* ARSIZE,
-  const unsigned char* ARBURST){
-
+  READ_SLAVEIN_PORTS_CONST){
+  
   if( QSize(&readQ[port])>0 && *RREADY){
     Transaction* t = (Transaction*)QPeek(&readQ[port]);
-        
+          
     if(verbose){
       printf("MAXI%d Service Read Addr(base rel):%d data:%lu/0x%lx remaining_burst:%d outstanding_requests:%d\n", port, t->addr, *(unsigned long*)(&memory[t->addr]), *(unsigned long*)(&memory[t->addr]), t->burst, QSize(&readQ[port]));
     }
@@ -423,11 +393,7 @@ void masterReadReqDriveOutputs(
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
-  unsigned char* ARREADY,
-  unsigned long* RDATA,
-  unsigned char* RVALID,
-  unsigned char* RRESP,
-  unsigned char* RLAST){
+  READ_SLAVEOUT_PORTS){
 
   *ARREADY = true;
 }
@@ -437,12 +403,7 @@ void masterReadReqLatchFlops(
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
-  const unsigned int* ARADDR,
-  const unsigned char* ARVALID,
-  const unsigned char* RREADY,
-  const unsigned char* ARLEN,
-  const unsigned char* ARSIZE,
-  const unsigned char* ARBURST){
+  READ_SLAVEIN_PORTS_CONST){
 
   if(*ARVALID){
     // read request
@@ -451,7 +412,8 @@ void masterReadReqLatchFlops(
     assert(*ARBURST==1);
     t.addr = *ARADDR;
     t.burst = *ARLEN+1;
-
+    t.id = *ARID;
+    
     if(verbose){
       printf("MAXI%d Read Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst );
       //std::cout << "MAXI" << port << " Read Request addr (base rel):" << (t.addr-MEMBASE) << "/" << std::hex << "0x" << (t.addr-MEMBASE) << std::dec << " burst:" << t.burst << std::endl;
@@ -470,29 +432,18 @@ void masterReadReqLatchFlops(
   }
 }
 
-typedef struct SlaveState{
-  unsigned char BVALID;
-  unsigned char BRESP;
-} SlaveState;
-
-void initSlaveState(SlaveState* slaveState){
-  slaveState->BVALID=false;
-}
-
 // return data to master
 void masterWriteDataDriveOutputs(
   bool verbose,
   unsigned char* memory,
   SlaveState* slaveState,
   int port,
-  unsigned char* AWREADY,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID){
+  WRITE_SLAVEOUT_PORTS){
 
   *WREADY = QSize(&writeQ[port])>0;
   *BVALID = slaveState->BVALID;
   *BRESP = slaveState->BRESP;
+  *BID = slaveState->BID;
 }
 
 // return error flag (true if error)
@@ -502,18 +453,13 @@ bool masterWriteDataLatchFlops(
   SlaveState* slaveState,
   int port,
   bool checkDataEqual, // in second round, we want to make sure pipeline does exactly the same thing
-  const unsigned int* AWADDR,
-  const unsigned char* AWVALID,
-  const unsigned long* WDATA,
-  const unsigned char* WVALID,
-  const unsigned char* BREADY,
-  const unsigned char* WSTRB,
-  const unsigned char* WLAST,
-  const unsigned char* AWLEN,
-  const unsigned char* AWSIZE,
-  const unsigned char* AWBURST){
+  WRITE_SLAVEIN_PORTS_CONST){
 
   //static int BVALIDS_SENT=0;
+
+  if(*BREADY){ // bvalid was accepted
+    slaveState->BVALID = false;
+  }
   
   if( QSize(&writeQ[port])>0 && *WVALID ){
     Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -540,14 +486,15 @@ bool masterWriteDataLatchFlops(
       QPop(&writeQ[port]);
       slaveState->BVALID = true;
       slaveState->BRESP = 0;
+      slaveState->BID = t->id;
       //BVALIDS_SENT++;
-      //printf("BVALIDS_SENT %d\n",BVALIDS_SENT);
+
       if(*BREADY==0){
         printf("MAXI%d NYI - BREADY is false\n");
         return true;
       }
-    }else{
-      slaveState->BVALID = false;
+      //    }else{
+      //      slaveState->BVALID = false;
     }
 
     cyclesSinceWrite[port] = 0;
@@ -555,7 +502,7 @@ bool masterWriteDataLatchFlops(
     if(verbose){ printf("MAXI%d no write data (%d outstanding requests)\n",port,QSize(&writeQ[port]));}
 
     cyclesSinceWrite[port]++;
-    slaveState->BVALID = false;
+    //    slaveState->BVALID = false;
 
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
@@ -572,10 +519,7 @@ void masterWriteReqDriveOutputs(
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
-  unsigned char* AWREADY,
-  unsigned char* WREADY,
-  unsigned char* BRESP,
-  unsigned char* BVALID){
+  WRITE_SLAVEOUT_PORTS){
 
   *AWREADY = true;
 }
@@ -585,16 +529,7 @@ void masterWriteReqLatchFlops(
   unsigned int MEMBASE,
   unsigned int MEMSIZE,
   int port,
-  const unsigned int* AWADDR,
-  const unsigned char* AWVALID,
-  const unsigned long* WDATA,
-  const unsigned char* WVALID,
-  const unsigned char* BREADY,
-  const unsigned char* WSTRB,
-  const unsigned char* WLAST,
-  const unsigned char* AWLEN,
-  const unsigned char* AWSIZE,
-  const unsigned char* AWBURST){
+  WRITE_SLAVEIN_PORTS_CONST){
 
   if(*AWVALID){
     assert(*AWSIZE==3);
@@ -604,6 +539,7 @@ void masterWriteReqLatchFlops(
     Transaction t;
     t.addr = *AWADDR;
     t.burst = *AWLEN+1;
+    t.id = *AWID;
 
     if( verbose ){
       printf("MAXI%d Write Request addr:%d/%#x (base rel):%d/%#x burst:%d\n", port, t.addr, t.addr, (t.addr-MEMBASE), (t.addr-MEMBASE), t.burst);
@@ -619,6 +555,8 @@ void masterWriteReqLatchFlops(
 
     //writeQ[port].push(t);
     QPush(&writeQ[port],(unsigned char*)&t);
+  }else{
+    if(verbose){printf("MAXI%d no write request\n",port);}
   }
 }
 
@@ -658,7 +596,7 @@ bool checkPorts(bool checkWriteOnly){
     if( QSize(&readQ[port])>0 && checkWriteOnly==false){
       //std::cout << "MAXI" << port << " Error, outstanding read requests at end of time! cnt:" << readQ[port].size() << " bytesRead: " << masterBytesRead[port] << std::endl;
       Transaction* t = (Transaction*)QPeek(&readQ[port]);
-      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d nextTransactionBurst:%d bytesRead: %d\n", port, QSize(&readQ[port]), t->burst, masterBytesRead[port] );
+      printf("MAXI%d Error, outstanding read requests at end of time! cnt:%d nextTransactionBurst:%d nextAddr:%x nextId:%d bytesRead: %d\n", port, QSize(&readQ[port]), t->burst, t->addr, t->id, masterBytesRead[port] );
       errored = true;
     }
     

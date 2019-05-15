@@ -8,15 +8,19 @@ local Zynq = require "zynq"
 
 local cycles = tonumber(string.match(arg[0],"%d+"))
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-local regs = SOC.axiRegs({},SDF{1,cycles},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local Conv = G.Module{ "ConvTop", SDF{1,cycles},
   function(i)
     local p = G.AXIReadBurst{"frame_128.raw",{128,64},types.u8,noc.read}(i)
+    print("READBURST",p)
     local s = G.HS{G.Stencil{{3,0,3,0}}}(p)
+    print("STENCIL",s,s.type)
     s = G.Reshape(s)
+    print("REhhhSHAPE",s)
     local f = G.HS{G.Map{G.Map{G.Rshift{4}}}}(s)
     print("FTYPE",f.type)
     local o = G.HS{G.Map{G.Reduce{G.Add{true}}}}(f)

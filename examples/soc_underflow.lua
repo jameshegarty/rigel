@@ -9,11 +9,11 @@ local SDF = require "sdf"
 types.export()
 local Zynq = require "zynq"
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
-noc.extern=true
-
 -- test underflow block
-local regs = SOC.axiRegs({},SDF{1,128*64},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
+local regs = SOC.axiRegs({},SDF{1,128*64}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
+noc.extern=true
 
 harness({
   regs.start,

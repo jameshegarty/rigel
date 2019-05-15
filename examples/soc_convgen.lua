@@ -12,12 +12,13 @@ local Zynq = require "zynq"
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
 
-inSize = { 1920, 1080 }
-padSize = { 1920+16, 1080+3 }
+local inSize = { 1920, 1080 }
+local padSize = { 1920+16, 1080+3 }
 
-noc = Zynq.SimpleNOC():instantiate("ZynqNOC")
+local regs = SOC.axiRegs({},SDF{1,padSize[1]*padSize[2]}):instantiate("regs")
+
+local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
-regs = SOC.axiRegs({},SDF{1,padSize[1]*padSize[2]},noc.readSource,noc.readSink,noc.writeSource,noc.writeSink):instantiate("regs")
 
 local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
 function(inp)

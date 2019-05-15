@@ -75,12 +75,14 @@ AXIT.AWSIZE64 = AXIT.AWSIZE(64)
 AXIT.AWBURST64 = AXIT.AWBURST(64)
 AXIT.AWID64 = AXIT.AWID(64)
 
-local function WriteDataLookup(idx) return macro(function(tab) return `&data(tab._1).["_"..AXI.WriteDataIdx[idx]] end) end
+local function WriteDataLookup(idx) return macro(function(tab)
+      if AXI.WriteDataIdx[idx]==nil then print("MISSING?",idx) end
+      return `&data(tab._1).["_"..AXI.WriteDataIdx[idx]] end) end
 function AXIT.WVALID(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return &valid(inp._1) end end
 function AXIT.WDATA(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return [WriteDataLookup("wdata")](inp) end end
 function AXIT.WSTRB(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return [WriteDataLookup("wstrb")](inp) end end
 function AXIT.WLAST(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return [WriteDataLookup("wlast")](inp) end end
-function AXIT.WID(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return [WriteDataLookup("wid")](inp) end end
+--function AXIT.WID(bts) return terra(inp:&types.lower(AXI.WriteIssue(bts)):toTerraType()) return [WriteDataLookup("wid")](inp) end end
 AXIT.WVALID32 = AXIT.WVALID(32)
 AXIT.WVALID64 = AXIT.WVALID(64)
 AXIT.WDATA32 = AXIT.WDATA(32)
@@ -89,8 +91,8 @@ AXIT.WSTRB64 = AXIT.WSTRB(64)
 AXIT.WSTRB32 = AXIT.WSTRB(32)
 AXIT.WLAST64 = AXIT.WLAST(64)
 AXIT.WLAST32 = AXIT.WLAST(32)
-AXIT.WID64 = AXIT.WID(64)
-AXIT.WID32 = AXIT.WID(32)
+--AXIT.WID64 = AXIT.WID(64)
+--AXIT.WID32 = AXIT.WID(32)
 
 local function WriteResponseLookup(idx)
   return macro(function(tab) return `&data(tab).["_"..AXI.WriteResponseIdx[idx]] end)

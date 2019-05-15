@@ -45,7 +45,11 @@ function SDFFunctions:equals(other)
 end
 
 function SDFMT.__tostring(tab)
-  return SDFRate.tostring(tab)
+  local mt = getmetatable(tab)
+  setmetatable(tab,nil)
+  local tabstr=tostring(tab)
+  setmetatable(tab,mt)
+  return SDFRate.tostring(tab) --..tabstr
 end
 
 
@@ -69,7 +73,7 @@ SDFTOPMT.__call = function(tab,arg,X)
     local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
     table.insert(uarg,{n,d})
   end
-  
+
   return setmetatable(uarg,SDFMT)
 end
   
