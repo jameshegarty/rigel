@@ -1,5 +1,6 @@
 local J = require("common")
 local IR = require("ir")
+local P = require "params"
 local err = J.err
 
 local types = {}
@@ -19,9 +20,20 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="float" then
     return "float"..ty.precision
   elseif ty.kind=="array" then
-    return tostring(ty.over).."["..table.concat(ty.size,",").."]"
+    return tostring(ty.over).."["..tostring(ty.size[1])..","..tostring(ty.size[2]).."]"
   elseif ty.kind=="tuple" then
     return "{"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",").."}"
+  elseif ty.kind=="Par" then
+    return "Par("..tostring(ty.over)..")"
+  elseif ty.kind=="ParSeq" then
+    return tostring(ty.over.over).."["..tostring(ty.over.size[1])..","..tostring(ty.over.size[2])..";"..tostring(ty.size[1])..","..tostring(ty.size[2]).."}"
+  elseif ty.kind=="Interface" then
+    local pre = ""
+    if ty.I~=nil then pre=pre.."I" end
+    if ty.R~=nil then pre=pre.."R" end
+    if ty.V~=nil then pre=pre.."V" end
+    if pre=="" then pre="S" end
+    return pre.."("..tostring(ty.over)..")"
   elseif ty.kind=="named" then
     return ty.name
   end
@@ -94,15 +106,16 @@ end
 types._array={}
 
 function types.array2d( _type, w, h, X )
-  err( types.isType(_type), "first index to array2d must be Rigel type" )
-  err( types.isBasic(_type), "array2d: input type must be basic, but is: "..tostring(_type) )
-  err( type(w)=="number", "types.array2d: second argument must be numeric width but is "..tostring(type(w)) )
-  err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..type(h))
+  err( types.isType(_type) or P.isParamType(_type), "first index to array2d must be Rigel type, but is: "..tostring(_type) )
+  err( type(w)=="number" or P.isParamValue(w), "types.array2d: second argument must be numeric width but is "..tostring(w)..","..tostring(type(w)) )
+  err( type(h)=="number" or P.isParamValue(h) or h==nil, "array2d h must be nil or number, but is:"..tostring(h)..","..type(h))
   if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
-  err(w==math.floor(w), "non integer array width "..tostring(w))
-  assert(h==math.floor(h))
-  err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
-  err( w*h>0,"types.array2d: w*h must be >0" )
+  
+  err( (P.isParamValue(w) and w.kind=="UintValue") or w==math.floor(w), "non integer array width "..tostring(w))
+  err( (P.isParamValue(h) and h.kind=="UintValue") or h==math.floor(h), "non integer array height "..tostring(h))
+  
+  --err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
+  err( (type(w)~="number" or type(h)~="number") or w*h>0,"types.array2d: w*h must be >0" )
   err( X==nil, "types.array2d: too many arguments" )
   
   -- dedup the arrays
@@ -118,9 +131,13 @@ function types.tuple( list )
   err(#list>0, "no empty tuple types!")
 
   for k,v in ipairs(list) do
-    err( types.isType(v), "types.tuple: all items in list must be types, but item "..tostring(k).." is :"..tostring(v))
-    err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
-    err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
+    if P.isParam(v) then
+      err( P.DataType("tmp"):isSuper(v), "types.tuple: all items in list must be data types, but item "..tostring(k).." is: "..tostring(v))
+    else
+      err( types.isType(v), "types.tuple: all items in list must be types, but item "..tostring(k).." is :"..tostring(v))
+      err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
+      --err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
+    end
   end
   
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
@@ -557,7 +574,7 @@ function TypeFunctions:verilogBits()
   elseif self:isNamed() then
     return self.structure:verilogBits()
   else
-    print(self)
+    print(":verilogBits() not implemented for:",self)
     assert(false)
   end
 end
@@ -783,6 +800,10 @@ function types.valueToType(v)
 end
 
 function types.isBasic(A)
+  if P.isParam(A) then
+    return P.DataType("tmp"):isSuper(A)
+  end
+  
   err(types.isType(A),"isBasic: input should be type, but is: "..tostring(A))
   if A:isArray() then
     return types.isBasic(A:arrayOver()) 
@@ -801,6 +822,42 @@ function types.isBasic(A)
 
   return true
 end
+types.isDataType = types.isBasic
+
+types.Par = J.memoize(function(D)
+  err( types.isDataType(D), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
+  return setmetatable({kind="Par",over=D},TypeMT)
+end)
+
+types.ParSeq = J.memoize(function(D,w,h)
+  local Uniform = require "uniform"
+  err( types.isDataType(D), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
+  err( D:isArray(), "types.ParSeq: input to schedule type should be array data type, but is: "..tostring(D) )
+  err( Uniform.isUniform(w) or P.isParamValue(w) or type(w)=="number", "ParSeq: w must be number, but is: "..tostring(w))
+  err( Uniform.isUniform(h) or P.isParamValue(h) or type(h)=="number", "ParSeq: h must be number, but is: "..tostring(h))
+
+  return setmetatable({kind="ParSeq",over=D,size={w,h}},TypeMT)
+end)
+
+function types.isScheduleType(T)
+  if P.isParam(T) then
+    return P.ScheduleType("tmp"):isSuper(T)
+  end
+  
+  err(types.isType(T),"isScheduleType: input should be type, but is: "..tostring(T))
+  return T.kind=="Par" or T.kind=="Seq" or T.kind=="ParSeq"
+end
+
+types.Interface = J.memoize(function(S,R,V,I)
+    err( types.isScheduleType(S), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
+    err( R==nil or types.isType(R), "types.Interface: Ready bit should be type, but is: "..tostring(R) )
+  return setmetatable({kind="Interface",over=S,R=R,V=V,I=I},TypeMT)
+end)
+
+function types.S(T) return types.Interface(T) end
+function types.R(T) return types.Interface(T,types.bool()) end
+function types.InterfaceV(T) return types.Interface(T,nil,types.bool()) end
+function types.InterfaceRV(T) return types.Interface(T,types.bool(),types.bool()) end
 
 -- by default, this is ready-valid (RV), ie, ready_downstream has to be asserted before valid
 -- if VR==true, this is instead valid-ready (VR), which allows valid to be asserted _before_ ready_downstream (optionally)
@@ -825,8 +882,9 @@ function types.HandshakeVarlen(A)
   return types.named("HandshakeVarlen("..tostring(A)..")", types.tuple{A,types.bool(),types.bool()}, "Handshake", {A=A} )
 end
 
+--[=[
 -- dims goes from innermost (idx 1) to outermost (idx n)
-local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
+local function makeFramedType(kind,A,mixed,dims,X)
   err(types.isType(A),kind.."Framed: argument should be type, but is: "..tostring(A))
   err(types.isBasic(A),kind.."Framed: argument should be basic type, but is: "..tostring(A))
   err( A:verilogBits()>0,"Framed: type must have >0 bits, but is: "..tostring(A) )
@@ -834,6 +892,11 @@ local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   err( type(dims)=="table", kind.."Framed: dims should be table")
   err( X==nil, kind.."Framed: too many arguments")
 
+  if mixed then
+    return types.ParSeq(A,
+  else
+    assert(false)
+  end
   -- make a deep copy, just in case
   local ldims = {}
   for i=1,#dims do
@@ -891,12 +954,16 @@ local function makeFramedType(kind,A,mixed,dims,extra0,extra1,X)
   end
   
   return types.named(str..")", structure, kind.."Framed", params )
-end
+  end]=]
 
 -- if A is an array, this specifies parallel dimensions (dimensions computed in parallel)
 -- dims specifies _all_ dimensions, some of which may be in serial
 -- dims should be in format {{4,2},{7,1},{1920,1080}}. Goes from innermost->outermost
-function types.HandshakeFramed(A,mixed,dims) return makeFramedType("Handshake",A,mixed,dims) end
+function types.HandshakeFramed(A,mixed,dims)
+  assert(#dims==1)
+  if mixed then return types.InterfaceRV(types.ParSeq(A,dims[1][1],dims[1][2])) end
+    assert(false)
+end
 function types.HandshakeArrayFramed(A,mixed,dims,W,H) return makeFramedType("HandshakeArray",A,mixed,dims,W,H) end
 function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
 function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end

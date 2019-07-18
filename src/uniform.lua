@@ -546,7 +546,7 @@ local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="ma
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
-      if type(t.value)=="number" then
+      if false and type(t.value)=="number" then
         return tostring(t.value).."/0x"..string.format("%x",t.value)
       else
         return tostring(t.value)
@@ -570,7 +570,7 @@ function UniformMT.__tostring(tab)
       J.err(false,"Uniform tostring() NYI - "..t.kind)
     end
   end
-  return "Uniform("..tostringInner(tab)..")"
+  return "Uni("..tostringInner(tab)..")"
 end
 
 -- returns a string that can be dumped into a lua file

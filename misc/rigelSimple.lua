@@ -1,8 +1,8 @@
 local R = require "rigel"
 local types = require("types")
-local RM = require "modules"
-local C = require "examplescommon"
-local harness = require "harness"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
+local harness = require "generators.harness"
 local fRS = require "fixed_float"
 local S = require("systolic")
 local SDFRate = require("sdfrate")

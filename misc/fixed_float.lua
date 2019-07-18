@@ -1,4 +1,4 @@
-local modules = require "modules"
+local modules = require "generators.modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")

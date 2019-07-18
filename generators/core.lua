@@ -1,11 +1,13 @@
 local R = require "rigel"
 local J = require "common"
 local types = require "types"
-local RM = require "modules"
+local T = types
+local P = require "params"
+local RM = require "generators.modules"
 local RS = require "rigelSimple"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local S = require "systolic"
-local SOC = require "soc"
+local SOC = require "generators.soc"
 local Uniform = require "uniform"
 
 local __unnamedID = 0
@@ -100,7 +102,7 @@ function(args)
   return C.fifo( ty, args.number, args.bool )
 end)
   
-generators.Add = R.newFunctionGenerator("generators","Add",{"type","rate"},{"bool","number"},
+--[=[generators.Add = R.newFunctionGenerator("generators","Add",{"type","rate"},{"bool","number"},
 function(args)
   if args.number~=nil then
     -- add a const (unary op)
@@ -110,6 +112,25 @@ function(args)
     J.err( args.type.list[1]==args.type.list[2], "generators.Add: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
     return C.sum( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
   end
+  end)]=]
+generators.Add = R.ParametricFunctionGenerator("generators","Add",{},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    res = {P.NumberType("T"),P.NumberType("T"),function(a) return C.plusConst(a.T,args.number) end}
+  else
+    res = {T.tuple{P.NumberType("T"),P.NumberType("T")},P.NumberType("T"),function(a) return C.sum( a.T, a.T, a.T, args.async ) end}
+  end
+
+  if args.async==true then
+    res[1],res[2] = T.S(T.Par(res[1])), T.S(T.Par(res[2]))
+  else
+    res[1],res[2] = T.S(T.Par(res[1])), T.R(T.Par(res[2]))
+  end
+  
+  return {res}
 end)
 
 generators.Sub = R.newFunctionGenerator("generators","Sub",{"type","rate"},{"bool"},

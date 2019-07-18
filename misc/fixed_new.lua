@@ -1,5 +1,5 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")

@@ -1,6 +1,6 @@
 local R = require "rigel"
-local C = require "examplescommon"
-local SOC = require "soc"
+local C = require "generators.examplescommon"
+local SOC = require "generators.soc"
 local J = require "common"
 local SDF = require "sdfrate"
 local types = require "types"

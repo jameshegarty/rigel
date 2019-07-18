@@ -1,15 +1,15 @@
 [submodule "modules/bsg_ip_cores"]
-	path = modules/bsg_ip_cores
+	path = generators/bsg_ip_cores
 	url = https://bitbucket.org/taylor-bsg/bsg_ip_cores.git
 [submodule "modules/axi_node"]
-	path = modules/pulpino/axi_node
+	path = generators/pulpino/axi_node
 	url = https://github.com/pulp-platform/axi_node.git
 [submodule "modules/axi_size_conv"]
-	path = modules/pulpino/axi_size_conv
+	path = generators/pulpino/axi_size_conv
 	url = https://github.com/pulp-platform/axi_size_conv.git
 [submodule "modules/axi"]
-	path = modules/pulpino/axi
+	path = generators/pulpino/axi
 	url = https://github.com/pulp-platform/axi.git
 [submodule "modules/pulpino/common_cells"]
-	path = modules/pulpino/common_cells
+	path = generators/pulpino/common_cells
 	url = https://github.com/pulp-platform/common_cells.git

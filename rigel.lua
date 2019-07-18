@@ -7,6 +7,7 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
 local SDF = require("sdf")
+local params = require "params"
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
@@ -277,7 +278,115 @@ function darkroom.newFunctionGenerator( namespace, name, requiredArgs, optArgs, 
   
   return setmetatable( {namespace=namespace, name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={} }, functionGeneratorMT )
 end
+
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
+
+local function checkTypeMatch(T1,T2,vars)
+  print("checkTypeMatch "..tostring(T1).." "..tostring(T2))
+  --print(types.isType(T1),types.isType(T2))
+  err( types.isType(T1) or params.isParam(T1), "checkTypeMatch: input should be type or param, but is: "..tostring(T1) )
+  err( types.isType(T2) or params.isParam(T2), "checkTypeMatch: input should be type or param, but is: "..tostring(T1) )
+  
+  if T1==T2 then
+    return true
+  elseif types.isType(T1) and types.isType(T2) then
+    -- do the params of these types match?
+    if J.keycount(T1)~=J.keycount(T2) then return false end
+    for k,v in pairs(T1) do
+      if k~="over" and T2[k]~=v then
+        print("When matching ",T1,T2,"key",k,"doesn't match")
+        return false
+      end
+    end
+
+    err( T1.over~=nil and T2.over~=nil, "Could not recurse into type? "..tostring(T1).." "..tostring(T2).." "..tostring(T1.over).." "..tostring(T2.over) )
+    -- recurse into it. Ie it's Array(T)
+    return checkTypeMatch(T1.over,T2.over,vars)
+  elseif params.isParam(T1) and params.isParam(T2) then
+    return T1.kind:isSuper(T2.kind) or T2.kind:isSuper(T1.kind)
+  else -- one param, one type
+    if types.isType(T2) then T1,T2=T2,T1 end
+    -- T1 contains the type, T2 contains param
+    if T2:isInstance(T1) then
+      vars[T2.name]=T1
+      return true
+    else
+      return false
+    end
+  end
+end
+
+local function specialize(T,vars)
+  if params.isParam(T) then
+    assert(vars[T.name]~=nil)
+    return vars[T.name]
+  elseif types.isType(T) then
+    for k,v in pairs(T) do
+      if k~="over" and params.isParam(v) then
+        assert(vars[T.name]~=nil)
+
+        --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
+        T = T:remake()
+      end
+    end
+    return specialize(T.over,vars)
+  else
+    print("specialize: ",T)
+    assert(false)
+  end
+end
+
+-- find how to lift parameterized type Tparam to match Ttarget
+local function findLifts(Ttarget,Tparam)
+  print("findLifts",Ttarget,Tparam)
+  if checkTypeMatch(Ttarget,Tparam) then
+    print("types match, we're done: ",Ttarget,Tparam)
+  end
+
+  local L = require "generators.lifts"
+
+  -- search through lifts
+  local liftsFound = false
+  for _,lift in ipairs(L) do
+    local vars1, vars2 = {},{}
+    if checkTypeMatch(Ttarget,lift[3],vars1) and checkTypeMatch(Tparam,lift[1],vars2) then
+      print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
+      assert(Ttarget==specialize(lift[3],vars1))
+      local newTtarget = specialize(lift[1],vars1)
+      print("NewTarget:",newTtarget)
+      
+      liftsFound = true
+    end
+  end
+
+  err(liftsFound,"No lifts found?")
+end
+
+function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, optArgs, completeFn )
+  table.insert(requiredArgs,"type")
+  table.insert(requiredArgs,"rate")
+
+  return darkroom.newFunctionGenerator(namespace, name, requiredArgs, optArgs,
+    function(args)
+      -- user should not be inspecting type or rate
+      local a = {}
+      for k,v in pairs(args) do
+        if k~="rate" and k~="type" then a[k]=v end
+      end
+
+      local fns = completeFn(a)
+
+      for _,v in ipairs(fns) do
+        local inputType, outputType, finFn = v[1],v[2],v[3]
+        -- finFn should now only be a function of type parameters
+
+
+        findLifts(args.type,inputType)
+
+      end
+      err( false, "Could not find any compatible functions")
+    end)
+end
 
 local function buildAndCheckSystolicModule(tab, isModule)
   -- build the systolic module as needed
@@ -713,7 +822,7 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
   local fn = instance.module.functions[functionName]
   assert(fn~=nil)
 
-  local G = require "generators"
+  local G = require "generators.core"
 
   local res = G.Module{"InstCall_"..instance.name.."_"..functionName, fn.inputType, fn.sdfInput,
                        function(i)

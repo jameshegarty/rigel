@@ -1,11 +1,11 @@
 local R = require "rigel"
-local RM = require "modules"
-local AXI = require "axi"
+local RM = require "generators.modules"
+local AXI = require "generators.axi"
 local SDF = require "sdf"
 local J = require "common"
 local Uniform = require "uniform"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 local Zynq = {}
 

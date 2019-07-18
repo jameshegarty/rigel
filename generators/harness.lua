@@ -1,6 +1,6 @@
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 --local fixed = require("fixed")
 local SDFRate = require "sdfrate"

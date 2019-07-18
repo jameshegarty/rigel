@@ -1,13 +1,13 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local S = require "systolic"
 local types = require "types"
 local J = require "common"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
 local Uniform = require "uniform"
-local AXI = require "axi"
+local AXI = require "generators.axi"
 
 local SOCMT
 

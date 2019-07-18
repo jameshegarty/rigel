@@ -1,6 +1,6 @@
 local R = require "rigel"
 local rigel = R
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require "types"
 local S = require "systolic"
 local Ssugar = require "systolicsugar"
