@@ -293,9 +293,17 @@ local function checkTypeMatch(T1,T2,vars)
     -- do the params of these types match?
     if J.keycount(T1)~=J.keycount(T2) then return false end
     for k,v in pairs(T1) do
-      if k~="over" and T2[k]~=v then
-        print("When matching ",T1,T2,"key",k,"doesn't match")
-        return false
+      if k~="over" then
+        err(T2[k]~=nil,"Key '"..tostring(k).."' missing from T2?")
+        local param, val = T2[k], v
+        if params.isParam(val) then param,val = val,param end
+
+        if params.isParam(param) and params.isParam(val)==false then
+          vars[param.name]=val
+        else
+          print("When matching ",T1,T2,"key",k," is not param/val pair?",param,val)
+          assert(val==param)
+        end
       end
     end
 
@@ -309,6 +317,7 @@ local function checkTypeMatch(T1,T2,vars)
     -- T1 contains the type, T2 contains param
     if T2:isInstance(T1) then
       vars[T2.name]=T1
+      print("SETVAR",T2.name,T1)
       return true
     else
       return false
@@ -323,13 +332,13 @@ local function specialize(T,vars)
   elseif types.isType(T) then
     for k,v in pairs(T) do
       if k~="over" and params.isParam(v) then
-        assert(vars[T.name]~=nil)
+        assert(vars[v.name]~=nil)
 
         --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
-        T = T:remake()
+        T = T:replaceVar(k,v)
       end
     end
-    return specialize(T.over,vars)
+    return T:replaceVar("over",specialize(T.over,vars))
   else
     print("specialize: ",T)
     assert(false)
@@ -337,29 +346,41 @@ local function specialize(T,vars)
 end
 
 -- find how to lift parameterized type Tparam to match Ttarget
-local function findLifts(Ttarget,Tparam)
+local function findLifts(fn,Ttarget,Tparam)
   print("findLifts",Ttarget,Tparam)
   if checkTypeMatch(Ttarget,Tparam) then
     print("types match, we're done: ",Ttarget,Tparam)
+    return fn
   end
 
   local L = require "generators.lifts"
 
   -- search through lifts
   local liftsFound = false
-  for _,lift in ipairs(L) do
+  for liftName,lift in pairs(L) do
+    print("Try lift",liftName)
     local vars1, vars2 = {},{}
     if checkTypeMatch(Ttarget,lift[3],vars1) and checkTypeMatch(Tparam,lift[1],vars2) then
       print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
-      assert(Ttarget==specialize(lift[3],vars1))
+      print("SPECIALIZE",Ttarget,lift[3])
+      for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
+      local spec = specialize(lift[3],vars1)
+      print("res",spec)
+      assert(Ttarget==spec)
       local newTtarget = specialize(lift[1],vars1)
       print("NewTarget:",newTtarget)
       
       liftsFound = true
+
+      local res = findLifts(fn,newTtarget,Tparam)
+      return lift[5](res)
     end
   end
 
-  err(liftsFound,"No lifts found?")
+  --err(liftsFound,"No lifts found?")
+  if liftsFound==false then print("No lifts found?") end
+
+  return nil
 end
 
 function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, optArgs, completeFn )
@@ -381,8 +402,11 @@ function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, op
         -- finFn should now only be a function of type parameters
 
 
-        findLifts(args.type,inputType)
+        local resFn = findLifts(finFn,args.type,inputType)
 
+        if resFn~=nil then
+          return resFn
+        end
       end
       err( false, "Could not find any compatible functions")
     end)

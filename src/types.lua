@@ -520,6 +520,25 @@ function TypeFunctions:stripNamed()
   end
 end
 
+-- take the key 'k' in this types table, and replace it with value 'v',
+-- and return a new valid type
+function TypeFunctions:replaceVar(k,v)
+  assert(k~="kind")
+
+  local cpy = {}
+  for kk,vv in pairs(self) do cpy[kk]=vv end
+  cpy[k]=v
+  
+  if self:isUint() then
+    return types.uint(cpy.precision)
+  elseif self:is("Interface") then
+    return types.Interface(cpy.over,cpy.R,cpy.V,cpy.I)
+  else
+    print(":replaceVar() NYI",self.kind)
+    assert(false)
+  end
+end
+
 function TypeFunctions:isArray()  return self.kind=="array" end
 
 function TypeFunctions:arrayOver()
