@@ -33,19 +33,14 @@ params.ScheduleType = makeParam("ScheduleType",false)
 params.ParSeqType = makeParam("ParSeqType",false,params.ScheduleType("tmp"))
 params.ParType = makeParam("ParType",false,params.ScheduleType("tmp"))
 
--- is this param a superclass of P?
-function ParamFunctions:isSuper(P)
-  J.err( params.isParam(P), ":isSuper(), arg is not a param: "..tostring(P) )
-  if self.kind==P.kind then return true end
-  if P.super==nil then return false end -- this kind has no super, and doesn't match self
-  return self:isSuper(P.super)
-end
-
-local function valueToParam(V)
+local function valueOrTypeToParam(V)
   local function firstToUpper(str)
     return (str:gsub("^%l", string.upper))
   end
 
+  local R = require "rigel"
+  if R.isSize(V) then return params.SizeValue("tmp") end
+  
   local types = require "types"
   if types.isType(V)==false then
     V = types.valueToType(V)
@@ -56,10 +51,19 @@ local function valueToParam(V)
   return p("tmp")
 end
 
--- is V an instance of this param?
-function ParamFunctions:isInstance(V)
-  print(V,"Is instance of?",self)
-  return self:isSuper(valueToParam(V))
+-- is this param a supertype of P?
+function ParamFunctions:isSupertypeOf(P)
+  local types = require "types"
+  local uniform = require "uniform"
+  if params.isParam(P) then
+    if self.kind==P.kind then return true end
+    if P.super==nil then return false end -- this kind has no super, and doesn't match self
+    return self:isSupertypeOf(P.super)
+  else
+    return self:isSupertypeOf(valueOrTypeToParam(P))
+    --print(tostring(self)..":isSupertypeOf() could not deal with ",P)
+    --assert(false)
+  end
 end
 
 return params

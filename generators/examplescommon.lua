@@ -161,7 +161,8 @@ end)
 
 -- takes {T[N/2],T[N/2]} to T[N]
 C.flatten2 = memoize(function(T,N)
-  err(types.isType(T),"cast: T should be type")
+  err(types.isType(T),"flatten2: T should be type")
+  err(T:isDataType(),"flatten2: T should be data type, but is: "..tostring(T))
   --assert(T:isTuple()==false) -- not supported by terra
   local AI = types.array2d(T,N/2)
   local docast = RM.lift( J.sanitize("flatten2_"..tostring(T).."_"..tostring(N)), types.tuple{AI,AI}, types.array2d(T,N), 0, function(sinp) return S.cast(sinp,types.array2d(T,N)) end, function() return CT.flatten2(T,N) end, "C.flatten2" )
@@ -1718,8 +1719,9 @@ C.handshakeToHandshakeFramed = memoize(
     err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
     err( type(mixed)=="boolean", "handshakeToHandshakeFramed: mixed should be bool")
     assert(X==nil)
-    err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake")
-    local res = {inputType=A,outputType=types.HandshakeFramed(A.params.A,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+    err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake, but is: "..tostring(A))
+    err(A.over:is("Par"),"handshakeToHandshakeFramed: input should be par")
+    local res = {inputType=A,outputType=types.HandshakeFramed(A.over.over,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
     local nm = "HandshakeToHandshakeFramed_"..tostring(A).."_mixed"..tostring(mixed).."_dims"..tostring(dims)
     res.name=J.sanitize(nm)
 
@@ -2080,7 +2082,7 @@ function C.automaticSystolicStub( mod )
 
   for fnname,fn in pairs(modFunctions) do
     fns[fnname] = Ssugar.lambdaConstructor(fnname,types.lower(fn.inputType),fnname.."_input")
-    if fn.outputType~=types.null() then
+    if fn.outputType~=types.Interface() then
       fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),fnname.."_output")
     end
     delays[fnname]=0
@@ -2091,14 +2093,14 @@ function C.automaticSystolicStub( mod )
       local readyDownstreamFnName = fnname.."_ready_downstream"
       if R.isFunction(mod) then readyDownstreamFnName = "ready_downstream" end -- hack for historic reasons
       
-      if fn.outputType==types.null() then
+      if fn.outputType==types.Interface() then
         inp = S.parameter(readyDownstreamFnName,types.null() )
       else
         inp = S.parameter(readyDownstreamFnName,types.extractReady(fn.outputType) )
       end
 
       local out
-      if fn.inputType~=types.null() then
+      if fn.inputType~=types.Interface() then
         out = S.constant(types.extractReady(fn.inputType):fakeValue(),types.extractReady(fn.inputType))
       end
 

@@ -135,8 +135,8 @@ output wire ]]..k..[[_ready,
   
 
 
-  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.start = R.newFunction{name="start",inputType=types.Interface(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.Interface(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
 
   local res = RM.moduleLambda( ModuleName, functionList )
   res.globalMetadata = globalMetadata
@@ -1625,13 +1625,18 @@ SOC.read = function( filename, fileBytes, readType, readFn_orig, Cstyle, address
   return res
 end
                           
-SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig, addressOverride, X)
-  J.err( type(filename)=="string","writeBurst: filename must be string")
-  J.err( type(W)=="number", "writeBurst: W must be number")
-  J.err( type(H)=="number", "writeBurst: H must be number")
+SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, framed, writeFn_orig, addressOverride, X)
+  J.err( type(filename)=="string","writeBurst: filename must be string, but is: "..tostring(filename))
+  --J.err( type(W)=="number", "writeBurst: W must be number, but is: "..tostring(W))
+  --J.err( type(H)=="number", "writeBurst: H must be number")
+  local W,H = Uniform(W_orig):toNumber(),Uniform(H_orig):toNumber()
   J.err( types.isType(ty), "writeBurst: type must be type")
-  J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
-  if V==nil then V=1 end
+
+  J.err( Vw==nil or type(Vw)=="number", "writeBurst: Vw must be number or nil")
+  if Vw==nil then Vw=1 end
+  J.err( Vh==nil or type(Vh)=="number", "writeBurst: Vh must be number or nil")
+  if Vh==nil then Vh=1 end
+
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean, but is: "..tostring(framed))
   J.err( R.isFunction(writeFn_orig), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
@@ -1652,12 +1657,12 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
   globalMetadata[writeFn_orig.name.."_write_address"] = address
 
   local inputType = ty
-  if V>0 then inputType = types.array2d(inputType,V) end
+  if Vw>0 then inputType = types.array2d(inputType,Vw,Vh) end
   
   local inp = R.input(R.Handshake(inputType))
   local out = RM.makeHandshake(C.bitcast(inputType,types.bits(inputType:verilogBits())))(inp)
 
-  local inputBits = ty:verilogBits()*math.max(V,1)
+  local inputBits = ty:verilogBits()*math.max(Vw*Vh,1)
   local desiredTotalInputBits = W*H*ty:verilogBits()
 
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
@@ -1678,7 +1683,7 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
 
   out = SOC.axiBurstWriteN( filename, totalBits/8, address, writeFn_orig )(out)
 
-  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_Vw"..Vw.."_Vh"..Vh.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   if addressOverride==nil then
@@ -1692,7 +1697,7 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
   
   if framed then
     -- HACK
-    res.inputType = types.HandshakeFramed(inputType,V>0,{{W,H}})
+    res.inputType = types.HandshakeFramed(inputType,Vw*Vh>0,{{W_orig,H_orig}})
   end
   
   return res

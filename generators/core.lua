@@ -572,13 +572,9 @@ function(args)
   end
 end)
 
-generators.AXIWriteBurst = R.newFunctionGenerator("generators","AXIWriteBurst",{"string","type","rate","rigelFunction"},{"size","number","address"},
+generators.AXIWriteBurst = R.ParametricFunctionGenerator("generators","AXIWriteBurst",{"string","rigelFunction"},{"address"},
 function(args)
-  if args.type:is("HandshakeFramed") then
-    return SOC.writeBurst( args.string, args.type:FW(), args.type:FH(), args.type:FPixelType(), args.type:FV(), true, args.rigelFunction, args.address )
-  else
-    J.err( false, "AXIWriteBurst: only framed types supported. unsupported input type: "..tostring(args.type))
-  end
+  return {{types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),types.HandshakeTrigger,function(a) return SOC.writeBurst( args.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, args.rigelFunction, args.address ) end }}
 end)
 
 generators.Reshape = R.newFunctionGenerator("generators","Reshape",{"type","rate"},{},

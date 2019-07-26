@@ -76,6 +76,19 @@ darkroom.streamCount = types.streamCount
 darkroom.isStreaming = types.isStreaming
 darkroom.isBasic = types.isBasic
 
+-- some basic classes
+local SizeMT = {}
+SizeMT.__tostring=function(tab) return tostring(tab[1])..","..tostring(tab[2]) end
+function darkroom.isSize(t) return getmetatable(t)==SizeMT end
+
+function darkroom.Size(w,h,X)
+  local Uniform = require "uniform"
+  err(type(w)=="number" or Uniform.isUniform(w),"Size: w must be number, but is: "..tostring(w))
+  err(type(h)=="number" or Uniform.isUniform(h),"Size: h must be number, but is: "..tostring(h))
+  assert(X==nil)
+  return setmetatable({w,h},SizeMT)
+end
+
 local function discoverName(x)
   local y = 1
   while true do
@@ -281,50 +294,6 @@ end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
-local function checkTypeMatch(T1,T2,vars)
-  print("checkTypeMatch "..tostring(T1).." "..tostring(T2))
-  --print(types.isType(T1),types.isType(T2))
-  err( types.isType(T1) or params.isParam(T1), "checkTypeMatch: input should be type or param, but is: "..tostring(T1) )
-  err( types.isType(T2) or params.isParam(T2), "checkTypeMatch: input should be type or param, but is: "..tostring(T1) )
-  
-  if T1==T2 then
-    return true
-  elseif types.isType(T1) and types.isType(T2) then
-    -- do the params of these types match?
-    if J.keycount(T1)~=J.keycount(T2) then return false end
-    for k,v in pairs(T1) do
-      if k~="over" then
-        err(T2[k]~=nil,"Key '"..tostring(k).."' missing from T2?")
-        local param, val = T2[k], v
-        if params.isParam(val) then param,val = val,param end
-
-        if params.isParam(param) and params.isParam(val)==false then
-          vars[param.name]=val
-        else
-          print("When matching ",T1,T2,"key",k," is not param/val pair?",param,val)
-          assert(val==param)
-        end
-      end
-    end
-
-    err( T1.over~=nil and T2.over~=nil, "Could not recurse into type? "..tostring(T1).." "..tostring(T2).." "..tostring(T1.over).." "..tostring(T2.over) )
-    -- recurse into it. Ie it's Array(T)
-    return checkTypeMatch(T1.over,T2.over,vars)
-  elseif params.isParam(T1) and params.isParam(T2) then
-    return T1.kind:isSuper(T2.kind) or T2.kind:isSuper(T1.kind)
-  else -- one param, one type
-    if types.isType(T2) then T1,T2=T2,T1 end
-    -- T1 contains the type, T2 contains param
-    if T2:isInstance(T1) then
-      vars[T2.name]=T1
-      print("SETVAR",T2.name,T1)
-      return true
-    else
-      return false
-    end
-  end
-end
-
 local function specialize(T,vars)
   if params.isParam(T) then
     assert(vars[T.name]~=nil)
@@ -335,7 +304,9 @@ local function specialize(T,vars)
         assert(vars[v.name]~=nil)
 
         --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
-        T = T:replaceVar(k,v)
+        print("SPECIAL",T,k,vars[v.name])
+        T = T:replaceVar(k,vars[v.name])
+        print("SPEC",T)
       end
     end
     return T:replaceVar("over",specialize(T.over,vars))
@@ -348,8 +319,13 @@ end
 -- find how to lift parameterized type Tparam to match Ttarget
 local function findLifts(fn,Ttarget,Tparam)
   print("findLifts",Ttarget,Tparam)
-  if checkTypeMatch(Ttarget,Tparam) then
+  local finVars = {}
+  if Tparam:isSupertypeOf(Ttarget,finVars) then
     print("types match, we're done: ",Ttarget,Tparam)
+    for k,v in pairs(finVars) do print(k,v) end
+    print("FN",fn)
+    fn = fn(finVars)
+    print("FN",fn)
     return fn
   end
 
@@ -360,12 +336,12 @@ local function findLifts(fn,Ttarget,Tparam)
   for liftName,lift in pairs(L) do
     print("Try lift",liftName)
     local vars1, vars2 = {},{}
-    if checkTypeMatch(Ttarget,lift[3],vars1) and checkTypeMatch(Tparam,lift[1],vars2) then
+    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) then
       print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
       print("SPECIALIZE",Ttarget,lift[3])
       for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
       local spec = specialize(lift[3],vars1)
-      print("res",spec)
+      print("res",Ttarget,spec)
       assert(Ttarget==spec)
       local newTtarget = specialize(lift[1],vars1)
       print("NewTarget:",newTtarget)
@@ -373,7 +349,11 @@ local function findLifts(fn,Ttarget,Tparam)
       liftsFound = true
 
       local res = findLifts(fn,newTtarget,Tparam)
-      return lift[5](res)
+      print("Found lift")
+      for k,v in pairs(vars2) do print("VARS2",k,v) end
+      for k,v in pairs(vars1) do print("VARS1",k,v) end
+      local liftFn = lift[5](vars1)
+      return liftFn(res)
     end
   end
 
@@ -405,6 +385,7 @@ function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, op
         local resFn = findLifts(finFn,args.type,inputType)
 
         if resFn~=nil then
+          print(resFn)
           return resFn
         end
       end
@@ -433,7 +414,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
 
     err( systolicFn~=nil, "systolic module function is missing ("..tostring(sm.name)..")")
     
-    if rigelFn.outputType~=types.null() then
+    if rigelFn.outputType~=types.Interface() then
       err( systolicFn.output~=nil, "module output is not null (is "..tostring(rigelFn.outputType).."), but systolic output is missing")
       err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."'" )
     end
@@ -444,18 +425,20 @@ local function buildAndCheckSystolicModule(tab, isModule)
       
       err( sm.functions[readyName]~=nil, "module ready function missing?")
 
-      if rigelFn.inputType~=types.null() and darkroom.extractReady(rigelFn.inputType)~=sm.functions[readyName].output.type then
+      local expectedReady = darkroom.extractReady(rigelFn.inputType)
+      if rigelFn.inputType~=types.Interface() and expectedReady~=sm.functions[readyName].output.type then
         err(false, "module '"..tab.name.."' systolic ready output type wrong. Systolic ready output type is '"..tostring(sm.functions[readyName].output.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.inputType)).."', because Rigel function input type is '"..tostring(rigelFn.inputType).."'.")
       end
 
+      --[=[
       if types.isHandshakeAny(rigelFn.inputType)==false and sm.functions[readyName].output~=nil then
         err(sm.functions[readyName].output.type==types.null(),"Systolic module '"..tab.name.."' function '"..readyName.."' (input type "..tostring(rigelFn.inputType)..") shouldn't return anything, but returns type: "..tostring(sm.functions[readyName].output.type))
-      end
+        end]=]
       
     end
 
-
-    err( darkroom.lower(rigelFn.inputType)==systolicFn.inputParameter.type, "module input type wrong?" )
+    local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
+    err( expectedInput==systolicFn.inputParameter.type, "systolic module input type wrong? Rigel input type:"..tostring(rigelFn.inputType).." Rigel Lowered:"..tostring(expectedInput).." module type:"..tostring(systolicFn.inputParameter.type) )
     
   end
 
@@ -678,7 +661,7 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
   assert(type(fnname)=="string")
   
   local v = {"\n/* function "..fnname.."*/\n"}
-  if self.inputType==types.null() then
+  if self.inputType==types.Interface() then
   elseif types.isHandshakeAny(self.inputType) then
     local readyName = "ready"
     if fnname~="process" then readyName=fnname.."_ready" end
@@ -690,10 +673,11 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
       table.insert(v,", input wire CE, input wire "..fnname.."_valid")
     end
   else
+    print("vHeaderInOut NYI type: "..tostring(self.inputType))
     assert(false)
   end
 
-  if self.outputType==types.null() then
+  if self.outputType==types.Interface() then
   elseif types.isHandshakeAny(self.outputType) then
     local readyName = "ready_downstream"
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
@@ -875,7 +859,18 @@ function darkroom.newFunction(tab,X)
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or tab.inputType==types.null(), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
+  -- legacy code hack
+  if types.isBasic(tab.inputType) then
+    tab.inputType = types.S(types.Par(tab.inputType))
+  end
+  if types.isBasic(tab.outputType) then
+    tab.outputType = types.S(types.Par(tab.outputType))
+  end
+  
+  err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
+  err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
+
+  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or tab.inputType==types.Interface(), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
@@ -1576,7 +1571,7 @@ function darkroomIRFunctions:typecheck()
     err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
     
     if n.inputs[1]==nil then
-      err( n.inst.module.functions[n.fnname].inputType==types.null(), "Error, method '"..n.fnname.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' was passed no input, but expected an input (of type "..tostring(n.inst.module.functions[n.fnname].inputType)..")")
+      err( n.inst.module.functions[n.fnname].inputType==types.Interface(), "Error, method '"..n.fnname.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' was passed no input, but expected an input (of type "..tostring(n.inst.module.functions[n.fnname].inputType)..")")
     else
       err( n.inst.module.functions[n.fnname].inputType==n.inputs[1].type, "Error, input to function '"..n.fnname.."' should have type '"..tostring(n.inst.module.functions[n.fnname].inputType).."', but was passed type '"..tostring(n.inputs[1].type).."'")
     end
@@ -1590,8 +1585,8 @@ function darkroomIRFunctions:typecheck()
     elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
       -- there's no reason for HandshakeTuple to exist...
       err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
-    elseif darkroom.isBasic(n.inputs[1].type) then
-      n.type = types.tuple( J.map(n.inputs, function(v) err(darkroom.isBasic(v.type),"concat: if one input is basic, all inputs must be basic"); return v.type end) )
+    elseif n.inputs[1].type:isStatic() and n.inputs[1].type.over:is("Par") then
+      n.type = types.S(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isStatic(),"concat: if one input is basic, all inputs must be basic"); return v.type.over.over end) )))
     else
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
@@ -1687,7 +1682,7 @@ function darkroomIRFunctions:codegenSystolicReady( module )
             assert(J.keycount(args)==1) -- NYI
             input = thisi
           else
-            assert(thisi.type:isArray() and thisi.type:arrayOver():isBool())
+            assert(thisi.type==types.extractReady(n.type))
             
             if input==nil then
               input = thisi
@@ -1748,14 +1743,14 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         readyout = input
       elseif n.kind=="apply" then
         res = {module:lookupInstance(n.name):ready(input)}
-        if n.fn.inputType==types.null() then
+        if n.fn.inputType==types.Interface() then
           table.insert(readyPipelines, res[1])
         end
       elseif n.kind=="applyMethod" then
         local inst = module:lookupInstance(n.inst.name)
         res = {inst[n.fnname.."_ready"](inst, input)}
         
-        if n.inst.module.functions[n.fnname].inputType==types.null() then
+        if n.inst.module.functions[n.fnname].inputType==types.Interface() then
           -- eg fifo:load_ready()... nothing else will drive this, so we need to add it
           table.insert(readyPipelines,res[1])
         end
@@ -1812,14 +1807,14 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         elseif types.isHandshakeTrigger(i.type) then
           --assert(#res==1)
           assert(res[k].type:isBool())
-        elseif i:outputStreams()>1 or types.isHandshakeArray(i.type) then
+        elseif i:outputStreams()>1 then
           
           err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
           if types.isHandshakeTmuxed(i.type) then
             err( res[k].type:isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
           elseif types.isHandshakeArrayOneHot(i.type) then
             err( res[k].type==types.uint(8),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
-          else
+          elseif i.type:is("InterfaceArray") then
             err(res[k].type:isArray() and res[k].type:arrayOver():isBool(),  "incorrect output format "..n.kind.." input "..tostring(k).." is "..tostring(res[k].type).." but expected stream count "..tostring(i:outputStreams()).."  - "..n.loc)
           end
         elseif i:outputStreams()==0 then
@@ -1923,6 +1918,7 @@ function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 -- function argument
 function darkroom.input( ty, sdfRate )
   err( types.isType( ty ), "darkroom.input: first argument should be type" )
+  err( ty:isInterface(),"input: type should be interface type, but is: "..tostring(ty))
   err( sdfRate==nil or SDFRate.isSDFRate(sdfRate), "input: second argument should be SDF rate or nil")
 
   if sdfRate==nil then
