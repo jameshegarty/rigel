@@ -19,7 +19,7 @@ local Conv = G.Module{ "ConvTop", SDF{1,cycles},
     print("READBURST",p)
     local s = G.Stencil{{-3,0,-3,0}}(p)
     print("STENCIL",s,s.type)
-    --s = G.Reshape(s)
+    s = G.Reshape(s)
     --print("REhhhSHAPE",s)
     --local f = G.HS{G.Map{G.Map{G.Rshift{4}}}}(s)
     local f = G.Rshift{4}(s)

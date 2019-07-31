@@ -2553,7 +2553,7 @@ end)
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
-modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
+modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
   err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
@@ -2575,18 +2575,20 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
   local outputCount = maxRate/outputRate
 
   local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
-  res.inputType = types.array2d(A,inputRate,H)
-  res.outputType = rigel.RV(types.array2d(A,outputRate,H))
 
-  if framed and inputRate<outputRate then
-    assert(H==1) -- makes no sense
-    assert(outputRate==framedW*framedH)
-    res.inputType = res.inputType:addDim(framedW,framedH,true)
-  elseif framed and inputRate>outputRate then
-    assert(H==1) -- makes no sense
-    assert(inputRate==framedW*framedH)
-    print("SER",res.inputType,res.outputType,framedW,framedH)
-    res.outputType = res.outputType:addDim(framedW,framedH,true)
+  if framed then
+    if inputRate<outputRate then
+      res.inputType = types.rV(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
+      res.outputType = rigel.Rv(types.Par(types.array2d(A,outputRate,H)))
+    elseif inputRate>outputRate then
+      res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
+      res.outputType = types.Rv(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
+    else
+      assert(false)
+    end
+  else
+    res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
+    res.outputType = types.Rv(types.Par(types.array2d(A,outputRate,H)))
   end
   
   res.stateful = true
@@ -2604,7 +2606,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
     local svalid = S.parameter("process_valid", types.bool() )
     local rvalid = S.parameter("reset", types.bool() )
-    local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
+    local pinp = S.parameter("process_input", rigel.lower(res.inputType,res.outputType) )
     
     if inputRate>outputRate then
       

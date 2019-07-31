@@ -635,10 +635,11 @@ function(args)
     else
       assert(false)
     end
-  elseif ratio>1 then
-    assert(false)
   end
 
+  -- if ratio >=1, don't do anything:
+  return generators.Identity{args.type,args.rate}
+--[=[  
   -- ratio==1
   if args.type:is("HandshakeFramed") then
     local ID = C.identity( args.type.params.A )
@@ -649,7 +650,7 @@ function(args)
     return C.identity(args.type)
   else
     assert(false)
-  end
+  end]=]
 end)
 
 generators.Sort = R.newFunctionGenerator("generators","Sort",{"type","rate","rigelFunction"},{},
@@ -659,9 +660,9 @@ function(args)
   return C.oddEvenMergeSort( args.type:arrayOver(), args.type:channels(), args.rigelFunction )
 end)
 
-generators.Identity = R.newFunctionGenerator("generators","Identity",{"type","rate"},{},
+generators.Identity = R.ParametricFunctionGenerator("generators","Identity",{},{},
 function(args)
-  return C.identity(args.type)
+  return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) return C.identity(a.T) end}}
 end)
 
 generators.Sel = R.newFunctionGenerator("generators","Sel",{"type","rate"},{},
