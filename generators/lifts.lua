@@ -15,15 +15,25 @@ lifts.mapParSeq={
 -- lift stateless modules to RV: S(A)->S(B) to RV(A)->RV(B)
 lifts.makeHandshake={
   T.S(P.ScheduleType("A")),T.S(P.ScheduleType("B")),
-  T.InterfaceRV(P.ScheduleType("A")),T.InterfaceRV(P.ScheduleType("B")),
+  T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.makeHandshake(f) end end}
+
+lifts.liftDecimate={
+  T.S(P.ScheduleType("A")),T.V(P.ScheduleType("B")),
+  T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
+  function(args) return function(f) return RM.liftHandshake(RM.liftDecimate(f)) end end}
 
 -- typical map, A->B to A[w,h]->B[w,h]
 lifts.map={
-  T.InterfaceV(T.Par(P.DataType("A"))),T.R(T.Par(P.DataType("B"))),
-  T.InterfaceV(T.Par(T.array2d(P.DataType("A"),P.SizeValue("Size")))),
+  T.V(T.Par(P.DataType("A"))),T.R(T.Par(P.DataType("B"))),
+  T.V(T.Par(T.array2d(P.DataType("A"),P.SizeValue("Size")))),
   T.R(T.Par(T.array2d(P.DataType("B"),P.SizeValue("Size")))),
-  function(args) return function(f) return RM.map(f,args.W,args.H) end end}
+  function(args) return function(f) return RM.map(f,args.Size[1],args.Size[2]) end end}
 
+lifts.mapStateless={
+  T.S(T.Par(P.DataType("A"))),T.S(T.Par(P.DataType("B"))),
+  T.S(T.Par(T.array2d(P.DataType("A"),P.SizeValue("Size")))),
+  T.S(T.Par(T.array2d(P.DataType("B"),P.SizeValue("Size")))),
+  function(args) return function(f) return RM.map(f,args.Size[1],args.Size[2]) end end}
 
 return lifts

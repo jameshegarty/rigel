@@ -422,6 +422,11 @@ function UniformFunctions:toNumber()
   return self.value
 end
 
+function UniformFunctions:toNumberIfPossible()
+  if self.kind=="const" and self:isNumber() then return self.value end
+  return self
+end
+
 -- is this uniform exactly one value?
 function UniformFunctions:isConst()
   return self.kind=="const"

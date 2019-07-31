@@ -187,6 +187,27 @@ C.tupleToArray = memoize(function(A,W,H,X)
   return docast
 end)
 
+-- converts T[W,H] to {T,T,T,T...}
+C.ArrayToTuple = memoize(function(T,W,H)
+  err(types.isType(T),"ArrayToTuple: A should be type")
+  err(type(W)=="number","ArrayToTuple: W must be number")
+  if H==nil then H=1 end
+  err(type(H)=="number","ArrayToTuple: H must be number")
+  err( X==nil,"ArrayToTuple: too many arguments")
+
+  local G = require "generators.core"
+  return G.Module{"ArrayToTuple_",types.S(types.Par(types.array2d(T,W,H))),
+    function(inp)
+      local res = {}
+      for y=0,H-1 do
+        for x=0,W-1 do
+          table.insert(res,G.Index{{x,y}}(inp))
+        end
+      end
+      return R.concat(res)
+    end}
+end)
+
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
@@ -285,7 +306,7 @@ C.sum = memoize(function( A, B, outputType, async )
 
   if async==nil then return C.sum(A,B,outputType,false) end
 
-  err(type(async)=="boolean","C.sum: async must be boolean")
+  err(type(async)=="boolean","C.sum: async must be boolean, but is: "..tostring(async))
 
   local delay
   if async then delay = 0 else delay = 1 end
@@ -1294,12 +1315,14 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
 end)
 
 
-C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed, X )
+C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, framed, X )
   err(types.isType(A), "stencilLinebuffer: A must be type, but is: "..tostring(A))
 
+  local w,h = Uniform(w_orig):toNumber(),Uniform(h_orig):toNumber()
+ 
   err(type(T)=="number","stencilLinebuffer: T must be number")
-  err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
-  err(type(h)=="number","stencilLinebuffer: h must be number")
+  -- err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
+  --err(type(h)=="number","stencilLinebuffer: h must be number")
   err(type(xmin)=="number","stencilLinebuffer: xmin must be number")
   err(type(xmax)=="number","stencilLinebuffer: xmax must be number")
   err(type(ymin)=="number","stencilLinebuffer: ymin must be number")
@@ -1315,11 +1338,11 @@ C.stencilLinebuffer = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, fram
 
   err(X==nil,"C.stencilLinebuffer: Too many arguments")
   
-  local SSRFn = modules.SSR( A, T, xmin, ymin)
+  local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w, h)
 
-  if framed then
-    SSRFn = modules.mapFramed(SSRFn,w/T,h,false)
-  end
+  --if framed then
+  --  SSRFn = modules.mapFramed(SSRFn,w/T,h,false)
+  --end
   
   return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, modules.linebuffer( A, w, h, T, ymin, framed ), "C.stencilLinebuffer" )
 end)
@@ -1363,6 +1386,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)) ), I, out )
 end)
 
+-- has rate T->1. Returns each stencil over 1/T cycles
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
   assert(T<=1); assert(w>0); assert(h>0);
@@ -1379,13 +1403,13 @@ end)
 -- purely wiring. This should really be implemented as a lift.
 -- framed: this fn is a bit strange (actually introduces a new dimension), so can't use mapFramed
 -- instead, special case this
-C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed, framedW, framedH, X )
+C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed, framedW_orig, framedH_orig, X )
   assert(types.isType(A))
   assert(type(stencilW)=="number")
   err(stencilW>0,"unpackStencil: stencilW must be >0, but is:"..tostring(stencilW))
   assert(type(stencilH)=="number")
   err(stencilH>0,"unpackStencil: stencilH must be >0, but is:"..tostring(stencilH))
-  assert(type(T)=="number")
+  err(type(T)=="number","unpackStencil: vector width should be number, but is: "..tostring(T))
   assert(T>=1)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
   err( framed==nil or type(framed)=="boolean", "unpackStencil: framed must be nil or bool")
@@ -1397,11 +1421,13 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
 
   if framed then
-    err( type(framedW)=="number", "unpackStencil: framedW must be nil or number")
-    err( type(framedH)=="number", "unpackStencil: framedH must be nil or number")
+    local framedW, framedH = Uniform(framedW_orig):toNumber(), Uniform(framedH_orig):toNumber()
+    --err( type(framedW)=="number", "unpackStencil: framedW must be number, but is: "..tostring(framedW))
+    --err( type(framedH)=="number", "unpackStencil: framedH must be  number")
     
     res.inputType = res.inputType:addDim(framedW/T,framedH,false)
     res.outputType = res.outputType:addDim(framedW,framedH,true)
+  else
   end
   
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
@@ -1499,7 +1525,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
 end)
 
 function C.index( inputType, idx, idy, X )
-  err( types.isType(inputType), "first input to index must be a type" )
+  err( types.isType(inputType), "first input to index must be a type, but is: "..tostring(inputType) )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end

@@ -1528,7 +1528,7 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   out = RM.makeHandshake(C.cast(types.bits(outType:verilogBits()),outType))(out)
 
   if framed then
-    out = C.handshakeToHandshakeFramed(out.type,V>0,{{W,H}})(out)
+    out = C.handshakeToHandshakeFramed(out.type,V>0,{{W:toNumberIfPossible(),H:toNumberIfPossible()}})(out)
   end
   
   local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)

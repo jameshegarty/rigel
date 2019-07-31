@@ -8,25 +8,32 @@ local types = {}
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   if ty.kind=="bool" then
-    return "bool"
+    res = "bool"
   elseif ty.kind=="null" then
-    return "null"
+    res = "null"
   elseif ty.kind=="int" then
-    return "int"..ty.precision
+    res = "int"..ty.precision
   elseif ty.kind=="uint" then
-    return "uint"..ty.precision
+    res = "uint"..ty.precision
   elseif ty.kind=="bits" then
-    return "bits"..ty.precision
+    res = "bits"..ty.precision
   elseif ty.kind=="float" then
-    return "float"..ty.precision
+    res = "float"..ty.precision
   elseif ty.kind=="array" then
-    return tostring(ty.over).."["..tostring(ty.size).."]"
+    res = tostring(ty.over).."["..tostring(ty.size).."]"
   elseif ty.kind=="tuple" then
-    return "{"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",").."}"
+    --res = "{"..table.concat(J.map(ty.list, function(n) res = tostring(n) end), ",").."}"
+    res = "{"
+    for _,v in ipairs(ty.list) do
+      res = res..tostring(v)..","
+    end
+    res = res.."}"
   elseif ty.kind=="Par" then
-    return "Par("..tostring(ty.over)..")"
+    res = "Par("..tostring(ty.over)..")"
   elseif ty.kind=="ParSeq" then
-    return tostring(ty.over.over).."["..tostring(ty.over.size)..";"..tostring(ty.size).."}"
+    res = tostring(ty.over.over).."["..tostring(ty.over.size)..";"..tostring(ty.size).."}"
+  elseif ty.kind=="Seq" then
+    res = tostring(ty.over).."{"..tostring(ty.size).."}"
   elseif ty.kind=="Interface" then
     local pre = ""
     if ty.I~=nil then pre=pre.."I" end
@@ -46,20 +53,27 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     if pre=="" then pre="S" end
 
     if ty.over==nil and pre=="S" then
-      return "Inil"
+      res = "Inil"
     elseif ty.over==nil then
-      return pre.."Trigger"
+      res = pre.."Trigger"
     else
-      return pre.."("..tostring(ty.over)..")"
+      res = pre.."("..tostring(ty.over)..")"
     end
   elseif ty.kind=="InterfaceTuple" then
-    return "<"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",")..">"
+    res = "<"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",")..">"
   elseif ty.kind=="named" then
-    return ty.name
+    res = "NAMED"..ty.name
+  else
+    print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
+    assert(false)
   end
 
-  print("Error, typeToString input doesn't appear to be a type, ",ty.kind)
-  assert(false)
+  --local mt = getmetatable(ty)
+  --setmetatable(ty,nil)
+  --res = res..tostring(ty)
+  --setmetatable(ty,mt)
+  
+  return res
 end}
 
 types._bool=setmetatable({kind="bool"}, TypeMT)
@@ -173,7 +187,7 @@ function types.tuple( list )
 
   for k,v in ipairs(list) do
     if P.isParam(v) then
-      err( P.DataType("tmp"):isSuper(v), "types.tuple: all items in list must be data types, but item "..tostring(k).." is: "..tostring(v))
+      err( P.DataType("tmp"):isSupertypeOf(v), "types.tuple: all items in list must be data types, but item "..tostring(k).." is: "..tostring(v))
     else
       err( types.isType(v), "types.tuple: all items in list must be types, but item "..tostring(k).." is :"..tostring(v))
       err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
@@ -538,40 +552,53 @@ end
 
 function TypeFunctions:isSupertypeOf(ty,vars)
   if vars==nil then vars={} end
+  local params = require "params"
+    
   err( types.isType(ty) or params.isParam(ty), ":isSubtypeOf(): input should be type or param, but is: "..tostring(ty) )
 
-  print(self,"isSuperTypeOf?",ty)
-  
-  local params = require "params"
+  --print(self,"isSuperTypeOf?",ty)
   
   if self==ty then
     return true
   elseif types.isType(ty) then
     -- do the params of these types match?
     if J.keycount(self)~=J.keycount(ty) then return false end
+    
     for k,v in pairs(self) do
---      if k~="over" then
-        err(ty[k]~=nil,":isSupertypeOf(): Key '"..tostring(k).."' missing from ty?")
-
-        if type(v)=="string" or type(v)=="number" then
-          return ty[k]==v
-        elseif types.isType(v) or params.isParam(v) then
-          if v:isSupertypeOf(ty[k],vars) then
-            if params.isParam(v) then
-              print("SET VAR",v.name,ty[k])
-              vars[v.name]=ty[k]
---            else
---              print("key ",k,"should match? but is:",v,ty[k],v:isSupertypeOf(ty[k],{}))
---              assert(v==ty[k])
+      --      if k~="over" then
+      if ty[k]==nil then
+        print(":isSupertypeOf(): Key '"..tostring(k).."' missing from ty '"..tostring(ty).."'?")
+        return false
+      end
+      
+      if type(v)=="string" or type(v)=="number" then
+        return ty[k]==v
+      elseif types.isType(v) or params.isParam(v) then
+        if v:isSupertypeOf(ty[k],vars) then
+          if params.isParam(v) then
+            print("SET VAR",v.name,ty[k])
+            vars[v.name]=ty[k]
+          end
+        else
+          return false
+        end
+      elseif k=="list" then
+        -- special case for tuple list
+        for kk,vv in ipairs(v) do
+          if vv:isSupertypeOf(ty[k][kk],vars) then
+            if params.isParam(vv) then
+              print("SET VAR",vv.name,ty[k][kk])
+              vars[vv.name]=ty[k][kk]
             end
           else
             return false
           end
-        else
-          print("did not know how to handle type k,v:",k,v)
-          assert(false)
         end
---      end
+      else
+        print("did not know how to handle type k,v:",k,v)
+        assert(false)
+      end
+      --      end
     end
 
     return true
@@ -695,9 +722,11 @@ function TypeFunctions:verilogBits()
   end
 end
 
+function TypeFunctions:isS() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and self.v==nil and self.r==nil end
 function TypeFunctions:isrV() return self.kind=="Interface" and self.R==nil and self.V==types.bool() and self.I==nil and self.v==nil and self.r==types.bool() end
 function TypeFunctions:isRv() return self.kind=="Interface" and self.r==nil and self.v==types.bool() and self.I==nil and self.V==nil and self.R==types.bool() end
 function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
+function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isDataType() return types.isBasic(self) end
 function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil end
 function TypeFunctions:isInterface() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
@@ -961,6 +990,35 @@ types.Par = J.memoize(function(D)
   return setmetatable({kind="Par",over=D},TypeMT)
 end)
 
+types.Seq = J.memoize(function(D,w,h,X)
+  local Uniform = require "uniform"
+  err( types.isDataType(D), "types.Seq: input to schedule type should be a data type, but is: "..tostring(D) )
+  err(X==nil,"Seq: too many arguments")
+  
+  -- were we passed a {w,h} table?
+  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
+    assert(h==nil)
+    return types.Seq(D,w[1],w[2])
+  end
+
+  local size
+  if P.isParamValue(w) then
+    err( w.kind=="SizeValue","Seq: parametric size must be size, but is: "..tostring(size))
+    assert(h==nil)
+    size = w
+  else    
+    err( Uniform.isUniform(w) or type(w)=="number", "Seq: w must be number, but is: "..tostring(w))
+    err( Uniform.isUniform(h) or type(h)=="number", "Seq: h must be number, but is: "..tostring(h))
+    local R = require "rigel"
+    size=R.Size(w,h)
+  end
+
+  return setmetatable({kind="Seq",over=D,size=size},TypeMT)
+end)
+
+-- overlap: each parallel 'tile' overlaps each other (for stenciling)
+--          The reason we want to do this, and not just use Seq, is that it's important that the nesting
+--          levels don't change between parallel and sequential processing. 
 types.ParSeq = J.memoize(function(D,w,h,X)
   local Uniform = require "uniform"
   err( types.isDataType(D), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
@@ -985,7 +1043,8 @@ types.ParSeq = J.memoize(function(D,w,h,X)
     size=R.Size(w,h)
   end
   
-  return setmetatable({kind="ParSeq",over=D,size=size},TypeMT)
+  local res = setmetatable({kind="ParSeq",over=D,size=size},TypeMT)
+  return res
 end)
 
 function types.isScheduleType(T)
@@ -997,12 +1056,13 @@ function types.isScheduleType(T)
   return T.kind=="Par" or T.kind=="Seq" or T.kind=="ParSeq"
 end
 
-types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode)
+types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
   err( S==nil or types.isScheduleType(S), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
   err( R==nil or types.isType(R), "types.Interface: Ready bit should be type, but is: "..tostring(R) )
   err( r==nil or types.isType(r), "types.Interface: Ready side fn (r) should be type, but is: "..tostring(r) )
   err( v==nil or types.isType(v), "types.Interface: Valid side fn (v) should be type, but is: "..tostring(v) )
   err( VRmode==nil or type(VRmode)=="boolean","Interface: VRmode should be nil or bool")
+  assert(X==nil)
   
   return setmetatable({kind="Interface",over=S,R=R,V=V,I=I,r=r,v=v,VRmode=VRmode},TypeMT)
 end)
@@ -1029,8 +1089,8 @@ function types.S(T) return types.Interface(T) end
 function types.R(T) return types.Interface(T,types.bool()) end
 function types.rV(T) return types.Interface(T,nil,types.bool(),nil,types.bool()) end
 function types.Rv(T) return types.Interface(T,types.bool(),nil,nil,nil,types.bool()) end
-function types.InterfaceV(T) return types.Interface(T,nil,types.bool()) end
-function types.InterfaceRV(T) return types.Interface(T,types.bool(),types.bool()) end
+function types.V(T) return types.Interface(T,nil,types.bool()) end
+function types.RV(T) return types.Interface(T,types.bool(),types.bool()) end
 
 -- by default, this is ready-valid (RV), ie, ready_downstream has to be asserted before valid
 -- if VR==true, this is instead valid-ready (VR), which allows valid to be asserted _before_ ready_downstream (optionally)
@@ -1134,14 +1194,14 @@ local function makeFramedType(kind,A,mixed,dims,X)
 function types.HandshakeFramed(A,mixed,dims)
   assert(#dims==1)
   if mixed then
-    return types.InterfaceRV(types.ParSeq(A,dims[1][1],dims[1][2]))
+    return types.RV(types.ParSeq(A,dims[1][1],dims[1][2]))
   end
   assert(false)
 end
 function types.HandshakeArrayFramed(A,mixed,dims,W,H) return makeFramedType("HandshakeArray",A,mixed,dims,W,H) end
-function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
-function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
-function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
+--function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
+--function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
+--function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
 
 -- Add an extra outermost dim (loop) to the type
 -- mixed: optional, perhaps this is adding dims to a type that already has sequential dimensions
@@ -1226,6 +1286,8 @@ function types.HSFPixelType(A)
   end
 end
 
+types.HandshakeTrigger = types.Interface(nil,types.bool(),types.bool())
+--[=[
 function TypeFunctions:FV() return types.HSFV(self) end
 function TypeFunctions:FW() return types.HSFSize(self)[1] end
 function TypeFunctions:FH() return types.HSFSize(self)[2] end
@@ -1251,19 +1313,19 @@ function TypeFunctions:framedOver()
   end
   
 end
+]=]
+--types.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
+--types.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
+--
 
-types.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
-types.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
-types.HandshakeTrigger = types.Interface(nil,types.bool(),types.bool())
+--function types.V(A)
+--  return types.Interface(A,nil,types.bool())
+--end
 
-function types.V(A)
-  return types.Interface(A,nil,types.bool())
-end
-
-function types.RV(A)
-  return types.Interface(A,types.bool(),types.bool())
-end
-
+--function types.RV(A)
+--  return types.Interface(A,types.bool(),types.bool())
+--end
+--[=[
 function types.HandshakeArray(A,W,H)
   err(types.isType(A),"HandshakeArray: argument should be type")
   err(types.isBasic(A),"HandshakeArray: argument should be basic type")
@@ -1278,7 +1340,7 @@ function types.HandshakeTriggerArray(W,H)
   if H==nil then H=1 end
   err(type(H)=="number" and H>0,"HandshakeTriggerArray: H should be number > 0")
   return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
-end
+  end]=]
 
 function types.HandshakeTuple(tab,VR,X)
   assert(X==nil)
@@ -1291,7 +1353,7 @@ function types.HandshakeVRTuple(tab,X)
   assert(X==nil)
   return types.HandshakeTuple(tab,true)
 end
-
+--[=[
 -- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
 -- input is valid (is the stream requested by ready valid this cycle?)
 function types.HandshakeArrayOneHot(A,N)
@@ -1311,7 +1373,7 @@ function types.HandshakeTmuxed(A,N)
   return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
 end
 
-
+]=]
 function types.isHandshakeArrayOneHot(a)
   err(types.isType(a),"isHandshakeArrayOneHot: argument must be a type")
   return a:isNamed() and a.generator=="HandshakeArrayOneHot"

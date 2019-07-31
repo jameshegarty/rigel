@@ -50,16 +50,22 @@ end)
 generators.Print = R.newFunctionGenerator("generators","Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
 generators.FlattenBits = R.newFunctionGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 generators.PartitionBits = R.newFunctionGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
-generators.Rshift = R.newFunctionGenerator("generators","Rshift",{"type","rate"},{"number"}, function(args) return C.rshift(args.type,args.number) end)
+generators.Rshift = R.ParametricFunctionGenerator("generators","Rshift",{},{"number"}, function(args)
+  if args.number~=nil then
+    return {{ T.S(T.Par(P.NumberType("T"))),T.S(T.Par(P.NumberType("T"))), function(a) return C.rshift(a.T,args.number) end}}
+  else
+    assert(false)
+  end
+end)
 generators.AddMSBs = R.newFunctionGenerator("generators","AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
 generators.RemoveMSBs = R.newFunctionGenerator("generators","RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
 generators.RemoveLSBs = R.newFunctionGenerator("generators","RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
-generators.Index = R.newFunctionGenerator("generators","Index",{"type","rate"},{"number","size"},
+generators.Index = R.ParametricFunctionGenerator("generators","Index",{},{"number","size"},
                                   function(args)
                                     if args.size~=nil then
-                                      return C.index(args.type,args.size[1],args.size[2])
+                                      return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) return C.index(a.T,args.size[1],args.size[2]) end}}
                                     else
-                                      return C.index(args.type,args.number)
+                                      return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) C.index(a.T,args.number) end}}
                                     end
                                   end)
 generators.ValueToTrigger = R.newFunctionGenerator("generators","ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
@@ -127,7 +133,7 @@ function(args)
   if args.async==true then
     res[1],res[2] = T.S(T.Par(res[1])), T.S(T.Par(res[2]))
   else
-    res[1],res[2] = T.S(T.Par(res[1])), T.R(T.Par(res[2]))
+    res[1],res[2] = T.S(T.Par(res[1])), T.S(T.Par(res[2]))
   end
   
   return {res}
@@ -248,6 +254,7 @@ function(args)
   return mod
 end)
 
+--[=[
 generators.Stencil = R.newFunctionGenerator("generators","Stencil",{"type","bounds","rate"},{},
 function(args)
 
@@ -273,6 +280,20 @@ function(args)
   else
     err(false,"generators.Stencil: unsupported input type: "..tostring(args.type))
   end
+  end)]=]
+
+generators.Stencil = R.ParametricFunctionGenerator("generators","Stencil",{"bounds"},{},
+function(args)
+  return {{types.S(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+           types.S(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))),
+           function(a)
+             assert(a.V[2]==1)
+             --local fna =
+             return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4], true )
+             --print("FNA",fna)
+             --local b = C.unpackStencil( a.T, args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1, a.V[1], nil, true, a.size[1], a.size[2] )
+             --return C.compose("generators_Linebuffer_"..fna.name.."_"..b.name,b,fna)
+  end }}
 end)
 
 generators.Pad = R.newFunctionGenerator("generators","Pad",{"type","size","number","bounds","rate"},{},
@@ -291,17 +312,13 @@ function(args)
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
-generators.Crop = R.newFunctionGenerator("generators","Crop",{"type","bounds","rate"},{},
+generators.Crop = R.ParametricFunctionGenerator("generators","Crop",{"bounds"},{},
 function(args)
-  if args.type:is("StaticFramed") then
-    local pixelType = types.HSFPixelType(args.type)
-    local size = types.HSFSize(args.type)
-    local V = types.HSFV(args.type)
+  return {{T.S(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+           T.V(T.ParSeq( T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size") )),
+           function(a) return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],true) end}}
 
-    return RM.cropSeq(pixelType,size[1],size[2],V,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],true)
-  else
-    J.err(false,"generators.Crop: unsupported input type: "..tostring(args.type))
-  end
+    
 end)
 
 generators.Downsample = R.newFunctionGenerator("generators","Downsample",{"type","size","rate"},{},
@@ -432,6 +449,24 @@ function(args)
   end
 end)
 
+generators.Reduce = R.ParametricFunctionGenerator("generators","Reduce",{"rigelFunction"},{},
+function(args)
+  --assert(args.rigelFunction.inputType:isStatic())
+  --assert(args.rigelFunction.inputType.over:is("Par"))
+  local res = {{
+      types.S(types.Seq(P.DataType("T"),P.SizeValue("size"))),
+      types.V(types.Par(P.DataType("T"))),
+      function(a) return RM.reduceSeq(args.rigelFunction,1/(a.size[1]*a.size[2]),true) end }}
+
+  table.insert(res,{
+                 types.S(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
+                 types.S(types.Par(P.DataType("T"))),
+                 function(a) return RM.reduce(args.rigelFunction,a.size[1],a.size[2],a.T) end })
+  
+  return res
+end)
+
+--[=[
 generators.Reduce = R.newFunctionGenerator("generators","Reduce",{"type","rigelFunction","rate"},{},
 function(args)
 
@@ -467,7 +502,7 @@ function(args)
   else
     return RM.reduce( mod, args.type.size[1], args.type.size[2] )
   end
-end)
+  end)]=]
 
 generators.ReduceSeq = R.newFunctionGenerator("generators","ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
@@ -642,10 +677,15 @@ function(args)
   return C.slice( args.type, args.size[1], args.size[2], 0, 0)
 end)
 
-generators.TupleToArray = R.newFunctionGenerator("generators","TupleToArray",{"type","rate"},{},
+generators.TupleToArray = R.ParametricFunctionGenerator("generators","TupleToArray",{},{},
 function(args)
-  J.err( args.type:isTuple(), "generators.TupleToArray: input should be tuple" )
-  return C.tupleToArray( args.type.list[1], #args.type.list )
+  return {{P.TupleType("T"),P.DataType("D"),function(a) return C.tupleToArray( a.T.list[1], #a.T.list ) end}}
+end)
+
+generators.ArrayToTuple = R.ParametricFunctionGenerator("generators","ArrayToTuple",{},{},
+function(args)
+  local C = require "generators.examplescommon"
+  return {{T.S(T.Par(P.ArrayType("T"))),T.S(T.Par(P.DataType("D"))),function(a) return C.ArrayToTuple( a.T.over, a.T.size[1], a.T.size[2] ) end}}
 end)
 
 generators.FilterSeq = R.newFunctionGenerator("generators","FilterSeq",{"type","rate","size"},{},

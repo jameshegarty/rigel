@@ -34,12 +34,6 @@ local function getloc()
   return debug.getinfo(3).source..":"..debug.getinfo(3).currentline.."\n"..debug.traceback()
 end
 
-local AddressMT = {}
-function darkroom.Address(num)
-  assert(type(num)=="number")
-  return setmetatable({num},AddressMT)
-end
-
 darkroom.VTrigger = types.VTrigger
 darkroom.RVTrigger = types.RVTrigger
 darkroom.HandshakeTrigger = types.HandshakeTrigger
@@ -80,6 +74,14 @@ darkroom.isBasic = types.isBasic
 local SizeMT = {}
 SizeMT.__tostring=function(tab) return tostring(tab[1])..","..tostring(tab[2]) end
 function darkroom.isSize(t) return getmetatable(t)==SizeMT end
+
+local AddressMT = {}
+function darkroom.Address(num)
+  assert(type(num)=="number")
+  return setmetatable({num},AddressMT)
+end
+
+darkroom.Async={}
 
 function darkroom.Size(w,h,X)
   local Uniform = require "uniform"
@@ -158,6 +160,9 @@ local function typeToKey(t)
         end
       elseif type(v)=="table" and #t==J.keycount(t) and J.foldl(J.andop,false,J.map(v,darkroom.isInstance)) then
         outk="instanceList"
+      elseif v==darkroom.Async then
+        outk="async"
+        v = true
       else
         J.err(false,"unknown type to key? "..tostring(v))
       end
@@ -317,8 +322,10 @@ local function specialize(T,vars)
 end
 
 -- find how to lift parameterized type Tparam to match Ttarget
-local function findLifts(fn,Ttarget,Tparam)
-  print("findLifts",Ttarget,Tparam)
+local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
+  assert(X==nil)
+  
+  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
     print("types match, we're done: ",Ttarget,Tparam)
@@ -335,8 +342,8 @@ local function findLifts(fn,Ttarget,Tparam)
   local liftsFound = false
   for liftName,lift in pairs(L) do
     print("Try lift",liftName)
-    local vars1, vars2 = {},{}
-    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) then
+    local vars1, vars2, vars3 = {},{},{}
+    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
       print("SPECIALIZE",Ttarget,lift[3])
       for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
@@ -348,12 +355,22 @@ local function findLifts(fn,Ttarget,Tparam)
       
       liftsFound = true
 
-      local res = findLifts(fn,newTtarget,Tparam)
-      print("Found lift")
-      for k,v in pairs(vars2) do print("VARS2",k,v) end
-      for k,v in pairs(vars1) do print("VARS1",k,v) end
-      local liftFn = lift[5](vars1)
-      return liftFn(res)
+      local res = findLifts(fn,newTtarget,Tparam,TparamOutput)
+
+      if res==nil then
+        return nil
+      else
+        print("Found lift",liftName,res)
+        for k,v in pairs(vars2) do print("VARS2",k,v) end
+        for k,v in pairs(vars1) do print("VARS1",k,v) end
+        local liftFn = lift[5](vars1)
+        return liftFn(res)
+      end
+    else
+      print("Lift '"..liftName.."' doesn't apply")
+      print(lift[3],"supertypeof?",Ttarget,lift[3]:isSupertypeOf(Ttarget,vars1))
+      print(lift[1],"Supertypeof?",Tparam,lift[1]:isSupertypeOf(Tparam,vars2))
+      print(lift[2],"Supertypeof?",TparamOutput,lift[2]:isSupertypeOf(TparamOutput,vars3))
     end
   end
 
@@ -372,7 +389,9 @@ function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, op
       -- user should not be inspecting type or rate
       local a = {}
       for k,v in pairs(args) do
-        if k~="rate" and k~="type" then a[k]=v end
+        if k~="rate" and k~="type" then
+          a[k]=v
+        end
       end
 
       local fns = completeFn(a)
@@ -382,14 +401,15 @@ function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, op
         -- finFn should now only be a function of type parameters
 
 
-        local resFn = findLifts(finFn,args.type,inputType)
+        print("Parametric call findLifts for: "..name)
+        local resFn = findLifts(finFn,args.type,inputType,outputType)
 
         if resFn~=nil then
           print(resFn)
           return resFn
         end
       end
-      err( false, "Could not find any compatible functions")
+      err( false, "Could not find any compatible conversions when calling generator '"..name.."' (expected input type "..tostring(fns[1][1])..") with input of type "..tostring(args.type))
     end)
 end
 
@@ -1558,7 +1578,7 @@ function darkroomIRFunctions:typecheck()
     
     err( fn.registered==false or fn.registered==nil, "Error, applying registered type! "..fn.name)
     if #n.inputs==0 then
-      err( fn.inputType==types.null(), "Missing function argument, "..n.loc)
+      err( fn.inputType==types.Interface(), "Missing function argument, (expected input type "..tostring(fn.inputType)..") "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
       err( n.inputs[1].type==fn.inputType, "Input type mismatch to function '"..fn.name.."'. Is "..tostring(n.inputs[1].type).." but should be "..tostring(fn.inputType)..", "..n.loc)
@@ -1872,9 +1892,9 @@ function darkroomIRFunctions:codegenSystolic( module )
           end
         end
         
-        if n.fn.inputType==types.null() then
+        if n.fn.inputType==types.Interface() then
           return { I:process() }
-        elseif darkroom.isV(n.inputs[1].type) then
+        elseif n.inputs[1].type:isV() then
           return { I:process(inputs[1][1]), I:ready() }
         elseif darkroom.isRV(n.inputs[1].type) then
           return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
