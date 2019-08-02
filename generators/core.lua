@@ -16,7 +16,7 @@ local __unnamedID = 0
 local generators = {}
 
 -- takes A to A[N]
-generators.Broadcast = R.newFunctionGenerator("generators","Broadcast",{"type","number","rate"},{"size"},
+generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","number","rate"},{"size"},
 function(args)
   local W,H
 
@@ -35,55 +35,57 @@ end)
 
 -- a broadcast is basically the same as a upsample, but has no W,H
 -- number: vector width
-generators.BroadcastSeq = R.newFunctionGenerator("generators","BroadcastSeq",{"type","number","size","rate"},{},
+generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"type","number","size","rate"},{},
 function(args)
   J.err( types.isBasic(args.type),"generators.BroadcastSeq: unsupported type: "..tostring(args.type))
   return RM.upsampleXSeq(args.type,args.number,args.size[1]*args.size[2])
 end)
 
 -- bits to unsigned
-generators.BtoU = R.newFunctionGenerator("generators","BtoU",{"type"},{},
+generators.BtoU = R.FunctionGenerator("core.BtoU",{"type"},{},
 function(args)
   J.err( args.type:isBits(), "BtoU input type should be Bits, but is: "..tostring(args.type))
   return C.cast(args.type,types.uint(args.type.precision))
 end)
 
-generators.Print = R.newFunctionGenerator("generators","Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
-generators.FlattenBits = R.newFunctionGenerator("generators","FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
-generators.PartitionBits = R.newFunctionGenerator("generators","PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
-generators.Rshift = R.ParametricFunctionGenerator("generators","Rshift",{},{"number"}, function(args)
+generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
+generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
+generators.PartitionBits = R.FunctionGenerator("core.PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
+generators.Rshift = R.FunctionGenerator("core.Rshift",{},{"number"}, function(args)
   if args.number~=nil then
-    return {{ T.S(T.Par(P.NumberType("T"))),T.S(T.Par(P.NumberType("T"))), function(a) return C.rshift(a.T,args.number) end}}
+    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift(a.T,args.number) end,T.S(T.Par(P.NumberType("T"))),T.S(T.Par(P.NumberType("T"))) )
   else
     assert(false)
   end
 end)
-generators.AddMSBs = R.newFunctionGenerator("generators","AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
-generators.RemoveMSBs = R.newFunctionGenerator("generators","RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
-generators.RemoveLSBs = R.newFunctionGenerator("generators","RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
-generators.Index = R.ParametricFunctionGenerator("generators","Index",{},{"number","size"},
-                                  function(args)
-                                    if args.size~=nil then
-                                      return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) return C.index(a.T,args.size[1],args.size[2]) end}}
-                                    else
-                                      return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) C.index(a.T,args.number) end}}
-                                    end
-                                  end)
-generators.ValueToTrigger = R.newFunctionGenerator("generators","ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
+generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
+generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
+generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
 
-generators.TriggerCounter = R.newFunctionGenerator("generators","TriggerCounter",{"type","number","rate"},{},
+generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
+  function(a)
+    if a.size~=nil then
+      return C.index(a.T,a.size[1],a.size[2])
+    else
+      return C.index(a.T,a.number)
+    end
+end, T.S(T.Par(P.DataType("T"))), T.S(T.Par(P.DataType("T"))))
+
+generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
+
+generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
   return RM.triggerCounter(args.number)
 end)
 
-generators.TriggerBroadcast = R.newFunctionGenerator("generators","TriggerBroadcast",{"type","number","rate"},{},
+generators.TriggerBroadcast = R.FunctionGenerator("core.TriggerBroadcast",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshakeTrigger(args.type), "TriggerBroadcast: input should be HandshakeTrigger" )
   return C.triggerUp(args.number)
 end)
 
-generators.FanOut = R.newFunctionGenerator("generators","FanOut",{"type","number","rate"},{},
+generators.FanOut = R.FunctionGenerator("core.FanOut",{"type","number","rate"},{},
 function(args)
   J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed") or args.type:is("HandshakeTrigger"),"FanOut: expected handshake input, but is: "..tostring(args.type))
   local mixed, dims
@@ -91,7 +93,7 @@ function(args)
   return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
 end)
 
-generators.FanIn = R.newFunctionGenerator("generators","FanIn",{"type","rate"},{"bool"},
+generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
   if R.isHandshakeTuple(args.type) then
     return RM.packTuple(args.type.params.list,args.bool)
@@ -102,14 +104,14 @@ function(args)
   end
 end)
 
-generators.FIFO = R.newFunctionGenerator("generators","FIFO",{"type","number","rate"},{"bool"},
+generators.FIFO = R.FunctionGenerator("core.FIFO",{"type","number","rate"},{"bool"},
 function(args)
   J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
   local ty = R.extractData(args.type)
   return C.fifo( ty, args.number, args.bool )
 end)
   
---[=[generators.Add = R.newFunctionGenerator("generators","Add",{"type","rate"},{"bool","number"},
+--[=[generators.Add = R.FunctionGenerator("core.Add",{"type","rate"},{"bool","number"},
 function(args)
   if args.number~=nil then
     -- add a const (unary op)
@@ -120,34 +122,26 @@ function(args)
     return C.sum( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
   end
   end)]=]
-generators.Add = R.ParametricFunctionGenerator("generators","Add",{},{"async","number"},
+generators.Add = R.FunctionGenerator("core.Add",{},{"async","number"},
 function(args)
   
   local res = {}
   if args.number~=nil then
     -- add a const (unary op)
-    res = {P.NumberType("T"),P.NumberType("T"),function(a) return C.plusConst(a.T,args.number) end}
+    return R.FunctionGenerator( "core.Add", {}, {}, function(a) return C.plusConst(a.T,args.number) end, T.S(T.Par(P.NumberType("T"))), T.S(T.Par(P.NumberType("T")) ) )
   else
-    res = {T.tuple{P.NumberType("T"),P.NumberType("T")},P.NumberType("T"),function(a) return C.sum( a.T, a.T, a.T, args.async ) end}
+    return R.FunctionGenerator("core.Add", {}, {}, function(a) return C.sum( a.T, a.T, a.T, args.async ) end, T.S(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.S(T.Par(P.NumberType("T"))) )
   end
-
-  if args.async==true then
-    res[1],res[2] = T.S(T.Par(res[1])), T.S(T.Par(res[2]))
-  else
-    res[1],res[2] = T.S(T.Par(res[1])), T.S(T.Par(res[2]))
-  end
-  
-  return {res}
 end)
 
-generators.Sub = R.newFunctionGenerator("generators","Sub",{"type","rate"},{"bool"},
+generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
   J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
   return C.sub( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
 end)
 
-generators.Mul = R.newFunctionGenerator("generators","Mul",{"type","rate"},{"number"},
+generators.Mul = R.FunctionGenerator("core.Mul",{"type","rate"},{"number"},
 function(args)
   if args.number~=nil then
     J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
@@ -160,7 +154,7 @@ function(args)
   end
 end)
 
-generators.GT = R.newFunctionGenerator("generators","GT",{"type","rate"},{"number"},
+generators.GT = R.FunctionGenerator("core.GT",{"type","rate"},{"number"},
 function(args)
   if args.number~=nil then
     J.err( args.type:isUint() or args.type:isInt(), "generators.GT: type should be int or uint, but is: "..tostring(args.type) )
@@ -173,7 +167,7 @@ function(args)
   end
 end)
 
-generators.LT = R.newFunctionGenerator("generators","LT",{"type","rate"},{"number"},
+generators.LT = R.FunctionGenerator("core.LT",{"type","rate"},{"number"},
 function(args)
   if args.number~=nil then
     J.err( args.type:isUint() or args.type:isInt(), "generators.LT: type should be int or uint, but is: "..tostring(args.type) )
@@ -186,20 +180,20 @@ function(args)
   end
 end)
 
-generators.And = R.newFunctionGenerator("generators","And",{"type","rate"},{"bool"},
+generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"bool"},
 function(args)
   J.err( args.type:isTuple(), "generators.And: type should be tuple, but is: "..tostring(args.type) )
   J.err( args.type.list[1]==types.bool() and args.type.list[2]==types.bool(), "generators.And: both inputs should be bool" )
   return C.And
 end)
 
-generators.Not = R.newFunctionGenerator("generators","Not",{"type","rate"},{"bool"},
+generators.Not = R.FunctionGenerator("core.Not",{"type","rate"},{"bool"},
 function(args)
   J.err( args.type==types.bool(), "generators.Not: input type should be bool, but is: "..tostring(args.type) )
   return C.Not
 end)
 
-generators.Zip = R.newFunctionGenerator("generators","Zip",{"type","rate"},{},
+generators.Zip = R.FunctionGenerator("core.Zip",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
 
@@ -212,7 +206,7 @@ function(args)
 end)
 
 -- bool is "HandshakeTrigger" option
-generators.HS = R.newFunctionGenerator("generators","HS",{"rigelFunction","type","rate"},{"bool"},
+generators.HS = R.FunctionGenerator("core.HS",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
   local mod
@@ -234,7 +228,7 @@ function(args)
   return RS.HS(mod,args.bool)
 end)
 
-generators.Linebuffer = R.newFunctionGenerator("generators","Linebuffer",{"type","size","number","bounds","rate"},{},
+generators.Linebuffer = R.FunctionGenerator("core.Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
   local itype
   if args.number==0 then
@@ -256,7 +250,7 @@ function(args)
 end)
 
 --[=[
-generators.Stencil = R.newFunctionGenerator("generators","Stencil",{"type","bounds","rate"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"type","bounds","rate"},{},
 function(args)
 
   if args.type:is("StaticFramed") then
@@ -283,21 +277,18 @@ function(args)
   end
   end)]=]
 
-generators.Stencil = R.ParametricFunctionGenerator("generators","Stencil",{"bounds"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds"},{},
 function(args)
-  return {{types.S(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-           types.S(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))),
-           function(a)
-             assert(a.V[2]==1)
-             --local fna =
-             return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4], true )
-             --print("FNA",fna)
-             --local b = C.unpackStencil( a.T, args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1, a.V[1], nil, true, a.size[1], a.size[2] )
-             --return C.compose("generators_Linebuffer_"..fna.name.."_"..b.name,b,fna)
-  end }}
+  return R.FunctionGenerator("core.Stencil",{},{},
+    function(a)
+      assert(a.V[2]==1)
+      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4], true )
+    end,
+    types.S(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+    types.S(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))))
 end)
 
-generators.Pad = R.newFunctionGenerator("generators","Pad",{"type","size","number","bounds","rate"},{},
+generators.Pad = R.FunctionGenerator("core.Pad",{"type","size","number","bounds","rate"},{},
 function(args)
   J.err(args.number>0,"NYI - V<=0")
   local A = args.type:arrayOver()
@@ -305,7 +296,7 @@ function(args)
 end)
 
 
-generators.CropSeq = R.newFunctionGenerator("generators","CropSeq",{"type","size","number","bounds","rate"},{},
+generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
   local A = args.type
   if args.number>0 then A  = args.type:arrayOver() end
@@ -313,16 +304,14 @@ function(args)
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
 end)
 
-generators.Crop = R.ParametricFunctionGenerator("generators","Crop",{"bounds"},{},
-function(args)
-  return {{T.S(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-           T.V(T.ParSeq( T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size") )),
-           function(a) return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],true) end}}
+generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
+function(a)
+  return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+end,
+T.S(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+T.V(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))))
 
-    
-end)
-
-generators.Downsample = R.newFunctionGenerator("generators","Downsample",{"type","size","rate"},{},
+generators.Downsample = R.FunctionGenerator("core.Downsample",{"type","size","rate"},{},
 function(args)
   if args.type:is("StaticFramed") then
     local size = types.HSFSize(args.type)
@@ -333,7 +322,7 @@ function(args)
   end
 end)
                                        
-generators.PosSeq = R.newFunctionGenerator("generators","PosSeq",{"size","number"},{"type"},
+generators.PosSeq = R.FunctionGenerator("core.PosSeq",{"size","number"},{"type"},
 function(args)
   if args.type~=nil then
     J.err( args.type==types.null(), "PosSeq: expected null input")
@@ -341,7 +330,7 @@ function(args)
   return RM.posSeq(args.size[1],args.size[2],args.number)
 end)
 
-generators.Pos = R.newFunctionGenerator("generators","PosSeq",{"size","number"},{"type"},
+generators.Pos = R.FunctionGenerator("core.PosSeq",{"size","number"},{"type"},
 function(args)
   if args.type~=nil then
     J.err( args.type==types.null(), "PosSeq: expected null input")
@@ -351,7 +340,7 @@ end)
 
 
 -- take a regular Handshake module and lift to HandshakeFramed type
-generators.MapFramed = R.newFunctionGenerator("generators","MapFramed",{"type","rigelFunction","rate"},{},
+generators.MapFramed = R.FunctionGenerator("core.MapFramed",{"type","rigelFunction","rate"},{},
 function(args)
   assert(args.type:is("HandshakeFramed"))
 
@@ -369,7 +358,7 @@ end)
 
 -- size/bool: output size/mixed for framed types (needed if vector width/ SDF rate changes...)
 --       think of this like a combined map&flatten
-generators.Map = R.newFunctionGenerator("generators","Map",{"type","rigelFunction","rate"},{"size","bool"},
+generators.Map = R.FunctionGenerator("core.Map",{"type","rigelFunction","rate"},{"size","bool"},
 function(args)
   if args.type:is("StaticFramed") then
 
@@ -450,34 +439,41 @@ function(args)
   end
 end)
 
-generators.Reduce = R.ParametricFunctionGenerator("generators","Reduce",{"rigelFunction"},{},
+generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
   --assert(args.rigelFunction.inputType:isStatic())
   --assert(args.rigelFunction.inputType.over:is("Par"))
 
-  local res = {{
-      types.S(types.Seq(P.DataType("T"),P.SizeValue("size"))),
-      types.V(types.Par(P.DataType("T"))),
-      function(a)
-        print("REDUCE:",a.T)
-        local fn = args.rigelFunction
-        if R.isFunctionGenerator(fn) then
-          fn = fn{R.Async,types.tuple{a.T,a.T},SDF{1,1}}
-        end
+  --
+  --
+  --local fn = args.rigelFunction:checkTypeAndSpecialize( fnType, fnVars)
 
-        return RM.reduceSeq(fn,1/(a.size[1]*a.size[2]),true)
-      end }}
-
-  table.insert(res,{
-                 types.S(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
-                 types.S(types.Par(P.DataType("T"))),
-                 function(a) return RM.reduce(args.rigelPlainFunction,a.size[1],a.size[2],a.T) end})
+  local fnVars = {}
+  local fnType = T.S(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
   
-  return res
+  print("FNTY:E",fnType,args.rigelFunction.inputType)
+  J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
+
+  print("FNVARS")
+  for k,v in pairs(fnVars) do print("FNVARS",k,v) end
+  return R.FunctionGenerator("core.Reduce",{},{},
+    function(a)
+      if a.opt==0 then
+        return RM.reduceSeq(args.rigelFunction,1/(a.size[1]*a.size[2]),true)
+      else
+        return RM.reduce(args.rigelFunction,a.size[1],a.size[2],a.T)
+      end
+    end,
+    P.SumType("opt",{
+            types.S(types.Seq(fnVars.T,P.SizeValue("size"))),
+            types.S(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
+    P.SumType("opt",{
+            types.V(types.Par(fnVars.T)),
+            types.S(types.Par(fnVars.T))}))
 end)
 
 --[=[
-generators.Reduce = R.newFunctionGenerator("generators","Reduce",{"type","rigelFunction","rate"},{},
+generators.Reduce = R.FunctionGenerator("core.Reduce",{"type","rigelFunction","rate"},{},
 function(args)
 
   local arrayOver
@@ -514,7 +510,7 @@ function(args)
   end
   end)]=]
 
-generators.ReduceSeq = R.newFunctionGenerator("generators","ReduceSeq",{"type","rigelFunction","number","rate"},{},
+generators.ReduceSeq = R.FunctionGenerator("core.ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
 
   local mod
@@ -529,26 +525,30 @@ function(args)
 end)
 
 -- number is the number of cycles over which to ser
-generators.Ser = R.newFunctionGenerator("generators","Ser",{"type","number","rate"},{},
+generators.Ser = R.FunctionGenerator("core.Ser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
   return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
 end)
 
 -- serialize to a particular vector width ("number")
-generators.SerToWidth = R.ParametricFunctionGenerator("generators","SerToWidth",{"number"},{},
-function(args)
-  local res = {{T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
-                T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-                function(a) return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true ) end}}
+generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
+function(a)
+  if a.opt==0 then
+    return RM.changeRate( a.T, a.size[2], a.size[1], a.number, true )
+  else                
+    return RM.changeRate( a.T, a.V[2], a.V[1], a.number, true, a.size[1], a.size[2] )
+  end
+end,
+P.SumType("opt",{
+            T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
+            T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
+P.SumType("opt",{
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))})
+)
 
-  table.insert(res,{T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-                T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-                function(a) return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] ) end})
-  return res
-end)
-
-generators.SerSeq = R.newFunctionGenerator("generators","SerSeq",{"type","number","rate"},{},
+generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
 
@@ -556,32 +556,32 @@ function(args)
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
 end)
 
-generators.Deser = R.newFunctionGenerator("generators","Deser",{"type","number","rate"},{},
+generators.Deser = R.FunctionGenerator("core.Deser",{"type","number","rate"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Deser: type should be array, but is: "..tostring(args.type) )
   return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]*args.number )
   --return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, false )
 end)
 
-generators.Fwrite = R.newFunctionGenerator("generators","Fwrite",{"type","string"},{"size"},
+generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"type","string"},{"size"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
   return RM.fwriteSeq(args.string,args.type,args.string..".verilog.raw",true)
 end)
 
 -- assert that the input stream is the same as the file. Early out on errors.
-generators.Fassert = R.newFunctionGenerator("generators","Fassert",{"type","string"},{},
+generators.Fassert = R.FunctionGenerator("core.Fassert",{"type","string"},{},
 function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.AXIReadBurstSeq = R.newFunctionGenerator("generators","AXIReadBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
+generators.AXIReadBurstSeq = R.FunctionGenerator("core.AXIReadBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
 function(args)
   -- note: type here should be explicitly passed by the user! This is the type of data we want
   return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false, nil, args.rigelFunction )
 end)
 
-generators.AXIWriteBurstSeq = R.newFunctionGenerator("generators","AXIWriteBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
+generators.AXIWriteBurstSeq = R.FunctionGenerator("core.AXIWriteBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
 function(args)
   J.err( R.isHandshake(args.type), "AXIWriteBurstSeq: input must be handshaked, but is: "..tostring(args.type))
   local ty
@@ -594,7 +594,7 @@ function(args)
   return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, false, args.rigelFunction )
 end)
 
-generators.Module = R.newFunctionGenerator("generators","Module",{"luaFunction","type"},{"string","rate","instanceList"},
+generators.Module = R.FunctionGenerator("core.Module",{"luaFunction","type"},{"string","rate","instanceList"},
 function(args)
   if args.string==nil then
     args.string = "unnamedModuleGen"..__unnamedID
@@ -611,7 +611,7 @@ end)
 generators.Generator = generators.Module
 
 -- rigelFunction: the fn to call to perform the AXI read
-generators.AXIReadBurst = R.newFunctionGenerator("generators","AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number","address"},
+generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number","address"},
 function(args)
   local numb = args.number
   if numb==nil then
@@ -621,7 +621,7 @@ function(args)
   return SOC.readBurst( args.string, args.size[1], args.size[2], args.type, numb, true, args.address, args.rigelFunction )
 end)
 
-generators.AXIRead = R.newFunctionGenerator("generators","AXIRead",{"string","type","number","rate","rigelFunction"},{},
+generators.AXIRead = R.FunctionGenerator("core.AXIRead",{"string","type","number","rate","rigelFunction"},{},
 function(args)
   if args.type:is("Handshake") then
     return SOC.read( args.string, args.number, types.uint(8), args.rigelFunction )
@@ -630,12 +630,14 @@ function(args)
   end
 end)
 
-generators.AXIWriteBurst = R.ParametricFunctionGenerator("generators","AXIWriteBurst",{"string","rigelFunction"},{"address"},
-function(args)
-  return {{types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),types.HandshakeTrigger,function(a) return SOC.writeBurst( args.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, args.rigelFunction, args.address ) end }}
-end)
+generators.AXIWriteBurst = R.FunctionGenerator("core.AXIWriteBurst",{"string","rigelFunction"},{"address"},
+function(a)
+  return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
+end,
+types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+types.HandshakeTrigger)
 
-generators.Reshape = R.newFunctionGenerator("generators","Reshape",{"type","rate"},{},
+generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
 
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
@@ -677,7 +679,7 @@ function(args)
   end
 
   -- if ratio >=1, don't do anything:
-  return generators.Identity{args.type,args.rate}
+  return generators.Identity
 --[=[  
   -- ratio==1
   if args.type:is("HandshakeFramed") then
@@ -692,56 +694,58 @@ function(args)
   end]=]
 end)
 
-generators.Sort = R.newFunctionGenerator("generators","Sort",{"type","rate","rigelFunction"},{},
+generators.Sort = R.FunctionGenerator("core.Sort",{"type","rate","rigelFunction"},{},
 function(args)
   J.err( args.type:isArray(),"generators.Sort: input must be array, but is: "..tostring(args.type) )
   J.err( args.type.size[2]==1,"generators.Sort: must be 1d array" )
   return C.oddEvenMergeSort( args.type:arrayOver(), args.type:channels(), args.rigelFunction )
 end)
 
-generators.Identity = R.ParametricFunctionGenerator("generators","Identity",{},{},
-function(args)
-  return {{T.S(T.Par(P.DataType("T"))),T.S(T.Par(P.DataType("T"))),function(a) return C.identity(a.T) end}}
-end)
+generators.Identity = R.FunctionGenerator("core.Identity",{},{},
+function(args) return C.identity(args.T) end,
+T.S(T.Par(P.DataType("T"))),
+T.S(T.Par(P.DataType("T"))))
 
-generators.Sel = R.newFunctionGenerator("generators","Sel",{"type","rate"},{},
+generators.Sel = R.FunctionGenerator("core.Sel",{"type","rate"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.Sel: input should be tuple" )
   return C.select(args.type.list[2])
 end)
 
-generators.Slice = R.newFunctionGenerator("generators","Slice",{"type","rate","size"},{},
+generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate","size"},{},
 function(args)
   J.err( args.type:isArray(), "generators.Slice: input must be array" )
   J.err( args.type.size[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
   return C.slice( args.type, args.size[1], args.size[2], 0, 0)
 end)
 
-generators.TupleToArray = R.ParametricFunctionGenerator("generators","TupleToArray",{},{},
+generators.TupleToArray = R.FunctionGenerator("core.TupleToArray",{},{},
 function(args)
   return {{P.TupleType("T"),P.DataType("D"),function(a) return C.tupleToArray( a.T.list[1], #a.T.list ) end}}
 end)
 
-generators.ArrayToTuple = R.ParametricFunctionGenerator("generators","ArrayToTuple",{},{},
-function(args)
+generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{},{},
+function(a)
   local C = require "generators.examplescommon"
-  return {{T.S(T.Par(P.ArrayType("T"))),T.S(T.Par(P.DataType("D"))),function(a) return C.ArrayToTuple( a.T.over, a.T.size[1], a.T.size[2] ) end}}
-end)
+  return C.ArrayToTuple( a.T.over, a.T.size[1], a.T.size[2] )
+end,
+T.S(T.Par(P.ArrayType("T"))),
+T.S(T.Par(P.DataType("D"))))
 
-generators.FilterSeq = R.newFunctionGenerator("generators","FilterSeq",{"type","rate","size"},{},
+generators.FilterSeq = R.FunctionGenerator("core.FilterSeq",{"type","rate","size"},{},
 function(args)
   J.err( args.type:isTuple(), "generators.FilterSeq: input should be tuple" )
   J.err( args.type.list[2]:isBool(), "generators.FilterSeq: input should be tuple of type {A,bool}, but is: "..tostring(args.type) )
   return RM.filterSeq( args.type.list[1], 1, 1, args.size, 0, false )
 end)
 
-generators.Arbitrate = R.newFunctionGenerator("generators","Arbitrate",{"type","rate"},{},
+generators.Arbitrate = R.FunctionGenerator("core.Arbitrate",{"type","rate"},{},
 function(args)
   J.err( types.isHandshakeArray(args.type), "generators.Arbitrate: input should be HandshakeArray, but is: "..tostring(args.type) )
   return RM.arbitrate(args.type.params.A,args.rate)
 end)
 
-generators.StripFramed = R.newFunctionGenerator("generators","StripFramed",{"type","rate"},{},
+generators.StripFramed = R.FunctionGenerator("core.StripFramed",{"type","rate"},{},
 function(args)
   return C.stripFramed(args.type)
 end)

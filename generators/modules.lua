@@ -3483,7 +3483,7 @@ modules.lut = memoize(function( inputType, outputType, values )
 end)
 
 modules.reduce = memoize(function( f, W, H, ty, X )
-  if rigel.isFunction(f)==false then error("Argument to reduce must be a darkroom function") end
+  if rigel.isFunction(f)==false then error("Argument to reduce must be a darkroom function, but is: "..tostring(f)) end
   err(type(W)=="number", "reduce W must be number")
   err(type(H)=="number", "reduce H must be number")
   err( types.isType(ty),"reduce: type must be type, but is: "..tostring(ty))

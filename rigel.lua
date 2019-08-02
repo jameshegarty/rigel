@@ -7,7 +7,7 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local err = J.err
 local SDF = require("sdf")
-local params = require "params"
+local P = require "params"
 
 -- We can operate in 2 different modes: either we stream frames continuously (STREAMING==true), or we only do one frame (STREAMING==false). 
 -- If STREAMING==false, we artificially cap the output once the expected number of pixels is reached. This is needed for some test harnesses
@@ -180,6 +180,89 @@ end
 local functionGeneratorFunctions = {}
 local functionGeneratorMT={}
 
+local function specialize(T,vars)
+  if P.isParam(T) then
+    assert(vars[T.name]~=nil)
+    return vars[T.name]
+  elseif types.isType(T) then
+    for k,v in pairs(T) do
+      if k~="over" and P.isParam(v) then
+        assert(vars[v.name]~=nil)
+
+        --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
+        --print("SPECIAL",T,k,vars[v.name])
+        T = T:replaceVar(k,vars[v.name])
+        --print("SPEC",T)
+      end
+    end
+    return T:replaceVar("over",specialize(T.over,vars))
+  else
+    print("specialize failed: ",T)
+    assert(false)
+  end
+end
+
+
+-- find how to lift parameterized type Tparam to match Ttarget
+local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
+  assert(X==nil)
+  
+  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  local finVars = {}
+  if Tparam:isSupertypeOf(Ttarget,finVars) then
+    --print("types match, we're done: ",Ttarget,Tparam)
+    --for k,v in pairs(finVars) do print(k,v) end
+    --print("FN",fn)
+    fn = fn(finVars)
+    --print("FN",fn)
+    return fn
+  end
+
+  local L = require "generators.lifts"
+
+  -- search through lifts
+  local liftsFound = false
+  for liftName,lift in pairs(L) do
+    --print("Try lift",liftName)
+    local vars1, vars2, vars3 = {},{},{}
+    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
+      --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
+      --print("SPECIALIZE",Ttarget,lift[3])
+      --for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
+      local spec = specialize(lift[3],vars1)
+      --print("res",Ttarget,spec)
+      assert(Ttarget==spec)
+      --print("SPECIALIZE",lift[1])
+      local newTtarget = specialize(lift[1],vars1)
+      --print("NewTarget:",newTtarget)
+      
+      liftsFound = true
+
+      local res = findLifts(fn,newTtarget,Tparam,TparamOutput)
+
+      if res==nil then
+        return nil
+      else
+        --print("Found lift",liftName,res)
+        --for k,v in pairs(vars2) do print("VARS2",k,v) end
+        --for k,v in pairs(vars1) do print("VARS1",k,v) end
+        local liftFn = lift[5](vars1)
+        return liftFn(res)
+      end
+    else
+      --print("Lift '"..liftName.."' doesn't apply")
+      --print(lift[3],"supertypeof?",Ttarget,lift[3]:isSupertypeOf(Ttarget,vars1))
+      --print(lift[1],"Supertypeof?",Tparam,lift[1]:isSupertypeOf(Tparam,vars2))
+      --print(lift[2],"Supertypeof?",TparamOutput,lift[2]:isSupertypeOf(TparamOutput,vars3))
+    end
+  end
+
+  --err(liftsFound,"No lifts found?")
+  if liftsFound==false then print("No lifts found?") end
+
+  return nil
+end
+
 functionGeneratorMT.__call=function(tab,...)
   local rawarg = {...}
 
@@ -197,8 +280,10 @@ functionGeneratorMT.__call=function(tab,...)
     
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+
     if arglist.type==nil then arglist.type = arg.type end
     if arglist.rate==nil then arglist.rate = arg.rate end
+
     return tab:complete(arglist)(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
     local arg = rawarg[1]
@@ -212,12 +297,13 @@ functionGeneratorMT.__call=function(tab,...)
       J.err( arglist[k]==nil or arglist[k]==v, "Argument '"..k.."' was already passed to function generator '"..tab.name.."'" )
       arglist[k] = v
     end
-    
+
+    -- Hack: if this module is parametric (inputType~=unknown), we need to have the input before we run it
     if tab:checkArgs(arglist) then
       return tab:complete(arglist)
     else
       -- not done yet, return curried generator
-      local res = darkroom.newFunctionGenerator( tab.namespace, tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn )
+      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.outputType )
       res.curriedArgs = arglist
       return res
     end
@@ -227,7 +313,9 @@ functionGeneratorMT.__call=function(tab,...)
 end
 functionGeneratorMT.__tostring=function(tab)
   local res = {}
-  table.insert(res,"Function Generator "..tab.namespace.."."..tab.name)
+  table.insert(res,"Function Generator "..tab.name)
+  table.insert(res,"  Input Type: "..tostring(tab.inputType))
+  table.insert(res,"  Output Type: "..tostring(tab.outputType))
   table.insert(res,"  Required Args:")
   for k,v in pairs(tab.requiredArgs) do table.insert(res,"    "..k) end
   table.insert(res,"  Curried Args:")
@@ -245,7 +333,7 @@ function functionGeneratorFunctions:checkArgs(arglist)
 
   for k,v in pairs(arglist) do
     if self.requiredArgs[k]==nil and self.optArgs[k]==nil then
-      print("Error, arg '"..k.."' is not in list of required or optional args on function generator '"..self.namespace.."."..self.name.."'!" )
+      print("Error, arg '"..k.."' is not in list of required or optional args on function generator '"..self.name.."'!" )
       print("Required Args: ")
       for k,v in pairs(self.requiredArgs) do print(k..",") end
       assert(false)
@@ -276,111 +364,82 @@ function functionGeneratorFunctions:complete(arglist)
     end
     assert(false)
   end
-  local mod = self.completeFn(arglist)
-  J.err( darkroom.isPlainFunction(mod), "function generator '"..self.namespace.."."..self.name.."' returned something other than a rigel function? "..tostring(mod) )
-  mod.generator = self
-  mod.generatorArgs = arglist
+
+  local mod
+  if self.inputType~=types.Unknown then
+    -- try to apply lifting functions
+    err(P.isParamType(self.inputType) and self.inputType.kind=="SumType","NYI - non-sum type Parametrics")
+    
+    for k,v in ipairs(self.inputType.list) do
+      local inputType, outputType = self.inputType.list[k],self.outputType.list[k]
+      local finFn = function(a)
+        for k,v in pairs(self.curriedArgs) do
+          assert(a[k]==nil)
+          a[k]=v
+        end
+        return self.completeFn(a)
+      end
+      -- finFn should now only be a function of type parameters
+      
+      
+      --print("Parametric call findLifts for: "..tab.name)
+      mod = findLifts(finFn,arglist.type,inputType,outputType)
+      
+      if mod~=nil then
+--        print("LIFTRESULT",resFn)
+--        mod = resFn(arg)
+--        print("LIFTMOD",mod)
+        break
+      end
+    end
+  else
+    mod = self.completeFn(arglist)
+  end
+
+  J.err( darkroom.isPlainFunction(mod) or darkroom.isFunctionGenerator(mod), "function generator '"..self.name.."' returned something other than a rigel function or function generator? "..tostring(mod) )
+
+  if darkroom.isPlainFunction(mod) then
+    mod.generator = self
+    mod.generatorArgs = arglist
+  end
+    
   return mod
 end
 
-function darkroom.newFunctionGenerator( namespace, name, requiredArgs, optArgs, completeFn )
-  err( type(namespace)=="string", "newFunctionGenerator: namespace must be string" )
-  err( type(name)=="string", "newFunctionGenerator: name must be table" )
-  err( type(requiredArgs)=="table", "newFunctionGenerator: requiredArgs must be table" )
-  if J.keycount(requiredArgs)==#requiredArgs then requiredArgs = J.invertTable(requiredArgs) end -- convert array of names to set
-  for k,v in pairs(requiredArgs) do J.err( type(k)=="string", "newFunctionGenerator: requiredArgs must be set of strings" ) end
-  err( type(optArgs)=="table", "newFunctionGenerator: requiredArgs must be table" )
+function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType )
+  err( type(name)=="string", "FunctionGenerator: name must be string, but is: "..tostring(name) )
+  err( type(requiredArgs)=="table", "FunctionGenerator: requiredArgs must be table, but is: "..tostring(requiredArgs) )
+  if J.keycount(requiredArgs)==#requiredArgs then
+    -- convert array of names to set
+    requiredArgs = J.invertTable(requiredArgs)
+  end 
+  for k,v in pairs(requiredArgs) do J.err( type(k)=="string", "FunctionGenerator: requiredArgs must be set of strings" ) end
+  err( type(optArgs)=="table", "FunctionGenerator: requiredArgs must be table" )
   if J.keycount(optArgs)==#optArgs then optArgs = J.invertTable(optArgs) end -- convert array of names to set
-  for k,v in pairs(optArgs) do J.err( type(k)=="string", "newFunctionGenerator: optArgs must be set of strings" ) end
-  err( type(completeFn)=="function", "newFunctionGenerator: completeFn must be lua function" )
-  
-  return setmetatable( {namespace=namespace, name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={} }, functionGeneratorMT )
+  for k,v in pairs(optArgs) do J.err( type(k)=="string", "FunctionGenerator: optArgs must be set of strings" ) end
+  err( type(completeFn)=="function", "FunctionGenerator: completeFn must be lua function" )
+
+  if inputType==nil or inputType==types.Unknown then
+    inputType=types.Unknown
+    outputType=types.Unknown
+  else
+    err(types.isType(inputType) or P.isParam(inputType),"FunctionGenerator, type should be type, but is: "..tostring(inputType))
+    err(types.isType(outputType) or P.isParam(outputType),"FunctionGenerator, type should be type, but is: "..tostring(outputType))
+
+    if inputType.kind~="SumType" then inputType = P.SumType("______SUMopt",{inputType}) end
+    if outputType.kind~="SumType" then outputType = P.SumType("______SUMopt",{outputType}) end
+
+    -- hack: for the parametric generators, we need to know type/rate, so make sure this is included, even if user doesn't care
+    requiredArgs.type=true
+    requiredArgs.rate=true
+  end
+
+  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, outputType=outputType }, functionGeneratorMT )
 end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
-local function specialize(T,vars)
-  if params.isParam(T) then
-    assert(vars[T.name]~=nil)
-    return vars[T.name]
-  elseif types.isType(T) then
-    for k,v in pairs(T) do
-      if k~="over" and params.isParam(v) then
-        assert(vars[v.name]~=nil)
-
-        --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
-        print("SPECIAL",T,k,vars[v.name])
-        T = T:replaceVar(k,vars[v.name])
-        print("SPEC",T)
-      end
-    end
-    return T:replaceVar("over",specialize(T.over,vars))
-  else
-    print("specialize: ",T)
-    assert(false)
-  end
-end
-
--- find how to lift parameterized type Tparam to match Ttarget
-local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
-  assert(X==nil)
-  
-  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
-  local finVars = {}
-  if Tparam:isSupertypeOf(Ttarget,finVars) then
-    print("types match, we're done: ",Ttarget,Tparam)
-    for k,v in pairs(finVars) do print(k,v) end
-    print("FN",fn)
-    fn = fn(finVars)
-    print("FN",fn)
-    return fn
-  end
-
-  local L = require "generators.lifts"
-
-  -- search through lifts
-  local liftsFound = false
-  for liftName,lift in pairs(L) do
-    print("Try lift",liftName)
-    local vars1, vars2, vars3 = {},{},{}
-    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
-      print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
-      print("SPECIALIZE",Ttarget,lift[3])
-      for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
-      local spec = specialize(lift[3],vars1)
-      print("res",Ttarget,spec)
-      assert(Ttarget==spec)
-      print("SPECIALIZE",lift[1])
-      local newTtarget = specialize(lift[1],vars1)
-      print("NewTarget:",newTtarget)
-      
-      liftsFound = true
-
-      local res = findLifts(fn,newTtarget,Tparam,TparamOutput)
-
-      if res==nil then
-        return nil
-      else
-        print("Found lift",liftName,res)
-        for k,v in pairs(vars2) do print("VARS2",k,v) end
-        for k,v in pairs(vars1) do print("VARS1",k,v) end
-        local liftFn = lift[5](vars1)
-        return liftFn(res)
-      end
-    else
-      print("Lift '"..liftName.."' doesn't apply")
-      print(lift[3],"supertypeof?",Ttarget,lift[3]:isSupertypeOf(Ttarget,vars1))
-      print(lift[1],"Supertypeof?",Tparam,lift[1]:isSupertypeOf(Tparam,vars2))
-      print(lift[2],"Supertypeof?",TparamOutput,lift[2]:isSupertypeOf(TparamOutput,vars3))
-    end
-  end
-
-  --err(liftsFound,"No lifts found?")
-  if liftsFound==false then print("No lifts found?") end
-
-  return nil
-end
-
+--[=[
 function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, optArgs, completeFn )
   table.insert(requiredArgs,"type")
   table.insert(requiredArgs,"rate")
@@ -412,7 +471,7 @@ function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, op
       end
       err( false, "Could not find any compatible conversions when calling generator '"..name.."' (expected input type "..tostring(fns[1][1])..") with input of type "..tostring(args.type))
     end)
-end
+  end]=]
 
 local function buildAndCheckSystolicModule(tab, isModule)
   -- build the systolic module as needed
@@ -1185,7 +1244,7 @@ darkroomIRMT.__tostring = function(tab)
           -- legacy
           gen = tab.fn.generator
         else
-          gen = tab.fn.generator.namespace.."."..tab.fn.generator.name.."{"
+          gen = tab.fn.generator.name.."{"
           local lst = {}
           for k,v in pairs(tab.fn.generatorArgs) do
             if k=="luaFunction" or k=="rigelFunction" then

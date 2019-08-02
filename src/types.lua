@@ -11,6 +11,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     res = "bool"
   elseif ty.kind=="null" then
     res = "null"
+  elseif ty.kind=="unknown" then
+    res = "UnknownType"
   elseif ty.kind=="int" then
     res = "int"..ty.precision
   elseif ty.kind=="uint" then
@@ -81,6 +83,8 @@ function types.bool() return types._bool end
 
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
+
+types.Unknown = setmetatable({kind="unknown"},TypeMT)
 
 types._named={}
 function types.named( name, structure, generator, params, X )
@@ -550,8 +554,10 @@ function types.checkExplicitCast(from, to, ast)
   return false
 end
 
-function TypeFunctions:isSupertypeOf(ty,vars)
-  if vars==nil then vars={} end
+function TypeFunctions:isSupertypeOf(ty,vars,X)
+  --if vars==nil then vars={} end
+  assert(type(vars)=="table")
+  assert(X==nil)
   local params = require "params"
     
   err( types.isType(ty) or params.isParam(ty), ":isSubtypeOf(): input should be type or param, but is: "..tostring(ty) )
@@ -578,7 +584,7 @@ function TypeFunctions:isSupertypeOf(ty,vars)
       elseif types.isType(v) or params.isParam(v) then
         if v:isSupertypeOf(ty[k],vars) then
           if params.isParam(v) then
-            print("SET VAR",v.name,ty[k])
+            --print("SET VAR",v.name,ty[k])
             vars[v.name]=ty[k]
           end
         else
@@ -589,7 +595,7 @@ function TypeFunctions:isSupertypeOf(ty,vars)
         for kk,vv in ipairs(v) do
           if vv:isSupertypeOf(ty[k][kk],vars) then
             if params.isParam(vv) then
-              print("SET VAR",vv.name,ty[k][kk])
+              --print("SET VAR",vv.name,ty[k][kk])
               vars[vv.name]=ty[k][kk]
             end
           else
@@ -606,7 +612,12 @@ function TypeFunctions:isSupertypeOf(ty,vars)
     return true
 --    err( self.over~=nil and ty.over~=nil, "Could not recurse into type? "..tostring(self).." "..tostring(ty).." "..tostring(self.over).." "..tostring(ty.over) )
     -- recurse into it. Ie it's Array(T)
---    return self.over:isSupertypeOf(ty.over,vars)
+    --    return self.over:isSupertypeOf(ty.over,vars)
+  elseif params.isParam(ty) and ty.kind=="SumType" then
+    assert(#ty.list==1) -- NYI
+    vars[ty.name]=0 -- we chose index 0
+    print("RECURSE INTO SUMTYPE",ty,ty.list[1])
+    return self:isSupertypeOf(ty.list[1],vars)
   elseif params.isParam(ty) then
     -- params always more general than specific types
     return false

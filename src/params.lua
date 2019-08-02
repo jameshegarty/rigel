@@ -37,6 +37,10 @@ params.ParSeqType = makeParam("ParSeqType",false,params.ScheduleType("tmp"))
 params.ParType = makeParam("ParType",false,params.ScheduleType("tmp"))
 params.SeqType = makeParam("SeqType",false,params.ScheduleType("tmp"))
 
+params.SumType = function(name,list)
+  return setmetatable({kind="SumType",name=name,isValue=false,list=list},ParamMT)
+end
+
 local function valueOrTypeToParam(V)
   local function firstToUpper(str)
     return (str:gsub("^%l", string.upper))
@@ -56,17 +60,23 @@ local function valueOrTypeToParam(V)
 end
 
 -- is this param a supertype of P?
-function ParamFunctions:isSupertypeOf(P)
+function ParamFunctions:isSupertypeOf(P,vars)
   local types = require "types"
   local uniform = require "uniform"
-  if params.isParam(P) then
+  if self.kind=="SumType" then
+    -- hack
+    assert(#self.list==1)
+    vars[P.name]=0
+    return self.list[1]:isSupertypeOf(P,vars)
+  elseif params.isParam(P) then
     if self.kind==P.kind then return true end
     if P.super==nil then return false end -- this kind has no super, and doesn't match self
-    return self:isSupertypeOf(P.super)
+    return self:isSupertypeOf(P.super,vars)
   else
-    return self:isSupertypeOf(valueOrTypeToParam(P))
+    return self:isSupertypeOf(valueOrTypeToParam(P),vars)
     --print(tostring(self)..":isSupertypeOf() could not deal with ",P)
     --assert(false)
+
   end
 end
 
