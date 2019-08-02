@@ -1011,6 +1011,24 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   return rigel.newFunction(res)
 end)
 
+modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
+    err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
+
+    assert(fn.inputType:isS())
+    assert(fn.inputType.over:is("Par"))
+    
+    local G = require "generators.core"
+
+    local res = G.Module{"MapSeq_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+    assert( rigel.isFunction(res) )
+
+    -- hackity hack
+    res.inputType = types.S(types.Seq(res.inputType.over.over,W_orig,H_orig))
+    res.outputType = types.S(types.Seq(res.outputType.over.over,W_orig,H_orig))
+    
+    return res
+end)
+
 modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputMixed, X )
   err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
   err( type(w)=="number", "mapFramed: width must be number")
@@ -2553,7 +2571,7 @@ end)
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
-modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, X)
+modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSeqX, ParSeqY, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
   err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
@@ -2568,7 +2586,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, X)
   local maxRate = math.max(inputRate,outputRate)
 
   err( maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
-  err( maxRate % outputRate == 0, "maxRate % outputRate ~=0")
+  err( outputRate==0 or maxRate % outputRate == 0, "maxRate ("..tostring(maxRate)..") % outputRate ("..tostring(outputRate)..") ~=0")
   rigel.expectBasic(A)
 
   local inputCount = maxRate/inputRate
@@ -2581,8 +2599,17 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, X)
       res.inputType = types.rV(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
       res.outputType = rigel.Rv(types.Par(types.array2d(A,outputRate,H)))
     elseif inputRate>outputRate then
-      res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
-      res.outputType = types.Rv(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
+      if ParSeqX==nil then
+        res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
+      else
+        res.inputType = types.rV(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
+      end
+
+      if outputRate==0 then
+        res.outputType = types.Rv(types.Seq(A,inputRate,H))
+      else
+        res.outputType = types.Rv(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
+      end
     else
       assert(false)
     end
@@ -3544,7 +3571,14 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
   err( type(framed)=="boolean","reduceSeq: framed must be boolean" )
   assert(X==nil)
 
-  if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
+  err( R.isPlainFunction(f), "reduceSeq: input should be plain rigel function" )
+  
+  assert( f.inputType:isS())
+  assert( f.inputType.over:isPar())
+  assert( f.outputType:isS())
+  assert( f.outputType.over:isPar())
+  
+  if f.inputType.over.over:isTuple()==false or f.inputType.over.over~=types.tuple({f.outputType.over.over,f.outputType.over.over}) then
     error("Reduction function f must be of type {A,A}->A, but is type "..tostring(f.inputType).."->"..tostring(f.outputType))
   end
 

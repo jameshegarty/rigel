@@ -83,13 +83,13 @@ end
 
 darkroom.Async={}
 
-function darkroom.Size(w,h,X)
+darkroom.Size = J.memoize(function(w,h,X)
   local Uniform = require "uniform"
   err(type(w)=="number" or Uniform.isUniform(w),"Size: w must be number, but is: "..tostring(w))
   err(type(h)=="number" or Uniform.isUniform(h),"Size: h must be number, but is: "..tostring(h))
   assert(X==nil)
   return setmetatable({w,h},SizeMT)
-end
+end)
 
 local function discoverName(x)
   local y = 1
@@ -209,7 +209,7 @@ functionGeneratorMT.__call=function(tab,...)
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
     for k,v in pairs(arg) do
-      J.err( arglist[k]==nil, "Argument '"..k.."' was already passed to function generator '"..tab.name.."'" )
+      J.err( arglist[k]==nil or arglist[k]==v, "Argument '"..k.."' was already passed to function generator '"..tab.name.."'" )
       arglist[k] = v
     end
     
@@ -350,6 +350,7 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
       local spec = specialize(lift[3],vars1)
       print("res",Ttarget,spec)
       assert(Ttarget==spec)
+      print("SPECIALIZE",lift[1])
       local newTtarget = specialize(lift[1],vars1)
       print("NewTarget:",newTtarget)
       

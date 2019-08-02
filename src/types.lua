@@ -557,14 +557,16 @@ function TypeFunctions:isSupertypeOf(ty,vars)
   err( types.isType(ty) or params.isParam(ty), ":isSubtypeOf(): input should be type or param, but is: "..tostring(ty) )
 
   --print(self,"isSuperTypeOf?",ty)
-  
+
   if self==ty then
     return true
   elseif types.isType(ty) then
+    --print("KEYCOUNT",J.keycount(self),J.keycount(ty))
     -- do the params of these types match?
     if J.keycount(self)~=J.keycount(ty) then return false end
     
     for k,v in pairs(self) do
+      --print("KV",self,k,v,ty[k])
       --      if k~="over" then
       if ty[k]==nil then
         print(":isSupertypeOf(): Key '"..tostring(k).."' missing from ty '"..tostring(ty).."'?")
@@ -572,7 +574,7 @@ function TypeFunctions:isSupertypeOf(ty,vars)
       end
       
       if type(v)=="string" or type(v)=="number" then
-        return ty[k]==v
+        if ty[k]~=v then return false end
       elseif types.isType(v) or params.isParam(v) then
         if v:isSupertypeOf(ty[k],vars) then
           if params.isParam(v) then
@@ -646,21 +648,29 @@ function TypeFunctions:replaceVar(k,v)
   local cpy = {}
   for kk,vv in pairs(self) do cpy[kk]=vv end
   cpy[k]=v
-  
+
+  local res
   if self:isUint() then
-    return types.uint(cpy.precision)
+    res = types.uint(cpy.precision)
   elseif self:is("Interface") then
-    return types.Interface(cpy.over,cpy.R,cpy.V,cpy.I)
+    res = types.Interface(cpy.over,cpy.R,cpy.V,cpy.I,cpy.r,cpy.v,cpy.VRmode)
   elseif self:is("ParSeq") then
-    return types.ParSeq(cpy.over,cpy.size)
+    res = types.ParSeq(cpy.over,cpy.size)
   elseif self:is("Par") then
-    return types.Par(cpy.over)
+    res = types.Par(cpy.over)
+  elseif self:is("Seq") then
+    res = types.Seq(cpy.over,cpy.size)
   elseif self:is("array") then
-    return types.array2d(cpy.over,cpy.size)
+    res = types.array2d(cpy.over,cpy.size)
   else
     print(":replaceVar() NYI",self.kind)
     assert(false)
   end
+
+  err(J.keycount(res)==J.keycount(self),"internal error: replaceVar on "..tostring(self))
+  for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on "..tostring(self).." key "..tostring(kk).." is "..tostring(res[kk]).." but should be:"..tostring(vv)) end
+
+  return res
 end
 
 function TypeFunctions:isArray()  return self.kind=="array" end
@@ -972,7 +982,7 @@ function types.isBasic(A)
     return false
   elseif A:isInterface() then
     return false
-  elseif A:is("Par") or A:is("ParSeq") then
+  elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") then
     return false
   elseif A:isNamed() and A.generator=="fixed" then
     return true -- COMPLETE HACK, REMOVE

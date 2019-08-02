@@ -24,7 +24,7 @@ local Conv = G.Module{ "ConvTop", SDF{1,cycles},
     --local f = G.HS{G.Map{G.Map{G.Rshift{4}}}}(s)
     local f = G.Rshift{4}(s)
     print("FTYPE",f.type)
-    local o = G.Reduce{G.Add{R.Async}}(f)
+    local o = G.Map{G.Reduce{G.Add}}(f)
     o = G.Crop{{24,0,3,0}}(o)
     return G.AXIWriteBurst{"out/soc_redu"..tostring(cycles),noc.write}(o)
   end}

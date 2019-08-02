@@ -9,6 +9,7 @@ local C = require "generators.examplescommon"
 local S = require "systolic"
 local SOC = require "generators.soc"
 local Uniform = require "uniform"
+local SDF  = require "sdf"
 
 local __unnamedID = 0
 
@@ -453,15 +454,24 @@ generators.Reduce = R.ParametricFunctionGenerator("generators","Reduce",{"rigelF
 function(args)
   --assert(args.rigelFunction.inputType:isStatic())
   --assert(args.rigelFunction.inputType.over:is("Par"))
+
   local res = {{
       types.S(types.Seq(P.DataType("T"),P.SizeValue("size"))),
       types.V(types.Par(P.DataType("T"))),
-      function(a) return RM.reduceSeq(args.rigelFunction,1/(a.size[1]*a.size[2]),true) end }}
+      function(a)
+        print("REDUCE:",a.T)
+        local fn = args.rigelFunction
+        if R.isFunctionGenerator(fn) then
+          fn = fn{R.Async,types.tuple{a.T,a.T},SDF{1,1}}
+        end
+
+        return RM.reduceSeq(fn,1/(a.size[1]*a.size[2]),true)
+      end }}
 
   table.insert(res,{
                  types.S(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
                  types.S(types.Par(P.DataType("T"))),
-                 function(a) return RM.reduce(args.rigelFunction,a.size[1],a.size[2],a.T) end })
+                 function(a) return RM.reduce(args.rigelPlainFunction,a.size[1],a.size[2],a.T) end})
   
   return res
 end)
@@ -523,6 +533,19 @@ generators.Ser = R.newFunctionGenerator("generators","Ser",{"type","number","rat
 function(args)
   J.err( args.type:isArray(), "generators.Ser: type should be array, but is: "..tostring(args.type) )
   return C.changeRateFramed( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.number, true )
+end)
+
+-- serialize to a particular vector width ("number")
+generators.SerToWidth = R.ParametricFunctionGenerator("generators","SerToWidth",{"number"},{},
+function(args)
+  local res = {{T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
+                T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+                function(a) return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true ) end}}
+
+  table.insert(res,{T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+                T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+                function(a) return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] ) end})
+  return res
 end)
 
 generators.SerSeq = R.newFunctionGenerator("generators","SerSeq",{"type","number","rate"},{},
@@ -618,7 +641,7 @@ function(args)
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
   if ratio<1 then
 
-    if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then
+--[=[    if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then
       if args.type:FV()*ratio < 1 then
         return generators.Module{function(i) return generators.Map{generators.Reshape}(i) end,args.type,args.rate}
       else
@@ -631,8 +654,24 @@ function(args)
       else
         local res = generators.HS{generators.Ser{args.rate[1][2]/args.rate[1][1]},args.type,args.rate}
         return res
+  end]=]
+    if args.type:isRV() then
+      local ov = args.type.over
+      if ov:is("Par") or ov:is("ParSeq") then
+        if ov.over:isArray() then
+          -- if not an array, can't really do anything
+          local chan = ov.over.size[1]*ov.over.size[2]*ratio
+          if chan<1 then chan=0 end
+          return generators.SerToWidth{chan,args.type,args.rate}
+        end
+      elseif ov:is("Seq") then
+        -- already fully sequential, try to apply to inner dim?
+        return generators.Map{generator.Reshape}
+      else
+        err(false,"Reshape: upsupported type "..args.type) 
       end
     else
+      print("Reshape: upsupported type ",args.type)
       assert(false)
     end
   end
