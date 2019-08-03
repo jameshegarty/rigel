@@ -23,9 +23,14 @@ lifts.makeHandshake={
   T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.makeHandshake(f) end end}
 
+lifts.liftBasic={
+  T.S(P.ScheduleType("A")),T.S(P.ScheduleType("B")),
+  T.S(P.ScheduleType("A")),T.V(P.ScheduleType("B")),
+  function(args) return function(f) return RM.liftHandshake(RM.liftDecimate(f)) end end}
+
 lifts.liftDecimate={
   T.S(P.ScheduleType("A")),T.V(P.ScheduleType("B")),
-  T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
+  T.rV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.liftHandshake(RM.liftDecimate(f)) end end}
 
 lifts.liftHandshake={

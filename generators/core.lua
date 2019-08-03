@@ -63,13 +63,16 @@ generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"type","rate"},{"
 generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
 
 generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
-  function(a)
-    if a.size~=nil then
-      return C.index(a.T,a.size[1],a.size[2])
-    else
-      return C.index(a.T,a.number)
-    end
-end, T.S(T.Par(P.DataType("T"))), T.S(T.Par(P.DataType("T"))))
+function(a)
+  print("GEN INDEX")
+  if a.size~=nil then
+    return C.index(a.T,a.size[1],a.size[2])
+  else
+    return C.index(a.T,a.number)
+  end
+end,
+T.S(T.Par(T.array2d(P.DataType("T"),P.SizeValue("V")))),
+T.S(T.Par(P.DataType("T"))))
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
 
@@ -306,6 +309,7 @@ end)
 
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
+  print("CROP")
   return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
 end,
 T.S(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
@@ -533,20 +537,57 @@ end)
 
 -- serialize to a particular vector width ("number")
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
-function(a)
-  if a.opt==0 then
-    return RM.changeRate( a.T, a.size[2], a.size[1], a.number, true )
-  else                
-    return RM.changeRate( a.T, a.V[2], a.V[1], a.number, true, a.size[1], a.size[2] )
-  end
-end,
-P.SumType("opt",{
+function(args)
+  if args.number==0 then
+    print("SERTOWIDTH0")
+    return R.FunctionGenerator("core.SerToWidth",{},{},
+      function(a)
+        if a.opt==0 then
+          return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true )
+        else
+          print("OPT1 H",a.V[2],"inputRate",a.V[1],"outputRate",args.number,"parseqx",a.size[1])
+          if a.V[1]*a.V[2]==1 then
+            -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
+
+            local res = generators.Module{
+              "SerToWidth_Convert_Array_to_scalar_"..tostring(a.T), SDF{1,1},
+--              T.rV(T.ParSeq(T.array2d(a.T,1,1),a.size[1],a.size[2])),
+              T.rV(T.Par(T.array2d(a.T,1,1))),
+              function(inp)
+                print("CALL INDEX",inp.type)
+                return generators.Index{0}(inp)
+            end}
+            assert(R.isPlainFunction(res))
+            return res
+          else
+           return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+          end
+        end
+      end,
+      P.SumType("opt",{
+                  T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
+                  T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
+      P.SumType("opt",{
+                  T.RV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut"))),
+                  T.RV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))}) )
+
+  else
+    return R.FunctionGenerator("core.SerToWidth",{},{},
+      function(a)
+        if a.opt==0 then
+          return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true )
+        else                
+          return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+        end
+      end,
+      P.SumType("opt",{
             T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
             T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
-P.SumType("opt",{
+      P.SumType("opt",{
             T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))})
-)
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
+  end
+end)
 
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
@@ -664,10 +705,12 @@ function(args)
           -- if not an array, can't really do anything
           local chan = ov.over.size[1]*ov.over.size[2]*ratio
           if chan<1 then chan=0 end
-          return generators.SerToWidth{chan,args.type,args.rate}
+          print("SERTOWIDTH",chan,args.type)
+          return generators.SerToWidth{chan}
         end
       elseif ov:is("Seq") then
         -- already fully sequential, try to apply to inner dim?
+        assert(false)
         return generators.Map{generator.Reshape}
       else
         err(false,"Reshape: upsupported type "..args.type) 

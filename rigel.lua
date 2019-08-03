@@ -207,7 +207,7 @@ end
 local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   assert(X==nil)
   
-  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
     --print("types match, we're done: ",Ttarget,Tparam)
@@ -223,7 +223,9 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   -- search through lifts
   local liftsFound = false
   for liftName,lift in pairs(L) do
-    --print("Try lift",liftName)
+    print("L3",lift[3],Ttarget)
+    print("L2",lift[2],TparamOutput)
+    print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
     local vars1, vars2, vars3 = {},{},{}
     if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
@@ -369,9 +371,14 @@ function functionGeneratorFunctions:complete(arglist)
   if self.inputType~=types.Unknown then
     -- try to apply lifting functions
     err(P.isParamType(self.inputType) and self.inputType.kind=="SumType","NYI - non-sum type Parametrics")
-    
+
+    local liftFound = false
+    local inputTypeList = ""
+    local outputTypeList = ""
     for k,v in ipairs(self.inputType.list) do
       local inputType, outputType = self.inputType.list[k],self.outputType.list[k]
+      inputTypeList = inputTypeList..tostring(inputType).."|"
+      outputTypeList = outputTypeList..tostring(outputType).."|"
       local finFn = function(a)
         for k,v in pairs(self.curriedArgs) do
           assert(a[k]==nil)
@@ -388,10 +395,13 @@ function functionGeneratorFunctions:complete(arglist)
       if mod~=nil then
 --        print("LIFTRESULT",resFn)
 --        mod = resFn(arg)
---        print("LIFTMOD",mod)
+        --        print("LIFTMOD",mod)
+        liftFound = true
         break
       end
     end
+    
+    err(liftFound,"Failed to find a lift for fn '"..self.name.."' with input type '"..inputTypeList.."', output type '"..outputTypeList.."' to convert to type '"..tostring(arglist.type).."'")
   else
     mod = self.completeFn(arglist)
   end
