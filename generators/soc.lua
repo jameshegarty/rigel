@@ -1697,7 +1697,11 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
   
   if framed then
     -- HACK
-    res.inputType = types.HandshakeFramed(inputType,Vw*Vh>0,{{W_orig,H_orig}})
+    if Vw==0 then
+      res.inputType = types.RV(types.Seq(inputType,W_orig,H_orig))
+    else
+      res.inputType = types.RV(types.ParSeq(types.array2d(ty,Vw,Vh),W_orig,H_orig))
+    end
   end
   
   return res

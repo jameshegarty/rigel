@@ -64,6 +64,7 @@ function ParamFunctions:isSupertypeOf(P,vars)
   local types = require "types"
   local uniform = require "uniform"
   if self.kind=="SumType" then
+    assert(false)
     -- hack
     assert(#self.list==1)
     vars[P.name]=0

@@ -260,17 +260,17 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
   return rigel.newFunction(res)
 end)
 
+-- lift rv->rv to rv->rvV
 modules.liftBasic = memoize(function(f)
   err(rigel.isFunction(f),"liftBasic argument should be darkroom function")
 
   local res = {kind="liftBasic", fn = f}
-  --rigel.expectBasic(f.inputType)
-  --rigel.expectBasic(f.outputType)
-  err( f.inputType:isS(), "liftBasic: f input type should be S, but is: "..tostring(f.inputType))
-  err( f.outputType:isS(), "liftBasic: f output type should be S, but is: "..tostring(f.outputType))
+
+  err( f.inputType:isrv(), "liftBasic: f input type should be rv, but is: "..tostring(f.inputType))
+  err( f.outputType:isrv(), "liftBasic: f output type should be rv, but is: "..tostring(f.outputType))
   
   res.inputType = f.inputType
-  res.outputType = rigel.V(f.outputType.over)
+  res.outputType = types.rvV(f.outputType.over)
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = f.delay
   res.stateful = f.stateful
@@ -282,7 +282,11 @@ modules.liftBasic = memoize(function(f)
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local inner = systolicModule:add( f.systolicModule:instantiate("LiftBasic_inner") )
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local CE = S.CE("CE")
+
+    local CE
+    if f.stateful or f.delay>0 then
+      CE = S.CE("CE")
+    end
     systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ inner:process(sinp), S.constant(true, types.bool())}, "process_output", nil, nil, CE ) )
     if f.stateful then systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) ) end
     systolicModule:complete()
@@ -291,7 +295,7 @@ modules.liftBasic = memoize(function(f)
   end
 
   return rigel.newFunction(res)
-                             end)
+end)
 
 local function passthroughSystolic( res, systolicModule, inner, passthroughFns, onlyWire )
   assert(type(passthroughFns)=="table")
@@ -464,10 +468,10 @@ modules.waitOnInput = memoize(function( f, X )
   err(rigel.isFunction(f),"waitOnInput argument should be darkroom function")
   err( X==nil, "waitOnInput: too many arguments" )
   local res = {kind="waitOnInput", fn = f}
-  err( f.inputType:isrRv(), "waitOnInput of fn '"..f.name.."': input type should be rRv, but is: "..tostring(f.inputType))
-  err( f.outputType:isrvV(), "waitOnInput: output type should be rvV, but is: "..tostring(f.outputType))
-  res.inputType = types.rRV(f.inputType.over)
-  res.outputType = types.rV(f.outputType.over)
+  err( f.inputType:isrv(), "waitOnInput of fn '"..f.name.."': input type should be rv, but is: "..tostring(f.inputType))
+  err( f.outputType:isrRvV(), "waitOnInput: output type should be rRvV, but is: "..tostring(f.outputType))
+  res.inputType = types.rV(f.inputType.over)
+  res.outputType = types.rRV(f.outputType.over)
 
   err(f.delay == math.floor(f.delay), "waitOnInput, delay is fractional?")
   err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
@@ -487,15 +491,16 @@ modules.waitOnInput = memoize(function( f, X )
   return rigel.newFunction(res)
 end)
 
-local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger, X )
+local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, handshakeTrigger, includeCE, X )
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule=systolicModule:toModule() end
   assert( S.isModule(systolicModule) )
   assert(type(handshakeTrigger)=="boolean")
+  assert(type(includeCE)=="table")
   
   local res = Ssugar.moduleConstructor("LiftDecimate_"..systolicModule.name)
   local inner = res:add( systolicModule:instantiate("LiftDecimate") )
 
-  for _,fnname in pairs(liftFns) do
+  for k,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
     local prefix = fnname.."_"
@@ -533,9 +538,16 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
     if srcFn.inputParameter.type~=types.null() then
       validout = S.__and(pout_valid,validi)
     end
-    
-    local CE = S.CE(prefix.."CE")
 
+    local CE
+    if includeCE[k] then
+      CE = S.CE(prefix.."CE")
+    end
+--    local CE
+--    if srcFn.CE~=nil then
+--      CE = S.CE(prefix.."CE")
+--    end
+    
     if pout_data==nil then
       res:addFunction( S.lambda(fnname, sinp, validout, fnname.."_output",nil,nil,CE ) )
     else
@@ -568,11 +580,12 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   if handshakeTrigger==nil then handshakeTrigger=true end
   
   local res = {kind="liftDecimate", fn = f}
-  err( f.inputType:isS(), "liftDecimate: fn input type should be static, but is: "..tostring(f.inputType) )
+  err( f.inputType:isrv(), "liftDecimate: fn input type should be rv, but is: "..tostring(f.inputType) )
+  err( f.outputType:isrvV(), "liftDecimate: fn input type should be rvV, but is: "..tostring(f.outputType) )
 
   res.name = "LiftDecimate_"..f.name
-  res.inputType = types.rRV(f.inputType.over)
-  res.outputType = types.rV(f.outputType.over)
+  res.inputType = types.rV(f.inputType.over)
+  res.outputType = types.rRV(f.outputType.over)
 
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
@@ -586,7 +599,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
 
   function res.makeSystolic()
     err( S.isModule(f.systolicModule), "Missing/incorrect systolic for "..f.name )
-    return liftDecimateSystolic( f.systolicModule, {"process"}, {}, handshakeTrigger )
+    return liftDecimateSystolic( f.systolicModule, {"process"}, {}, handshakeTrigger, {f.stateful or f.delay>0} )
   end
 
   return rigel.newFunction(res)
@@ -631,10 +644,11 @@ modules.RPassthrough = memoize(function(f)
   return rigel.newFunction(res)
 end)
 
-local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput, X )
+local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, hasReadyInput, hasCE, X )
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule = systolicModule:toModule() end
   err( S.isModule(systolicModule), "liftHandshakeSystolic: systolicModule not a systolic module?" )
   assert(type(hasReadyInput)=="table")
+  assert(type(hasCE)=="table")
   assert(X==nil)
   
   local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
@@ -643,9 +657,16 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule:complete(); systolicModule=systolicModule.module end
 
   local resetPipelines = {}
-
+  --res:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", {},S.parameter("reset",types.bool())) ) end
+  --
+  
   passthroughSystolic( res, systolicModule, inner, passthroughFns, true )
 
+  if res:lookupFunction("reset")==nil then
+    -- we need a reset for the shift register or something?
+    res:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "reset" ) )
+  end
+    
   for K,fnname in pairs(liftFns) do
     local srcFn = systolicModule:lookupFunction(fnname)
 
@@ -662,7 +683,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 
     local downstreamReady
     local CE
-    
+
     if hasReadyInput[K] then
       downstreamReady = S.parameter(prefix.."ready_downstream", types.bool())
       CE = downstreamReady
@@ -671,7 +692,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
       CE = S.constant(true,types.bool())
     end
 
-    local pout = inner[fnname](inner,pinp,S.constant(true,types.bool()), CE )
+    local pout = inner[fnname](inner,pinp,S.constant(true,types.bool()), J.sel(hasCE[K],CE,nil) )
 
     if pout.type:isTuple() and #pout.type.list==2 then
     elseif pout.type==types.null() then
@@ -715,6 +736,9 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     end
 
     local readyOut
+
+    err( systolicModule.functions[prefix.."ready"]~=nil, "LiftHandshake, module is missing ready fn? module '"..systolicModule.name.."', fn "..tostring(prefix).."ready")
+
     if hasReadyInput[K] and systolicModule.functions[prefix.."ready"].output~=nil and systolicModule.functions[prefix.."ready"].output.type~=types.null() then
       readyOut = systolic.__and(inner[prefix.."ready"](inner),downstreamReady)
     else
@@ -756,8 +780,8 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err( X==nil, "liftHandshake: too many arguments" )
     
   local res = {kind="liftHandshake", fn=f}
-  err( f.inputType:isrRV(), "liftHandshake of fn '"..f.name.."': expected rRV input interface type, but is "..tostring(f.inputType))
-  err( f.outputType:isrV() ,"liftHandshake: expected rV output type")
+  err( f.inputType:isrV(), "liftHandshake of fn '"..f.name.."': expected rV input interface type, but is "..tostring(f.inputType))
+  err( f.outputType:isrRV() ,"liftHandshake: expected rRV output type, but is: "..tostring(f.outputType))
 
   res.inputType = types.RV(f.inputType.over)
   res.outputType = types.RV(f.outputType.over)
@@ -767,7 +791,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
-  res.stateful = f.stateful
+  res.stateful = true --f.stateful  valid bit shift register is stateful
 
   err( type(f.delay)=="number","Module is missing delay? "..tostring(f))
   res.delay = math.max(1, f.delay)
@@ -779,7 +803,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
     assert( S.isModule(f.systolicModule) )
     local passthrough = {}
     if f.stateful then passthrough={"reset"} end
-    return liftHandshakeSystolic( f.systolicModule, {"process"},passthrough,{true} )
+    return liftHandshakeSystolic( f.systolicModule, {"process"},passthrough,{true},{f.stateful or f.delay>0} )
   end
 
   return rigel.newFunction(res)
@@ -932,7 +956,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   --err( type(H)=="number", "mapParSeq: H must be number" )
   err( X==nil, "mapParSeq: too many arguments" )
        
-  local res = {kind="mapParSeq",fn=fn,Vw=Vw,Vh=Vh,stateful=fn.stateful,delay=fn.delay,W=W,H}
+  local res = { kind="mapParSeq", fn=fn, Vw=Vw,Vh=Vh, stateful=fn.stateful, delay=fn.delay, W=W, H=H}
   
   res.name=J.sanitize("MapParSeq_"..fn.name.."_VW"..tostring(Vw_orig).."_VH"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig))
 
@@ -985,7 +1009,10 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
 
     local inner = sm:add(fnMapped.systolicModule:instantiate("inner"))
 
-    local CE = S.CE("process_CE")
+    local CE
+    if fnMapped.stateful or fnMapped.delay>0 then
+      CE = S.CE("process_CE")
+    end
     local reset_valid = S.parameter("reset",types.bool())
 
     local I = S.parameter("process_input", rigel.lower(fnMapped.inputType) )
@@ -1003,20 +1030,22 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   return rigel.newFunction(res)
 end)
 
+-- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
+-- this is basically a trivial conversion
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
 
-    assert(fn.inputType:isS())
-    assert(fn.inputType.over:is("Par"))
-    
+    err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
+    err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
+
     local G = require "generators.core"
 
-    local res = G.Module{"MapSeq_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+    local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
     assert( rigel.isFunction(res) )
 
     -- hackity hack
-    res.inputType = types.S(types.Seq(res.inputType.over.over,W_orig,H_orig))
-    res.outputType = types.S(types.Seq(res.outputType.over.over,W_orig,H_orig))
+    res.inputType = types.rv(types.Seq(res.inputType.over.over,W_orig,H_orig))
+    res.outputType = types.rv(types.Seq(res.outputType.over.over,W_orig,H_orig))
     
     return res
 end)
@@ -2409,10 +2438,12 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
     --print("FRAMEHACK",res.inputType,res.outputType)
     if V==0 then
       --res.inputType = res.inputType:addDim(W,H,V>0) --types.StaticFramed(res.inputType,idim)
-      assert(false) -- NYI
+      --assert(false) -- NYI
+      res.inputType = types.rv(types.Seq(res.inputType.over.over,W_orig,H))
+      res.outputType = types.rvV(types.Seq(res.outputType.over.over.list[1],W_orig-L-R,H-B-Top))
     else
-      res.inputType = types.S(types.ParSeq(res.inputType.over.over,W_orig,H))
-      res.outputType = types.V(types.ParSeq(res.outputType.over.over.list[1],W_orig-L-R,H-B-Top))
+      res.inputType = types.rv(types.ParSeq(res.inputType.over.over,W_orig,H))
+      res.outputType = types.rvV(types.ParSeq(res.outputType.over.over.list[1],W_orig-L-R,H-B-Top))
       print("CROPHACK",res.inputType,res.outputType)
     end
     
@@ -2492,8 +2523,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
   err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-  res.inputType = types.rRv(types.Par(types.array2d(A,T)))
-  res.outputType = types.rvV(types.Par(types.array2d(A,T)))
+  res.inputType = types.rv(types.Par(types.array2d(A,T)))
+  res.outputType = types.rRvV(types.Par(types.array2d(A,T)))
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
   res.delay=0
@@ -2588,26 +2619,26 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
 
   if framed then
     if inputRate<outputRate then
-      res.inputType = types.rRv(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
-      res.outputType = rigel.rvV(types.Par(types.array2d(A,outputRate,H)))
+      res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
+      res.outputType = rigel.rRvV(types.Par(types.array2d(A,outputRate,H)))
     elseif inputRate>outputRate then
       if ParSeqX==nil then
-        res.inputType = types.rRv(types.Par(types.array2d(A,inputRate,H)))
+        res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
       else
-        res.inputType = types.rRv(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
+        res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
       end
 
       if outputRate==0 then
-        res.outputType = types.rvV(types.Seq(A,inputRate,H))
+        res.outputType = types.rRvV(types.Seq(A,inputRate,H))
       else
-        res.outputType = types.rvV(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
+        res.outputType = types.rRvV(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
       end
     else
       assert(false)
     end
   else
-    res.inputType = types.rRv(types.Par(types.array2d(A,inputRate,H)))
-    res.outputType = types.rvV(types.Par(types.array2d(A,outputRate,H)))
+    res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
+    res.outputType = types.rRvV(types.Par(types.array2d(A,outputRate,H)))
   end
   
   res.stateful = true
@@ -3368,9 +3399,9 @@ return mod
         end
         --------------
         
-        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset",J.sel(includeSizeFn,"size",nil)}, false )
+        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset",J.sel(includeSizeFn,"size",nil)}, false, {true} )
         systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset",J.sel(includeSizeFn,"size",nil)})
-        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset",J.sel(includeSizeFn,"size",nil)},{true,false})
+        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset",J.sel(includeSizeFn,"size",nil)},{true,false},{true,true})
         
         return systolicModule
       end
@@ -3484,7 +3515,7 @@ modules.reduce = memoize(function( f, W, H, ty, X )
   --err( f.inputType:isS(),"Reduce: f input type should be static")
   --err( f.outputType:isS(),"Reduce: f output type should be static")
 
-  print("WH",W,H)
+  --print("WH",W,H)
   local res
   if (W*H)==2 then
     local G = require "generators.core"
@@ -4544,10 +4575,11 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     -- for the non-handshake (purely systolic) modules, the ready bit doesn't flow from outputs to inputs,
     -- it flows from inputs to outputs. The reason is that upstream things can't stall downstream things anyway, so there's really no point of doing it the 'right' way.
     -- this is kind of messed up!
-    if rigel.isRV( fn.inputType ) or fn.inputType:is("RVFramed") then
+    if fn.inputType:isrRV() and fn.output.type:isrRV() then
+      -- weird (old) RV->RV fn type?
       assert( S.isAST(out[2]) )
       local readyfn = module:addFunction( S.lambda("ready", readyInput, out[2], "ready", {} ) )
-    elseif rigel.isRV( fn.outputType ) or fn.outputType:is("RVFramed") then
+    elseif fn.inputType:isrV() and fn.outputType:isrRV() then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
     elseif HANDSHAKE_MODE then
       local readyinp, readyout, readyPipelines = fn.output:codegenSystolicReady( module )

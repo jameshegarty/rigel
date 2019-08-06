@@ -207,9 +207,10 @@ end
 local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   assert(X==nil)
   
-  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
+    --print("CHECKSUPER",Tparam,Ttarget)
     --print("types match, we're done: ",Ttarget,Tparam)
     --for k,v in pairs(finVars) do print(k,v) end
     --print("FN",fn)
@@ -223,9 +224,9 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   -- search through lifts
   local liftsFound = false
   for liftName,lift in pairs(L) do
-    print("L3",lift[3],Ttarget)
-    print("L2",lift[2],TparamOutput)
-    print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
+    --print("L3",lift[3],Ttarget)
+    --print("L2",lift[2],TparamOutput)
+    --print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
     local vars1, vars2, vars3 = {},{},{}
     if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
@@ -260,7 +261,7 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   end
 
   --err(liftsFound,"No lifts found?")
-  if liftsFound==false then print("No lifts found?") end
+  --if liftsFound==false then print("No lifts found?") end
 
   return nil
 end
@@ -380,9 +381,10 @@ function functionGeneratorFunctions:complete(arglist)
       inputTypeList = inputTypeList..tostring(inputType).."|"
       outputTypeList = outputTypeList..tostring(outputType).."|"
       local finFn = function(a)
-        for k,v in pairs(self.curriedArgs) do
-          assert(a[k]==nil)
-          a[k]=v
+        a[self.inputType.name]=k-1
+        for kk,vv in pairs(self.curriedArgs) do
+          assert(a[kk]==nil)
+          a[kk]=vv
         end
         return self.completeFn(a)
       end
@@ -390,7 +392,7 @@ function functionGeneratorFunctions:complete(arglist)
       
       
       --print("Parametric call findLifts for: "..tab.name)
-      mod = findLifts(finFn,arglist.type,inputType,outputType)
+      mod = findLifts( finFn, arglist.type, inputType, outputType )
       
       if mod~=nil then
 --        print("LIFTRESULT",resFn)
@@ -449,40 +451,6 @@ end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
---[=[
-function darkroom.ParametricFunctionGenerator( namespace, name, requiredArgs, optArgs, completeFn )
-  table.insert(requiredArgs,"type")
-  table.insert(requiredArgs,"rate")
-
-  return darkroom.newFunctionGenerator(namespace, name, requiredArgs, optArgs,
-    function(args)
-      -- user should not be inspecting type or rate
-      local a = {}
-      for k,v in pairs(args) do
-        if k~="rate" and k~="type" then
-          a[k]=v
-        end
-      end
-
-      local fns = completeFn(a)
-
-      for _,v in ipairs(fns) do
-        local inputType, outputType, finFn = v[1],v[2],v[3]
-        -- finFn should now only be a function of type parameters
-
-
-        print("Parametric call findLifts for: "..name)
-        local resFn = findLifts(finFn,args.type,inputType,outputType)
-
-        if resFn~=nil then
-          print(resFn)
-          return resFn
-        end
-      end
-      err( false, "Could not find any compatible conversions when calling generator '"..name.."' (expected input type "..tostring(fns[1][1])..") with input of type "..tostring(args.type))
-    end)
-  end]=]
-
 local function buildAndCheckSystolicModule(tab, isModule)
   -- build the systolic module as needed
   err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
@@ -508,18 +476,30 @@ local function buildAndCheckSystolicModule(tab, isModule)
       err( systolicFn.output~=nil, "module output is not null (is "..tostring(rigelFn.outputType).."), but systolic output is missing")
       err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."' (rigel type "..tostring(rigelFn.outputType)..")" )
     end
-    
+
+    local shouldHaveCE = (types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType))==false and (rigelFn.stateful or (rigelFn.delay~=nil and rigelFn.delay>0)) and (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false
+    err( shouldHaveCE==(systolicFn.CE~=nil), "Systolic function CE doesn't match rigel definition. Module '"..tab.name.."' fn '"..fnname.."'. rigelFn.stateful="..tostring(rigelFn.stateful).." rigelFn.delay="..tostring(rigelFn.delay).." rigelFn.inputType="..tostring(rigelFn.inputType).." shouldHaveCE="..tostring(shouldHaveCE).." systolicCE:"..tostring(systolicFn.CE))
+      
     if types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType) then
       local readyName = fnname.."_ready"
       if isModule==false then readyName="ready" end
       
       err( sm.functions[readyName]~=nil, "module ready function missing?")
 
-      local expectedReady = darkroom.extractReady(rigelFn.inputType)
-      if rigelFn.inputType~=types.Interface() and expectedReady~=sm.functions[readyName].output.type then
-        err(false, "module '"..tab.name.."' systolic ready output type wrong. Systolic ready output type is '"..tostring(sm.functions[readyName].output.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.inputType)).."', because Rigel function input type is '"..tostring(rigelFn.inputType).."'.")
+      local expectedInputReady = darkroom.extractReady(rigelFn.inputType)
+      local expectedOutputReady = darkroom.extractReady(rigelFn.outputType)
+
+      err( sm.functions[readyName]~=nil,"missing ready fn?")
+      err( rigelFn.inputType==types.Interface() or sm.functions[readyName].output~=nil,"ready fn '"..readyName.."' has no output? module: "..tostring(rigelFn))
+
+      if rigelFn.inputType~=types.Interface() then
+        err( expectedInputReady==sm.functions[readyName].output.type, "module '"..tab.name.."' systolic ready '"..readyName.."' output type wrong. Systolic ready output type is '"..tostring(sm.functions[readyName].output.type).."', but should be '"..tostring(expectedInputReady).."', because Rigel function input type is '"..tostring(rigelFn.inputType).."'.")
       end
 
+      if rigelFn.outputType~=types.Interface() then
+        err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
+      end
+      
       --[=[
       if types.isHandshakeAny(rigelFn.inputType)==false and sm.functions[readyName].output~=nil then
         err(sm.functions[readyName].output.type==types.null(),"Systolic module '"..tab.name.."' function '"..readyName.."' (input type "..tostring(rigelFn.inputType)..") shouldn't return anything, but returns type: "..tostring(sm.functions[readyName].output.type))
@@ -1840,6 +1820,7 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         end
       elseif n.kind=="applyMethod" then
         local inst = module:lookupInstance(n.inst.name)
+
         res = {inst[n.fnname.."_ready"](inst, input)}
         
         if n.inst.module.functions[n.fnname].inputType==types.Interface() then
@@ -1966,11 +1947,11 @@ function darkroomIRFunctions:codegenSystolic( module )
         
         if n.fn.inputType==types.Interface() then
           return { I:process() }
-        elseif n.inputs[1].type:isV() then
+        elseif n.inputs[1].type:isrV() then
           return { I:process(inputs[1][1]), I:ready() }
-        elseif darkroom.isRV(n.inputs[1].type) then
+        elseif n.inputs[1].type:isrRV() then
           return { I:process(inputs[1][1]), I:ready(inputs[1][2]) }
-        elseif darkroom.isRV(n.type) then
+        elseif n.type:isrRvV() then
           -- the strange basic->RV case
           err( false, "You shouldn't use Basic->RV directly, loc "..n.loc )
         else

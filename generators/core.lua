@@ -309,11 +309,24 @@ end)
 
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
-  print("CROP")
-  return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+  --print("CROP")
+  if a.opt==0 then
+    assert(a.V[2]==1)
+    return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+  elseif a.opt==1 then
+    return RM.cropSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+  else
+    print("OPT",a.opt)
+    assert(false)
+  end
 end,
-T.rv(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-T.rvV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))))
+P.SumType("opt",{
+            T.rv(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+            T.rv(T.Seq(P.DataType("T"),P.SizeValue("size")))}),
+P.SumType("opt",{
+            T.rvV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
+            T.rvV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))})
+)
 
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"type","size","rate"},{},
 function(args)
@@ -464,8 +477,10 @@ function(args)
     function(a)
       if a.opt==0 then
         return RM.reduceSeq(args.rigelFunction,1/(a.size[1]*a.size[2]),true)
-      else
+      elseif a.opt==1 then
         return RM.reduce(args.rigelFunction,a.size[1],a.size[2],a.T)
+      else
+        assert(false)
       end
     end,
     P.SumType("opt",{
@@ -544,48 +559,57 @@ function(args)
       function(a)
         if a.opt==0 then
           return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true )
-        else
+        elseif a.opt==1 then
           print("OPT1 H",a.V[2],"inputRate",a.V[1],"outputRate",args.number,"parseqx",a.size[1])
-          if a.V[1]*a.V[2]==1 then
+          if a.V[1]*a.V[2]==1 and args.number==0 then
             -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
 
+            print("Special case [1,1;w,h}")
             local res = generators.Module{
               "SerToWidth_Convert_Array_to_scalar_"..tostring(a.T), SDF{1,1},
 --              T.rV(T.ParSeq(T.array2d(a.T,1,1),a.size[1],a.size[2])),
               T.rV(T.Par(T.array2d(a.T,1,1))),
               function(inp)
-                print("CALL INDEX",inp.type)
+                --print("CALL INDEX",inp.type)
                 return generators.Index{0}(inp)
             end}
             assert(R.isPlainFunction(res))
+            --print("SSSER",res,res.systolicModule)
+            res.inputType = types.rV(types.ParSeq(T.array2d(a.T,1,1),a.size))
+            res.outputType = types.rRV(types.Seq(a.T,a.size))
+            --print(res)
             return res
           else
            return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
           end
+        else
+          assert(false)
         end
       end,
       P.SumType("opt",{
                   T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
                   T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
       P.SumType("opt",{
-                  T.RV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut"))),
-                  T.RV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))}) )
+                  T.rRV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut"))),
+                  T.rRV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))}) )
 
   else
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
           return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true )
-        else                
+        elseif a.opt==1 then                
           return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+        else
+          assert(false)
         end
       end,
       P.SumType("opt",{
             T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
             T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
       P.SumType("opt",{
-            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
+            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
   end
 end)
 
@@ -673,10 +697,18 @@ end)
 
 generators.AXIWriteBurst = R.FunctionGenerator("core.AXIWriteBurst",{"string","rigelFunction"},{"address"},
 function(a)
-  return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
+  if a.opt==0 then
+    return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
+  elseif a.opt==1 then
+    return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, 0, 0, true, a.rigelFunction, a.address )
+  else
+    assert(false)
+  end
 end,
-types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-types.HandshakeTrigger)
+P.SumType("opt",{
+            types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+            types.Handshake(types.Seq(P.DataType("T"),P.SizeValue("size")))}),
+P.SumType("opt",{types.HandshakeTrigger,types.HandshakeTrigger}) )
 
 generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
@@ -705,7 +737,6 @@ function(args)
           -- if not an array, can't really do anything
           local chan = ov.over.size[1]*ov.over.size[2]*ratio
           if chan<1 then chan=0 end
-          print("SERTOWIDTH",chan,args.type)
           return generators.SerToWidth{chan}
         end
       elseif ov:is("Seq") then

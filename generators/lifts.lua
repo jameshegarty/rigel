@@ -27,19 +27,19 @@ lifts.liftBasicToDecimate={
   T.S(P.ScheduleType("A")),T.S(P.ScheduleType("B")),
   T.S(P.ScheduleType("A")),T.V(P.ScheduleType("B")),
   function(args) return function(f) return RM.liftBasic(f) end end}
-
-lifts.liftBasicToUpsamp={
-  T.S(P.ScheduleType("A")),T.S(P.ScheduleType("B")),
-  T.rV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
-  function(args) return function(f) return RM.liftDecimate(RM.liftBasic(f)) end end}
 ]=]
+lifts.liftBasicToUpsamp={
+  T.rv(P.ScheduleType("A")),T.rv(P.ScheduleType("B")),
+  T.rV(P.ScheduleType("A")),T.rRV(P.ScheduleType("B")),
+  function(args) return function(f) return RM.liftDecimate(RM.liftBasic(f)) end end}
+
 lifts.liftDecimateToHandshake={
   T.rv(P.ScheduleType("A")),T.rvV(P.ScheduleType("B")),
   T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.liftHandshake(RM.liftDecimate(f)) end end}
 
 lifts.liftHandshake={
-  T.rV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
+  T.rV(P.ScheduleType("A")),T.rRV(P.ScheduleType("B")),
   T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.liftHandshake(f) end end}
 

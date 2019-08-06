@@ -575,7 +575,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
       --print("KV",self,k,v,ty[k])
       --      if k~="over" then
       if ty[k]==nil then
-        print(":isSupertypeOf(): Key '"..tostring(k).."' missing from ty '"..tostring(ty).."'?")
+        --print(":isSupertypeOf(): Key '"..tostring(k).."' missing from ty '"..tostring(ty).."'?")
         return false
       end
       
@@ -750,6 +750,7 @@ function TypeFunctions:isRv() return self.kind=="Interface" and self.r==nil and 
 function TypeFunctions:isrRv() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==nil and self.R==types.bool() end
 function TypeFunctions:isrvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isrRV() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
+function TypeFunctions:isrRvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isDataType() return types.isBasic(self) end
@@ -1116,6 +1117,8 @@ function types.rV(T) return types.Interface(T,nil,types.bool(),nil,types.bool())
 -- for old S->RV type, now rRv->rvV
 function types.rRv(T) return types.Interface(T,types.bool(),nil,nil,types.bool(),types.bool()) end
 function types.rRV(T) return types.Interface(T,types.bool(),types.bool(),nil,types.bool()) end
+function types.rRvV(T) return types.Interface(T,types.bool(),types.bool(),nil,types.bool(),types.bool()) end
+function types.rvV(T) return types.Interface(T,nil,types.bool(),nil,types.bool(),types.bool()) end
 function types.rvV(T) return types.Interface(T,nil,types.bool(),nil,types.bool(),types.bool()) end
 function types.Rv(T) return types.Interface(T,types.bool(),nil,nil,nil,types.bool()) end
 function types.V(T) return types.Interface(T,nil,types.bool()) end
@@ -1422,7 +1425,7 @@ function types.isHandshakeTuple( a ) return a:isNamed() and a.generator=="Handsh
 -- is this any of the handshaked types?
 function types.isHandshakeAny( a )
   if a:is("Interface") then
-    return a.R~=nil and a.V~=nil
+    return a:isRV()
   elseif a:is("InterfaceTuple") then
     for _,v in ipairs(a.list) do if types.isHandshakeAny(v) then return true end end
     return false
@@ -1459,29 +1462,14 @@ function types.lower( a, outputType )
       if a.V~=nil then return a.V end
       assert(false)
     end
---[=[    elseif a:isS() or a:isrv() then
-      return types.lower(a.over)
-    elseif a:isV() then
-      return a.V
-    elseif a:isrV() then
-      err(outputType~=nil, "types.lower: TODO: fix, ambiguous case rV input, it's different depending on output type (Rv vs RV)")
-      assert(outputType:is("Interface"))
-      if outputType.R~=nil and outputType.V~=nil then
-        return types.tuple{types.lower(a.over),a.V}
-      else
-        return types.lower(a.over)
-      end
-    elseif (a:isV() or a:isRV()) and  then
-      return types.tuple{types.lower(a.over),a.V}
-  end]=]
   elseif a:is("InterfaceTuple") then
     local res = {}
     for _,v in ipairs(a.list) do table.insert(res,types.lower(v,loc)) end
     return types.tuple(res)
   elseif a:isSchedule() then
-    if a:is("Par") or a:is("ParSeq") then
+    --if a:is("Par") or a:is("ParSeq") then
       return a.over
-    end
+    --end
   end
   
   print("rigel.lower: unknown type? ",a)
@@ -1556,7 +1544,7 @@ end
 -- is this type any type of handshake type?
 function types.isStreaming(A)
   if A:is("Interface") then
-    if A.R~=nil and A.V~=nil then
+    if A:isRV() then
       return true
     else
       return false
