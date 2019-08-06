@@ -745,11 +745,15 @@ end
 
 function TypeFunctions:isS() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and self.v==nil and self.r==nil end
 function TypeFunctions:isrV() return self.kind=="Interface" and self.R==nil and self.V==types.bool() and self.I==nil and self.v==nil and self.r==types.bool() end
+function TypeFunctions:isrv() return self.kind=="Interface" and self.R==nil and self.v==types.bool() and self.I==nil and self.V==nil and self.r==types.bool() end
 function TypeFunctions:isRv() return self.kind=="Interface" and self.r==nil and self.v==types.bool() and self.I==nil and self.V==nil and self.R==types.bool() end
+function TypeFunctions:isrRv() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==nil and self.R==types.bool() end
+function TypeFunctions:isrvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==nil end
+function TypeFunctions:isrRV() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isDataType() return types.isBasic(self) end
-function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil end
+--function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
 function TypeFunctions:isInterface() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
 function TypeFunctions:isSchedule() return types.isScheduleType(self) end
 function TypeFunctions:isFloat() return self.kind=="float" end
@@ -1109,9 +1113,14 @@ end
 function types.S(T) return types.Interface(T) end
 function types.R(T) return types.Interface(T,types.bool()) end
 function types.rV(T) return types.Interface(T,nil,types.bool(),nil,types.bool()) end
+-- for old S->RV type, now rRv->rvV
+function types.rRv(T) return types.Interface(T,types.bool(),nil,nil,types.bool(),types.bool()) end
+function types.rRV(T) return types.Interface(T,types.bool(),types.bool(),nil,types.bool()) end
+function types.rvV(T) return types.Interface(T,nil,types.bool(),nil,types.bool(),types.bool()) end
 function types.Rv(T) return types.Interface(T,types.bool(),nil,nil,nil,types.bool()) end
 function types.V(T) return types.Interface(T,nil,types.bool()) end
 function types.RV(T) return types.Interface(T,types.bool(),types.bool()) end
+function types.rv(T) return types.Interface(T,nil,nil,nil,types.bool(),types.bool()) end
 
 -- by default, this is ready-valid (RV), ie, ready_downstream has to be asserted before valid
 -- if VR==true, this is instead valid-ready (VR), which allows valid to be asserted _before_ ready_downstream (optionally)
@@ -1440,13 +1449,21 @@ function types.lower( a, outputType )
   err( outputType==nil or types.isType(outputType),"lower: output type is not a type, is:"..tostring(outputType))
        
   if a:is("Interface") then
-    if a.R==nil and a.V==nil and a.over==nil and a.v==nil and a.r==nil then
+    if a==types.Interface() then
       return types.null()
-    elseif a.r==nil and a.v==nil and a.R==nil and a.V==nil and a.over~=nil then
+    else
+      local over = a.over
+      if over~=nil then over = types.lower(over) end
+      if over~=nil and a.V~=nil then return types.tuple{over,a.V} end
+      if over~=nil then  return over end
+      if a.V~=nil then return a.V end
+      assert(false)
+    end
+--[=[    elseif a:isS() or a:isrv() then
       return types.lower(a.over)
-    elseif a.r==nil and a.v==nil and a.over==nil and a.R~=nil and a.V~=nil then
+    elseif a:isV() then
       return a.V
-    elseif a.r~=nil and a.v==nil and a.over~=nil and a.R==nil and a.V~=nil then
+    elseif a:isrV() then
       err(outputType~=nil, "types.lower: TODO: fix, ambiguous case rV input, it's different depending on output type (Rv vs RV)")
       assert(outputType:is("Interface"))
       if outputType.R~=nil and outputType.V~=nil then
@@ -1454,9 +1471,9 @@ function types.lower( a, outputType )
       else
         return types.lower(a.over)
       end
-    elseif a.over~=nil then
-      return types.tuple{types.lower(a.over),a.V or a.v}
-    end
+    elseif (a:isV() or a:isRV()) and  then
+      return types.tuple{types.lower(a.over),a.V}
+  end]=]
   elseif a:is("InterfaceTuple") then
     local res = {}
     for _,v in ipairs(a.list) do table.insert(res,types.lower(v,loc)) end

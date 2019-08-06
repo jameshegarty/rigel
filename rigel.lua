@@ -506,7 +506,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
     
     if rigelFn.outputType~=types.Interface() then
       err( systolicFn.output~=nil, "module output is not null (is "..tostring(rigelFn.outputType).."), but systolic output is missing")
-      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."'" )
+      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."' (rigel type "..tostring(rigelFn.outputType)..")" )
     end
     
     if types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType) then
@@ -951,16 +951,18 @@ function darkroom.newFunction(tab,X)
 
   -- legacy code hack
   if types.isBasic(tab.inputType) then
-    tab.inputType = types.S(types.Par(tab.inputType))
+    tab.inputType = types.rv(types.Par(tab.inputType))
   end
   if types.isBasic(tab.outputType) then
-    tab.outputType = types.S(types.Par(tab.outputType))
+    tab.outputType = types.rv(types.Par(tab.outputType))
   end
   
   err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
   err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  err( type(tab.delay)=="number" or types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or tab.inputType==types.Interface(), "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
+  if (types.isHandshakeAny(tab.inputType) or tab.inputType==types.Interface() or types.isHandshakeAny(tab.outputType) or tab.outputType==types.Interface())==false then
+    err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
+  end
   
   if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
@@ -1675,8 +1677,8 @@ function darkroomIRFunctions:typecheck()
     elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
       -- there's no reason for HandshakeTuple to exist...
       err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
-    elseif n.inputs[1].type:isStatic() and n.inputs[1].type.over:is("Par") then
-      n.type = types.S(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isStatic(),"concat: if one input is basic, all inputs must be basic"); return v.type.over.over end) )))
+    elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
+      n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be basic"); return v.type.over.over end) )))
     else
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end

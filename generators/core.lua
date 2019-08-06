@@ -53,7 +53,7 @@ generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},func
 generators.PartitionBits = R.FunctionGenerator("core.PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 generators.Rshift = R.FunctionGenerator("core.Rshift",{},{"number"}, function(args)
   if args.number~=nil then
-    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift(a.T,args.number) end,T.S(T.Par(P.NumberType("T"))),T.S(T.Par(P.NumberType("T"))) )
+    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift(a.T,args.number) end,T.rv(T.Par(P.NumberType("T"))),T.rv(T.Par(P.NumberType("T"))) )
   else
     assert(false)
   end
@@ -66,13 +66,13 @@ generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
 function(a)
   print("GEN INDEX")
   if a.size~=nil then
-    return C.index(a.T,a.size[1],a.size[2])
+    return C.index(T.array2d(a.T,a.V),a.size[1],a.size[2])
   else
-    return C.index(a.T,a.number)
+    return C.index(T.array2d(a.T,a.V),a.number)
   end
 end,
-T.S(T.Par(T.array2d(P.DataType("T"),P.SizeValue("V")))),
-T.S(T.Par(P.DataType("T"))))
+T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("V")))),
+T.rv(T.Par(P.DataType("T"))))
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
 
@@ -131,9 +131,9 @@ function(args)
   local res = {}
   if args.number~=nil then
     -- add a const (unary op)
-    return R.FunctionGenerator( "core.Add", {}, {}, function(a) return C.plusConst(a.T,args.number) end, T.S(T.Par(P.NumberType("T"))), T.S(T.Par(P.NumberType("T")) ) )
+    return R.FunctionGenerator( "core.Add", {}, {}, function(a) return C.plusConst(a.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T")) ) )
   else
-    return R.FunctionGenerator("core.Add", {}, {}, function(a) return C.sum( a.T, a.T, a.T, args.async ) end, T.S(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.S(T.Par(P.NumberType("T"))) )
+    return R.FunctionGenerator("core.Add", {}, {}, function(a) return C.sum( a.T, a.T, a.T, args.async ) end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))) )
   end
 end)
 
@@ -287,8 +287,8 @@ function(args)
       assert(a.V[2]==1)
       return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4], true )
     end,
-    types.S(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-    types.S(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))))
+    types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+    types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))))
 end)
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"type","size","number","bounds","rate"},{},
@@ -312,8 +312,8 @@ function(a)
   print("CROP")
   return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
 end,
-T.S(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-T.V(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))))
+T.rv(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+T.rvV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))))
 
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"type","size","rate"},{},
 function(args)
@@ -453,7 +453,7 @@ function(args)
   --local fn = args.rigelFunction:checkTypeAndSpecialize( fnType, fnVars)
 
   local fnVars = {}
-  local fnType = T.S(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
+  local fnType = T.rv(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
   
   print("FNTY:E",fnType,args.rigelFunction.inputType)
   J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
@@ -469,11 +469,11 @@ function(args)
       end
     end,
     P.SumType("opt",{
-            types.S(types.Seq(fnVars.T,P.SizeValue("size"))),
-            types.S(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
+            types.rv(types.Seq(fnVars.T,P.SizeValue("size"))),
+            types.rv(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
     P.SumType("opt",{
-            types.V(types.Par(fnVars.T)),
-            types.S(types.Par(fnVars.T))}))
+            types.rvV(types.Par(fnVars.T)),
+            types.rv(types.Par(fnVars.T))}))
 end)
 
 --[=[
@@ -746,8 +746,8 @@ end)
 
 generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
-T.S(T.Par(P.DataType("T"))),
-T.S(T.Par(P.DataType("T"))))
+T.rv(T.Par(P.DataType("T"))),
+T.rv(T.Par(P.DataType("T"))))
 
 generators.Sel = R.FunctionGenerator("core.Sel",{"type","rate"},{},
 function(args)
@@ -772,8 +772,8 @@ function(a)
   local C = require "generators.examplescommon"
   return C.ArrayToTuple( a.T.over, a.T.size[1], a.T.size[2] )
 end,
-T.S(T.Par(P.ArrayType("T"))),
-T.S(T.Par(P.DataType("D"))))
+T.rv(T.Par(P.ArrayType("T"))),
+T.rv(T.Par(P.DataType("D"))))
 
 generators.FilterSeq = R.FunctionGenerator("core.FilterSeq",{"type","rate","size"},{},
 function(args)

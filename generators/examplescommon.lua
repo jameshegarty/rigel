@@ -196,7 +196,7 @@ C.ArrayToTuple = memoize(function(T,W,H)
   err( X==nil,"ArrayToTuple: too many arguments")
 
   local G = require "generators.core"
-  return G.Module{"ArrayToTuple_",types.S(types.Par(types.array2d(T,W,H))),
+  return G.Module{"ArrayToTuple_",types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)
       local res = {}
       for y=0,H-1 do

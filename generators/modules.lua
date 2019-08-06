@@ -264,10 +264,13 @@ modules.liftBasic = memoize(function(f)
   err(rigel.isFunction(f),"liftBasic argument should be darkroom function")
 
   local res = {kind="liftBasic", fn = f}
-  rigel.expectBasic(f.inputType)
-  rigel.expectBasic(f.outputType)
+  --rigel.expectBasic(f.inputType)
+  --rigel.expectBasic(f.outputType)
+  err( f.inputType:isS(), "liftBasic: f input type should be S, but is: "..tostring(f.inputType))
+  err( f.outputType:isS(), "liftBasic: f output type should be S, but is: "..tostring(f.outputType))
+  
   res.inputType = f.inputType
-  res.outputType = rigel.V(f.outputType)
+  res.outputType = rigel.V(f.outputType.over)
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = f.delay
   res.stateful = f.stateful
@@ -461,10 +464,10 @@ modules.waitOnInput = memoize(function( f, X )
   err(rigel.isFunction(f),"waitOnInput argument should be darkroom function")
   err( X==nil, "waitOnInput: too many arguments" )
   local res = {kind="waitOnInput", fn = f}
-  err( f.inputType:isrV(), "waitOnInput: input type should be rV, but is: "..tostring(f.inputType))
-  err( f.outputType:isRv(), "waitOnInput: output type should be Rv, but is: "..tostring(f.outputType))
-  res.inputType = f.inputType
-  res.outputType = types.RV(f.outputType.over)
+  err( f.inputType:isrRv(), "waitOnInput of fn '"..f.name.."': input type should be rRv, but is: "..tostring(f.inputType))
+  err( f.outputType:isrvV(), "waitOnInput: output type should be rvV, but is: "..tostring(f.outputType))
+  res.inputType = types.rRV(f.inputType.over)
+  res.outputType = types.rV(f.outputType.over)
 
   err(f.delay == math.floor(f.delay), "waitOnInput, delay is fractional?")
   err( type(f.sdfInput)=="table", "Missing SDF rate for fn "..f.kind)
@@ -567,21 +570,9 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   local res = {kind="liftDecimate", fn = f}
   err( f.inputType:isS(), "liftDecimate: fn input type should be static, but is: "..tostring(f.inputType) )
 
-  if f.inputType==types.Interface() then
-    res.inputType = rigel.VTrigger
-  else
-    res.inputType = types.rV(f.inputType.over)
-  end
-  
   res.name = "LiftDecimate_"..f.name
-
-  if f.outputType:isV() then
-    res.outputType = rigel.RV(f.outputType.over)
-  elseif rigel.isVTrigger(f.outputType) then
-    res.outputType = rigel.RVTrigger
-  else
-    err(false, "liftDecimate: expected V output type, but is "..tostring(f.outputType))
-  end
+  res.inputType = types.rRV(f.inputType.over)
+  res.outputType = types.rV(f.outputType.over)
 
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
@@ -765,11 +756,11 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err( X==nil, "liftHandshake: too many arguments" )
     
   local res = {kind="liftHandshake", fn=f}
-  err( f.inputType:isrV(), "liftHandshake: expected rV input interface type")
-  err( f.outputType:isRV() ,"liftHandshake: expected RV output type")
+  err( f.inputType:isrRV(), "liftHandshake of fn '"..f.name.."': expected rRV input interface type, but is "..tostring(f.inputType))
+  err( f.outputType:isrV() ,"liftHandshake: expected rV output type")
 
   res.inputType = types.RV(f.inputType.over)
-  res.outputType = f.outputType
+  res.outputType = types.RV(f.outputType.over)
   
   res.name = "LiftHandshake_"..f.name
 
@@ -778,6 +769,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful
 
+  err( type(f.delay)=="number","Module is missing delay? "..tostring(f))
   res.delay = math.max(1, f.delay)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
@@ -846,8 +838,8 @@ modules.map = memoize(function( f, W_orig, H_orig, X )
   local H = Uniform(H_orig)
   --err( type(H)=="number", "map: H must be number" )
 
-  err( f.inputType:isStatic(), "map: error, mapping a module with a non-basic input type? name:"..f.name.." "..tostring(f.inputType))
-  err( f.outputType:isStatic(), "map: error, mapping a module with a non-basic output type? name:"..f.name.." "..tostring(f.outputType))
+  err( f.inputType:isrv(), "map: error, mapping a module with a non-rv input type? name:"..f.name.." "..tostring(f.inputType))
+  err( f.outputType:isrv(), "map: error, mapping a module with a non-rv output type? name:"..f.name.." "..tostring(f.outputType))
 
   W,H = W:toNumber(), H:toNumber()
   
@@ -860,7 +852,7 @@ modules.map = memoize(function( f, W_orig, H_orig, X )
     -- (produces log(n) sized code instead of linear)
     
     local C = require "generators.examplescommon"
-    local I = rigel.input( types.S(types.Par(types.array2d( f.inputType.over.over, W, H ))) )
+    local I = rigel.input( types.rv(types.Par(types.array2d( f.inputType.over.over, W, H ))) )
     local ic = rigel.apply( "cc", C.cast( types.array2d( f.inputType.over.over, W, H ), types.array2d( f.inputType.over.over, W*H ) ), I)
 
     local ica = rigel.apply("ica", C.slice(types.array2d( f.inputType.over.over, W*H ),0,(W*H)/2-1,0,0), ic)
@@ -944,8 +936,8 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   
   res.name=J.sanitize("MapParSeq_"..fn.name.."_VW"..tostring(Vw_orig).."_VH"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig))
 
-  err( fn.inputType:isStatic(),"mapParSeq only support static interfaces, but fn.inputType is: "..tostring(fn.inputType))
-  err( fn.outputType:isStatic(),"mapParSeq only support static interfaces")
+  err( fn.inputType:isrv(),"mapParSeq only support rv interfaces, but fn.inputType is: "..tostring(fn.inputType))
+  err( fn.outputType:isrv(),"mapParSeq only support rv interfaces")
 
   err(types.isBasic(fn.inputType.over.over) and types.isBasic(fn.outputType.over.over), "MapParSeq NYI - "..tostring(fn.inputType).." "..tostring(fn.outputType) )
 
@@ -965,8 +957,8 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
 
   local fnMapped = modules.map(fn,Vw,Vh)
   
-  res.inputType = types.S(types.ParSeq(fnMapped.inputType.over.over,W_orig,H_orig))
-  res.outputType = types.S(types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
+  res.inputType = types.rv(types.ParSeq(fnMapped.inputType.over.over,W_orig,H_orig))
+  res.outputType = types.rv(types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
   
   function res.makeSystolic()
     local sm = Ssugar.moduleConstructor(res.name)
@@ -2293,7 +2285,7 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W_orig, H, T, bits,
   err( type(name)=="string", "liftXYSeq: name must be string" )
   err( type(generatorStr)=="string", "liftXYSeq: generatorStr must be string" )
   err( rigel.isFunction(f), "liftXYSeq: f must be function")
-  err( f.inputType:isS() and f.inputType.over:is("Par"), "liftXYSeq: f must have SPar input type, but is: "..tostring(f.inputType) )
+  err( f.inputType:isrv() and f.inputType.over:is("Par"), "liftXYSeq: f must have rvPar input type, but is: "..tostring(f.inputType) )
   err( f.inputType.over.over:isTuple(),"liftXYSeq: f must have tuple input type, but is: "..tostring(f.inputType) )
   --err( type(W)=="number", "liftXYSeq: W must be number")
   local W = Uniform(W_orig)
@@ -2302,7 +2294,7 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W_orig, H, T, bits,
   err( X==nil, "liftXYSeq: too many arguments")
 
   local inputType = f.inputType.over.over.list[2]
-  local inp = rigel.input( types.S(types.Par(inputType)) )
+  local inp = rigel.input( types.rv(types.Par(inputType)) )
   local p = rigel.apply("p", modules.posSeq(W,H,T,bits) )
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
   return modules.lambda( "liftXYSeq_"..name.."_W"..tostring(W_orig), inp, out,nil,generatorStr )
@@ -2500,8 +2492,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
   err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-  res.inputType = types.rV(types.Par(types.array2d(A,T)))
-  res.outputType = types.Rv(types.Par(types.array2d(A,T)))
+  res.inputType = types.rRv(types.Par(types.array2d(A,T)))
+  res.outputType = types.rvV(types.Par(types.array2d(A,T)))
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
   res.delay=0
@@ -2596,26 +2588,26 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
 
   if framed then
     if inputRate<outputRate then
-      res.inputType = types.rV(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
-      res.outputType = rigel.Rv(types.Par(types.array2d(A,outputRate,H)))
+      res.inputType = types.rRv(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
+      res.outputType = rigel.rvV(types.Par(types.array2d(A,outputRate,H)))
     elseif inputRate>outputRate then
       if ParSeqX==nil then
-        res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
+        res.inputType = types.rRv(types.Par(types.array2d(A,inputRate,H)))
       else
-        res.inputType = types.rV(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
+        res.inputType = types.rRv(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
       end
 
       if outputRate==0 then
-        res.outputType = types.Rv(types.Seq(A,inputRate,H))
+        res.outputType = types.rvV(types.Seq(A,inputRate,H))
       else
-        res.outputType = types.Rv(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
+        res.outputType = types.rvV(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
       end
     else
       assert(false)
     end
   else
-    res.inputType = types.rV(types.Par(types.array2d(A,inputRate,H)))
-    res.outputType = types.Rv(types.Par(types.array2d(A,outputRate,H)))
+    res.inputType = types.rRv(types.Par(types.array2d(A,inputRate,H)))
+    res.outputType = types.rvV(types.Par(types.array2d(A,outputRate,H)))
   end
   
   res.stateful = true
@@ -2700,11 +2692,11 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
     -- this is strange for a reason: inner loop is no longer a serialized flat array, so size must change
     --res.outputType = types.StaticFramed(res.outputType,false,{{w/T,h}})
     --T[1,ymin][T;w,h}
-    res.inputType = types.S(types.ParSeq(res.inputType,w,h))
-    res.outputType = types.S(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w,h))
+    res.inputType = types.rv(types.ParSeq(res.inputType,w,h))
+    res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w,h))
   else
-    res.inputType = types.S(types.Par(res.inputType))
-    res.outputType = types.S(types.Par(res.inputType))
+    res.inputType = types.rv(types.Par(res.inputType))
+    res.outputType = types.rv(types.Par(res.inputType))
   end
   
   res.stateful = true
@@ -2907,7 +2899,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW, framedH, X )
     res.inputType, res.outputType = types.Par(res.inputType), types.Par(res.outputType)
   end
 
-  res.inputType, res.outputType = types.S(res.inputType), types.S(res.outputType)
+  res.inputType, res.outputType = types.rv(res.inputType), types.rv(res.outputType)
   
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
@@ -3070,8 +3062,8 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
   else
-    err( f.inputType:isStatic() or f.inputType:is("StaticFramed"),"makeHandshake: fn input type should be basic or StaticFramed, but is "..tostring(f.inputType) )
-    err( f.outputType:isStatic() or f.outputType:is("StaticFramed"),"makeHandshake: fn output type should be basic or StaticFramed, but is "..tostring(f.outputType))
+    err( f.inputType:isrv(),"makeHandshake: fn '"..f.name.."' input type should be rv, but is "..tostring(f.inputType) )
+    err( f.outputType:isrv(),"makeHandshake: fn output type should be rv, but is "..tostring(f.outputType))
 
     if f.inputType==types.Interface() and nilhandshake==true then
       res.inputType = rigel.HandshakeTrigger
@@ -3497,12 +3489,12 @@ modules.reduce = memoize(function( f, W, H, ty, X )
   if (W*H)==2 then
     local G = require "generators.core"
     local C = require "generators.examplescommon"
-    return C.compose("ReduceArrayToTupleWrapper",f,G.ArrayToTuple,nil,types.S( types.Par( types.array2d( ty, W, H ) ) ),SDF{1,1})
+    return C.compose("ReduceArrayToTupleWrapper",f,G.ArrayToTuple,nil,types.rv( types.Par( types.array2d( ty, W, H ) ) ),SDF{1,1})
   elseif (W*H)%2==0 then
     -- codesize reduction optimization
     local C = require "generators.examplescommon"
 
-    local I = rigel.input( types.S( types.Par( types.array2d( ty, W, H ) ) ) )
+    local I = rigel.input( types.rv( types.Par( types.array2d( ty, W, H ) ) ) )
     local ic = rigel.apply( "cc", C.cast( types.array2d( ty, W, H ), types.array2d( ty, W*H ) ), I)
 
     local ica = rigel.apply("ica", C.slice(types.array2d( ty, W*H ),0,(W*H)/2-1,0,0), ic)
