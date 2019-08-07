@@ -20,7 +20,10 @@ local Conv = G.Module{ "ConvTop", SDF{1,cycles},
     local s = G.Stencil{{-3,0,-3,0}}(p)
 --    print("STENCIL",s,s.type)
     s = G.Reshape(s)
---    print("RESHAPE",s.type)
+    print("RESHAPE",s.type)
+    s = G.Reshape(s)
+    print("RESHAPE",s.type)
+    
 --    s = G.Reshape(s)
 --    print("RESHAPE",s.type)
     --print("REhhhSHAPE",s)

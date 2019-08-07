@@ -64,7 +64,6 @@ generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"
 
 generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
 function(a)
-  print("GEN INDEX")
   if a.size~=nil then
     return C.index(T.array2d(a.T,a.V),a.size[1],a.size[2])
   else
@@ -554,7 +553,7 @@ end)
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
 function(args)
   if args.number==0 then
-    print("SERTOWIDTH0")
+--    print("SERTOWIDTH0")
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
@@ -564,7 +563,7 @@ function(args)
           if a.V[1]*a.V[2]==1 and args.number==0 then
             -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
 
-            print("Special case [1,1;w,h}")
+--            print("Special case [1,1;w,h}")
             local res = generators.Module{
               "SerToWidth_Convert_Array_to_scalar_"..tostring(a.T), SDF{1,1},
 --              T.rV(T.ParSeq(T.array2d(a.T,1,1),a.size[1],a.size[2])),
@@ -714,6 +713,8 @@ generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
 
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
+
+  print("Reshape",ratio)
   if ratio<1 then
 
 --[=[    if args.type:is("HandshakeFramed") and #args.type.params.dims==1 then
@@ -731,21 +732,29 @@ function(args)
         return res
   end]=]
     if args.type:isRV() then
-      local ov = args.type.over
-      if ov:is("Par") or ov:is("ParSeq") then
-        if ov.over:isArray() then
-          -- if not an array, can't really do anything
-          local chan = ov.over.size[1]*ov.over.size[2]*ratio
-          if chan<1 then chan=0 end
-          return generators.SerToWidth{chan}
+
+      local function reduceRatio(ty)
+        print("ReduceRatio",ty)
+        if ty:is("Par") or ty:is("ParSeq") then
+          if ty.over:isArray() then
+            -- if not an array, can't really do anything
+            local chan = ty.over.size[1]*ty.over.size[2]*ratio
+            if chan<1 then chan=0 end
+            return generators.SerToWidth{chan}
+          else
+            assert(false)
+          end
+        elseif ty:is("Seq") then
+            -- already fully sequential, try to apply to inner dim?
+            --assert(false)
+            --return generators.Map{generator.Reshape}
+          print("Recurse into REDU",chan)
+          return reduceRatio(ty.over)
+        else
+          J.err(false,"Reshape: upsupported type "..tostring(ty)) 
         end
-      elseif ov:is("Seq") then
-        -- already fully sequential, try to apply to inner dim?
-        assert(false)
-        return generators.Map{generator.Reshape}
-      else
-        err(false,"Reshape: upsupported type "..args.type) 
       end
+      return reduceRatio(args.type.over,ratio)
     else
       print("Reshape: upsupported type ",args.type)
       assert(false)

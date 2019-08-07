@@ -1018,7 +1018,7 @@ end)
 
 types.Seq = J.memoize(function(D,w,h,X)
   local Uniform = require "uniform"
-  err( types.isDataType(D), "types.Seq: input to schedule type should be a data type, but is: "..tostring(D) )
+  err( types.isDataType(D) or types.isScheduleType(D), "types.Seq: input to schedule type should be a data type, but is: "..tostring(D) )
   err(X==nil,"Seq: too many arguments")
   
   -- were we passed a {w,h} table?
@@ -1039,6 +1039,10 @@ types.Seq = J.memoize(function(D,w,h,X)
     size=R.Size(w,h)
   end
 
+  if types.isDataType(D) then
+    D = types.Par(D)
+  end
+  
   return setmetatable({kind="Seq",over=D,size=size},TypeMT)
 end)
 

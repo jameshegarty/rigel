@@ -207,7 +207,7 @@ end
 local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   assert(X==nil)
   
-  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
     --print("CHECKSUPER",Tparam,Ttarget)
@@ -224,9 +224,9 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   -- search through lifts
   local liftsFound = false
   for liftName,lift in pairs(L) do
-    --print("L3",lift[3],Ttarget)
-    --print("L2",lift[2],TparamOutput)
-    --print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
+    print("L3",lift[3],Ttarget)
+    print("L2",lift[2],TparamOutput)
+    print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
     local vars1, vars2, vars3 = {},{},{}
     if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
