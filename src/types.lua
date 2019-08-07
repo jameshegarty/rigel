@@ -756,7 +756,9 @@ function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and s
 function TypeFunctions:isDataType() return types.isBasic(self) end
 --function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
 function TypeFunctions:isInterface() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
+function TypeFunctions:isInterfaceType() return self.kind=="Interface" end
 function TypeFunctions:isSchedule() return types.isScheduleType(self) end
+function TypeFunctions:isScheduleType() return types.isScheduleType(self) end
 function TypeFunctions:isFloat() return self.kind=="float" end
 function TypeFunctions:isBool() return self.kind=="bool" end
 function TypeFunctions:isInt() return self.kind=="int" end
@@ -1018,9 +1020,9 @@ end)
 
 types.Seq = J.memoize(function(D,w,h,X)
   local Uniform = require "uniform"
-  err( types.isDataType(D) or types.isScheduleType(D), "types.Seq: input to schedule type should be a data type, but is: "..tostring(D) )
+  err( types.isScheduleType(D), "types.Seq: input to Seq should be a schedule type, but is: "..tostring(D) )
   err(X==nil,"Seq: too many arguments")
-  
+  --print("MakeSeq",D,w,h,type(w),type(h))
   -- were we passed a {w,h} table?
   if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
     assert(h==nil)
@@ -1039,11 +1041,13 @@ types.Seq = J.memoize(function(D,w,h,X)
     size=R.Size(w,h)
   end
 
-  if types.isDataType(D) then
-    D = types.Par(D)
-  end
+--  if types.isDataType(D) then
+--    D = types.Par(D)
+--  end
   
-  return setmetatable({kind="Seq",over=D,size=size},TypeMT)
+  local res = setmetatable({kind="Seq",over=D,size=size},TypeMT)
+--  print("MakeSeq",D,w,h,res)
+  return res
 end)
 
 -- overlap: each parallel 'tile' overlaps each other (for stenciling)
@@ -1079,7 +1083,8 @@ end)
 
 function types.isScheduleType(T)
   if P.isParam(T) then
-    return P.ScheduleType("tmp"):isSupertypeOf(T)
+    --return P.ScheduleType("tmp"):isSupertypeOf(T)
+    return T.kind=="ScheduleType"
   end
   
   err(types.isType(T),"isScheduleType: input should be type, but is: "..tostring(T))
@@ -1472,8 +1477,10 @@ function types.lower( a, outputType )
     return types.tuple(res)
   elseif a:isSchedule() then
     --if a:is("Par") or a:is("ParSeq") then
-      return a.over
+    return types.lower(a.over)
     --end
+  elseif types.isBasic(a) then
+    return a
   end
   
   print("rigel.lower: unknown type? ",a)

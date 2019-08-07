@@ -180,22 +180,44 @@ end
 local functionGeneratorFunctions = {}
 local functionGeneratorMT={}
 
-local function specialize(T,vars)
-  if P.isParam(T) then
+function darkroom.specialize(T,vars)
+  --print("Specialzie",T)
+  if P.isParam(T) and T.kind=="SumType" then
     assert(vars[T.name]~=nil)
-    return vars[T.name]
+    local o = T.list[vars[T.name]+1]
+    --print("SMTYPE",T.name,vars[T.name],o)
+    return darkroom.specialize(o,vars)
+  elseif P.isParam(T) then
+    err(vars[T.name]~=nil,"specialize: looking for var '"..T.name.."', but wasn't found in table")
+    if type(vars[T.name])=="function" then
+      -- for InterfaceType, ScheduleType
+      return vars[T.name](darkroom.specialize(T.over,vars))
+    else
+      return vars[T.name]
+    end
+  elseif types.isType(T) and T:isTuple() then
+    -- special case for tuples (!)
+    local newList = {}
+    for k,v in ipairs(T.list) do
+      table.insert(newList,darkroom.specialize(v,vars))
+    end
+    return types.tuple(newList)
   elseif types.isType(T) then
+    local newT = T
     for k,v in pairs(T) do
-      if k~="over" and P.isParam(v) then
-        assert(vars[v.name]~=nil)
+      if P.isParam(v) or types.isType(v) then
+--        assert(vars[v.name]~=nil)
 
         --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
         --print("SPECIAL",T,k,vars[v.name])
-        T = T:replaceVar(k,vars[v.name])
+--        T = T:replaceVar(k,vars[v.name])
         --print("SPEC",T)
+        newT = newT:replaceVar(k,darkroom.specialize(v,vars))
       end
     end
-    return T:replaceVar("over",specialize(T.over,vars))
+
+    
+    return newT
   else
     print("specialize failed: ",T)
     assert(false)
@@ -224,19 +246,22 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   -- search through lifts
   local liftsFound = false
   for liftName,lift in pairs(L) do
-    print("L3",lift[3],Ttarget)
-    print("L2",lift[2],TparamOutput)
-    print("Try lift",liftName,lift[3]:isSupertypeOf(Ttarget,{}),lift[1]:isSupertypeOf(Tparam,{}),lift[2]:isSupertypeOf(TparamOutput,{}))
+    local L1 = liftName,lift[3]:isSupertypeOf(Ttarget,{})
+    print("L1",lift[3],"isSupertypeOf?",Ttarget,L1)
+    print("L3",lift[2],"isSupertypeOf?",TparamOutput,"(can lift output deal with fn output?)",L3)
+    local L3 = lift[2]:isSupertypeOf(TparamOutput,{})
+
+    print("Try lift",L1,lift[1]:isSupertypeOf(Tparam,{}),L3)
     local vars1, vars2, vars3 = {},{},{}
     if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
       --print("SPECIALIZE",Ttarget,lift[3])
       --for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
-      local spec = specialize(lift[3],vars1)
+      local spec = darkroom.specialize(lift[3],vars1)
       --print("res",Ttarget,spec)
-      assert(Ttarget==spec)
+      err( Ttarget==spec, "Internal error, specialized lift doesn't match target? target:"..tostring(Ttarget).." Specialized:"..tostring(spec) )
       --print("SPECIALIZE",lift[1])
-      local newTtarget = specialize(lift[1],vars1)
+      local newTtarget = darkroom.specialize(lift[1],vars1)
       --print("NewTarget:",newTtarget)
       
       liftsFound = true

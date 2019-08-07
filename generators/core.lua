@@ -321,10 +321,10 @@ function(a)
 end,
 P.SumType("opt",{
             T.rv(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-            T.rv(T.Seq(P.DataType("T"),P.SizeValue("size")))}),
+            T.rv(T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
 P.SumType("opt",{
             T.rvV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
-            T.rvV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))})
+            T.rvV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))})
 )
 
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"type","size","rate"},{},
@@ -474,20 +474,33 @@ function(args)
   for k,v in pairs(fnVars) do print("FNVARS",k,v) end
   return R.FunctionGenerator("core.Reduce",{},{},
     function(a)
+
+      print("TryToSpecial",args.rigelFunction.inputType)
+      local joinset = J.joinSet(fnVars,a,true)
+      for k,v in pairs(joinset) do print("A",k,v) end
+      local spType = R.specialize(args.rigelFunction.inputType, joinset )
+      print("SPTYPE",spType)
+      local fn = args.rigelFunction{spType,SDF{1,1}}
+      assert(R.isPlainFunction(fn))
+        
       if a.opt==0 then
-        return RM.reduceSeq(args.rigelFunction,1/(a.size[1]*a.size[2]),true)
+        return RM.reduceSeq( fn, 1/(a.size[1]*a.size[2]),true)
       elseif a.opt==1 then
-        return RM.reduce(args.rigelFunction,a.size[1],a.size[2],a.T)
+        return RM.reduceParSeq( fn, a.V[1], a.V[2], a.size[1], a.size[2] )
+      elseif a.opt==2 then
+        return RM.reduce( fn, a.size[1],a.size[2],a.T)
       else
         assert(false)
       end
     end,
     P.SumType("opt",{
-            types.rv(types.Seq(fnVars.T,P.SizeValue("size"))),
-            types.rv(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
+                types.rv(types.Seq(T.Par(fnVars.T),P.SizeValue("size"))),
+                types.rv(types.ParSeq(T.array2d(fnVars.T,P.SizeValue("V")),P.SizeValue("size"))),
+                types.rv(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
     P.SumType("opt",{
-            types.rvV(types.Par(fnVars.T)),
-            types.rv(types.Par(fnVars.T))}))
+                types.rvV(types.Par(fnVars.T)),
+                types.rvV(types.Par(fnVars.T)),
+                types.rv(types.Par(fnVars.T))}))
 end)
 
 --[=[
@@ -575,7 +588,7 @@ function(args)
             assert(R.isPlainFunction(res))
             --print("SSSER",res,res.systolicModule)
             res.inputType = types.rV(types.ParSeq(T.array2d(a.T,1,1),a.size))
-            res.outputType = types.rRV(types.Seq(a.T,a.size))
+            res.outputType = types.rRV(types.Seq(T.Par(a.T),a.size))
             --print(res)
             return res
           else
@@ -589,8 +602,8 @@ function(args)
                   T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
                   T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
       P.SumType("opt",{
-                  T.rRV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut"))),
-                  T.rRV(T.Seq(P.DataType("T"),P.SizeValue("sizeOut")))}) )
+                  T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut"))),
+                  T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))}) )
 
   else
     return R.FunctionGenerator("core.SerToWidth",{},{},
@@ -706,7 +719,7 @@ function(a)
 end,
 P.SumType("opt",{
             types.Handshake(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-            types.Handshake(types.Seq(P.DataType("T"),P.SizeValue("size")))}),
+            types.Handshake(types.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
 P.SumType("opt",{types.HandshakeTrigger,types.HandshakeTrigger}) )
 
 generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
@@ -734,13 +747,16 @@ function(args)
     if args.type:isRV() then
 
       local function reduceRatio(ty)
-        print("ReduceRatio",ty)
+        print("ReduceRatio",ty,ratio)
         if ty:is("Par") or ty:is("ParSeq") then
           if ty.over:isArray() then
             -- if not an array, can't really do anything
-            local chan = ty.over.size[1]*ty.over.size[2]*ratio
+--            local chan = ty.over.size[1]*ty.over.size[2]*ratio
+            local chan = ty.over.size[1]*ratio -- NYI, 2d
             if chan<1 then chan=0 end
-            return generators.SerToWidth{chan}
+            local res = generators.SerToWidth{chan}
+            print("ReduceRationFN","CHAN",chan,res)
+            return res
           else
             assert(false)
           end

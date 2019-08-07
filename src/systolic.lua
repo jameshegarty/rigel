@@ -1949,6 +1949,7 @@ end
 function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, delayMode, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
+  err( types.isBasic(ty),"reg: type must be basic type, but is: "..tostring(ty) )
   err( ty:verilogBits()>0, "0 bit size register?")
   err(type(hasCE)=="boolean", "hasCE must be bool")
   if initial~=nil then ty:checkLuaValue(initial) end

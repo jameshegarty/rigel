@@ -1035,21 +1035,64 @@ end)
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
 
-    err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
-    err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
+    --err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
+    --err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
 
     local G = require "generators.core"
 
     local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
     assert( rigel.isFunction(res) )
 
+
     -- hackity hack
-    res.inputType = types.rv(types.Seq(res.inputType.over.over,W_orig,H_orig))
-    res.outputType = types.rv(types.Seq(res.outputType.over.over,W_orig,H_orig))
-    
+    res.inputType = fn.inputType:replaceVar("over",types.Seq(res.inputType.over,W_orig,H_orig))
+    res.outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
+
+    print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
+          
     return res
 end)
 
+-- it's hard to know how any given module should be flatmapped, so just have user explicitly say what they want
+-- take f:Par(T1[Vw1,Vh1])->Par(T2[Vw2,Vh2]) to T1[Vw1,Vh1;W1,H1}->T2[Vw2,Vh2;W2,H2}
+-- if Vw==Vh==W==H==0, just leave that dimension alone (scalar output)
+-- if Vw==Vh==0, have a Seq output, instead of ParSeq
+modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2_orig, H2_orig, X )
+  err( rigel.isFunction(fn), "flatmapParSeq: first argument must be Rigel function, but is "..tostring(fn) )
+
+  err( (Vw1==0 and Vh1==0) or fn.inputType.over:is("Par"), "flatmapParSeq: fn input must Par, but input type is: "..tostring(fn.inputType) )
+  err( (Vw1==0 and Vh1==0) or fn.inputType.over.over:isArray(), "flatmapParSeq: fn input must be array, but input type is: "..tostring(fn.inputType) )
+  
+  err( (Vw2==0 and Vh2==0) or fn.outputType.over:is("Par"), "flatmapParSeq: fn output must be Par, but output type is: "..tostring(fn.outputType) )
+  err( (Vw2==0 and Vh2==0) or fn.outputType.over.over:isArray(), "flatmapParSeq: fn output must be array, but output type is: "..tostring(fn.outputType) )
+  
+    --err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
+    --err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
+
+    local G = require "generators.core"
+
+    local res = G.Module{"flatmapParSeq_fn"..fn.name.."_Vw1"..tostring(Vw1).."_Vh1"..tostring(Vh1).."_W1"..tostring(W1_orig).."_H1"..tostring(H1_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+    assert( rigel.isFunction(res) )
+
+    -- hackity hack
+    if Vw1>0 or Vh1>0 then
+      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType.over.over,W1_orig,H1_orig))
+    elseif W1_orig>0 or H1_orig>0 then
+      res.inputType = fn.inputType:replaceVar("over",types.Seq(types.Par(res.inputType.over.over),W1_orig,H1_orig))
+    end
+
+    if Vw2>0 or Vh2>0 then
+      res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType.over.over,W2_orig,H2_orig))
+    elseif W2_orig>0 or H2_orig>0 then
+      res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par(res.outputType.over.over),W2_orig,H2_orig))
+    end
+    
+    --print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
+          
+    return res
+end)
+
+--[=[
 modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputMixed, X )
   err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
   err( type(w)=="number", "mapFramed: width must be number")
@@ -1186,7 +1229,7 @@ modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, out
   function res.makeTerra() return MT.mapFramed(res,fn,w,h,mixed) end
   
   return rigel.newFunction(res)
-end)
+  end)]=]
 
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
@@ -2439,8 +2482,8 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
     if V==0 then
       --res.inputType = res.inputType:addDim(W,H,V>0) --types.StaticFramed(res.inputType,idim)
       --assert(false) -- NYI
-      res.inputType = types.rv(types.Seq(res.inputType.over.over,W_orig,H))
-      res.outputType = types.rvV(types.Seq(res.outputType.over.over.list[1],W_orig-L-R,H-B-Top))
+      res.inputType = types.rv(types.Seq(types.Par(res.inputType.over.over),W_orig,H))
+      res.outputType = types.rvV(types.Seq(types.Par(res.outputType.over.over.list[1]),W_orig-L-R,H-B-Top))
     else
       res.inputType = types.rv(types.ParSeq(res.inputType.over.over,W_orig,H))
       res.outputType = types.rvV(types.ParSeq(res.outputType.over.over.list[1],W_orig-L-R,H-B-Top))
@@ -2620,7 +2663,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
   if framed then
     if inputRate<outputRate then
       res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
-      res.outputType = rigel.rRvV(types.Par(types.array2d(A,outputRate,H)))
+      res.outputType = types.rRvV(types.Par(types.array2d(A,outputRate,H)))
     elseif inputRate>outputRate then
       if ParSeqX==nil then
         res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
@@ -3506,11 +3549,25 @@ modules.lut = memoize(function( inputType, outputType, values )
 end)
 
 modules.reduce = memoize(function( f, W, H, ty, X )
-  if rigel.isFunction(f)==false then error("Argument to reduce must be a darkroom function, but is: "..tostring(f)) end
+  if rigel.isPlainFunction(f)==false then error("Argument to reduce must be a plain rigel function, but is: "..tostring(f)) end
+
+  assert( f.inputType:isrv())
+  assert( f.inputType.over:is("Par"))
+  assert( f.outputType:isrv())
+  assert( f.outputType.over:is("Par"))
+
+  if f.inputType.over.over:isTuple()==false or f.inputType.over.over~=types.tuple({f.outputType.over.over,f.outputType.over.over}) then
+    error("Reduction function f must be of type {A,A}->A, but is type "..tostring(f.inputType).."->"..tostring(f.outputType))
+  end
+
+
   err(type(W)=="number", "reduce W must be number")
   err(type(H)=="number", "reduce H must be number")
+  if ty==nil then ty=f.outputType.over.over end
   err( types.isType(ty),"reduce: type must be type, but is: "..tostring(ty))
   err( types.isBasic(ty),"reduce: type must be basic type")
+  assert(ty==f.outputType.over.over)
+
   err( X==nil,"reduce: too many arguments")
   --err( f.inputType:isS(),"Reduce: f input type should be static")
   --err( f.outputType:isS(),"Reduce: f output type should be static")
@@ -3587,36 +3644,42 @@ modules.reduce = memoize(function( f, W, H, ty, X )
 end)
 
 
-modules.reduceSeq = memoize(function( f, T, framed, X )
-  err(type(T)=="number","reduceSeq: T should be number")
-  err(T<=1, "reduceSeq: T>1, T="..tostring(T))
+-- takes T{Wv,Vh}->T
+modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
+  err(type(Vw)=="number","reduceSeq: Vw should be number")
+  --err(T<=1, "reduceSeq: T>1, T="..tostring(T))
+  err(Vw>=1,"reduceSeq: Vw should be >=1")
+  if Vh==nil then Vh=1 end
+  err(type(Vh)=="number","reduceSeq: Vh should be number")
+  err(Vh>=1,"reduceSeq: Vh should be >=1")
+  
   if framed==nil then framed=false end
   err( type(framed)=="boolean","reduceSeq: framed must be boolean" )
   assert(X==nil)
 
-  err( R.isPlainFunction(f), "reduceSeq: input should be plain rigel function" )
+  err( rigel.isPlainFunction(f), "reduceSeq: input should be plain rigel function" )
   
-  assert( f.inputType:isS())
-  assert( f.inputType.over:isPar())
-  assert( f.outputType:isS())
-  assert( f.outputType.over:isPar())
+  assert( f.inputType:isrv())
+  assert( f.inputType.over:is("Par"))
+  assert( f.outputType:isrv())
+  assert( f.outputType.over:is("Par"))
   
   if f.inputType.over.over:isTuple()==false or f.inputType.over.over~=types.tuple({f.outputType.over.over,f.outputType.over.over}) then
     error("Reduction function f must be of type {A,A}->A, but is type "..tostring(f.inputType).."->"..tostring(f.outputType))
   end
 
-  local res = {kind="reduceSeq", fn=f, T=T}
-  rigel.expectBasic(f.outputType)
-  res.inputType = f.outputType
+  local res = {kind="reduceSeq", fn=f, Vw=Vw, Vh=Vh}
+  --rigel.expectBasic(f.outputType.ov)
+  res.inputType = types.rv(types.Par(f.outputType.over.over))
   if framed then
-    res.inputType = types.StaticFramed( res.inputType, false, {{1/T,1}} )
+    res.inputType = types.rv(types.Seq( types.Par(f.outputType.over.over), Vw, Vh ))
   end
-  res.outputType = rigel.V(f.outputType)
-  res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1/T}
+  res.outputType = types.rvV(types.Par(f.outputType.over.over))
+  res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,Vw*Vh}
   res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
-  res.name = "ReduceSeq_"..f.name.."_T"..tostring(1/T)
+  res.name = "ReduceSeq_"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh)
 
   if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,T) end
 
@@ -3629,10 +3692,10 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),f.outputType,f.outputType}, "ReduceSeq "..f.systolicModule.name.." phase %d input %d output %d", true):instantiate("printInst") ) end
 
-    local sinp = S.parameter("process_input", f.outputType )
+    local sinp = S.parameter("process_input", f.outputType.over.over )
     local svalid = S.parameter("process_valid", types.bool() )
 
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (1/T)-1 ) ):CE(true):setReset(0):instantiate("phase") )
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), Vw*Vh-1 ) ):CE(true):setReset(0):instantiate("phase") )
     
     local pipelines = {}
     table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
@@ -3643,7 +3706,7 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
       -- hack: Our reduce fn always adds two numbers. If we only have 1 number, it won't work! just return the input.
       out = sinp
     else
-      local sResult = systolicModule:add( Ssugar.regByConstructor( f.outputType, f.systolicModule ):CE(true):hasSet(true):instantiate("result") )
+      local sResult = systolicModule:add( Ssugar.regByConstructor( f.outputType.over.over, f.systolicModule ):CE(true):hasSet(true):instantiate("result") )
       table.insert( pipelines, sResult:set( sinp, S.eq(phase:get(), S.constant(0, types.uint(16) ) ):disablePipelining() ) )
       out = sResult:setBy( sinp, S.__not(S.eq(phase:get(), S.constant(0, types.uint(16) ) )):disablePipelining() )
     end
@@ -3651,7 +3714,7 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
     if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process( S.tuple{phase:get(),sinp,out} ) ) end
     
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (1/T)-1, types.uint(16))) }, "process_output", pipelines, svalid, CE) )
+    systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( Vw*Vh-1, types.uint(16))) }, "process_output", pipelines, svalid, CE) )
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()}, S.parameter("reset",types.bool())) )
     
@@ -3661,6 +3724,15 @@ modules.reduceSeq = memoize(function( f, T, framed, X )
   return rigel.newFunction( res )
 end)
 
+-- takes rv(T[Vw,Vh;W,H})->rvV(T)
+modules.reduceParSeq = memoize(function( f, Vw, Vh, W, H, X )
+  assert(W%Vw==0)
+  assert(H%Vh==0)
+  local res = modules.compose("ReduceParSeq_f"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_W"..tostring(W).."_H"..tostring(H),modules.reduceSeq(f,W/Vw,H/Vh,true),modules.flatmap(modules.reduce(f,Vw,Vh),Vw,Vh,W,H,0,0,W/Vw,H/Vh))
+  print("reduceSeqPar",res)
+  return res
+end)
+  
 -- surpresses output if we get more then _count_ inputs
 modules.overflow = memoize(function( A, count )
   rigel.expectBasic(A)
