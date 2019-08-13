@@ -355,13 +355,13 @@ function RS.HS(t,handshakeTrigger)
   if types.isType(t) then
     return R.Handshake(t)
   elseif R.isFunction(t) then
-    if (R.isV(t.inputType) or t.inputType:is("VFramed")) and (R.isRV(t.outputType) or t.outputType:is("RVFramed")) then
+    if t.inputType:isrV() and t.outputType:isrRV() then
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
       return t
-    elseif (R.isBasic(t.inputType) or t.inputType:is("StaticFramed")) and (R.isV(t.outputType) or t.outputType:is("VFramed")) then
+    elseif t.inputType:isrv() and t.outputType:isrvV() then
       return RM.liftHandshake(RM.liftDecimate(t))
-    elseif (R.isBasic(t.inputType) and R.isBasic(t.outputType)) or ((t.inputType:is("StaticFramed") or t.inputType==types.null()) and (t.outputType:is("StaticFramed") or t.outputType==types.null())) then
+    elseif (t.inputType==types.Interface() or t.inputType:isrv()) and (t.outputType==types.Interface() or t.outputType:isrv()) then
       if handshakeTrigger==nil then handshakeTrigger = true end
       return RM.makeHandshake(t,nil,handshakeTrigger)
     else

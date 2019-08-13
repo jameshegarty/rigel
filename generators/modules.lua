@@ -96,13 +96,13 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
  
     local C = require "generators.examplescommon"
 
-    local itype = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
+    local itype = types.rv(types.Par(types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )))
     local I = rigel.input( itype )
 
     local IA = {}
     local IB = {}
     for k,t in ipairs(typelist) do
-      local i = rigel.apply("II"..tostring(k-1), C.index(itype,k-1), I)
+      local i = rigel.apply("II"..tostring(k-1), C.index(itype.over.over,k-1), I)
       
       local ic = rigel.apply( "cc"..tostring(k-1), C.cast( types.array2d( t, W, H ), types.array2d( t, W*H ) ), i)
 
@@ -114,7 +114,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
 
     IA = rigel.concat("IA",IA)
     IB = rigel.concat("IB",IB)
-
+    
     local oa = rigel.apply("oa", modules.SoAtoAoS((W*H)/2,1,typelist,asArray), IA)
     local ob = rigel.apply("ob", modules.SoAtoAoS((W*H)/2,1,typelist,asArray), IB)
 
@@ -124,6 +124,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     out = rigel.apply( "cflatar", C.cast( types.array2d( types.tuple(typelist), W*H ), types.array2d( types.tuple(typelist), W,H ) ), out)
 
     res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray)), I, out)
+
   else
     res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
     
@@ -142,7 +143,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
-      local sinp = S.parameter("process_input", res.inputType )
+      local sinp = S.parameter("process_input", res.inputType.over.over )
       local arrList = {}
       for y=0,H-1 do
         for x=0,W-1 do
@@ -166,23 +167,45 @@ end)
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
-modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
-  err( type(typelist)=="table", "packTuple: type list must be table" )
+-- arraySize: if not nil, accept an array instead of a tuple (typelist should just be a type then)
+modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
+  err( type(typelist)=="table", "packTuple: type list must be table, but is: "..tostring(typelist) )
   err( disableFIFOCheck==nil or type(disableFIFOCheck)=="boolean", "packTuple: disableFIFOCheck must be nil or bool" )
   err( X==nil, "packTuple: too many arguments" )
   
   local res = {kind="packTuple", disableFIFOCheck = disableFIFOCheck}
   
-  J.map(typelist, function(t) rigel.expectBasic(t) end )
+  J.map(typelist, function(t) err(t:isRV(),"packTuple: should be list of RV types, but is: "..tostring(t)) end )
 
-  if typelist[1]==types.null() then
+  --if typelist[1]==types.null() then
     -- handshake trigger mode
-    res.inputType = types.HandshakeTriggerArray(#typelist)
-    res.outputType = types.HandshakeTrigger
+ --   res.inputType = types.HandshakeTriggerArray(#typelist)
+--    res.outputType = types.HandshakeTrigger
+--  else
+--    res.inputType = rigel.HandshakeTuple(typelist)
+--    res.outputType = rigel.Handshake( types.tuple(typelist) )
+  --  end
+  if arraySize==nil then
+    res.inputType = types.tuple(typelist)
+    local schedList = {}
+    local schedListOver = {}
+    local allPar = true -- backwards compatibility hack
+    print("TYPELIST",typelist)
+    for k,v in ipairs(typelist) do
+      print("OVER",v,v.over)
+      table.insert(schedList,v.over)
+      table.insert(schedListOver,v.over.over)
+      if v.over:is("Par")==false then allPar=false end
+    end
+    if allPar then
+      res.outputType = types.RV(types.Par(types.tuple(schedListOver)))
+    else
+      res.outputType = types.RV(types.tuple(schedList))
+    end
   else
-    res.inputType = rigel.HandshakeTuple(typelist)
-    res.outputType = rigel.Handshake( types.tuple(typelist) )
+    assert(false)
   end
+    
   res.stateful = false
   res.sdfOutput = SDF{1,1}
   res.sdfInput = SDF(J.map(typelist, function(n)  return {1,1} end))
@@ -240,7 +263,11 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, X )
       table.insert( readyOutList, S.__or(S.__and( downstreamReady, validOut), S.__not(valid_i) ) )
     end
   
-    local readyOut = S.cast(S.tuple(readyOutList), types.array2d(types.bool(),#typelist) )
+    local readyOut = S.tuple(readyOutList)
+    if arraySize~=nil then
+      assert(false)
+      readyOut = S.cast(readyOut, types.array2d(types.bool(),#typelist) )
+    end
     
     --if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
     
@@ -2182,38 +2209,36 @@ end)
 -- We do that here by modifying the valid bit combinationally!! This could potentially
 -- cause a combinationaly loop (validOut depends on readyDownstream) if another later unit does the opposite
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
-modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
-  err( types.isType(A), "broadcastStream: A must be type")
-  rigel.expectBasic(A)
-  err( type(N)=="number", "broadcastStream: N must be number")
-  if framed==nil then framed=false end
-  err( type(framed)=="boolean","broadcastStream: framed must be boolean")
-  err( framed==false or type(framedMixed)=="boolean", "broadcastStream: frameMixed should be boolean")
+modules.broadcastStream = memoize(function(A,W,H,X)
+  err( A==nil or types.isType(A), "broadcastStream: type must be type, but is: "..tostring(A))
+  err( A==nil or A:isScheduleType(),"broadcastStream: type must be schedule type, but is: "..tostring(A))
+  err( type(W)=="number", "broadcastStream: W must be number")
+  if H==nil then H=1 end
+  err( type(H)=="number", "broadcastStream: H must be number")
   assert(X==nil)
 
-  local res = {kind="broadcastStream", A=A, N=N,  stateful=false}
+  local res = {kind="broadcastStream", A=A, W=W, H=H,  stateful=false}
 
-  if A==types.null() then
-    res.inputType = rigel.HandshakeTrigger
-    res.outputType = rigel.HandshakeTriggerArray(N)
-  elseif framed then
-    res.inputType = types.HandshakeFramed(A,framedMixed,framedDims)
-    res.outputType = types.HandshakeArrayFramed( A, framedMixed, framedDims, N )
-  else
-    res.inputType = rigel.Handshake(A)
-    res.outputType = rigel.HandshakeArray(A, N)
-  end
+--  if A==nil then
+--    res.inputType = types.HandshakeTrigger
+--    res.outputType = types.Inter(N)
+--  else
+  res.inputType = types.RV(A)
+  res.outputType = types.array2d(types.RV(A), W, H)
+--  end
 
+  print("BROADCAST",A,types.lower(res.inputType))
+  
   res.sdfInput = SDF{1,1}
-  res.sdfOutput = SDF(J.broadcast({1,1},N))
-  res.name = sanitize("BroadcastStream_"..tostring(A).."_"..N)
+  res.sdfOutput = SDF(J.broadcast({1,1},W*H))
+  res.name = sanitize("BroadcastStream_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H))
 
   if terralib~=nil then res.terraModule = MT.broadcastStream(res,A,N) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
 
-    local printStr = "IV %d readyDownstream ["..table.concat( J.broadcast("%d",N),",").."] ready %d"
+    local printStr = "IV %d readyDownstream ["..table.concat( J.broadcast("%d",W*H),",").."] ready %d"
     local printInst
     if DARKROOM_VERBOSE then 
       printInst = systolicModule:add( S.module.print( types.tuple( J.broadcast(types.bool(),N+2)), printStr):instantiate("printInst") ) 
@@ -2222,15 +2247,15 @@ modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
     local inp = S.parameter( "process_input", rigel.lower(res.inputType) )
     local inpData, inpValid
 
-    if A==types.null() then -- HandshakeTrigger
+    if A==nil then -- HandshakeTrigger
       inpValid = inp
     else
       inpData = S.index(inp,0)
       inpValid = S.index(inp,1)
     end
 
-    local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),N) )
-    local readyDownstreamList = J.map(J.range(N), function(i) return S.index(readyDownstream,i-1) end )
+    local readyDownstream = S.parameter( "ready_downstream", types.array2d(types.bool(),W,H) )
+    local readyDownstreamList = J.map(J.range(W*H), function(i) return S.index(readyDownstream,i-1) end )
     
     local allReady = J.foldt( readyDownstreamList, function(a,b) return S.__and(a,b) end, "X" )
     local validOut = S.__and(inpValid,allReady)
@@ -2239,10 +2264,10 @@ modules.broadcastStream = memoize(function(A,N,framed,framedMixed,framedDims,X)
 
     if inpData==nil then
       -- HandshakeTrigger
-      out  = S.tuple( J.broadcast(validOut, N))
-      out = S.cast(out, types.array2d(types.bool(),N) )
+      out  = S.tuple( J.broadcast(validOut, W*H))
+      out = S.cast(out, types.array2d(types.bool(),W,H) )
     else
-      out  = S.tuple( J.broadcast(S.tuple{inpData, validOut}, N))
+      out  = S.tuple( J.broadcast(S.tuple{inpData, validOut}, W,H))
     end
     out = S.cast(out, rigel.lower(res.outputType) )
     
@@ -4142,7 +4167,7 @@ local function checkFIFOs(output)
         if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then fn = n.inst.module end
         
         if fn.kind=="broadcastStream" then
-          res = J.broadcast( false, n.type.params.W*n.type.params.H )
+          res = J.broadcast( false, n.type.size[1]*n.type.size[2] )
         elseif fn.kind=="packTuple" or fn.kind=="toHandshakeArrayOneHot" then
           assert(#arg==1)
           assert(#arg[1]==types.streamCount(fn.inputType) )
@@ -4682,8 +4707,9 @@ end
 function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, instanceMap, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
+  err( inputType:isData(),"modules.lift: inputType should be Data Type, but is: "..tostring(inputType))
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
-  err( outputType:isDataType(),"modules.lift: outputType should be Data Type")
+  err( outputType:isData(),"modules.lift: outputType should be Data Type")
   err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )

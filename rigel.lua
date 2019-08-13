@@ -229,7 +229,7 @@ end
 local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   assert(X==nil)
   
-  print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
     --print("CHECKSUPER",Tparam,Ttarget)
@@ -239,6 +239,8 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
     fn = fn(finVars)
     --print("FN",fn)
     return fn
+  else
+    --print("Trivial check failed")
   end
 
   local L = require "generators.lifts"
@@ -247,11 +249,11 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   local liftsFound = false
   for liftName,lift in pairs(L) do
     local L1 = liftName,lift[3]:isSupertypeOf(Ttarget,{})
-    print("L1",lift[3],"isSupertypeOf?",Ttarget,L1)
-    print("L3",lift[2],"isSupertypeOf?",TparamOutput,"(can lift output deal with fn output?)",L3)
+    --print("L1",lift[3],"isSupertypeOf?",Ttarget,L1)
+    --print("L3",lift[2],"isSupertypeOf?",TparamOutput,"(can lift output deal with fn output?)",L3)
     local L3 = lift[2]:isSupertypeOf(TparamOutput,{})
 
-    print("Try lift",L1,lift[1]:isSupertypeOf(Tparam,{}),L3)
+    --print("Try lift",L1,lift[1]:isSupertypeOf(Tparam,{}),L3)
     local vars1, vars2, vars3 = {},{},{}
     if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
@@ -778,9 +780,10 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif types.isBasic(self.outputType) then
-    table.insert(v,", output wire ["..(self.outputType:verilogBits()-1)..":0] "..fnname.."_output")
+  elseif self.outputType:isrv() and self.outputType.over:is("Par") then
+    table.insert(v,", output wire ["..(self.outputType.over.over:verilogBits()-1)..":0] "..fnname.."_output")
   else
+    print("vHeaderInOut NYI",self.outputType)
     assert(false)
   end
 
@@ -797,16 +800,16 @@ function darkroomFunctionFunctions:vHeaderRequires()
       
       if types.isHandshakeAny(fn.inputType) then
         table.insert(v,", output wire ["..(types.lower(fn.inputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_input, input wire ["..(types.extractReady(fn.inputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_ready")
-      elseif fn.inputType==types.null() then
+      elseif fn.inputType==types.Interface() then
       else
-        print("NYI - require of: "..tostring(inst.name))
+        print("NYI - require of: "..tostring(inst.name),fn.inputType)
         assert(false)
       end
       
       if types.isHandshakeAny(fn.outputType) then
         table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output, output wire "..inst.name.."_"..fnname.."_ready_downstream")
-      elseif types.isBasic(fn.outputType) then
-        table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
+      elseif fn.outputType:isrv() and fn.outputType.over:is("Par") then
+        table.insert(v,", input wire ["..(types.lower(fn.outputType.over.over):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
       else
         print("NYI - require of: "..tostring(inst))
         assert(false)
@@ -969,8 +972,8 @@ function darkroom.newFunction(tab,X)
     err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
   end
   
-  if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
-  if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
+  --if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
+  --if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
   
   if tab.globalMetadata==nil then tab.globalMetadata={} end
 
@@ -1227,7 +1230,7 @@ function darkroomIRMT.__index(tab,key)
     return darkroomIRFunctions[key]
   end
 
-  if type(key)=="number" and (darkroom.isHandshakeArray(tab.type) or darkroom.isHandshakeTuple(tab.type) or tab.type:is("HandshakeArrayFramed") or tab.type:is("HandshakeTriggerArray")) then
+  if type(key)=="number" and tab.type:isInterface() then
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
@@ -1420,14 +1423,14 @@ function darkroomInstanceFunctions:toVerilog()
   if darkroom.isPlainFunction(self.module) then
 
     local vstr = {}
-    if self.module.inputType~=types.null() then
+    if self.module.inputType~=types.Interface() then
       table.insert(vstr,"wire ["..(types.lower(self.module.inputType):verilogBits()-1)..":0] "..self.name.."_process_input;\n")
       if types.isHandshakeAny(self.module.inputType) then 
         table.insert(vstr,"wire ["..(types.extractReady(self.module.inputType):verilogBits()-1)..":0] "..self.name.."_ready;\n")
       end
     end
 
-    if self.module.outputType~=types.null() then
+    if self.module.outputType~=types.Interface() then
       table.insert(vstr,"wire ["..(types.lower(self.module.outputType):verilogBits()-1)..":0] "..self.name.."_process_output;\n")
       if types.isHandshakeAny(self.module.outputType) then
         table.insert(vstr,"wire ["..(types.extractReady(self.module.outputType):verilogBits()-1)..":0] "..self.name.."_ready_downstream;\n")
@@ -1437,14 +1440,14 @@ function darkroomInstanceFunctions:toVerilog()
     table.insert(vstr,self.module.name.." "..self.name.."(.CLK(CLK)")
     if self.module.stateful then table.insert(vstr,",.reset(reset)") end
 
-    if self.module.inputType~=types.null() then
+    if self.module.inputType~=types.Interface() then
       table.insert(vstr,",.process_input("..self.name.."_process_input)")
       if types.isHandshakeAny(self.module.inputType) then 
         table.insert(vstr,",.ready("..self.name.."_ready)")
       end
     end
 
-    if self.module.outputType~=types.null() then
+    if self.module.outputType~=types.Interface() then
       table.insert(vstr,",.process_output("..self.name.."_process_output)")
       if types.isHandshakeAny(self.module.outputType) then
         table.insert(vstr,",.ready_downstream("..self.name.."_ready_downstream)")
@@ -1455,14 +1458,14 @@ function darkroomInstanceFunctions:toVerilog()
       for fnname,_ in pairs(fnmap) do
         local fn = inst.module.functions[fnname]
 
-        if fn.inputType~=types.null() then
+        if fn.inputType~=types.Interface() then
           table.insert(vstr,",."..inst.name.."_"..fnname.."_input("..inst.name.."_"..fnname.."_input)")
           if types.isHandshakeAny(fn.inputType) then 
             table.insert(vstr,",."..inst.name.."_"..fnname.."_ready("..inst.name.."_"..fnname.."_ready)")
           end
         end
 
-        if fn.outputType~=types.null() then
+        if fn.outputType~=types.Interface() then
           table.insert(vstr,",."..inst.name.."_"..fnname.."_output("..inst.name.."_"..fnname.."_output)")
           if types.isHandshakeAny(fn.outputType) then 
             table.insert(vstr,",."..inst.name.."_"..fnname.."_ready_downstream("..inst.name.."_"..fnname.."_ready_downstream)")
@@ -1530,7 +1533,7 @@ function darkroomIRFunctions:calcSDF( )
     -- spaghetti code: see case in 'apply' above
     assert( darkroom.isModule(self.inst.module) )
 
-    if #self.inputs==0 or self.inputs[1].type==types.null() then
+    if #self.inputs==0 or self.inputs[1].type==types.Interface() then
       err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "null input applyMethod '"..self.fnname.."' on module '"..self.inst.module.name.."' should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
@@ -1707,21 +1710,13 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="statements" then
     n.type = n.inputs[1].type
   elseif n.kind=="selectStream" then
-    if darkroom.isHandshakeArray(n.inputs[1].type) or n.inputs[1].type:is("HandshakeArrayFramed") then
-      err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds. inputType: "..tostring(n.inputs[1].type).." index:"..tostring(n.i))
-      err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
-      if n.inputs[1].type:is("HandshakeArrayFramed") then
-        n.type = types.HandshakeFramed(n.inputs[1].type.params.A,n.inputs[1].type.params.mixed,n.inputs[1].type.params.dims)
-      else
-        n.type = darkroom.Handshake(n.inputs[1].type.params.A)
-      end
-    elseif darkroom.isHandshakeTriggerArray(n.inputs[1].type) then
-      err( n.i < n.inputs[1].type.params.W, "selectStream index out of bounds")
-      err( n.j==nil or (n.j < n.inputs[1].type.params.H), "selectStream index out of bounds")
-      n.type = darkroom.HandshakeTrigger
-    elseif darkroom.isHandshakeTuple(n.inputs[1].type) then
-      err( n.i < #n.inputs[1].type.params.list, "selectStream index out of bounds")
-      n.type = darkroom.Handshake(n.inputs[1].type.params.list[n.i+1])
+    if n.inputs[1].type:isInterface() and n.inputs[1].type:is("array") then
+      err( n.i < n.inputs[1].type.size[1], "selectStream index out of bounds. inputType: "..tostring(n.inputs[1].type).." index:"..tostring(n.i))
+      err( n.j==nil or (n.j < n.inputs[1].type.size[2]), "selectStream index out of bounds")
+      n.type =n.inputs[1].type.over
+    elseif n.inputs[1].type:isInterface() and n.inputs[1].type:isTuple() then
+      err( n.i < #n.inputs[1].type.list, "selectStream index out of bounds")
+      n.type = n.inputs[1].type.list[n.i+1]
     else
       err(false, "selectStream input must be array or tuple of handshakes, but is "..tostring(n.inputs[1].type) )
     end
@@ -1853,7 +1848,11 @@ function darkroomIRFunctions:codegenSystolicReady( module )
           table.insert(readyPipelines,res[1])
         end
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
-        err( input.type:isArray() and input.type:arrayOver():isBool(), "Error, tuple should have an input type of array of N ready bits")
+        err( input.type:isTuple(), "Error, tuple should have an input type of a tuple of ready bits")
+        
+        for _,v in ipairs(input.type.list) do
+          err( v:isBool(), "Error, tuple should have an input type of a tuple of ready bits")
+        end
         
         -- tuple has N input streams, N output streams
         

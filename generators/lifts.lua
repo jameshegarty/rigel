@@ -7,8 +7,8 @@ local RM = require "generators.modules"
 
 -- lift pointwise to ParSeq: S(A)->S(B) to S(A{w,h;W,H])->S(B{w,h;W,H])
 lifts.mapSeq={
-  P.InterfaceType("InterfaceIn",P.ScheduleTypeOver("SchedIn",P.DataType("A"))), P.InterfaceType("InterfaceOut",P.ScheduleTypeOver("SchedOut",P.DataType("B"))),
-  P.InterfaceType("InterfaceIn",T.Seq(P.ScheduleTypeOver("SchedIn",P.DataType("A")),P.SizeValue("Size"))), P.InterfaceType("InterfaceOut",T.Seq(P.ScheduleTypeOver("SchedOut",P.DataType("B")),P.SizeValue("Size"))),
+  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn",P.DataType("A"))), P.InterfaceType("InterfaceOut",P.ScheduleType("SchedOut",P.DataType("B"))),
+  P.InterfaceType("InterfaceIn",T.Seq(P.ScheduleType("SchedIn",P.DataType("A")),P.SizeValue("Size"))), P.InterfaceType("InterfaceOut",T.Seq(P.ScheduleType("SchedOut",P.DataType("B")),P.SizeValue("Size"))),
   function(args) return function(f) return RM.mapSeq(f,args.Size[1],args.Size[2]) end end}
 
 lifts.mapParSeq={

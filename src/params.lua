@@ -9,6 +9,8 @@ local ParamMT = {__index=ParamFunctions,__tostring=function(p)
                        res = res.."|"..tostring(v)
                      end
                      return res
+                   elseif p.kind=="TypeList" then
+                     return "TypeList:"..p.name.."("..tostring(p.constraint)..")"
                    else
                      local over = ""
                      if p.over~=nil then over="("..tostring(p.over)..")" end
@@ -17,13 +19,22 @@ local ParamMT = {__index=ParamFunctions,__tostring=function(p)
 end
                 }
 
+function ParamFunctions:isSchedule()
+  if self.kind=="TypeList" then return self.constraint:isSchedule() end
+  return self.kind=="ScheduleType"
+end
+function ParamFunctions:isInterface()
+  if self.kind=="TypeList" then return self.constraint:isInterface() end
+  return self.kind=="InterfaceType"
+end
+
 local function makeParam( kind, isValue, super )
   assert(type(kind)=="string")
   assert(type(isValue)=="boolean")
   assert(super==nil or params.isParam(super))
   return J.memoize(function(name,X)
-      assert(type(name)=="string")
-      assert(X==nil)
+    assert(type(name)=="string")
+    assert(X==nil)
     return setmetatable({kind=kind,name=name,isValue=isValue,super=super},ParamMT)
   end)
 end
@@ -42,30 +53,46 @@ params.ArrayType = makeParam("ArrayType",false,params.DataType("tmp"))
 params.TupleType = makeParam("TupleType",false,params.DataType("tmp"))
 --params.InterfaceType = makeParam("InterfaceType",false)
 
-params.ScheduleType = makeParam("ScheduleType",false)
+-- over can be nil: means any interface
+params.InterfaceType = function(name,over,X)
+  assert(X==nil)
+  assert(type(name)=="string")
+  --local types = require "types"
+  --assert(types.isType(over) or params.isParam(over) or over==nil)
+  return setmetatable({kind="InterfaceType",name=name,over=over,isValue=false,list=list},ParamMT)
+end
+
+-- over can be nil: means any schedule
+params.ScheduleType = function(name,over,X)
+  assert(X==nil)
+  assert(type(name)=="string")
+  --local types = require "types"
+  --assert(types.isType(over) or params.isParam(over) or over==nil)
+  return setmetatable({kind="ScheduleType",name=name,over=over,isValue=false,list=list},ParamMT)
+end
+
+--params.ScheduleType = makeParam("ScheduleType",false)
 params.ParSeqType = makeParam("ParSeqType",false,params.ScheduleType("tmp"))
 params.ParType = makeParam("ParType",false,params.ScheduleType("tmp"))
 params.SeqType = makeParam("SeqType",false,params.ScheduleType("tmp"))
+
+--params.InterfaceType = makeParam("InterfaceType",false)
+
+-- a list of types (for tuples)
+params.TypeList = function(name,constraint,X)
+  assert(constraint~=nil)
+  return setmetatable({kind="TypeList",name=name,constraint=constraint,isValue=false},ParamMT)
+end
 
 params.SumType = function(name,list)
   return setmetatable({kind="SumType",name=name,isValue=false,list=list},ParamMT)
 end
 
-params.InterfaceType = function(name,over,X)
-  assert(X==nil)
-  assert(type(name)=="string")
-  local types = require "types"
-  assert(types.isType(over) or params.isParam(over))
-  return setmetatable({kind="InterfaceType",name=name,over=over,isValue=false,list=list},ParamMT)
-end
+-- this is optional
+--params.Optional = function(name,ty)
+--  return setmetatable({kind="Optional",name=name,isValue=false,over=ty},ParamMT)
+--end
 
-params.ScheduleTypeOver = function(name,over,X)
-  assert(X==nil)
-  assert(type(name)=="string")
-  local types = require "types"
-  assert(types.isType(over) or params.isParam(over))
-  return setmetatable({kind="ScheduleType",name=name,over=over,isValue=false,list=list},ParamMT)
-end
 
 local function valueOrTypeToParam(V)
   local function firstToUpper(str)
@@ -89,15 +116,34 @@ end
 function ParamFunctions:isSupertypeOf(P,vars)
   local types = require "types"
   local uniform = require "uniform"
+  local R = require "rigel"
+
+  J.err(P~=nil,":isSupertypeOf: type must not be nil")
+  
   if self.kind=="SumType" then
     assert(false)
     -- hack
     assert(#self.list==1)
     vars[P.name]=0
     return self.list[1]:isSupertypeOf(P,vars)
+--  elseif self.kind=="Optional" then
+--    if P==nil then
+--      vars[self.name]=false
+--      return true
+--    else
+--      vars[self.name]=true
+--      return self.over:isSupertypeOf(P,vars)
+    --    end
+  elseif params.isParam(P) then
+    if self.kind==P.kind then return true end
+    if P.super==nil then return false end -- this kind has no super, and doesn't match self
+    return self:isSupertypeOf(P.super,vars)
+
   elseif self.kind=="InterfaceType" then
     --print("Param interface type",P)
-    if P:isInterfaceType()==false then return false end
+    if P:isInterface()==false then return false end
+    if P:isArray() or P:isTuple() then return false end
+    
     if P:isRV() then
       vars[self.name] = types.RV
     elseif P:isrV() then
@@ -112,16 +158,17 @@ function ParamFunctions:isSupertypeOf(P,vars)
       print("NYI interf - "..tostring(P))
       assert(false)
     end
+    if self.over==nil or P.over==nil then
+      -- one of them is a trigger - they must match
+      return self.over==P.over
+    end
+    
     local res = self.over:isSupertypeOf(P.over,vars)
     --print("Param interface here",self.over,P.over,res)
     return res
   elseif self.kind=="ScheduleType" then
     --J.err(types.isType(P),"Schedule Type match should be type, but is: "..tostring(P).." self:"..tostring(self))
-    if P==nil then -- this can happen if we're mapping against a RVTrigger for example
-return false
-    end
-    
-    if P:isScheduleType()==false then return false end
+    if P:isSchedule()==false then return false end
     if P:is("Par") then
       vars[self.name] = types.Par
     elseif P:is("ParSeq") then
@@ -139,16 +186,12 @@ return false
       --print("Param interface here",self.over,P.over,res)
       return res
     end
-  elseif params.isParam(P) then
-    if self.kind==P.kind then return true end
-    if P.super==nil then return false end -- this kind has no super, and doesn't match self
-    return self:isSupertypeOf(P.super,vars)
-  else
+  elseif types.isType(P) or type(P)=="number" or R.isSize(P) then
     return self:isSupertypeOf(valueOrTypeToParam(P),vars)
-    --print(tostring(self)..":isSupertypeOf() could not deal with ",P)
-    --assert(false)
-
   end
+
+  print("Error, checking "..tostring(self)..":isSupertypeOf("..tostring(P)..")")
+  assert(false)
 end
 
 return params

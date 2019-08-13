@@ -95,7 +95,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     globalMetadata["TypeOfRegister_".."InstCall_regs_"..k] = v[1]
 
     if v[3]=="input" then
-      functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.Interface(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
 
       table.insert(portPassthrough,"."..k.."_ready("..k.."_ready)")
       table.insert(portPassthrough,"."..k.."_input("..k.."_input)")
@@ -109,7 +109,7 @@ output wire ]]..k..[[_ready,
     else
       table.insert(portPassthrough,"."..k.."("..k.."_output)")
           
-      functionList[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[k] = R.newFunction{name=k, inputType=types.Interface(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
       
       regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]

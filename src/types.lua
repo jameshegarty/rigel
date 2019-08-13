@@ -24,12 +24,20 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="array" then
     res = tostring(ty.over).."["..tostring(ty.size).."]"
   elseif ty.kind=="tuple" then
-    --res = "{"..table.concat(J.map(ty.list, function(n) res = tostring(n) end), ",").."}"
-    res = "{"
-    for _,v in ipairs(ty.list) do
-      res = res..tostring(v)..","
+    local o,c="{","}"
+    if ty:isInterface() then o,c="<",">" end
+    if ty:isSchedule() then o,c="[","]" end
+    
+    if P.isParam(ty.list) or types.isType(ty.list) then
+      res = o..tostring(ty.list)..c
+    else
+      res = o
+      for k,v in ipairs(ty.list) do
+        res = res..tostring(v)
+        if k<#ty.list then res = res.."," end
+      end
+      res = res..c
     end
-    res = res.."}"
   elseif ty.kind=="Par" then
     res = "Par("..tostring(ty.over)..")"
   elseif ty.kind=="ParSeq" then
@@ -61,8 +69,14 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     else
       res = pre.."("..tostring(ty.over)..")"
     end
-  elseif ty.kind=="InterfaceTuple" then
-    res = "<"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",")..">"
+--[=[  elseif ty.kind=="InterfaceTuple" then
+    if P.isParam(ty.list) or types.isType(ty.list) then
+      res = "<"..tostring(ty.list)..">"
+    else
+      res = "<"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",")..">"
+    end
+  elseif ty.kind=="InterfaceArray" then
+  res = "("..tostring(ty.over)..")<"..tostring(ty.size)..">"]=]
   elseif ty.kind=="named" then
     res = "NAMED"..ty.name
   else
@@ -183,12 +197,25 @@ function types.array2d( _type, w, h, X )
 end
 
 types._tuples = {}
+types._tuplesParam = {}
 
-function types.tuple( list )
+function types.tuple( list, X )
+  err( X==nil, "types.tuple: too many arguments" )
+
+  if P.isParam(list) and list.kind=="TypeList" then -- parameterized
+    if types._tuplesParam[list]~=nil then
+      return types._tuplesParam[list]
+    else
+      types._tuplesParam[list] = setmetatable( {kind="tuple", list = list }, TypeMT )
+      return types._tuplesParam[list]
+    end
+  end
+    
   err(type(list)=="table","input to types.tuple must be table")
   err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
 
+  --[=[
   for k,v in ipairs(list) do
     if P.isParam(v) then
       err( P.DataType("tmp"):isSupertypeOf(v), "types.tuple: all items in list must be data types, but item "..tostring(k).." is: "..tostring(v))
@@ -197,7 +224,7 @@ function types.tuple( list )
       err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
       --err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
     end
-  end
+    end]=]
   
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
@@ -559,29 +586,58 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
   assert(type(vars)=="table")
   assert(X==nil)
   local params = require "params"
-    
-  err( types.isType(ty) or params.isParam(ty), ":isSubtypeOf(): input should be type or param, but is: "..tostring(ty) )
 
+  err( types.isType(ty) or params.isParam(ty), tostring(self)..":isSubtypeOf("..tostring(ty).."): input should be type or param, but is: "..tostring(ty) )
+
+
+--  print(tostring(self)..":isSupertypeOf("..tostring(ty)..")")
+  
   --print(self,"isSuperTypeOf?",ty)
 
   if self==ty then
     return true
   elseif types.isType(ty) then
-    --print("KEYCOUNT",J.keycount(self),J.keycount(ty))
     -- do the params of these types match?
-    if J.keycount(self)~=J.keycount(ty) then return false end
+    if J.keycount(self)~=J.keycount(ty) then -- might be optional things
+--      print("KEYCOUNT MISMATCH")
+      return false
+    end
     
     for k,v in pairs(self) do
-      --print("KV",self,k,v,ty[k])
-      --      if k~="over" then
       if ty[k]==nil then
         --print(":isSupertypeOf(): Key '"..tostring(k).."' missing from ty '"..tostring(ty).."'?")
         return false
       end
-      
+
       if type(v)=="string" or type(v)=="number" then
         if ty[k]~=v then return false end
+      elseif k=="list" then
+        -- special case for tuple list
+        --print("LIST",self,self.kind,ty)
+        if P.isParam(self.list) and self.list.kind=="TypeList" then
+          --assert(false)
+          vars[self.list.name]={}
+          for kk,vv in ipairs(ty[k]) do
+            if self.list.constraint:isSupertypeOf(ty[k][kk],vars) then
+              vars[self.list.name][kk]=vv
+            else
+              return false
+            end
+          end
+        else
+          for kk,vv in ipairs(v) do
+            if vv:isSupertypeOf(ty[k][kk],vars) then
+              if params.isParam(vv) then
+                --print("SET VAR",vv.name,ty[k][kk])
+                vars[vv.name]=ty[k][kk]
+              end
+            else
+              return false
+            end
+          end
+        end
       elseif types.isType(v) or params.isParam(v) then
+        --print("CHECKSUPERTYPE",v,k,ty[k],self,ty)
         if v:isSupertypeOf(ty[k],vars) then
           if params.isParam(v) then
             --print("SET VAR",v.name,ty[k])
@@ -590,23 +646,10 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
         else
           return false
         end
-      elseif k=="list" then
-        -- special case for tuple list
-        for kk,vv in ipairs(v) do
-          if vv:isSupertypeOf(ty[k][kk],vars) then
-            if params.isParam(vv) then
-              --print("SET VAR",vv.name,ty[k][kk])
-              vars[vv.name]=ty[k][kk]
-            end
-          else
-            return false
-          end
-        end
       else
         print("did not know how to handle type k,v:",k,v)
         assert(false)
       end
-      --      end
     end
 
     return true
@@ -753,12 +796,38 @@ function TypeFunctions:isrRV() return self.kind=="Interface" and self.r==types.b
 function TypeFunctions:isrRvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
-function TypeFunctions:isDataType() return types.isBasic(self) end
+function TypeFunctions:isData() return types.isBasic(self) end
 --function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
-function TypeFunctions:isInterface() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
-function TypeFunctions:isInterfaceType() return self.kind=="Interface" end
-function TypeFunctions:isSchedule() return types.isScheduleType(self) end
-function TypeFunctions:isScheduleType() return types.isScheduleType(self) end
+function TypeFunctions:isInterface()
+  if self.kind=="tuple" and (types.isType(self.list) or P.isParam(self.list)) then
+    return self.list:isInterface()
+  elseif self.kind=="tuple" then
+    for k,v in ipairs(self.list) do
+      if v:isInterface()==false then return false end
+    end
+    return true
+  elseif self.kind=="array" then
+    return self.over:isInterface()
+  end
+
+  return self.kind=="Interface"
+end
+--function TypeFunctions:isInterfaceType() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
+function TypeFunctions:isSchedule()
+  if self.kind=="tuple" and (types.isType(self.list) or P.isParam(self.list)) then
+    return self.list:isSchedule()
+  elseif self.kind=="tuple" then
+    for k,v in ipairs(self.list) do
+      if v:isSchedule()==false then return false end
+    end
+    return true
+  elseif self.kind=="array" then
+    return self.over:isSchedule()
+  end
+    
+  return self.kind=="Par" or self.kind=="Seq" or self.kind=="ParSeq"
+end
+--function TypeFunctions:isScheduleType() return types.isScheduleType(self) end
 function TypeFunctions:isFloat() return self.kind=="float" end
 function TypeFunctions:isBool() return self.kind=="bool" end
 function TypeFunctions:isInt() return self.kind=="int" end
@@ -1020,7 +1089,8 @@ end)
 
 types.Seq = J.memoize(function(D,w,h,X)
   local Uniform = require "uniform"
-  err( types.isScheduleType(D), "types.Seq: input to Seq should be a schedule type, but is: "..tostring(D) )
+  err( types.isType(D) or P.isParam(D),"types.Seq must be over a type, but is: "..tostring(D))
+  err( D:isSchedule(), "types.Seq: input to Seq should be a schedule type, but is: "..tostring(D) )
   err(X==nil,"Seq: too many arguments")
   --print("MakeSeq",D,w,h,type(w),type(h))
   -- were we passed a {w,h} table?
@@ -1081,18 +1151,8 @@ types.ParSeq = J.memoize(function(D,w,h,X)
   return res
 end)
 
-function types.isScheduleType(T)
-  if P.isParam(T) then
-    --return P.ScheduleType("tmp"):isSupertypeOf(T)
-    return T.kind=="ScheduleType"
-  end
-  
-  err(types.isType(T),"isScheduleType: input should be type, but is: "..tostring(T))
-  return T.kind=="Par" or T.kind=="Seq" or T.kind=="ParSeq"
-end
-
 types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
-  err( S==nil or types.isScheduleType(S), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
+  err( S==nil or (types.isType(S) and S:isSchedule()) or (P.isParam(S) and S:isSchedule()), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
   err( R==nil or types.isType(R), "types.Interface: Ready bit should be type, but is: "..tostring(R) )
   err( r==nil or types.isType(r), "types.Interface: Ready side fn (r) should be type, but is: "..tostring(r) )
   err( v==nil or types.isType(v), "types.Interface: Valid side fn (v) should be type, but is: "..tostring(v) )
@@ -1102,10 +1162,26 @@ types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
   return setmetatable({kind="Interface",over=S,R=R,V=V,I=I,r=r,v=v,VRmode=VRmode},TypeMT)
 end)
 
+--[=[
 types._interfaceTuples = {}
-types.InterfaceTuple = function(list)
-  err(type(list)=="table","input to types.tuple must be table")
-  err(J.keycount(list)==#list,"types.tuple: input table is not an array")
+types._interfaceTuplesParam = {}
+
+types.InterfaceTuple = function(list, X)
+  err( X==nil, "types.InterfaceTuple: too many arguments" )
+  
+  if P.isParam(list) and list.kind=="TypeList" then -- parameterized
+    assert(list:isInterface())
+    --assert( list.kind=="TypeList" )
+    if types._interfaceTuplesParam[list]~=nil then
+      return types._interfaceTuplesParam[list]
+    else
+      types._interfaceTuplesParam[list] = setmetatable( {kind="InterfaceTuple", list = list }, TypeMT )
+      return types._interfaceTuplesParam[list]
+    end
+  end
+    
+  err(type(list)=="table","input to types.InterfaceTuple must be table, but is: "..tostring(list))
+  err(J.keycount(list)==#list,"types.InterfaceTuple: input table is not an array, is: "..tostring(list))
   err(#list>0, "no empty tuple types!")
 
   for k,v in ipairs(list) do
@@ -1119,7 +1195,26 @@ types.InterfaceTuple = function(list)
   assert(#res.list==#list)
   return res
 end
+
+types.InterfaceArray = J.memoize(function(T,w,h,X)
+  err( T:isInterface(), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
+
+  local size
+
+  if P.isParamValue(w) then
+    err( w.kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(w))
+    assert(h==nil)
+    size = w
+  else
+    err( type(w)=="number", "InterfaceArray: w must be number, but is: "..tostring(w))
+    err( type(h)=="number", "InterfaceArray: h must be number, but is: "..tostring(h))
+    local R = require "rigel"
+    size=R.Size(w,h)
+  end
   
+  return setmetatable({kind="InterfaceArray",over=T,size=size},TypeMT)
+  end)]=]
+
 function types.S(T) return types.Interface(T) end
 function types.R(T) return types.Interface(T,types.bool()) end
 function types.rV(T) return types.Interface(T,nil,types.bool(),nil,types.bool()) end
@@ -1388,7 +1483,7 @@ function types.HandshakeTuple(tab,VR,X)
   assert(X==nil)
   local t = {}
   for k,v in ipairs(tab) do table.insert(t,types.Handshake(v,VR)) end
-  return types.InterfaceTuple(t)
+  return types.tuple(t)
 end
 
 function types.HandshakeVRTuple(tab,X)
@@ -1435,7 +1530,7 @@ function types.isHandshakeTuple( a ) return a:isNamed() and a.generator=="Handsh
 function types.isHandshakeAny( a )
   if a:is("Interface") then
     return a:isRV()
-  elseif a:is("InterfaceTuple") then
+  elseif a:isTuple() then
     for _,v in ipairs(a.list) do if types.isHandshakeAny(v) then return true end end
     return false
   else
@@ -1456,11 +1551,16 @@ function types.expectHandshake( A, er ) if types.isHandshake(A)==false then erro
 -- ie V(A) => {A,bool}
 -- RV(A) => {A,bool}
 -- Handshake(A) => {A,bool}
-function types.lower( a, outputType )
+function types.lower( a )
   err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-  err( outputType==nil or types.isType(outputType),"lower: output type is not a type, is:"..tostring(outputType))
        
-  if a:is("Interface") then
+  if a:isTuple() then
+    local res = {}
+    for _,v in ipairs(a.list) do table.insert(res,types.lower(v,loc)) end
+    return types.tuple(res)
+  elseif a:isArray() then
+    return types.array2d(types.lower(a.over),a.size)
+  elseif a:is("Interface") then
     if a==types.Interface() then
       return types.null()
     else
@@ -1471,10 +1571,6 @@ function types.lower( a, outputType )
       if a.V~=nil then return a.V end
       assert(false)
     end
-  elseif a:is("InterfaceTuple") then
-    local res = {}
-    for _,v in ipairs(a.list) do table.insert(res,types.lower(v,loc)) end
-    return types.tuple(res)
   elseif a:isSchedule() then
     --if a:is("Par") or a:is("ParSeq") then
     return types.lower(a.over)
@@ -1511,16 +1607,18 @@ end
 function types.extractReady(a)
   assert(a:isInterface())
 
-  if a:is("Interface") then
+  if a:isTuple() then
+    local res = {}
+    for _,v in ipairs(a.list) do table.insert(res,types.extractReady(v)) end
+    return types.tuple(res)
+  elseif a:isArray() then
+    return types.array2d(types.extractReady(a.over),a.size)
+  elseif a:is("Interface") then
     if a.R~=nil then
       return a.R
     else
       return a.r
     end
-  elseif a:is("InterfaceTuple") then
-    local res = {}
-    for _,v in ipairs(a.list) do table.insert(res,types.extractReady(v)) end
-    return types.tuple(res)
   else
     print("extractReady NYI on "..tostring(a))
     assert(false)
@@ -1541,12 +1639,14 @@ function types.streamCount(A)
     else
       return 0
     end
-  elseif A:is("InterfaceTuple") then
+  elseif A:isTuple() then
     local cnt = 0
     for _,v in ipairs(A.list) do
       cnt = cnt + types.streamCount(v)
     end
     return cnt
+  elseif A:isArray() then
+    return types.streamCount(A.over)*A.size[1]*A.size[2]
   else
     err(false, "NYI streamCount "..tostring(A))
   end
@@ -1560,7 +1660,7 @@ function types.isStreaming(A)
     else
       return false
     end
-  elseif A:is("InterfaceTuple") then
+  elseif A:isTuple() then
     local res = false
     for _,v in ipairs(A.list) do
       res = res or types.isStreaming(v)

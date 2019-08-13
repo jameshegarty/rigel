@@ -162,7 +162,7 @@ end)
 -- takes {T[N/2],T[N/2]} to T[N]
 C.flatten2 = memoize(function(T,N)
   err(types.isType(T),"flatten2: T should be type")
-  err(T:isDataType(),"flatten2: T should be data type, but is: "..tostring(T))
+  err(T:isData(),"flatten2: T should be data type, but is: "..tostring(T))
   --assert(T:isTuple()==false) -- not supported by terra
   local AI = types.array2d(T,N/2)
   local docast = RM.lift( J.sanitize("flatten2_"..tostring(T).."_"..tostring(N)), types.tuple{AI,AI}, types.array2d(T,N), 0, function(sinp) return S.cast(sinp,types.array2d(T,N)) end, function() return CT.flatten2(T,N) end, "C.flatten2" )
@@ -1464,6 +1464,7 @@ end)
 -- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
+  err( inputType:isData() ,"C.slice: type must be data type, but is:"..tostring(inputType) )
   err( type(idxLow)=="number", "slice idxLow must be number")
   err( type(idxHigh)=="number", "slice idxHigh must be number")
   err( index==nil or type(index)=="boolean", "index must be bool")
@@ -1476,11 +1477,12 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    return modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType, OT, 0,
+    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), types.lower(inputType), types.lower(OT), 0,
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
 
+    return res
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
@@ -1526,6 +1528,7 @@ end)
 
 function C.index( inputType, idx, idy, X )
   err( types.isType(inputType), "first input to index must be a type, but is: "..tostring(inputType) )
+  err( inputType:isData(),"C.index: type must be data type, but is: "..tostring(inputType) )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end

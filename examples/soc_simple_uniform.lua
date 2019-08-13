@@ -1,12 +1,12 @@
 local R = require "rigel"
-local SOC = require "soc"
-local C = require "examplescommon"
-local harness = require "harnessSOC"
-local G = require "generators"
+local SOC = require "generators.soc"
+local C = require "generators.examplescommon"
+local harness = require "generators.harnessSOC"
+local G = require "generators.core"
 local RS = require "rigelSimple"
 local types = require "types"
 local SDF = require "sdf"
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
 types.export()
 
 local regs = SOC.axiRegs({readAddress={u(32),0x30008000},writeAddress={u(32),0x30008000+(128*64)}},SDF{1,128*64}):instantiate("regs")
@@ -18,7 +18,7 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
     local readStream = SOC.axiBurstReadN("frame_128.raw",128*64,regs.readAddress,noc.read)(i)
     readStream = G.HS{C.bitcast(b(64),ar(u(8),8))}(readStream)
-    local offset = G.HS{G.Map{G.Add{200}}}(readStream)
+    local offset = G.Add{200}(readStream)
     offset = G.HS{C.bitcast(ar(u(8),8),b(64))}(offset)
     return SOC.axiBurstWriteN("out/soc_simple_uniform",128*64,regs.writeAddress,noc.write)(offset)
   end}

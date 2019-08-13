@@ -644,7 +644,8 @@ end
 -- convert to a verilog string for the value
 function UniformFunctions:toVerilog(ty)
   J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
-  assert(self:canRepresentUsing(ty))
+  J.err( types.isBasic(ty),"Uniform:toVerilog(): input must be basic type, but is: "..tostring(ty) )
+  J.err( self:canRepresentUsing(ty), "Uniform:toVerilog() can't represent uniform '"..tostring(self).."' using type '"..tostring(ty).."'")
 
   if self.kind=="apply" then
     return self.instance.name.."_process_output"
@@ -710,7 +711,9 @@ Uniform.canRepresentUsing = J.memoize(
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
     elseif n.kind=="apply" then
-      return n.instance.module.outputType:canSafelyConvertTo(ty)
+      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType.over:is("Par"))
+      return n.instance.module.outputType.over.over:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
@@ -765,7 +768,7 @@ UniformTopMT.__call = J.memoize(function(tab,arg,X)
   if Uniform.isUniform(arg) then
 return arg
   elseif R.isPlainFunction(arg) then
-    assert(arg.inputType==types.null())
+    J.err(arg.inputType==types.Interface(),"Error creating uniform from function, input type is '"..tostring(arg.inputType).."', but should be Inil")
 return Uniform.new{kind="apply",instance=arg:instantiate(),inputs={}}
   elseif type(arg)=="number" then
 return Uniform.const(arg)

@@ -87,24 +87,47 @@ function(args)
   return C.triggerUp(args.number)
 end)
 
-generators.FanOut = R.FunctionGenerator("core.FanOut",{"type","number","rate"},{},
+generators.FanOut = R.FunctionGenerator("core.FanOut",{},{"number","size"},
 function(args)
-  J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed") or args.type:is("HandshakeTrigger"),"FanOut: expected handshake input, but is: "..tostring(args.type))
-  local mixed, dims
-  if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
-  return RM.broadcastStream( R.extractData(args.type), args.number, args.type:is("HandshakeFramed"), mixed, dims )
+  --J.err( R.isHandshake(args.type) or args.type:is("HandshakeFramed") or args.type:is("HandshakeTrigger"),"FanOut: expected handshake input, but is: "..tostring(args.type))
+  --local mixed, dims
+  --if args.type:is("HandshakeFramed") then mixed,dims=args.type.params.mixed,args.type.params.dims end
+  local size = args.size
+  if args.number~=nil then size={args.number,1} end
+  
+  return R.FunctionGenerator("core.FanOut",{},{},
+    function(a)
+      return RM.broadcastStream( a.S, size[1], size[2] )
+    end,
+    P.SumType("opt",{types.RV(P.ScheduleType("S")),
+                     types.HandshakeTrigger}),
+    P.SumType("opt",{types.array2d(types.RV(P.ScheduleType("S")),size[1],size[2]),
+                     types.array2d(types.HandshakeTrigger,size[1],size[2])}))
 end)
 
-generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
+generators.FanIn = R.FunctionGenerator("core.FanIn",{},{"bool"},
 function(args)
-  if R.isHandshakeTuple(args.type) then
-    return RM.packTuple(args.type.params.list,args.bool)
-  elseif R.isHandshakeTriggerArray(args.type) then
-    return RM.packTuple(J.broadcast(types.null(),args.type.params.W*args.type.params.H),args.bool)
+--  for k,v in ipairs(args.list) do
+--    err(v:isRV(),"FanIn: error, NYI - FanIn should only get an InterfaceTuple of RV interfaces")
+--  end
+  
+  --if R.isHandshakeTuple(args.type) then
+  print("FANIN",args.opt,args.list)
+  
+  if args.opt==0 then
+    return RM.packTuple(args.list,args.bool)
+    --elseif R.isHandshakeTriggerArray(args.type) then
+  elseif args.opt==1 then
+    return RM.packTuple(args.list,args.bool,args.size)
   else
     J.err(false, "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
   end
-end)
+end,
+P.SumType("opt",{types.tuple(P.TypeList("list",types.RV(P.ScheduleType("S")))),
+                 types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size"))}),
+P.SumType("opt",{types.RV(types.tuple(P.TypeList("list",P.ScheduleType("S")))),
+                 types.RV(P.ScheduleType("S"),P.SizeValue("size"))})
+)
 
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"type","number","rate"},{"bool"},
 function(args)
