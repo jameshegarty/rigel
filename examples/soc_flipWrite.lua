@@ -1,12 +1,12 @@
 local R = require "rigel"
 R.export()
-require "generators".export()
-local harness = require "harnessSOC"
-local SOC = require "soc"
-local C = require "examplescommon"
+require "generators.core".export()
+local harness = require "generators.harnessSOC"
+local SOC = require "generators.soc"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
 require "types".export()
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
 
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 
@@ -33,9 +33,9 @@ fn = Module{"Top",
     ob0 = FIFO{128}(ob0)
     local ob1 = R.selectStream("ob1",ob,1)
     ob1 = FIFO{128}(ob1)
-    ob1 = HS{ValueToTrigger}(ob1)
-    local posSeqOut = HS{ PosSeq{{W/8,H},1} }(ob1)
-    local addrGenOut = HS{AddrGen}(posSeqOut)
+    ob1 = ValueToTrigger(ob1)
+    local posSeqOut = PosSeq{{W/8,H},1}(ob1)
+    local addrGenOut = AddrGen(posSeqOut)
 
     local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8,nil,noc.write)
     print("WRITEMOD",WRITEMOD.inputType)

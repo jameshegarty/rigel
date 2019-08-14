@@ -561,7 +561,8 @@ function fixedNewASTFunctions:toRigelModule(name,X)
     local sys = Ssugar.moduleConstructor(name)
     for _,v in ipairs(instances) do sys:add(v) end
     for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
-    local CE = S.CE("process_CE")
+    --local CE = S.CE("process_CE")
+    local CE
     sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
     
     if res.stateful then

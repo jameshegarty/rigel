@@ -607,13 +607,13 @@ C.shiftAndCast = memoize(function(from, to, shift)
   err( type(shift)=="number", "C.shiftAndCast: shift must be number")
 
   if shift >= 0 then
-    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 1,
+    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 0,
       function(touint8inp) return S.cast(S.rshift(touint8inp,S.constant(shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
     return touint8
   else
-    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 1,
+    local touint8 = RM.lift( J.sanitize("shiftAndCast_uint" .. from.precision .. "to_uint" .. to.precision.."_shift"..tostring(shift)), from, to, 0,
       function(touint8inp) return S.cast(S.lshift(touint8inp,S.constant(-shift,from)), to) end,
       function() return CT.shiftAndCast(from,to,shift) end,
       "C.shiftAndCast")
@@ -670,7 +670,7 @@ C.convolveConstant = memoize(function( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
@@ -1340,11 +1340,9 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
   
   local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w, h)
 
-  --if framed then
-  --  SSRFn = modules.mapFramed(SSRFn,w/T,h,false)
-  --end
+  local LBfn = modules.linebuffer( A, w, h, T, ymin, framed )
   
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, modules.linebuffer( A, w, h, T, ymin, framed ), "C.stencilLinebuffer" )
+  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w_orig.."_h"..h_orig.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, LBfn, "C.stencilLinebuffer" )
 end)
 
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
@@ -1451,7 +1449,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
       end
     end
     
-    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, S.CE("process_CE") ) )
+    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, nil ) )
 
     return systolicModule
   end

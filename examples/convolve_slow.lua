@@ -1,11 +1,12 @@
 R = require "rigelSimple"
+local types = require "types"
 
 P = 1/4
 inSize = { 1920, 1080 }
 padSize = { 1920+16, 1080+3 }
 
 function makePartialConvolve()
-  local convolveInput = R.input( R.array2d(R.uint8,4*P,4) )
+  local convolveInput = R.input( types.rv(types.Par(R.array2d(R.uint8,4*P,4))) )
 
   local filterCoeff = R.connect{ input=nil, toModule =
     R.modules.constSeq{ type=R.array2d(R.uint8,4,4), P=P, value = 
@@ -48,7 +49,7 @@ partialConvolved = R.connect{ input = partialStencil, toModule =
 -- sum partial convolutions to calculate full convolution
 summedPartials = R.connect{ input=partialConvolved, toModule =
   R.HS(R.modules.reduceSeq{ fn = 
-    R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, V=1/P}) }
+    R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, V=P}) }
 
 convolved = R.connect{ input = summedPartials, toModule = 
   R.HS(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }

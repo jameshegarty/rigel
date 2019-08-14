@@ -167,7 +167,10 @@ local function typeToKey(t)
         J.err(false,"unknown type to key? "..tostring(v))
       end
       
-      J.err( res[outk]==nil, "Generator key '"..outk.."' is set twice?" )
+      --J.err( res[outk]==nil, "Generator key '"..outk.."' is set twice?" )
+      local o_outk = outk
+      local i=1
+      while res[outk]~=nil do outk=o_outk..tostring(i);i=i+1 end
       res[outk] = v
     else
       J.err( res[k]==nil, "Generator key '"..k.."' is set twice?" )
@@ -181,11 +184,9 @@ local functionGeneratorFunctions = {}
 local functionGeneratorMT={}
 
 function darkroom.specialize(T,vars)
-  --print("Specialzie",T)
   if P.isParam(T) and T.kind=="SumType" then
     assert(vars[T.name]~=nil)
     local o = T.list[vars[T.name]+1]
-    --print("SMTYPE",T.name,vars[T.name],o)
     return darkroom.specialize(o,vars)
   elseif P.isParam(T) then
     err(vars[T.name]~=nil,"specialize: looking for var '"..T.name.."', but wasn't found in table")
@@ -197,8 +198,13 @@ function darkroom.specialize(T,vars)
     end
   elseif types.isType(T) and T:isTuple() then
     -- special case for tuples (!)
+    local lst = T.list
+    if P.isParam(T.list) and T.list.kind=="TypeList" then
+      lst = vars[T.list.name]
+    end
+    
     local newList = {}
-    for k,v in ipairs(T.list) do
+    for k,v in ipairs(lst) do
       table.insert(newList,darkroom.specialize(v,vars))
     end
     return types.tuple(newList)
@@ -206,16 +212,9 @@ function darkroom.specialize(T,vars)
     local newT = T
     for k,v in pairs(T) do
       if P.isParam(v) or types.isType(v) then
---        assert(vars[v.name]~=nil)
-
-        --- this should take in a K,V, and replace that value in the type, and then return us the new type with that replaced
-        --print("SPECIAL",T,k,vars[v.name])
---        T = T:replaceVar(k,vars[v.name])
-        --print("SPEC",T)
         newT = newT:replaceVar(k,darkroom.specialize(v,vars))
       end
     end
-
     
     return newT
   else
@@ -232,12 +231,11 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
-    --print("CHECKSUPER",Tparam,Ttarget)
-    --print("types match, we're done: ",Ttarget,Tparam)
-    --for k,v in pairs(finVars) do print(k,v) end
-    --print("FN",fn)
+    err(finVars.type==nil,"findLifts: argument 'type' already set? Don't use 'type' as a parameter name")
+
+    finVars.type = darkroom.specialize(Tparam,finVars)
     fn = fn(finVars)
-    --print("FN",fn)
+
     return fn
   else
     --print("Trivial check failed")
@@ -311,8 +309,8 @@ functionGeneratorMT.__call=function(tab,...)
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
 
-    if arglist.type==nil then arglist.type = arg.type end
-    if arglist.rate==nil then arglist.rate = arg.rate end
+    if arglist.type==nil and (tab.requiredArgs.type~=nil or tab.optArgs.type~=nil) then arglist.type = arg.type end
+    if arglist.rate==nil and (tab.requiredArgs.rate~=nil or tab.optArgs.rate~=nil) then arglist.rate = arg.rate end
 
     return tab:complete(arglist)(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
@@ -408,11 +406,22 @@ function functionGeneratorFunctions:complete(arglist)
       inputTypeList = inputTypeList..tostring(inputType).."|"
       outputTypeList = outputTypeList..tostring(outputType).."|"
       local finFn = function(a)
-        a[self.inputType.name]=k-1
+        --for kk,vv in pairs(a) do print("FINFN",self.name,kk,vv) end
+        
+        a[self.inputType.name]=k-1 -- sum type option
         for kk,vv in pairs(self.curriedArgs) do
           assert(a[kk]==nil)
           a[kk]=vv
         end
+        --for kk,vv in pairs(a) do print("FINFN2",self.name,kk,vv) end
+        for kk,vv in pairs(arglist) do
+          if kk~="type" then
+            -- "type" will be added later"
+            err(a[kk]==nil or a[kk]==vv,self.name.." arglist and curry list don't match?  (you probably named one of your type paramters 'type') K:"..tostring(kk).." curry:"..tostring(a[kk]).." "..tostring(self.curriedArgs[kk]).." arglist:"..tostring(vv))
+            a[kk]=vv
+          end
+        end
+--        err(a.type==nil,"'type' is set somewhere in arglist of '"..self.name.."'? (is "..tostring(a.type)..") Make sure 'type' isn't the name of a type parameter")
         return self.completeFn(a)
       end
       -- finFn should now only be a function of type parameters
@@ -958,10 +967,14 @@ function darkroom.newFunction(tab,X)
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
   -- legacy code hack
-  if types.isBasic(tab.inputType) then
+  if tab.inputType==types.null() then
+    tab.inputType = types.Interface()
+  elseif types.isBasic(tab.inputType) then
     tab.inputType = types.rv(types.Par(tab.inputType))
   end
-  if types.isBasic(tab.outputType) then
+  if tab.outputType==types.null() then
+    tab.outputType = types.Interface()
+  elseif types.isBasic(tab.outputType) then
     tab.outputType = types.rv(types.Par(tab.outputType))
   end
   
@@ -1658,7 +1671,7 @@ function darkroomIRFunctions:typecheck()
     
     err( fn.registered==false or fn.registered==nil, "Error, applying registered type! "..fn.name)
     if #n.inputs==0 then
-      err( fn.inputType==types.Interface(), "Missing function argument, (expected input type "..tostring(fn.inputType)..") "..n.loc)
+      err( fn.inputType==types.Interface(), "Missing function argument, (expected input type "..tostring(fn.inputType).." on function '"..fn.name.."') "..n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
       err( n.inputs[1].type==fn.inputType, "Input type mismatch to function '"..fn.name.."'. Is "..tostring(n.inputs[1].type).." but should be "..tostring(fn.inputType)..", "..n.loc)
@@ -1686,7 +1699,7 @@ function darkroomIRFunctions:typecheck()
       -- there's no reason for HandshakeTuple to exist...
       err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
     elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
-      n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be basic"); return v.type.over.over end) )))
+      n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but input "..tostring(k).." is "..tostring(v.type)); return v.type.over.over end) )))
     else
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
@@ -1982,7 +1995,7 @@ function darkroomIRFunctions:codegenSystolic( module )
           return {I:process(inputs[1][1])}
         end
       elseif n.kind=="constant" then
-        return {S.constant( n.value, n.type )}
+        return {S.constant( n.value, n.type.over.over )}
       elseif n.kind=="concat" then
         return {S.tuple( J.map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="concatArray2d" then
@@ -2014,7 +2027,7 @@ function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
 function darkroom.input( ty, sdfRate )
-  err( types.isType( ty ), "darkroom.input: first argument should be type" )
+  err( types.isType( ty ), "input: first argument should be type, but is: "..tostring(ty) )
   err( ty:isInterface(),"input: type should be interface type, but is: "..tostring(ty))
   err( sdfRate==nil or SDFRate.isSDFRate(sdfRate), "input: second argument should be SDF rate or nil")
 
@@ -2104,7 +2117,8 @@ function darkroom.constant( name, value, ty, X )
   end
   
   res.type:checkLuaValue(res.value)
-
+  res.type = types.rv(types.Par(res.type))
+  
   return darkroom.newIR( res )
 end
 darkroom.c = darkroom.constant

@@ -10,7 +10,7 @@ return function(fn,t,instances)
   if R.isFunction(fn)==false then
     fn = C.linearPipeline(fn,"Top", nil, instances )
   elseif R.isFunctionGenerator(fn) then
-    fn = fn{type=types.null()}
+    fn = fn{type=types.Interface()}
     J.err( R.isPlainFunction(fn), "harnessSOC: input generator could not be resolved into a module.")
   elseif R.isFunction(fn) then
     J.err(fn.name=="Top","Top module must be called 'Top', but is "..fn.name)

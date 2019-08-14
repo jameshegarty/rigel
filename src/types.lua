@@ -1049,6 +1049,7 @@ function types.valueToType(v)
 end
 
 function types.isBasic(A)
+  if P.isParam(A) and (A.kind=="DataType" or A.kind=="NumberType") then return true end
   if P.isParam(A) then
     return P.DataType("tmp"):isSupertypeOf(A)
   end
@@ -1080,10 +1081,15 @@ function types.isBasic(A)
   print("NYI - isBasic",A)
   assert(false)
 end
-types.isDataType = types.isBasic
 
-types.Par = J.memoize(function(D)
-  err( types.isDataType(D), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
+types.Par = J.memoize(function(D,X)
+  assert(X==nil)
+  err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
+  err(D~=types.null(),"types.Par: input should not be null")
+--  if types.isType(D) then
+--    err(D:verilogBits()>0,"types.Par: input should have >0 bits")
+--  end
+
   return setmetatable({kind="Par",over=D},TypeMT)
 end)
 
@@ -1125,7 +1131,7 @@ end)
 --          levels don't change between parallel and sequential processing. 
 types.ParSeq = J.memoize(function(D,w,h,X)
   local Uniform = require "uniform"
-  err( types.isDataType(D), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
+  err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
   err( D:isArray(), "types.ParSeq: input to schedule type should be array data type, but is: "..tostring(D) )
   err(X==nil,"ParSeq: too many arguments")
   
@@ -1588,9 +1594,15 @@ end
 -- RV(A) => A
 -- Handshake(A) => A
 function types.extractData(a)
-  assert(a:is("Interface"))
-  while types.isBasic(a)==false do a=a.over end
-  return a
+  if a:is("Interface") or a:isSchedule() then
+    return types.extractData(a.over)
+  elseif a:isData() then
+    return a
+  elseif a:isTuple() or a:isArray() then
+    assert(false)
+  end
+  print("extractData: unsupported: "..tostring(a))
+  assert(false)
 end
 
 function types.hasReady(a)

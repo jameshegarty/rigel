@@ -22,6 +22,12 @@ lifts.makeHandshake={
   T.rv(P.ScheduleType("A")),T.rv(P.ScheduleType("B")),
   T.RV(P.ScheduleType("A")),T.RV(P.ScheduleType("B")),
   function(args) return function(f) return RM.makeHandshake(f) end end}
+
+lifts.makeHandshakeTrigger={
+  T.Interface(),T.rv(P.ScheduleType("B")),
+  T.HandshakeTrigger,T.RV(P.ScheduleType("B")),
+  function(args) return function(f) return RM.makeHandshake(f,nil,true) end end}
+
 --[=[
 lifts.liftBasicToDecimate={
   T.S(P.ScheduleType("A")),T.S(P.ScheduleType("B")),

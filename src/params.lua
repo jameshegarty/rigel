@@ -28,6 +28,10 @@ function ParamFunctions:isInterface()
   return self.kind=="InterfaceType"
 end
 
+function ParamFunctions:isData()
+  return self.kind=="DataType" or self.kind=="NumberType"
+end
+
 local function makeParam( kind, isValue, super )
   assert(type(kind)=="string")
   assert(type(isValue)=="boolean")

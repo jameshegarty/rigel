@@ -1670,8 +1670,8 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
       res.outputType = rigel.RV(A)
     else
       local ITYPE = types.array2d(A,T)
-      res.inputType = ITYPE
-      res.outputType = rigel.RV(types.array2d(A,T))
+      res.inputType = types.rv(types.Par(ITYPE))
+      res.outputType = types.rRvV(types.Par(types.array2d(A,T)))
     end
     
     res.delay=0
@@ -1682,10 +1682,10 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
     -----------------
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
-      local sinp = S.parameter( "inp", res.inputType )
+      local sinp = S.parameter( "inp", res.inputType.over.over )
 
       local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(COUNTER_BITS), fpgamodules.sumwrap(types.uint(COUNTER_BITS),scale-1) ):CE(true):setReset(0):instantiate("phase") )
-      local reg = systolicModule:add( S.module.reg( res.inputType,true ):instantiate("buffer") )
+      local reg = systolicModule:add( S.module.reg( res.inputType.over.over,true ):instantiate("buffer") )
 
       local reading = S.eq(sPhase:get(),S.constant(0,types.uint(COUNTER_BITS))):disablePipelining()
       local out = S.select( reading, sinp, reg:get() ) 
@@ -2211,7 +2211,7 @@ end)
 -- (readyUpstream depends on validIn). But I don't think we will have any units that do that??
 modules.broadcastStream = memoize(function(A,W,H,X)
   err( A==nil or types.isType(A), "broadcastStream: type must be type, but is: "..tostring(A))
-  err( A==nil or A:isScheduleType(),"broadcastStream: type must be schedule type, but is: "..tostring(A))
+  err( A==nil or A:isSchedule(),"broadcastStream: type must be schedule type, but is: "..tostring(A))
   err( type(W)=="number", "broadcastStream: W must be number")
   if H==nil then H=1 end
   err( type(H)=="number", "broadcastStream: H must be number")
@@ -2450,7 +2450,6 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   err( V==0 or ((W-L-R)%V):eq(0):assertAlwaysTrue(), "cropSeq, (W-L-R)%V must be 0")
   err( X==nil, "cropSeq: too many arguments" )
 
-
   --err( W:lt(math.pow(2,BITS)-1):assertAlwaysTrue(), "cropSeq: width too large!")
   err( H<math.pow(2,BITS), "cropSeq: height too large!")
   
@@ -2519,6 +2518,9 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
     --odim[#odim]={W-L-R,H-B-Top}
     --res.outputType = types.VFramed(res.outputType.params.A,V>0,{{W-L-R,H-B-Top}})
     --print("CROPHACK", res.inputType, res.outputType)
+  else
+--    print("RESR",res.outputType.over)
+    res.outputType = types.rvV(types.Par(res.outputType.over.over.list[1]))
   end
   
   return res
@@ -2782,7 +2784,9 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
   assert(T>0)
   
   local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
-  rigel.expectBasic(A)
+  --rigel.expectBasic(A)
+
+  err( types.isType(A) and A:isData(), "Linebuffer: input should be data type, but is: "..tostring(A))
   res.inputType = types.array2d(A,T)
   res.outputType = types.array2d(A,T,-ymin+1)
 
@@ -2795,7 +2799,7 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
     res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w,h))
   else
     res.inputType = types.rv(types.Par(res.inputType))
-    res.outputType = types.rv(types.Par(res.inputType))
+    res.outputType = types.rv(types.Par(types.array2d(A,T,-ymin+1)))
   end
   
   res.stateful = true
@@ -3066,7 +3070,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW, framedH, X )
       end
       finalOut = S.cast( S.tuple( results ), rigel.lower(res.outputType) )
     else
-      finalOut = S.cast( S.tuple( outarray ), rigel.lower(res.outputType) )
+      finalOut = S.cast( S.tuple( out ), rigel.lower(res.outputType) )
     end
 
     local CE = S.CE("process_CE")
@@ -3161,8 +3165,8 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
   else
-    err( f.inputType:isrv(),"makeHandshake: fn '"..f.name.."' input type should be rv, but is "..tostring(f.inputType) )
-    err( f.outputType:isrv(),"makeHandshake: fn output type should be rv, but is "..tostring(f.outputType))
+    err( f.inputType:isrv() or f.inputType==types.Interface(),"makeHandshake: fn '"..f.name.."' input type should be rv of null, but is "..tostring(f.inputType) )
+    err( f.outputType:isrv() or f.outputType==types.Interface(),"makeHandshake: fn output type should be rv or null, but is "..tostring(f.outputType))
 
     if f.inputType==types.Interface() and nilhandshake==true then
       res.inputType = rigel.HandshakeTrigger
@@ -3171,17 +3175,17 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     elseif f.inputType~=types.Interface() then
       res.inputType = rigel.Handshake(f.inputType.over)
     else
-      res.inputType = types.null()
+      res.inputType = types.Interface()
     end
 
     if f.outputType==types.Interface() and nilhandshake==true then
       res.outputType = rigel.HandshakeTrigger
     elseif f.outputType~=types.Interface() and f.outputType:is("StaticFramed") then
       res.outputType = types.HandshakeFramed( f.outputType.params.A, f.outputType.params.mixed, f.outputType.params.dims )
-    elseif f.outputType~=types.null() then
+    elseif f.outputType~=types.Interface() then
       res.outputType = rigel.Handshake(f.outputType.over)
     else
-      res.outputType = types.null()
+      res.outputType = types.Interface()
     end
 
     J.err( rigel.SDF==false or f.sdfInput~=nil, "makeHandshake: fn is missing sdfInput? "..f.name )
@@ -3190,7 +3194,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     J.err( rigel.SDF==false or #f.sdfInput==1, "makeHandshake expects SDF input rate of 1")
     J.err( rigel.SDF==false or f.sdfInput[1][1]:eq(f.sdfInput[1][2]):assertAlwaysTrue(), "makeHandshake expects SDF input rate of 1, but is: "..tostring(f.sdfInput))
     J.err( rigel.SDF==false or #f.sdfOutput==1, "makeHandshake expects SDF output rate of 1")
-    J.err( rigel.SDF==false or f.sdfOutput[1][1]:eq(f.sdfOutput[1][2]):assertAlwaysTrue(), "makeHandshake expects SDF output rate of 1, but is: "..tostring(f.sdfOutput))
+    J.err( rigel.SDF==false or f.sdfOutput[1][1]:eq(f.sdfOutput[1][2]):assertAlwaysTrue(), "makeHandshake of fn '"..f.name.."' expects SDF output rate of 1, but is: "..tostring(f.sdfOutput))
 
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   end
@@ -3230,20 +3234,20 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
       
     local outvalid
     local out
-    if f.inputType==types.null() and f.outputType==types.null() and nilhandshake==true then
+    if f.inputType==types.Interface() and f.outputType==types.Interface() and nilhandshake==true then
       assert(false) -- NYI
-    elseif f.inputType==types.null() and nilhandshake==true then
+    elseif f.inputType==types.Interface() and nilhandshake==true then
       outvalid = SR:pushPop( pinp, S.constant(true,types.bool()), CE)
       out = S.tuple({inner:process(nil,pinp,processCE), outvalid})
-    elseif f.inputType==types.null() and nilhandshake==false then
+    elseif f.inputType==types.Interface() and nilhandshake==false then
       outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
       --table.insert(pipelines,inner:process(nil,pinp,CE))
       out = S.tuple({inner:process(nil,S.constant(true,types.bool()),processCE), outvalid})
-    elseif f.outputType==types.null() and nilhandshake==true then
+    elseif f.outputType==types.Interface() and nilhandshake==true then
       outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = outvalid
       table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
-    elseif f.outputType==types.null() and nilhandshake==false then
+    elseif f.outputType==types.Interface() and nilhandshake==false then
       table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
     else
       outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
@@ -3255,7 +3259,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
       local str = "RST %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutput %d"
       local lst = {rst, S.index(out,0), S.index(out,1), pready, pready, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) }
       
-      if res.inputType~=types.null() then
+      if res.inputType~=types.Interface() then
         table.insert(lst, S.index(pinp,1))
         table.insert(typelist, rigel.extractValid(res.inputType))
         str = str.." IV %d"
@@ -3621,27 +3625,27 @@ modules.reduce = memoize(function( f, W, H, ty, X )
     res = modules.lambda("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)
   else
     print("WH",W,H)
-    assert(false)
+    --assert(false)
     res = {kind="reduce", fn = f, W=W, H=H}
     --rigel.expectBasic(f.inputType)
     --rigel.expectBasic(f.outputType)
     --if f.inputType:isTuple()==false or f.inputType~=types.tuple({f.outputType,f.outputType}) then
     --  err("Reduction function f must be of type {A,A}->A, but is "..tostring(f.inputType).." -> "..tostring(f.outputType))
     --end
-    res.inputType = types.array2d( ty, W, H )
-    res.outputType = ty
+    res.inputType = types.rv(types.Par(types.array2d( ty, W, H )))
+    res.outputType = types.rv(types.Par(ty))
     res.stateful = f.stateful
     if f.stateful then print("WARNING: reducing with a stateful function - are you sure this is what you want to do?") end
     
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
-    res.delay = math.ceil(math.log(res.inputType:channels())/math.log(2))*f.delay
+    res.delay = math.ceil(math.log(W*H)/math.log(2))*f.delay
     res.name = sanitize("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
     
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
       
       local resetPipelines = {}
-      local sinp = S.parameter("process_input", res.inputType )
+      local sinp = S.parameter("process_input", res.inputType.over.over )
       local t = J.map( J.range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
       
       local i=0
@@ -3651,7 +3655,8 @@ modules.reduce = memoize(function( f, W, H, ty, X )
                              return I:process(S.tuple{a,b}) end, nil )
 
       local CE
-      if f.systolicModule.functions.process.CE~=nil then
+      --if f.systolicModule.functions.process.CE~=nil then
+      if f.delay>0 or f.stateful then
         CE = S.CE("process_CE")
       end
       
@@ -3673,7 +3678,7 @@ end)
 modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
   err(type(Vw)=="number","reduceSeq: Vw should be number")
   --err(T<=1, "reduceSeq: T>1, T="..tostring(T))
-  err(Vw>=1,"reduceSeq: Vw should be >=1")
+  err(Vw>=1,"reduceSeq: Vw should be >=1, but is: "..tostring(Vw))
   if Vh==nil then Vh=1 end
   err(type(Vh)=="number","reduceSeq: Vh should be number")
   err(Vh>=1,"reduceSeq: Vh should be >=1")
@@ -4723,7 +4728,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   if sdfOutput==nil then sdfOutput = SDF{1,1} end
 
   name = J.verilogSanitize(name)
-
+  
   local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, instanceMap=instanceMap }
 
   function res.makeSystolic()
@@ -4953,7 +4958,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   end
 
   local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
-  res.inputType = types.null()
+  res.inputType = types.Interface()
   local W = w*T
   err( W == math.floor(W), "constSeq T must divide array size")
   res.outputType = types.array2d(A,W,h)

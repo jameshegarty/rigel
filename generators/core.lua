@@ -58,22 +58,35 @@ generators.Rshift = R.FunctionGenerator("core.Rshift",{},{"number"}, function(ar
     assert(false)
   end
 end)
-generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{"type","rate"},{"number"}, function(args) return C.addMSBs(args.type,args.number) end)
-generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"type","rate"},{"number"}, function(args) return C.removeMSBs(args.type,args.number) end)
+generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end,T.rv(T.Par(P.NumberType("T"))),T.rv(T.Par(P.NumberType("T"))))
+generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
 generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
 
 generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
 function(a)
-  if a.size~=nil then
-    return C.index(T.array2d(a.T,a.V),a.size[1],a.size[2])
+  local ity
+  if a.opt==0 then
+    ity = T.array2d(a.T,a.V)
   else
-    return C.index(T.array2d(a.T,a.V),a.number)
+    ity = T.tuple(a.list)
+  end
+  
+  if a.size~=nil then
+    return C.index(ity,a.size[1],a.size[2])
+  else
+    return C.index(ity,a.number)
   end
 end,
-T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("V")))),
-T.rv(T.Par(P.DataType("T"))))
+P.SumType("opt",{
+            T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("V")))),
+            T.rv(T.Par(T.tuple(P.TypeList("list",P.DataType("T")))))
+}),
+P.SumType("opt",{
+            T.rv(T.Par(P.DataType("T"))),
+            T.rv(T.Par(P.DataType("T")))
+}))
 
-generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.type) end)
+generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.D) end,T.rv(T.Par(P.DataType("D"))),T.Interface())
 
 generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"type","number","rate"},{},
 function(args)
@@ -159,23 +172,23 @@ function(args)
   end
 end)
 
-generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"bool"},
+generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
-  J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
-  J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
-  return C.sub( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
-end)
+  --J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
+  --J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+  return C.sub( args.T, args.T, args.T, args.async )
+end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))))
 
-generators.Mul = R.FunctionGenerator("core.Mul",{"type","rate"},{"number"},
+generators.Mul = R.FunctionGenerator("core.Mul",{},{"number","async"},
 function(args)
   if args.number~=nil then
     J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
     return C.multiplyConst(args.type, args.number )
   else
-    J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
-    J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
+    --J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
+    --J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
 
-    return C.multiply( args.type.list[1], args.type.list[1], args.type.list[1], args.bool )
+    return R.FunctionGenerator("core.Mul",{},{"bool"},function(args) return C.multiply( args.T, args.T, args.T, args.async ) end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})), T.rv(T.Par(P.NumberType("T"))))
   end
 end)
 
@@ -218,20 +231,22 @@ function(args)
   return C.Not
 end)
 
-generators.Zip = R.FunctionGenerator("core.Zip",{"type","rate"},{},
+generators.Zip = R.FunctionGenerator("core.Zip",{},{},
 function(args)
-  J.err( args.type:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
+  J.err( args.D:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
 
   local typelist = {}
-  for k,v in ipairs(args.type.list) do
+  for k,v in ipairs(args.D.list) do
     typelist[k] = v:arrayOver()
   end
   
-  return RM.SoAtoAoS( args.type.list[1].size[1], args.type.list[1].size[2], typelist )
-end)
+  return RM.SoAtoAoS( args.D.list[1].size[1], args.D.list[1].size[2], typelist )
+end,
+types.rv(T.Par(P.DataType("D"))),
+types.rv(T.Par(P.DataType("D"))))
 
 -- bool is "HandshakeTrigger" option
-generators.HS = R.FunctionGenerator("core.HS",{"rigelFunction","type","rate"},{"bool"},
+--[=[generators.HS = R.FunctionGenerator("core.HS",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
   local mod
@@ -251,7 +266,7 @@ function(args)
   J.err( R.isPlainFunction(mod), "generators.HS: input Rigel function didn't yield a plain Rigel function? (is "..tostring(mod)..")" )
     
   return RS.HS(mod,args.bool)
-end)
+  end)]=]
 
 generators.Linebuffer = R.FunctionGenerator("core.Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
@@ -363,11 +378,11 @@ end)
                                        
 generators.PosSeq = R.FunctionGenerator("core.PosSeq",{"size","number"},{"type"},
 function(args)
-  if args.type~=nil then
-    J.err( args.type==types.null(), "PosSeq: expected null input")
-  end
+  --if args.type~=nil then
+  --  J.err( args.type==types.null(), "PosSeq: expected null input")
+  --end
   return RM.posSeq(args.size[1],args.size[2],args.number)
-end)
+end,types.Interface(),types.rv(types.Par(P.DataType("D"))))
 
 generators.Pos = R.FunctionGenerator("core.PosSeq",{"size","number"},{"type"},
 function(args)
@@ -490,7 +505,7 @@ function(args)
   local fnVars = {}
   local fnType = T.rv(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
   
-  print("FNTY:E",fnType,args.rigelFunction.inputType)
+  print("FNTY:E",fnType,args.rigelFunction.inputType,rigelFunction)
   J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
 
   print("FNVARS")
@@ -708,7 +723,25 @@ function(args)
   return RM.lambda( args.string, input, out, args.instanceList )
 end)
 
-generators.Generator = generators.Module
+generators.Generator = R.FunctionGenerator("core.Module",{"luaFunction","type","type1"},{"string","rate","instanceList"},
+function(args)
+  if args.string==nil then
+    args.string = "unnamedModuleGen"..__unnamedID
+    __unnamedID = __unnamedID+1
+  end
+
+  return R.FunctionGenerator(args.string,{"type","rate"},{},
+    function(a)
+      print("FNGEN",a.type,args.rate)
+      local input = R.input( a.type, args.rate )
+      local out = args.luaFunction(input)
+      J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
+  
+      return RM.lambda( args.string, input, out, args.instanceList )
+    end,args.type,args.type1)
+end)
+
+--generators.Generator = generators.Module
 
 -- rigelFunction: the fn to call to perform the AXI read
 generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","rate","rigelFunction"},{"number","address"},
@@ -849,9 +882,9 @@ end)
 generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{},{},
 function(a)
   local C = require "generators.examplescommon"
-  return C.ArrayToTuple( a.T.over, a.T.size[1], a.T.size[2] )
+  return C.ArrayToTuple( a.D, a.size[1], a.size[2] )
 end,
-T.rv(T.Par(P.ArrayType("T"))),
+T.rv(T.Par(T.array2d(P.DataType("D"),P.SizeValue("size")))),
 T.rv(T.Par(P.DataType("D"))))
 
 generators.FilterSeq = R.FunctionGenerator("core.FilterSeq",{"type","rate","size"},{},
