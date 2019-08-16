@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 
 inputW = 128
 inputH = 64
@@ -27,7 +27,7 @@ local reduceSumInt32_0cyc = C.sum( types.int(32), types.int(32),  types.int(32),
 
 local inp = R.input( R.Handshake( types.uint(8) ) )
 local out = R.apply("toint32", RM.makeHandshake(toint32), inp)
-local out = R.apply("rseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(reduceSumInt32_0cyc,1/DOWNSAMP)) ), out )
+local out = R.apply("rseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(reduceSumInt32_0cyc,DOWNSAMP)) ), out )
 local out = R.apply("touint8", RM.makeHandshake(touint8), out)
 local hsfn = RM.lambda( "hsfn", inp, out )
 

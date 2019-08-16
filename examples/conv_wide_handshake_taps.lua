@@ -1,12 +1,11 @@
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 local S = require("systolic")
-local harness = require("harness")
-local C = require "examplescommon"
+local harness = require("generators.harness")
 require "common".export()
-local soc = require "soc"
+local soc = require "generators.soc"
 
 R.SDF=false -- for taps
 
@@ -38,7 +37,7 @@ local regs = soc.regStub{taps={STTYPE,tapValue}}:instantiate("taps")
 regs.extern = true
 
 local ITYPE = STTYPE
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 --local tapv = R.readGlobal("tg",regs.coeffs)
 packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), R.concat("tc",{inp,regs.taps()}) )
 conv = R.apply( "partial", RM.map( partial, ConvWidth, ConvWidth ), packed )
@@ -50,7 +49,7 @@ print(convolve)
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = BASE_TYPE
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 
 convLB = R.apply( "convLB", C.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
 convstencils = R.apply( "convstencils",  C.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T  ), convLB )

@@ -4,7 +4,7 @@ local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
 local err = J.err
-local MT = require "modulesTerra"
+local MT = require "generators.modulesTerra"
 local Uniform = require "uniform"
 
 local data = macro(function(i) return `i._0 end)

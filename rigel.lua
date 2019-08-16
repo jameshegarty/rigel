@@ -1707,11 +1707,11 @@ function darkroomIRFunctions:typecheck()
     J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k-1).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
     
     if darkroom.isHandshake(n.inputs[1].type) then
-      n.type = darkroom.HandshakeArray( darkroom.extractData(n.inputs[1].type), n.W, n.H )
+      n.type = types.array2d(types.RV( n.inputs[1].type:extractSchedule() ), n.W, n.H )
     elseif n.inputs[1].type:is("HandshakeFramed") then
       n.type = types.HandshakeArrayFramed( darkroom.extractData(n.inputs[1].type), n.inputs[1].type.params.mixed, n.inputs[1].type.params.dims, n.W, n.H )
-    elseif darkroom.isBasic(n.inputs[1].type) then
-      n.type = types.array2d( n.inputs[1].type, n.W, n.H )
+    elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
+      n.type = types.rv(types.Par(types.array2d( n.inputs[1].type.over.over, n.W, n.H )))
     elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
       for k,v in ipairs(n.inputs) do
         err(types.isHandshakeTrigger(v.type),"concat: is one input is HandshakeTrigger, all inputs must be HandshakeTrigger")
@@ -1773,7 +1773,7 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         
         if types.isHandshake(n.type) or types.isHandshakeTrigger(n.type) or n.type:is("HandshakeFramed") then
           assert(systolicAST.isSystolicAST(thisi))
-          assert(thisi.type:isBool())
+          assert(thisi.type:isBool() or thisi.type:isUint())
           
           if input==nil then
             input = thisi
@@ -1861,10 +1861,18 @@ function darkroomIRFunctions:codegenSystolicReady( module )
           table.insert(readyPipelines,res[1])
         end
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
-        err( input.type:isTuple(), "Error, tuple should have an input type of a tuple of ready bits")
-        
-        for _,v in ipairs(input.type.list) do
-          err( v:isBool(), "Error, tuple should have an input type of a tuple of ready bits")
+        if n.kind=="concat" then
+          err( input.type:isTuple(), "Error, tuple should have an input type of a tuple of ready bits")
+
+          for _,v in ipairs(input.type.list) do
+            err( v:isBool(), "Error, tuple should have an input type of a tuple of ready bits")
+          end
+
+        elseif n.kind=="concatArray2d" then
+          err( input.type:isArray(), "Error, concatArray2d should have an input type of an array of ready bits")
+          err( input.type==n.type:extractReady(),"Error, concatArray2d has incorrect ready bit format?")
+        else
+          assert(false)
         end
         
         -- tuple has N input streams, N output streams
@@ -1913,7 +1921,7 @@ function darkroomIRFunctions:codegenSystolicReady( module )
       for k,i in ipairs(n.inputs) do
         if types.isHandshake(i.type) or i.type:is("HandshakeFramed") then
           err(systolicAST.isSystolicAST(res[k]), "incorrect output format "..n.kind.." input "..tostring(k)..", not systolic value" )
-          err(systolicAST.isSystolicAST(res[k]) and res[k].type:isBool(), "incorrect output format of ready function. This node: kind='"..n.kind.."' "..tostring(n).." input index "..tostring(k).."/"..(#n.inputs).." (with input type "..tostring(i.type)..", and input name "..i.name..") is "..tostring(res[k].type).." but expected bool, "..n.loc )
+          err(systolicAST.isSystolicAST(res[k]) and res[k].type==i.type:extractReady(), "incorrect output format of ready function. This node: kind='"..n.kind.."' "..tostring(n).." input index "..tostring(k).."/"..(#n.inputs).." (with input type "..tostring(i.type)..", and input name "..i.name..") is "..tostring(res[k].type).." but expected "..tostring(i.type:extractReady())..", "..n.loc )
         elseif types.isHandshakeTrigger(i.type) then
           --assert(#res==1)
           assert(res[k].type:isBool())
@@ -1950,7 +1958,7 @@ function darkroomIRFunctions:codegenSystolic( module )
     function(n, inputs)
       if n.kind=="input" then
         local res = {module:lookupFunction("process"):getInput()}
-        if darkroom.isRV(n.type) then res[2] = module:lookupFunction("ready"):getInput() end
+        if n.type:isrRV() or n.type:isrRvV() then res[2] = module:lookupFunction("ready"):getInput() end
         return res
       elseif n.kind=="applyMethod" then
         local I = module:lookupInstance(n.inst.name)
@@ -1999,12 +2007,15 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="concat" then
         return {S.tuple( J.map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="concatArray2d" then
-        local outtype
-        if darkroom.isHandshakeArray(n.type) or n.type:is("HandshakeTriggerArray")then
-          outtype = n.type.structure
-        else
-          outtype = types.array2d(darkroom.lower(n.type:arrayOver()),n.W,n.H)
-        end
+        local outtype = types.lower(n.type)
+--        if darkroom.isHandshakeArray(n.type) or n.type:is("HandshakeTriggerArray")then
+--          outtype = n.type.structure
+--        elseif n.type:isrv() and n.type.over:is("Par") then
+--          outtype = types.array2d(darkroom.lower(n.type.over.over:arrayOver()),n.W,n.H)
+--        else
+--          print("NYI - concatArray2d of type ",n.type)
+--          assert(false)
+--        end
         return {S.cast(S.tuple( J.map(inputs,function(i) return i[1] end) ), outtype) }
       elseif n.kind=="statements" then
         for i=2,#inputs do

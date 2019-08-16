@@ -1,8 +1,8 @@
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
+local harness = require "generators.harness"
 
 T = 8 -- throughput
 --ConvRadius = 1

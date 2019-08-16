@@ -1,12 +1,12 @@
 local R = require "rigel"
 local RS = require "rigelSimple"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local J = require "common"
-local soc = require "soc"
+local soc = require "generators.soc"
 
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p,NOSTALL)
@@ -77,7 +77,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   local trig = R.apply("trig", RM.makeHandshake(C.valueToTrigger(BASE_TYPE),nil,true), out0)
   local tapinp = R.apply("RT", RM.makeHandshake(taps.taps,nil,true), trig)
   
-  local convpipeinp = R.apply("CPI", RM.packTuple({BASE_TYPE,TAP_TYPE}), R.concat("CONVPIPEINP",{out1,tapinp}))
+  local convpipeinp = R.apply("CPI", RM.packTuple({types.RV(types.Par(BASE_TYPE)),types.RV(types.Par(TAP_TYPE))}), R.concat("CONVPIPEINP",{out1,tapinp}))
 
   local out = R.apply("HH",RM.makeHandshake(kernel), convpipeinp)
   

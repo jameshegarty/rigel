@@ -1,10 +1,10 @@
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 
 function MAKE(T)
   assert(T<=1)
@@ -30,7 +30,7 @@ function MAKE(T)
   local ITYPE = R.Handshake(BASE_TYPE)
   local inp = R.input( ITYPE )
   
-  local out = R.apply( "convLB", C.stencilLinebufferPartial( types.uint(8), inputW, inputH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
+  local out = R.apply( "convLB", C.stencilLinebufferPartial( types.uint(8), inputW, inputH, 1/T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
   out = R.apply("extract",RM.makeHandshake(extract),out)
   out = R.apply( "border", RM.makeHandshake( C.borderSeq( types.uint(8), inputW/T, inputH, 1, (ConvWidth-1)/T, 0, ConvWidth-1, 0, 0 )), out ) -- cut off the junk (undefined region)
   local hsfn = RM.lambda("lbp", inp, out)

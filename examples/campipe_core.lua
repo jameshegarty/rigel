@@ -1,10 +1,10 @@
 local f = require "fixed"
 local R = require "rigel"
 local types = require "types"
-local RM = require "modules"
+local RM = require "generators.modules"
 local S = require "systolic"
 local modules = require "fpgamodules"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local CC = {}
 
 local campipeCoreTerra
@@ -67,7 +67,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
 
   local XYTYPE = types.tuple{types.uint(16),types.uint(16)}
   local DTYPE = types.tuple{XYTYPE,types.array2d(types.uint(8),DEMOSAIC_W,DEMOSAIC_H)}
-  local deminp = R.input(DTYPE)
+  local deminp = R.input(types.rv(types.Par(DTYPE)))
   local xy = R.apply("xy",C.index(DTYPE,0),deminp)
   local st = R.apply("dat",C.index(DTYPE,1),deminp)
 
@@ -89,7 +89,7 @@ function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAI
   dem = RM.liftXYSeqPointwise("dem","dem",dem,internalW,internalH,internalT)
 
   ---------------
-  local demtop = R.input(types.array2d(types.uint(8),internalT))
+  local demtop = R.input( types.rv(types.Par(types.array2d(types.uint(8),internalT))) )
   local st = R.apply( "st", C.stencilLinebuffer(types.uint(8),internalW,internalH,internalT,-DEMOSAIC_W+1,0,-DEMOSAIC_H+1,0), demtop)
   local st = R.apply( "convstencils", C.unpackStencil( types.uint(8), DEMOSAIC_W, DEMOSAIC_H, internalT ) , st )
   local demtopout = R.apply("dem",dem,st)
@@ -122,7 +122,7 @@ function CC.addchan()
     out[c] = inp:index(c)
   end
   out[3] = f.plainconstant(0,types.uint(8))
-  return f.array2d(out,4):toRigelModule("addChan")
+  return f.array2d(out,4):disablePipelining():toRigelModule("addChan")
 end
 
 function CC.makeGamma(g)
@@ -167,7 +167,7 @@ function CC.shiftKernel(t,W,H,xs,ys)
 end
 
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 
 rigelInput = R.input
 

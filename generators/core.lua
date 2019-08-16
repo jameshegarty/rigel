@@ -16,22 +16,23 @@ local __unnamedID = 0
 local generators = {}
 
 -- takes A to A[N]
-generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","number","rate"},{"size"},
+generators.Broadcast = R.FunctionGenerator("core.Broadcast",{},{"number","size"},
 function(args)
   local W,H
 
   if args.size~=nil then
     W,H = args.size[1], args.size[2]
-  else
+  elseif args.number~=nil then
     W = args.number
+    H = 1
+  else
+      assert(false)
   end
 
-  if types.isBasic(args.type) then
-    return C.broadcast(args.type,W,H)
-  else
-    J.err(false, "Broadcast: NYI on type: "..tostring(args.type) )
-  end
-end)
+  return C.broadcast(args.T,W,H)
+end,
+T.rv(T.Par(P.DataType("T"))),
+T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("outSize")))))
 
 -- a broadcast is basically the same as a upsample, but has no W,H
 -- number: vector width
@@ -526,7 +527,7 @@ function(args)
       elseif a.opt==1 then
         return RM.reduceParSeq( fn, a.V[1], a.V[2], a.size[1], a.size[2] )
       elseif a.opt==2 then
-        return RM.reduce( fn, a.size[1],a.size[2],a.T)
+        return RM.reduce( fn, a.size[1],a.size[2])
       else
         assert(false)
       end

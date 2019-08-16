@@ -1,13 +1,13 @@
 local R = require "rigel"
-local MT = require "modulesTerra"
+local MT = require "generators.modulesTerra"
 local types = require "types"
 local cstdio = terralib.includec("stdio.h")
 local cstdlib = terralib.includec("stdlib.h")
 local cstring = terralib.includec("string.h")
 local J = require "common"
 local Uniform = require "uniform"
-local AXI = require "axi"
-local AXIT = require "axiTerra"
+local AXI = require "generators.axi"
+local AXIT = require "generators.axiTerra"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)

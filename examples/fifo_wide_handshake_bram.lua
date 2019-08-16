@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 
 W = 128
 H = 64

@@ -1,7 +1,7 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local J = require "common"
 
 function toUint8Sign(ty)
@@ -34,7 +34,7 @@ function invert2x2( AType, bits )
   assert(type(bits)=="table")
 
   f.expectFixed(AType)
-  local inp = R.input( types.array2d(AType,4) )
+  local inp = R.input( types.rv(types.Par(types.array2d(AType,4))) )
   local out, output_type
   local cost = 0
 
@@ -54,6 +54,7 @@ function invert2x2( AType, bits )
     fdenom = fdenom:reduceBits(bits.inv22inp[1],bits.inv22inp[2])
     fdenom = fdenom:hist("fdenom")
     local fdenom_type = fdenom.type
+    print("FDENOM_TYPE",fdenom_type,AType)
     cost = cost + fdenom:cost()
     fdenom = fdenom:toRigelModule("denom")
     --------
@@ -63,7 +64,7 @@ function invert2x2( AType, bits )
     local det = R.apply("det", fdetfn, denom)
     
     ---------
-    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type} )
+    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type.over.over} )
     local fmatrix = finp:index(0)
     local fdet = finp:index(1)
 
@@ -139,7 +140,7 @@ function makeA( dType, window, bits )
 
   local stt = types.array2d(dType, window, window)
   local inpt = types.tuple{ stt, stt }
-  local inp = R.input( inpt )
+  local inp = R.input( types.rv(types.Par(inpt)) )
   local Fdx = R.apply("fdx", C.index(inpt,0), inp)
   local Fdy = R.apply("fdy", C.index(inpt,1), inp)
 
@@ -190,7 +191,7 @@ function makeB( dtype, window, bits )
   local FTYPE = types.array2d(types.uint(8),window,window)
   local DTYPE = types.array2d(dtype,window,window)
   local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
-  local finp = R.input( ITYPE )
+  local finp = R.input( types.rv(types.Par(ITYPE)) )
   
   local frame0 = R.apply("frame0", C.index(ITYPE,0), finp)
   local frame1 = R.apply("frame1", C.index(ITYPE,1), finp)
@@ -280,7 +281,7 @@ function makeLK( T, internalW, internalH, window, bits )
   local cost = 9
 
   local INPTYPE = types.array2d(types.uint(8),2)
-  local inp = R.input(types.array2d(INPTYPE,T))
+  local inp = R.input(types.rv(types.Par(types.array2d(INPTYPE,T))))
   local frame0 = R.apply("f0", RM.map(C.index(INPTYPE, 0 ),T), inp)
   local frame1 = R.apply("f1", RM.map(C.index(INPTYPE, 1 ),T), inp)
 

@@ -1,8 +1,8 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local C = require("examplescommon")
-local harness = require "harness"
+local C = require("generators.examplescommon")
+local harness = require "generators.harness"
 local fixed = require "fixed"
 
 W = 128
@@ -19,7 +19,7 @@ local afn = a:toRigelModule("a")
 local lutinv, lutinvtype = C.lutinvert(a.type)
 print("LUTINV TYPE",lutinvtype)
 ------------
-local binp = fixed.parameter("binp", types.tuple{types.uint(8),lutinvtype} )
+local binp = fixed.parameter("binp", types.tuple{types.uint(8),lutinvtype.over.over} )
 local b_orig = binp:index(0)
 local b_inv = binp:index(1)
 local constv = fixed.constant(2048, true)
@@ -31,7 +31,7 @@ b = b:abs():denormalize():truncate(8):lower()
 local bfn = b:toRigelModule("b")
 ------------
 ITYPE = types.uint(8)
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 local aout = R.apply( "a", afn, inp )
 local inv = R.apply("inv", lutinv, aout)
 out = R.apply( "b", bfn, R.concat("binp",{inp,inv}) )

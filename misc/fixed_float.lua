@@ -34,7 +34,7 @@ end
 local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
-fixedASTMT={__index = fixedASTFunctions,
+local fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
   assert(fixed.isFixedType(l.type))
   assert(fixed.isFixedType(r.type))
@@ -43,7 +43,8 @@ end,
 __sub=function(l,r) 
   return fixed.new({kind="binop",op="-",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
-__mul=function(l,r) 
+__mul=function(l,r)
+  print("FLOAT_MUL",l,r)
   return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
 __div=function(l,r) 

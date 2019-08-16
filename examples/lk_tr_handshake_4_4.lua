@@ -1,6 +1,6 @@
 local types = require("types")
-local C = require "examplescommon"
-local harness = require "harness"
+local C = require "generators.examplescommon"
+local harness = require "generators.harness"
 local J = require "common"
 
 if string.find(arg[0],"float") then
@@ -57,7 +57,7 @@ function makeLK(T,window)
     inputFilename = "packed_v0000.raw"
   end
 
-  local internalT = 1/T
+  local internalT = T
 
   if f.FLOAT then
     harness{ outFile="lk_tr_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(internalT,W,H,window,bits), inFile=inputFilename, inSize={W,H}, outSize={W,H} }

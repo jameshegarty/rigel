@@ -1,5 +1,5 @@
-local C = require "examplescommon"
-local harness = require "harness"
+local C = require "generators.examplescommon"
+local harness = require "generators.harness"
 local types = require "types"
 local f = require "fixed"
 local J = require "common"

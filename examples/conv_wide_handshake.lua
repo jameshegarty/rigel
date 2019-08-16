@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require("harness")
-local C = require "examplescommon"
+local harness = require("generators.harness")
+local C = require "generators.examplescommon"
 require "common".export()
 
 T = 8 -- throughput
@@ -24,7 +24,7 @@ H = inputH
 local convolve = C.convolveConstant( types.uint(8), ConvWidth, ConvWidth, range(ConvArea), 8 )
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
-inp = R.input( BASE_TYPE )
+inp = R.input( types.rv(types.Par(BASE_TYPE)) )
 
 convLB = R.apply( "convLB", C.stencilLinebuffer( types.uint(8), W,H, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), inp)
 convstencils = R.apply( "convstencils", C.unpackStencil( types.uint(8), ConvWidth, ConvWidth, T ), convLB )

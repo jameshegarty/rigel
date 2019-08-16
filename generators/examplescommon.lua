@@ -12,7 +12,7 @@ local f = require "fixed_new"
 local SDF = require "sdf"
 local Uniform = require "uniform"
 
-if terralib~=nil then CT=require("examplescommonTerra") end
+if terralib~=nil then CT=require("generators.examplescommonTerra") end
 
 local C = {}
 
@@ -196,7 +196,7 @@ C.ArrayToTuple = memoize(function(T,W,H)
   err( X==nil,"ArrayToTuple: too many arguments")
 
   local G = require "generators.core"
-  return G.Module{"ArrayToTuple_",types.rv(types.Par(types.array2d(T,W,H))),
+  return G.Module{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H),types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)
       local res = {}
       for y=0,H-1 do
@@ -433,7 +433,7 @@ C.select = memoize(function(ty)
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
 
-  local selm = RM.lift( J.sanitize("C_select_"..tostring(ty)), ITYPE, ty, 1,
+  local selm = RM.lift( J.sanitize("C_select_"..tostring(ty)), ITYPE, ty, 0,
     function(sinp) return S.select(S.index(sinp,0), S.index(sinp,1), S.index(sinp,2)) end,nil,
     "C.select" )
 
@@ -496,14 +496,15 @@ C.packTap = memoize(function(A,ty,global)
 end)
 
 -----------------------------
-C.packTapBroad = memoize(function(A,ty,tap,N)
-  assert(types.isType(A))
-  assert(types.isType(ty))
+C.packTapBroad = memoize(function(A,ty,tap,N,X)
+  assert(types.isType(A) and A:isData())
+  assert(types.isType(ty) and ty:isData())
   assert(type(N)=="number")
   assert(R.isFunction(tap))
-
-  local G = require "generators"
-  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),A,SDF{1,1},function(i)
+  assert(X==nil)
+  
+  local G = require "generators.core"
+  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
                     return R.concat{i,G.Broadcast{N}(tap())} end}
 end)
 
@@ -526,7 +527,7 @@ C.argmin = memoize(function(idxType,vType, async, domax)
   if async==true then
     delay = 0
   else
-    delay = 2
+    delay = 0
   end
 
   local name = "argmin"
@@ -626,7 +627,7 @@ C.shiftAndCastSaturate = memoize(function(from, to, shift)
   err( types.isType(to), "C.shiftAndCastSaturate: to type must be type")
   err( type(shift)=="number", "C.shiftAndCastSaturate: shift must be number")
 
-  local touint8 = RM.lift( J.sanitize("shiftAndCastSaturate_"..tostring(from).."_to_"..tostring(to).."_shift_"..tostring(shift)), from, to, 1,
+  local touint8 = RM.lift( J.sanitize("shiftAndCastSaturate_"..tostring(from).."_to_"..tostring(to).."_shift_"..tostring(shift)), from, to, 0,
     function(touint8inp)
       local OT = S.rshift(touint8inp,S.constant(shift,from))
       return S.select(S.gt(OT,S.constant(255,from)),S.constant(255,types.uint(8)), S.cast(OT,to))
@@ -641,6 +642,8 @@ end)
 -- returns a function of type {A[ConvWidth,ConvWidth], A_const[ConvWidth,ConvWidth]}
 -- that convolves the two arrays
 C.convolveTaps = memoize(function( A, ConvWidth, shift )
+  assert( types.isType(A) )
+  assert( A:isData() )
   if shift==nil then shift=7 end
 
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
@@ -648,7 +651,7 @@ C.convolveTaps = memoize(function( A, ConvWidth, shift )
   local TAP_TYPE_CONST = TAP_TYPE
 
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
-  local inp = R.input( INP_TYPE )
+  local inp = R.input( types.rv(types.Par(INP_TYPE)) )
 
 ---  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp ) XXX
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), inp )
@@ -687,26 +690,27 @@ end)
 C.convolveConstantTR = memoize(function( A, ConvWidth, ConvHeight, T, tab, shift, X )
   assert(type(shift)=="number")
   assert(type(T)=="number")
-  assert(T<=1)
+  assert(T>=1)
+  assert(ConvWidth%T==0)
   assert(type(shift)=="number")
   assert(X==nil)
-
-  local inp = R.input( types.array2d( A, ConvWidth*T, ConvHeight ) )
+  
+  local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth/T, ConvHeight ))) )
   local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
 
-  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth*T,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
-  local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth*T, ConvHeight ), packed )
-  local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth*T, ConvHeight ), conv )
+  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth/T,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
+  local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth/T, ConvHeight ), packed )
+  local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth/T, ConvHeight ), conv )
 
   local convseq = RM.lambda( "convseq_T"..tostring(1/T), inp, conv )
 ------------------
-  inp = R.input( R.V(types.array2d( A, ConvWidth*T, ConvHeight )) )
+  inp = R.input( types.rV(types.Par(types.array2d( A, ConvWidth/T, ConvHeight ))) )
   conv = R.apply( "convseqapply", RM.liftDecimate(RM.liftBasic(convseq)), inp)
   conv = R.apply( "sumseq", RM.RPassthrough(RM.liftDecimate(RM.reduceSeq( C.sum(types.uint(32),types.uint(32),types.uint(32),true), T ))), conv )
   conv = R.apply( "touint8", C.RVPassthrough(C.shiftAndCast( types.uint(32), A, shift )), conv )
   conv = R.apply( "arrayop", C.RVPassthrough(C.arrayop( types.uint(8), 1, 1)), conv)
 
-  local convolve = RM.lambda( "convolve_tr_T"..tostring(1/T), inp, conv )
+  local convolve = RM.lambda( "convolve_tr_T"..tostring(T), inp, conv )
 
   return convolve
 end)
@@ -715,9 +719,10 @@ end)
 -- returns a function from A[2][Width,Width]->reduceType
 -- 'reduceType' is the precision we do the sum
 C.SAD = memoize(function( A, reduceType, Width, X )
+  err( types.isType(A) and A:isData(),"SAD: type must be data type")
   assert(X==nil)
 
-  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( types.array2d(A,2) , Width, Width ))) )
 
   local conv = R.apply( "partial", RM.map( C.absoluteDifference(A,reduceType), Width, Width ), inp )
   local conv = R.apply( "sum", RM.reduce( C.sum(reduceType, reduceType, reduceType), Width, Width ), conv )
@@ -728,13 +733,15 @@ end)
 
 
 C.SADFixed = memoize(function( A, reduceType, Width, X )
+  err( types.isType(A) and A:isData(),"SADFixed: type should be data type")
+
   local fixed = require "fixed"
   assert(X==nil)
   fixed.expectFixed(reduceType)
   assert(fixed.extractSigned(reduceType)==false)
   assert(fixed.extractExp(reduceType)==0)
 
-  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( types.array2d(A,2) , Width, Width ))) )
 
   -------
   local ABS_inp = fixed.parameter("abs_inp", types.array2d(A,2))
@@ -796,8 +803,10 @@ end)
 -- takes a function f:A[StencilW,stencilH]->B
 -- returns a function from A[T]->B[T]
 C.stencilKernel = memoize(function( A, T, imageW, imageH, stencilW, stencilH, f)
+  err( types.isType(A) and A:isData(),"stencilKernel: input should be data type")
+    
   local BASE_TYPE = types.array2d( A, T )
-  local inp = R.input( BASE_TYPE )
+  local inp = R.input( types.rv(types.Par(BASE_TYPE)) )
 
   local convLB = R.apply( "convLB", C.stencilLinebuffer( A, imageW, imageH, T, -stencilW+1, 0, -stencilH+1, 0 ), inp)
   local convstencils = R.apply( "convstencils", C.unpackStencil( A, stencilW, stencilH, T ), convLB )
@@ -816,7 +825,7 @@ C.stencilKernelTaps = memoize(function( A, T, tapType, imageW, imageH, stencilW,
 
   local BASE_TYPE = types.array2d( A, T )
   local ITYPE = types.tuple{BASE_TYPE, tapType}
-  local rawinp = R.input( ITYPE )
+  local rawinp = R.input( types.rv(types.Par(ITYPE)) )
 
   local inp = R.apply("idx0",C.index(ITYPE,0),rawinp)
   local taps = R.apply("idx1",C.index(ITYPE,1),rawinp)
@@ -966,7 +975,10 @@ end
 --
 -- Plug this back in, and to find the real value, we have:
 -- LUT(ffffffff) + 256, which has exponant n-17
-function C.lutinvert(ty)
+function C.lutinvert(ty,X)
+  assert(X==nil)
+  assert(types.isType(ty))
+  assert(ty:isData())
   local fixed = require "fixed"
   fixed.expectFixed(ty)
   local signed = fixed.extractSigned(ty)
@@ -1005,12 +1017,12 @@ function C.lutinvert(ty)
   local bfn = b:toRigelModule("lutinvert_b")
   ---------------
 
-  local inp = R.input( ty )
+  local inp = R.input( types.rv(types.Par(ty)) )
   local aout = R.apply( "a", afn, inp )
-  local aout_float = R.apply("aout_float", C.index(afn.outputType,0), aout)
-  local aout_exp = R.apply("aout_exp", C.index(afn.outputType,1), aout)
+  local aout_float = R.apply("aout_float", C.index(afn.outputType:extractData(),0), aout)
+  local aout_exp = R.apply("aout_exp", C.index(afn.outputType:extractData(),1), aout)
   local aout_sign
-  if signed then aout_sign = R.apply("aout_sign", C.index(afn.outputType,2), aout) end
+  if signed then aout_sign = R.apply("aout_sign", C.index(afn.outputType:extractData(),2), aout) end
 
   local aout_float_lsbs = R.apply("aout_float_lsbs", stripMSB(9), aout_float)
 
@@ -1023,7 +1035,9 @@ end
 -------------
 C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T<=1); assert(w>0); assert(h>0);
+  assert(T>=1);
+  assert(w>0);
+  assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
   assert(xmax==0)
@@ -1031,7 +1045,7 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 
   local ST_W = -xmin+1
   local ssr_region = ST_W - offset - overlap
-  local stride = ssr_region*T
+  local stride = ssr_region/T
   assert(stride==math.floor(stride))
 
   local LB = RM.makeHandshake(RM.linebuffer( A, w, h, 1, ymin ))
@@ -1091,13 +1105,14 @@ C.compose = RM.compose
 C.SoAtoAoS = RM.SoAtoAoS
 
 -- takes {Handshake(a[W,H]), Handshake(b[W,H]),...} to Handshake( {a,b}[W,H] )
--- typelist should be a table of pure types
+-- typelist should be a table of data types
 C.SoAtoAoSHandshake = memoize(function( W, H, typelist, X )
   assert(X==nil)
+  
   local f = modules.SoAtoAoS(W,H,typelist)
   f = modules.makeHandshake(f)
 
-  return C.compose( J.sanitize("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..tostring(typelist)), f, modules.packTuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) ) )
+  return C.compose( J.sanitize("SoAtoAoSHandshake_W"..tostring(W).."_H"..tostring(H).."_"..tostring(typelist)), f, modules.packTuple( J.map(typelist, function(t) return types.RV(types.Par(types.array2d(t,W,H))) end) ) )
 end)
 
 -- Takes A[W,H] to A[W,H], but with a border around the edges determined by L,R,B,T
@@ -1142,7 +1157,7 @@ end)
 
 -- V -> RV
 C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
-  err( types.isType(A), "C.downsampleSeq: A must be type")
+  err( types.isType(A) and A:isData(), "C.downsampleSeq: A must be data type")
   err( type(W)=="number", "C.downsampleSeq: W must be number")
   err( type(H)=="number", "C.downsampleSeq: H must be number")
   err( type(T)=="number", "C.downsampleSeq: T must be number")
@@ -1163,7 +1178,7 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
     return C.identity(A)
   end
 
-  local inp = rigel.input( rigel.V(types.array2d(A,T)) )
+  local inp = rigel.input( types.rV(types.Par(types.array2d(A,T))) )
   local out = inp
   if scaleY>1 then
     out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W, H, T, scaleY )), out)
@@ -1215,7 +1230,7 @@ C.upsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, X )
     inner = modules.upsampleXSeq( A, T, scaleX )
   else
     local f = modules.upsampleXSeq( A, T, scaleX )
-    inner = C.compose( J.sanitize("upsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),nil,"C.upsampleSeq")
+    inner = C.compose( J.sanitize("upsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY)), f, modules.liftHandshake(modules.upsampleYSeq( A, W, H, T, scaleY )),"C.upsampleSeq")
   end
 
     return inner
@@ -1306,7 +1321,7 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
-  local inp = rigel.input( types.array2d( A, T ) )
+  local inp = rigel.input( types.rv(types.Par(types.array2d( A, T ))) )
   local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
@@ -1387,7 +1402,9 @@ end)
 -- has rate T->1. Returns each stencil over 1/T cycles
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
-  assert(T<=1); assert(w>0); assert(h>0);
+  assert(T>=1);
+  assert(w>0);
+  assert(h>0);
   assert(xmin<xmax)
   assert(ymin<ymax)
   assert(xmax==0)

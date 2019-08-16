@@ -12,7 +12,7 @@ local AXI = require "generators.axi"
 local SOCMT
 
 if terralib~=nil then
-  SOCMT = require("socTerra")
+  SOCMT = require("generators.socTerra")
 end
 
 local SOC = {}

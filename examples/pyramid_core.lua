@@ -1,10 +1,11 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local RS = require "rigelSimple"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local P = {}
-local soc = require "soc"
+local soc = require "generators.soc"
+local J = require "common"
 
 local function FIFOp(fifos,statements,A,inp, size, name, W,H,T)
   local id = #fifos
@@ -71,7 +72,7 @@ end
 local convolvefntaps = C.convolveTaps( types.uint(8), TConvWidth, 6 )
 
 -- DUMB_DOWNSAMPLE: instead of doing the convolution at internalT/4 throughput when downsampling, do it at internalT throughput.
-function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DOWNSAMPLE,taps,X)
+P.pyramidIterTaps = J.memoize(function(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DOWNSAMPLE,taps,X)
   assert(type(ConvWidth)=="number")
   assert(type(nofifo)=="boolean")
   assert(type(DUMB_DOWNSAMPLE)=="boolean")
@@ -146,8 +147,7 @@ function P.pyramidIterTaps(i,doDownsample,internalT,W,H,ConvWidth,nofifo,DUMB_DO
     return RM.lambda("pyramid"..i, inp, out, fifos )
   end
 
---  
-end
+end)
 
 function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
   assert(type(internalT)=="number")
@@ -189,7 +189,7 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
     out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CST", RM.makeHandshake( C.cast(st_type,types.array2d(A,ConvWidth*ConvWidth)) ), out)
     out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), 1, ConvWidth*ConvWidth, ConvWidth*ConvWidth*convT )), out )
-    out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth*ConvWidth,1,convT,P.G,6)), out)
+    out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth*ConvWidth,1,1/convT,P.G,6)), out)
   else
     out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), ConvWidth, ConvWidth, convT )), out )

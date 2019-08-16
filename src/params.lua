@@ -52,6 +52,7 @@ params.SizeValue = makeParam("SizeValue",true)
 
 params.DataType = makeParam("DataType",false)
 params.NumberType = makeParam("NumberType",false,params.DataType("tmp"))
+params.IntType = makeParam("IntType",false,params.NumberType("tmp"))
 params.UintType = makeParam("UintType",false,params.NumberType("tmp"))
 params.ArrayType = makeParam("ArrayType",false,params.DataType("tmp"))
 params.TupleType = makeParam("TupleType",false,params.DataType("tmp"))
@@ -72,7 +73,7 @@ params.ScheduleType = function(name,over,X)
   assert(type(name)=="string")
   --local types = require "types"
   --assert(types.isType(over) or params.isParam(over) or over==nil)
-  return setmetatable({kind="ScheduleType",name=name,over=over,isValue=false,list=list},ParamMT)
+  return setmetatable({kind="ScheduleType",name=name,over=over,isValue=false},ParamMT)
 end
 
 --params.ScheduleType = makeParam("ScheduleType",false)
@@ -111,8 +112,16 @@ local function valueOrTypeToParam(V)
     V = types.valueToType(V)
   end
   
-  local p = params[firstToUpper(V.kind).."Type"]
-  J.err(p~=nil,"No corresponding param for type "..V.kind)
+  local p
+  if V.kind=="named" then
+    -- legacy hack
+    --assert(false)
+--    print("NAMED",V,V.structure,V.structure.kind)
+    p = params[firstToUpper(V.structure.kind).."Type"]
+  else
+    p = params[firstToUpper(V.kind).."Type"]
+  end
+  J.err(p~=nil,"No corresponding param for type "..V.kind.." "..tostring(V))
   return p("tmp")
 end
 

@@ -7,6 +7,7 @@ local types = {}
 
 TypeFunctions = {}
 TypeMT = {__index=TypeFunctions, __tostring=function(ty)
+  local res
   if ty.kind=="bool" then
     res = "bool"
   elseif ty.kind=="null" then
@@ -48,16 +49,19 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     local pre = ""
     if ty.I~=nil then pre=pre.."I" end
 
+    local v,r = "",""
+    if ty.v~=nil then v=v.."v" end
+    if ty.V==types.bool() then v=v.."V"
+    elseif ty.V~=nil then v=v.."V="..tostring(ty.V).."," end
+
+    if ty.r~=nil then r=r.."r" end
+    if ty.R==types.bool() then r=r.."R"
+    elseif ty.R~=nil then r=r.."R="..tostring(ty.R).."," end
+
     if ty.VRmode==true then
-      if ty.V~=nil then pre=pre.."V" end
-      if ty.v~=nil then pre=pre.."v" end
-      if ty.r~=nil then pre=pre.."r" end
-      if ty.R~=nil then pre=pre.."R" end
+      pre = pre..v..r
     else
-      if ty.r~=nil then pre=pre.."r" end
-      if ty.R~=nil then pre=pre.."R" end
-      if ty.v~=nil then pre=pre.."v" end
-      if ty.V~=nil then pre=pre.."V" end
+      pre = pre..r..v
     end
 
     if pre=="" then pre="S" end
@@ -794,7 +798,7 @@ function TypeFunctions:isrRv() return self.kind=="Interface" and self.r==types.b
 function TypeFunctions:isrvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isrRV() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isrRvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==types.bool() end
-function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() end
+function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V~=nil and self.R~=nil end
 function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
 function TypeFunctions:isData() return types.isBasic(self) end
 --function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
@@ -1496,27 +1500,27 @@ function types.HandshakeVRTuple(tab,X)
   assert(X==nil)
   return types.HandshakeTuple(tab,true)
 end
---[=[
+
 -- HandshakeArrayOneHot: upstream ready is a uint8 (idenfitying which stream should be read this cycle)
 -- input is valid (is the stream requested by ready valid this cycle?)
 function types.HandshakeArrayOneHot(A,N)
   err(types.isType(A),"HandshakeArrayOneHot: first argument should be type")
-  err(types.isBasic(A),"HandshakeArrayOneHot: first argument should be basic type")
+  err(A:isSchedule(),"HandshakeArrayOneHot: first argument should be schedule type")
   err(type(N)=="number","HandshakeArrayOneHot: second argument should be number")
-  return types.named("HandshakeArrayOneHot("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.bool()}, "HandshakeArrayOneHot", {A=A,N=N} )
+
+  return types.Interface(A,types.uint(8),types.bool())
 end
 
 -- serialize N Handshake streams into 1. The valid bit is a unint8 which indicates which stream was chosen.
 -- ready bit is a single bool
 function types.HandshakeTmuxed(A,N)
   err(types.isType(A),"HandshakeTmuxed: first argument should be type")
-  err(types.isBasic(A),"HandshakeTmuxed: first argument should be basic type")
+  err( A:isSchedule(),"HandshakeTmuxed: first argument should be schedule type, but is: "..tostring(A))
   err(type(N)=="number","HandshakeTmuxed: second argument should be number")
   err(N<256,"HandshakeTmuxed: NYI - more than 255 streams not supported")
-  return types.named("HandshakeTmuxed("..tostring(A)..","..tostring(N)..")", types.tuple{A,types.uint(8)}, "HandshakeTmuxed",{A=A,N=N} )
+  return types.Interface(A,types.bool(),types.uint(8))
 end
 
-]=]
 function types.isHandshakeArrayOneHot(a)
   err(types.isType(a),"isHandshakeArrayOneHot: argument must be a type")
   return a:isNamed() and a.generator=="HandshakeArrayOneHot"
@@ -1539,15 +1543,18 @@ function types.isHandshakeAny( a )
   elseif a:isTuple() then
     for _,v in ipairs(a.list) do if types.isHandshakeAny(v) then return true end end
     return false
+  elseif a:isArray() then
+    return types.isHandshakeAny(a.over)
   else
+    print("isHandshakeAny NYI:",a)
     assert(false)
   end
 end
 
-function types.isV( a ) return a:isNamed() and a.generator=="V" end
-function types.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
-function types.isRV( a ) return a:isNamed() and a.generator=="RV" end
-function types.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
+--function types.isV( a ) return a:isNamed() and a.generator=="V" end
+--function types.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
+--function types.isRV( a ) return a:isNamed() and a.generator=="RV" end
+--function types.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
 function types.expectBasic( A ) err( types.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function types.expectV( A, er ) if types.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
@@ -1562,7 +1569,7 @@ function types.lower( a )
        
   if a:isTuple() then
     local res = {}
-    for _,v in ipairs(a.list) do table.insert(res,types.lower(v,loc)) end
+    for _,v in ipairs(a.list) do table.insert(res,types.lower(v)) end
     return types.tuple(res)
   elseif a:isArray() then
     return types.array2d(types.lower(a.over),a.size)
@@ -1589,12 +1596,33 @@ function types.lower( a )
   assert(false)
 end
 
+function TypeFunctions:extractSchedule()
+  if self:isSchedule() then
+    return self
+  elseif self:isInterface() then
+    if self:is("Interface") then
+      return self.over:extractSchedule()
+    else
+      assert(false)
+    end
+  else
+    err(false,":extractSchedule: type doesn't not contain a schedule type? "..tostring(self) )
+  end
+end
+
+function TypeFunctions:extractData()
+  return types.extractData(self)
+end
+
+
 -- extract underlying actual data type.
 -- V(A) => A
 -- RV(A) => A
 -- Handshake(A) => A
 function types.extractData(a)
+  assert(types.isType(a))
   if a:is("Interface") or a:isSchedule() then
+    if a.over==nil then return types.null() end
     return types.extractData(a.over)
   elseif a:isData() then
     return a
@@ -1614,6 +1642,10 @@ function types.hasReady(a)
     print("UNKNOWN READY",a)
     assert(false)
   end
+end
+
+function TypeFunctions:extractReady()
+  return types.extractReady(self)
 end
 
 function types.extractReady(a)

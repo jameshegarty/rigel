@@ -1,8 +1,8 @@
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
+local harness = require "generators.harness"
 
 W = 640
 H = 480
@@ -21,7 +21,7 @@ if terralib~=nil then
   tfn = ovt(SPLIT_TYPE,OTYPE)
 end
 
-splitfn = RM.lift( "split", SPLIT_TYPE, OTYPE , 10, 
+splitfn = RM.lift( "split", SPLIT_TYPE, OTYPE , 0, 
   function(inp) 
 local sout = S.select(S.lt(S.index(S.index(inp,0),0),S.constant(320,types.uint(16))),S.index(S.index(inp,1),0),S.index(S.index(inp,1),1))
 sout = S.tuple{sout,sout,sout,S.constant(0,types.uint(8))}

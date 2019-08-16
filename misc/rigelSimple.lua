@@ -296,7 +296,7 @@ function RS.index(t)
   if R.isHandshake(ty) then
     ty = R.extractData(ty)
     ccnt = ccnt + 1
-    return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty.over.over,t.key)), t.input )
+    return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
   else
     ccnt = ccnt + 1
     return R.apply("v"..tostring(ccnt), C.index(ty.over.over,t.key), t.input )
@@ -308,10 +308,10 @@ function RS.fanOut(t)
   local ty = t.input.type
 
   err( R.isHandshake(ty) or R.isHandshakeTrigger(ty), "calling fanOut on a non handshake type "..tostring(t.input.type))
-  ty = R.extractData(ty)
+  --ty = R.extractData(ty)
 
   ccnt = ccnt + 1
-  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
+  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty:extractSchedule(),t.branches), t.input )
 
   local res = {}
   for i=1,t.branches do
@@ -325,9 +325,10 @@ function RS.fanIn(t)
   local typelist = {}
   for _,v in ipairs(t) do
     local ty = v.type
-    err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
-    ty = R.extractData(ty)
+--    err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
+--    ty = R.extractData(ty)
 
+    --    table.insert(typelist,types.RV(ty))
     table.insert(typelist,ty)
   end
 
@@ -389,7 +390,7 @@ function RS.modules.fwriteSeq(t)
   elseif t.type:toCPUType()~=t.type then
     err( t.type:isArray()==false and t.type:isTuple()==false,"fwriteSeq: NYI - aggregate types ("..tostring(t.type).."). use a cast")
 
-    local inp = RS.input(t.type)
+    local inp = RS.input(types.rv(types.Par(t.type)))
 
     local out, fwritetype
 
@@ -409,12 +410,7 @@ function RS.writePixels(input,id,imageSize,V,DIR)
 
   if DIR==nil then DIR="out" end
   
-  local TY
-  if R.isHandshake(input.type) then
-    TY = R.extractData(input.type)
-  else
-    TY = input.type
-  end
+  local TY = input.type:extractData()
 
   local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw"}
 
