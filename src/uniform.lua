@@ -391,7 +391,10 @@ Uniform.isNumber = J.memoize(
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
     elseif n.kind=="apply" then
-      return n.instance.module.outputType:isNumber()
+      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType.over:is("Par"))
+      assert(n.instance.module.outputType.over.over:isData())
+      return n.instance.module.outputType.over.over:isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()
@@ -537,7 +540,7 @@ function UniformFunctions:maximum()
     if string.match(res,"sat") then
       local num = string.match (res, "%d+")
       --print("Z3MAX:",num)
-      J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr?")
+      J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr? "..tostring(self))
       return tonumber(num)
     else
       assert(false)

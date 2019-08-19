@@ -89,11 +89,13 @@ P.SumType("opt",{
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.D) end,T.rv(T.Par(P.DataType("D"))),T.Interface())
 
-generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"type","number","rate"},{},
+generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"number"},{},
 function(args)
-  J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
+  --J.err( R.isHandshakeTrigger(args.type), "TriggerCounter: input should be HandshakeTrigger" )
   return RM.triggerCounter(args.number)
-end)
+end,
+types.RV(),
+types.RV())
 
 generators.TriggerBroadcast = R.FunctionGenerator("core.TriggerBroadcast",{"type","number","rate"},{},
 function(args)
@@ -183,8 +185,11 @@ end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.Numb
 generators.Mul = R.FunctionGenerator("core.Mul",{},{"number","async"},
 function(args)
   if args.number~=nil then
-    J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
-    return C.multiplyConst(args.type, args.number )
+    --J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
+    --return C.multiplyConst(args.type, args.number )
+    return R.FunctionGenerator("core.Mul",{},{"async"},
+      function(a) return C.multiplyConst( a.T, args.number, a.async ) end,
+      T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))))
   else
     --J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
     --J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
@@ -329,12 +334,14 @@ function(args)
     types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))))
 end)
 
-generators.Pad = R.FunctionGenerator("core.Pad",{"type","size","number","bounds","rate"},{},
-function(args)
-  J.err(args.number>0,"NYI - V<=0")
-  local A = args.type:arrayOver()
-  return RM.padSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4],0)
-end)
+generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
+function(a)
+  J.err(a.V[2]==1,"Pad NYI - Vh >1")
+  --local A = args.type:arrayOver()
+  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+end,
+types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
+types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut")) ))
 
 
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},

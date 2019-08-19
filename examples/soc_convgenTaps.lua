@@ -27,7 +27,8 @@ local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNO
 noc.extern=true
 
 
-local conv = Module{ T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))),
+local conv = Generator{ T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))),
+                        T.rv(T.Par(u8)),
 function(inp)
   inp = AddMSBs{24}(inp)
   local z = Zip(inp,regs.coeffs())
@@ -38,10 +39,10 @@ end}
 
 harness({
   regs.start,
-  SOC.readBurst("1080p.raw",1920,1080,u(8),1,nil,nil,noc.read),
-  HS{Pad{inSize,1,{8,8,2,1}}},
-  HS{Linebuffer{padSize,1,{3,0,3,0}}},
-  HS{Map{conv}},
-  HS{CropSeq{padSize,1,{9,7,3,0}}},
-  SOC.writeBurst("out/soc_convgenTaps",1920,1080,u(8),1,1,nil,noc.write),
+  AXIReadBurst{"1080p.raw",{1920,1080},u(8),1,noc.read},
+  Pad{{8,8,2,1}},
+  Stencil{{-3,0,-3,0}},
+  conv,
+  Crop{{9,7,3,0}},
+  AXIWriteBurst{"out/soc_convgenTaps",noc.write},
   regs.done},nil,{regs})

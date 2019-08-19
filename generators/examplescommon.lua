@@ -227,9 +227,11 @@ end)
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
-C.multiplyConst = memoize(function(A,constValue)
+C.multiplyConst = memoize(function( A, constValue, X )
   err( types.isType(A), "C.multiply: A must be type")
-
+  err( type(constValue)=="number","C.multiplyConst: value must be number, but is: "..tostring(constValue) )
+  err(X==nil,"C.multiplyConst: too many arguments" )
+  
   local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
     function(sinp) return sinp*S.constant(constValue,A) end,
     function() return CT.multiplyConst(A,constValue) end,
@@ -1333,7 +1335,7 @@ end)
 C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, framed, X )
   err(types.isType(A), "stencilLinebuffer: A must be type, but is: "..tostring(A))
 
-  local w,h = Uniform(w_orig):toNumber(),Uniform(h_orig):toNumber()
+  --local w,h = Uniform(w_orig):toNumber(),Uniform(h_orig):toNumber()
  
   err(type(T)=="number","stencilLinebuffer: T must be number")
   -- err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
@@ -1344,8 +1346,8 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
   err(type(ymax)=="number","stencilLinebuffer: ymax must be number")
 
   err(T>=1, "stencilLinebuffer: T must be >=1");
-  err(w>0,"stencilLinebuffer: w must be >0");
-  err(h>0,"stencilLinebuffer: h must be >0");
+  err(Uniform(w_orig):toNumber()>0,"stencilLinebuffer: w must be >0");
+  err(Uniform(h_orig):toNumber()>0,"stencilLinebuffer: h must be >0");
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
   err(ymin<=ymax,"stencilLinebuffer: ymin("..tostring(ymin)..") must be <= ymax("..tostring(ymax)..")")
   err(xmax==0,"stencilLinebuffer: xmax must be 0")
@@ -1353,11 +1355,11 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
 
   err(X==nil,"C.stencilLinebuffer: Too many arguments")
   
-  local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w, h)
+  local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w_orig, h_orig)
 
-  local LBfn = modules.linebuffer( A, w, h, T, ymin, framed )
+  local LBfn = modules.linebuffer( A, w_orig, h_orig, T, ymin, framed )
   
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..w_orig.."_h"..h_orig.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, LBfn, "C.stencilLinebuffer" )
+  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..tostring(w_orig).."_h"..tostring(h_orig).."_T"..tostring(T).."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, LBfn, "C.stencilLinebuffer" )
 end)
 
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams

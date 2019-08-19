@@ -609,7 +609,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   if handshakeTrigger==nil then handshakeTrigger=true end
   
   local res = {kind="liftDecimate", fn = f}
-  err( f.inputType:isrv(), "liftDecimate: fn input type should be rv, but is: "..tostring(f.inputType) )
+  err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn input type should be rv, but is: "..tostring(f.inputType) )
   err( f.outputType:isrvV(), "liftDecimate: fn '"..f.name.."' output type should be rvV, but is: "..tostring(f.outputType) )
 
   res.name = "LiftDecimate_"..f.name
@@ -2573,7 +2573,7 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
+modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed, X )
   err( types.isType(A), "A must be a type")
   
   err( A~=nil, "padSeq A==nil" )
@@ -2585,6 +2585,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
   err( B~=nil, "padSeq B==nil" )
   err( Top~=nil, "padSeq Top==nil" )
   err( Value~=nil, "padSeq Value==nil" )
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean","padSeq: framed should be boolean" )
   err( X==nil, "padSeq: too many arguments" )
   
   J.map({W=W,H=H,T=T,L=L,B=B,Top=Top},function(n,k)
@@ -2603,8 +2605,17 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, X )
   err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-  res.inputType = types.rv(types.Par(types.array2d(A,T)))
-  res.outputType = types.rRvV(types.Par(types.array2d(A,T)))
+  res.inputType = types.array2d(A,T)
+  res.outputType = types.array2d(A,T)
+
+  if framed then
+    res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
+    res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+  else
+    res.inputType = types.rv(types.Par(res.inputType))
+    res.outputType = types.rRvV(types.Par(res.outputType))
+  end
+  
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
   res.delay=0
@@ -2781,15 +2792,16 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
   return modules.waitOnInput(rigel.newFunction(res))
 end)
 
-modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
-  assert(w>0); assert(h>0);
+modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
+  assert(Uniform(w_orig):toNumber()>0);
+  assert(h>0);
   assert(ymin<=0)
   err(X==nil,"linebuffer: too many args!")
   err( framed==nil or type(framed)=="boolean", "modules.linebuffer: framed must be bool or nil")
   if framed==nil then framed=false end
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
-  err( w%T==0, "Linebuffer error, W%T~=0 , W="..tostring(w).." T="..tostring(T))
+  err( (Uniform(w_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "Linebuffer error, W%T~=0 , W="..tostring(w_orig).." T="..tostring(T))
 
   assert(T>0)
   
@@ -2805,8 +2817,8 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
     -- this is strange for a reason: inner loop is no longer a serialized flat array, so size must change
     --res.outputType = types.StaticFramed(res.outputType,false,{{w/T,h}})
     --T[1,ymin][T;w,h}
-    res.inputType = types.rv(types.ParSeq(res.inputType,w,h))
-    res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w,h))
+    res.inputType = types.rv(types.ParSeq(res.inputType,w_orig,h))
+    res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w_orig,h))
   else
     res.inputType = types.rv(types.Par(res.inputType))
     res.outputType = types.rv(types.Par(types.array2d(A,T,-ymin+1)))
@@ -2815,21 +2827,21 @@ modules.linebuffer = memoize(function( A, w, h, T, ymin, framed, X )
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 0
-  res.name = sanitize("linebuffer_w"..w.."_h"..h.."_T"..T.."_ymin"..ymin.."_A"..tostring(A).."_framed"..tostring(framed))
+  res.name = sanitize("linebuffer_w"..tostring(w_orig).."_h"..tostring(h).."_T"..tostring(T).."_ymin"..tostring(ymin).."_A"..tostring(A).."_framed"..tostring(framed))
 
   if terralib~=nil then res.terraModule = MT.linebuffer(res, A, w, h, T, ymin) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (w/T)-1), true, nil, 0 ):instantiate("addr") )
+    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (Uniform(w_orig):toNumber()/T)-1), true, nil, 0 ):instantiate("addr") )
     
     local outarray = {}
     local evicted
     
     local bits = rigel.lower(res.inputType):verilogBits()
     local bytes = J.nearestPowerOf2(J.upToNearest(8,bits)/8)
-    local sizeInBytes = J.nearestPowerOf2((w/T)*bytes)
+    local sizeInBytes = J.nearestPowerOf2((Uniform(w_orig):toNumber()/T)*bytes)
 
     local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
     local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
@@ -2990,7 +3002,7 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
 end)
 
 -- xmin, ymin are inclusive
-modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW, framedH, X )
+modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_orig, X )
   J.map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
   err( ymin<=0, "modules.SSR: ymin>0")
   err( xmin<=0, "module.SSR: xmin>0")
@@ -3004,10 +3016,10 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW, framedH, X )
   res.outputType = types.array2d(A,T-xmin,-ymin+1)
 
   if framed then
-    err(type(framedW)=="number","SSR: framedW must be number")
-    err(type(framedH)=="number","SSR: framedH must be number")
-    res.inputType = types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),framedW,framedH)
-    res.outputType = types.ParSeq(types.array2d(types.array2d(A,-xmin+1,-ymin+1),T),framedW,framedH)
+    --err(type(framedW)=="number","SSR: framedW must be number")
+    --err(type(framedH)=="number","SSR: framedH must be number")
+    res.inputType = types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),framedW_orig,framedH_orig)
+    res.outputType = types.ParSeq(types.array2d(types.array2d(A,-xmin+1,-ymin+1),T),framedW_orig,framedH_orig)
   else
     res.inputType, res.outputType = types.Par(res.inputType), types.Par(res.outputType)
   end
@@ -5147,8 +5159,8 @@ modules.triggerCounter = memoize(function(N_orig)
   local N = Uniform(N_orig)
 
   local res = {kind="triggerCounter"}
-  res.inputType = types.null()
-  res.outputType = rigel.VTrigger
+  res.inputType = types.Interface()
+  res.outputType = types.rvV()
   res.sdfInput = SDF{1,1}
   res.sdfOutput = SDF{1,N}
   res.stateful=true
@@ -5177,7 +5189,6 @@ modules.triggerCounter = memoize(function(N_orig)
   end
 
   return modules.liftHandshake(modules.liftDecimate( rigel.newFunction(res), true ))
-  
 end)
 
 -- just counts from 0....N-1

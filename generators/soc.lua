@@ -1744,7 +1744,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
 
   local inp, inpAddr, inpData
 
-  local G = require "generators"
+  local G = require "generators.core"
 
   if syncAddrData then
     inp = R.input( R.Handshake(types.tuple{types.uint(32),writeType}) )
@@ -1774,8 +1774,8 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     end}
   
   -- scale by type size
-  inpAddr = G.HS{G.Mul{writeType:verilogBits()/8}}(inpAddr)
-  inpData = G.HS{C.bitcast(writeType,types.bits(writeType:verilogBits()))}(inpData)
+  inpAddr = G.Mul{writeType:verilogBits()/8}(inpAddr)
+  inpData = RM.makeHandshake(C.bitcast(writeType,types.bits(writeType:verilogBits())))(inpData)
   
   if writeType:verilogBits()/8 > 8*16 then
     assert(false) -- NYI

@@ -72,7 +72,7 @@ darkroom.isBasic = types.isBasic
 
 -- some basic classes
 local SizeMT = {}
-SizeMT.__tostring=function(tab) return tostring(tab[1])..","..tostring(tab[2]) end
+SizeMT.__tostring=function(tab) return "Size("..tostring(tab[1])..","..tostring(tab[2])..")" end
 function darkroom.isSize(t) return getmetatable(t)==SizeMT end
 
 local AddressMT = {}
@@ -1787,7 +1787,7 @@ function darkroomIRFunctions:codegenSystolicReady( module )
             assert(J.keycount(args)==1) -- NYI
             input = thisi
           else
-            assert(thisi.type==types.extractReady(n.type))
+            err(thisi.type==types.extractReady(n.type),"Ready type isn't what was expected. Is:"..tostring(thisi.type).." but expected: "..tostring(types.extractReady(n.type)).." on node: "..tostring(n).." inside module: "..module.__name)
             
             if input==nil then
               input = thisi
@@ -1908,8 +1908,14 @@ function darkroomIRFunctions:codegenSystolicReady( module )
             res[1][i] = S.constant(true,types.bool())
           end
         end
-        
-        res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
+
+        if n.inputs[1].type:isTuple() then
+          res[1] = S.tuple(res[1])
+        elseif n.inputs[1].type:isArray() then
+          res[1] = S.cast( S.tuple(res[1]),types.array2d(types.bool(),n.inputs[1]:outputStreams()) )
+        else
+          err(false,"Error, input to selectStream isn't tuple or array?")
+        end
       else
         print("missing ready wiring of op - "..n.kind)
         assert(false)

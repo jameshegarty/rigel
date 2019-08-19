@@ -167,6 +167,10 @@ function ParamFunctions:isSupertypeOf(P,vars)
       vars[self.name] = types.rv
     elseif P:isrvV() then
       vars[self.name] = types.rvV
+    elseif P:isrRvV() then
+      vars[self.name] = types.rRvV
+    elseif P:isInil() then
+      vars[self.name] = types.Interface
     else
       print("NYI interf - "..tostring(P))
       assert(false)

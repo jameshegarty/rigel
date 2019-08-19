@@ -7,6 +7,7 @@ local C = require "generators.examplescommon"
 local SDF = require "sdf"
 require "types".export()
 local Zynq = require "generators.zynq"
+local types = require "types"
 
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 
@@ -15,12 +16,15 @@ noc.extern=true
 
 local W,H = 128,64
 
-AddrGen = Module{SDF{1,1},function(inp)
-  local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
-  local resx = AddMSBs{16}(x)
-  local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )
-  return Add(resx,resy)
-end}
+AddrGen = Generator{SDF{1,1},
+  types.rv(types.Par(types.array2d(types.tuple{u16,u16},1))),
+  types.rv(types.Par(u32)),
+  function(inp)
+    local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
+    local resx = AddMSBs{16}(x)
+    local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )
+    return Add(resx,resy)
+  end}
 
 fn = Module{"Top",
   function(inp)

@@ -613,7 +613,8 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
         return false
       end
 
-      if type(v)=="string" or type(v)=="number" then
+      local R = require "rigel" 
+      if type(v)=="string" or type(v)=="number" or R.isSize(v) then
         if ty[k]~=v then return false end
       elseif k=="list" then
         -- special case for tuple list
@@ -651,7 +652,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
           return false
         end
       else
-        print("did not know how to handle type k,v:",k,v)
+        print("did not know how to handle type k,v:",k,v,"on type",self)
         assert(false)
       end
     end
@@ -790,6 +791,7 @@ function TypeFunctions:verilogBits()
   end
 end
 
+function TypeFunctions:isInil() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and self.v==nil and self.r==nil and self.over==nil end
 function TypeFunctions:isS() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and self.v==nil and self.r==nil end
 function TypeFunctions:isrV() return self.kind=="Interface" and self.R==nil and self.V==types.bool() and self.I==nil and self.v==nil and self.r==types.bool() end
 function TypeFunctions:isrv() return self.kind=="Interface" and self.R==nil and self.v==types.bool() and self.I==nil and self.V==nil and self.r==types.bool() end
