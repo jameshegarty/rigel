@@ -39,9 +39,14 @@ function UniformFunctions:toSMT(includeProperties)
           J.err(n.inputs[2].kind=="const","Rshift: rhs should be const, but is: "..tostring(n.inputs[2]))
           res = "(/ "..inputs[1].." "..tostring(math.pow(2,n.inputs[2].value))..")"
         else
-          if opToZ3[n.op]==nil then print("OP",n.op) end
-          assert(n.op~="^") -- not implemented in some versions of z3
-          res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
+          if opToZ3[n.op]==nil then print("missing OP",n.op) end
+          
+          if n.op=="^" and n.inputs[2].kind=="const" and n.inputs[2].value==2 then
+            res = "(* "..inputs[1].." "..inputs[1]..")"
+          else
+            J.err(n.op~="^","Uniform: could not codegen '"..tostring(self).."' b/c uses ^? ") -- not implemented in some versions of z3
+            res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
+          end
         end
       elseif n.kind=="unary" then
         res = "("..n.op.." "..inputs[1]..")"
@@ -774,6 +779,7 @@ return arg
     J.err(arg.inputType==types.Interface(),"Error creating uniform from function, input type is '"..tostring(arg.inputType).."', but should be Inil")
 return Uniform.new{kind="apply",instance=arg:instantiate(),inputs={}}
   elseif type(arg)=="number" then
+    J.err(arg~=math.inf,"Attempting to create a uniform out of an inf?")
 return Uniform.const(arg)
   elseif type(arg)=="boolean" then
 return Uniform.const(arg)

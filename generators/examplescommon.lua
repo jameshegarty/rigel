@@ -245,7 +245,7 @@ C.GT = memoize(function(A,B)
   err( types.isType(A), "C.GT: A must be type")
   err( types.isType(B), "C.GT: B must be type")
 
-  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 1,
+  local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 0,
     function(sinp) return S.gt(S.index(sinp,0),S.index(sinp,1)) end )
 
   return partial
@@ -257,7 +257,7 @@ end)
 C.GTConst = memoize(function(A,constValue)
   err( types.isType(A), "C.GTConst: A must be type")
   
-  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 1,
+  local partial = RM.lift( J.sanitize("GT_const_A"..tostring(A).."_value"..tostring(constValue)), A, types.bool(), 0,
                            function(sinp) return S.gt(sinp,S.constant(constValue,A)) end )
 
   return partial
@@ -1158,10 +1158,10 @@ end)
 
 
 -- V -> RV
-C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
+C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed, X )
   err( types.isType(A) and A:isData(), "C.downsampleSeq: A must be data type")
-  err( type(W)=="number", "C.downsampleSeq: W must be number")
-  err( type(H)=="number", "C.downsampleSeq: H must be number")
+  --err( type(W)=="number", "C.downsampleSeq: W must be number")
+  --err( type(H)=="number", "C.downsampleSeq: H must be number")
   err( type(T)=="number", "C.downsampleSeq: T must be number")
   err( T>0, "C.downsampleSeq: T must be >0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
@@ -1170,8 +1170,8 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   err( scaleY>=1, "C.downsampleSeq: scaleY must be >=1")
   err( X==nil, "C.downsampleSeq: too many arguments" )
 
-  err( W%scaleX==0,"C.downsampleSeq: NYI - scaleX does not divide W")
-  err( H%scaleY==0,"C.downsampleSeq: NYI - scaleY does not divide H")
+  err( (Uniform(W_orig)%Uniform(scaleX)):eq(0):assertAlwaysTrue(),"C.downsampleSeq: NYI - scaleX does not divide W")
+  err( (Uniform(H_orig)%Uniform(scaleY)):eq(0):assertAlwaysTrue(),"C.downsampleSeq: NYI - scaleY does not divide H")
   
   if framed==nil then framed=false end
   err( type(framed)=="boolean", "C.donwsampleSeq: framed must be boolean" )
@@ -1183,10 +1183,10 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
   local inp = rigel.input( types.rV(types.Par(types.array2d(A,T))) )
   local out = inp
   if scaleY>1 then
-    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W, H, T, scaleY )), out)
+    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY )), out)
   end
   if scaleX>1 then
-    local mod = modules.liftDecimate(modules.downsampleXSeq( A, W, H, T, scaleX ))
+    local mod = modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX ))
 
     if scaleY>1 then mod=modules.RPassthrough(mod) end
 
@@ -1197,11 +1197,15 @@ C.downsampleSeq = memoize(function( A, W, H, T, scaleX, scaleY, framed, X )
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
-  local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
+  local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H_orig).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
 
   if framed then
-    res.inputType = res.inputType:addDim(W,H,true)
-    res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
+    print("FRAMED",A,T,res.inputType,res.outputType)
+    local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
+    res.inputType = types.rV(types.ParSeq(res.inputType.over.over,W_orig,H_orig))
+    res.outputType = types.rRV(types.ParSeq(res.outputType.over.over,math.ceil(W/scaleX),math.ceil(H/scaleY) ))
+    --res.inputType = res.inputType:addDim(W,H,true)
+    --res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
   end
 
   return res
@@ -1760,14 +1764,14 @@ function C.linearPipeline( t, modulename, rate, instances, X )
 end
 
 -- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
-C.handshakeToHandshakeFramed = memoize(
+--[=[C.handshakeToHandshakeFramed = memoize(
   function( A, mixed, dims, X )
     err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
     err( type(mixed)=="boolean", "handshakeToHandshakeFramed: mixed should be bool")
     assert(X==nil)
     err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake, but is: "..tostring(A))
     err(A.over:is("Par"),"handshakeToHandshakeFramed: input should be par")
-    local res = {inputType=A,outputType=types.HandshakeFramed(A.over.over,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+    local res = {inputType=A,outputType=types.RV(A.over.over,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
     local nm = "HandshakeToHandshakeFramed_"..tostring(A).."_mixed"..tostring(mixed).."_dims"..tostring(dims)
     res.name=J.sanitize(nm)
 
@@ -1820,7 +1824,7 @@ C.stripFramed = memoize(
     
     return rigel.newFunction(res)
 
-  end)
+  end)]=]
 
 -- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}
 -- if ser==false, takes A[W*H/ratio,W,H}->A[W,H]
@@ -1846,8 +1850,8 @@ end)
 -- of type A[2]->A[2]
 C.sortCompare = memoize(
   function(A,op)
-    local G = require "generators"
-    return G.Module{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.array2d(A,2),
+    local G = require "generators.core"
+    return G.Module{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,2))),
       function(inp)
         local res = op(inp[0],inp[1])
         return G.Sel(res,inp,G.TupleToArray(inp[1],inp[0]))
@@ -1858,13 +1862,13 @@ C.sortCompare = memoize(
 -- see http://www.iti.fh-flensburg.de/lang/algorithmen/sortieren/networks/oemen.htm
 C.oddEvenMerge = memoize(
   function(A,N,op)
-    local G = require "generators"
+    local G = require "generators.core"
     assert(N>=2)
     assert(J.isPowerOf2(N))
     if N==2 then
       return C.sortCompare(A,op)
     else
-      return G.Module{"OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+      return G.Module{"OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
         function(inp)
 
           local even,odd = {},{}
@@ -1891,17 +1895,19 @@ C.oddEvenMerge = memoize(
 
 C.oddEvenMergeSort = memoize(
   function(A,N,op)
-    local G = require "generators"
+    local G = require "generators.core"
     assert(N>0)
     assert(J.isPowerOf2(N))
     if N==1 then
-      return G.Identity{types.array2d(A,N)}
+      return G.Identity --{types.array2d(A,N)}
     else
-      return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.array2d(A,N),
+      return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
         function(inp)
           local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
+          print("LR",l.type,r.type)
           l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
           local res = C.flatten2(A,N)(l,r)
+          print("RES",res.type)
           res = C.oddEvenMerge(A,N,op)(res)
           return res
         end}
@@ -1911,8 +1917,8 @@ C.oddEvenMergeSort = memoize(
 C.StridedReader = memoize(
   function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr,readFn)
     -- stride,offset is given as # of items
-    local G = require "generators"
-    local SOC = require "soc"
+    local G = require "generators.core"
+    local SOC = require "generators.soc"
     assert(totalBytes%(itemBytes*stride)==0)
     assert(itemBytes%8==0)
     assert( R.isFunction(readFn) )
@@ -1922,9 +1928,9 @@ C.StridedReader = memoize(
       function(inp)
         print("MAKESTRIDED",stride,offset)
         local cnt = C.triggerUp(Nreads)(inp)
-        local cnt = G.HS{RM.counter(types.uint(32), Nreads)}(cnt)
-        cnt = G.HS{G.Mul{stride*itemBytes}}(cnt)
-        local addr = G.HS{G.Add{offset*itemBytes}}(cnt)
+        local cnt = G.Map{RM.counter(types.uint(32), Nreads)}(cnt)
+        cnt = G.Mul{stride*itemBytes}(cnt)
+        local addr = G.Add{offset*itemBytes}(cnt)
         --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
         return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr,readFn)(addr)
       end}
@@ -1935,8 +1941,8 @@ C.StridedReader = memoize(
 -- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
   function(filename,W,H,ty,V,noc) -- Nbits: # of bits to read in parallel
-    local G = require "generators"
-    local SOC = require "soc"
+    local G = require "generators.core"
+    local SOC = require "generators.soc"
     assert( (ty:verilogBits()*V)%64==0)
     local N = (ty:verilogBits()*V)/64
     assert((W*H)%N==0)
@@ -1958,7 +1964,7 @@ C.AXIReadPar = memoize(
 
         out = G.FanIn(unpack(out))
         print("OUTT",out.type)
-        return G.HS{C.bitcast(out.type.params.A,types.array2d(ty,V))}(out)
+        return G.Map{C.bitcast(out.type.over.over,types.array2d(ty,V))}(out)
       end}
 
     res.globalMetadata[noc.read.name.."_read_W"] = W
@@ -1980,7 +1986,7 @@ C.AXIReadPar = memoize(
 C.tokenCounterReg = memoize(
   function( A, regGlobal, N)
     J.err( types.isType(A),"tokenCounterReg: a must be type" )
-    J.err( A:is("Handshake"),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
+    J.err( A:isRV(),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
     J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
     J.err( R.isFunction(regGlobal),"tokenCounterReg: reg should be fn")
     
@@ -1988,14 +1994,14 @@ C.tokenCounterReg = memoize(
       N = math.pow(2,32)-1
     end
       
-    local G = require "generators"
+    local G = require "generators.core"
 
     local res = G.Module{"TokenCounterReg_"..tostring(A).."_"..tostring(regGlobal).."_"..tostring(N),A,
       function(inp)
         local inpb = G.FanOut{2}(inp)
-        local ct = G.HS{C.valueToTrigger(A.params.A)}(inpb[1])
-        local cnt = G.HS{RM.counter(types.uint(32),N)}(ct)
-        cnt = G.HS{G.Add{1}}(cnt)
+        local ct = G.Map{C.valueToTrigger(A.over.over)}(inpb[1])
+        local cnt = G.Map{RM.counter(types.uint(32),N)}(ct)
+        cnt = G.Add{1}(cnt)
         return R.statements{inpb[0],regGlobal(cnt)}
       end}
     

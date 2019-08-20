@@ -29,7 +29,7 @@ function ParamFunctions:isInterface()
 end
 
 function ParamFunctions:isData()
-  return self.kind=="DataType" or self.kind=="NumberType"
+  return self.kind=="DataType" or self.kind=="NumberType" or self.kind=="TupleType"
 end
 
 local function makeParam( kind, isValue, super )
@@ -54,6 +54,8 @@ params.DataType = makeParam("DataType",false)
 params.NumberType = makeParam("NumberType",false,params.DataType("tmp"))
 params.IntType = makeParam("IntType",false,params.NumberType("tmp"))
 params.UintType = makeParam("UintType",false,params.NumberType("tmp"))
+params.BoolType = makeParam("BoolType",false,params.NumberType("tmp"))
+params.BitsType = makeParam("BitsType",false,params.DataType("tmp"))
 params.ArrayType = makeParam("ArrayType",false,params.DataType("tmp"))
 params.TupleType = makeParam("TupleType",false,params.DataType("tmp"))
 --params.InterfaceType = makeParam("InterfaceType",false)

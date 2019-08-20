@@ -1170,7 +1170,7 @@ types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
   err( v==nil or types.isType(v), "types.Interface: Valid side fn (v) should be type, but is: "..tostring(v) )
   err( VRmode==nil or type(VRmode)=="boolean","Interface: VRmode should be nil or bool")
   assert(X==nil)
-  
+
   return setmetatable({kind="Interface",over=S,R=R,V=V,I=I,r=r,v=v,VRmode=VRmode},TypeMT)
 end)
 

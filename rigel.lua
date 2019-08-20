@@ -335,8 +335,17 @@ functionGeneratorMT.__call=function(tab,...)
       res.curriedArgs = arglist
       return res
     end
+  elseif tab.inputType~=nil and types.Interface():isSupertypeOf(tab.inputType,{}) then
+    err(#rawarg==0,"Calling a nullary function with an argument?")
+
+    local arglist = {}
+    for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
+    if arglist.type==nil and (tab.requiredArgs.type~=nil or tab.optArgs.type~=nil) then arglist.type = types.Interface() end
+    if arglist.rate==nil and (tab.requiredArgs.rate~=nil or tab.optArgs.rate~=nil) then arglist.rate = SDF{1,1} end
+
+    return tab:complete(arglist)()
   else
-    J.err(false, "Called function generator '"..tab.name.."' with something other than a Rigel value or table ("..tostring(rawarg[1])..")? Make sure you call function generator with curly brackets {}")
+    J.err(false, "Called function generator '"..tab.name.."' with something other than a Rigel value or table ("..tostring(rawarg[1])..")? Make sure you call function generator with curly brackets {} ")
   end
 end
 functionGeneratorMT.__tostring=function(tab)
@@ -364,6 +373,8 @@ function functionGeneratorFunctions:checkArgs(arglist)
       print("Error, arg '"..k.."' is not in list of required or optional args on function generator '"..self.name.."'!" )
       print("Required Args: ")
       for k,v in pairs(self.requiredArgs) do print(k..",") end
+      print("Curried Args: ")
+      for k,v in pairs(self.curriedArgs) do print(k..",") end
       assert(false)
     end
     if self.requiredArgs[k]~=nil then reqArgs[k]=1 end
@@ -1243,15 +1254,17 @@ function darkroomIRMT.__index(tab,key)
     return darkroomIRFunctions[key]
   end
 
-  if type(key)=="number" and tab.type:isInterface() then
+  if type(key)=="number" and types.isHandshakeAny(tab.type) then
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
-  elseif type(key)=="number" and darkroom.isBasic(tab.type) and (tab.type:isArray() or tab.type:isTuple()) then
-    local G = require "generators"
+  elseif type(key)=="number" and tab.type:isrv() and (tab.type.over.over:isArray() or tab.type.over.over:isTuple()) then
+    local G = require "generators.core"
     local res = G.Index{key}(tab)
     rawset(tab,key,res)
     return res
+  elseif type(key)=="number" then
+    err(false,"Attempted to index something other than a tuple or array? "..tostring(tab.type))
   end
 end
 
@@ -1796,7 +1809,13 @@ function darkroomIRFunctions:codegenSystolicReady( module )
               for i=0,n:outputStreams()-1 do
                 r[i+1] = S.__and(S.index(input,i),S.index(thisi,i))
               end
-              input = S.cast(S.tuple(r),types.array2d(types.bool(),n:outputStreams()))
+              if n.type:isArray() then
+                input = S.cast(S.tuple(r),types.array2d(types.bool(),n:outputStreams()))
+              elseif n.type:isTuple() then
+                input = S.tuple(r)
+              else
+                assert(false)
+              end
             end
           end
         else
@@ -1810,12 +1829,12 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         assert(readyinp==nil)
         assert(n:parentCount(self)==0)
         
-        if n:outputStreams()==1 then
-          readyinp = S.parameter( "ready_downstream", types.bool() )
+        if n:outputStreams()>=1 then
+          readyinp = S.parameter( "ready_downstream", n.type:extractReady() )
           input = readyinp
-        elseif n:outputStreams()>1 then
-          readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
-          input = readyinp
+--        elseif n:outputStreams()>1 then
+--          readyinp = S.parameter( "ready_downstream", types.array2d(types.bool(),n:outputStreams()) )
+--          input = readyinp
         else
           -- this is ok: ready bit may be totally internal to the module
           readyinp = S.parameter( "ready_downstream", types.null() )

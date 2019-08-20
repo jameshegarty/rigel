@@ -31,6 +31,8 @@ local function concat2dArrays(tab)
   assert( type(tab)=="table")
   assert( #tab>0)
   assert( systolic.isAST(tab[1]))
+
+  assert( tab[1].type:isArray() )
   local H, ty = (tab[1].type:arrayLength())[2], tab[1].type:arrayOver()
   local totalW = 0
   local res = {}
@@ -1079,9 +1081,14 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
 
 
     -- hackity hack
-    res.inputType = fn.inputType:replaceVar("over",types.Seq(res.inputType.over,W_orig,H_orig))
-    res.outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
+    if fn.inputType~=types.Interface() then
+      res.inputType = fn.inputType:replaceVar("over",types.Seq(res.inputType.over,W_orig,H_orig))
+    end
 
+    if fn.outputType~=types.Interface() then
+      res.outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
+    end
+    
     print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
           
     return res
@@ -1410,8 +1417,8 @@ modules.filterSeqPar = memoize(function( A, N, rate )
   err( SDF.isSDF(rate), "filterSeqPar: rate must be SDF rate" )
 
   local res = {kind="filterSeqPar"}
-  res.inputType = types.array2d( types.tuple{A,types.bool()}, N )
-  res.outputType = types.RV( A )
+  res.inputType = types.rv(types.Par(types.array2d( types.tuple{A,types.bool()}, N )) )
+  res.outputType = types.rRvV( types.Par(A) )
   res.sdfInput = SDF{1,1}
 
   -- we have N elements coming in, but we only write out 1 per cycle, so include that factor
@@ -1426,14 +1433,14 @@ modules.filterSeqPar = memoize(function( A, N, rate )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local buffer = systolicModule:add( S.module.reg( res.inputType, true, fakeVA, true, fakeVA ):instantiate("buffer") )
+    local buffer = systolicModule:add( S.module.reg( res.inputType.over.over, true, fakeVA, true, fakeVA ):instantiate("buffer") )
 
     local readyForMore0 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
     local readyForMore1 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(true,types.bool()) )
     local readyForMore2 = S.eq( S.index(S.index(buffer:get(),1),1), S.constant(false,types.bool()) )
     local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
 
-    local sinp = S.parameter( "inp", res.inputType )
+    local sinp = S.parameter( "inp", res.inputType.over.over )
 
     -- shift phase
     local sptup = {}
@@ -1461,14 +1468,14 @@ end)
 -- takes A[W,H] to A[W,H/scale]
 -- lines where ycoord%scale==0 are kept
 -- basic -> V
-modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
+modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( types.isType(A), "downsampleYSeq: type must be rigel type")
-  err( type(W)=="number", "downsampleYSeq: W must be number" )
-  err( type(H)=="number", "downsampleYSeq: H must be number" )
+  err( Uniform(W_orig):isNumber(), "downsampleYSeq: W must be number" )
+  err( Uniform(H_orig):isNumber(), "downsampleYSeq: H must be number" )
   err( type(T)=="number", "downsampleYSeq: T must be number" )
   err( type(scale)=="number", "downsampleYSeq: scale must be number" )
   err( scale>=1, "downsampleYSeq: scale must be >=1" )
-  err( W%T==0, "downsampleYSeq, W%T~=0")
+  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleYSeq, W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
   err( X==nil, "downsampleYSeq: too many arguments" )
 
@@ -1479,7 +1486,7 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
   local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = J.sanitize("DownsampleYSeq_W"..tostring(W).."_H"..tostring(H).."_scale"..tostring(scale).."_"..tostring(A).."_T"..tostring(T))
+  local modname = J.sanitize("DownsampleYSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_scale"..tostring(scale).."_"..tostring(A).."_T"..tostring(T))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -1492,7 +1499,7 @@ modules.downsampleYSeq = memoize(function( A, W, H, T, scale, X )
       return MT.downsampleYSeqFn(innerInputType,outputType,scale)
     end, nil, {{1,scale}})
 
-  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W, H, T )
+  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, T )
   --print("DOWNYSEQ",res)
   -- hack
   res.outputType = types.rvV(types.Par(inputType))
@@ -1504,18 +1511,20 @@ end)
 -- basic -> V
 -- 
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
-modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
+modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( types.isType(A), "downsampleXSeq: type must be rigel type" )
-  err( type(W)=="number", "downsampleXSeq: W must be number" )
-  err( type(H)=="number", "downsampleXSeq: H must be number" )
+  --err( type(W)=="number", "downsampleXSeq: W must be number" )
+  --err( type(H)=="number", "downsampleXSeq: H must be number" )
   err( type(T)=="number", "downsampleXSeq: T must be number" )
   err( type(scale)=="number", "downsampleXSeq: scale must be number" )
   err( scale>=1, "downsampleXSeq: scale must be >=1 ")
-  err( W%T==0, "downsampleXSeq, W%T~=0")
+  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleXSeq, W%T~=0")
   err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
   err( X==nil, "downsampleXSeq: too many arguments" )
 
-  err( W%scale==0,"downsampleXSeq: NYI - scale ("..tostring(scale)..") does not divide W ("..tostring(W)..")")
+  err( (Uniform(W_orig)%Uniform(scale)):eq(0):assertAlwaysTrue(),"downsampleXSeq: NYI - scale ("..tostring(scale)..") does not divide W ("..tostring(W_orig)..")")
+
+  local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
   
   local sbits = math.log(scale)/math.log(2)
 
@@ -1541,7 +1550,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
   end
 
-  local modname = J.sanitize("DownsampleXSeq_W"..tostring(W).."_H"..tostring(H).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
+  local modname = J.sanitize("DownsampleXSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -1564,7 +1573,7 @@ modules.downsampleXSeq = memoize(function( A, W, H, T, scale, X )
     function() return tfn end, nil,
     sdfOverride)
 
-  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W, H, T )
+  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, T )
   -- hack
   res.outputType = types.rvV(types.Par(types.array2d(A,outputT)))
   return res
@@ -1660,15 +1669,19 @@ broadcastWide = memoize(function( A, T, scale )
 end)
 
 -- this has type V->RV
-modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
+modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
   err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
   err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean", "upsampleXSeq: framed must be bool" )
+  
   --err( type(scale)=="number","upsampleXSeq: scale must be number")
   local scale = Uniform(scale_orig)
   local COUNTER_BITS = 24
   local COUNTER_MAX = math.pow(2,COUNTER_BITS)-1
   err( scale:lt(COUNTER_MAX):assertAlwaysTrue(), "upsampleXSeq: NYI - scale>="..tostring(COUNTER_MAX)..". scale="..tostring(scale))
+  err( scale:gt(0):assertAlwaysTrue(),"upsampleXSeq: scale must be >0! but is: "..tostring(scale))
   err(X==nil, "upsampleXSeq: too many arguments")
   
   if T==1 or T==0 then
@@ -1676,8 +1689,8 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
     local res = {kind="upsampleXSeq",sdfInput=SDF{1,scale}, sdfOutput=SDF{1,1}, stateful=true, A=A, T=T, scale=scale}
 
     if T==0 then
-      res.inputType = A
-      res.outputType = rigel.RV(A)
+      res.inputType = types.rv(types.Par(A))
+      res.outputType = types.rRvV(types.Par(A))
     else
       local ITYPE = types.array2d(A,T)
       res.inputType = types.rv(types.Par(ITYPE))
@@ -1712,7 +1725,14 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, X )
       return systolicModule
     end
 
-    return modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
+    local res = modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
+    if framed then
+      print("UPSAM",res.inputType,res.outputType)
+      --assert(false)
+      res.outputType = types.RV(types.Seq(res.outputType.over,scale_orig,1))
+    end
+    
+    return res
   else
     -- this takes T[V]->T[V] with rate (1/scale)->1
     err( scale:isConst(), "upsampleXSeq: NYI - runtime configurable scale" )
@@ -2018,10 +2038,11 @@ end)
 
 -- tmuxed: should we return a tmuxed type? or just a raw Handshake stream (no ids). Default false
 modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
-  err( types.isType(A), "A must be type" )
+  err( types.isType(A), "A must be type, but is: "..tostring(A) )
+  err( A:isSchedule(),"arbitrate: type must be schedule type" )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates) )
-  rigel.expectBasic(A)
+  --rigel.expectBasic(A)
   if tmuxed==nil then tmuxed=false end
   assert(type(tmuxed)=="boolean")
   err(X==nil,"arbitrate: too many arguments")
@@ -2030,12 +2051,12 @@ modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
   res.name = sanitize("Arbitrate_"..tostring(A).."_"..#inputRates)
   res.stateful = false
 
-  res.inputType = types.HandshakeArray( A, #inputRates )
+  res.inputType = types.array2d( types.RV(A), #inputRates )
 
   if tmuxed then
     res.outputType = rigel.HandshakeTmuxed( A, #inputRates )
   else
-    res.outputType = rigel.Handshake( A )
+    res.outputType = types.RV( A )
   end
 
   local sdfSum = SDFRate.sum(inputRates)
@@ -2321,7 +2342,7 @@ modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
   if asArray then sizeType = types.array2d(types.uint(bits),2) end
   if T==0 then
     res.outputType = sizeType
-    if framed then res.outputType = types.StaticFramed(res.outputType,false,{{W,H}}) end
+    if framed then res.outputType = types.rv(types.Seq(types.Par(res.outputType),W_orig,H)) end
   else
     res.outputType = types.array2d(sizeType,T)
     if framed then res.outputType = types.StaticFramed(res.outputType,true,{{W,H}}) end
@@ -2685,11 +2706,16 @@ end)
 
 
 --StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
-modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSeqX, ParSeqY, X)
+-- 'rate' has a strange meaning here: 'rate' means size of array.
+--     so inputRate=2 means 2items/clock (2 wide array)
+-- framedW/H: these are the size of the whole array. So, when framed, we expect input:
+--    [inputRate,H;framedW,framedH} to [outputRate,H;framedW,framedH}
+modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
+  err( H>0,"changeRate: H must be >0")
   err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
-  err( inputRate>0, "changeRate: inputRate must be >0")
+  err( inputRate>=0, "changeRate: inputRate must be >=0")
   err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
   err( type(outputRate)=="number", "changeRate: outputRate should be number, but is: "..tostring(outputRate))
   err( outputRate==math.floor(outputRate), "changeRate: outputRate should be integer, but is: "..tostring(outputRate))
@@ -2699,47 +2725,63 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
 
   local maxRate = math.max(inputRate,outputRate)
 
-  err( maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
+  err( inputRate==0 or maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
   err( outputRate==0 or maxRate % outputRate == 0, "maxRate ("..tostring(maxRate)..") % outputRate ("..tostring(outputRate)..") ~=0")
   rigel.expectBasic(A)
 
-  local inputCount = maxRate/inputRate
-  local outputCount = maxRate/outputRate
+  local inputCount = maxRate/math.max(inputRate,1)
+  local outputCount = maxRate/math.max(outputRate,1)
 
   local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
 
   if framed then
-    if inputRate<outputRate then
-      res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),outputRate,H))
-      res.outputType = types.rRvV(types.Par(types.array2d(A,outputRate,H)))
-    elseif inputRate>outputRate then
-      if ParSeqX==nil then
-        res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
-      else
-        res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),ParSeqX,ParSeqY))
-      end
+    err(type(framedW)=="number", "changeRate: if framed, framedW should be number, but is: "..tostring(framedW))
+    assert(type(framedH)=="number")
+    assert(inputRate==0 or framedW%inputRate==0)
+    assert(outputRate==0 or framedW%outputRate==0)
+    
+    if inputRate==0 then
+      assert(framedH==1)
+      res.inputType = types.rv(types.Seq(types.Par(A),framedW,framedH))
+    elseif inputRate<framedW then
+      assert(H==framedH)
+      res.inputType = types.rv(types.ParSeq(types.array2d(A,inputRate,H),framedW,framedH))
+    elseif inputRate==framedW then
+      assert(H==framedH)
+      res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
+    else
+      assert(false)
+    end
 
-      if outputRate==0 then
-        res.outputType = types.rRvV(types.Seq(A,inputRate,H))
-      else
-        res.outputType = types.rRvV(types.ParSeq(types.array2d(A,outputRate,H),inputRate,H))
-      end
+    if outputRate==0 then
+      assert(framedH==1)
+      res.outputType = types.rRvV(types.Seq(A,framedW,framedH))
+    elseif outputRate<framedW then
+      assert(framedH==H)
+      res.outputType = types.rRvV(types.ParSeq(types.array2d(A,outputRate,H),framedW,framedH))
+    elseif outputRate==framedW then
+      assert(framedH==H)
+      res.outputType = types.rRvV(types.Par(types.array2d(A,framedW,framedH)))
     else
       assert(false)
     end
   else
-    res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
+    if inputRate==0 then
+      res.inputType = types.rv(types.Par(A))
+    else
+      res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
+    end
     res.outputType = types.rRvV(types.Par(types.array2d(A,outputRate,H)))
   end
   
   res.stateful = true
   res.delay = 0
-  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed))
+  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH))
 
   if inputRate>outputRate then -- 8 to 4
-    res.sdfInput, res.sdfOutput = SDF{outputRate,inputRate},SDF{1,1}
+    res.sdfInput, res.sdfOutput = SDF{outputRate,math.max(inputRate,1)},SDF{1,1}
   else -- 4 to 8
-    res.sdfInput, res.sdfOutput = SDF{1,1},SDF{inputRate,outputRate}
+    res.sdfInput, res.sdfOutput = SDF{1,1},SDF{math.max(inputRate,1),outputRate}
   end
 
   function res.makeSystolic()
@@ -2776,7 +2818,14 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, ParSe
       -- in the first cycle (first time inputPhase==0), we don't have any data yet. Use the sWroteLast variable to keep track of this case
       local validout = S.eq(sPhase:get(),S.constant(inputCount-1,types.uint(16))):disablePipelining()
       
-      local out = concat2dArrays(J.map(J.range(inputCount-1,0), function(i) return pinp(i) end))
+      local out
+      if inputRate==0 then
+        local delayedVals = J.map(J.range(inputCount-1,0), function(i) return pinp(i) end)
+        out = S.cast( S.tuple(delayedVals), types.array2d(A,outputRate,H) )
+      else
+        out = concat2dArrays(J.map(J.range(inputCount-1,0), function(i) return pinp(i) end))
+      end
+      
       local pipelines = {sPhase:setBy(ConstTrue)} 
       if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process(S.tuple{sPhase:get(),out})) end
       
@@ -4198,7 +4247,7 @@ local function checkFIFOs(output)
 
           -- Is this right???? if we got this far, we did have a fifo along this brach...
           res = J.broadcast(true,types.streamCount(n.type))
-        elseif n.kind=="apply" and rigel.isFunctionGenerator(fn.generator) and fn.generator.name=="FIFO" then
+        elseif n.kind=="apply" and rigel.isFunctionGenerator(fn.generator) and fn.generator.name=="core.FIFO" then
           res = {true}
         elseif n.kind=="apply" and fn.generator=="C.fifo" then
           res = {true}

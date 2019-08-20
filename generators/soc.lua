@@ -1527,12 +1527,20 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   if V>0 then outType=types.array2d(outType,V) end
   out = RM.makeHandshake(C.cast(types.bits(outType:verilogBits()),outType))(out)
 
+  
+  local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_framed"..tostring(framed).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+
   if framed then
-    out = C.handshakeToHandshakeFramed(out.type,V>0,{{W:toNumberIfPossible(),H:toNumberIfPossible()}})(out)
+    --out = C.handshakeToHandshakeFramed(out.type,V>0,{{W:toNumberIfPossible(),H:toNumberIfPossible()}})(out)
+    --print("FRAMED",res.outputType)
+    --res.outputType=4
+    if V==0 then
+      res.outputType = types.RV(types.Seq(types.Par(ty),W_orig,H_orig))
+    else
+      res.outputType = types.RV(types.ParSeq(outType,W_orig,H_orig))
+    end
   end
-  
-  local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
-  
+    
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
 
   if addressOverride==nil then
@@ -1634,7 +1642,7 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
 
   J.err( Vw==nil or type(Vw)=="number", "writeBurst: Vw must be number or nil")
   if Vw==nil then Vw=1 end
-  J.err( Vh==nil or type(Vh)=="number", "writeBurst: Vh must be number or nil")
+  J.err( Vh==nil or type(Vh)=="number", "writeBurst: Vh must be number or nil, but is: "..tostring(Vh))
   if Vh==nil then Vh=1 end
 
   if framed==nil then framed=false end
@@ -1752,10 +1760,10 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     
     inpAddr = R.selectStream( "inpAddr", tmp, 0 )
     inpAddr = G.FIFO{128}(inpAddr)
-    inpAddr = G.HS{G.Index{0}}(inpAddr)
+    inpAddr = G.Index{0}(inpAddr)
     inpData = R.selectStream( "inpData", tmp, 1 )
     inpData = G.FIFO{128}(inpData)
-    inpData = G.HS{G.Index{1}}(inpData)
+    inpData = G.Index{1}(inpData)
   else
     inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
 
@@ -1765,13 +1773,13 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   
   local writeBytesPerBurst
 
-  local Scale0 = G.Module{
+  --[=[local Scale0 = G.Module{
     function(inp)
       local a,b = G.Index{0}(inp), G.Index{1}(inp)
       a = (a)
       b = (b)
       return R.concat("out",{a,b})
-    end}
+    end}]=]
   
   -- scale by type size
   inpAddr = G.Mul{writeType:verilogBits()/8}(inpAddr)
