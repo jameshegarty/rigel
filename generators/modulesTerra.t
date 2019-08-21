@@ -266,7 +266,7 @@ function MT.liftDecimate(res,f)
   terra LiftDecimate:free() self.inner:free() end
   terra LiftDecimate:stats(name:&int8) cstdio.printf("LiftDecimate %s utilization %f\n",name,[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
 
-  if rigel.isVTrigger(res.inputType) and rigel.isRVTrigger(res.outputType) then
+  if res.inputType:isrVTrigger() and res.outputType:isrRVTrigger() then
     print("INOUT",res.inputType,res.outputType)
     terra LiftDecimate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       if @inp then
@@ -489,7 +489,8 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
   
 end
 
-function MT.upsampleXSeq(res,A, T, scale_orig, ITYPE )
+function MT.upsampleXSeq( res, A, T, scale_orig, ITYPE )
+  assert(types.isType(ITYPE) and ITYPE:isData())
   local scale = Uniform(scale_orig)
   local struct UpsampleXSeq { buffer : ITYPE:toTerraType(), phase:uint, ready:bool }
   terra UpsampleXSeq:reset() self.phase=0; end
@@ -1216,7 +1217,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
   local validFalse = false
   if tmuxRates~=nil then validFalse = #tmuxRates end
 
-  if f.inputType==types.null() and nilhandshake==false then
+  if f.inputType==types.Interface() and nilhandshake==false then
     terra MakeHandshake:process( out : &rigel.lower(res.outputType):toTerraType())
       if self.readyDownstream then
         if self.delaysr:size()==delay then
@@ -1234,7 +1235,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         self.delaysr:pushBack(&tout)
       end
     end
-  elseif f.inputType==types.null() and nilhandshake==true then
+  elseif f.inputType==types.Interface() and nilhandshake==true then
     terra MakeHandshake:process( inp : &bool,
                                  out : &rigel.lower(res.outputType):toTerraType())
       if self.readyDownstream then
@@ -1255,12 +1256,12 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         self.delaysr:pushBack(&tout)
       end
     end
-  elseif f.outputType==types.null() and nilhandshake==false then
+  elseif f.outputType==types.Interface() and nilhandshake==false then
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType())
       if DARKROOM_VERBOSE then cstdio.printf("MakeHandshake %s IV %d readyDownstream=true\n",f.kind,valid(inp)) end
       if (valid(inp)~=validFalse) then self.inner:process(&data(inp)) end -- don't bother if invalid
     end
-  elseif f.outputType==types.null() and nilhandshake==true then
+  elseif f.outputType==types.Interface() and nilhandshake==true then
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
                                  out : &bool)
       if self.readyDownstream then
@@ -1280,7 +1281,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
         self.delaysr:pushBack(&tout)
       end
     end
-  elseif f.inputType==types.null() and f.outputType==types.null() and nilhandshake==false then
+  elseif f.inputType==types.Interface() and f.outputType==types.Interface() and nilhandshake==false then
     assert(false)
   else
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
@@ -1310,7 +1311,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
     end
   end
 
-  if f.outputType==types.null() and nilhandshake==false then
+  if f.outputType==types.Interface() and nilhandshake==false then
     terra MakeHandshake:calculateReady( ) self.ready = true; self.readyDownstream = true; end
   else
     terra MakeHandshake:calculateReady( readyDownstream: bool ) self.ready = readyDownstream; self.readyDownstream = readyDownstream end
@@ -1914,7 +1915,7 @@ function MT.lambdaCompile(fn)
     table.insert( Module.entries, {field="readyDownstream", type=rigel.extractReady(fn.output.type):toTerraType()} )
   end
 
-  if rigel.hasReady(fn.inputType) or rigel.isRV(fn.output.type) or fn.output.type:is("RVFramed") then
+  if rigel.hasReady(fn.inputType) or fn.output.type:isrRV() then
     table.insert( Module.entries, {field="ready", type=rigel.extractReady(fn.input.type):toTerraType()} )
   end
   
@@ -2006,7 +2007,7 @@ return {`mself.[n.name].ready}
           readyOutput = arg
           assert(readyOutput~=nil)
         elseif n.kind=="apply" then
-          if rigel.hasReady(n.fn.outputType)==false or rigel.isV(n.fn.inputType) then
+          if rigel.hasReady(n.fn.outputType)==false or n.fn.inputType:isrV() then
             table.insert( readyStats, quote mself.[n.name]:calculateReady() end )
             res = {`mself.[n.name].ready}
           else
@@ -2105,19 +2106,19 @@ return {`mself.[n.name].ready}
         table.insert( freeStats, quote mself.[n.name]:free() end )
         table.insert( statStats, quote mself.[n.name]:stats([n.name]) end )
 
-        if n.fn.inputType==types.null() then
+        if n.fn.inputType==types.Interface() then
           table.insert( stats, quote mself.[n.name]:process( out ) end )
-        elseif n.fn.outputType==types.null() then
+        elseif n.fn.outputType==types.Interface() then
           table.insert( stats, quote mself.[n.name]:process( [inputs[1]] ) end )
         else
           table.insert( stats, quote mself.[n.name]:process( [inputs[1]], out ) end )
         end
 
         local rvready
-        if #n.inputs==1 and rigel.isV(n.inputs[1].type) then
+        if #n.inputs==1 and n.inputs[1].type:isrV() then
           table.insert( RVReadyStats, quote mself.[n.name]:calculateReady() end )
           rvready = `mself.[n.name].ready
-        elseif #n.inputs==1 and rigel.isRV(n.inputs[1].type) then
+        elseif #n.inputs==1 and n.inputs[1].type:isrRV() then
           table.insert( RVReadyStats, quote mself.[n.name]:calculateReady([inputsReady[1]]) end )
           rvready = `mself.[n.name].ready
         end
@@ -2156,7 +2157,7 @@ return {`mself.[n.name].ready}
 --          assert(false)
         end
       elseif n.kind=="constant" then
-        table.insert( stats, quote (@out) = [n.type:valueToTerra(n.value)] end )
+        table.insert( stats, quote (@out) = [n.type.over.over:valueToTerra(n.value)] end )
         res = {out}
       elseif n.kind=="concat" then
         J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])
@@ -2203,9 +2204,9 @@ return {`mself.[n.name].ready}
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
   end
 
-  if rigel.isRV(fn.inputType) or fn.inputType:is("RVFramed") then
+  if fn.inputType:isrRV() then
     terra Module.methods.calculateReady( [mself], [RVReadyInput] ) mself.readyDownstream = RVReadyInput; [RVReadyStats]; mself.ready = RVReadyOutput end
-  elseif rigel.isRV(fn.outputType) or fn.outputType:is("RVFramed") then
+  elseif fn.outputType:isrRV() then
     -- notice that we set readyInput to true here. This is kind of a hack to make the code above simpler. This should never actually be read from.
     terra Module.methods.calculateReady( [mself] ) var [RVReadyInput] = true; [RVReadyStats]; mself.ready = RVReadyOutput end
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then

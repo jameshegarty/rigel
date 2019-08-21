@@ -1700,7 +1700,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
     res.delay=0
     res.name = verilogSanitize("UpsampleXSeq_"..tostring(A).."_T_"..tostring(T).."_scale_"..tostring(scale_orig))
 
-    if terralib~=nil then res.terraModule = MT.upsampleXSeq(res,A, T, scale, res.inputType ) end
+    if terralib~=nil then res.terraModule = MT.upsampleXSeq(res, A, T, scale, res.inputType.over.over ) end
 
     -----------------
     function res.makeSystolic()

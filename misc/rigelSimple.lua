@@ -382,11 +382,11 @@ function RS.modules.fwriteSeq(t)
   -- file write only support byte aligned, so make a wrapper that casts up
   if t.type:isBool() then
       -- special case: write out bools as 255 or 0 to make it easy to look @ the file
-      local inp = RS.input(types.bool())
-      local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
-      local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
-      local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
-      return RS.defineModule{input=inp,output=out}
+    local inp = RS.input( types.rv(types.Par(types.bool())) )
+    local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
+    local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
+    local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
+    return RS.defineModule{input=inp,output=out}
   elseif t.type:toCPUType()~=t.type then
     err( t.type:isArray()==false and t.type:isTuple()==false,"fwriteSeq: NYI - aggregate types ("..tostring(t.type).."). use a cast")
 

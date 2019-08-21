@@ -1,11 +1,11 @@
 local R = require "rigel"
 local types = require "types"
 local J = require "common"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
-local AXI = require "axi"
-local RM = require "modules"
-local G = require "generators"
+local AXI = require "generators.axi"
+local RM = require "generators.modules"
+local G = require "generators.core"
 local Bjump = {}
 
 -- a direct mapped cache, with 'sets' number of blocks, each block of size ty:verilogBytes()*itemsPerBlock bytes

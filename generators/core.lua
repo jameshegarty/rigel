@@ -732,11 +732,14 @@ end)
 
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
-  J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
+  --J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
 
-  J.err(args.type:arrayLength()[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
-  return RM.changeRate( args.type:arrayOver(), args.type:arrayLength()[2], args.type:arrayLength()[1], args.type:arrayLength()[1]/args.number )
-end)
+  J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
+  return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
+end,
+types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
+types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))) )
+
 
 generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},
 function(args)

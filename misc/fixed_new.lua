@@ -288,8 +288,8 @@ end
 --             but for the fixed representation, we want use the fixed type.
 function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType,operateOnUnderlyingType)
   R.isFunction(f)
-  R.expectBasic(f.inputType)
-  R.expectBasic(f.outputType)
+  assert( f.inputType:isrv() and f.inputType.over:is("Par") )
+  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
 
   if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
 

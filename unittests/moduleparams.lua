@@ -70,7 +70,7 @@ for k,v in ipairs(CSC) do
     v.value = J.broadcast(val,v.W*v.H)
     
     v.type = types.array2d(v.type,v.W,v.H)
-    v.P = 1/v.P
+    --v.P = 1/v.P
     v.W=nil; v.H=nil
 
     table.insert(configs.constSeq, v)

@@ -446,7 +446,7 @@ C.eq = memoize(function(ty)
   err(types.isType(ty), "C.eq error: input must be type")
   local ITYPE = types.tuple{ty,ty}
 
-  local selm = RM.lift( J.sanitize("C_eq_"..tostring(ty)), ITYPE, types.bool(), 1,
+  local selm = RM.lift( J.sanitize("C_eq_"..tostring(ty)), ITYPE, types.bool(), 0,
     function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end, nil,
     "C.eq" )
 

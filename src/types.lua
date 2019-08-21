@@ -802,6 +802,8 @@ function TypeFunctions:isrRV() return self.kind=="Interface" and self.r==types.b
 function TypeFunctions:isrRvV() return self.kind=="Interface" and self.r==types.bool() and self.v==types.bool() and self.I==nil and self.V==types.bool() and self.R==types.bool() end
 function TypeFunctions:isRV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V~=nil and self.R~=nil end
 function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil end
+function TypeFunctions:isrVTrigger() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil and self.over==nil end
+function TypeFunctions:isrRVTrigger() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() and self.over==nil end
 function TypeFunctions:isData() return types.isBasic(self) end
 --function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
 function TypeFunctions:isInterface()
@@ -1636,9 +1638,9 @@ function types.extractData(a)
 end
 
 function types.hasReady(a)
-  if types.isHandshake(a) or types.isHandshakeTrigger(a) or types.isRV(a) or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
+  if types.isHandshake(a) or types.isHandshakeTrigger(a) or a:isRV() or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
     return true
-  elseif types.isBasic(a) or types.isV(a) or a:is("StaticFramed") or a:is("VFramed") then
+  elseif types.isBasic(a) or a:isV() or a:isrv() or a:isrV() or a==types.Interface() then
     return false
   else
     print("UNKNOWN READY",a)
