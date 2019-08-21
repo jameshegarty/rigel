@@ -18,7 +18,7 @@ local generators = {}
 -- takes A to A[N]
 generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"size"},{},
 function(args)
-  if args.opt==3 then
+  if args.opt==2 then
 --    local W,H
 --    if args.size~=nil then
 --      W,H = args.size[1], args.size[2]
@@ -41,6 +41,9 @@ function(args)
     J.err(args.size[2]==1,"Broadcast NYI: height>1")
     return RM.upsampleXSeq(args.T,0,args.size[1],true)
   elseif args.opt==1 then
+    assert(false)
+  else
+    print("OPT",args.opt)
     assert(false)
   end
 end,

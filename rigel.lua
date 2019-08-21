@@ -235,7 +235,8 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
 
     finVars.type = darkroom.specialize(Tparam,finVars)
     fn = fn(finVars)
-
+    err(fn~=nil,"findLifts: generator function returned nil?")
+    
     return fn
   else
     --print("Trivial check failed")
@@ -442,9 +443,6 @@ function functionGeneratorFunctions:complete(arglist)
       mod = findLifts( finFn, arglist.type, inputType, outputType )
       
       if mod~=nil then
---        print("LIFTRESULT",resFn)
---        mod = resFn(arg)
-        --        print("LIFTMOD",mod)
         liftFound = true
         break
       end

@@ -3078,7 +3078,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay=0
-  res.name = verilogSanitize("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..tostring(T).."_A"..tostring(A).."_framed"..tostring(framed).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH))
+  res.name = verilogSanitize("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..tostring(T).."_A"..tostring(A).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig))
 
   if terralib~=nil then res.terraModule = MT.SSR(res, A, T, xmin, ymin ) end
 
@@ -3790,14 +3790,14 @@ modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
     local sinp = S.parameter("process_input", f.outputType.over.over )
     local svalid = S.parameter("process_valid", types.bool() )
 
-    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), Vw*Vh-1 ) ):CE(true):setReset(0):instantiate("phase") )
+    local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.sumwrap(types.uint(16), (Vw*Vh)-1 ) ):CE(true):setReset(0):instantiate("phase") )
     
     local pipelines = {}
     table.insert(pipelines, phase:setBy( S.constant(1,types.uint(16)) ) )
     
     local out
     
-    if T==1 then
+    if Vw*Vh==1 then
       -- hack: Our reduce fn always adds two numbers. If we only have 1 number, it won't work! just return the input.
       out = sinp
     else
@@ -3809,7 +3809,7 @@ modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
     if DARKROOM_VERBOSE then table.insert(pipelines, printInst:process( S.tuple{phase:get(),sinp,out} ) ) end
     
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( Vw*Vh-1, types.uint(16))) }, "process_output", pipelines, svalid, CE) )
+    systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ out, S.eq(phase:get(), S.constant( (Vw*Vh)-1, types.uint(16))) }, "process_output", pipelines, svalid, CE) )
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {phase:reset()}, S.parameter("reset",types.bool())) )
     

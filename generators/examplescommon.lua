@@ -507,7 +507,7 @@ C.packTapBroad = memoize(function(A,ty,tap,N,X)
   
   local G = require "generators.core"
   return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
-                    return R.concat{i,G.Broadcast{N}(tap())} end}
+                    return R.concat{i,G.Broadcast{{N,1}}(tap())} end}
 end)
 
 -----------------------------
