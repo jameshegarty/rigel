@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
 W = 128
 H = 64
@@ -22,7 +22,7 @@ local muxout = R.applyMethod("L1", fifos[1],"load")
 
 local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{A,muxout},2,1))
 
-local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
+local SER = RM.sequence( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )
 
 multiplexed = R.apply( "plus100", RM.makeHandshake( RM.map(C.plus100(types.uint(8)),8),{{1,2},{1,2}}), out )

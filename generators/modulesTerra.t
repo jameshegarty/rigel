@@ -26,94 +26,6 @@ function MT.terraReference(inst)
   return global( &inst.module.terraModule, nil, inst.name )
 end
 
---[=[
-function MT.instanceCallsiteCalculateReady(tab)
-  -- closure
-  local fn = tab.instance.module.functions[tab.functionName]
-
-  err(tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]~=nil, tab.functionName.."_calculateReady() is missing on terra module")
-  
-  if fn.inputType==types.null() then
-    return terra(inp:types.extractReady(fn.outputType):toTerraType())
-      [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
-    end
-  elseif fn.outputType==types.null() and fn.inputType~=types.null() then
-    return terra()
-      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()])
-    end
-  else
-    return terra(inp:types.extractReady(fn.outputType):toTerraType())
-      return [tab.instance.module.terraModule.methods[tab.functionName.."_calculateReady"]]([tab.instance:terraReference()],inp)
-    end
-  end
-end
-
--- REMEMBER: This should be READ ONLY
-function MT.instanceCallsiteReady(tab)
-  local fn = tab.instance.module.functions[tab.functionName]
-  err(types.isHandshakeAny(fn.inputType),tab.instance.name..":"..tab.functionName.."() does not have a upstream ready bit. input type: "..tostring(fn.inputType))
-  local qt = `[tab.instance:terraReference()].[tab.functionName.."_ready"]
-  return qt
-end
-
-function MT.instanceCallsiteTerraFn(tab)
-  local fn = tab.instance.module.functions[tab.functionName]
-
-  err( tab.instance.module.terraModule.methods[tab.functionName]~=nil, tab.instance.name..":"..tab.functionName.."() terra fn is missing?" )
-  
-  if fn.inputType==types.null() then
-    return terra(out:&types.lower(fn.outputType):toTerraType())
-      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],out)
-    end
-  elseif fn.outputType==types.null() then
-    return terra(inp:&types.lower(fn.inputType):toTerraType())
-      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp)
-    end
-  else
-    return terra( inp:&types.lower(fn.inputType):toTerraType(), out:&types.lower(fn.outputType):toTerraType() )
-      [tab.instance.module.terraModule.methods[tab.functionName]]([tab.instance:terraReference()],inp,out)
-    end
-  end
-end
-
-function MT.instanceCallsiteShim(tab)
-  local struct InstanceCallsiteShim {}
-  InstanceCallsiteShim.name="InstanceCallsiteShim_"..tab.instance.name.."_"..tab.functionName
-  local fn = tab.instance.module.functions[tab.functionName]
-
-  if fn.inputType==types.null() then
-    terra InstanceCallsiteShim:process( out : &rigel.lower(fn.outputType):toTerraType() )
-      [tab.instance:terraReference()]:[tab.functionName](out)
-    end
-
-    if types.isHandshakeAny(fn.outputType) then
-      terra InstanceCallsiteShim:calculateReady( readyDownstream:bool )
-        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"](readyDownstream)
-      end
-    end
-  elseif fn.outputType==types.null() then
-  
-    if types.isHandshakeAny(fn.inputType) then
-      table.insert( InstanceCallsiteShim.entries, {field="ready",type=bool})
-      terra InstanceCallsiteShim:calculateReady()
-        [tab.instance:terraReference()]:[tab.functionName.."_calculateReady"]()
-        self.ready = [tab.instance:terraReference()].[tab.functionName.."_ready"]
-      end
-    end
-
-    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType() )
-      [tab.instance:terraReference()]:[tab.functionName](inp)
-    end
-  else
-    terra InstanceCallsiteShim:process( inp : &rigel.lower(fn.inputType):toTerraType(), out : &rigel.lower(fn.outputType):toTerraType() )
-      [tab.instance:terraReference()]:[tab.functionName](inp,out)
-    end
-  end
-
-  
-  return MT.new(InstanceCallsiteShim)
-end
-]=]
 function MT.new(Module)
   if Module.methods.init==nil then terra Module:init() end end
   if Module.methods.free==nil then terra Module:free() end end
@@ -149,23 +61,23 @@ function MT.SoAtoAoS(res,W,H,typelist,asArray)
 end
 
 function MT.packTuple(res,typelist)
-  local struct PackTuple { ready:bool[#typelist], readyDownstream:bool, outputCount:uint32}
+  local struct PackTuple { ready:res.inputType:extractReady():toTerraType(), readyDownstream:bool, outputCount:uint32}
 
   -- ignore the valid bit on const stuff: it is always considered valid
   local activePorts = {}
   for k,v in ipairs(typelist) do
-    assert(types.isType(v))
+    err(types.isType(v) and v:is("Interface"),"packTuple, types should be interface type, but is: "..tostring(v))
     table.insert(activePorts, k)
   end
     
   -- the simulator doesn't have true bidirectional dataflow, so fake it with a FIFO
-  J.map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:toTerraType(), 8, "PackTuple"..k)}) end )
+  J.map( activePorts, function(k) table.insert(PackTuple.entries,{field="FIFO"..k, type=simmodules.fifo( typelist[k]:extractData():toTerraType(), 8, "PackTuple"..k)}) end )
   
   terra PackTuple:stats(name:&int8) self.outputCount=0 end
   terra PackTuple:reset() [J.map(activePorts, function(i) return quote self.["FIFO"..i]:reset() end end)] end
   terra PackTuple:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     [J.map(activePorts, function(i) return quote 
-             if valid(inp.["_"..(i-1)]) and self.ready[i-1] then 
+             if valid(inp.["_"..(i-1)]) and self.ready.["_"..(i-1)] then 
                self.["FIFO"..i]:pushBack(&data(inp.["_"..(i-1)])) 
              end 
                       end end )]
@@ -179,7 +91,7 @@ function MT.packTuple(res,typelist)
         if hasData then
           -- terra doesn't like us copying large structs by value
           escape J.map( typelist, function(t,k) 
-        emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:sizeof()] ) end
+                          emit quote cstring.memcpy( &data(out).["_"..(k-1)], self.["FIFO"..k]:popFront(), [t:extractData():sizeof()] ) end
         end ) end
           valid(out) = true
           
@@ -198,7 +110,7 @@ function MT.packTuple(res,typelist)
 
       escape
         for i=1,#typelist do 
-          emit quote self.ready[i-1] = (self.["FIFO"..i]:full()==false) end 
+          emit quote self.ready.["_"..(i-1)] = (self.["FIFO"..i]:full()==false) end 
         end
       end
   end
@@ -249,6 +161,8 @@ function MT.waitOnInput(res,f)
 --        darkroomAssert(false,"waitOnInput valid bit doesnt match ready bit") 
 --      end
 
+      if DARKROOM_VERBOSE then cstdio.printf("WaitOnInput %s\n", f.name) end
+      
       self.inner:process(&data(inp),out)
     else
       valid(out) = false
@@ -327,7 +241,7 @@ function MT.liftHandshake(res,f,delay)
   if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTrigger(res.outputType) then
     terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       if self.readyDownstream then
-        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
+        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.name, self.inner.ready) end
 
         if self.delaysr:size()==delay then
           var ot = self.delaysr:popFront()
@@ -345,7 +259,7 @@ function MT.liftHandshake(res,f,delay)
   else
     terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       if self.readyDownstream then
-        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.kind,self.inner.ready) end
+        if DARKROOM_VERBOSE then cstdio.printf("LIFTHANDSHAKE %s READY DOWNSTRAM = true. ready this = %d\n", f.name, self.inner.ready ) end
 
         if self.delaysr:size()==delay then
           var ot = self.delaysr:popFront()
@@ -378,12 +292,12 @@ function MT.map(res,f,W,H)
   terra MapModule:reset() self.fn:reset() end
   terra MapModule:init() self.fn:init() end
   terra MapModule:free() self.fn:free() end
-  terra MapModule:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+  terra MapModule:process( inp : &types.lower(res.inputType):toTerraType(), out : &types.lower(res.outputType):toTerraType() )
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
   return MT.new(MapModule)
 end
-
+--[=[
 function MT.mapFramed(res,f,W,H,vectorized)
   local struct MapFramed {fn:f.terraModule, ready:bool, readyDownstream:bool}
 
@@ -425,7 +339,7 @@ function MT.mapFramed(res,f,W,H,vectorized)
   end
 
   return MT.new(MapFramed)
-end
+  end]=]
 
 function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
 
@@ -444,7 +358,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
     terra FilterSeq:init() end
     terra FilterSeq:free() end
 
-    terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+    terra FilterSeq:process( inp : &res.inputType:lower():toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
 
       var validIn = inp._1
 
@@ -478,7 +392,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
     terra FilterSeq:free()  end
     terra FilterSeq:stats(name:&int8) end
 
-    terra FilterSeq:process( inp : &res.inputType:toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
+    terra FilterSeq:process( inp : &res.inputType:lower():toTerraType(), out:&rigel.lower(res.outputType):toTerraType() )
       valid(out) = inp._1
       data(out) = inp._0
     end
@@ -729,10 +643,9 @@ function MT.serialize( res, A, inputRates, Schedule)
 end
 
 function MT.Arbitrate( res, A, inputRates, tmuxed)
+  assert( types.isType(A) and A:isSchedule() )
   local N = #inputRates
-  local struct Arbitrate { buffer:A:toTerraType()[N], hasItem:bool[N], ready:bool[N], readyDownstream:bool}
-
-  --print("INP",res.inputType,rigel.lower(res.inputType):toTerraType())
+  local struct Arbitrate { buffer:A:extractData():toTerraType()[N], hasItem:bool[N], ready:bool[N], readyDownstream:bool}
   
   terra Arbitrate:reset()
     for i=0,N do
@@ -833,12 +746,16 @@ function MT.flattenStreams( res, A, rates)
   return MT.new(FlattenStreams)
 end
 
-function MT.broadcastStream(res,A,N)
-  local struct BroadcastStream {ready:bool, readyDownstream:bool[N]}
+function MT.broadcastStream(res,W,H,X)
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(X==nil)
+  assert(H==1)
+  local struct BroadcastStream {ready:bool, readyDownstream:bool[W]}
 
   if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTriggerArray(res.outputType) then
     terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-      for i=0,N do
+      for i=0,W do
         if self.ready then -- all of readyDownstream are true
           (@out)[i] = @inp
         else
@@ -848,8 +765,10 @@ function MT.broadcastStream(res,A,N)
     end
 
   else
+    print("BROADCASTSTRAEM",res.inputType,rigel.lower(res.inputType),rigel.lower(res.outputType))
+    
     terra BroadcastStream:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-      for i=0,N do
+      for i=0,W do
         if self.ready then -- all of readyDownstream are true
           data((@out)[i]) = data(inp)
           valid((@out)[i]) = valid(inp)
@@ -860,9 +779,9 @@ function MT.broadcastStream(res,A,N)
     end
   end
 
-  terra BroadcastStream:calculateReady( readyDownstream : bool[N] )
+  terra BroadcastStream:calculateReady( readyDownstream : bool[W] )
     self.ready = true
-    for i=0,N do
+    for i=0,W do
       self.readyDownstream[i] = readyDownstream[i]
       self.ready = self.ready and readyDownstream[i]
     end
@@ -1001,7 +920,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   return MT.new(PadSeq)
 end
 
-function MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount )
+function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
 
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
@@ -1055,10 +974,33 @@ function MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inpu
   return MT.new(ChangeRate)
 end
 
-function MT.linebuffer(res, A, w, h, T, ymin)
+function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
+  assert( types.isType(A) and A:isData() )
+  assert( ymin<=0 )
+  assert( T>0 )
+  assert(X==nil)
+  
   local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
-  terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+
+  if framed then
+    terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    -- pretend that this happens in one cycle (delays are added later)
+    for i=0,[T] do
+      self.SR:pushBack( &(@inp)[i] )
+    end
+
+    for y=[ymin],1 do
+      for x=[-T+1],1 do
+        --var outIdx = (y-ymin)*T+(x+T-1)
+        var peekIdx = x+y*[w]
+        --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
+        (@out)[x+T-1][y-ymin] = @(self.SR:peekBack(peekIdx))
+      end
+    end
+    end
+  else
+    terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
     for i=0,[T] do
       self.SR:pushBack( &(@inp)[i] )
@@ -1072,7 +1014,7 @@ function MT.linebuffer(res, A, w, h, T, ymin)
         (@out)[outIdx] = @(self.SR:peekBack(peekIdx))
       end
     end
-
+    end
   end
 
   return MT.new(Linebuffer)
@@ -1152,8 +1094,38 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
   return MT.new(SparseLinebuffer)
 end
 
-function MT.SSR(res, A, T, xmin, ymin )
+function MT.SSR(res, A, T, xmin, ymin, framed, X )
+  assert(X==nil)
+
   local struct SSR {SR:(A:toTerraType())[-xmin+T][-ymin+1]}
+  
+  if framed then
+
+  terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+    -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
+    for y=0,-ymin+1 do
+      for x=0,-xmin do
+        self.SR[y][x] = self.SR[y][x+T]
+      end
+    end
+
+    for y=0,-ymin+1 do
+      for x=-xmin,-xmin+T do
+        self.SR[y][x] = (@inp)[y][x+xmin]
+      end
+    end
+
+    -- write to output
+    for y=0,-ymin+1 do
+      for x=0,-xmin+T do
+        (@out)[y][x] = self.SR[y][x]
+      end
+    end
+  end
+
+
+
+  else
   terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
     for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+T] end end
@@ -1162,11 +1134,15 @@ function MT.SSR(res, A, T, xmin, ymin )
     -- write to output
     for y=0,-ymin+1 do for x=0,-xmin+T do (@out)[y*(-xmin+T)+x] = self.SR[y][x] end end
   end
+  end
 
   return MT.new(SSR)
 end
 
-function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
+function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput, X)
+  err(T>=1,"SSRPartial: T should be >=1")
+  assert(X==nil)
+  
   local struct SSRPartial {phase:int; SR:(A:toTerraType())[-xmin+1][-ymin+1]; activeCycles:int; idleCycles:int, ready:bool}
   terra SSRPartial:reset() self.phase=0; self.activeCycles=0;self.idleCycles=0; end
   terra SSRPartial:stats(name:&int8) cstdio.printf("SSRPartial %s T=%f utilization:%f\n",name,[float](T),[float](self.activeCycles*100)/[float](self.activeCycles+self.idleCycles)) end
@@ -1180,14 +1156,14 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput)
       for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
       self.phase = terralib.select([T==1],0,1)
     else
-      if self.phase<[1/T]-1 then 
+      if self.phase<[T]-1 then 
         self.phase = self.phase + 1 
       else
         self.phase = 0
       end
     end
 
-    var W : int = [(-xmin+1)*T]
+    var W : int = [(-xmin+1)/T]
     var Wtotal = -xmin+1
     if fullOutput then W = Wtotal end
     for y=0,-ymin+1 do for x=0,W do data(out)[y*W+x] = self.SR[y][J.fixedModulus(x+phaseAtStart*stride,Wtotal)] end end
@@ -1450,17 +1426,17 @@ function MT.reduce(res,f, W, H)
   terra ReduceModule:reset() self.inner:reset() end
 
   -- the execution order needs to match the hardware
-  local inp = symbol( &res.inputType:toTerraType() )
+  local inp = symbol( &res.inputType:lower():toTerraType() )
   local mself = symbol( &ReduceModule )
   local t = J.map(J.range(0,W*H-1), function(i) return `(@inp)[i] end )
 
   local foldout = J.foldt(t, function(a,b) return quote 
-    var tinp : f.inputType:toTerraType() = {a,b}
-    var tout : f.outputType:toTerraType()
+                            var tinp : f.inputType:lower():toTerraType() = {a,b}
+                            var tout : f.outputType:lower():toTerraType()
     mself.inner:process(&tinp,&tout)
     in tout end end )
 
-  ReduceModule.methods.process = terra( [mself], [inp], out : &res.outputType:toTerraType() )
+  ReduceModule.methods.process = terra( [mself], [inp], out : &res.outputType:lower():toTerraType() )
 --      var res : res.outputType:toTerraType() = (@inp)[0]
 --      for i=1,W*H do
 --        var tinp : f.inputType:toTerraType() = {res, (@inp)[i]}
@@ -1473,11 +1449,15 @@ function MT.reduce(res,f, W, H)
   return MT.new(ReduceModule)
 end
 
-function MT.reduceSeq(res,f, T)
-  local struct ReduceSeq { phase:int; result : f.outputType:toTerraType(); inner : f.terraModule}
+function MT.reduceSeq(res,f, Vw,Vh,X)
+  assert(X==nil)
+  assert(Vw>=1)
+  assert(Vh>=1)
+  
+  local struct ReduceSeq { phase:int; result : f.outputType:lower():toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
-  terra ReduceSeq:process( inp : &f.outputType:toTerraType(), out : &rigel.lower(res.outputType):toTerraType())
-    if self.phase==0 and T==1 then -- T==1 mean this is a noop, passthrough
+  terra ReduceSeq:process( inp : &f.outputType:lower():toTerraType(), out : &rigel.lower(res.outputType):toTerraType())
+    if self.phase==0 and Vw*Vh==1 then -- T==1 mean this is a noop, passthrough
       self.phase = 0
       valid(out) = true
       data(out) = @inp
@@ -1489,7 +1469,7 @@ function MT.reduceSeq(res,f, T)
       var v = {self.result, @inp}
       self.inner:process(&v,&self.result)
       
-      if self.phase==[1/T]-1 then
+      if self.phase==[Vw*Vh]-1 then
         self.phase = 0
         valid(out) = true
         data(out) = self.result
@@ -1632,13 +1612,16 @@ function MT.cycleCounter( res, A, count )
   return MT.new(CycleCounter)
 end
 
-function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicOutput)
+function MT.lift( name, inputType, outputType, terraFunction, systolicInput, systolicOutput, X)
+  assert(type(name)=="string")
   err(types.isType(inputType),"modules terra lift: input type must be type")
-
+  assert(X==nil)
 
   local struct LiftModule {}
 
-  if terraFunction==nil and systolicInput~=nil and systolicOutput~=nil then
+  if terraFunction==nil and (systolicInput~=nil or systolicOutput~=nil) then
+    -- derive terra fn from systolic fn
+    
     if outputType==nil then
       outputType = systolicOutput.type
     end
@@ -1648,11 +1631,19 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
     local inpS = symbol(systolicInput.type:toTerraType())
     local symbs = {}
     symbs[systolicInput.name] = inpS
-    local terraOut = systolicOutput:toTerra(symbs)
+    local terraOut
+    if systolicOutput~=nil then
+      terraOut = systolicOutput:toTerra(symbs)
+    else
+      err( outputType==types.null(),"MT.lift: systolicOutput is missing, but output type is: "..tostring(outputType).." on fn "..name )
+    end
 
     if inputType==types.null() then
       terra LiftModule:process(out:&rigel.lower(outputType):toTerraType())
         @out = [terraOut]
+      end
+    elseif outputType==types.null() then
+      terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType())
       end
     else
       terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType())
@@ -1666,35 +1657,42 @@ function MT.lift( inputType, outputType, terraFunction, systolicInput, systolicO
     
     return function()
       local tfn = terraFunction()
-      if outputType==types.null() then
+      if outputType==types.Interface() then
         terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) tfn(inp) end
       else
         terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) tfn(inp,out) end
       end
       return MT.new(LiftModule)
     end
-  else
+  elseif terralib.isfunction(terraFunction) then
     err(types.isType(outputType),"modules terra lift: output type must be type")
-    assert(inputType~=types.null())
+    assert(inputType~=types.Interface())
     --assert(outputType~=types.null())
-    if outputType==types.null() and terraFunction==nil then
+    if outputType==types.Interface() and terraFunction==nil then
       terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) end
-    elseif outputType==types.null() then
+    elseif outputType==types.Interface() then
       terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType()) terraFunction(inp) end
     else
       terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) terraFunction(inp,out) end
     end
+  else
+    print("lift is missing an implementation?",name,terraFunction,systolicInput,systolicOutput)
+    assert(false)
   end
 
   return MT.new(LiftModule)
 end
 
-function MT.constSeq(res, value, A, w, h, T,W )
-  local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][1/T] }
+function MT.constSeq( res, value, A, w, h, T, W, X )
+  assert( types.isType(A) and A:isData() )
+  assert( T>=1 )
+assert( X==nil )
+  
+  local struct ConstSeqState {phase : int; data : (A:toTerraType())[h*W][T] }
   local mself = symbol(&ConstSeqState,"mself")
   local initstats = {}
 
-  for C=0,(1/T)-1 do
+  for C=0,T-1 do
     for y=0,h-1 do
       for x=0,W-1 do
         table.insert( initstats, quote mself.data[C][y*W+x] = [A:valueToTerra(value[x+y*w+C*W+1])] end )
@@ -1705,7 +1703,7 @@ function MT.constSeq(res, value, A, w, h, T,W )
   terra ConstSeqState:process( out : &rigel.lower(res.outputType):toTerraType() )
     @out = self.data[self.phase]
     self.phase = self.phase + 1
-    if self.phase == [1/T] then self.phase = 0 end
+    if self.phase == T then self.phase = 0 end
   end
 
   return MT.new(ConstSeqState)
@@ -1764,14 +1762,14 @@ function MT.seqMap(f, W, H, T)
   local struct SeqMap { inner: f.terraModule}
   terra SeqMap:reset() self.inner:reset() end
   terra SeqMap:stats() self.inner:stats("TOP") end
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+  terra SeqMap:process( inp:&types.Interface():toTerraType(), out:&types.Interface():toTerraType())
     var o : darkroom.lower(f.outputType):toTerraType()
     for i=0,W*H do self.inner:process(nil,&o) end
   end
 
   return SeqMap
 end
-
+--[=[
 -- simCycles: run the simulation for at least this number of cycles
 function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, outputCount, axi, readyRate, simCycles, X)
   assert(X==nil)
@@ -1788,7 +1786,7 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
   local assntaps = quote end
   if tapInputType~=nil then assntaps = quote data(innerinp) = {nil,[tapInputType:valueToTerra(tapValue)]} end end
 
-  terra SeqMap:process( inp:&types.null():toTerraType(), out:&types.null():toTerraType())
+  terra SeqMap:process( inp:&types.Interface():toTerraType(), out:&types.Interface():toTerraType())
     var [innerinp]
     [assntaps]
 
@@ -1815,7 +1813,7 @@ function MT.seqMapHandshake(f, inputType, tapInputType, tapValue, inputCount, ou
 
   return SeqMap
 end
-
+]=]
 function MT.cropSeqFn(innerInputType,outputType,A, W_orig, H, T, L, R, B, Top )
   local W = Uniform(W_orig)
   return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
@@ -1971,10 +1969,23 @@ function MT.lambdaCompile(fn)
           err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
 
           if n.kind=="input" then
-            readyOutput = `array(list)
+            if n.type:isTuple() then
+              assert(false)
+            elseif n.type:isArray() then
+              readyOutput = `array(list)
+            else
+              assert(false)
+            end
 return {readyOutput}
           else
-            table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+            if n.type:isTuple() then
+              assert(false)
+            elseif n.type:isArray() then
+              table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
+            else
+              assert(false)
+            end
+
 return {`mself.[n.name].ready}
           end
         end
@@ -2013,7 +2024,7 @@ return {`mself.[n.name].ready}
           else
             table.insert( readyStats, quote mself.[n.name]:calculateReady(arg) end )
 
-            if n.fn.inputType~=types.null() then
+            if n.fn.inputType~=types.Interface() then
               res = {`mself.[n.name].ready}
             else
               res = {`0} -- has to return something, but should not be read
@@ -2029,7 +2040,7 @@ return {`mself.[n.name].ready}
             inst = `mself.[n.inst.name]
           end
           
-          if types.isHandshakeAny(applyfn.inputType) and applyfn.outputType==types.null() then
+          if types.isHandshakeAny(applyfn.inputType) and applyfn.outputType==types.Interface() then
             table.insert( readyStats, quote inst:[n.fnname.."_calculateReady"]() end ) 
             res = {`inst.[n.fnname.."_ready"]}
           elseif types.isHandshakeAny(applyfn.outputType) then
@@ -2042,7 +2053,12 @@ return {`mself.[n.name].ready}
           else
             assert(false)
           end
-        elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        elseif n.kind=="concat" then
+          res = {}
+          for k,_ in ipairs(n.inputs) do
+            res[k] = `[arg].["_"..(k-1)]
+          end
+        elseif n.kind=="concatArray2d" then
           res = {}
           for k,_ in ipairs(n.inputs) do
             res[k] = `[arg][ [k-1] ]
@@ -2067,6 +2083,20 @@ return {`mself.[n.name].ready}
         else
           print(n.kind)
           assert(false)
+        end
+
+        if type(res)=="table" then
+          local ty = res[1].type
+          if terralib.isquote(res[1]) then
+            ty = res[1]:gettype()
+          end
+
+          if n.inputs[1]~=nil and n.inputs[1].type~=types.Interface() then
+--            print(n.inputs[1],ty,n.inputs[1].type,res[1])
+--            print(ty)
+--            print(n.inputs[1].type,types.extractReady(n.inputs[1].type),types.extractReady(n.inputs[1].type):toTerraType())
+            err(ty == types.extractReady(n.inputs[1].type):toTerraType(),"Expected terra ready type '"..tostring(types.extractReady(n.inputs[1].type):toTerraType()).."' because input type was '"..tostring(n.inputs[1].type).."' but was '"..tostring(ty).."' "..tostring(res[1]).." "..tostring(n))
+          end
         end
 
         return res
@@ -2139,14 +2169,14 @@ return {`mself.[n.name].ready}
         end
 
         local instfn = n.inst.module.functions[n.fnname]
-        if instfn.inputType==types.null() then
+        if instfn.inputType==types.Interface() then
           table.insert( stats, quote inst:[n.fnname]( out ) end)
 
           if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("LOAD OUTPUT %s valid:%d readyDownstream:%d\n",n.name, valid(out), mself.[n.inst.name].readyDownstream ) end ) end
 
           res = {out}
-        elseif instfn.outputType==types.null() then
-          if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
+        elseif instfn.outputType==types.Interface() then
+          --if DARKROOM_VERBOSE then table.insert( stats, quote cstdio.printf("STORE INPUT %s valid:%d ready:%d\n",n.name,valid([inputs[1]]), mself.[n.inst.name].ready) end ) end
 
           table.insert(stats, quote  inst:[n.fnname]( [inputs[1]] ) end )
           res = {`nil}
@@ -2168,7 +2198,7 @@ return {`mself.[n.name].ready}
         J.map( inputs, function(m,i) table.insert(stats, quote cstring.memcpy(&((@out)[i-1]),[m],[ty:sizeof()]) end) end)
         res = {out}
       elseif n.kind=="statements" then
-        if n.inputs[1].type~=types.null() then table.insert( stats, quote @out = @[inputs[1]] end) end
+        if n.inputs[1].type~=types.Interface() then table.insert( stats, quote @out = @[inputs[1]] end) end
         res = {inputs[1]}
       elseif n.kind=="selectStream" then
         if rigel.isHandshakeTuple(n.inputs[1].type) then
@@ -2196,9 +2226,9 @@ return {`mself.[n.name].ready}
   RVReadyOutput = out[2]
   out = out[1]
 
-  if fn.input==nil or fn.inputType==types.null() then
+  if fn.input==nil or fn.inputType==types.Interface() then
     terra Module.methods.process( [mself], [outputSymbol] ) [stats] end
-  elseif fn.outputType==types.null() then
+  elseif fn.outputType==types.Interface() then
     terra Module.methods.process( [mself], [inputSymbol] ) [stats] end
   else
     terra Module.methods.process( [mself], [inputSymbol], [outputSymbol] ) [stats] end
@@ -2211,15 +2241,15 @@ return {`mself.[n.name].ready}
     terra Module.methods.calculateReady( [mself] ) var [RVReadyInput] = true; [RVReadyStats]; mself.ready = RVReadyOutput end
   elseif rigel.isHandshake(fn.outputType) or fn.output:outputStreams()>0 then
     local TMP = quote end
-    if fn.input~=nil and fn.input.type~=types.null() then TMP = quote mself.ready = [readyOutput] end end
+    if fn.input~=nil and fn.input.type~=types.Interface() then TMP = quote mself.ready = [readyOutput] end end
     terra Module.methods.calculateReady( [mself], [readyInput] ) mself.readyDownstream = readyInput; [readyStats]; TMP; end
   elseif rigel.streamCount(fn.inputType)>0 then
     -- has a handshake input, but not a handshake output
-    assert(fn.outputType==types.null())
+    assert(fn.outputType==types.Interface())
     terra Module.methods.calculateReady( [mself] ) [readyStats]; mself.ready = [readyOutput]; end
   elseif rigel.handshakeMode(fn.output) then
-    assert(fn.outputType==types.null())
-    assert(fn.inputType==types.null())
+    assert(fn.outputType==types.Interface())
+    assert(fn.inputType==types.Interface())
     terra Module.methods.calculateReady( [mself] ) [readyStats]; end
   end
 

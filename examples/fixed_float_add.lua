@@ -1,7 +1,7 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 local fixed = require "fixed_float"
 
 W = 64
@@ -15,7 +15,7 @@ local a = (af+fixed.constant(7540982534034)):toRigelModule("a")
 
 ------------
 ITYPE = types.array2d( types.int(32), T )
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "a", RM.map( a, T ), inp )
 fn = RM.lambda( "fixed_wide", inp, out )
 ------------

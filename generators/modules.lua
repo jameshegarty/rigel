@@ -983,7 +983,7 @@ end)
 
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
-modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
+--[=[modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
   --err( type(Vw)=="number", "mapParSeq: vector width must be number, but is: "..tostring(Vw))
@@ -1064,8 +1064,38 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   function res.makeTerra() return MT.mapParSeq(res,fn,W,H) end
   
   return rigel.newFunction(res)
-end)
+  end)]=]
 
+-- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
+-- basically the same as regular map, but for parseq
+modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
+  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
+  local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
+
+  err( X==nil, "mapParSeq: too many arguments" )
+
+  local G = require "generators.core"
+
+  local fnMapped = modules.map(fn,Vw,Vh)
+
+  local res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
+  assert( rigel.isFunction(res) )
+
+
+  -- hackity hack
+  if fn.inputType~=types.Interface() then
+    res.inputType = fn.inputType:replaceVar("over",types.ParSeq(fnMapped.inputType.over.over,W_orig,H_orig))
+  end
+
+  if fn.outputType~=types.Interface() then
+    res.outputType = fn.outputType:replaceVar("over",types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
+  end
+    
+--  print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
+          
+  return res
+end)
+ 
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
@@ -2134,8 +2164,8 @@ modules.demux = memoize(function( A, rates, X )
 
   local res = {kind="demux", A=A, rates=rates}
 
-  res.inputType = rigel.HandshakeTmuxed( A, #rates )
-  res.outputType = rigel.HandshakeArray(A, #rates)
+  res.inputType = rigel.HandshakeTmuxed( types.Par(A), #rates )
+  res.outputType = types.array2d( types.RV(types.Par(A)), #rates)
   res.stateful = false
   res.name = sanitize("Demux_"..tostring(A).."_"..#rates)
 
@@ -2263,7 +2293,7 @@ modules.broadcastStream = memoize(function(A,W,H,X)
   res.sdfOutput = SDF(J.broadcast({1,1},W*H))
   res.name = sanitize("BroadcastStream_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H))
 
-  if terralib~=nil then res.terraModule = MT.broadcastStream(res,A,N) end
+  if terralib~=nil then res.terraModule = MT.broadcastStream(res,W,H) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name):onlyWire(true)
@@ -2854,7 +2884,7 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
 
   assert(T>0)
   
-  local res = {kind="linebuffer", type=A, T=T, w=w, h=h, ymin=ymin }
+  local res = {kind="linebuffer", type=A, T=T, w=w_orig, h=h, ymin=ymin }
   --rigel.expectBasic(A)
 
   err( types.isType(A) and A:isData(), "Linebuffer: input should be data type, but is: "..tostring(A))
@@ -2878,7 +2908,7 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
   res.delay = 0
   res.name = sanitize("linebuffer_w"..tostring(w_orig).."_h"..tostring(h).."_T"..tostring(T).."_ymin"..tostring(ymin).."_A"..tostring(A).."_framed"..tostring(framed))
 
-  if terralib~=nil then res.terraModule = MT.linebuffer(res, A, w, h, T, ymin) end
+  if terralib~=nil then res.terraModule = MT.linebuffer(res, A, Uniform(w_orig):toNumber(), h, T, ymin, framed ) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -3052,6 +3082,7 @@ end)
 
 -- xmin, ymin are inclusive
 modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_orig, X )
+  err( types.isType(A) and A:isData(),"SSR: type should be data type")
   J.map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
   err( ymin<=0, "modules.SSR: ymin>0")
   err( xmin<=0, "module.SSR: xmin>0")
@@ -3080,7 +3111,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   res.delay=0
   res.name = verilogSanitize("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..tostring(T).."_A"..tostring(A).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig))
 
-  if terralib~=nil then res.terraModule = MT.SSR(res, A, T, xmin, ymin ) end
+  if terralib~=nil then res.terraModule = MT.SSR(res, A, T, xmin, ymin, framed ) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -3229,10 +3260,11 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   local res = { kind="makeHandshake", fn = f, tmuxRates = tmuxRates }
 
   if tmuxRates~=nil then
-    rigel.expectBasic(f.inputType)
-    rigel.expectBasic(f.outputType)
-    res.inputType = rigel.HandshakeTmuxed( f.inputType, #tmuxRates )
-    res.outputType = rigel.HandshakeTmuxed (f.outputType, #tmuxRates )
+    err(f.inputType:isrv() and f.inputType.over:is("Par"),"makeHandshake fn input should be rvPar, but is: "..tostring(f.inputType))
+    err(f.outputType:isrv() and f.outputType.over:is("Par"),"makeHandshake fn output should be rvPar, but is: "..tostring(f.outputType))
+
+    res.inputType = rigel.HandshakeTmuxed( f.inputType.over, #tmuxRates )
+    res.outputType = rigel.HandshakeTmuxed (f.outputType.over, #tmuxRates )
     assert( SDFRate.isSDFRate(tmuxRates) )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
   else
@@ -3776,7 +3808,7 @@ modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
   res.delay = 0
   res.name = "ReduceSeq_"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh)
 
-  if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,T) end
+  if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,Vw,Vh) end
 
   function res.makeSystolic()
     local del = f.systolicModule:getDelay("process")
@@ -4194,7 +4226,7 @@ local function lambdaSDFNormalize( input, output, name, X )
   local sdfMaxRate = output:sdfExtremeRate(true)
   local scaleFactor = SDFRate.fracInvert(sdfMaxRate)
   
-  if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
+  --if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
 
   local newInput
   local newOutput = output:process(
@@ -4762,10 +4794,10 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     return systolicModule
   end
 
-  if DARKROOM_VERBOSE then
-    print("lambda done '"..name.."'")
-    if terralib~=nil then print("lambda terra module size:"..terralib.sizeof(res.terraModule)) end
-  end
+  --if DARKROOM_VERBOSE then
+  --  print("lambda done '"..name.."'")
+   -- if terralib~=nil then print("lambda terra module size:"..terralib.sizeof(res.terraModule)) end
+  --end
 
   return rigel.newFunction( res )
 end
@@ -4843,7 +4875,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
       systolicOutput = res.systolicModule.functions.process.output
     end
 
-    local tmod = MT.lift(inputType,outputType,makeTerra,systolicInput,systolicOutput)
+    local tmod = MT.lift( name, inputType, outputType, makeTerra, systolicInput, systolicOutput )
     if type(tmod)=="function" then
       res.makeTerra = tmod
     elseif terralib.types.istype(tmod) then

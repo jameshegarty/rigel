@@ -188,7 +188,7 @@ C.tupleToArray = memoize(function(A,W,H,X)
 end)
 
 -- converts T[W,H] to {T,T,T,T...}
-C.ArrayToTuple = memoize(function(T,W,H)
+C.ArrayToTuple = memoize(function(T,W,H,X)
   err(types.isType(T),"ArrayToTuple: A should be type")
   err(type(W)=="number","ArrayToTuple: W must be number")
   if H==nil then H=1 end
@@ -1244,13 +1244,14 @@ end)
 
 
 -- takes A to A[T] by duplicating the input
-C.broadcast = memoize(function(A,W,H)
+C.broadcast = memoize(function(A,W,H,X)
   err( types.isType(A), "C.broadcast: A must be type A")
   err( types.isBasic(A), "C.broadcast: type should be basic, but is: "..tostring(A))
   err( type(W)=="number", "broadcast: W should be number")
   if H==nil then return C.broadcast(A,W,1) end
   err( type(H)=="number", "broadcast: H should be number")
-
+  assert(X==nil)
+  
   local OT = types.array2d(A, W, H)
 
   return modules.lift( J.sanitize("Broadcast_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H)),A,OT,0,

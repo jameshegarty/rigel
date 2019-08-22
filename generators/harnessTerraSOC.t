@@ -1,13 +1,13 @@
-local SOC = require "soc"
-local SOCMT = require "socTerra"
+local SOC = require "generators.soc"
+local SOCMT = require "generators.socTerra"
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local clocale = terralib.includec("locale.h")
 local J = require "common"
 local Uniform = require "uniform"
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
 local types = require "types"
-local AXI = require "axi"
+local AXI = require "generators.axi"
 
 local data = macro(function(i) return `i._0 end)
 local valid = macro(function(i) return `i._1 end)
@@ -138,8 +138,8 @@ return function(top, options)
     local I = J.sel(i==0,"",tostring(i))
     
     MWRITE_SLAVEOUT[i] = {
-      `[&uint8](&NOC.["write"..I.."_ready"][0]),
-      `[&uint8](&NOC.["write"..I.."_ready"][1]),
+      `[&uint8](&NOC.["write"..I.."_ready"]._0),
+      `[&uint8](&NOC.["write"..I.."_ready"]._1),
       `&NOC.["MAXI"..i.."_BRESP"],
       `[&uint8](&NOC.["MAXI"..i.."_BVALID"]),
       `&NOC.["MAXI"..i.."_BID"]

@@ -7,8 +7,8 @@ GRAD_TYPE = types.int(8)
 local sift = require("sift_core_hw")
 local rigel = require "rigel"
 local R = require "rigelSimple"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 
 local descriptor = {}
 
@@ -17,7 +17,7 @@ function descriptor.addPos()
   local PTYPE = R.tuple{types.array2d(descType,TILES_X*TILES_Y*8),R.tuple{R.uint16,R.uint16}}
   local POS_TYPE = R.tuple{R.uint16,R.uint16}
 
-  local inp = R.input(PTYPE)
+  local inp = R.input(types.rv(types.Par(PTYPE)))
   local desc = rigel.apply("pxd",C.index(PTYPE,0),inp)
   local pos = rigel.apply("p",C.index(PTYPE,1),inp)
   local posx = rigel.apply("px",C.index(POS_TYPE,0),pos)
@@ -47,7 +47,7 @@ function norm()
   local desc_sum = R.index{input=R.index{input=inp0, key=1 }, key=0}
   local desc0 = rigel.apply("d0lift",RM.makeHandshake(sift.fixedLift(R.int32)), R.index{input=R.index{input=inp1,key=0 },key=0} )
   
-  local desc = rigel.apply("pt",RM.packTuple({R.float,R.float},true),rigel.concat("PTT",{desc0,desc_sum}))
+  local desc = rigel.apply("pt",RM.packTuple({types.RV(types.Par(R.float)),types.RV(types.Par(R.float))},true),rigel.concat("PTT",{desc0,desc_sum}))
   local desc = rigel.apply("ptt",RM.makeHandshake(sift.fixedDiv(R.float)),desc)
   return R.defineModule{input=inp,output=desc}
 end

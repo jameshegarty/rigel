@@ -1,8 +1,8 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
+local harness = require "generators.harness"
 local J = require "common"
 
 GRAD_INT = true

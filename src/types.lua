@@ -1535,10 +1535,14 @@ end
 
 function types.isHandshake( a ) return a:is("Interface") and a.R~=nil and a.V~=nil end
 function types.isHandshakeVR( a ) return a:is("Interface") and a.R~=nil and a.V~=nil and a.VRmode end
-function types.isHandshakeTrigger( a ) return a:isNamed() and a.generator=="HandshakeTrigger" end
-function types.isHandshakeArray( a ) return a:isNamed() and a.generator=="HandshakeArray" end
-function types.isHandshakeTriggerArray( a ) return a:isNamed() and a.generator=="HandshakeTriggerArray" end
-function types.isHandshakeTuple( a ) return a:isNamed() and a.generator=="HandshakeTuple" end
+function types.isHandshakeTrigger( a ) return a:is("Interface") and a.R==types.bool() and a.V==types.bool() and a.v==nil and a.r==nil and a.I==nil and a.over==nil end
+function types.isHandshakeArray( a ) return a:isArray() and types.isHandshake(a.over) end
+function types.isHandshakeTriggerArray( a ) return a:isArray() and types.isHandshakeTrigger(a.over) end
+function types.isHandshakeTuple( a )
+  if a:isTuple()==false then return false end
+  for k,v in ipairs(a.list) do if v:isRV()==false then return false end end
+  return true
+end
 
 -- is this any of the handshaked types?
 function types.isHandshakeAny( a )
@@ -1563,6 +1567,8 @@ function types.expectBasic( A ) err( types.isBasic(A), "type should be basic but
 function types.expectV( A, er ) if types.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
 function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
+
+function TypeFunctions:lower() return types.lower(self) end
 
 -- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
 -- ie V(A) => {A,bool}
@@ -1640,7 +1646,10 @@ end
 function types.hasReady(a)
   if types.isHandshake(a) or types.isHandshakeTrigger(a) or a:isRV() or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
     return true
-  elseif types.isBasic(a) or a:isV() or a:isrv() or a:isrV() or a==types.Interface() then
+  elseif types.isBasic(a) or a:isV() or a:isrv() or a:isrV() or a:isrvV() or a==types.Interface() then
+    return false
+  elseif a:isTuple() then
+    for _,v in pairs(a.list) do if types.hasReady(v) then return true end end
     return false
   else
     print("UNKNOWN READY",a)

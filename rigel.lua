@@ -1367,7 +1367,7 @@ end)
 
 -- get a reference to the instance in terra
 darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
-  local MT = require "modulesTerra"
+  local MT = require "generators.modulesTerra"
   return MT.terraReference(tab)
 end)
 
@@ -1587,7 +1587,7 @@ function darkroomIRFunctions:calcSDF( )
         end
       end
       res = {IR}
-      if DARKROOM_VERBOSE then print("CONCAT",self.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
+      --if DARKROOM_VERBOSE then print("CONCAT",self.name,"converged=",res[2][1],"RATE",res[1][1][1],res[1][1][2]) end
     else
       res = {}
       for k,v in ipairs(self.inputs) do

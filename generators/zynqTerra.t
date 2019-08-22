@@ -1,6 +1,6 @@
-local MT = require "modulesTerra"
-local AXI = require "axi"
-local AXIT = require "axiTerra"
+local MT = require "generators.modulesTerra"
+local AXI = require "generators.axi"
+local AXIT = require "generators.axiTerra"
 local types = require "types"
 local J = require "common"
 
@@ -64,7 +64,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
                              readSink_ready:bool, -- SAXI0_RREADY (driven by TB)
                              writeSink_ready:bool, -- SAXI0_BREADY (driven by TB)
 
-                             write_ready:bool[2] -- 0:MAXI0_AWREADY, 1:MAXI0_WREADY (driven by TB)
+                             write_ready:tuple(bool,bool) -- 0:MAXI0_AWREADY, 1:MAXI0_WREADY (driven by TB)
                            }
 
   local resetQuotes = {}
@@ -193,9 +193,9 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
 --    @AXIT.WID32(out) = self.SAXI0_WID;
   end
 
-  terra ZynqNOCTerra:writeSource_calculateReady(inp:bool[2])
-    self.SAXI0_AWREADY = inp[0]
-    self.SAXI0_WREADY = inp[1]
+  terra ZynqNOCTerra:writeSource_calculateReady(inp:tuple(bool,bool))
+    self.SAXI0_AWREADY = inp._0
+    self.SAXI0_WREADY = inp._1
   end
 
   terra ZynqNOCTerra:writeSink(inp:&types.lower(AXI.WriteResponse(32)):toTerraType())

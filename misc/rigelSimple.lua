@@ -114,7 +114,7 @@ end
 
 function RS.modules.reduceSeq(t)
   err( type(t.V)=="number", "reduceSeq: V must be number ")
-  return RM.reduceSeq( t.fn, 1/t.V )
+  return RM.reduceSeq( t.fn, t.V )
 end
 
 function RS.modules.map(t)

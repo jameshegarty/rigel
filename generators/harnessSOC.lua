@@ -109,7 +109,7 @@ return function(fn,t,instances)
     f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
-    local doTerraSim = require("harnessTerraSOC")
+    local doTerraSim = require("generators.harnessTerraSOC")
     doTerraSim(fn,t)
   else
     print("backend",backend)

@@ -30,7 +30,7 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
 
   local makeTerra
   if terralib~=nil then
-    makeTerra = require "zynqTerra"
+    makeTerra = require "generators.zynqTerra"
   end
   
 

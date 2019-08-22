@@ -54,6 +54,7 @@ params.DataType = makeParam("DataType",false)
 params.NumberType = makeParam("NumberType",false,params.DataType("tmp"))
 params.IntType = makeParam("IntType",false,params.NumberType("tmp"))
 params.UintType = makeParam("UintType",false,params.NumberType("tmp"))
+params.FloatType = makeParam("FloatType",false,params.NumberType("tmp"))
 params.BoolType = makeParam("BoolType",false,params.NumberType("tmp"))
 params.BitsType = makeParam("BitsType",false,params.DataType("tmp"))
 params.ArrayType = makeParam("ArrayType",false,params.DataType("tmp"))
@@ -66,7 +67,7 @@ params.InterfaceType = function(name,over,X)
   assert(type(name)=="string")
   --local types = require "types"
   --assert(types.isType(over) or params.isParam(over) or over==nil)
-  return setmetatable({kind="InterfaceType",name=name,over=over,isValue=false,list=list},ParamMT)
+  return setmetatable({kind="InterfaceType",name=name,over=over,isValue=false},ParamMT)
 end
 
 -- over can be nil: means any schedule

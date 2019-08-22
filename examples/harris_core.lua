@@ -1,8 +1,8 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local f = require "fixed_float"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local J = require "common"
 
 local G  = {14 , 62 , 104 , 62 , 14}
@@ -42,7 +42,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
@@ -181,7 +181,7 @@ function harris.harrisWithStencil(t)
 
   out = R.apply("dxdyix",RM.makeHandshake(C.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
 
-  local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(DXDY_PAIR,2), out)
+  local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(types.Par(DXDY_PAIR),2), out)
 
   local internalW = t.W+15
   local internalH = t.H+15
@@ -226,7 +226,7 @@ function harris.harrisWithStencil(t)
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
-  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.concat("MPT",{left,right}))
+  local out = R.apply("merge",RM.packTuple{types.RV(types.Par(FILTER_TYPE)),types.RV(types.Par(types.bool()))},R.concat("MPT",{left,right}))
 
   local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,t.W+15,t.H+15,1,15,0,15,0))), out)

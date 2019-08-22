@@ -572,19 +572,19 @@ function(args)
   local fnVars = {}
   local fnType = T.rv(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
   
-  print("FNTY:E",fnType,args.rigelFunction.inputType,rigelFunction)
+  --print("FNTY:E",fnType,args.rigelFunction.inputType,rigelFunction)
   J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
 
-  print("FNVARS")
+  --print("FNVARS")
   for k,v in pairs(fnVars) do print("FNVARS",k,v) end
   return R.FunctionGenerator("core.Reduce",{},{},
     function(a)
 
-      print("TryToSpecial",args.rigelFunction.inputType)
+      --print("TryToSpecial",args.rigelFunction.inputType)
       local joinset = J.joinSet(fnVars,a,true)
       for k,v in pairs(joinset) do print("A",k,v) end
       local spType = R.specialize(args.rigelFunction.inputType, joinset )
-      print("SPTYPE",spType)
+      --print("SPTYPE",spType)
       local fn = args.rigelFunction{spType,SDF{1,1}}
       assert(R.isPlainFunction(fn))
         

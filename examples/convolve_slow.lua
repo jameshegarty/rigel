@@ -49,7 +49,7 @@ partialConvolved = R.connect{ input = partialStencil, toModule =
 -- sum partial convolutions to calculate full convolution
 summedPartials = R.connect{ input=partialConvolved, toModule =
   R.HS(R.modules.reduceSeq{ fn = 
-    R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, V=P}) }
+    R.modules.sumAsync{ inType = R.uint32, outType = R.uint32 }, V=1/P}) }
 
 convolved = R.connect{ input = summedPartials, toModule = 
   R.HS(R.modules.shiftAndCast{ inType = R.uint32, outType = R.uint8, shift = 8 }) }

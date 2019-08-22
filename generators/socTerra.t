@@ -31,7 +31,7 @@ end
 
 function SOCMT.axiRegs( mod, tab, X )
   assert(X==nil)
-  local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:bool[2], write_readyDownstream:bool }
+  local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:tuple(bool,bool), write_readyDownstream:bool }
 
   for k,v in pairs(tab) do
     local ty = v[1]
@@ -119,8 +119,8 @@ function SOCMT.axiRegs( mod, tab, X )
   end
 
   terra AxiRegsN:write_calculateReady(readyDownstream:bool)
-    self.write_ready[0] = true
-    self.write_ready[1] = true
+    self.write_ready._0 = true
+    self.write_ready._1 = true
     self.write_readyDownstream = readyDownstream
   end
 
@@ -285,11 +285,11 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, baseAddress_orig, writeFn )
       
       @AXIT.WVALID64(&W) = false
     elseif self.writeFirst then
-      cstdio.printf("WRITEFIRST nextAddrToWrite:%d IP_MAXI_WDATA_READY:%d data:%d/%#x\n", self.nextAddrToWrite, self.writeFnInst.ready[1], self.dataBuffer, self.dataBuffer )
+      cstdio.printf("WRITEFIRST nextAddrToWrite:%d IP_MAXI_WDATA_READY:%d data:%d/%#x\n", self.nextAddrToWrite, self.writeFnInst.ready._1, self.dataBuffer, self.dataBuffer )
       @AXIT.WVALID64(&W) = (self.nextAddrToWrite>0)
       cstring.memcpy( AXIT.WDATA64(&W), &self.dataBuffer, [R.extractData(inputType):sizeof()] )
 
-      if (self.nextAddrToWrite>0) and self.writeFnInst.ready[1] then
+      if (self.nextAddrToWrite>0) and self.writeFnInst.ready._1 then
         self.writeFirst=false
       end
     elseif valid(dataIn) and self.nextAddrToWrite>0 then
@@ -348,8 +348,8 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, baseAddress_orig, writeFn )
     -- ready needs to be true at the start of time (b/c WDATA may not be true until it sees addresses)
     -- but ready needs to be false once we've seen 1 valid, but not written it to bus
     self.writeFnInst:calculateReady(readyDownstream)
-    self.ready = (self.writeFnInst.ready[1] or self.nextAddrToWrite==[Nbytes:toTerra()]) and (self.writeFirst==false);
-    self.addrReadyDownstream = self.writeFnInst.ready[0]
+    self.ready = (self.writeFnInst.ready._1 or self.nextAddrToWrite==[Nbytes:toTerra()]) and (self.writeFirst==false);
+    self.addrReadyDownstream = self.writeFnInst.ready._0
     self.readyDownstream = readyDownstream
   end
 
@@ -427,7 +427,7 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
   local inputType = R.HandshakeTuple{types.uint(32),types.bits(Nbits)}
   local outputType = R.HandshakeTrigger
 
-  local struct WriteBytes { ready:bool[2], writeFnInst:writeFn.terraModule }
+  local struct WriteBytes { ready:tuple(bool,bool), writeFnInst:writeFn.terraModule }
   
   local burstCount = Nbytes/8
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
