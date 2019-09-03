@@ -453,6 +453,30 @@ C.eq = memoize(function(ty)
   return selm
 end)
 
+-----------------------------------------
+C.NE = memoize(function(ty)
+  err(types.isType(ty) and ty:isData(), "C.ne error: input must be data type")
+  local ITYPE = types.tuple{ty,ty}
+
+  local selm = RM.lift( J.sanitize("C_ne_"..tostring(ty)), ITYPE, types.bool(), 0,
+    function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end, nil,
+    "C.ne" )
+
+  return selm
+end)
+
+------------------------------------
+C.NEConst = memoize(function(ty,const)
+  err(types.isType(ty) and ty:isData(), "C.ne error: input must be data type")
+  err(ty:checkLuaValue(const),"C.neConst: lua value isn't what was expected")
+  
+  local selm = RM.lift( J.sanitize("C_ne_const_"..tostring(ty).."_value"..tostring(const)), ty, types.bool(), 0,
+    function(sinp) return S.eq(sinp, S.constant(const,ty)) end, nil,
+    "C.NEConst" )
+
+  return selm
+end)
+
 -----------------------------
 C.readTap = memoize(function(global)
   local G = {}
@@ -1066,7 +1090,7 @@ end)
 -- includeSizeFn: should module have a size fn?
 C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
   err( types.isType(ty), "C.fifo: type must be a type" )
-  err( R.isBasic(ty), "C.fifo: type must be basic type, but is: "..tostring(ty) )
+  err( ty:isData() or ty:isSchedule(), "C.fifo: type must be data type or schedule type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
   err( nostall==nil or type(nostall)=="boolean", "C.fifo: nostall must be boolean")
   err( csimOnly==nil or type(csimOnly)=="boolean", "C.fifo: csimOnly must be boolean")
@@ -1350,7 +1374,7 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
   err(type(ymin)=="number","stencilLinebuffer: ymin must be number")
   err(type(ymax)=="number","stencilLinebuffer: ymax must be number")
 
-  err(T>=1, "stencilLinebuffer: T must be >=1");
+  err(T>=0, "stencilLinebuffer: T must be >=0");
   err(Uniform(w_orig):toNumber()>0,"stencilLinebuffer: w must be >0");
   err(Uniform(h_orig):toNumber()>0,"stencilLinebuffer: h must be >0");
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")

@@ -624,7 +624,7 @@ function fixedNewASTFunctions:isSigned()
   if self.type:isUint() then return false end
   if self.type:isInt() then return true end
   if self.type:isNamed() and self.type.generator=="fixed" then return self.type.params.signed end
-  err(false,":isSigned(), not a numeric type!")
+  err(false,":isSigned(), not a numeric type! "..tostring(self.type))
 end
 
 function fixedNewASTFunctions:exp()

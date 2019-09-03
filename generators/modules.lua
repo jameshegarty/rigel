@@ -167,6 +167,79 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   return res
 end)
 
+-- takes rv([A{W,H},B{W,H},C{W,H}]) to rv({A,B,C}{W,H})
+-- typelist: list of {A,B,C} schedule types
+modules.ZipSchedules = memoize(function( mode, typelist, W, H, Vw, Vh, X )
+  err( type(W)=="number", "ZipSchedules: first argument should be number (width)")
+  err( type(H)=="number", "ZipSchedules: second argument should be number (height)")
+  err( type(typelist)=="table", "ZipSchedules: typelist must be table")
+  err( J.keycount(typelist)==#typelist, "ZipSchedules: typelist must be lua array")
+  err( asArray==nil or type(asArray)=="boolean", "ZipSchedules: asArray must be bool or nil")
+  assert(type(mode)=="string")
+
+  if asArray==nil then asArray=false end
+
+  local typeString = ""
+  local itype = {}
+
+  -- if all schedules are Par(data), get rid of the Pars as a courtesy
+  local terminal = true
+  for k,v in ipairs(typelist) do
+    err( types.isType(v),"ZipSchedules: typelist index "..tostring(k).." must be rigel type")
+
+    if mode=="ParSeq" then
+      err( v:isData(),"ZipSchedules: input should be list of data types, but is: "..tostring(v))
+    else
+      err( v:isSchedule(),"ZipSchedules: input should be list of schedule types, but is: "..tostring(v))
+      if (v:is("Par") and v.over:isData())==false then
+        terminal = false
+      end
+    end
+    
+    typeString = typeString.."_"..tostring(v)
+    if mode=="VarSeq" then
+      table.insert(itype,types.VarSeq(v,W,H))
+    elseif mode=="Seq" then
+      table.insert(itype,types.Seq(v,W,H))
+    elseif mode=="ParSeq" then
+      table.insert(itype,types.ParSeq(v,W,H))
+    else
+      assert(false)
+    end
+  end
+
+  local inputType = types.rv(types.tuple(itype))
+  print("ZIPINP",inputType)
+  local G = require "generators.core"
+  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..tostring(varSeq)..typeString,inputType,SDF{1,1},function(inp) return inp end}
+
+  assert( rigel.isPlainFunction(res) )
+
+  local typeOut = types.Tuple(typelist)
+  if terminal then
+    local newlist = {}
+    for k,v in ipairs(typelist) do
+      table.insert(newlist,v.over)
+    end
+    typeOut = types.Par(types.Tuple(newlist))
+  end
+  
+  -- hackity hack
+  if mode=="VarSeq" then
+    res.outputType = types.rv(types.VarSeq(typeOut,W,H))
+  elseif mode=="ParSeq" then
+    local newlist = {}
+    for k,v in ipairs(typelist) do
+      table.insert(newlist,v.over)
+    end
+    res.outputType = types.rv(types.ParSeq(types.Array2d(types.Tuple(newlist),Vw,Vh),W,H))
+  else
+    res.outputType = types.rv(types.Seq(typeOut,W,H))
+  end
+  
+  return res
+end)
+
 -- Converst {Handshake(a), Handshake(b)...} to Handshake{a,b}
 -- typelist should be a table of pure types
 -- WARNING: ready depends on ValidIn
@@ -1079,7 +1152,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   local fnMapped = modules.map(fn,Vw,Vh)
 
   local res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
-  assert( rigel.isFunction(res) )
+  assert( rigel.isPlainFunction(res) )
 
 
   -- hackity hack
@@ -1120,6 +1193,31 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     end
     
     print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
+          
+    return res
+end)
+
+-- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
+-- this is basically a trivial conversion
+modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
+    err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
+
+    local G = require "generators.core"
+
+    local res = G.Module{"MapVarSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+    assert( rigel.isFunction(res) )
+
+
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      res.inputType = fn.inputType:replaceVar("over",types.VarSeq(res.inputType.over,W_orig,H_orig))
+    end
+
+    if fn.outputType~=types.Interface() then
+      res.outputType = fn.outputType:replaceVar("over",types.VarSeq(res.outputType.over,W_orig,H_orig))
+    end
+    
+    print("MAPVarSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
           
     return res
 end)
@@ -1305,20 +1403,29 @@ modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, out
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
-modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce )
+modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce, framed, X )
   assert(types.isType(A))
   err(type(W)=="number", "W must be number")
   err(type(H)=="number", "H must be number")
   err( SDFRate.isFrac(rate), "filterSeq: rate must be {n,d} format fraction" )
   err(type(fifoSize)=="number", "fifoSize must be number")
-
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean", "filterSeq: framed must be bool" )
+  err(X==nil,"filterSeq: too many args")
+  
   if coerce==nil then coerce=true end
 
 
   local res = { kind="filterSeq", A=A }
   -- this has type basic->V (decimate)
-  res.inputType = types.rv(types.Par(types.tuple{A,types.bool()}))
-  res.outputType = types.rvV(types.Par(A))
+  if framed then
+    res.inputType = types.rv(types.Seq(types.Par(types.tuple{A,types.bool()}),W,H))
+    res.outputType = types.rvV(types.VarSeq(types.Par(A),W,H))
+  else
+    res.inputType = types.rv(types.Par(types.tuple{A,types.bool()}))
+    res.outputType = types.rvV(types.Par(A))
+  end
+  
   res.delay = 0
   res.stateful = true
   res.sdfInput = SDF{1,1}
@@ -2877,27 +2984,38 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
   assert(ymin<=0)
   err(X==nil,"linebuffer: too many args!")
   err( framed==nil or type(framed)=="boolean", "modules.linebuffer: framed must be bool or nil")
+  err( type(T)=="number" and T>=0,"modules.linebuffer: T must be number >=0")
   if framed==nil then framed=false end
   
   -- if W%T~=0, then we would potentially have to do two reads on wraparound. So don't allow this case.
-  err( (Uniform(w_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "Linebuffer error, W%T~=0 , W="..tostring(w_orig).." T="..tostring(T))
-
-  assert(T>0)
+  if T>0 then
+    err( (Uniform(w_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "Linebuffer error, W%T~=0 , W="..tostring(w_orig).." T="..tostring(T))
+  end
   
   local res = {kind="linebuffer", type=A, T=T, w=w_orig, h=h, ymin=ymin }
   --rigel.expectBasic(A)
 
   err( types.isType(A) and A:isData(), "Linebuffer: input should be data type, but is: "..tostring(A))
-  res.inputType = types.array2d(A,T)
-  res.outputType = types.array2d(A,T,-ymin+1)
-
+  if T==0 then
+    res.inputType = A
+    res.outputType = types.array2d(A,1,-ymin+1)
+  else
+    res.inputType = types.array2d(A,T)
+    res.outputType = types.array2d(A,T,-ymin+1)
+  end
+  
   if framed then
     --res.inputType = types.StaticFramed(res.inputType,true,{{w,h}})
     -- this is strange for a reason: inner loop is no longer a serialized flat array, so size must change
     --res.outputType = types.StaticFramed(res.outputType,false,{{w/T,h}})
     --T[1,ymin][T;w,h}
-    res.inputType = types.rv(types.ParSeq(res.inputType,w_orig,h))
-    res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w_orig,h))
+    if T==0 then
+      res.inputType = types.rv(types.Seq(types.Par(A),w_orig,h))
+      res.outputType = types.rv(types.Seq(types.Par(types.array2d(A,1,-ymin+1)),w_orig,h))
+    else
+      res.inputType = types.rv(types.ParSeq(res.inputType,w_orig,h))
+      res.outputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),w_orig,h))
+    end
   else
     res.inputType = types.rv(types.Par(res.inputType))
     res.outputType = types.rv(types.Par(types.array2d(A,T,-ymin+1)))
@@ -3086,21 +3204,28 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   J.map({T,xmin,ymin}, function(i) assert(type(i)=="number") end)
   err( ymin<=0, "modules.SSR: ymin>0")
   err( xmin<=0, "module.SSR: xmin>0")
-  err( T>0, "modules.SSR: T<=0")
+  err( T>=0, "modules.SSR: T<0")
   if framed==nil then framed=false end
   err(type(framed)=="boolean","SSR: framed must be boolean")
   err( X==nil,"SSR: too many arguments")
   
   local res = {kind="SSR", type=A, T=T, xmin=xmin, ymin=ymin }
-  res.inputType = types.array2d(A,T,-ymin+1)
-  res.outputType = types.array2d(A,T-xmin,-ymin+1)
 
   if framed then
-    --err(type(framedW)=="number","SSR: framedW must be number")
-    --err(type(framedH)=="number","SSR: framedH must be number")
-    res.inputType = types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),framedW_orig,framedH_orig)
-    res.outputType = types.ParSeq(types.array2d(types.array2d(A,-xmin+1,-ymin+1),T),framedW_orig,framedH_orig)
+    err(type(framedW_orig)=="number" or Uniform.isUniform(framedW_orig),"SSR: framedW must be uniform or number")
+    err(type(framedH_orig)=="number" or Uniform.isUniform(framedH_orig),"SSR: framedH must be uniform or number")
+    if T==0 then
+      res.inputType = types.Seq( types.Par(types.array2d(A,1,-ymin+1)),framedW_orig,framedH_orig)
+      res.outputType = types.Seq(types.Par(types.array2d(A,-xmin+1,-ymin+1)),framedW_orig,framedH_orig)
+    else
+      res.inputType = types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),T),framedW_orig,framedH_orig)
+      res.outputType = types.ParSeq(types.array2d(types.array2d(A,-xmin+1,-ymin+1),T),framedW_orig,framedH_orig)
+    end
   else
+    assert(T>0) -- NYI
+    res.inputType = types.array2d(A,T,-ymin+1)
+    res.outputType = types.array2d(A,T-xmin,-ymin+1)
+
     res.inputType, res.outputType = types.Par(res.inputType), types.Par(res.outputType)
   end
 
@@ -3417,7 +3542,8 @@ end
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
 modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, X )
-  rigel.expectBasic(A)
+  err( types.isType(A), "fifo: type must be type")
+  err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
   err(nostall==nil or type(nostall)=="boolean", "fifo: nostall should be nil or boolean")
@@ -5187,18 +5313,25 @@ end
 -- this is a Handshake triggered counter.
 -- it accepts an input value V of type TY.
 -- Then produces N tokens (from V to V+(N-1)*stride)
-modules.triggeredCounter = memoize(function(TY, N, stride)
+modules.triggeredCounter = memoize(function(TY, N, stride, framed, X)
   err( types.isType(TY),"triggeredCounter: TY must be type")
   err( rigel.expectBasic(TY), "triggeredCounter: TY should be basic")
   err( TY:isNumber(), "triggeredCounter: type must be numeric rigel type, but is "..tostring(TY))
   if stride==nil then stride=1 end
   err( type(stride)=="number", "triggeredCounter: stride should be number")
+  if framed==nil then framed=false end
+  assert(type(framed)=="boolean")
+  assert(X==nil)
   
   err(type(N)=="number", "triggeredCounter: N must be number")
 
   local res = {kind="triggeredCounter"}
   res.inputType = types.rv(types.Par(TY))
-  res.outputType = types.rRvV(types.Par(TY))
+  if framed then
+    res.outputType = types.rRvV(types.Seq(types.Par(TY),N,1))
+  else
+    res.outputType = types.rRvV(types.Par(TY))
+  end
   res.sdfInput = SDF{1,N}
   res.sdfOutput = SDF{1,1}
   res.stateful=true

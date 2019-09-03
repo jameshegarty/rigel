@@ -229,6 +229,7 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   assert(X==nil)
   
   --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars) then
     err(finVars.type==nil,"findLifts: argument 'type' already set? Don't use 'type' as a parameter name")
@@ -247,14 +248,17 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   -- search through lifts
   local liftsFound = false
   for liftName,lift in pairs(L) do
-    local L1 = liftName,lift[3]:isSupertypeOf(Ttarget,{})
-    --print("L1",lift[3],"isSupertypeOf?",Ttarget,L1)
-    --print("L3",lift[2],"isSupertypeOf?",TparamOutput,"(can lift output deal with fn output?)",L3)
-    local L3 = lift[2]:isSupertypeOf(TparamOutput,{})
-
-    --print("Try lift",L1,lift[1]:isSupertypeOf(Tparam,{}),L3)
     local vars1, vars2, vars3 = {},{},{}
-    if lift[3]:isSupertypeOf(Ttarget,vars1) and lift[1]:isSupertypeOf(Tparam,vars2) and lift[2]:isSupertypeOf(TparamOutput,vars3) then
+    --print("check1",lift[3],"isSupertypeOf",Ttarget)
+    local check1 = lift[3]:isSupertypeOf(Ttarget,vars1)
+    --print("check2",lift[1],":isSupertypeOf",Tparam)
+    local check2 = lift[1]:isSupertypeOf(Tparam,vars2)
+    --print("check3",lift[2],":isSupertypeOf",TparamOutput)
+    local check3 = lift[2]:isSupertypeOf(TparamOutput,vars3)
+
+    --print("Try lift",liftName,check1,check2,check3)
+
+    if check1 and check2 and check3 then
       --print("Apply lift: "..tostring(lift[1]).."->"..tostring(lift[2]).." to "..tostring(lift[3]).."->"..tostring(lift[4]))
       --print("SPECIALIZE",Ttarget,lift[3])
       --for kk,vv in pairs(vars1) do print("SPEC",kk,vv) end
@@ -311,6 +315,12 @@ functionGeneratorMT.__call=function(tab,...)
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
 
     if arglist.type==nil and (tab.requiredArgs.type~=nil or tab.optArgs.type~=nil) then arglist.type = arg.type end
+    
+    if arglist.type~=nil and (tab.requiredArgs.type1~=nil or tab.optArgs.type1~=nil) then
+      -- special case: user has asked for a _second_ type as an explicit argument. But we always assign input to 'type'. SO reshuffle
+      arglist.type1 = arglist.type
+      arglist.type = arg.type
+    end
     if arglist.rate==nil and (tab.requiredArgs.rate~=nil or tab.optArgs.rate~=nil) then arglist.rate = arg.rate end
 
     return tab:complete(arglist)(arg)
@@ -422,7 +432,13 @@ function functionGeneratorFunctions:complete(arglist)
         
         a[self.inputType.name]=k-1 -- sum type option
         for kk,vv in pairs(self.curriedArgs) do
-          assert(a[kk]==nil)
+
+
+          if kk=="type" and self.requiredArgs.type1~=nil then
+            -- HACK: special case for input type, when we want a second type as explicit input
+          else
+            err(a[kk]==nil,"generator:complete(): arg '"..kk.."' was already set? on generator '"..self.name.."'")
+          end
           a[kk]=vv
         end
         --for kk,vv in pairs(a) do print("FINFN2",self.name,kk,vv) end
@@ -463,7 +479,8 @@ function functionGeneratorFunctions:complete(arglist)
   return mod
 end
 
-function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType )
+function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType, X )
+  assert(X==nil)
   err( type(name)=="string", "FunctionGenerator: name must be string, but is: "..tostring(name) )
   err( type(requiredArgs)=="table", "FunctionGenerator: requiredArgs must be table, but is: "..tostring(requiredArgs) )
   if J.keycount(requiredArgs)==#requiredArgs then
@@ -1252,11 +1269,11 @@ function darkroomIRMT.__index(tab,key)
     return darkroomIRFunctions[key]
   end
 
-  if type(key)=="number" and types.isHandshakeAny(tab.type) then
+  if type(key)=="number" and types.isHandshakeAny(tab.type) and (tab.type:isTuple() or tab.type:isArray()) then
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
-  elseif type(key)=="number" and tab.type:isrv() and (tab.type.over.over:isArray() or tab.type.over.over:isTuple()) then
+  elseif type(key)=="number" and (tab.type:extractData():isArray() or tab.type:extractData():isTuple()) then
     local G = require "generators.core"
     local res = G.Index{key}(tab)
     rawset(tab,key,res)
@@ -1531,6 +1548,8 @@ function darkroom.newIR(tab)
   return r
 end
 
+function darkroomIRFunctions:setName(nm) assert(type(nm)=="string"); self.name=nm; return self end
+
 function darkroomIRFunctions:calcSDF( )
   local res
   if self.kind=="input" or self.kind=="constant" then
@@ -1705,10 +1724,14 @@ function darkroomIRFunctions:typecheck()
   elseif n.kind=="constant" then
   elseif n.kind=="concat" then
     if darkroom.isHandshake(n.inputs[1].type) then
-      n.type = darkroom.HandshakeTuple( J.map(n.inputs, function(v,k) err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type)); return darkroom.extractData(v.type) end) )
-    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
+      n.type = types.tuple( J.map(n.inputs,
+                                  function(v,k)
+                                    err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type));
+                                    return v.type
+                                  end) )
+--    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
       -- there's no reason for HandshakeTuple to exist...
-      err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
+--      err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
     elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
       n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but input "..tostring(k).." is "..tostring(v.type)); return v.type.over.over end) )))
     else

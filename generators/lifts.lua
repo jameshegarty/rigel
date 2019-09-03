@@ -7,9 +7,18 @@ local RM = require "generators.modules"
 
 -- lift pointwise to Seq: S(A)->S(B) to S(A{w,h})->S(B{w,h})
 lifts.mapSeq={
-  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn",P.DataType("A"))), P.InterfaceType("InterfaceOut",P.ScheduleType("SchedOut",P.DataType("B"))),
-  P.InterfaceType("InterfaceIn",T.Seq(P.ScheduleType("SchedIn",P.DataType("A")),P.SizeValue("Size"))), P.InterfaceType("InterfaceOut",T.Seq(P.ScheduleType("SchedOut",P.DataType("B")),P.SizeValue("Size"))),
+  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn")), P.InterfaceType("InterfaceOut",P.ScheduleType("SchedOut")),
+  P.InterfaceType("InterfaceIn",T.Seq(P.ScheduleType("SchedIn"),P.SizeValue("Size"))), P.InterfaceType("InterfaceOut",T.Seq(P.ScheduleType("SchedOut"),P.SizeValue("Size"))),
   function(args) return function(f) return RM.mapSeq(f,args.Size[1],args.Size[2]) end end}
+
+lifts.mapVarSeq={
+  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn")),
+  P.InterfaceType("InterfaceOut",P.ScheduleType("SchedOut")),
+  
+  P.InterfaceType("InterfaceIn",T.VarSeq(P.ScheduleType("SchedIn"),P.SizeValue("Size"))),
+  P.InterfaceType("InterfaceOut",T.VarSeq(P.ScheduleType("SchedOut"),P.SizeValue("Size"))),
+  
+  function(args) return function(f) return RM.mapVarSeq(f,args.Size[1],args.Size[2]) end end}
 
 -- lift pointwise to Seq: S(A)->S(B) to S(A{w,h})->S(B{w,h})
 lifts.mapSeqInilOut={

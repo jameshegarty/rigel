@@ -29,7 +29,8 @@ function ParamFunctions:isInterface()
 end
 
 function ParamFunctions:isData()
-  return self.kind=="DataType" or self.kind=="NumberType" or self.kind=="TupleType"
+  -- "TupleType" seems wrong here (could contain a interface or schedule?)    
+  return self.kind=="DataType" or self.kind=="NumberType" or self.kind=="BitsType" or self.kind=="UintType" or self.kind=="IntType" or self.kind=="TupleType"
 end
 
 local function makeParam( kind, isValue, super )
@@ -92,7 +93,9 @@ params.TypeList = function(name,constraint,X)
   return setmetatable({kind="TypeList",name=name,constraint=constraint,isValue=false},ParamMT)
 end
 
-params.SumType = function(name,list)
+params.SumType = function(name,list,X)
+  assert(type(list)=="table")
+  assert(X==nil)
   return setmetatable({kind="SumType",name=name,isValue=false,list=list},ParamMT)
 end
 
@@ -189,22 +192,31 @@ function ParamFunctions:isSupertypeOf(P,vars)
   elseif self.kind=="ScheduleType" then
     --J.err(types.isType(P),"Schedule Type match should be type, but is: "..tostring(P).." self:"..tostring(self))
     if P:isSchedule()==false then return false end
-    if P:is("Par") then
-      vars[self.name] = types.Par
-    elseif P:is("ParSeq") then
-      vars[self.name] = function(o) return types.ParSeq(o,P.size[1],P.size[2]) end
-    elseif P:is("Seq") then
-      vars[self.name] = function(o) return types.Seq(o,P.size[1],P.size[2]) end
-    else
-      print("NYI - "..tostring(P))
-      assert(false)
-    end
+
     if self.over==nil then
+      vars[self.name] = P
       return true
     else
+      if P:isTuple() or P:isArray() then
+        -- not sure what to do here... we want a schedule type matching a particular
+        -- pattern, but the user gave us a tuple/array? (which doesn't match pattern, sort of?)
+        return false
+      end
+      
       local res = self.over:isSupertypeOf(P.over,vars)
-      --print("Param interface here",self.over,P.over,res)
-      return res
+      if res==false then return false end
+      
+      if P:is("Par") then
+        vars[self.name] = types.Par
+      elseif P:is("ParSeq") then
+        vars[self.name] = function(o) return types.ParSeq(o,P.size[1],P.size[2]) end
+      elseif P:is("Seq") then
+        vars[self.name] = function(o) return types.Seq(o,P.size[1],P.size[2]) end
+      else
+        print("NYI - "..tostring(P))
+        assert(false)
+      end
+      return true
     end
   elseif types.isType(P) or type(P)=="number" or R.isSize(P) then
     return self:isSupertypeOf(valueOrTypeToParam(P),vars)

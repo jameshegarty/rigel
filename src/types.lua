@@ -45,6 +45,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     res = tostring(ty.over.over).."["..tostring(ty.over.size)..";"..tostring(ty.size).."}"
   elseif ty.kind=="Seq" then
     res = tostring(ty.over).."{"..tostring(ty.size).."}"
+  elseif ty.kind=="VarSeq" then
+    res = tostring(ty.over).."{<="..tostring(ty.size).."}"
   elseif ty.kind=="Interface" then
     local pre = ""
     if ty.I~=nil then pre=pre.."I" end
@@ -98,6 +100,7 @@ end}
 
 types._bool=setmetatable({kind="bool"}, TypeMT)
 function types.bool() return types._bool end
+types.Bool = types.bool()
 
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
@@ -130,6 +133,7 @@ function types.bits( prec, X )
   types._bits[prec] = types._bits[prec] or setmetatable({kind="bits",precision=prec},TypeMT)
   return types._bits[prec]
 end
+types.Bits = types.bits
 
 types._uint={}
 function types.uint( prec, X )
@@ -141,6 +145,8 @@ function types.uint( prec, X )
   return types._uint[prec]
 end
 types.u = types.uint
+types.U = types.uint
+types.Uint=types.uint
 
 types._int={}
 function types.int( prec, X )
@@ -150,6 +156,8 @@ function types.int( prec, X )
   types._int[prec] = types._int[prec] or setmetatable({kind="int",precision=prec},TypeMT)
   return types._int[prec]
 end
+types.I = types.int
+types.Int=types.int
 
 types._float={}
 function types.float( prec, X )
@@ -199,6 +207,7 @@ function types.array2d( _type, w, h, X )
   local ty = setmetatable( {kind="array", over=_type, size=size}, TypeMT )
   return J.deepsetweak(types._array, {_type,w,h}, ty)
 end
+types.Array2d = types.array2d
 
 types._tuples = {}
 types._tuplesParam = {}
@@ -242,6 +251,7 @@ function types.tuple( list, X )
   assert(#res.list==#list)
   return res
 end
+types.Tuple = types.tuple
 
 local boolops = {["or"]=1,["and"]=1,["=="]=1,["xor"]=1,["select"]=1} -- bool -> bool -> bool
 local cmpops = {["=="]=1,["~="]=1,["<"]=1,[">"]=1,["<="]=1,[">="]=1} -- number -> number -> bool
@@ -719,6 +729,8 @@ function TypeFunctions:replaceVar(k,v)
     res = types.Par(cpy.over)
   elseif self:is("Seq") then
     res = types.Seq(cpy.over,cpy.size)
+  elseif self:is("VarSeq") then
+    res = types.VarSeq(cpy.over,cpy.size)
   elseif self:is("array") then
     res = types.array2d(cpy.over,cpy.size)
   else
@@ -785,9 +797,10 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isNamed() then
     return self.structure:verilogBits()
+  elseif self:is("Par") or self:is("Seq") or self:is("ParSeq") or self:is("VarSeq") then
+    return self.over:verilogBits()
   else
-    print(":verilogBits() not implemented for:",self)
-    assert(false)
+    err(false,":verilogBits() not implemented for: "..tostring(self))
   end
 end
 
@@ -833,7 +846,7 @@ function TypeFunctions:isSchedule()
     return self.over:isSchedule()
   end
     
-  return self.kind=="Par" or self.kind=="Seq" or self.kind=="ParSeq"
+  return self.kind=="Par" or self.kind=="Seq" or self.kind=="ParSeq" or self.kind=="VarSeq"
 end
 --function TypeFunctions:isScheduleType() return types.isScheduleType(self) end
 function TypeFunctions:isFloat() return self.kind=="float" end
@@ -886,7 +899,7 @@ function TypeFunctions:checkLuaValue(v)
       self:arrayOver():checkLuaValue(v[i])
     end
   elseif self:isTuple() then
-    err( type(v)=="table", "if type is "..tostring(self)..", value must be a table")
+    err( type(v)=="table", "if type is "..tostring(self)..", value must be a table, but is: "..tostring(v))
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() then
@@ -1057,7 +1070,7 @@ function types.valueToType(v)
 end
 
 function types.isBasic(A)
-  if P.isParam(A) and (A.kind=="DataType" or A.kind=="NumberType") then return true end
+  if P.isParam(A) and (A.kind=="DataType" or A.kind=="NumberType" or A.kind=="BitsType" or A.kind=="UintType" or A.kind=="IntType") then return true end
   if P.isParam(A) then
     return P.DataType("tmp"):isSupertypeOf(A)
   end
@@ -1078,7 +1091,7 @@ function types.isBasic(A)
     return false
   elseif A:isInterface() then
     return false
-  elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") then
+  elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") or A:is("VarSeq") then
     return false
   elseif A:isNamed() and A.generator=="fixed" then
     return true -- COMPLETE HACK, REMOVE
@@ -1092,6 +1105,7 @@ end
 
 types.Par = J.memoize(function(D,X)
   assert(X==nil)
+--    print("PAR",D,P.isParam(D),D:isData(),types.isBasic(D))
   err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
   err(D~=types.null(),"types.Par: input should not be null")
 --  if types.isType(D) then
@@ -1131,6 +1145,34 @@ types.Seq = J.memoize(function(D,w,h,X)
   
   local res = setmetatable({kind="Seq",over=D,size=size},TypeMT)
 --  print("MakeSeq",D,w,h,res)
+  return res
+end)
+
+types.VarSeq = J.memoize(function(D,w,h,X)
+  local Uniform = require "uniform"
+  err( types.isType(D) or P.isParam(D),"types.VarSeq must be over a type, but is: "..tostring(D))
+  err( D:isSchedule(), "types.VarSeq: input to VarSeq should be a schedule type, but is: "..tostring(D) )
+  err(X==nil,"VarSeq: too many arguments")
+
+  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
+    assert(h==nil)
+    return types.VarSeq(D,w[1],w[2])
+  end
+
+  local size
+  if P.isParamValue(w) then
+    err( w.kind=="SizeValue","VarSeq: parametric size must be size, but is: "..tostring(size))
+    assert(h==nil)
+    size = w
+  else    
+    err( Uniform.isUniform(w) or type(w)=="number", "VarSeq: w must be number, but is: "..tostring(w))
+    err( Uniform.isUniform(h) or type(h)=="number", "VarSeq: h must be number, but is: "..tostring(h))
+    local R = require "rigel"
+    size=R.Size(w,h)
+  end
+
+  local res = setmetatable({kind="VarSeq",over=D,size=size},TypeMT)
+
   return res
 end)
 
