@@ -603,7 +603,7 @@ bool checkPorts(bool checkWriteOnly){
     if( QSize(&writeQ[port])>0){
       //std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << " bytesWritten: " << masterBytesWritten[port] << std::endl;
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
-      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d nextTransactionAddr:%d nextTransactionBurst:%d bytesWritten:%d\n",port, QSize(&writeQ[port]), t->addr, t->burst, masterBytesWritten[port] );
+      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d nextTransactionAddr:%d nextTransactionBurst:%d bytesWrittenOnThisPort:%d bytesReadOnAllPorts:%d\n",port, QSize(&writeQ[port]), t->addr, t->burst, masterBytesWritten[port], bytesRead() );
       errored = true;
     }
   }

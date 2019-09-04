@@ -17,7 +17,7 @@ function displayOutput( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.uint(8),1)
 
-  return RM.lift("displayOutput",ITYPE, OTYPE, 0,
+  return RM.lift("displayOutput",ITYPE, OTYPE, 2,
     function(inp)
       local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
       if threshold~=0 then
@@ -40,7 +40,7 @@ function displayOutputColor( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.array2d(types.uint(8),4),1)
 
-  return RM.lift("displayOutput",ITYPE, OTYPE, 0,
+  return RM.lift("displayOutput",ITYPE, OTYPE, 2,
     function(inp)
       local out = S.cast(S.index(inp,0),types.array2d(types.uint(8),4))
       out = S.cast(out,OTYPE)

@@ -245,7 +245,7 @@ C.Abs = memoize(function(A,X)
   err( types.isType(A), "C.Abs: A must be type")
   assert(X==nil)
 
-  local partial = RM.lift( J.sanitize("Abs_A"..tostring(A)), A, A, 0,
+  local partial = RM.lift( J.sanitize("Abs_A"..tostring(A)), A, A, 1,
     function(sinp) return S.abs(sinp) end )
 
   return partial
@@ -304,7 +304,7 @@ end)
 
 C.neg = memoize(function(bits)
   assert(type(bits)=="number")
-  return RM.lift( "Neg_"..tostring(bits), types.Int(bits), types.Int(bits), 0, function(sinp) return S.neg(sinp) end )
+  return RM.lift( "Neg_"..tostring(bits), types.Int(bits), types.Int(bits), 1, function(sinp) return S.neg(sinp) end )
 end)
 
 C.tokenCounter = memoize(function(A,str,X)
@@ -501,7 +501,7 @@ C.NE = memoize(function(ty)
   local ITYPE = types.tuple{ty,ty}
 
   local selm = RM.lift( J.sanitize("C_ne_"..tostring(ty)), ITYPE, types.bool(), 0,
-    function(sinp) return S.eq(S.index(sinp,0), S.index(sinp,1)) end, nil,
+    function(sinp) return S.__not(S.eq(S.index(sinp,0), S.index(sinp,1))) end, nil,
     "C.ne" )
 
   return selm
@@ -513,7 +513,7 @@ C.NEConst = memoize(function(ty,const)
   err(ty:checkLuaValue(const),"C.neConst: lua value isn't what was expected")
   
   local selm = RM.lift( J.sanitize("C_ne_const_"..tostring(ty).."_value"..tostring(const)), ty, types.bool(), 0,
-    function(sinp) return S.eq(sinp, S.constant(const,ty)) end, nil,
+    function(sinp) return S.__not(S.eq(sinp, S.constant(const,ty))) end, nil,
     "C.NEConst" )
 
   return selm
@@ -838,7 +838,7 @@ C.SADFixed4 = memoize(function( A, reduceType, Width, X )
   assert(fixed.extractSigned(reduceType)==false)
   assert(fixed.extractExp(reduceType)==0)
 
-  local inp = R.input( types.array2d( types.array2d(A,2) , Width, Width ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( types.array2d(A,2) , Width, Width ))) )
 
   -------
   local ABS_inp = fixed.parameter("abs_inp", types.array2d(A,2))
@@ -1645,7 +1645,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
   err( (minTotalOutputBits%Uniform(outputBitsPerCyc)):eq(0):assertAlwaysTrue(), "generalizedChangeRate: outputBitsPerCycle ("..outputBitsPerCyc..") must divide minTotalOutputBits ("..tostring(minTotalOutputBits)..")")
   assert(X==nil)
 
-  local name = J.sanitize("GeneralizedChangeRate_"..tostring(inputBitsPerCyc).."_"..tostring(outputBitsPerCyc).."_"..tostring(minTotalInputBits_orig).."_"..tostring(minTotalOutputBits_orig))
+  local name = J.sanitize("GeneralizedChangeRate_inputBitsPerCyc"..tostring(inputBitsPerCyc).."_outputBitsPerCyc"..tostring(outputBitsPerCyc).."_minTotalInputBits"..tostring(minTotalInputBits_orig).."_minTotalOutputBits"..tostring(minTotalOutputBits_orig))
 
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = minTotalInputBits:max(minTotalOutputBits)

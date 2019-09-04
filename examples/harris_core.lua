@@ -17,23 +17,26 @@ floatMult = J.memoize(function(Atype)
     B = B:lift(0)
   end
   local out = A*B
+--  if Atype:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
-                    end)
+end)
 
 floatSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("fm",types.tuple{A,A})
   local out = (inp:index(0))+(inp:index(1))
+  --if A:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatSum"), out.type}
-                   end)
+end)
 
 floatShift = J.memoize(function(A,amount)
   assert(types.isType(A))
   assert(type(amount)=="number")
   local inp = f.parameter("fm",A)
   local out = inp:rshift(amount)
+--  if A:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatShift"), out.type}
-                     end)
+end)
 
 function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(ConvWidth)=="number")
@@ -71,7 +74,8 @@ function harris.makeHarrisKernel(dxType, dyType)
   local tr = Ixx+Iyy
   local trsq = tr*tr
   local out = det - (f.constant(K))*trsq
---  out = out:lshift(10):lower(types.uint(8))
+  --  out = out:lshift(10):lower(types.uint(8))
+--  if dxType:isFloat() then out = out:disablePipelining() end
   local res = out:toRigelModule("harrisinner")
   return res, out.type
 end
@@ -96,6 +100,7 @@ function harris.makeNMS(ty, boolOutput, X)
   if boolOutput==false then
     out = f.select(out,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
   end
+--  if ty:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("nms")
 end
 
@@ -113,7 +118,8 @@ function harris.makeDXDYKernel(ty)
 --  return out:toRigelModule("DXDY"), types.uint(8)
 
   local out = f.tuple{dx,dy}
---  print("DXDYTYPE",out.type,dx.type)
+  --  print("DXDYTYPE",out.type,dx.type)
+--  if ty:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("DXDY"), dx.type
 end
 

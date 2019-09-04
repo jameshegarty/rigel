@@ -16,21 +16,23 @@ if terralib~=nil then siftCoreHWTerra=require("sift_core_hw_terra") end
 
 sift = {}
 
-local fixedSum = J.memoize(function(A)
+local fixedSum = J.memoize(function(A,async)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+inp:index(1)
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if async==true then out = out:disablePipelining() end
   return out:toRigelModule("fixedSum")
                    end)
 
-local fixedSumPow2 = J.memoize(function(A)
+local fixedSumPow2 = J.memoize(function(A,async)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+(inp:index(1)*inp:index(1))
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if async==true then out = out:disablePipelining() end
   return out:toRigelModule("fixedSumPow2")
                    end)
 
@@ -39,7 +41,8 @@ local fixedDiv = J.memoize(function(A)
   local inp = f.parameter("II",types.tuple{A,A})
   local out = (inp:index(0))/(inp:index(1))
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if A:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("fixedDiv")
                    end)
 
@@ -48,7 +51,8 @@ local fixedSqrt = J.memoize(function(A)
   local inp = f.parameter("II",A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if A:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("fixedSqrt")
                    end)
 
@@ -138,6 +142,8 @@ local function siftBucket(dxdyType,magtype)
   local v5 = f.select((dx_ge_0:__not()):__and((dy_ge_0:__not()):__and(negdx_gt_negdy:__not())),mag,zero)
 
   local out = f.array2d({v0,v1,v2,v3,v4,v5,v6,v7},8)
+
+  if dxdyType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("siftBucket")
 end
 ----------------
@@ -151,6 +157,7 @@ local function siftMag(dxdyType)
   local mag = magsq:sqrt()
 
   local out = mag*gauss_weight
+  if dxdyType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("siftmag"), out.type
 end
 ----------------
@@ -184,7 +191,7 @@ local function bucketReduce(descType,N,X)
   local descArray = types.array2d(descType,N)
   local inp = R.input(types.rv(types.Par(types.tuple{descArray,descArray})))
   local out = R.apply("SOA",C.SoAtoAoS(N,1,{descType,descType}),inp)
-  local out = R.apply("MP",RM.map(fixedSum(descType),N),out)
+  local out = R.apply("MP",RM.map(fixedSum(descType,true),N),out)
   return RM.lambda("bucketReduce",inp,out)
 end
 ----------------
@@ -237,6 +244,7 @@ local function addDescriptorPos(descType)
   local a = {px,py}
   for i=0,127 do table.insert(a,desc:index(i)) end
   local out = f.array2d(a,130)
+  if descType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("addDescriptorPos")
 end
 ----------------
@@ -303,7 +311,7 @@ local function siftKernel(dxdyType)
   --local desc1 = C.fifoLoop( fifos, statements, descType, desc1, 256, "d1")
   local desc1 = C.fifo(descType,256)(desc1)
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType),128))),desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType,true),128))),desc1)
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, 128), desc_sum)
@@ -331,7 +339,7 @@ function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
 
-  local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
+  local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},0,
     function(sinp) return sinp end, function() return siftCoreHWTerra.posSub(ITYPE,x,y) end )
 
   return ps

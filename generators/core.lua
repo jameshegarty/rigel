@@ -379,19 +379,26 @@ function(args)
   
     return RM.SoAtoAoS( args.size[1], args.size[2], typelist )
   elseif args.opt==1 or args.opt==2 or args.opt==3 then
-    local schedulelist = {}
-    for k,v in ipairs(args.list) do
-      schedulelist[k] = v.over
-    end
 
     local mode = "Seq"
     if args.opt==2 then mode="VarSeq" end
     if args.opt==3 then mode="ParSeq" end
 
     if args.opt==3 then
-      return RM.ZipSchedules( mode, schedulelist, args.size[1], args.size[2], args.V[1], args.V[2] )
+      --return RM.ZipSchedules( mode, schedulelist, args.size[1], args.size[2], args.V[1], args.V[2] )
+      local schedulelist = {}
+      for k,v in ipairs(args.list) do
+        schedulelist[k] = v.over.over
+      end
+
+      return RM.SoAtoAoS( args.V[1], args.V[2], schedulelist, nil, args.size[1], args.size[2] )
     else
-      return RM.ZipSchedules( mode, schedulelist, args.size[1], args.size[2] )
+      local schedulelist = {}
+      for k,v in ipairs(args.list) do
+        schedulelist[k] = v.over
+      end
+
+      return RM.ZipSeq( mode, schedulelist, args.size[1], args.size[2] )
     end
   else
     assert(false)
@@ -916,7 +923,7 @@ P.SumType("opt",{types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("
 generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq(args.string,args.T,args.string..".verilog.raw",true)
+  return RM.fwriteSeq(args.string,args.T,args.string..".verilatorSOC.raw",true)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))

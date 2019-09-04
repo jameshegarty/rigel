@@ -194,6 +194,10 @@ function fixedASTFunctions:cast(to)
   return fixed.new{kind="cast",type=to, inputs={self}, loc=getloc()}
 end
 
+function fixedASTFunctions:disablePipelining()
+  return fixed.new{kind="disablePipelining", type=self.type,inputs={self},loc=getloc()}
+end
+
 function fixedASTFunctions:index(ix,iy)
   err(self.type:isTuple() or self.type:isArray(), "attempting to index into something other than an array or tuple")
   err( type(ix)=="number", "ix must be number")
@@ -371,6 +375,9 @@ function fixedASTFunctions:toSystolic(inp)
         res = S.cast(S.tuple(inp),n.type)
       elseif n.kind=="cast" then
         res = S.cast(args[1],n.type)
+      elseif n.kind=="disablePipelining" then
+        res = args[1]:disablePipelining()
+        --res = args[1]
       else
         err(false,"missing? "..n.kind)
       end
@@ -415,12 +422,18 @@ function fixedASTFunctions:toRigelModule(name,X)
   local inpType
   self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  return modules.lift( name, inpType, self.type, 0, 
+  local delay = 1
+  if self.kind=="disablePipelining" then delay=0 end
+    
+  local res = modules.lift( name, inpType, self.type, delay, 
     function(inp)
       local out, instances = self:toSystolic(inp)
       return out, instances
     end,
     function() return fixedFloatTerra.tfn(self) end)
+
+  --print("FIXEFLOAT",name,res,res.systolicModule)
+  return res
 end
 
 return fixed

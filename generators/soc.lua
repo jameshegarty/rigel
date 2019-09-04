@@ -1676,9 +1676,11 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
 
   local ChangeRateModule, totalBits = CR[1], CR[2]
+  --print("TOTALBITS",totalBits)
   
   assert( Uniform(totalBits%(128*8)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits%inputBits):eq(0):assertAlwaysTrue() )
+  assert( Uniform(totalBits%Uniform(16*64)):eq(0):assertAlwaysTrue() ) -- burst size is 128 bytes=1024 bits
   assert( Uniform(totalBits):ge(desiredTotalInputBits):assertAlwaysTrue() )
 
   if desiredTotalInputBits~=totalBits then

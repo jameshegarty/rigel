@@ -913,7 +913,7 @@ function TypeFunctions:checkLuaValue(v)
     err( v<math.pow(2,self:verilogBits()), "Constant value "..tostring(v).." out of range for type "..tostring(self))
     err( v==math.floor(v), "uint constant must be integer, but is: "..tostring(v) )
   elseif self:isBool() then
-    err( type(v)=="boolean", "bool must be lua bool")
+    err( type(v)=="boolean", "bool must be lua bool, but is '"..tostring(v).."'")
   elseif self:isNamed() then
     return self.structure:checkLuaValue(v)
   elseif self==types.null() then
@@ -1599,10 +1599,21 @@ function types.extractReady(a)
 end
 
 function types.extractValid(a)
-  if types.isHandshakeTmuxed(a) then
-    return types.uint(8)
+  if a:is("Interface") then
+    if a.V~=nil then
+      return a.V
+    else
+      return a.v
+    end
+  else
+    print("extractValid NYI on "..tostring(a))
+    assert(false)
   end
-  return types.bool()
+  
+  --if types.isHandshakeTmuxed(a) then
+--    return types.uint(8)
+--  end
+--  return types.bool()
 end
 
 function types.streamCount(A)

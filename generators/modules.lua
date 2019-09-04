@@ -80,7 +80,8 @@ end)
 -- This converts SoA to AoS
 -- ie {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d({a,b,c},W,H)
 -- if asArray==true then converts {Arr2d(a,W,H),Arr2d(b,W,H),...} to Arr2d(a[N],W,H). This requires a,b,c be the same...
-modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
+-- framedW, framedH, if not nil, will let us operate on ParSeqs
+modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
   err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
   err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
   err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
@@ -126,8 +127,13 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
     out = rigel.apply( "cflat", C.flatten2( types.tuple(typelist), W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( types.tuple(typelist), W*H ), types.array2d( types.tuple(typelist), W,H ) ), out)
 
-    res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray)), I, out)
+    res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH)), I, out)
 
+    if framedW~=nil then
+      -- hackity hack
+      res.inputType = types.rv(types.tuple( J.map(typelist, function(t) return types.ParSeq(types.array2d(t,W,H),framedW,framedH) end) ))
+      res.outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    end
   else
     res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
     
@@ -167,9 +173,10 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray )
   return res
 end)
 
+-- Zips Seq types (this is just a trivial conversion)
 -- takes rv([A{W,H},B{W,H},C{W,H}]) to rv({A,B,C}{W,H})
 -- typelist: list of {A,B,C} schedule types
-modules.ZipSchedules = memoize(function( mode, typelist, W, H, Vw, Vh, X )
+modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   err( type(W)=="number", "ZipSchedules: first argument should be number (width)")
   err( type(H)=="number", "ZipSchedules: second argument should be number (height)")
   err( type(typelist)=="table", "ZipSchedules: typelist must be table")
@@ -182,38 +189,38 @@ modules.ZipSchedules = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   local typeString = ""
   local itype = {}
 
-  -- if all schedules are Par(data), get rid of the Pars as a courtesy
+  -- if all schedules are Seq(Par(data)), get rid of the Pars as a courtesy
   local terminal = true
   for k,v in ipairs(typelist) do
     err( types.isType(v),"ZipSchedules: typelist index "..tostring(k).." must be rigel type")
 
-    if mode=="ParSeq" then
-      err( v:isData(),"ZipSchedules: input should be list of data types, but is: "..tostring(v))
-    else
+--    if mode=="ParSeq" then
+--      err( v:isData(),"ZipSchedules: input should be list of data types, but is: "..tostring(v))
+--    else
       err( v:isSchedule(),"ZipSchedules: input should be list of schedule types, but is: "..tostring(v))
       if (v:is("Par") and v.over:isData())==false then
         terminal = false
       end
-    end
+--    end
     
     typeString = typeString.."_"..tostring(v)
     if mode=="VarSeq" then
       table.insert(itype,types.VarSeq(v,W,H))
     elseif mode=="Seq" then
       table.insert(itype,types.Seq(v,W,H))
-    elseif mode=="ParSeq" then
-      table.insert(itype,types.ParSeq(v,W,H))
+--    elseif mode=="ParSeq" then
+--      table.insert(itype,types.ParSeq(v,W,H))
     else
       assert(false)
     end
   end
 
   local inputType = types.rv(types.tuple(itype))
-  print("ZIPINP",inputType)
+--  print("ZIPINP",inputType)
   local G = require "generators.core"
   local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..tostring(varSeq)..typeString,inputType,SDF{1,1},function(inp) return inp end}
 
-  assert( rigel.isPlainFunction(res) )
+--  assert( rigel.isPlainFunction(res) )
 
   local typeOut = types.Tuple(typelist)
   if terminal then
@@ -227,12 +234,12 @@ modules.ZipSchedules = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   -- hackity hack
   if mode=="VarSeq" then
     res.outputType = types.rv(types.VarSeq(typeOut,W,H))
-  elseif mode=="ParSeq" then
-    local newlist = {}
-    for k,v in ipairs(typelist) do
-      table.insert(newlist,v.over)
-    end
-    res.outputType = types.rv(types.ParSeq(types.Array2d(types.Tuple(newlist),Vw,Vh),W,H))
+--  elseif mode=="ParSeq" then
+--    local newlist = {}
+--    for k,v in ipairs(typelist) do
+--      table.insert(newlist,v.over)
+--    end
+--    res.outputType = types.rv(types.ParSeq(types.Array2d(types.Tuple(newlist),Vw,Vh),W,H))
   else
     res.outputType = types.rv(types.Seq(typeOut,W,H))
   end
@@ -3439,7 +3446,11 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     
     local SRdefault = false
     if tmuxRates~=nil then SRdefault = #tmuxRates end
-    local SR = systolicModule:add( fpgamodules.shiftRegister( rigel.extractValid(res.inputType), f.systolicModule:getDelay("process"), SRdefault, true ):instantiate( J.sanitize("validBitDelay_"..f.systolicModule.name) ) )
+
+    local srtype = rigel.extractValid(res.inputType)
+    if res.inputType==types.Interface() then srtype = rigel.extractValid(res.outputType) end
+
+    local SR = systolicModule:add( fpgamodules.shiftRegister( srtype, f.systolicModule:getDelay("process"), SRdefault, true ):instantiate( J.sanitize("validBitDelay_"..f.systolicModule.name) ) )
     local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
     local rst = S.parameter("reset",types.bool())

@@ -78,6 +78,8 @@ local function toTerra(self)
         res = `terralib.select([args[1]],[args[2]],[args[3]])
       elseif n.kind=="cast" then
         res = `[n.type:toTerraType()]([args[1]])
+      elseif n.kind=="disablePipelining" then        
+        res = args[1]
       else
         print(n.kind)
         assert(false)
