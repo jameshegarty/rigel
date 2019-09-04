@@ -523,7 +523,7 @@ end
 
 function systolic.tuple( tab )
   err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
-  err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array")
+  err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array, but is: "..tostring(tab))
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
 

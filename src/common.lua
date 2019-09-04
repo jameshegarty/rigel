@@ -260,6 +260,11 @@ function common.gcd(a,b)
   end
 end
 
+-- least common multiple
+function common.lcm(a,b)
+  return (a*b)/common.gcd(a,b)
+end
+
 function common.ratioFactor(a,b)
   local g = common.gcd(a,b)
   assert(a%g==0)

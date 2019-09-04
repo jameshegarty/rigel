@@ -121,8 +121,6 @@ local function valueOrTypeToParam(V)
   local p
   if V.kind=="named" then
     -- legacy hack
-    --assert(false)
---    print("NAMED",V,V.structure,V.structure.kind)
     p = params[firstToUpper(V.structure.kind).."Type"]
   else
     p = params[firstToUpper(V.kind).."Type"]
@@ -145,21 +143,12 @@ function ParamFunctions:isSupertypeOf(P,vars)
     assert(#self.list==1)
     vars[P.name]=0
     return self.list[1]:isSupertypeOf(P,vars)
---  elseif self.kind=="Optional" then
---    if P==nil then
---      vars[self.name]=false
---      return true
---    else
---      vars[self.name]=true
---      return self.over:isSupertypeOf(P,vars)
-    --    end
   elseif params.isParam(P) then
     if self.kind==P.kind then return true end
     if P.super==nil then return false end -- this kind has no super, and doesn't match self
     return self:isSupertypeOf(P.super,vars)
 
   elseif self.kind=="InterfaceType" then
-    --print("Param interface type",P)
     if P:isInterface()==false then return false end
     if P:isArray() or P:isTuple() then return false end
     

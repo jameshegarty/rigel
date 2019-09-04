@@ -241,12 +241,34 @@ C.multiplyConst = memoize(function( A, constValue, X )
 end)
 
 ------------------------------
+C.Abs = memoize(function(A,X)
+  err( types.isType(A), "C.Abs: A must be type")
+  assert(X==nil)
+
+  local partial = RM.lift( J.sanitize("Abs_A"..tostring(A)), A, A, 0,
+    function(sinp) return S.abs(sinp) end )
+
+  return partial
+end)
+
+------------------------------
 C.GT = memoize(function(A,B)
   err( types.isType(A), "C.GT: A must be type")
   err( types.isType(B), "C.GT: B must be type")
 
   local partial = RM.lift( J.sanitize("GT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 0,
     function(sinp) return S.gt(S.index(sinp,0),S.index(sinp,1)) end )
+
+  return partial
+end)
+
+------------------------------
+C.LT = memoize(function(A,B)
+  err( types.isType(A), "C.LT: A must be type")
+  err( types.isType(B), "C.LT: B must be type")
+
+  local partial = RM.lift( J.sanitize("LT_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, types.bool(), 0,
+    function(sinp) return S.lt(S.index(sinp,0),S.index(sinp,1)) end )
 
   return partial
 end)
@@ -274,6 +296,16 @@ end)
 
 C.Not = RM.lift( "Not", types.bool(), types.bool(), 0, function(sinp) return S.__not(sinp) end )
 C.And = RM.lift( "And", types.tuple{types.bool(),types.bool()}, types.bool(), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
+
+C.AndUint = memoize(function(bits)
+  assert(type(bits)=="number")
+  return RM.lift( "AndUint_"..tostring(bits), types.tuple{types.Uint(bits),types.Uint(bits)}, types.Uint(bits), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
+end)
+
+C.neg = memoize(function(bits)
+  assert(type(bits)=="number")
+  return RM.lift( "Neg_"..tostring(bits), types.Int(bits), types.Int(bits), 0, function(sinp) return S.neg(sinp) end )
+end)
 
 C.tokenCounter = memoize(function(A,str,X)
   err( types.isType(A), "C.tokenCounter: A must be type")
@@ -353,19 +385,29 @@ C.sub = memoize(function( A, B, outputType, async )
 end)
 
 -----------------------------
-C.rshift = memoize(function(A,const)
+C.rshiftConst = memoize(function(A,const)
   err( types.isType(A),"C.rshift: type should be rigel type")
   err( type(const)=="number" or const==nil,"C.rshift: const should be number or value")
   
-  if const~=nil then
+  -- shift by a const
+  J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
+  local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
+                      function(inp) return S.rshift(inp,S.constant(const,A)) end)
+  return mod
+end)
+
+-----------------------------
+C.rshift = memoize(function(A,B,X)
+  err( types.isType(A),"C.rshift: type should be rigel type")
+  err( types.isType(B),"C.rshift: type should be rigel type")
+  assert(X==nil)
+
     -- shift by a const
-    J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
-    local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
-                        function(inp) return S.rshift(inp,S.constant(const,A)) end)
-    return mod
-  else
-    assert(false)
-  end
+  J.err( A:isUint() or A:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
+  J.err( B:isUint() or B:isInt(), "generators.Rshift: type should be int or uint, but is: "..tostring(A) )
+  local mod = RM.lift(J.sanitize("generators_rshift_"..tostring(A).."_"..tostring(B)), types.Tuple{A,B},A,0,
+                      function(inp) return S.rshift(S.index(inp,0),S.index(inp,1)) end)
+  return mod
 end)
 
 -----------------------------
@@ -1646,10 +1688,13 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
       return {RM.lambda(name,inp,out),bts}
     else
-      assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
-      local shifterBits = inputBitsPerCyc
-      while shifterBits%outputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
+      --assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
+      --local shifterBits = inputBitsPerCyc
+      --while shifterBits%outputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
 
+      local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
+      print("SHIFTBITS",shifterBits,"inputBitsPerCyc",inputBitsPerCyc,"outputBitsPerCyc",outputBitsPerCyc)
+            
       assert(shifterBits%outputBitsPerCyc==0)
       assert(shifterBits%inputBitsPerCyc==0)
       
@@ -1689,10 +1734,12 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
       return {RM.lambda(name,inp,out),bts}
     else
-      assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
-      local shifterBits = outputBitsPerCyc
-      while shifterBits%inputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
-      print("SHIFTBITS",shifterBits)
+      -- outputBitsPerCyc>inputBitsPerCyc
+      --assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
+      --local shifterBits = outputBitsPerCyc
+      --while shifterBits%inputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
+      local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
+      print("SHIFTBITS",shifterBits,"inputBitsPerCyc",inputBitsPerCyc,"outputBitsPerCyc",outputBitsPerCyc)
       assert(shifterBits%inputBitsPerCyc==0)
       assert(shifterBits%outputBitsPerCyc==0)
       

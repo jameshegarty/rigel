@@ -920,7 +920,7 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
-	err( types.isType(A), "A must be a type")
+  err( types.isType(A), "A must be a type")
 
   err( A~=nil, "pad A==nil" )
   err( W~=nil, "pad W==nil" )
@@ -976,7 +976,7 @@ modules.map = memoize(function( f, W_orig, H_orig, X )
 
   W,H = W:toNumber(), H:toNumber()
   
-  err( W*H==1 or f.stateful==false,"map: mapping a stateful function ("..f.name.."), which will probably not work correctly. (may execute out of order)" )
+  err( W*H==1 or f.stateful==false,"map: mapping a stateful function ("..f.name.."), which will probably not work correctly. (may execute out of order) W="..tostring(W)..",H="..tostring(H) )
   
   local res
   
@@ -1163,8 +1163,6 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   if fn.outputType~=types.Interface() then
     res.outputType = fn.outputType:replaceVar("over",types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
   end
-    
---  print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
           
   return res
 end)
@@ -1174,14 +1172,10 @@ end)
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
 
-    --err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
-    --err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
-
     local G = require "generators.core"
 
     local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
     assert( rigel.isFunction(res) )
-
 
     -- hackity hack
     if fn.inputType~=types.Interface() then
@@ -1191,8 +1185,6 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     if fn.outputType~=types.Interface() then
       res.outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
     end
-    
-    print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
           
     return res
 end)
@@ -1207,7 +1199,6 @@ modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
     local res = G.Module{"MapVarSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
     assert( rigel.isFunction(res) )
 
-
     -- hackity hack
     if fn.inputType~=types.Interface() then
       res.inputType = fn.inputType:replaceVar("over",types.VarSeq(res.inputType.over,W_orig,H_orig))
@@ -1216,8 +1207,6 @@ modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
     if fn.outputType~=types.Interface() then
       res.outputType = fn.outputType:replaceVar("over",types.VarSeq(res.outputType.over,W_orig,H_orig))
     end
-    
-    print("MAPVarSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
           
     return res
 end)
@@ -1446,7 +1435,7 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce, framed, X 
     -- hack: get broken systolic library to actually wire valid
     local phase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), 42, 1 ) ):CE(true):setReset(0):setInit(0):instantiate("phase") ) 
     
-    local sinp = S.parameter("process_input", res.inputType.over.over )
+    local sinp = S.parameter("process_input", res.inputType:lower() )
     local CE = S.CE("CE")
     local v = S.parameter("process_valid",types.bool())
     
@@ -1718,7 +1707,7 @@ end)
 
 -- takes an image of size A[W,H] to size A[W/scaleX,H/scaleY]. Fills the new pixels with value 'Value'
 modules.downsample = memoize(function( A, W, H, scaleX, scaleY, X )
-	err( types.isType(A), "A must be a type")
+  err( types.isType(A), "A must be a type")
 
   err( A~=nil, "downsample A==nil" )
   err( W~=nil, "downsample W==nil" )
@@ -1864,8 +1853,6 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
 
     local res = modules.liftHandshake(modules.waitOnInput( rigel.newFunction(res) ))
     if framed then
-      print("UPSAM",res.inputType,res.outputType)
-      --assert(false)
       res.outputType = types.RV(types.Seq(res.outputType.over,scale_orig,1))
     end
     
@@ -3031,14 +3018,14 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
-    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (Uniform(w_orig):toNumber()/T)-1), true, nil, 0 ):instantiate("addr") )
+    local addr = systolicModule:add( fpgamodules.regBy( types.uint(16), fpgamodules.incIfWrap( types.uint(16), (Uniform(w_orig):toNumber()/math.max(T,1))-1), true, nil, 0 ):instantiate("addr") )
     
     local outarray = {}
     local evicted
     
     local bits = rigel.lower(res.inputType):verilogBits()
     local bytes = J.nearestPowerOf2(J.upToNearest(8,bits)/8)
-    local sizeInBytes = J.nearestPowerOf2((Uniform(w_orig):toNumber()/T)*bytes)
+    local sizeInBytes = J.nearestPowerOf2((Uniform(w_orig):toNumber()/math.max(T,1))*bytes)
 
     local bramMod = fpgamodules.bramSDP( true, sizeInBytes, bytes, nil, nil, true )
     local addrbits = math.log(sizeInBytes/bytes)/math.log(2)
@@ -3046,7 +3033,12 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
     for y=0,-ymin do
       local lbinp = evicted
       if y==0 then lbinp = sinp end
-      for x=1,T do outarray[x+(-ymin-y)*T] = S.index(lbinp,x-1) end
+
+      if T>0 then
+        for x=1,T do outarray[x+(-ymin-y)*T] = S.index(lbinp,x-1) end
+      else
+        outarray[-ymin-y+1] = lbinp
+      end
       
       if y<-ymin then
         -- last line doesn't need a ram
@@ -3065,7 +3057,7 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
 
     local finalOut
     
-    if framed then
+    if framed and T>0 then
       local results = {}
       for v=1,T do
         local thisV = {}
@@ -3244,36 +3236,37 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
     local pipelines = {}
     local SR = {}
     local out = {}
+    local Tf = math.max(T,1) -- fix for when T==0
     for y=0,-ymin do 
       SR[y]={}
-      local x = -xmin+T-1
+      local x = -xmin+Tf-1
       while(x>=0) do
-        if x<-xmin-T then
+        if x<-xmin-Tf then
           SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
-          table.insert( pipelines, SR[y][x]:set(SR[y][x+T]:get()) )
-          out[y*(-xmin+T)+x+1] = SR[y][x]:get()
+          table.insert( pipelines, SR[y][x]:set(SR[y][x+Tf]:get()) )
+          out[y*(-xmin+Tf)+x+1] = SR[y][x]:get()
         elseif x<-xmin then
           SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
 
           local val
-          if framed then
-            val = S.index(S.index(sinp,x+(T+xmin)),0,y)
+          if framed and T>0 then
+            val = S.index(S.index(sinp,x+(Tf+xmin)),0,y)
           else
-            val = S.index(sinp,x+(T+xmin),y )
+            val = S.index(sinp,x+(Tf+xmin),y )
           end
           
           table.insert( pipelines, SR[y][x]:set(val) )
-          out[y*(-xmin+T)+x+1] = SR[y][x]:get()
+          out[y*(-xmin+Tf)+x+1] = SR[y][x]:get()
         else -- x>-xmin
           local val
-          if framed then
+          if framed and T>0 then
             val = S.index(sinp,x+xmin)
             val = S.index(val,0,y)
           else
             val = S.index(sinp,x+xmin,y )
           end
 
-          out[y*(-xmin+T)+x+1] = val
+          out[y*(-xmin+Tf)+x+1] = val
         end
 
         x = x - 1
@@ -3282,7 +3275,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
 
     local finalOut
     
-    if framed then
+    if framed and T>0 then
       local results = {}
       for v=1,T do
         local thisV = {}
@@ -3647,11 +3640,11 @@ return mod
       makeSystolic = function()
         local systolicModule = Ssugar.moduleConstructor(name)
         
-        local fifo = systolicModule:add( fpgamodules.fifo(A,size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
+        local fifo = systolicModule:add( fpgamodules.fifo(A:lower(),size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
         
         --------------
         -- basic -> R
-        local store = systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A, "store_input" ) )
+        local store = systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A:lower(), "store_input" ) )
         local storeCE = S.CE("store_CE")
         store:setCE(storeCE)
         store:addPipeline( fifo:pushBack( store:getInput() ) )
@@ -4892,7 +4885,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     assert(systolic.isAST(out[1]))
 
-    err( out[1].type==rigel.lower(res.outputType), "Internal error, systolic type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
+    err( out[1].type==rigel.lower(res.outputType), "modules.lambda: Internal error, systolic output type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
 
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )

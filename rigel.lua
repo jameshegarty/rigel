@@ -546,7 +546,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
       local readyName = fnname.."_ready"
       if isModule==false then readyName="ready" end
       
-      err( sm.functions[readyName]~=nil, "module ready function missing?")
+      err( sm.functions[readyName]~=nil, "module '"..tab.name.."' ready function '"..readyName.."' missing?")
 
       local expectedInputReady = darkroom.extractReady(rigelFn.inputType)
       local expectedOutputReady = darkroom.extractReady(rigelFn.outputType)
@@ -2260,7 +2260,7 @@ end
 
 -- this should go somewhere else
 function darkroom.handshakeMode(output)
-  local HANDSHAKE_MODE = false
+  local HANDSHAKE_MODE = darkroom.isHandshakeAny(output.type)
   output:visitEach(
     function(n)
       if n.kind=="apply" then

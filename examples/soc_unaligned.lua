@@ -21,7 +21,7 @@ OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
     addrStream = G.Index{0}(addrStream)
     addrStream = G.AddMSBs{16}(addrStream)
     addrStream = G.Add{3}(addrStream)
-    local readStream = G.AXIRead{"frame_128.raw",128*64,noc.read}(addrStream)
+    local readStream = G.AXIRead{"frame_128.raw",128*64,noc.read,types.U(8)}(addrStream)
     return G.AXIWriteBurstSeq{"out/soc_unaligned",{128,1},0,noc.write}(readStream)
   end}
 
