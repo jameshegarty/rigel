@@ -17,7 +17,7 @@ function displayOutput( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.uint(8),1)
 
-  return RM.lift("displayOutput",ITYPE, OTYPE, 2,
+  return RM.lift("displayOutput",ITYPE, OTYPE, 0,
     function(inp)
       local out = S.cast(S.tuple{S.index(inp,0)},OTYPE)
       if threshold~=0 then

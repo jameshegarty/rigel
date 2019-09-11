@@ -674,7 +674,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
   elseif params.isParam(ty) and ty.kind=="SumType" then
     assert(#ty.list==1) -- NYI
     vars[ty.name]=0 -- we chose index 0
-    print("RECURSE INTO SUMTYPE",ty,ty.list[1])
+    --print("RECURSE INTO SUMTYPE",ty,ty.list[1])
     return self:isSupertypeOf(ty.list[1],vars)
   elseif params.isParam(ty) then
     -- params always more general than specific types

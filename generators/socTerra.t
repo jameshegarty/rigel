@@ -20,7 +20,7 @@ function SOCMT.regStub(tab)
   for regname,v in pairs(tab) do
     local regtype = v[1]
     local regval = v[2]
-    print("REGSTUB",regname)
+
     RegStub.methods[regname] = terra( self:&RegStub, out: &regtype:toTerraType())
       @out = [regtype:valueToTerra(regval)]
     end
@@ -433,8 +433,8 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
   J.err( burstCount<=16,"axiReadBytes: NYI - burst longer than 16")
 
   terra WriteBytes:reset()
-    self.ready[0] = false
-    self.ready[1] = false
+    self.ready._0 = false
+    self.ready._1 = false
     self.writeFnInst:reset()
   end
 

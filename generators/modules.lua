@@ -181,10 +181,7 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   err( type(H)=="number", "ZipSchedules: second argument should be number (height)")
   err( type(typelist)=="table", "ZipSchedules: typelist must be table")
   err( J.keycount(typelist)==#typelist, "ZipSchedules: typelist must be lua array")
-  err( asArray==nil or type(asArray)=="boolean", "ZipSchedules: asArray must be bool or nil")
   assert(type(mode)=="string")
-
-  if asArray==nil then asArray=false end
 
   local typeString = ""
   local itype = {}
@@ -193,34 +190,25 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   local terminal = true
   for k,v in ipairs(typelist) do
     err( types.isType(v),"ZipSchedules: typelist index "..tostring(k).." must be rigel type")
-
---    if mode=="ParSeq" then
---      err( v:isData(),"ZipSchedules: input should be list of data types, but is: "..tostring(v))
---    else
-      err( v:isSchedule(),"ZipSchedules: input should be list of schedule types, but is: "..tostring(v))
-      if (v:is("Par") and v.over:isData())==false then
-        terminal = false
-      end
---    end
+    err( v:isSchedule(),"ZipSchedules: input should be list of schedule types, but is: "..tostring(v))
+    if (v:is("Par") and v.over:isData())==false then
+      terminal = false
+    end
     
     typeString = typeString.."_"..tostring(v)
     if mode=="VarSeq" then
       table.insert(itype,types.VarSeq(v,W,H))
     elseif mode=="Seq" then
       table.insert(itype,types.Seq(v,W,H))
---    elseif mode=="ParSeq" then
---      table.insert(itype,types.ParSeq(v,W,H))
     else
       assert(false)
     end
   end
 
   local inputType = types.rv(types.tuple(itype))
---  print("ZIPINP",inputType)
-  local G = require "generators.core"
-  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..tostring(varSeq)..typeString,inputType,SDF{1,1},function(inp) return inp end}
 
---  assert( rigel.isPlainFunction(res) )
+  local G = require "generators.core"
+  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,inputType,SDF{1,1},function(inp) return inp end}
 
   local typeOut = types.Tuple(typelist)
   if terminal then
@@ -234,12 +222,6 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   -- hackity hack
   if mode=="VarSeq" then
     res.outputType = types.rv(types.VarSeq(typeOut,W,H))
---  elseif mode=="ParSeq" then
---    local newlist = {}
---    for k,v in ipairs(typelist) do
---      table.insert(newlist,v.over)
---    end
---    res.outputType = types.rv(types.ParSeq(types.Array2d(types.Tuple(newlist),Vw,Vh),W,H))
   else
     res.outputType = types.rv(types.Seq(typeOut,W,H))
   end
@@ -1063,93 +1045,11 @@ end)
 
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
---[=[modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
-  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
-  local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
-  --err( type(Vw)=="number", "mapParSeq: vector width must be number, but is: "..tostring(Vw))
-  --err( type(Vh)=="number", "mapParSeq: vector height must be number")
-  --err( type(W)=="number", "mapParSeq: W must be number" )
-  --err( type(H)=="number", "mapParSeq: H must be number" )
-  err( X==nil, "mapParSeq: too many arguments" )
-       
-  local res = { kind="mapParSeq", fn=fn, Vw=Vw,Vh=Vh, stateful=fn.stateful, delay=fn.delay, W=W, H=H}
-  
-  res.name=J.sanitize("MapParSeq_"..fn.name.."_VW"..tostring(Vw_orig).."_VH"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig))
-
-  err( fn.inputType:isrv(),"mapParSeq only support rv interfaces, but fn.inputType is: "..tostring(fn.inputType))
-  err( fn.outputType:isrv(),"mapParSeq only support rv interfaces")
-
-  err(types.isBasic(fn.inputType.over.over) and types.isBasic(fn.outputType.over.over), "MapParSeq NYI - "..tostring(fn.inputType).." "..tostring(fn.outputType) )
-
-  err( #fn.sdfInput==1 and Uniform(fn.sdfInput[1][1]):toNumber()==1 and Uniform(fn.sdfInput[1][2]):toNumber()==1,"mapParSeq SDF: "..tostring(fn.sdfInput))
-  err( #fn.sdfOutput==1 and Uniform(fn.sdfOutput[1][1]):toNumber()==1 and Uniform(fn.sdfOutput[1][2]):toNumber()==1,"mapParSeq SDF: "..tostring(fn.sdfOutput))
-     
-  res.sdfInput=SDF{1,1}
-  res.sdfOutput=SDF{1,1}
-  
-  res.requires = {}
-  for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
-  res.provides = {}
-  for inst,fnmap in pairs(fn.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
-
-  res.globalMetadata = {}
-  for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
-
-  local fnMapped = modules.map(fn,Vw,Vh)
-  
-  res.inputType = types.rv(types.ParSeq(fnMapped.inputType.over.over,W_orig,H_orig))
-  res.outputType = types.rv(types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
-  
-  function res.makeSystolic()
-    local sm = Ssugar.moduleConstructor(res.name)
-
-    for inst,fnmap in pairs(res.requires) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addExternalFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addExternalFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    for inst,fnmap in pairs(res.provides) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addProvidesFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addProvidesFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    local inner = sm:add(fnMapped.systolicModule:instantiate("inner"))
-
-    local CE
-    if fnMapped.stateful or fnMapped.delay>0 then
-      CE = S.CE("process_CE")
-    end
-    local reset_valid = S.parameter("reset",types.bool())
-
-    local I = S.parameter("process_input", rigel.lower(fnMapped.inputType) )
-    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
-
-    if fnMapped.stateful then
-      sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
-    end
-    
-    return sm
-  end
-
-  function res.makeTerra() return MT.mapParSeq(res,fn,W,H) end
-  
-  return rigel.newFunction(res)
-  end)]=]
-
--- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
--- basically the same as regular map, but for parseq
 modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
-  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
+  err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is "..tostring(fn) )
+  err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: "..tostring(fn.inputType) )
+  err( fn.outputType:isrv(),"mapParSeq: output must be rv, but is: "..tostring(fn.outputType) )
+    
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
 
   err( X==nil, "mapParSeq: too many arguments" )
@@ -1160,7 +1060,6 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
 
   local res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
   assert( rigel.isPlainFunction(res) )
-
 
   -- hackity hack
   if fn.inputType~=types.Interface() then
@@ -1708,7 +1607,11 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
 
   local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, T )
   -- hack
-  res.outputType = types.rvV(types.Par(types.array2d(A,outputT)))
+  local newType = types.rvV(types.Par(types.array2d(A,outputT)))
+  assert(res.outputType:lower()==newType:lower())
+  --assert(res.outputType:lower():toTerraType()==newType:lower():toTerraType())
+  res.outputType = newType
+  
   return res
 end)
 
@@ -2382,13 +2285,8 @@ modules.broadcastStream = memoize(function(A,W,H,X)
 
   local res = {kind="broadcastStream", A=A, W=W, H=H,  stateful=false}
 
---  if A==nil then
---    res.inputType = types.HandshakeTrigger
---    res.outputType = types.Inter(N)
---  else
   res.inputType = types.RV(A)
   res.outputType = types.array2d(types.RV(A), W, H)
---  end
 
   res.sdfInput = SDF{1,1}
   res.sdfOutput = SDF(J.broadcast({1,1},W*H))
@@ -2438,8 +2336,6 @@ modules.broadcastStream = memoize(function(A,W,H,X)
     
     systolicModule:addFunction( S.lambda("process", inp, out, "process_output", pipelines ) )
 
-    --local resetValid = S.parameter("reset_valid", types.bool() )
-    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", nil, resetValid ) )
 
     systolicModule:addFunction( S.lambda("ready", readyDownstream, allReady, "ready" ) )
 
@@ -2555,7 +2451,9 @@ modules.liftXYSeq = memoize(function( name, generatorStr, f, W_orig, H, T, bits,
   local inp = rigel.input( types.rv(types.Par(inputType)) )
   local p = rigel.apply("p", modules.posSeq(W,H,T,bits) )
   local out = rigel.apply("m", f, rigel.concat("ptup", {p,inp}) )
-  return modules.lambda( "liftXYSeq_"..name.."_W"..tostring(W_orig), inp, out,nil,generatorStr )
+  local res = modules.lambda( "liftXYSeq_"..name.."_W"..tostring(W_orig), inp, out,nil,generatorStr )
+  
+  return res
 end)
 
 -- this takes a function f : {{uint16,uint16},inputType} -> outputType
@@ -3851,7 +3749,7 @@ modules.reduce = memoize(function( f, W, H, X )
     local out = rigel.apply("out", f, fin)
     res = modules.lambda("reduce_"..f.name.."_W"..tostring(W).."_H"..tostring(H), I, out)
   else
-    print("WH",W,H)
+    --print("WH",W,H)
     --assert(false)
     res = {kind="reduce", fn = f, W=W, H=H}
     --rigel.expectBasic(f.inputType)
@@ -3986,7 +3884,7 @@ modules.reduceParSeq = memoize(function( f, Vw, Vh, W, H, X )
   assert(W%Vw==0)
   assert(H%Vh==0)
   local res = modules.compose("ReduceParSeq_f"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_W"..tostring(W).."_H"..tostring(H),modules.reduceSeq(f,W/Vw,H/Vh,true),modules.flatmap(modules.reduce(f,Vw,Vh),Vw,Vh,W,H,0,0,W/Vw,H/Vh))
-  print("reduceSeqPar",res)
+
   return res
 end)
   
@@ -3998,7 +3896,7 @@ modules.overflow = memoize(function( A, count )
   
   -- SDF rates are not actually correct, b/c this module doesn't fit into the SDF model.
   -- But in theory you should only put this at the very end of your pipe, so whatever...
-  local res = {kind="overflow", A=A, inputType=A, outputType=rigel.V(A), stateful=true, count=count, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, delay=0}
+  local res = {kind="overflow", A=A, inputType=types.rv(types.Par(A)), outputType=types.rvV(types.Par(A)), stateful=true, count=count, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, delay=0}
   if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
   res.name = "Overflow_"..count.."_"..verilogSanitize(tostring(A))
 
@@ -4956,8 +4854,14 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
 
   name = J.verilogSanitize(name)
   
-  local res = { kind="lift", name=name, inputType = inputType, outputType = outputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, instanceMap=instanceMap }
+  local res = { kind="lift", name=name, inputType = inputType, delay=delay, sdfInput=SDF{1,1}, sdfOutput=SDF(sdfOutput), stateful=false, generator=generatorStr, instanceMap=instanceMap }
 
+  if outputType==types.null() then
+    res.outputType = types.Interface()
+  else
+    res.outputType = outputType
+  end
+  
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(name)
 

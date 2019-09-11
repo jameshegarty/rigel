@@ -65,7 +65,14 @@ generators.ClampToSize = R.FunctionGenerator("core.ClampToSize",{"size"},{},
 function(args)
   local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]),T.RV(T.VarSeq(T.Par(args.T),args.InSize[1],args.InSize[2])),SDF{1,1},function(inp) return inp end}
   --print("CLAMPTO",res.inputType,res.outputType,types.isHandshakeAny(res.outputType))
-  res.outputType = T.RV(T.Seq(T.Par(args.T),args.size[1],args.size[2]))
+  assert(R.isPlainFunction(res))
+  local newType = T.RV(T.Seq(T.Par(args.T),args.size[1],args.size[2]))
+  assert(res.outputType:lower()==newType:lower())
+  res.outputType = newType
+
+  --print("CLAMPSIZE",res.terraModule)
+  --res.terraModule.methods.process:printpretty()
+  
   return res
 end,
 T.RV(T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize"))),
@@ -108,7 +115,20 @@ T.rv(T.Par(P.UintType("T"))),
 T.rv(T.Par(P.DataType("TypeOut"))))
 
 
-generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},function(args) return C.print(args.type,args.string) end)
+generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
+function(args)
+  if args.opt==1 then
+    return C.print( args.T, args.string )
+  elseif args.opt==0 then
+    return C.print( T.Array2d(args.T,args.size), args.string )
+  else
+    assert(false)
+  end
+end,
+P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
+            T.rv(T.Par(P.NumberType("T")))}),
+P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
+                 T.rv(T.Par(P.NumberType("T")))}))
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -200,7 +220,7 @@ function(args)
 --  end
   
   --if R.isHandshakeTuple(args.type) then
-  print("FANIN",args.opt,args.list)
+  --print("FANIN",args.opt,args.list)
   
   if args.opt==0 then
     return RM.packTuple(args.list,args.bool)
@@ -282,23 +302,16 @@ T.rv(T.Par(P.IntType("T"))) )
 
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
-  --J.err( args.type:isTuple(), "generators.Sub: type should be tuple, but is: "..tostring(args.type) )
-  --J.err( args.type.list[1]==args.type.list[2], "generators.Sub: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
   return C.sub( args.T, args.T, args.T, args.async )
 end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))))
 
 generators.Mul = R.FunctionGenerator("core.Mul",{},{"number","async"},
 function(args)
   if args.number~=nil then
-    --J.err( args.type:isUint() or args.type:isInt(), "generators.Mul: type should be int or uint, but is: "..tostring(args.type) )
-    --return C.multiplyConst(args.type, args.number )
     return R.FunctionGenerator("core.Mul",{},{"async"},
       function(a) return C.multiplyConst( a.T, args.number, a.async ) end,
       T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))))
   else
-    --J.err( args.type:isTuple(), "generators.Mul: type should be tuple, but is:"..tostring(args.type) )
-    --J.err( args.type.list[1]==args.type.list[2], "generators.Mul: lhs type ("..tostring(args.type.list[1])..") must match rhs type ("..tostring(args.type.list[2])..")" )
-
     return R.FunctionGenerator("core.Mul",{},{"bool"},function(args) return C.multiply( args.T, args.T, args.T, args.async ) end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})), T.rv(T.Par(P.NumberType("T"))))
   end
 end)

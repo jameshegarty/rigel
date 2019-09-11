@@ -44,7 +44,7 @@ __sub=function(l,r)
   return fixed.new({kind="binop",op="-",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
 __mul=function(l,r)
-  print("FLOAT_MUL",l,r)
+  --print("FLOAT_MUL",l,r)
   return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
 __div=function(l,r) 

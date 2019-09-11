@@ -1693,7 +1693,6 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       --while shifterBits%outputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
 
       local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
-      print("SHIFTBITS",shifterBits,"inputBitsPerCyc",inputBitsPerCyc,"outputBitsPerCyc",outputBitsPerCyc)
             
       assert(shifterBits%outputBitsPerCyc==0)
       assert(shifterBits%inputBitsPerCyc==0)
