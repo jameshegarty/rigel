@@ -1131,8 +1131,8 @@ end)
 -- VRLoad: if true, make the load function be HandshakeVR
 -- includeSizeFn: should module have a size fn?
 C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
-  err( types.isType(ty), "C.fifo: type must be a type" )
-  err( ty:isData() or ty:isSchedule(), "C.fifo: type must be data type or schedule type, but is: "..tostring(ty) )
+  err( ty==nil or types.isType(ty), "C.fifo: type must be a type" )
+  err( ty==nil or ty:isData() or ty:isSchedule(), "C.fifo: type must be data type or schedule type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
   err( nostall==nil or type(nostall)=="boolean", "C.fifo: nostall must be boolean")
   err( csimOnly==nil or type(csimOnly)=="boolean", "C.fifo: csimOnly must be boolean")
@@ -1143,7 +1143,7 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
   if includeSizeFn==nil then includeSizeFn=false end
   
   local inp, regs
-  if ty:verilogBits()==0 then
+  if ty==nil then
     inp = R.input(types.HandshakeTrigger)
     regs = {R.instantiate("f1",RM.triggerFIFO())}
   else

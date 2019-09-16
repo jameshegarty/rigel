@@ -225,26 +225,32 @@ function(args)
   if args.opt==0 then
     return RM.packTuple(args.list,args.bool)
     --elseif R.isHandshakeTriggerArray(args.type) then
-  elseif args.opt==1 then
+  elseif args.opt==1 or args.opt==2 then
     return RM.packTuple(args.list,args.bool,args.size)
   else
     J.err(false, "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
   end
 end,
 P.SumType("opt",{types.tuple(P.TypeList("list",types.RV(P.ScheduleType("S")))),
-                 types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size"))}),
+                 types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size")),
+                 types.tuple(P.TypeList("list",types.RV()))}),
 P.SumType("opt",{types.RV(types.tuple(P.TypeList("list",P.ScheduleType("S")))),
-                 types.RV(P.ScheduleType("S"),P.SizeValue("size"))})
+                 types.RV(P.ScheduleType("S"),P.SizeValue("size")),
+                 types.RV()})
 )
 
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"number"},{"bool"},
 function(args)
   --J.err( R.isHandshake(args.type) or R.isHandshakeTrigger(args.type),"FIFO: expected handshake input, but is: "..tostring(args.type))
   --local ty = R.extractData(args.type)
-  return C.fifo( args.S, args.number, args.bool )
+  if args.opt==0  then
+    return C.fifo( args.S, args.number, args.bool )
+  else
+    return C.fifo( nil, args.number, args.bool )
+  end
 end,
-types.RV(P.ScheduleType("S")),
-types.RV(P.ScheduleType("S")))
+P.SumType("opt",{types.RV(P.ScheduleType("S")),types.RV()}),
+P.SumType("opt",{types.RV(P.ScheduleType("S")),types.RV()}))
   
 --[=[generators.Add = R.FunctionGenerator("core.Add",{"type","rate"},{"bool","number"},
 function(args)

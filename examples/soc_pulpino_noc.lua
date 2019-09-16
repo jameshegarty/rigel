@@ -38,7 +38,7 @@ local IP_plus200 = C.linearPipeline({
     G.Add{200},
     G.AXIWriteBurst{"out/soc_simple_plus200",noc.write, R.Address(0x3000C000)} },"IP_plus100")
 
-local Inv = G.Module{"Inv",types.u(8),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
+local Inv = G.Module{"Inv",types.rv(types.Par(types.u(8))),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
 
 local IP_inv = C.linearPipeline({
     G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },

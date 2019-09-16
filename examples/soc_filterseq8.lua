@@ -16,9 +16,18 @@ local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
+-- The basic idea of this sort is:
+-- we take an array of V {A,bool} pairs (A vectorized sparse array)
+-- Assign a index to each pair, where higher indices in the array get higher indexes
+--    false bool values get a 0 index.
+-- Then: sort, and throw out the indexes and convert back to bools.
+-- We need to do the index thing, b/c we want to keep items in order.
+
+-- input {{A,u8},{A,u8}}, where the u8 is the index. 
 IdxGT = G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
 
 -- input type: {{A,bool},u8} -> {A,u8}
+-- if bool is true-> return the idx, Else, return 0
 BoolToIdxInner = G.Module{"BoolToIdxInner", types.rv(types.Par(types.tuple{types.tuple{u8,types.bool()},u8})),
                           function(i) return R.concat{i[0][0],G.Sel(i[0][1],i[1],R.c(0,u8))} end}
 

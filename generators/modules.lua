@@ -256,15 +256,20 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
     local schedListOver = {}
     local allPar = true -- backwards compatibility hack
 
-    for k,v in ipairs(typelist) do
-      table.insert(schedList,v.over)
-      table.insert(schedListOver,v.over.over)
-      if v.over:is("Par")==false then allPar=false end
-    end
-    if allPar then
-      res.outputType = types.RV(types.Par(types.tuple(schedListOver)))
+    if typelist[1]==types.RV() then
+      -- handshake trigger tuple
+      res.outputType=types.RV()
     else
-      res.outputType = types.RV(types.tuple(schedList))
+      for k,v in ipairs(typelist) do
+        table.insert(schedList,v.over)
+        table.insert(schedListOver,v.over.over)
+        if v.over:is("Par")==false then allPar=false end
+      end
+      if allPar then
+        res.outputType = types.RV(types.Par(types.tuple(schedListOver)))
+      else
+        res.outputType = types.RV(types.tuple(schedList))
+      end
     end
   else
     assert(false)
@@ -295,13 +300,13 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
     for k,v in pairs(typelist) do  table.insert(activePorts,k) end
       
     local inputValues
-    if typelist[1]~=types.null() then -- NOT HandshakeTrigger mode
+    if typelist[1]~=types.RV() then -- NOT HandshakeTrigger mode
       inputValues = S.tuple(J.map(J.range(0,#typelist-1), function(i) return S.index(S.index(sinp,i),0) end))
     end
     
     -- valid bit is the AND of all the inputs
     local validInList
-    if typelist[1]==types.null() then -- HandshakeTrigger mode
+    if typelist[1]==types.RV() then -- HandshakeTrigger mode
       validInList = J.map(J.range(0,#typelist-1),function(i) return S.index(sinp,i) end)
     else
       validInList = J.map(J.range(0,#typelist-1),function(i) return S.index(S.index(sinp,i),1) end)
@@ -319,7 +324,7 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
     for i=1,#typelist do
       -- if this stream doesn't have data, let it run regardless.
       local valid_i
-      if typelist[1]==types.null() then -- HandshakeTrigger mode
+      if typelist[1]==types.RV() then -- HandshakeTrigger mode
         valid_i = S.index(sinp,i-1)
       else
         valid_i = S.index(S.index(sinp,i-1),1)
@@ -336,7 +341,7 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
     --if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process(S.tuple(concat(concat(validInFullList,{validOut}),concat(readyOutList,{downstreamReady})))) ) end
     
     local out
-    if typelist[1]==types.null() then -- HandshakeTrigger mode
+    if typelist[1]==types.RV() then -- HandshakeTrigger mode
       out = validOut
     else
       out = S.tuple{inputValues, validOut}
@@ -1440,6 +1445,9 @@ vstring = vstring..[[endmodule
   return rigel.newFunction(res)
 end)
 
+-- takes in a vectorized sparse array: {A,bool}[N], and returns it as sparse A array
+--   We simplify this module by only writing out at most 1 token per cycle.
+--   So, our output rate really needs to be <1/N, or else we will not be able to keep up with throughput
 -- restrictions: input array of valids must be sorted (valids come first)
 -- 'rate' is % of tokens that will survive the filter. (ie 1/2 means half elements will be filtered)
 modules.filterSeqPar = memoize(function( A, N, rate )
@@ -3628,7 +3636,7 @@ modules.triggerFIFO = memoize(function()
   res.kind="fifo"
 
   function res.makeSystolic()
-    local C = require "examplescommon"
+    local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
 
     local vstr = res:vHeader()..[=[
