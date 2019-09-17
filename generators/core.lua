@@ -61,6 +61,7 @@ P.SumType("opt",{
             T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("outSize"))))}))
 
 
+-- Hack! clamp a variable sized array to a particular size
 generators.ClampToSize = R.FunctionGenerator("core.ClampToSize",{"size"},{},
 function(args)
   local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]),T.RV(T.VarSeq(T.Par(args.T),args.InSize[1],args.InSize[2])),SDF{1,1},function(inp) return inp end}
@@ -613,116 +614,33 @@ end,
 types.Interface(),
 types.rv(types.Par(P.DataType("D"))))
 
-generators.Pos = R.FunctionGenerator("core.PosSeq",{"size","number"},{},
+generators.Pos = R.FunctionGenerator("core.PosSeq",{"size","rate"},{},
 function(args)
---  if args.type~=nil then
---    J.err( args.type==types.null(), "PosSeq: expected null input")
---  end
-  return RM.posSeq( args.size[1], args.size[2], args.number, nil, true, true )
+  local V = (args.size[1]*args.size[2]*args.rate[1][1]:toNumber())/args.rate[1][2]:toNumber()
+  local V0 = V
+  if V<1 then V=0;V0=1 end
+  local res = generators.Function{"Pos_With_Trig",T.RV(),SDF{1,args.size[1]*args.size[2]/V0},
+    function(inp) return generators.Map{RM.posSeq(args.size[1],args.size[2],V,nil,true,true)}(generators.TriggerBroadcast{args.size[1]*args.size[2]/V0}(inp)) end}
+
+  return res
+--  return RM.posSeq( args.size[1], args.size[2], V, nil, true, true )
 end,
-types.Interface(),
-types.rv(types.Par(P.DataType("D"))))
+types.RV(),
+types.RV(P.ScheduleType("D")))
 
-
--- take a regular Handshake module and lift to HandshakeFramed type
-generators.MapFramed = R.FunctionGenerator("core.MapFramed",{"type","rigelFunction","rate"},{},
+generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
 function(args)
-  assert(args.type:is("HandshakeFramed"))
+  local res = generators.Function{"Flatten_VW"..tostring(args.inner[1]).."_VH"..tostring(args.inner[2]).."_W"..tostring(args.outer[1]).."_H"..tostring(args.outer[2]),T.RV(T.Seq(T.Par(T.Array2d(args.D,args.inner)),args.outer)),SDF{1,1},function(inp) return inp end}
 
-  local fn = args.rigelFunction
-  if R.isFunctionGenerator(fn) then
-    fn = fn{types.Handshake(args.type.params.A),args.rate}
-  else
-    assert(false)
-  end
+  assert(R.isPlainFunction(res))
+  local newType = T.RV(T.ParSeq(T.Array2d(args.D,args.inner),args.outer[1]*args.inner[1],args.outer[2]*args.inner[2]))
+  assert(res.outputType:lower()==newType:lower())
+  res.outputType = newType
 
-  J.err( R.isPlainFunction(fn), "generators.MapFramed: input didn't yield a plain rigel function? "..tostring(fn))
-
-  return RM.mapFramed( fn, args.type.params.dims[1][1], args.type.params.dims[1][2], true )
-end)
-
--- size/bool: output size/mixed for framed types (needed if vector width/ SDF rate changes...)
---       think of this like a combined map&flatten
---[=[generators.Map = R.FunctionGenerator("core.Map",{"type","rigelFunction","rate"},{"size","bool"},
-function(args)
-  if args.type:is("StaticFramed") then
-
-    if args.type.params.mixed and #args.type.params.dims==1 then
-      local mod = args.rigelFunction
-      if R.isFunctionGenerator(mod) then
-        mod = mod{args.type.params.A:arrayOver(),args.rate}
-      end
-      J.err( R.isPlainFunction(mod), "generators.Map: input didn't yield a plain rigel function? "..tostring(mod))
-      
-      assert( args.type.params.A.size[2]==1 )
-      local res = RM.map( mod, args.type.params.A.size[1], args.type.params.A.size[2] )
-      return RM.mapFramed( res, args.type.params.dims[1][1], args.type.params.dims[1][2], true )
-    else
-      local size = types.HSFSize(args.type)
-      local mod = args.rigelFunction
-      if R.isFunctionGenerator(mod) then
-        mod = mod{args.type:framedOver(),args.rate}
-      end
-      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: input didn't yield a plain Rigel function? "..tostring(mod))
-
-      -- fully serial
-      return RM.mapFramed( mod, size[1], size[2], false )
-    end
-  elseif args.type:is("HandshakeFramed") then
-    if (args.type.params.mixed==false and #args.type.params.dims==1) or (args.type.params.mixed and args.type:FV()==1) then
-      -- this is basically just applying a HSF wrapper
-      local size = types.HSFSize(args.type)
-      local mod = args.rigelFunction
-      if R.isFunctionGenerator(mod) then
-        mod = mod{args.type:framedOver(),args.rate}
-      end
-      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: function didn't yield a plain Rigel function? "..tostring(mod))
-
-      local omixed = args.bool
-      local ow,oh
-      -- optionally allow user to override output size
-      if args.size~=nil then ow,oh=args.size[1],args.size[2] end
-      
-      if args.type.params.mixed and args.type:FV()==1 then
-         -- hack: lift mod to work on an array of size 1
-         mod = generators.Module{R.Handshake(args.type.params.A),args.rate,
-                                function(i)
-                                  local o = generators.HS{generators.Index{0}}(i)
-                                  --o = mod(o)
-                                  --return generators.Map{mod}(o)
-                                  return mod(o)
-                                end}
-
-        assert(omixed==nil)
-        omixed=nil
-        assert(ow==nil)
-        assert(oh==nil)
-        ow=128
-        oh=64
-      end
-
-      J.err( R.isPlainFunction(mod) or R.isInstanceCallsite(mod), "generators.Map: input didn't yield a plain rigel function? (2)")
-      
-      -- fully serial
-      return RM.mapFramed( mod, size[1], size[2], args.type.params.mixed, ow, oh, omixed )
-    else
-      J.err(false, "generators.Map: attempted to apply to HandshakeFramed value with unsupported type: "..tostring(args.type))
-    end
-  elseif args.type:isArray() then
-    local mod = args.rigelFunction
-    if R.isFunctionGenerator(mod) then
-      local r
-      if mod:requiresArg("rate") then r = args.rate end
-
-      mod = mod{args.type:arrayOver(),r}
-    end
-    J.err( R.isPlainFunction(mod), "generators.Map: input didn't yield a plain rigel function? "..tostring(mod))
-    
-    return RM.map( mod, args.type.size[1], args.type.size[2] )
-  else
-    J.err(false, "generators.Map: attempted to apply to value with unsupported type: "..tostring(args.type))
-  end
-  end)]=]
+  return res
+end,
+T.RV(T.Seq(T.Par(T.Array2d(P.DataType("D"),P.SizeValue("inner"))),P.SizeValue("outer"))),
+T.RV(T.ParSeq(T.Array2d(P.DataType("D"),P.SizeValue("inner")),P.SizeValue("outer"))))
 
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction"},{},
 function(args)

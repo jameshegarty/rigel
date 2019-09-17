@@ -2360,7 +2360,7 @@ modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
   err( type(bits)=="number", "posSeq: bits should be number, but is: "..tostring(bits))
   local W = Uniform(W_orig)
   err(type(H)=="number","posSeq: H must be number")
-  err(type(T)=="number","posSeq: T must be number")
+  err(type(T)=="number","posSeq: T must be number, but is: "..tostring(T))
   err( W:gt(0):assertAlwaysTrue(), "posSeq: W must be >0, but is: "..tostring(W));
   err(H>0, "posSeq: H must be >0");
   err(T>=0, "posSeq: T must be >=0");
