@@ -36,8 +36,8 @@ module sqrt_float_float (
 );
             parameter INSTANCE_NAME="INST";
    
-  input CLK;
-  input ce;
+  input wire CLK;
+  input wire ce;
   input [31 : 0] inp;
   output [31 : 0] out;
   

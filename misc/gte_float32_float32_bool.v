@@ -38,8 +38,8 @@ module gte_float32_float32_bool (
 );
             parameter INSTANCE_NAME="INST";
    
-  input CLK;
-  input ce;
+  input wire CLK;
+  input wire ce;
   input [63 : 0] inp;
   output [0:0] out;
 

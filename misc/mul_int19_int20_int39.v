@@ -45,8 +45,8 @@ module mul_int19_int20_int39 (
   input [19 : 0] b;
   output [38 : 0] p;*/
 
-     input CLK;
-  input ce;
+   input wire CLK;
+   input wire ce;
    input [38:0] inp;
    output [38:0] out;
 

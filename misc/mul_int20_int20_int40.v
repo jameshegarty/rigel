@@ -38,8 +38,8 @@ module mul_int20_int20_int40 (
 );
    parameter INSTANCE_NAME="INST";
    
-  input CLK;
-  input ce;
+  input wire CLK;
+  input wire ce;
    input [39:0] inp;
    output [39:0] out;
 

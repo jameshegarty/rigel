@@ -38,8 +38,8 @@ module add_float32_float32_float32 (
 );
             parameter INSTANCE_NAME="INST";
 
-  input CLK;
-  input ce;
+  input wire CLK;
+  input wire ce;
   input [63 : 0] inp;
   output [31 : 0] out;
   

@@ -227,6 +227,24 @@ ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bmp,$(SRCS_ZU9))
 ZU9VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.correct.txt,$(SRCS_ZU9))
 ZU9VIVADO += $(ZU9VIVADOBITS)
 
+SRCS_CORA10 = $(SRCS_AXI20)
+
+# ERROR [Synth 8-448] named port connection 'taps' does not exist for instance 'pipeline' of module 'harnessaxi'
+SRCS_CORA10 := $(filter-out conv_wide_handshake_taps.lua convpadcrop_wide_handshake_4_1.lua convpadcrop_wide_handshake_4_1_1080p.lua convpadcrop_wide_handshake_4_2.lua convpadcrop_wide_handshake_4_2_1080p.lua convpadcrop_wide_handshake_4_4.lua convpadcrop_wide_handshake_4_4_1080p.lua convpadcrop_wide_handshake_4_8.lua convpadcrop_wide_handshake_4_8_1080p.lua convpadcrop_wide_handshake_8_1.lua convpadcrop_wide_handshake_8_1_1080p.lua convpadcrop_wide_handshake_8_1_1080p_nostall.lua convpadcrop_wide_handshake_8_2.lua convpadcrop_wide_handshake_8_2_1080p.lua convpadcrop_wide_handshake_8_2_1080p_nostall.lua convpadcrop_wide_handshake_8_4.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_4_1080p_nostall.lua pyramid_large_nofifo_taps_1.lua pyramid_large_nofifo_taps_2.lua pyramid_large_nofifo_tr_1.lua pyramid_large_nofifo_tr_2.lua pyramid_large_nofifo_tr_3.lua pyramid_large_nofifo_tr_4.lua pyramid_large_taps_1.lua pyramid_large_taps_2.lua pyramid_large_tr_1.lua pyramid_large_tr_2.lua pyramid_large_tr_3.lua pyramid_large_tr_4.lua pyramid_taps_1.lua pyramid_taps_2.lua pyramid_tr_1.lua pyramid_tr_2.lua pyramid_tr_3.lua pyramid_tr_4.lua,$(SRCS_CORA10))
+
+# ERROR [Place 30-640] Place Check
+SRCS_CORA10 := $(filter-out harris.lua harris_corner.lua lk_wide_handshake_6_1_axi.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_medi_4.lua stereo_tr_medi_8.lua stereo_tr_rgba_full_32.lua,$(SRCS_CORA10))
+
+# diff fails
+SRCS_CORA10 := $(filter-out 2xov7660.lua campipe_128.lua campipe_512.lua campipe_ov7660.lua campipe_ov7660_1x.lua conv_tr_handshake_4_1.lua conv_tr_handshake_4_1_1080p.lua conv_tr_handshake_4_2.lua conv_tr_handshake_4_2_1080p.lua conv_tr_handshake_4_4.lua conv_tr_handshake_4_4_1080p.lua conv_tr_handshake_8_1.lua conv_tr_handshake_8_1_1080p.lua conv_tr_handshake_8_2.lua conv_tr_handshake_8_2_1080p.lua conv_tr_handshake_8_4.lua conv_tr_handshake_8_4_1080p.lua conv_tr_handshake_8_8.lua conv_tr_handshake_8_8_1080p.lua convolve_p8.lua convolve_slow.lua downsample_wide_handshake_2.lua downsample_wide_handshake_4.lua downsamplex_wide_handshake_1.lua downsamplex_wide_handshake_2.lua downsamplex_wide_handshake_4.lua downsamplex_wide_handshake_8.lua filterseq.lua fixed_inv_wide_handshake.lua interleve_wide_handshake.lua lk_wide_handshake_4_1_axi.lua lowthroughput_128.lua lowthroughput_16.lua lowthroughput_4.lua nilhandshake.lua pyramid_1.lua pyramid_2.lua pyramid_3.lua pyramid_4.lua pyramid_large_1.lua pyramid_large_2.lua pyramid_large_3.lua pyramid_large_4.lua rcp.lua rcpsigned.lua resample_wide_handshake.lua sparselb.lua sparselb_dense.lua sparselb_overflow.lua stereo_ov7660.lua stereo_tr_full_16.lua stereo_tr_medi_16.lua stereo_tr_tiny_1.lua stereo_tr_tiny_2.lua stereo_tr_tiny_4.lua stereo_wide_handshake_tiny.lua triggeredCounter.lua upsamplex_wide_handshake_1.lua upsamplex_wide_handshake_8.lua,$(SRCS_CORA10))
+
+CORA10VIVADOBITS = $(patsubst %.lua,$(BUILDDIR)/%.cora10vivado.bit,$(SRCS_CORA10))
+
+CORA10VIVADO = $(patsubst %.lua,$(BUILDDIR)/%.cora10vivado.raw,$(SRCS_CORA10))
+CORA10VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.cora10vivado.bmp,$(SRCS_CORA10))
+CORA10VIVADO += $(patsubst %.lua,$(BUILDDIR)/%.cora10vivado.correct.txt,$(SRCS_CORA10))
+CORA10VIVADO += $(CORA10VIVADOBITS)
+
 STATS = $(patsubst %.lua,$(BUILDDIR)/%.stats.txt,$(AXISRCS))
 
 STATS100 = $(patsubst %.lua,$(BUILDDIR)/%.stats100.txt,$(SRCS_AXI100))
@@ -319,6 +337,10 @@ axiverilog: $(AXIVERILOG)
 zynq20bits: $(AXIBITS)
 
 zynq100bits: $(AXIBITS100)
+
+cora10vivado: $(CORA10VIVADO)
+
+cora10vivadobits: $(CORA10VIVADOBITS)
 
 asic: $(ASIC)
 

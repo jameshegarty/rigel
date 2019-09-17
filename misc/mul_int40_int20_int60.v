@@ -46,8 +46,8 @@ module mul_int40_int20_int60 (
   output [59 : 0] p;
   */
 
-     input CLK;
-  input ce;
+   input wire CLK;
+   input wire ce;
    input [59:0] inp;
    output [59:0] out;
 
