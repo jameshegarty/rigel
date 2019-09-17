@@ -1,12 +1,13 @@
 local R = require "rigel"
 R.export()
-require "generators".export()
-local harness = require "harnessSOC"
-local SOC = require "soc"
-local C = require "examplescommon"
+require "generators.core".export()
+local harness = require "generators.harnessSOC"
+local SOC = require "generators.soc"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
 require "types".export()
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
+local types = require "types"
 
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 
@@ -15,12 +16,15 @@ noc.extern=true
 
 local W,H = 128,64
 
-AddrGen = Module{SDF{1,1},function(inp)
-  local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
-  local resx = AddMSBs{16}(x)
-  local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )
-  return Add(resx,resy)
-end}
+AddrGen = Generator{SDF{1,1},
+  types.rv(types.Par(types.array2d(types.tuple{u16,u16},1))),
+  types.rv(types.Par(u32)),
+  function(inp)
+    local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
+    local resx = AddMSBs{16}(x)
+    local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )
+    return Add(resx,resy)
+  end}
 
 fn = Module{"Top",
   function(inp)
@@ -33,9 +37,9 @@ fn = Module{"Top",
     ob0 = FIFO{128}(ob0)
     local ob1 = R.selectStream("ob1",ob,1)
     ob1 = FIFO{128}(ob1)
-    ob1 = HS{ValueToTrigger}(ob1)
-    local posSeqOut = HS{ PosSeq{{W/8,H},1} }(ob1)
-    local addrGenOut = HS{AddrGen}(posSeqOut)
+    ob1 = ValueToTrigger(ob1)
+    local posSeqOut = PosSeq{{W/8,H},1}(ob1)
+    local addrGenOut = AddrGen(posSeqOut)
 
     local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8,nil,noc.write)
     print("WRITEMOD",WRITEMOD.inputType)

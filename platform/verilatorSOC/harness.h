@@ -330,7 +330,7 @@ void printMasterWrite(
   printf("M%d_AWVALID(out): %d\n",id,(int)*AWVALID);
   printf("M%d_AWREADY(in): %d\n",id, (int)*AWREADY);
   
-  printf("M%d_WDATA(out): %d/%#x\n",id, *WDATA, *WDATA);
+  printf("M%d_WDATA(out): %lu/%#lx\n",id, *WDATA, *WDATA);
   printf("M%d_WVALID(out): %d\n",id, (int)*WVALID);
   printf("M%d_WREADY(in): %d\n",id, (int)*WREADY);
 }
@@ -473,7 +473,7 @@ bool masterWriteDataLatchFlops(
     *(unsigned long*)(&memory[t->addr]) = *WDATA;
 
     if(verbose){
-      printf("MAXI%d Accept Write, Addr(base rel): %d/%#0lx data: %d/%#018lx remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, *WDATA, t->burst, QSize(&writeQ[port]) );
+      printf("MAXI%d Accept Write, Addr(base rel): %u/%#0x data: %lu/%#018lx remaining_burst: %d outstanding_requests: %d\n", port, t->addr, t->addr, *WDATA, *WDATA, t->burst, QSize(&writeQ[port]) );
     }
     
     t->burst--;
@@ -490,7 +490,7 @@ bool masterWriteDataLatchFlops(
       //BVALIDS_SENT++;
 
       if(*BREADY==0){
-        printf("MAXI%d NYI - BREADY is false\n");
+        printf("MAXI NYI - BREADY is false\n");
         return true;
       }
       //    }else{
@@ -549,7 +549,7 @@ void masterWriteReqLatchFlops(
     t.addr -= MEMBASE;
 
     if(t.addr>=MEMSIZE){
-      printf("MAXI%d Segmentation fault on write! addr:%d/%#x segment:%#x-%#x\n",port,origAddr,origAddr,MEMBASE,MEMBASE+MEMSIZE);
+      printf("MAXI%d Segmentation fault on write! addr:%lu/%#lx segment:%#x-%#x\n",port,origAddr,origAddr,MEMBASE,MEMBASE+MEMSIZE);
       exit(1);
     }
 
@@ -570,7 +570,7 @@ void loadFile( char* filename, unsigned char* memory, unsigned int addrOffset ){
   fclose( infile );
   
   //std::cout << "Input File " << inputCount << ": filename=" << argv[curArg] << " address=0x" << std::hex << addr << " addressOffset=0x" << addrOffset << std::dec << " bytes=" << insize <<std::endl;
-  printf("Input File: filename=%s addressOffset=0x%x bytes=%d\n",filename,addrOffset,insize);
+  printf("Input File: filename=%s addressOffset=0x%x bytes=%lu\n",filename,addrOffset,insize);
 }
 
 void saveFile( const char* filename, unsigned char* memory, unsigned int addrOffset, unsigned int bytes ){
@@ -603,7 +603,7 @@ bool checkPorts(bool checkWriteOnly){
     if( QSize(&writeQ[port])>0){
       //std::cout << "MAXI" << port << " Error, outstanding write requests at end of time! cnt:" << writeQ[port].size() << " bytesWritten: " << masterBytesWritten[port] << std::endl;
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
-      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d nextTransactionAddr:%d nextTransactionBurst:%d bytesWritten:%d\n",port, QSize(&writeQ[port]), t->addr, t->burst, masterBytesWritten[port] );
+      printf("MAXI%d Error, outstanding write requests at end of time! cnt:%d nextTransactionAddr:%d nextTransactionBurst:%d bytesWrittenOnThisPort:%d bytesReadOnAllPorts:%d\n",port, QSize(&writeQ[port]), t->addr, t->burst, masterBytesWritten[port], bytesRead() );
       errored = true;
     }
   }

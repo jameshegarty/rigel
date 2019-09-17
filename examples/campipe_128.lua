@@ -1,11 +1,12 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local CC = require "campipe_core"
 local J = require "common"
+local types = require "types"
 
 function makeCampipeTop()
   -- inp -> |blacklevel| -> |Demosaic| -> |CCM| -> |Gamma| -> out
-  local input = rigelInput(grayscale_uint8)
+  local input = rigelInput(types.rv(types.Par(grayscale_uint8)))
   local bl_out = connect{input=input, tomodule=BlackLevel}
   local dem_out = connect{input=bl_out, tomodule=Demosaic}
   local ccm_out = connect{input=dem_out, tomodule=CCM}
@@ -14,11 +15,10 @@ function makeCampipeTop()
 end
 
 
-local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 local f = require "fixed"
 local modules = require "fpgamodules"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 W = 512
 H = 512

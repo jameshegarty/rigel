@@ -1,10 +1,10 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 local harris = require "harris_core"
 local fixed = require "fixed_float"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 W = 32
 H = 16

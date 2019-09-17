@@ -1,4 +1,4 @@
-local RM = require "modules"
+local RM = require "generators.modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
@@ -71,7 +71,7 @@ end)
 local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
-fixedASTMT={__index = fixedASTFunctions,
+local fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
   if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
     local ty
@@ -116,13 +116,15 @@ __sub=function(l,r)
     return fixed.new({kind="binop",op="-",inputs={l,r}, type=fixed.type( true, p, l:exp() ), loc=getloc()})
   end
  end,
-__mul=function(l,r) 
+__mul=function(l,r)
   err(l:isSigned() == r:isSigned(), "*: lhs/rhs sign must match but is ("..tostring(l:isSigned())..","..tostring(r:isSigned())..")")
   local exp = l:exp() + r:exp()
 
   local p = l:precision() + r:precision()
   local ty = fixed.type( l:isSigned(), p, l:exp()+r:exp() )
-  return fixed.new({kind="binop",op="*",inputs={l,r}, type=ty, loc=getloc()})
+  local res = fixed.new({kind="binop",op="*",inputs={l,r}, type=ty, loc=getloc()})
+
+  return res
  end,
   __newindex = function(table, key, value)
                     error("Attempt to modify systolic AST node")
@@ -141,8 +143,10 @@ function fixed.new(tab)
   return setmetatable(tab,fixedASTMT)
 end
 
-function fixed.parameter( name, ty )
+function fixed.parameter( name, ty, X )
   err(types.isType(ty), "second arg must be type")
+  err(ty:isData(),"second arg must be data type, but is: "..tostring(ty))
+  assert(X==nil)
   return fixed.new{kind="parameter",name=name, type=ty,inputs={},loc=getloc()}
 end
 
@@ -509,7 +513,7 @@ function fixedASTFunctions:liftFloat(minExp, maxExp, floatExp)
 end
 
 function fixedASTFunctions:isSigned()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type, but was: "..tostring(self.type)..self.loc)
   return self.type.params.signed
 end
 
@@ -739,7 +743,7 @@ function fixedASTFunctions:toRigelModule(name,X)
   local inpType
   self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  return RM.lift( name, inpType, self.type, 0, 
+  return RM.lift( name, inpType, self.type, J.sel(self.kind=="disablePipelining",0,1), 
     function(inp)
       local out, instances = self:toSystolic(inp)
       return out, instances

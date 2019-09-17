@@ -523,7 +523,7 @@ end
 
 function systolic.tuple( tab )
   err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
-  err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array")
+  err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array, but is: "..tostring(tab))
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
 
@@ -741,10 +741,10 @@ end
 
 -- this returns (I=total internal delay of node), (D=delays pipelining has to add)
 -- I-D is the amount that the op has built in (eg delay of a call)
-function systolicASTFunctions:internalDelay()
+function systolicASTFunctions:internalDelay(moduleName)
   if self.kind=="call" then 
     local res = self.inst.module:getDelay( self.fnname ) 
-    err( res==0 or self.pipelined, "Error, could not disable pipelining, "..self.loc)
+    err( res==0 or self.pipelined, "Error, could not disable pipelining on module '"..tostring(moduleName).."' due to call of '"..self.inst.module.name.."', "..self.loc)
     return res, 0
   elseif self.kind=="binop" or self.kind=="select" or self.kind=="unary" then 
     if self.pipelined==nil or self.pipelined then
@@ -770,26 +770,26 @@ end
 
 -- this function calculates the pipe delay of each op in the AST.
 -- You can add constraints (disable pipelinging, coherence groups), and it will solve for them.
-function systolicASTFunctions:calculateDelays()
+function systolicASTFunctions:calculateDelays(moduleName)
   local delaysAtInput = {}
   local firstFailure
 
   local finalOut = self:visitEach(
     function( n )
       local maxd = 0
-      J.map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay()) end)
+      J.map( n.inputs, function(a) maxd=math.max(maxd,delaysAtInput[a]+a:internalDelay(moduleName)) end)
       delaysAtInput[n] = maxd      
     end)
 
   return delaysAtInput
 end
 
-function systolicASTFunctions:getDelay()
-  local delaysAtInput = self:calculateDelays()
-  return delaysAtInput[self]+self:internalDelay()
+function systolicASTFunctions:getDelay(moduleName)
+  local delaysAtInput = self:calculateDelays(moduleName)
+  return delaysAtInput[self]+self:internalDelay(moduleName)
 end
 
-function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains )
+function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains, moduleName )
   local pipelineRegisters = {}
   local fnDelays = {}
 
@@ -812,7 +812,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
         if n.fn.output==nil then
           fnDelays[n.fn.name] = 0
         else
-          fnDelays[n.fn.name] = delaysAtInput[orig.inputs[1]]+orig.inputs[1]:internalDelay()
+          fnDelays[n.fn.name] = delaysAtInput[orig.inputs[1]]+orig.inputs[1]:internalDelay(moduleName)
         end
       end
 
@@ -827,7 +827,7 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
         for k,_ in pairs(inputList) do
           -- insert delays so that each input is delayed the same amount
           -- Note: we have to do this on the original node, before we removed the pipeling information!
-          local ID, delaysToAdd = orig.inputs[k]:internalDelay()
+          local ID, delaysToAdd = orig.inputs[k]:internalDelay(moduleName)
           local inpDelay = delaysAtInput[orig.inputs[k]] + (ID-delaysToAdd)
 
           n.inputs[k] = getDelayed( n.inputs[k], math.floor(thisDelay) - math.floor(inpDelay), orig.inputs[k])
@@ -840,11 +840,11 @@ function systolicASTFunctions:addPipelineRegisters( delaysAtInput, stallDomains 
   return finalOut, pipelineRegisters, fnDelays
 end
 
-function systolicASTFunctions:pipeline(stallDomains)
+function systolicASTFunctions:pipeline(stallDomains,moduleName)
   local iter=1
   local delaysAtInput = {}
-  delaysAtInput = self:calculateDelays()
-  return self:addPipelineRegisters( delaysAtInput, stallDomains )
+  delaysAtInput = self:calculateDelays(moduleName)
+  return self:addPipelineRegisters( delaysAtInput, stallDomains,moduleName )
 end
 
 function systolicASTFunctions:calculateStallDomains()
@@ -1836,7 +1836,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   if onlyWire==nil or onlyWire==false then
     local pipelineRegisters
     local stallDomains = t.ast:calculateStallDomains()
-    t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline(stallDomains)
+    t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline(stallDomains,name)
   end
 
   t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
@@ -1949,6 +1949,7 @@ end
 function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, delayMode, X )
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
+  err( types.isBasic(ty),"reg: type must be basic type, but is: "..tostring(ty) )
   err( ty:verilogBits()>0, "0 bit size register?")
   err(type(hasCE)=="boolean", "hasCE must be bool")
   if initial~=nil then ty:checkLuaValue(initial) end

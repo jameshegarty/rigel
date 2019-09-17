@@ -1,26 +1,37 @@
 local R = require "rigel"
-local SOC = require "soc"
-local C = require "examplescommon"
-local harness = require "harnessSOC"
-local G = require "generators"
+local SOC = require "generators.soc"
+local C = require "generators.examplescommon"
+local harness = require "generators.harnessSOC"
+local G = require "generators.core"
 local RS = require "rigelSimple"
 local types = require "types"
 local SDF = require "sdf"
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
+local Uniform = require "uniform"
 types.export()
 
 local regs = SOC.axiRegs({readAddress={u(32),0x30008000},writeAddress={u(32),0x30008000+(128*64)}},SDF{1,128*64}):instantiate("regs")
+
+local readAddress = Uniform(regs.readAddress)
+readAddress:addProperty(readAddress:ge(0x30008000))
+readAddress:addProperty(readAddress:le(0x30008000))
+
+local writeAddress = Uniform(regs.writeAddress)
+writeAddress:addProperty(writeAddress:ge(0x30008000+(128*64)))
+writeAddress:addProperty(writeAddress:le(0x30008000+(128*64)))
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
-    local readStream = SOC.axiBurstReadN("frame_128.raw",128*64,regs.readAddress,noc.read)(i)
-    readStream = G.HS{C.bitcast(b(64),ar(u(8),8))}(readStream)
-    local offset = G.HS{G.Map{G.Add{200}}}(readStream)
-    offset = G.HS{C.bitcast(ar(u(8),8),b(64))}(offset)
-    return SOC.axiBurstWriteN("out/soc_simple_uniform",128*64,regs.writeAddress,noc.write)(offset)
+    --local readStream = SOC.axiBurstReadN("frame_128.raw",128*64,regs.readAddress,noc.read)(i)
+    local readStream = SOC.readBurst("frame_128.raw",128,64,u8,8,true,readAddress,noc.read)(i)
+    --readStream = G.Bitcast{b(64),ar(u(8),8)}(readStream)
+    local offset = G.Add{200}(readStream)
+    --offset = G.HS{C.bitcast(ar(u(8),8),b(64))}(offset)
+    --return SOC.axiBurstWriteN("out/soc_simple_uniform",128*64,regs.writeAddress,noc.write)(offset)
+    return SOC.writeBurst("out/soc_simple_uniform",128,64,u8,8,1,true,noc.write,writeAddress)(offset)
   end}
 
 -- tell the system how much memory we want

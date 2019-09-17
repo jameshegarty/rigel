@@ -1,6 +1,6 @@
 local types = require("types")
-local C = require "examplescommon"
-local harness = require "harness"
+local C = require "generators.examplescommon"
+local harness = require "generators.harness"
 local J = require "common"
 
 if string.find(arg[0],"float") then

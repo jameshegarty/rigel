@@ -3,7 +3,7 @@ local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
 local types = require("types")
 local S = require("systolic")
-local MT = require("modulesTerra")
+local MT = require("generators.modulesTerra")
 
 local fixedNewTerra={}
 

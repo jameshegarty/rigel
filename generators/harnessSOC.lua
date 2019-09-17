@@ -1,6 +1,6 @@
 local R = require "rigel"
-local C = require "examplescommon"
-local SOC = require "soc"
+local C = require "generators.examplescommon"
+local SOC = require "generators.soc"
 local J = require "common"
 local SDF = require "sdfrate"
 local types = require "types"
@@ -10,7 +10,7 @@ return function(fn,t,instances)
   if R.isFunction(fn)==false then
     fn = C.linearPipeline(fn,"Top", nil, instances )
   elseif R.isFunctionGenerator(fn) then
-    fn = fn{type=types.null()}
+    fn = fn{type=types.Interface()}
     J.err( R.isPlainFunction(fn), "harnessSOC: input generator could not be resolved into a module.")
   elseif R.isFunction(fn) then
     J.err(fn.name=="Top","Top module must be called 'Top', but is "..fn.name)
@@ -109,7 +109,7 @@ return function(fn,t,instances)
     f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
     f:close()
   elseif backend=="terra" then
-    local doTerraSim = require("harnessTerraSOC")
+    local doTerraSim = require("generators.harnessTerraSOC")
     doTerraSim(fn,t)
   else
     print("backend",backend)

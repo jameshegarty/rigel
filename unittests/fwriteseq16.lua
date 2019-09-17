@@ -1,17 +1,17 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 
 W = 128
 H = 64
 
 
 ------------
-inp = R.input( types.uint(8) )
+inp = R.input( types.rv(types.Par(types.uint(8))) )
 a = R.apply("a", C.cast(types.uint(8),types.uint(16)), inp)
 a = R.apply("AA", C.plus100(types.uint(16)), a)
 b = R.apply("b", RM.fwriteSeq("out/fwriteseq16test.raw",types.uint(16),"out/fwriteseq16testVerilog.raw"),a)

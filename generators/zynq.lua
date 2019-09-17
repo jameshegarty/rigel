@@ -1,11 +1,11 @@
 local R = require "rigel"
-local RM = require "modules"
-local AXI = require "axi"
+local RM = require "generators.modules"
+local AXI = require "generators.axi"
 local SDF = require "sdf"
 local J = require "common"
 local Uniform = require "uniform"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 local Zynq = {}
 
@@ -30,7 +30,7 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
 
   local makeTerra
   if terralib~=nil then
-    makeTerra = require "zynqTerra"
+    makeTerra = require "generators.zynqTerra"
   end
   
 
@@ -41,6 +41,8 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
       J.err( v[1].inputType==AXI.ReadAddress32 and v[1].outputType==AXI.ReadData32, "Zynq.SimpleNOC: slave read should have type AXI.ReadAddress32->AXI.ReadData32")
       
       J.err( R.isFunction(v[2]), "Zynq.SimpleNOC: slave write should be rigel function, but is: "..tostring(v[2]))
+      print("AXIWRITEISSUE32",AXI.WriteIssue32)
+      print("AXIWRITERESP32",AXI.WriteResponse32)
       J.err( v[2].inputType==AXI.WriteIssue32 and v[2].outputType==AXI.WriteResponse32, "Zynq.SimpleNOC: write should have type AXI.WriteIssue32->AXI.WriteResponse32, but is: "..tostring(v[2].inputType).."->"..tostring(v[2].outputType))
       
       table.insert(instanceList,v[1]:instantiate("readSlave"))

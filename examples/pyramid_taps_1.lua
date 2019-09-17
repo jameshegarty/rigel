@@ -1,13 +1,13 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local RS = require "rigelSimple"
 local types = require("types")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local P = require "pyramid_core"
 local SDFRate = require "sdfrate"
 local J = require "common"
-local soc = require "soc"
+local soc = require "generators.soc"
 
 --R.SDF=false
 
@@ -107,7 +107,7 @@ for depth=1,TARGET_DEPTH do
     out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "finalFIFO", curW, curH, 8 )
     L[depth] = out
   else
-    out = R.apply("out_broadcast"..depth, RM.broadcastStream(TOP_TYPE,2), out)
+    out = R.apply("out_broadcast"..depth, RM.broadcastStream(types.Par(TOP_TYPE),2), out)
     local out0 = R.selectStream("i0"..depth,out,0)
     out0 = P.FIFO( fifos, statements, TOP_TYPE, out0, nil, "internal"..depth, curW, curH, internalT )
 
@@ -134,7 +134,7 @@ local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
 
 --print("TARGET_DEPTH",TARGET_DEPTH)
 if TARGET_DEPTH>1 then
-  SER = RM.serialize( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
+  SER = RM.sequence( RW_TYPE, SDF, RM.pyramidSchedule( TARGET_DEPTH, inputW, outputT ) ) 
   out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot( RW_TYPE, SDF), R.concatArray2d( "sa", L, TARGET_DEPTH, 1))
   out = R.apply("ser", SER, out )
 

@@ -1,8 +1,8 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require "types"
 local S = require "systolic"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 local stereoCoreTerra
 if terralib~=nil then stereoCoreTerra=require("stereo_core_terra") end
@@ -37,7 +37,7 @@ local function argmin( SearchWindow, SADWidth, OffsetX, X)
 
   local A = types.uint(8)
   local ITYPE = types.array2d( types.array2d( types.array2d(A,2), SADWidth, SADWidth ), SearchWindow )
-  local inp = R.input( ITYPE )
+  local inp = R.input( types.rv(types.Par(ITYPE)) )
 
   local idx = {}
   for i=1,SearchWindow do
@@ -76,7 +76,7 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
   local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
   local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(LRTYPE,1),0)), inp) -- A[2]
-  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(LRTYPE,2), inp)
+  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(LRTYPE),2), inp)
 
   -------------
   local left = R.apply("left", RM.makeHandshake(C.index(types.array2d(A,2),0)), R.selectStream("i0",inp_broadcast,0) )

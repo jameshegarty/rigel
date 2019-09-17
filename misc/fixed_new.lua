@@ -1,5 +1,5 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
@@ -288,8 +288,8 @@ end
 --             but for the fixed representation, we want use the fixed type.
 function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType,operateOnUnderlyingType)
   R.isFunction(f)
-  R.expectBasic(f.inputType)
-  R.expectBasic(f.outputType)
+  assert( f.inputType:isrv() and f.inputType.over:is("Par") )
+  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
 
   if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
 
@@ -553,7 +553,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   
   local tfn
 
-  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=0, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), globals=globals}
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=1, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), globals=globals}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 
@@ -561,7 +561,9 @@ function fixedNewASTFunctions:toRigelModule(name,X)
     local sys = Ssugar.moduleConstructor(name)
     for _,v in ipairs(instances) do sys:add(v) end
     for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
+
     local CE = S.CE("process_CE")
+--    local CE
     sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
     
     if res.stateful then
@@ -622,7 +624,7 @@ function fixedNewASTFunctions:isSigned()
   if self.type:isUint() then return false end
   if self.type:isInt() then return true end
   if self.type:isNamed() and self.type.generator=="fixed" then return self.type.params.signed end
-  err(false,":isSigned(), not a numeric type!")
+  err(false,":isSigned(), not a numeric type! "..tostring(self.type))
 end
 
 function fixedNewASTFunctions:exp()

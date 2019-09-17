@@ -1,7 +1,7 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 
 W = 128
 H = 64
@@ -23,7 +23,7 @@ for i=0,255 do table.insert(invtable, inv(i)) end
 
 ------------
 ITYPE = types.array2d( types.uint(8), T )
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "inv", RM.map( RM.lut(types.uint(8), types.uint(8), invtable), T ), inp )
 fn = RM.lambda( "pointwise_wide", inp, out )
 ------------

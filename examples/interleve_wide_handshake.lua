@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 
 W = 128
 H = 64
@@ -21,7 +21,7 @@ local ignoreBin = C.index(BTYPE,0)
 --local fifos = { R.instantiateRegistered("f1",RM.fifo(ITYPE,128)), R.instantiateRegistered("f2",RM.fifo(ITYPE,128)) }
 
 A = R.input( R.Handshake(ITYPE) )
-local Abroadcast = R.apply("Abroadcast", RM.broadcastStream(ITYPE,2), A)
+local Abroadcast = R.apply("Abroadcast", RM.broadcastStream(types.Par(ITYPE),2), A)
 
 --local AinFifo1 = R.applyMethod("L1", fifos[1],"load")
 local AinFifo1 = C.fifo(ITYPE,128)(Abroadcast[0])
@@ -32,7 +32,7 @@ AinFifo2 = C.fifo(ITYPE,128)(Abroadcast[1])
 
 local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{AinFifo2,B},2,1))
 
-local SER = RM.serialize( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
+local SER = RM.sequence( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )
 
 out = R.apply("flatten", RM.flattenStreams(ITYPE,{{1,2},{1,2}}), out )

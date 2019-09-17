@@ -1,7 +1,7 @@
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 require "common".export()
 
 T = 1 -- throughput

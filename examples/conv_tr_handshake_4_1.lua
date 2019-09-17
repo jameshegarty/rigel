@@ -1,14 +1,14 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local J = require "common"
 
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p)
-  assert(T<=1)
+  assert(T>=1)
   --ConvRadius = 1
   local ConvRadius = ConvWidth/2
   -- put center at (ConvRadius,ConvRadius)
@@ -40,7 +40,7 @@ function MAKE(T,ConvWidth,size1080p)
   local convolve = C.convolveConstantTR( types.uint(8), ConvWidth, ConvWidth, T, J.range(ConvWidth*ConvWidth), J.sel(ConvWidth==4,7,11) )
   -------------
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
-  local hsfninp = R.input( R.Handshake(RW_TYPE) )
+  local hsfninp = R.input( R.Handshake(types.Par(RW_TYPE)) )
 
   local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), hsfninp )
   local out = R.apply("pad", RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
@@ -53,7 +53,7 @@ function MAKE(T,ConvWidth,size1080p)
   local hsfn = RM.lambda("hsfn", hsfninp, out)
   
   local infile = "frame_128.raw"
-  local outfile = "conv_tr_handshake_"..tostring(ConvWidth).."_"..(1/T)
+  local outfile = "conv_tr_handshake_"..tostring(ConvWidth).."_"..T
 
   if size1080p then 
     infile="1080p.raw" 
@@ -73,4 +73,4 @@ local first = string.find(arg[0],"%d+")
 local convwidth = string.sub(arg[0],first,first)
 local t = string.sub(arg[0], string.find(arg[0],"%d+",first+1))
 
-MAKE(1/tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"))
+MAKE(tonumber(t),tonumber(convwidth),string.find(arg[0],"1080p"))

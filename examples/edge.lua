@@ -1,14 +1,14 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
 --local cstdio = terralib.includec("stdio.h")
 --local cstring = terralib.includec("string.h")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local f = require "fixed"
-local soc = require "soc"
+local soc = require "generators.soc"
 
 
 local edgeTerra={}
@@ -65,7 +65,7 @@ local nms = RM.lift("nms", types.array2d(ty,3,3),ty,10,
 local function makeThresh()
   local inptype = types.tuple{types.uint(8),types.uint(32)}
 
-  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),10,
+  local thfn = RM.lift("thfn", inptype, types.array2d(types.uint(8),4),0,
     function(inp)
       local inpData = S.index( inp, 0 )
       local inpTap = S.index( inp, 1 )
@@ -77,7 +77,7 @@ local function makeThresh()
 
   if TAPS==false then
     local THRESH=10
-    local inp = R.input( types.uint(8) )
+    local inp = R.input( types.rv(types.Par(types.uint(8))) )
     local out = R.apply("rr", thfn, R.concat("rof",{inp,R.constant("Rt",THRESH,types.uint(32))}))
     thfn = RM.lambda("EWR",inp,out)
   end

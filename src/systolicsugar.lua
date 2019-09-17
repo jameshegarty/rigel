@@ -64,7 +64,7 @@ setReset=function(self,I) self.type:checkLuaValue(I); self.resetValue=I; return 
 systolicFunctionConstructor = {}
 systolicFunctionConstructorMT={
   __index=systolicFunctionConstructor,
-  __tostring=function(tab) return "SystolicFunctionConstructor "..tab.name end}
+  __tostring=function(tab) return "SystolicFunctionConstructor "..tab.__name end}
 
 function sugar.isFunctionConstructor(t) return getmetatable(t)==systolicFunctionConstructorMT end
 

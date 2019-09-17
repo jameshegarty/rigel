@@ -1,6 +1,6 @@
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local f = require "fixed"
 local types = require "types"
 local S = require "systolic"
@@ -40,7 +40,7 @@ function displayOutputColor( reduceType, threshold )
   local ITYPE = types.tuple{types.uint(8),reduceType}
   local OTYPE = types.array2d(types.array2d(types.uint(8),4),1)
 
-  return RM.lift("displayOutput",ITYPE, OTYPE, 0,
+  return RM.lift("displayOutput",ITYPE, OTYPE, 2,
     function(inp)
       local out = S.cast(S.index(inp,0),types.array2d(types.uint(8),4))
       out = S.cast(out,OTYPE)
@@ -85,7 +85,7 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
   local perCycleSearch = (SearchWindow*T)
 
   local ITYPE = types.array2d(types.array2d(types.array2d(A,2),SADWidth,SADWidth),perCycleSearch)
-  local inp = R.input( ITYPE )
+  local inp = R.input( types.rv(types.Par(ITYPE)) )
 
   local idx = {}
   for i=1,SearchWindow do
@@ -93,11 +93,11 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
     idx[i] = SearchWindow+OffsetX-(i-1)
   end
 
-  local indices = R.apply( "convKernel", RM.constSeq( idx, types.uint(8), SearchWindow, 1, T ) ) -- uint8[perCycleSearch]
+  local indices = R.apply( "convKernel", RM.constSeq( idx, types.uint(8), SearchWindow, 1, 1/T ) ) -- uint8[perCycleSearch]
 
   -------
   local LOWER_SUM_INP = f.parameter("LOWER_SUM_INP", reduceType)
-  local LOWER_SUM = LOWER_SUM_INP:lower()
+  local LOWER_SUM = LOWER_SUM_INP:lower():disablePipelining()
   -------
 
   local sadout
@@ -113,7 +113,7 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
   local AM = C.argmin(types.uint(8),LOWER_SUM.type)
   local AM_async = C.argmin(types.uint(8),LOWER_SUM.type,true)
   local out = R.apply("argmin", RM.reduce(AM,perCycleSearch,1),packed)
-  out = R.apply("argminseq", RM.reduceSeq(AM_async,T), out)
+  out = R.apply("argminseq", RM.reduceSeq(AM_async,1/T), out)
 
   return RM.lambda("argmin", inp, out )
 end
@@ -151,7 +151,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
   local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, J.sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
   local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
-  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.array2d(A,2),2), inp)
+  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(types.array2d(A,2)),2), inp)
 
   -------------
   local left = R.apply("left", RM.makeHandshake(C.index(types.array2d(A,2),0)), R.selectStream("i0",inp_broadcast,0))
@@ -164,7 +164,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   left = C.fifo(A,128)(left)
 
   local left = R.apply("AO",RM.makeHandshake(C.arrayop(A,1)),left)
-  local left = R.apply("LB", C.stencilLinebufferPartialOffsetOverlap( A, internalW, internalH, T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
+  local left = R.apply("LB", C.stencilLinebufferPartialOffsetOverlap( A, internalW, internalH, 1/T, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0, OffsetX, SADWidth-1), left )
   local left = R.apply( "llb", RM.makeHandshake(C.unpackStencil( A, SADWidth, SADWidth, perCycleSearch)), left) -- A[SADWidth,SADWidth][PCS]
 
   --------

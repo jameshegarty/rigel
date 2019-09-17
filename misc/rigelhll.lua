@@ -1,9 +1,9 @@
 local RHLL = {}
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local RS = require "rigelSimple"
-local llharness = require "harness"
+local llharness = require "generators.harness"
 local fixed_new = require("fixed_new")
 local types = require("types")
 local SDFRate = require "sdfrate"

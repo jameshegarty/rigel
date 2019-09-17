@@ -1,13 +1,13 @@
 local R = require "rigel"
-local Pulpino = require "pulpino"
+local Pulpino = require "generators.pulpino"
 local J = require "common"
-local Zynq = require "zynq"
-local SOC = require "soc"
+local Zynq = require "generators.zynq"
+local SOC = require "generators.soc"
 local SDF = require "sdf"
-local C = require "examplescommon"
-local G = require "generators"
+local C = require "generators.examplescommon"
+local G = require "generators.core"
 local types = require "types"
-local harness = require "harnessSOC"
+local harness = require "generators.harnessSOC"
 
 
 -- axiRegs expects 32 bit port
@@ -32,11 +32,20 @@ local noc = Pulpino.AXIInterconnect(2,2,{{zynqNOC.read,zynqNOC.write}}):instanti
 
 print(ZynqNOC)
 
-local IP_plus200 = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },G.MapFramed{G.FIFO{512}},G.HS{G.Map{G.Add{200}}},G.AXIWriteBurst{"out/soc_simple_plus200",noc.write, R.Address(0x3000C000)} },"IP_plus100")
+local IP_plus200 = C.linearPipeline({
+    G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },
+    G.FIFO{512},
+    G.Add{200},
+    G.AXIWriteBurst{"out/soc_simple_plus200",noc.write, R.Address(0x3000C000)} },"IP_plus100")
 
-local Inv = G.Module{"Inv",types.u(8),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
+local Inv = G.Module{"Inv",types.rv(types.Par(types.u(8))),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
 
-local IP_inv = C.linearPipeline({G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },G.MapFramed{G.FIFO{512}},G.HS{G.Map{G.Add{100}}},G.HS{G.Map{G.Add{100}}},G.AXIWriteBurst{"out/soc_simple_inv",noc.write1, R.Address(0x3000D000)}},"IP_inv")
+local IP_inv = C.linearPipeline({
+    G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },
+    G.FIFO{512},
+    G.Add{100},
+    G.Add{100},
+    G.AXIWriteBurst{"out/soc_simple_inv",noc.write1, R.Address(0x3000D000)}},"IP_inv")
 
 local PTop = G.Module{"PTop",types.HandshakeTrigger,
   function(i)
@@ -45,8 +54,6 @@ local PTop = G.Module{"PTop",types.HandshakeTrigger,
     done_plus200 = G.FIFO{128}(done_plus200)
     done_inv = G.FIFO{128}(done_inv)
     
-    
-    --    return regs:done(G.FanIn(done_plus200,done_inv))
     return G.FanIn(done_plus200,done_inv)
   end}
 

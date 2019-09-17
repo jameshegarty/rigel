@@ -1,6 +1,6 @@
 local R = require "rigel"
-local RM = require "modules"
-local C = require "examplescommon"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
 local types = require("types")
 --local fixed = require("fixed")
 local SDFRate = require "sdfrate"
@@ -12,7 +12,7 @@ local H = {}
 
 if terralib~=nil then
   --harnessWrapperFn = underoverWrapper
-  H.terraOnly = require("harnessTerra")
+  H.terraOnly = require("generators.harnessTerra")
 end
 
 local function writeMetadata(filename, tab)
@@ -56,12 +56,13 @@ function H.verilogOnly(filename, hsfn, inputFilename, tapType, tapValue, inputTy
 end
 
 function guessP(ty, tapType)
+  assert( types.isType(ty) )
   err(tapType==nil or types.isType(tapType),"tapType should be type or nil")
 
   -- if user didn't pass us type, try to guess it
   -- if array: then it is an array with P=array size
   -- if not array: then it is P=1
-  local ty = R.extractData(ty)
+  local ty = ty:extractData()
 
   local iover, inputP
 
@@ -91,6 +92,7 @@ function harnessTop(t)
   -- if user explicitly passes us the the info, just trust them...
   local iover, inputP, oover, outputP, fn = t.inType, t.inP, t.outType, t.outP, t.fn
 
+  assert(R.isPlainFunction(fn))
   if iover==nil or inputP==nil then
     iover, inputP = guessP(fn.inputType,t.tapType)
   end

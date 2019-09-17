@@ -70,6 +70,8 @@ SDFTOPMT.__call = function(tab,arg,X)
   
   local uarg = {}
   for _,v in ipairs(arg) do
+    --J.err(Uniform(v[2]):gt(0):assertAlwaysTrue(),"SDF: denominator should not be 0!")
+    --J.err( (Uniform(v[1])/Uniform(v[2])):gt(0):assertAlwaysTrue(),"SDF: rate is 0?")
     local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
     table.insert(uarg,{n,d})
   end

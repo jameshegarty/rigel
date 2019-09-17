@@ -1,5 +1,5 @@
 local types = require "types"
-local AXI = require "axi"
+local AXI = require "generators.axi"
 
 local AXIT = {}
 

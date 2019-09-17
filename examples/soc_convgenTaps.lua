@@ -1,13 +1,14 @@
 local R = require "rigel"
 R.export()
-local SOC = require "soc"
-local harness = require "harnessSOC"
+local SOC = require "generators.soc"
+local harness = require "generators.harnessSOC"
 local RS = require "rigelSimple"
-local C = require "examplescommon"
-require "generators".export()
-require "types".export()
+local C = require "generators.examplescommon"
+require "generators.core".export()
+local T = require "types"
+T.export()
 local SDF = require "sdf"
-local Zynq = require "zynq"
+local Zynq = require "generators.zynq"
 
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
@@ -26,21 +27,22 @@ local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNO
 noc.extern=true
 
 
-local conv = Module{ ar(u(8),ConvWidth,ConvWidth),
+local conv = Generator{ T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))),
+                        T.rv(T.Par(u8)),
 function(inp)
-  inp = Map{AddMSBs{24}}(inp)
+  inp = AddMSBs{24}(inp)
   local z = Zip(inp,regs.coeffs())
-  local out = Map{Mul}(z)
-  local res = Reduce{Add}(out)
+  local out = Mul(z)
+  local res = Reduce{Add{R.Async}}(out)
   return RemoveMSBs{24}(Rshift{8}(res))
 end}
 
 harness({
   regs.start,
-  SOC.readBurst("1080p.raw",1920,1080,u(8),1,nil,nil,noc.read),
-  HS{Pad{inSize,1,{8,8,2,1}}},
-  HS{Linebuffer{padSize,1,{3,0,3,0}}},
-  HS{Map{conv}},
-  HS{CropSeq{padSize,1,{9,7,3,0}}},
-  SOC.writeBurst("out/soc_convgenTaps",1920,1080,u(8),1,nil,noc.write),
+  AXIReadBurst{"1080p.raw",{1920,1080},u(8),1,noc.read},
+  Pad{{8,8,2,1}},
+  Stencil{{-3,0,-3,0}},
+  conv,
+  Crop{{9,7,3,0}},
+  AXIWriteBurst{"out/soc_convgenTaps",noc.write},
   regs.done},nil,{regs})

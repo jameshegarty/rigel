@@ -1,10 +1,10 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 require "common".export()
 
 W = 128
@@ -22,13 +22,13 @@ end
 --plus100 = RM.lift( "plus100", types.uint(8), types.uint(8) , 10, terra( a : &uint8, out : &uint8  ) @out =  @a+100 end, inp, inp + S.constant(100,types.uint(8)) )
 
 ------------
-inp = R.input( types.uint(8) )
+inp = R.input( types.rv(types.Par(types.uint(8))) )
 a = R.apply("a", C.plus100(types.uint(8)), inp)
 b = R.apply("b", C.plus100(types.uint(8)), a)
 p200 = RM.lambda( "p200", inp, b )
 ------------
 ITYPE = types.array2d( types.uint(8), T )
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "plus100", RM.map( p200, T ), inp )
 fn = RM.lambda( "pointwise_wide", inp, out )
 ------------

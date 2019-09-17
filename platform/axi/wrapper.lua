@@ -1,9 +1,9 @@
 local rigel = require "rigel"
 local R = rigel
-local RM = require "modules"
+local RM = require "generators.modules"
 local J = require "common"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local Uniform = require "uniform"
 
 local VERILOGFILE = arg[1]
@@ -73,7 +73,7 @@ return fn
   local inp = R.input( R.Handshake(types.array2d(iover,targetInputP)) )
   local out = inp
 
-  if fn.inputType:verilogBits()~=64 then
+  if fn.inputType:lower():verilogBits()~=64 then
     out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
   end
 
@@ -108,7 +108,7 @@ return fn
 
     assert( targetOutputBytes%(oover:verilogBits()/8)==0)
       
-    if fn.outputType:verilogBits()~=64 then
+    if fn.outputType:lower():verilogBits()~=64 then
       out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
     end
 

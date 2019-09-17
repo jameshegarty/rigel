@@ -1,11 +1,11 @@
 local R = require "rigel"
 local types = require "types"
 local J = require "common"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
-local AXI = require "axi"
-local RM = require "modules"
-local G = require "generators"
+local AXI = require "generators.axi"
+local RM = require "generators.modules"
+local G = require "generators.core"
 local Bjump = {}
 
 -- a direct mapped cache, with 'sets' number of blocks, each block of size ty:verilogBytes()*itemsPerBlock bytes
@@ -24,61 +24,61 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   local out = R.statements{RM.makeHandshake(C.bitcast(types.uint(32),ty))(INP),readFnInst(RM.makeHandshake(C.const(types.uint(32),0))())}
   local res = RM.lambda("Bjump_AXICachedRead",INP,out,{readFnInst})
   
-  local bsg_defines = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_defines.v")
-  local bsg_mem_1rw_sync_mask_write_bit_synth = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.v",{bsg_defines})
-  local bsg_mem_1rw_sync_mask_write_bit = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_bit.v",{bsg_defines,bsg_mem_1rw_sync_mask_write_bit_synth})
-  local bsg_mem_1rw_sync_synth = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_synth.v",{bsg_defines})
-  local bsg_mem_1rw_sync = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync.v",{bsg_defines,bsg_mem_1rw_sync_synth})
-  local bsg_mem_1rw_sync_mask_write_byte_synth = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.v",{bsg_defines,bsg_mem_1rw_sync})
-  local bsg_mem_1rw_sync_mask_write_byte = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_byte.v",{bsg_defines,bsg_mem_1rw_sync_mask_write_byte_synth})
+  local bsg_defines = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_defines.v")
+  local bsg_mem_1rw_sync_mask_write_bit_synth = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.v",{bsg_defines})
+  local bsg_mem_1rw_sync_mask_write_bit = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_bit.v",{bsg_defines,bsg_mem_1rw_sync_mask_write_bit_synth})
+  local bsg_mem_1rw_sync_synth = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_synth.v",{bsg_defines})
+  local bsg_mem_1rw_sync = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync.v",{bsg_defines,bsg_mem_1rw_sync_synth})
+  local bsg_mem_1rw_sync_mask_write_byte_synth = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.v",{bsg_defines,bsg_mem_1rw_sync})
+  local bsg_mem_1rw_sync_mask_write_byte = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1rw_sync_mask_write_byte.v",{bsg_defines,bsg_mem_1rw_sync_mask_write_byte_synth})
 
-  local bsg_mux_segmented = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_mux_segmented.v")
-  local bsg_mux = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_mux.v",{bsg_defines})
+  local bsg_mux_segmented = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_mux_segmented.v")
+  local bsg_mux = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_mux.v",{bsg_defines})
 
-  local bsg_cache_pkg = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_pkg.v")
-  local bsg_cache_pkt = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_pkt.vh",{bsg_cache_pkg})
-  local bsg_cache_miss = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_miss.v")
-  local bsg_cache_dma_pkt = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_dma_pkt.vh")
+  local bsg_cache_pkg = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_pkg.v")
+  local bsg_cache_pkt = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_pkt.vh",{bsg_cache_pkg})
+  local bsg_cache_miss = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_miss.v")
+  local bsg_cache_dma_pkt = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_dma_pkt.vh")
 
-  local bsg_circular_ptr = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_circular_ptr.v",{bsg_defines})
-  local bsg_fifo_1rw_large = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_fifo_1rw_large.v",{bsg_defines,bsg_circular_ptr})
-  local bsg_fifo_tracker = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_fifo_tracker.v",{})
-  local bsg_parallel_in_serial_out = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_parallel_in_serial_out.v",{})
-  local bsg_serial_in_parallel_out = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_serial_in_parallel_out.v",{})
+  local bsg_circular_ptr = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_circular_ptr.v",{bsg_defines})
+  local bsg_fifo_1rw_large = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_fifo_1rw_large.v",{bsg_defines,bsg_circular_ptr})
+  local bsg_fifo_tracker = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_fifo_tracker.v",{})
+  local bsg_parallel_in_serial_out = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_parallel_in_serial_out.v",{})
+  local bsg_serial_in_parallel_out = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_serial_in_parallel_out.v",{})
 
-  local bsg_thermometer_count = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_thermometer_count.v",{})
-  local bsg_decode = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_decode.v",{bsg_defines})
-  local bsg_decode_with_v = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_decode_with_v.v",{bsg_decode})
-  local bsg_counter_clear_up = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_counter_clear_up.v",{bsg_defines})
-  local bsg_round_robin_2_to_2 = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_round_robin_2_to_2.v",{})
+  local bsg_thermometer_count = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_thermometer_count.v",{})
+  local bsg_decode = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_decode.v",{bsg_defines})
+  local bsg_decode_with_v = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_decode_with_v.v",{bsg_decode})
+  local bsg_counter_clear_up = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_counter_clear_up.v",{bsg_defines})
+  local bsg_round_robin_2_to_2 = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_round_robin_2_to_2.v",{})
 
-  local bsg_round_robin_arb = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_round_robin_arb.v",{bsg_defines})
+  local bsg_round_robin_arb = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_round_robin_arb.v",{bsg_defines})
 
-  local bsg_mux_one_hot = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_mux_one_hot.v",{})
-  local bsg_crossbar_o_by_i = C.VerilogFile("modules/bsg_ip_cores/bsg_misc/bsg_crossbar_o_by_i.v",{bsg_mux_one_hot})
+  local bsg_mux_one_hot = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_mux_one_hot.v",{})
+  local bsg_crossbar_o_by_i = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_crossbar_o_by_i.v",{bsg_mux_one_hot})
   
-  local bsg_round_robin_n_to_1 = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_round_robin_n_to_1.v",{bsg_round_robin_arb,bsg_crossbar_o_by_i})
-  local bsg_mem_1r1w_synth = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1r1w_synth.v",{bsg_defines})
-  local bsg_mem_1r1w = C.VerilogFile("modules/bsg_ip_cores/bsg_mem/bsg_mem_1r1w.v",{bsg_mem_1r1w_synth,bsg_defines })
-  local bsg_two_fifo = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_two_fifo.v",{bsg_mem_1r1w})
+  local bsg_round_robin_n_to_1 = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_round_robin_n_to_1.v",{bsg_round_robin_arb,bsg_crossbar_o_by_i})
+  local bsg_mem_1r1w_synth = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1r1w_synth.v",{bsg_defines})
+  local bsg_mem_1r1w = C.VerilogFile("generators/bsg_ip_cores/bsg_mem/bsg_mem_1r1w.v",{bsg_mem_1r1w_synth,bsg_defines })
+  local bsg_two_fifo = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_two_fifo.v",{bsg_mem_1r1w})
 
-  local bsg_fifo_1r1w_small = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_fifo_1r1w_small.v",{bsg_fifo_tracker})
+  local bsg_fifo_1r1w_small = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_fifo_1r1w_small.v",{bsg_fifo_tracker})
   
-  local bsg_fifo_1r1w_large = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_fifo_1r1w_large.v",{bsg_fifo_1rw_large,bsg_serial_in_parallel_out,bsg_thermometer_count,bsg_round_robin_2_to_2,bsg_two_fifo,bsg_round_robin_n_to_1})
-  local bsg_cache_dma = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_dma.v",{bsg_cache_dma_pkt,bsg_fifo_1r1w_large})
-  local bsg_cache_sbuf_queue = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_sbuf_queue.v")
-  local bsg_cache_sbuf = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_sbuf.v",{bsg_cache_sbuf_queue})
+  local bsg_fifo_1r1w_large = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_fifo_1r1w_large.v",{bsg_fifo_1rw_large,bsg_serial_in_parallel_out,bsg_thermometer_count,bsg_round_robin_2_to_2,bsg_two_fifo,bsg_round_robin_n_to_1})
+  local bsg_cache_dma = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_dma.v",{bsg_cache_dma_pkt,bsg_fifo_1r1w_large})
+  local bsg_cache_sbuf_queue = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_sbuf_queue.v")
+  local bsg_cache_sbuf = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_sbuf.v",{bsg_cache_sbuf_queue})
 
   
-  local bsg_cache_to_axi_rx = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_to_axi_rx.v",{bsg_defines,bsg_fifo_1r1w_small,bsg_parallel_in_serial_out,bsg_decode_with_v,bsg_counter_clear_up})
-  local bsg_cache_to_axi_tx = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_to_axi_tx.v",{bsg_defines})
+  local bsg_cache_to_axi_rx = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_to_axi_rx.v",{bsg_defines,bsg_fifo_1r1w_small,bsg_parallel_in_serial_out,bsg_decode_with_v,bsg_counter_clear_up})
+  local bsg_cache_to_axi_tx = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_to_axi_tx.v",{bsg_defines})
 
-  local bsg_cache_to_axi = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache_to_axi.v",{bsg_cache_to_axi_rx,bsg_cache_to_axi_tx,bsg_cache_dma_pkt})
+  local bsg_cache_to_axi = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache_to_axi.v",{bsg_cache_to_axi_rx,bsg_cache_to_axi_tx,bsg_cache_dma_pkt})
 
-  local bsg_cache = C.VerilogFile("modules/bsg_ip_cores/bsg_cache/bsg_cache.v",{bsg_cache_pkt,bsg_cache_dma_pkt,bsg_mem_1rw_sync_mask_write_bit,bsg_mem_1rw_sync_mask_write_byte,bsg_cache_miss,bsg_cache_dma,bsg_cache_sbuf,bsg_mux_segmented,bsg_mux})
+  local bsg_cache = C.VerilogFile("generators/bsg_ip_cores/bsg_cache/bsg_cache.v",{bsg_cache_pkt,bsg_cache_dma_pkt,bsg_mem_1rw_sync_mask_write_bit,bsg_mem_1rw_sync_mask_write_byte,bsg_cache_miss,bsg_cache_dma,bsg_cache_sbuf,bsg_mux_segmented,bsg_mux})
 
 
-  local bsg_flow_convert = C.VerilogFile("modules/bsg_ip_cores/bsg_dataflow/bsg_flow_convert.v",{})
+  local bsg_flow_convert = C.VerilogFile("generators/bsg_ip_cores/bsg_dataflow/bsg_flow_convert.v",{})
   
   res.instanceMap[bsg_cache:instantiate()] = 1
   res.instanceMap[bsg_cache_pkt:instantiate()] = 1

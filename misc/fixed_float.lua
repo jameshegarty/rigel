@@ -1,4 +1,4 @@
-local modules = require "modules"
+local modules = require "generators.modules"
 local IR = require("ir")
 local types = require("types")
 local S = require("systolic")
@@ -34,7 +34,7 @@ end
 local fixedASTFunctions = {}
 setmetatable(fixedASTFunctions,{__index=IR.IRFunctions})
 
-fixedASTMT={__index = fixedASTFunctions,
+local fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
   assert(fixed.isFixedType(l.type))
   assert(fixed.isFixedType(r.type))
@@ -43,7 +43,8 @@ end,
 __sub=function(l,r) 
   return fixed.new({kind="binop",op="-",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
-__mul=function(l,r) 
+__mul=function(l,r)
+  --print("FLOAT_MUL",l,r)
   return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.float(32), loc=getloc()})
  end,
 __div=function(l,r) 
@@ -191,6 +192,10 @@ function fixedASTFunctions:cast(to)
   assert( fixed.isFixedType(self.type)==false )
   assert(types.isType(to))
   return fixed.new{kind="cast",type=to, inputs={self}, loc=getloc()}
+end
+
+function fixedASTFunctions:disablePipelining()
+  return fixed.new{kind="disablePipelining", type=self.type,inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:index(ix,iy)
@@ -370,6 +375,9 @@ function fixedASTFunctions:toSystolic(inp)
         res = S.cast(S.tuple(inp),n.type)
       elseif n.kind=="cast" then
         res = S.cast(args[1],n.type)
+      elseif n.kind=="disablePipelining" then
+        res = args[1]:disablePipelining()
+        --res = args[1]
       else
         err(false,"missing? "..n.kind)
       end
@@ -414,12 +422,18 @@ function fixedASTFunctions:toRigelModule(name,X)
   local inpType
   self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  return modules.lift( name, inpType, self.type, 0, 
+  local delay = 1
+  if self.kind=="disablePipelining" then delay=0 end
+    
+  local res = modules.lift( name, inpType, self.type, delay, 
     function(inp)
       local out, instances = self:toSystolic(inp)
       return out, instances
     end,
     function() return fixedFloatTerra.tfn(self) end)
+
+  --print("FIXEFLOAT",name,res,res.systolicModule)
+  return res
 end
 
 return fixed

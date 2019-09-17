@@ -1,14 +1,14 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 
 GRAD_INT = true
 GRAD_SCALE = 4 -- <2 is bad
 GRAD_TYPE = types.int(8)
 
 local sift = require "sift_core_hw"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 
 local W = 16
 local H = 16

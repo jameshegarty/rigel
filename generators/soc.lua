@@ -1,18 +1,18 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local S = require "systolic"
 local types = require "types"
 local J = require "common"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local SDF = require "sdf"
 local Uniform = require "uniform"
-local AXI = require "axi"
+local AXI = require "generators.axi"
 
 local SOCMT
 
 if terralib~=nil then
-  SOCMT = require("socTerra")
+  SOCMT = require("generators.socTerra")
 end
 
 local SOC = {}
@@ -95,7 +95,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     globalMetadata["TypeOfRegister_".."InstCall_regs_"..k] = v[1]
 
     if v[3]=="input" then
-      functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.null(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[k] = R.newFunction{name=k, inputType=R.Handshake(v[1]), outputType=types.Interface(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
 
       table.insert(portPassthrough,"."..k.."_ready("..k.."_ready)")
       table.insert(portPassthrough,"."..k.."_input("..k.."_input)")
@@ -109,7 +109,7 @@ output wire ]]..k..[[_ready,
     else
       table.insert(portPassthrough,"."..k.."("..k.."_output)")
           
-      functionList[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[k] = R.newFunction{name=k, inputType=types.Interface(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
       
       regPorts = regPorts.."output wire ["..tostring(v[1]:verilogBits()-1)..":0] "..k..[[,
 ]]
@@ -135,8 +135,8 @@ output wire ]]..k..[[_ready,
   
 
 
-  functionList.start = R.newFunction{name="start",inputType=types.null(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.null(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.start = R.newFunction{name="start",inputType=types.Interface(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.Interface(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
 
   local res = RM.moduleLambda( ModuleName, functionList )
   res.globalMetadata = globalMetadata
@@ -1527,12 +1527,20 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   if V>0 then outType=types.array2d(outType,V) end
   out = RM.makeHandshake(C.cast(types.bits(outType:verilogBits()),outType))(out)
 
+  
+  local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_framed"..tostring(framed).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+
   if framed then
-    out = C.handshakeToHandshakeFramed(out.type,V>0,{{W,H}})(out)
+    --out = C.handshakeToHandshakeFramed(out.type,V>0,{{W:toNumberIfPossible(),H:toNumberIfPossible()}})(out)
+    --print("FRAMED",res.outputType)
+    --res.outputType=4
+    if V==0 then
+      res.outputType = types.RV(types.Seq(types.Par(ty),W_orig,H_orig))
+    else
+      res.outputType = types.RV(types.ParSeq(outType,W_orig,H_orig))
+    end
   end
-  
-  local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
-  
+    
   SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
 
   if addressOverride==nil then
@@ -1625,13 +1633,18 @@ SOC.read = function( filename, fileBytes, readType, readFn_orig, Cstyle, address
   return res
 end
                           
-SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig, addressOverride, X)
-  J.err( type(filename)=="string","writeBurst: filename must be string")
-  J.err( type(W)=="number", "writeBurst: W must be number")
-  J.err( type(H)=="number", "writeBurst: H must be number")
+SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, framed, writeFn_orig, addressOverride, X)
+  J.err( type(filename)=="string","writeBurst: filename must be string, but is: "..tostring(filename))
+  --J.err( type(W)=="number", "writeBurst: W must be number, but is: "..tostring(W))
+  --J.err( type(H)=="number", "writeBurst: H must be number")
+  local W,H = Uniform(W_orig):toNumber(),Uniform(H_orig):toNumber()
   J.err( types.isType(ty), "writeBurst: type must be type")
-  J.err( V==nil or type(V)=="number", "writeBurst: V must be number or nil")
-  if V==nil then V=1 end
+
+  J.err( Vw==nil or type(Vw)=="number", "writeBurst: Vw must be number or nil")
+  if Vw==nil then Vw=1 end
+  J.err( Vh==nil or type(Vh)=="number", "writeBurst: Vh must be number or nil, but is: "..tostring(Vh))
+  if Vh==nil then Vh=1 end
+
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean, but is: "..tostring(framed))
   J.err( R.isFunction(writeFn_orig), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
@@ -1646,26 +1659,28 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
   local globalMetadata={}
   globalMetadata[writeFn_orig.name.."_write_W"] = W
   globalMetadata[writeFn_orig.name.."_write_H"] = H
-  globalMetadata[writeFn_orig.name.."_write_V"] = V
+  globalMetadata[writeFn_orig.name.."_write_V"] = Vw*Vh
   globalMetadata[writeFn_orig.name.."_write_type"] = tostring(ty)
   globalMetadata[writeFn_orig.name.."_write_bitsPerPixel"] = ty:verilogBits()
   globalMetadata[writeFn_orig.name.."_write_address"] = address
 
   local inputType = ty
-  if V>0 then inputType = types.array2d(inputType,V) end
+  if Vw>0 then inputType = types.array2d(inputType,Vw,Vh) end
   
   local inp = R.input(R.Handshake(inputType))
   local out = RM.makeHandshake(C.bitcast(inputType,types.bits(inputType:verilogBits())))(inp)
 
-  local inputBits = ty:verilogBits()*math.max(V,1)
+  local inputBits = ty:verilogBits()*math.max(Vw*Vh,1)
   local desiredTotalInputBits = W*H*ty:verilogBits()
 
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
 
   local ChangeRateModule, totalBits = CR[1], CR[2]
+  --print("TOTALBITS",totalBits)
   
   assert( Uniform(totalBits%(128*8)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits%inputBits):eq(0):assertAlwaysTrue() )
+  assert( Uniform(totalBits%Uniform(16*64)):eq(0):assertAlwaysTrue() ) -- burst size is 128 bytes=1024 bits
   assert( Uniform(totalBits):ge(desiredTotalInputBits):assertAlwaysTrue() )
 
   if desiredTotalInputBits~=totalBits then
@@ -1678,7 +1693,7 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
 
   out = SOC.axiBurstWriteN( filename, totalBits/8, address, writeFn_orig )(out)
 
-  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_v"..V.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
+  local res = RM.lambda("WriteBurst_W"..W.."_H"..H.."_Vw"..Vw.."_Vh"..Vh.."_port"..SOC.currentMAXIWritePort.."_addr"..tostring(SOC.currentAddr).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   SOC.currentMAXIWritePort = SOC.currentMAXIWritePort+1
   if addressOverride==nil then
@@ -1692,7 +1707,11 @@ SOC.writeBurst = J.memoize(function( filename, W, H, ty, V, framed, writeFn_orig
   
   if framed then
     -- HACK
-    res.inputType = types.HandshakeFramed(inputType,V>0,{{W,H}})
+    if Vw==0 then
+      res.inputType = types.RV(types.Seq(types.Par(inputType),W_orig,H_orig))
+    else
+      res.inputType = types.RV(types.ParSeq(types.array2d(ty,Vw,Vh),W_orig,H_orig))
+    end
   end
   
   return res
@@ -1735,7 +1754,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
 
   local inp, inpAddr, inpData
 
-  local G = require "generators"
+  local G = require "generators.core"
 
   if syncAddrData then
     inp = R.input( R.Handshake(types.tuple{types.uint(32),writeType}) )
@@ -1743,10 +1762,10 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     
     inpAddr = R.selectStream( "inpAddr", tmp, 0 )
     inpAddr = G.FIFO{128}(inpAddr)
-    inpAddr = G.HS{G.Index{0}}(inpAddr)
+    inpAddr = G.Index{0}(inpAddr)
     inpData = R.selectStream( "inpData", tmp, 1 )
     inpData = G.FIFO{128}(inpData)
-    inpData = G.HS{G.Index{1}}(inpData)
+    inpData = G.Index{1}(inpData)
   else
     inp = R.input( R.HandshakeTuple{types.uint(32),writeType} )
 
@@ -1756,17 +1775,17 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   
   local writeBytesPerBurst
 
-  local Scale0 = G.Module{
+  --[=[local Scale0 = G.Module{
     function(inp)
       local a,b = G.Index{0}(inp), G.Index{1}(inp)
       a = (a)
       b = (b)
       return R.concat("out",{a,b})
-    end}
+    end}]=]
   
   -- scale by type size
-  inpAddr = G.HS{G.Mul{writeType:verilogBits()/8}}(inpAddr)
-  inpData = G.HS{C.bitcast(writeType,types.bits(writeType:verilogBits()))}(inpData)
+  inpAddr = G.Mul{writeType:verilogBits()/8}(inpAddr)
+  inpData = RM.makeHandshake(C.bitcast(writeType,types.bits(writeType:verilogBits())))(inpData)
   
   if writeType:verilogBits()/8 > 8*16 then
     assert(false) -- NYI

@@ -1,9 +1,9 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 local harris = require "harris_core"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local f = require "fixed_float"
 
 W = 256
@@ -18,17 +18,18 @@ FILTER_RATE = 128
 ----------------
 local inp = f.parameter("inp16to8",types.tuple{types.uint(16),types.uint(16)})
 local out = f.array2d({inp:index(0):cast(types.uint(8)),inp:index(1):cast(types.uint(8))},2,1)
+out = out:disablePipelining()
 local touint8pair = out:toRigelModule("touint8pair")
 ----------------
 -- harris -> pos fn
 ITYPE = types.array2d(types.uint(8),1)
 
-local inpraw = R.input(types.array2d(types.bool(),1))
+local inpraw = R.input( types.rv(types.Par(types.array2d(types.bool(),1))) )
 local inp = R.apply("ir0", C.index(types.array2d(types.bool(),1),0,0), inpraw)
 
 local PS = RM.posSeq(W,H,1)
 local pos = R.apply("posseq", PS)
-local pos = R.apply("idx0", C.index(PS.outputType,0,0), pos )
+local pos = R.apply("idx0", C.index(PS.outputType:extractData(),0,0), pos )
 local pos = R.apply("cst", touint8pair, pos)
 
 local fsinp = R.concat("PTT",{pos,inp})

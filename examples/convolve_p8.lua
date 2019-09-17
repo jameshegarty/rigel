@@ -1,11 +1,12 @@
 R = require "rigelSimple"
+local T = require "types"
 
 P = 8
 inSize = { 1920, 1080 }
 padSize = { 1920+16, 1080+3 }
 
 function makeConvolve()
-  local convolveInput = R.input( R.array2d(R.uint8,4,4) )
+  local convolveInput = R.input( T.rv(T.Par(R.array2d(R.uint8,4,4))) )
 
   local filterCoeff = R.constant{ type=R.array2d(R.uint8,4,4), value = 
     { 4, 14, 14,  4,
@@ -32,7 +33,7 @@ function makeConvolve()
 end
 
 ----------------
-input = R.input( R.HS( R.array( R.uint8, P) ) )
+input = R.input( R.HS( T.Par( R.array( R.uint8, P) ) ) )
 
 -- apply boundary condition by padding stream
 padded = R.connect{ input=input, toModule = 

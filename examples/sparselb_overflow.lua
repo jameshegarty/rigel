@@ -1,10 +1,10 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local ffi = require("ffi")
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
-local C = require "examplescommon"
+local harness = require "generators.harness"
+local C = require "generators.examplescommon"
 local RS = require "rigelSimple"
 local f = require "fixed_new"
 
@@ -16,11 +16,11 @@ pad={8,8}
 padSize = {W+pad[1],H+pad[2]}
 
 ------------
-inp = R.input( types.uint(8) )
+inp = R.input( types.rv(types.Par(types.uint(8))) )
 local posSeqMod = RS.modules.posSeq{size=padSize,V=1}
 pos = RS.connect{toModule=posSeqMod}
 
-local pbinp = f.parameter("pbinp",posSeqMod.outputType):index(0)
+local pbinp = f.parameter("pbinp",posSeqMod.outputType.over.over):index(0)
 local pbx = pbinp:index(0):mod(8):eq(f.constant(7))
 local pby = pbinp:index(1):mod(8):eq(f.constant(7))
 local pb = pbx:__and(pby)
@@ -29,7 +29,7 @@ posbool = RS.connect{ input=pos,toModule=pb:toRigelModule("pb") }
 sparseInput = RM.lambda( "sparseInput", inp, RS.concat{ inp, posbool } )
 
 ------------
-inp = R.input( RS.array2d(RS.uint8,1) )
+inp = R.input( types.rv(types.Par(RS.array2d(RS.uint8,1))) )
 out = RS.index{input=inp,key=0}
 out = RS.connect{input=out, toModule=sparseInput}
 -- we pad the image by 8 pix (1 hot pix), so if we have a row size of 8, we should see 7 dots per row in out image

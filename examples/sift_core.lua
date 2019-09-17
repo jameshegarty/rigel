@@ -1,11 +1,11 @@
 local R = require "rigel"
 local RS = require "rigelSimple"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")
-local harness = require "harness"
+local harness = require "generators.harness"
 local harris = require "harris_core"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 f.DISABLE_SYNTH=true
@@ -16,21 +16,23 @@ if terralib~=nil then siftCoreHWTerra=require("sift_core_hw_terra") end
 
 sift = {}
 
-local fixedSum = J.memoize(function(A)
+local fixedSum = J.memoize(function(A,async)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+inp:index(1)
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if async==true then out = out:disablePipelining() end
   return out:toRigelModule("fixedSum")
                    end)
 
-local fixedSumPow2 = J.memoize(function(A)
+local fixedSumPow2 = J.memoize(function(A,async)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
   local out = inp:index(0)+(inp:index(1)*inp:index(1))
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if async==true then out = out:disablePipelining() end
   return out:toRigelModule("fixedSumPow2")
                    end)
 
@@ -39,7 +41,8 @@ local fixedDiv = J.memoize(function(A)
   local inp = f.parameter("II",types.tuple{A,A})
   local out = (inp:index(0))/(inp:index(1))
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if A:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("fixedDiv")
                    end)
 
@@ -48,7 +51,8 @@ local fixedSqrt = J.memoize(function(A)
   local inp = f.parameter("II",A)
   local out = inp:sqrt()
 --  out = out:disablePipelining()
---  out = out:cast(A)
+  --  out = out:cast(A)
+  if A:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("fixedSqrt")
                    end)
 
@@ -138,6 +142,8 @@ local function siftBucket(dxdyType,magtype)
   local v5 = f.select((dx_ge_0:__not()):__and((dy_ge_0:__not()):__and(negdx_gt_negdy:__not())),mag,zero)
 
   local out = f.array2d({v0,v1,v2,v3,v4,v5,v6,v7},8)
+
+  if dxdyType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("siftBucket")
 end
 ----------------
@@ -151,6 +157,7 @@ local function siftMag(dxdyType)
   local mag = magsq:sqrt()
 
   local out = mag*gauss_weight
+  if dxdyType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("siftmag"), out.type
 end
 ----------------
@@ -161,8 +168,8 @@ local function siftDescriptor(dxdyType)
   G = tileGaussian(G,16,4)
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
-  local inp = R.input(ITYPE)
-  local gweight = R.apply("gweight",RM.constSeq(G,dxdyType,16*16,1,1/256))
+  local inp = R.input(types.rv(types.Par(ITYPE)))
+  local gweight = R.apply("gweight",RM.constSeq(G,dxdyType,16*16,1,256))
   local gweight = R.apply("gwidx",C.index(types.array2d(dxdyType,1),0,0),gweight)
   local dx = R.apply("i0", C.index(ITYPE,0), inp)
   local dy = R.apply("i1", C.index(ITYPE,1), inp)
@@ -182,9 +189,9 @@ local function bucketReduce(descType,N,X)
   assert(X==nil)
 
   local descArray = types.array2d(descType,N)
-  local inp = R.input(types.tuple{descArray,descArray})
+  local inp = R.input(types.rv(types.Par(types.tuple{descArray,descArray})))
   local out = R.apply("SOA",C.SoAtoAoS(N,1,{descType,descType}),inp)
-  local out = R.apply("MP",RM.map(fixedSum(descType),N),out)
+  local out = R.apply("MP",RM.map(fixedSum(descType,true),N),out)
   return RM.lambda("bucketReduce",inp,out)
 end
 ----------------
@@ -198,7 +205,7 @@ local function tile(W,H,T,A)
   assert(H%T==0)
 
   local ITYPE = types.array2d(A,W,H)
-  local inp = R.input(ITYPE)
+  local inp = R.input(types.rv(types.Par(ITYPE)))
 
   local tab = {}
   for y=0,H-1 do
@@ -237,6 +244,7 @@ local function addDescriptorPos(descType)
   local a = {px,py}
   for i=0,127 do table.insert(a,desc:index(i)) end
   local out = f.array2d(a,130)
+  if descType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("addDescriptorPos")
 end
 ----------------
@@ -254,7 +262,7 @@ local function siftKernel(dxdyType)
   local statements = {}
 
   local inp = R.input(R.Handshake(ITYPE))
-  local inp_broad = R.apply("inp_broad", RM.broadcastStream(ITYPE,2), inp)
+  local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
 
   --local inp_pos = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
   local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
@@ -281,7 +289,7 @@ local function siftKernel(dxdyType)
   local descFn, descType = siftDescriptor(dxdyType)
   local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
-  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),1/16))),desc)
+  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),16))),desc)
 
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
@@ -293,7 +301,7 @@ local function siftKernel(dxdyType)
   local desc = R.apply("upidx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc)
 
   -- sum and normalize the descriptors
-  local desc_broad = R.apply("desc_broad", RM.broadcastStream(descType,2), desc)
+  local desc_broad = R.apply("desc_broad", RM.broadcastStream(types.Par(descType),2), desc)
 
   local desc0 = R.selectStream("d0",desc_broad,0)
   --local desc0 = C.fifoLoop( fifos, statements, descType, desc0, 256, "d0")
@@ -303,19 +311,19 @@ local function siftKernel(dxdyType)
   --local desc1 = C.fifoLoop( fifos, statements, descType, desc1, 256, "d1")
   local desc1 = C.fifo(descType,256)(desc1)
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType),1/128))),desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType,true),128))),desc1)
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, 128), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
-  local desc = R.apply("pt",RM.packTuple{descType,descType},R.concat("PTT",{desc0,desc_sum}))
+  local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
   local desc = R.apply("ptt",RM.makeHandshake(fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,128)),desc)
   -- we now have an array of type descType[128]. Add the pos.
-  local desc_pack = R.apply("dp", RM.packTuple{types.array2d(descType,128),posType,posType},R.concat("DPT",{desc,posX,posY}))
+  local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,128))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
   local desc = R.apply("addpos",RM.makeHandshake(addDescriptorPos(descType)), desc_pack)
 
   table.insert(statements,1,desc)
@@ -331,7 +339,7 @@ function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
 
-  local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},1,
+  local ps = RM.lift("possub", types.tuple{A,A}, types.tuple{A,A},0,
     function(sinp) return sinp end, function() return siftCoreHWTerra.posSub(ITYPE,x,y) end )
 
   return ps
@@ -348,7 +356,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
 
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
     
-    local inp = R.input(ITYPE)
+    local inp = R.input(types.rv(types.Par(ITYPE)))
     
     local PS = RM.posSeq(internalW,internalH,1)
     local pos = R.apply("posseq", PS)
@@ -383,7 +391,7 @@ local function descInner(dxdyType,W,H)
   assert(type(H)=="number")
 
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
-  local inp = R.input(types.array2d(DXDY_PAIR,1))
+  local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,1))))
 
   local out = R.apply("ST",C.stencilLinebuffer(DXDY_PAIR,W,H,1,-15,0,-15,0), inp)
 
@@ -414,9 +422,9 @@ function sift.siftDesc(W,H,inputT,X)
 
   local DI = descInner(dxdyType,W,H)
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
-  local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType,1,1)), out)
-  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType, W, H, 1, 15, 0, 15, 0))), out)
-  local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType,1),0,0)), out)
+  local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
+  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, 15, 0, 15, 0))), out)
+  local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType:extractData(),1),0,0)), out)
 
   local siftFn, descType = siftKernel(dxdyType)
   local out = R.apply("sft", siftFn, out)

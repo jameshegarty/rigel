@@ -1,7 +1,7 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local types = require("types")
-local harness = require "harness"
+local harness = require "generators.harness"
 local fixed = require "fixed"
 
 W = 128
@@ -17,7 +17,7 @@ local binp = fixed.parameter("ainp",fixed.type(false,8,9))
 local b = (binp*fixed.constant(64,false,8,0)):hist("b"):normalize(8):rshift(12):denormalize():truncate(8):hist("b_atend"):lower():toRigelModule("b")
 ------------
 ITYPE = types.array2d( types.uint(8), T )
-inp = R.input( ITYPE )
+inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "a", RM.map( a, T ), inp )
 out = R.apply( "b", RM.map( b, T ), out )
 fn = RM.lambda( "fixed_wide", inp, out )

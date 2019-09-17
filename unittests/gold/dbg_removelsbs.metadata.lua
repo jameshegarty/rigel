@@ -1,1 +1,1 @@
-return {width=64,height=32,type='uint4_4'}
+return {width=64,height=32,type='NAMEDuint4_4'}

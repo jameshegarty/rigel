@@ -62,7 +62,12 @@ function M.fifo( T, reqMaxSize, name, verbose )
   return FIFO
 end
 
-function M.shiftRegister( T, size, name )
+function M.shiftRegister( T, size, name, X )
+  assert(X==nil)
+  assert(terralib.types.istype(T))
+  assert(type(size)=="number")
+  assert(type(name)=="string")
+
   local FIFO = M.fifo( T, size, name )
   local struct SR { fifo : FIFO }
   terra SR:reset() self.fifo:reset() end

@@ -324,7 +324,7 @@ int main(int argc, char** argv) {
         if(db==1){
           
           if(doneBitSet==false){
-            printf("DONE BIT SET\n");
+            printf("DONE BIT SET. Bytes Written: %d\n",bytesWritten());
             cyclesToDoneSignal=cycle;
           }
           

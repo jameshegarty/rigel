@@ -39,9 +39,14 @@ function UniformFunctions:toSMT(includeProperties)
           J.err(n.inputs[2].kind=="const","Rshift: rhs should be const, but is: "..tostring(n.inputs[2]))
           res = "(/ "..inputs[1].." "..tostring(math.pow(2,n.inputs[2].value))..")"
         else
-          if opToZ3[n.op]==nil then print("OP",n.op) end
-          assert(n.op~="^") -- not implemented in some versions of z3
-          res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
+          if opToZ3[n.op]==nil then print("missing OP",n.op) end
+          
+          if n.op=="^" and n.inputs[2].kind=="const" and n.inputs[2].value==2 then
+            res = "(* "..inputs[1].." "..inputs[1]..")"
+          else
+            J.err(n.op~="^","Uniform: could not codegen '"..tostring(self).."' b/c uses ^? ") -- not implemented in some versions of z3
+            res = "("..opToZ3[n.op].." "..inputs[1].." "..inputs[2]..")"
+          end
         end
       elseif n.kind=="unary" then
         res = "("..n.op.." "..inputs[1]..")"
@@ -391,7 +396,10 @@ Uniform.isNumber = J.memoize(
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
     elseif n.kind=="apply" then
-      return n.instance.module.outputType:isNumber()
+      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType.over:is("Par"))
+      assert(n.instance.module.outputType.over.over:isData())
+      return n.instance.module.outputType.over.over:isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()
@@ -420,6 +428,11 @@ function UniformFunctions:toNumber()
   assert(self:isNumber())
   J.err(self.kind=="const",":toNumber(): not a const? "..tostring(self))
   return self.value
+end
+
+function UniformFunctions:toNumberIfPossible()
+  if self.kind=="const" and self:isNumber() then return self.value end
+  return self
 end
 
 -- is this uniform exactly one value?
@@ -532,7 +545,7 @@ function UniformFunctions:maximum()
     if string.match(res,"sat") then
       local num = string.match (res, "%d+")
       --print("Z3MAX:",num)
-      J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr?")
+      J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr? "..tostring(self))
       return tonumber(num)
     else
       assert(false)
@@ -546,7 +559,7 @@ local opToInfix = {mul="*",eq="==",mod="%",lt="<",gt=">",ge=">=",le="<=",max="ma
 function UniformMT.__tostring(tab)
   local function tostringInner(t)
     if t.kind=="const" then
-      if type(t.value)=="number" then
+      if false and type(t.value)=="number" then
         return tostring(t.value).."/0x"..string.format("%x",t.value)
       else
         return tostring(t.value)
@@ -570,7 +583,7 @@ function UniformMT.__tostring(tab)
       J.err(false,"Uniform tostring() NYI - "..t.kind)
     end
   end
-  return "Uniform("..tostringInner(tab)..")"
+  return "Uni("..tostringInner(tab)..")"
 end
 
 -- returns a string that can be dumped into a lua file
@@ -639,7 +652,8 @@ end
 -- convert to a verilog string for the value
 function UniformFunctions:toVerilog(ty)
   J.err( types.isType(ty),"Uniform:toVerilog(): input must be type" )
-  assert(self:canRepresentUsing(ty))
+  J.err( types.isBasic(ty),"Uniform:toVerilog(): input must be basic type, but is: "..tostring(ty) )
+  J.err( self:canRepresentUsing(ty), "Uniform:toVerilog() can't represent uniform '"..tostring(self).."' using type '"..tostring(ty).."'")
 
   if self.kind=="apply" then
     return self.instance.name.."_process_output"
@@ -705,7 +719,9 @@ Uniform.canRepresentUsing = J.memoize(
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
     elseif n.kind=="apply" then
-      return n.instance.module.outputType:canSafelyConvertTo(ty)
+      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType.over:is("Par"))
+      return n.instance.module.outputType.over.over:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()
@@ -760,9 +776,10 @@ UniformTopMT.__call = J.memoize(function(tab,arg,X)
   if Uniform.isUniform(arg) then
 return arg
   elseif R.isPlainFunction(arg) then
-    assert(arg.inputType==types.null())
+    J.err(arg.inputType==types.Interface(),"Error creating uniform from function, input type is '"..tostring(arg.inputType).."', but should be Inil")
 return Uniform.new{kind="apply",instance=arg:instantiate(),inputs={}}
   elseif type(arg)=="number" then
+    J.err(arg~=math.inf,"Attempting to create a uniform out of an inf?")
 return Uniform.const(arg)
   elseif type(arg)=="boolean" then
 return Uniform.const(arg)

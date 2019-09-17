@@ -336,6 +336,8 @@ function modules.wideMux( tab, key )
 end
 
 modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
+  err( types.isType(ty),"shiftRegister: type must be type, but is: "..tostring(ty))
+  err( type(size)=="number","shiftRegister: size must be number")
   assert(X==nil)
   if resetValue~=nil then ty:checkLuaValue(resetValue) end
   err( type(CE)=="boolean", "CE option must be bool")
@@ -807,9 +809,13 @@ local function loadVerilogFile(inpType,outType,filestr)
 
   local outv = 0
   if outType==types.bool() then outv=false end
-  fns.process = S.lambda("process",inp,S.cast(S.constant(outv,outType),outType),"out",nil,nil,S.CE("ce"))
+
+  local delay = tonumber(delaystring)
+  local CE
+  if delay>0 then CE=S.CE("ce") end
+  fns.process = S.lambda("process",inp,S.cast(S.constant(outv,outType),outType),"out",nil,nil,CE)
   --print("MODULE ",filestr,"DELAY",tonumber(delaystring))
-  local m = systolic.module.new(filestr,fns,{},true,nil,vstring,{process=tonumber(delaystring)})
+  local m = systolic.module.new(filestr,fns,{},true,nil,vstring,{process=delay})
   return m
 end
 

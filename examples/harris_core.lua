@@ -1,8 +1,8 @@
 local R = require "rigel"
-local RM = require "modules"
+local RM = require "generators.modules"
 local f = require "fixed_float"
 local types = require "types"
-local C = require "examplescommon"
+local C = require "generators.examplescommon"
 local J = require "common"
 
 local G  = {14 , 62 , 104 , 62 , 14}
@@ -17,23 +17,26 @@ floatMult = J.memoize(function(Atype)
     B = B:lift(0)
   end
   local out = A*B
+--  if Atype:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
-                    end)
+end)
 
 floatSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("fm",types.tuple{A,A})
   local out = (inp:index(0))+(inp:index(1))
+  --if A:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatSum"), out.type}
-                   end)
+end)
 
 floatShift = J.memoize(function(A,amount)
   assert(types.isType(A))
   assert(type(amount)=="number")
   local inp = f.parameter("fm",A)
   local out = inp:rshift(amount)
+--  if A:isFloat() then out = out:disablePipelining() end
   return {out:toRigelModule("floatShift"), out.type}
-                     end)
+end)
 
 function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(ConvWidth)=="number")
@@ -42,7 +45,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  local inp = R.input( types.array2d( A, ConvWidth, ConvHeight ) )
+  local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
@@ -71,7 +74,8 @@ function harris.makeHarrisKernel(dxType, dyType)
   local tr = Ixx+Iyy
   local trsq = tr*tr
   local out = det - (f.constant(K))*trsq
---  out = out:lshift(10):lower(types.uint(8))
+  --  out = out:lshift(10):lower(types.uint(8))
+--  if dxType:isFloat() then out = out:disablePipelining() end
   local res = out:toRigelModule("harrisinner")
   return res, out.type
 end
@@ -96,6 +100,7 @@ function harris.makeNMS(ty, boolOutput, X)
   if boolOutput==false then
     out = f.select(out,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
   end
+--  if ty:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("nms")
 end
 
@@ -113,7 +118,8 @@ function harris.makeDXDYKernel(ty)
 --  return out:toRigelModule("DXDY"), types.uint(8)
 
   local out = f.tuple{dx,dy}
---  print("DXDYTYPE",out.type,dx.type)
+  --  print("DXDYTYPE",out.type,dx.type)
+--  if ty:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("DXDY"), dx.type
 end
 
@@ -181,7 +187,7 @@ function harris.harrisWithStencil(t)
 
   out = R.apply("dxdyix",RM.makeHandshake(C.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
 
-  local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(DXDY_PAIR,2), out)
+  local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(types.Par(DXDY_PAIR),2), out)
 
   local internalW = t.W+15
   local internalH = t.H+15
@@ -226,7 +232,7 @@ function harris.harrisWithStencil(t)
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
 
-  local out = R.apply("merge",RM.packTuple{FILTER_TYPE,types.bool()},R.concat("MPT",{left,right}))
+  local out = R.apply("merge",RM.packTuple{types.RV(types.Par(FILTER_TYPE)),types.RV(types.Par(types.bool()))},R.concat("MPT",{left,right}))
 
   local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,t.W+15,t.H+15,1,15,0,15,0))), out)

@@ -1,8 +1,8 @@
 local R = require "rigel"
 local types = require("types")
-local RM = require "modules"
-local C = require "examplescommon"
-local harness = require "harness"
+local RM = require "generators.modules"
+local C = require "generators.examplescommon"
+local harness = require "generators.harness"
 local fRS = require "fixed_float"
 local S = require("systolic")
 local SDFRate = require("sdfrate")
@@ -114,7 +114,7 @@ end
 
 function RS.modules.reduceSeq(t)
   err( type(t.V)=="number", "reduceSeq: V must be number ")
-  return RM.reduceSeq( t.fn, 1/t.V )
+  return RM.reduceSeq( t.fn, t.V )
 end
 
 function RS.modules.map(t)
@@ -299,7 +299,7 @@ function RS.index(t)
     return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
   else
     ccnt = ccnt + 1
-    return R.apply("v"..tostring(ccnt), C.index(ty,t.key), t.input )
+    return R.apply("v"..tostring(ccnt), C.index(ty.over.over,t.key), t.input )
   end
 end
 
@@ -308,10 +308,10 @@ function RS.fanOut(t)
   local ty = t.input.type
 
   err( R.isHandshake(ty) or R.isHandshakeTrigger(ty), "calling fanOut on a non handshake type "..tostring(t.input.type))
-  ty = R.extractData(ty)
+  --ty = R.extractData(ty)
 
   ccnt = ccnt + 1
-  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty,t.branches), t.input )
+  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty:extractSchedule(),t.branches), t.input )
 
   local res = {}
   for i=1,t.branches do
@@ -325,9 +325,10 @@ function RS.fanIn(t)
   local typelist = {}
   for _,v in ipairs(t) do
     local ty = v.type
-    err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
-    ty = R.extractData(ty)
+--    err( R.isHandshake(ty), "rigelSimple.fanIn: expected all inputs to be handshake")
+--    ty = R.extractData(ty)
 
+    --    table.insert(typelist,types.RV(ty))
     table.insert(typelist,ty)
   end
 
@@ -355,13 +356,13 @@ function RS.HS(t,handshakeTrigger)
   if types.isType(t) then
     return R.Handshake(t)
   elseif R.isFunction(t) then
-    if (R.isV(t.inputType) or t.inputType:is("VFramed")) and (R.isRV(t.outputType) or t.outputType:is("RVFramed")) then
+    if t.inputType:isrV() and t.outputType:isrRV() then
       return RM.liftHandshake(t)
     elseif R.isHandshake(t.inputType) then
       return t
-    elseif (R.isBasic(t.inputType) or t.inputType:is("StaticFramed")) and (R.isV(t.outputType) or t.outputType:is("VFramed")) then
+    elseif t.inputType:isrv() and t.outputType:isrvV() then
       return RM.liftHandshake(RM.liftDecimate(t))
-    elseif (R.isBasic(t.inputType) and R.isBasic(t.outputType)) or ((t.inputType:is("StaticFramed") or t.inputType==types.null()) and (t.outputType:is("StaticFramed") or t.outputType==types.null())) then
+    elseif (t.inputType==types.Interface() or t.inputType:isrv()) and (t.outputType==types.Interface() or t.outputType:isrv()) then
       if handshakeTrigger==nil then handshakeTrigger = true end
       return RM.makeHandshake(t,nil,handshakeTrigger)
     else
@@ -381,15 +382,15 @@ function RS.modules.fwriteSeq(t)
   -- file write only support byte aligned, so make a wrapper that casts up
   if t.type:isBool() then
       -- special case: write out bools as 255 or 0 to make it easy to look @ the file
-      local inp = RS.input(types.bool())
-      local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
-      local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
-      local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
-      return RS.defineModule{input=inp,output=out}
+    local inp = RS.input( types.rv(types.Par(types.bool())) )
+    local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
+    local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
+    local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
+    return RS.defineModule{input=inp,output=out}
   elseif t.type:toCPUType()~=t.type then
     err( t.type:isArray()==false and t.type:isTuple()==false,"fwriteSeq: NYI - aggregate types ("..tostring(t.type).."). use a cast")
 
-    local inp = RS.input(t.type)
+    local inp = RS.input(types.rv(types.Par(t.type)))
 
     local out, fwritetype
 
@@ -409,12 +410,7 @@ function RS.writePixels(input,id,imageSize,V,DIR)
 
   if DIR==nil then DIR="out" end
   
-  local TY
-  if R.isHandshake(input.type) then
-    TY = R.extractData(input.type)
-  else
-    TY = input.type
-  end
+  local TY = input.type:extractData()
 
   local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw"}
 
