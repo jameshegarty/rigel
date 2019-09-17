@@ -34,10 +34,10 @@ ReadStencilDMA = G.Module{ "ReadStencilDMA", Handshake(types.Par(ar(u16,2))), SD
     return G.Deser{3*3}(pxStream) -- Deserialize 9 reads into 9 element array
   end}
 
-ConvTop = G.Module{ "ConvTop", 
+ConvTop = G.Module{ "ConvTop", SDF{1,30*14*9},
   function(i)
-    i = G.TriggerBroadcast{30*14}(i)
-    local pos = G.Pos{{30,14},0}(i)
+    --i = G.TriggerBroadcast{30*14}(i)
+    local pos = G.Pos{{30,14}}(i)
     local posScaled = G.Mul{4}(pos) -- mult coords by 4
     local stencil = G.Map{ReadStencilDMA}(posScaled)
     local shifted = G.Rshift{3}(stencil)
