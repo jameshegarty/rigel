@@ -798,11 +798,11 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     local readyName = "ready"
     if fnname~="process" then readyName=fnname.."_ready" end
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] "..fnname.."_input, output wire ["..(types.extractReady(self.inputType):verilogBits()-1)..":0] "..readyName)
-  elseif types.isBasic(self.inputType) then
-    table.insert(v,", input wire ["..(self.inputType:verilogBits()-1)..":0] "..fnname.."_input")
+  elseif self.inputType:isrv() then
+    table.insert(v,", input wire ["..(self.inputType:extractData():verilogBits()-1)..":0] "..fnname.."_input")
 
     if self.stateful or (self.delay~=nil and self.delay>0) then
-      table.insert(v,", input wire CE, input wire "..fnname.."_valid")
+      table.insert(v,", input wire "..fnname.."_CE, input wire "..fnname.."_valid")
     end
   else
     print("vHeaderInOut NYI type: "..tostring(self.inputType))
@@ -885,6 +885,8 @@ function darkroomFunctionFunctions:vInstances()
 end
 
 local darkroomModuleFunctions = {}
+
+darkroomModuleFunctions.vInstances = darkroomFunctionFunctions.vInstances
 
 function darkroomModuleFunctions:vHeader()
     local v = {"module "..self.name.." (input wire CLK"}
@@ -1391,8 +1393,6 @@ end)
 function darkroomInstanceFunctions:vInput()
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_input"
-  elseif darkroom.isInstanceCallsite(self.module) then
-    return self.module.instance.name.."_"..self.module.functionName.."_input"
   else
     assert(false)
   end
@@ -1417,8 +1417,6 @@ end
 function darkroomInstanceFunctions:vInputReady()
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready"
-  elseif darkroom.isInstanceCallsite(self.module) then
-    return self.module.instance.name.."_"..self.module.functionName.."_ready"
   else
     assert(false)
   end
@@ -1427,8 +1425,6 @@ end
 function darkroomInstanceFunctions:vOutput()
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_output"    
-  elseif darkroom.isInstanceCallsite(self.module) then
-    return self.module.instance.name.."_"..self.module.functionName
   else
     assert(false)
   end
@@ -1453,47 +1449,73 @@ end
 function darkroomInstanceFunctions:vOutputReady()
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready_downstream"
-  elseif darkroom.isInstanceCallsite(self.module) then
-    return self.module.instance.name.."_"..self.module.functionName.."_ready_downstream"
   else
     assert(false)
   end
 end
 
 function darkroomInstanceFunctions:toVerilog()
-  if darkroom.isPlainFunction(self.module) then
+  if darkroom.isPlainFunction(self.module) or darkroom.isPlainModule(self.module) then
+
+    local fnList = {}
+    if darkroom.isPlainFunction(self.module) then
+      fnList.process = self.module
+    else
+      fnList = self.module.functions
+    end
 
     local vstr = {}
-    if self.module.inputType~=types.Interface() then
-      table.insert(vstr,"wire ["..(types.lower(self.module.inputType):verilogBits()-1)..":0] "..self.name.."_process_input;\n")
-      if types.isHandshakeAny(self.module.inputType) then 
-        table.insert(vstr,"wire ["..(types.extractReady(self.module.inputType):verilogBits()-1)..":0] "..self.name.."_ready;\n")
+    local decls = {}
+    local ports = {}
+    
+    for fnname,fn in pairs(fnList) do
+      local prefix=""
+      if fnname~="process" then prefix=fnname.."_" end
+      
+      if fn.inputType~=types.Interface() then
+        table.insert(decls,"wire ["..(types.lower(fn.inputType):verilogBits()-1)..":0] "..self.name.."_"..fnname.."_input;\n")
+        if types.isHandshakeAny(fn.inputType) then 
+          table.insert(decls,"wire ["..(types.extractReady(fn.inputType):verilogBits()-1)..":0] "..self.name.."_"..prefix.."ready;\n")
+        end
       end
+      
+      if fn.outputType~=types.Interface() then
+        table.insert(decls,"wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..self.name.."_"..fnname.."_output;\n")
+        if types.isHandshakeAny(fn.outputType) then
+          table.insert(decls,"wire ["..(types.extractReady(fn.outputType):verilogBits()-1)..":0] "..self.name.."_"..prefix.."ready_downstream;\n")
+        end
+      end
+      
+      if fn.inputType~=types.Interface() then
+        table.insert(ports,",."..fnname.."_input("..self.name.."_"..fnname.."_input)")
+        if types.isHandshakeAny(fn.inputType) then 
+          table.insert(ports,",."..prefix.."ready("..self.name.."_"..prefix.."ready)")
+        end
+      end
+      
+      if fn.outputType~=types.Interface() then
+        table.insert(ports,",."..fnname.."_output("..self.name.."_"..fnname.."_output)")
+        if types.isHandshakeAny(fn.outputType) then
+          table.insert(ports,",."..prefix.."ready_downstream("..self.name.."_"..prefix.."ready_downstream)")
+        end
+      end
+
+      if types.isHandshakeAny(fn.inputType)==false and types.isHandshakeAny(fn.outputType)==false and (fn.stateful or fn.delay>0) then
+        table.insert(decls,"wire "..self.name.."_"..fnname.."_CE;\n")
+        table.insert(ports,",."..fnname.."_CE("..self.name.."_"..fnname.."_CE)")
+      end
+
+      if types.isHandshakeAny(fn.inputType)==false and types.isHandshakeAny(fn.outputType)==false and fn.stateful then
+        table.insert(decls,"wire "..self.name.."_"..fnname.."_valid;\n")
+        table.insert(ports,",."..fnname.."_valid("..self.name.."_"..fnname.."_valid)")
+      end
+
     end
 
-    if self.module.outputType~=types.Interface() then
-      table.insert(vstr,"wire ["..(types.lower(self.module.outputType):verilogBits()-1)..":0] "..self.name.."_process_output;\n")
-      if types.isHandshakeAny(self.module.outputType) then
-        table.insert(vstr,"wire ["..(types.extractReady(self.module.outputType):verilogBits()-1)..":0] "..self.name.."_ready_downstream;\n")
-      end
-    end
-    
+    for _,v in ipairs(decls) do table.insert(vstr,v) end
     table.insert(vstr,self.module.name.." "..self.name.."(.CLK(CLK)")
     if self.module.stateful then table.insert(vstr,",.reset(reset)") end
-
-    if self.module.inputType~=types.Interface() then
-      table.insert(vstr,",.process_input("..self.name.."_process_input)")
-      if types.isHandshakeAny(self.module.inputType) then 
-        table.insert(vstr,",.ready("..self.name.."_ready)")
-      end
-    end
-
-    if self.module.outputType~=types.Interface() then
-      table.insert(vstr,",.process_output("..self.name.."_process_output)")
-      if types.isHandshakeAny(self.module.outputType) then
-        table.insert(vstr,",.ready_downstream("..self.name.."_ready_downstream)")
-      end
-    end
+    for _,v in ipairs(ports) do table.insert(vstr,v) end
     
     for inst,fnmap in pairs(self.module.requires) do
       for fnname,_ in pairs(fnmap) do
@@ -1517,8 +1539,6 @@ function darkroomInstanceFunctions:toVerilog()
     
     table.insert(vstr,");\n")
     return table.concat(vstr,"")
-  elseif darkroom.isInstanceCallsite(self.module) then
-    return ""
   else
     print("Error, NYI instance:toVerilog() of "..tostring(self))
     assert(false)

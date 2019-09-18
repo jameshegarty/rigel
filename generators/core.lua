@@ -1073,11 +1073,6 @@ end,
 T.array2d(T.RV(P.ScheduleType("sched")),P.SizeValue("size")),
 T.RV(P.ScheduleType("sched")))
 
---generators.StripFramed = R.FunctionGenerator("core.StripFramed",{"type","rate"},{},
---function(args)
---  return C.stripFramed(args.type)
---end)
-
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end

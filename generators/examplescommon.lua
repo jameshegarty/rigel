@@ -2233,15 +2233,22 @@ function C.automaticSystolicStub( mod )
       fns[readyFnName] = Ssugar.lambdaConstructor(readyFnName,inp.type,readyFnName.."_downstream")
       if out~=nil then fns[readyFnName]:setOutput(out,readyFnName) end
       delays[readyFnName]=0
+    else
+      if fn.stateful or fn.delay>0 then
+        fns[fnname]:setCE(S.CE(fnname.."_CE"))
+      end
+      if fn.stateful then
+        fns[fnname]:setValid(fnname.."_valid")
+      end
     end
   end
-
+--[=[
   if modFunctions.process~=nil then
     if types.isBasic(modFunctions.process.inputType) and types.isBasic(modFunctions.process.outputType) and mod.stateful then
       fns.process:setCE(S.CE("CE"))
       fns.process:setValid("process_valid")
     end
-  end
+  end]=]
 
   local res = Ssugar.moduleConstructor(mod.name)
   
@@ -2273,11 +2280,20 @@ function C.automaticSystolicStub( mod )
 
             local defaultFn
             for _,v in pairs(fns) do defaultFn=v end
-            
+
+            local CE
+            local VALID
+            if fn.CE~=nil then
+              CE=S.constant(true,types.Bool)
+            end
+            if fn.valid~=nil then
+              VALID=S.constant(true,types.Bool)
+            end
+
             if fn.inputParameter.type==types.null() then
-              defaultFn:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+              defaultFn:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool()),CE))
             else
-              defaultFn:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+              defaultFn:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type),VALID,CE))
             end
           else
             print("NYI - fn of type "..tostring(fn))

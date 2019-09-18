@@ -1161,145 +1161,6 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
     return res
 end)
 
---[=[
-modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputMixed, X )
-  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
-  err( type(w)=="number", "mapFramed: width must be number")
-  err( type(h)=="number", "mapFramed: height must be number")
-  err( type(mixed)=="boolean", "mapFramed: mixed must be bool")
-  err( outputW==nil or type(outputW)=="number", "mapFramed: outputW must be number or nil" )
-  err( outputH==nil or type(outputH)=="number", "mapFramed: outputH must be number or nil" )
-  err( outputMixed==nil or type(outputMixed)=="boolean", "mapFramed: outputMixed must be boolean or nil" )
-  err( X==nil, "mapFramed: too many arguments" )
-       
-  local res = {kind="mapFramed",fn=fn,w=w,h=h,mixed=mixed,stateful=fn.stateful,delay=fn.delay}
-  
-  res.name=J.sanitize("MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_mixed"..tostring(mixed).."_outputW"..tostring(outputW).."_outputH"..tostring(outputH).."_outputMixed"..tostring(outputMixed))
-
-  if fn.sdfInput~=nil then
-    assert(#fn.sdfInput==1)
-    assert(#fn.sdfOutput==1)
-    res.sdfInput=SDF{fn.sdfInput[1][1],fn.sdfInput[1][2]}
-    res.sdfOutput=SDF{fn.sdfOutput[1][1],fn.sdfOutput[1][2]}
-  else
-    res.sdfInput=SDF{1,1}
-    res.sdfOutput=SDF{1,1}
-  end
-  
-  res.requires = {}
-  for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
-  res.provides = {}
-  for inst,fnmap in pairs(fn.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
-
-  res.globalMetadata = {}
-  for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
-
-  res.inputType = fn.inputType:addDim(w,h,mixed)
-
-  -- tokens: # of parallel data tokens we process (which is what SDF tells us)
-  -- make sure this ends up being consistant... (ie possible based on given vector widths/SDF)
-  local inTok = w*h
-  if mixed and fn.inputType:is("HandshakeFramed") then
-    inTok = inTok/fn.inputType:FV()
-  elseif mixed then
-    err( types.isBasic(fn.inputType) or fn.inputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.inputType) )
-    local BT = rigel.extractData(fn.inputType)
-    inTok = inTok/BT:channels()
-  end
-
-  local outTok
-  if fn.outputType==types.null() then
-    res.outputType = types.null()
-  elseif outputW==nil then
-    res.outputType = fn.outputType:addDim(w,h,mixed)
-    outTok = w*h
-    if mixed and fn.outputType:is("HandshakeFramed") then
-      outTok = outTok/fn.outputType:FV()
-    elseif mixed then
-      err( types.isBasic(fn.outputType) or fn.outputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.outputType) )
-      local BT = rigel.extractData(fn.outputType)
-      outTok = outTok/BT:channels()
-    end
-  else
-    res.outputType = fn.outputType:addDim(outputW,outputH,outputMixed)
-    outTok = outputW*outputH
-
-    if outputMixed then outTok = outTok/fn.outputType:FV() end
-  end
-  
-  if fn.inputType:is("Handshake") then
-    -- sanity check: make sure # of tokens we say we're making is consistant with SDF
-    -- need to scale # of output tokens by SDF
-    -- outputSDF/inputSDF = (out[1]/out[2])/(in[1]/in[2]) = (out[1]*in[2])/(out[2]*in[1])
-    local n,d = fn.sdfOutput[1][1]*fn.sdfInput[1][2], fn.sdfOutput[1][2], fn.sdfInput[1][1]
-    local SDFTok = (inTok*n)/d
-    
-    if outTok~=SDFTok then
-      print("mapFramed: warning, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
-    end
-  end
-  
-  function res.makeSystolic()
-    local sm = Ssugar.moduleConstructor(res.name)
-
-    for inst,fnmap in pairs(res.requires) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addExternalFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addExternalFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    for inst,fnmap in pairs(res.provides) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addProvidesFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addProvidesFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    local inner = sm:add(fn.systolicModule:instantiate("inner"))
-
-    local CE = S.CE("process_CE")
-    local reset_valid = S.parameter("reset",types.bool())
-    if fn.inputType:is("Handshake") and fn.outputType==types.null() then
-      sm:addFunction( S.lambda("ready", S.parameter("ready_downstream",types.null()), inner:ready(), "ready" ) )
-      sm:onlyWire(true)
-      CE=nil
-    elseif (fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed")) and (fn.outputType:is("Handshake") or fn.outputType:is("HandshakeFramed")) then
-      local rds = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", rds, inner:ready(rds), "ready" ) )
-      sm:onlyWire(true)
-      CE=nil
-    elseif fn.inputType:is("StaticFramed") and (fn.outputType:is("StaticFramed") or fn.outputType:is("V")) then
-      --
-    else
-      err(types.isBasic(fn.inputType) and types.isBasic(fn.outputType), "MapFramed NYI - "..tostring(fn.inputType).." "..tostring(fn.outputType) )
-    end
-
-    local I = S.parameter("process_input", rigel.lower(fn.inputType) )
-    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
-
-    if fn.stateful then
-      if fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed") then
-        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
-      else
-        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
-      end
-    end
-    
-    return sm
-  end
-
-  function res.makeTerra() return MT.mapFramed(res,fn,w,h,mixed) end
-  
-  return rigel.newFunction(res)
-  end)]=]
-
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
@@ -5430,5 +5291,58 @@ endmodule
 
     return rigel.newFunction(res)
   end)
+
+-- extraPortIsWrite: should the extra port be a write port?
+modules.reg = memoize(function(ty,initial,extraPortIsWrite,read1bits,X)
+  if read1bits==nil then read1bits=32 end
+  assert(type(read1bits)=="number")
+  assert(types.isType(ty))
+  assert(ty:isData())
+  ty:checkLuaValue(initial)
+  assert(X==nil)
+
+  assert(ty:verilogBits()%read1bits==0)
+  
+  local tab = {name=J.sanitize("Reg_"..tostring(ty).."_read1bits"..tostring(read1bits)), stateful=true, functions={}}
+  tab.functions.read1 = rigel.newFunction{name="read1",inputType=types.Interface(),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  tab.functions.read = rigel.newFunction{name="read",inputType=types.rv(types.Par(types.Uint(32))),outputType=types.rv(types.Par(types.Bits(read1bits))),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  tab.functions.write = rigel.newFunction{name="write",inputType=types.rv(types.Par(types.Tuple{types.Uint(32),types.Bits(read1bits)})),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+  
+  local res = rigel.newModule(tab)
+  --assert(res.size==nil)
+  --res.size = ty:verilogBits()
+  assert(res.type==nil)
+  res.type = ty
+  assert(res.init==nil)
+  res.init=initial
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+
+    local vstr = {res:vHeader()..[=[
+  reg []=]..(read1bits-1)..[=[:0] r[]=]..((ty:verilogBits()/read1bits)-1)..[=[:0];
+]=]}
+
+    for i=0,(ty:verilogBits()/read1bits)-1 do
+      table.insert(vstr,"assign read1_output["..((i+1)*read1bits-1)..":"..(i*read1bits).."] = r["..i.."];\n")
+    end
+    
+table.insert(vstr,[=[  always @(posedge CLK) begin
+    if (write_CE && write_valid) begin
+      r[write_input[31:0]] <= write_input[63:32];
+    end
+  end
+endmodule
+
+]=])
+
+s:verilog(table.concat(vstr,""))
+    
+    return s
+  end
+
+  return res
+end)
 
 return modules
