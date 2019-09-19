@@ -33,29 +33,32 @@ function SOCMT.axiRegs( mod, tab, X )
   assert(X==nil)
   local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:tuple(bool,bool), write_readyDownstream:bool }
 
-  for k,v in pairs(tab) do
-    local ty = v[1]
+  for _,v in pairs(tab) do
+    local regname, regmod = v[1], v[2]
+    
+    table.insert( AxiRegsN.entries,{field=regname.."_value",type=regmod.terraModule})
 
-    table.insert( AxiRegsN.entries,{field=k.."_value",type=ty:toTerraType()})
-
-    if v[3]=="input" then
-      table.insert( AxiRegsN.entries,{field=k.."_ready",type=bool})
+    if regmod.functions.write1~=nil then
+      table.insert( AxiRegsN.entries,{field=regname.."_ready",type=bool})
     end
   end
 
   local SELF = symbol(&AxiRegsN)
   
-  for k,v in pairs(tab) do
-    local ty = v[1]
+  for _,v in pairs(tab) do
+    local regname, regmod = v[1], v[2]
+    local ty = regmod.type
 
-    if v[3]=="input" then
-      AxiRegsN.methods[k] = terra([SELF],inp:&types.lower(types.Handshake(ty)):toTerraType())
-        if valid(@inp) then SELF.[k.."_value"] = data(@inp) end
+    if regmod.functions.write1~=nil then
+      AxiRegsN.methods[regname] = terra([SELF],inp:&types.lower(types.Handshake(ty)):toTerraType())
+        if valid(@inp) then
+           SELF.[regname.."_value"]:write1(&data(@inp))
+        end
       end
-      AxiRegsN.methods[k.."_calculateReady"] = terra([SELF]) SELF.[k.."_ready"] = true; end
+      AxiRegsN.methods[regname.."_calculateReady"] = terra([SELF]) SELF.[regname.."_ready"] = true; end
     else
-      AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())
-        @out=SELF.[k.."_value"]
+      AxiRegsN.methods[regname] = terra([SELF],out:&ty:toTerraType())
+        SELF.[regname.."_value"]:read1(out)
       end
     end
   end
@@ -80,18 +83,17 @@ function SOCMT.axiRegs( mod, tab, X )
 
   local writeInp = symbol(&types.lower(AXI.WriteIssue(32)):toTerraType(),"writeInp")
   
-  for k,v in pairs(tab) do
-    local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..k]
-    local ty = v[1]
+  for _,v in pairs(tab) do
+    local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..v[1]]
+    local ty = v[2].type
 
-    if v[3]=="input" then
-    else
+    if v[2].functions.read1~=nil then
       for i=0,math.ceil(ty:verilogBits()/32)-1 do
         table.insert(regSet,
           quote
             if @AXIT.AWADDR32(writeInp)==[addr+i*4] then
 --              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
-              @([&uint](&SELF.[k.."_value"])+i) = @AXIT.WDATA32(writeInp)
+              @([&uint](&SELF.[v[1].."_value"])+i) = @AXIT.WDATA32(writeInp)
             end
           end)
 

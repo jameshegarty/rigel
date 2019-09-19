@@ -2234,6 +2234,7 @@ function C.automaticSystolicStub( mod )
       if out~=nil then fns[readyFnName]:setOutput(out,readyFnName) end
       delays[readyFnName]=0
     else
+      J.err(fn.delay~=nil,"Fn is missing delay? "..mod.name.." "..fnname)
       if fn.stateful or fn.delay>0 then
         fns[fnname]:setCE(S.CE(fnname.."_CE"))
       end
@@ -2326,7 +2327,7 @@ end
 C.VerilogFile = J.memoize(function(filename,dependencyList)
   if dependencyList==nil then dependencyList={} end
     
-  local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename) }
+  local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename), delay=0 }
   res.instanceMap={}
   for _,d in pairs(dependencyList) do
     assert(R.isModule(d))

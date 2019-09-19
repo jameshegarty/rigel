@@ -71,12 +71,6 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
   functionList.read = R.newFunction{name="Read",inputType=AXI.ReadAddress32,outputType=AXI.ReadData32,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
   functionList.write = R.newFunction{name="Write",inputType=AXI.WriteIssue32, outputType=AXI.WriteResponse32, sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false}
 
---  local addToModuleHack = {}
---  local outputsToModuleHack = {}
---  local regPorts = ""
---  local regPortAssigns = ""
---  local regValidAssigns = ""
---  local portPassthrough = {}
   local NREG = 2
   local curDataBit = 64 -- for start/done
   local instanceList = {}
@@ -85,12 +79,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     local regname, regmod = v[1],v[2]
     J.err( type(regname)=="string", "axiRegs: first value must be string" )
     J.err( R.isPlainModule(regmod), "axiRegs: second value must be a delegate module" )
-    --J.err( type(v.size)=="number","axiRegs: delegate is missing size" )
-    --v.type:checkLuaValue(v.init),"axiRegs: delegate init" )
-    --J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
     J.err( regmod.type:toCPUType()==regmod.type, "axiRegs: NYI - input type must be a CPU type" )
-    --J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
-    --v[1]:checkLuaValue(v[2])
 
     local inst = regmod:instantiate(regname)
     table.insert(instanceList,inst)
@@ -107,42 +96,17 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
 
     if regmod.functions.write1~=nil then
       functionList[regname] = R.newFunction{name=regname, inputType=R.Handshake(regmod.type), outputType=types.Interface(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
-
---      table.insert(portPassthrough,"."..k.."_ready("..k.."_ready)")
---      table.insert(portPassthrough,"."..k.."_input("..k.."_input)")
-
---[=[      regPorts = regPorts.."input wire ["..tostring(v.type:verilogBits())..":0] "..k..[[_input,
-output wire ]]..k..[[_ready,
-  ]]]=]
---      regPortAssigns = regPortAssigns.."assign "..k.."_ready = 1'b1; // register writes always ready\n"
---      regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = "..k.."_input["..tostring(v[1]:verilogBits()).."];\n"
---      regPortAssigns = regPortAssigns.."assign DATA["..(curDataBit+v[1]:verilogBits()-1)..":"..curDataBit.."] = "..k.."_input["..tostring(v[1]:verilogBits()-1)..":0]; // register write\n"
     else
---      table.insert(portPassthrough,"."..k.."("..k.."_output)")
-          
       functionList[regname] = R.newFunction{name=regname, inputType=types.Interface(), outputType=regmod.type, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
-      
---[=[      regPorts = regPorts.."output wire ["..tostring(v.type:verilogBits()-1)..":0] "..k..[[,
-]]
-      regPortAssigns = regPortAssigns.."assign "..k.." = CONFIG_DATA["..(curDataBit+v.type:verilogBits()-1)..":"..curDataBit.."];\n"
-      regValidAssigns = regValidAssigns.."assign DATA_VALID["..(NREG-1).."] = 1'b0; // "..k..". this is an input, so never write to it\n"
-]=]
     end
     
     SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(regmod.type:verilogBits()/32)*4
     curDataBit = curDataBit + math.max(regmod.type:verilogBits(),32)
   end
-
---  if #portPassthrough==0 then
---    portPassthrough=""
---  else
---    portPassthrough = table.concat(portPassthrough,",")..","
---  end
   
   local ModuleName = J.sanitize("Regs_"..tostring(tab).."_"..tostring(port))
 
   local REG_ADDR_BITS = math.ceil(math.log(NREG)/math.log(2))
-  --print("REG_ADDR_BITS",NREG,REG_ADDR_BITS)
   
   local verbose = false
 
@@ -302,74 +266,25 @@ module ict106_axilite_conv #
 endmodule
 
 ]=]}
+  local W = 32
+  local ADDR_BASE = "32'hA0000000"
 
 
+  table.insert(vstring, res:vHeader()..res:vInstances())
 
-        --[==[[=[module Conf #(parameter ADDR_BASE = 32'd0,
-parameter NREG = 4,
-parameter W = 32)(
-    input wire ACLK,
-    input wire ARESETN,
-    //AXI Inputs
-    input wire [31:0] S_AXI_ARADDR,
-    output wire S_AXI_ARREADY,
-    input wire S_AXI_ARVALID,
-
-    input wire [31:0] S_AXI_AWADDR,
-    output wire S_AXI_AWREADY,
-    input wire S_AXI_AWVALID,
-
-    output wire [31:0] S_AXI_RDATA,
-    input wire S_AXI_RREADY,
-    output wire S_AXI_RVALID,
-
-    input wire [31:0] S_AXI_WDATA,
-    output wire S_AXI_WREADY,
-    input wire S_AXI_WVALID,
-
-    output wire [1:0] S_AXI_BRESP,
-    output wire S_AXI_BVALID,
-    input wire S_AXI_BREADY,
-
-    input wire [11:0] S_AXI_ARID,
-    input wire [11:0] S_AXI_AWID,
-    output wire [11:0] S_AXI_BID,
-    output wire [11:0] S_AXI_RID,
-    output wire S_AXI_RLAST,
-    output wire [1:0] S_AXI_RRESP,
-    input wire [3:0] S_AXI_WSTRB,
-
-    
-    output wire CONFIG_VALID,
-    input wire CONFIG_READY,
-    output wire [NREG*W-1:0] CONFIG_DATA,
-    output wire CONFIG_IRQ,
-
-    input wire []=]..(NREG-1)..[=[:0] WRITE_DATA_VALID,
-    input wire []=]..((NREG*32)-1)..[=[:0] WRITE_DATA
-    );
-
-]==]
-
-        local W = 32
-        local ADDR_BASE = "32'hA0000000"
-
-
-        table.insert(vstring, res:vHeader()..res:vInstances())
-
-        -- wire instance fns to external fns
-        for _,v in pairs(tab) do
-          if v[2].functions.write1~=nil then
-            table.insert(vstring, "assign "..v[1].."_write1_input = "..v[1].."_input["..(v[2].type:verilogBits()-1)..":0];\n")
-            table.insert(vstring, "assign "..v[1].."_write1_valid = "..v[1].."_input["..v[2].type:verilogBits().."];\n")
-            table.insert(vstring, "assign "..v[1].."_write1_CE = 1'b1;\n")
-            table.insert(vstring, "assign "..v[1].."_ready = 1'b1;\n")
-          else
-            table.insert(vstring, "assign "..v[1].."_output = "..v[1].."_read1_output;\n")
-          end
-        end
-        
-        table.insert(vstring,[=[
+  -- wire instance fns to external fns
+  for _,v in pairs(tab) do
+    if v[2].functions.write1~=nil then
+      table.insert(vstring, "assign "..v[1].."_write1_input = "..v[1].."_input["..(v[2].type:verilogBits()-1)..":0];\n")
+      table.insert(vstring, "assign "..v[1].."_write1_valid = "..v[1].."_input["..v[2].type:verilogBits().."];\n")
+      table.insert(vstring, "assign "..v[1].."_write1_CE = 1'b1;\n")
+      table.insert(vstring, "assign "..v[1].."_ready = 1'b1;\n")
+    else
+      table.insert(vstring, "assign "..v[1].."_output = "..v[1].."_read1_output;\n")
+    end
+  end
+  
+  table.insert(vstring,[=[
 
     wire CONFIG_VALID; // output
 
@@ -601,19 +516,6 @@ always @(posedge CLK) begin
                 w_wrotedata <= 0;
                 w_wroteresp <= 0;
             end
-]=])
-
-        --[==[
-for i=0,NREG-1 do
-table.insert(vstring,[=[
-            if (WRITE_DATA_VALID[]=]..i..[=[]) begin
-              data[]=]..i..[=[] <= WRITE_DATA[]=]..(i*32+31)..":"..(i*32)..[=[];
-              ]=]..J.sel([[$display("IP WRITE REG ]]..i..[[ %d",WRITE_DATA[]]..(i*32+31)..":"..(i*32).."]);\n","")..[=[
-            end 
-]=])
-end
-        ]==]
-table.insert(vstring,[=[
         end
         RWAIT: begin
 ]=])
@@ -632,22 +534,6 @@ table.insert(vstring,[=[
                 donereg <= LITE_WDATA;
             end
 ]=])
-
-
--- Generate states for AXI-side writes
---[==[
-for i=0,NREG-1 do
-table.insert(vstring,[=[            
-            if (!w_wrotedata && w_select_r==]=]..REG_ADDR_BITS..[=['d]=]..i..[=[ && LITE_WVALID) begin
-                ]=]..J.sel(verbose,[[$display("AXI WRITE REG ]]..i..[[ %d",LITE_WDATA);]].."\n","")..[=[
-                data[]=]..i..[=[] <= LITE_WDATA;
-            end else if (WRITE_DATA_VALID[]=]..i..[=[]) begin
-                ]=]..J.sel(verbose,[[$display("IP WRITE REG ]]..i..[[ %d",WRITE_DATA[]]..(i*32+31)..":"..(i*32).."]);\n","")..[=[
-                data[]=]..i..[=[] <= WRITE_DATA[]=]..(i*32+31)..":"..(i*32)..[=[];
-            end
-]=])
-end
-]==]
 
 table.insert(vstring,[=[
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin
@@ -684,34 +570,8 @@ always @(posedge CLK) begin
             end
     endcase
 end
-]=])
 
-
---for i=0,NREG-1 do
---  table.insert(vstring,"assign CONFIG_DATA["..(i*32+31)..":"..(i*32).."] = data["..i.."];\n")
---end
-
---local RSOURCE = "read"
---local RSINK = "read_input"
-
---[===[
-table.insert(vstring,[=[//how many cycles does the operation take?
-always @(posedge CLK) begin
-    if (reset == 1'b1) begin
-        counter <= 0;
-    end else if (CONFIG_READY && CONFIG_VALID) begin
-        counter <= 0;
-    end else if (CONFIG_READY==1'b0) begin
-        counter <= counter + 1;
-    end
-  end]=])]===]
-
-table.insert(vstring,[=[
 // deal with the start/done bit
-//assign DATA_VALID[0] = 1'd0;
-//assign DATA_VALID[1] = done_input;
-//assign DATA[63:32] = 32'd1;
-
 wire dostart;
 assign dostart = CONFIG_VALID && startreg==32'd1;
 
@@ -741,173 +601,6 @@ assign done_ready = 1'b1;
 endmodule
 
 ]=])
-
---[=[
-reg busy = 0;
-reg busy_last = 0;
-always @(posedge ACLK) begin
-    if (ARESETN == 0) begin
-        busy <= 0;
-        busy_last <= 0;
-    end else begin
-        if (CONFIG_READY) begin
-            busy <= CONFIG_VALID ? 1 : 0;
-        end
-        busy_last <= busy;
-    end
-end
-
-assign CONFIG_IRQ = !busy;
-]=]
-
---[==[
-"module "..ModuleName..[=[_ported(
-  input wire CLK,
-  input wire reset,
-
-  input wire [32:0] IP_SAXI_ARADDR,
-  output wire IP_SAXI_ARADDR_ready,
-
-  input wire [32:0] IP_SAXI_AWADDR,
-  output wire IP_SAXI_AWADDR_ready,
-
-  output wire [32:0] IP_SAXI_RDATA,
-  input wire IP_SAXI_RDATA_ready,
-
-  input wire [32:0] IP_SAXI_WDATA,
-  output wire IP_SAXI_WDATA_ready,
-
-  output wire [2:0] IP_SAXI_BRESP,
-  input wire IP_SAXI_BRESP_ready,
-
-  input wire [11:0] IP_SAXI_ARID,
-  input wire [11:0] IP_SAXI_AWID,
-  output wire [11:0] IP_SAXI_BID,
-  output wire [11:0] IP_SAXI_RID,
-  output wire IP_SAXI_RLAST,
-  output wire [1:0] IP_SAXI_RRESP,
-  input wire [3:0] IP_SAXI_WSTRB,
-
-  // global drivers  
-  ]=]..regPorts..[=[
-
-  // done signal
-  input wire done_input,
-  output wire done_ready,
-
-  // start signal
-  input wire start_ready_inp,
-  output wire start_output
-);
-parameter INSTANCE_NAME="inst";
-
-wire CONFIG_VALID;
-wire []=]..(NREG*32-1)..[=[:0] CONFIG_DATA;
-wire CONFIG_IRQ;
-
-wire []=]..(NREG-1)..[=[:0] DATA_VALID;
-wire []=]..(NREG*32-1)..[=[:0] DATA;
-
-]=]..regPortAssigns..regValidAssigns..[=[
-
-Conf #(.ADDR_BASE(32'hA0000000),.NREG(]=]..NREG..[=[)) conf(
-.ACLK(CLK),
-.ARESETN(~reset),
-
-.CONFIG_READY(1'b1),
-.CONFIG_VALID(CONFIG_VALID),
-.CONFIG_DATA(CONFIG_DATA),
-.CONFIG_IRQ(CONFIG_IRQ),
-
-.WRITE_DATA_VALID(DATA_VALID),
-.WRITE_DATA(DATA),
-
-.S_AXI_ARADDR(IP_SAXI_ARADDR[31:0]),
-.S_AXI_ARVALID(IP_SAXI_ARADDR[32]),
-.S_AXI_ARREADY(IP_SAXI_ARADDR_ready),
-
-.S_AXI_AWADDR(IP_SAXI_AWADDR[31:0]),
-.S_AXI_AWVALID(IP_SAXI_AWADDR[32]),
-.S_AXI_AWREADY(IP_SAXI_AWADDR_ready),
-
-.S_AXI_RDATA(IP_SAXI_RDATA[31:0]),
-.S_AXI_RVALID(IP_SAXI_RDATA[32]),
-.S_AXI_RREADY(IP_SAXI_RDATA_ready),
-
-.S_AXI_WDATA(IP_SAXI_WDATA[31:0]),
-.S_AXI_WVALID(IP_SAXI_WDATA[32]),
-.S_AXI_WREADY(IP_SAXI_WDATA_ready),
-
-.S_AXI_BRESP(IP_SAXI_BRESP[1:0]),
-.S_AXI_BVALID(IP_SAXI_BRESP[2]),
-.S_AXI_BREADY(IP_SAXI_BRESP_ready),
-
-.S_AXI_ARID(IP_SAXI_ARID),
-.S_AXI_AWID(IP_SAXI_AWID),
-.S_AXI_BID(IP_SAXI_BID),
-.S_AXI_RID(IP_SAXI_RID),
-.S_AXI_RLAST(IP_SAXI_RLAST),
-.S_AXI_RRESP(IP_SAXI_RRESP),
-.S_AXI_WSTRB(IP_SAXI_WSTRB)
-);
-
-assign DATA_VALID[0] = 1'd0;
-assign DATA_VALID[1] = done_input;
-assign DATA[63:32] = 32'd1;
-
-wire dostart;
-assign dostart = CONFIG_VALID && CONFIG_DATA[31:0]==32'd1;
-
-reg dostartReg = 1'b0;
-assign start_output = dostartReg;
-
-always @(posedge CLK) begin
-  if( dostartReg && start_ready_inp ) begin
-    dostartReg <= 1'b0; // reset it
-  end else begin
-    dostartReg <= dostartReg | dostart;
-  end
-end
-
-assign done_ready = 1'b1;
-
-endmodule
-
-]=]..res:vHeader()..[=[
-
-]=]..ModuleName..[=[_ported ported(.CLK(CLK),
-.reset(reset),
-.done_input(done_input),
-.done_ready(done_ready),
-.start_ready_inp(start_ready_downstream),
-.start_output(start_output),
-]=]..portPassthrough..[=[
-.IP_SAXI_ARADDR({read_input]=]..AXI.ReadAddressVSelect.arvalid..[=[,read_input]=]..AXI.ReadAddressVSelect.araddr..[=[}),
-.IP_SAXI_ARID(read_input]=]..AXI.ReadAddressVSelect.arid..[=[),
-.IP_SAXI_ARADDR_ready(read_ready),
-
-.IP_SAXI_RDATA({read_output]=]..AXI.ReadDataVSelect(32).rvalid..[=[,read_output]=]..AXI.ReadDataVSelect(32).rdata..[=[}),
-.IP_SAXI_RRESP(read_output]=]..AXI.ReadDataVSelect(32).rresp..[=[),
-.IP_SAXI_RID(read_output]=]..AXI.ReadDataVSelect(32).rid..[=[),
-.IP_SAXI_RLAST(read_output]=]..AXI.ReadDataVSelect(32).rlast..[=[),
-.IP_SAXI_RDATA_ready(read_ready_downstream),
-
-.IP_SAXI_AWADDR({write_input]=]..AXI.WriteIssueVSelect(32).awvalid..[=[,write_input]=]..AXI.WriteIssueVSelect(32).awaddr..[=[}),
-.IP_SAXI_AWID(write_input]=]..AXI.WriteIssueVSelect(32).awid..[=[),
-.IP_SAXI_AWADDR_ready(write_ready[0]),
-
-.IP_SAXI_WDATA({write_input]=]..AXI.WriteIssueVSelect(32).wvalid..[=[,write_input]=]..AXI.WriteIssueVSelect(32).wdata..[=[}),
-.IP_SAXI_WSTRB(write_input]=]..AXI.WriteIssueVSelect(32).wstrb..[=[),
-.IP_SAXI_WDATA_ready(write_ready[1]),
-
-.IP_SAXI_BRESP({write_output]=]..AXI.WriteResponseVSelect(32).bvalid..[=[,write_output]=]..AXI.WriteResponseVSelect(32).bresp..[=[}),
-.IP_SAXI_BID(write_output]=]..AXI.WriteResponseVSelect(32).bid..[=[),
-.IP_SAXI_BRESP_ready(write_ready_downstream)
-);
-
-endmodule
-]=])
-]==]
 
     s:verilog(table.concat(vstring))
     return s

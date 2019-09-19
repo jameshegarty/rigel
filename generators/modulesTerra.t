@@ -2235,4 +2235,27 @@ return {`mself.[n.name].ready}
   return Module
 end
 
+function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
+  local chunks = math.max(ty:verilogBits()/read1bits,1)
+  assert(math.floor(chunks)==chunks)
+
+  local chunkType = types.bits(read1bits):toTerraType()
+
+  local struct Reg {r:chunkType[chunks]}
+  terra Reg:read(addr:&uint32,out:&chunkType) @out = self.r[@addr] end
+  terra Reg:write(inp:&tuple(uint32,chunkType)) self.r[inp._0]=inp._1 end
+
+  if extraPortIsWrite==true then
+    terra Reg:write1(inp:&ty:toTerraType())
+      cstring.memcpy( &self.r, inp, [ty:sizeof()])    
+    end
+  else
+    terra Reg:read1(out:&ty:toTerraType())
+      cstring.memcpy( out, &self.r, [ty:sizeof()])    
+    end
+  end
+
+  return Reg
+end
+
 return MT

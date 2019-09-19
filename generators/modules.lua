@@ -5304,7 +5304,7 @@ modules.reg = memoize(function(ty,initial,extraPortIsWrite,read1bits,X)
   J.err( ty:verilogBits()<32 or ty:verilogBits()%read1bits==0,"reg: request type '"..tostring(ty).."' of bits '"..(ty:verilogBits()).."'  must be divisible by "..read1bits)
   
   local tab = {name=J.sanitize("Reg_"..tostring(ty).."_read1bits"..tostring(read1bits).."_extraPortIsWrite"..tostring(extraPortIsWrite).."_init"..tostring(initial)), stateful=true, functions={}}
-  if extraPortIsWrite then
+  if extraPortIsWrite==true then
     tab.functions.write1 = rigel.newFunction{name="write1",inputType=types.rv(types.Par(ty)),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
   else
     tab.functions.read1 = rigel.newFunction{name="read1",inputType=types.Interface(),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
@@ -5370,6 +5370,8 @@ s:verilog(table.concat(vstr,""))
     return s
   end
 
+  if terralib~=nil then res.terraModule = MT.reg(ty,initial,extraPortIsWrite,read1bits) end
+  
   return res
 end)
 
