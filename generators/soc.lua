@@ -88,7 +88,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     --J.err( type(v.size)=="number","axiRegs: delegate is missing size" )
     --v.type:checkLuaValue(v.init),"axiRegs: delegate init" )
     --J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
-    --J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
+    J.err( regmod.type:toCPUType()==regmod.type, "axiRegs: NYI - input type must be a CPU type" )
     --J.err( v[1]:verilogBits()<32 or v[1]:verilogBits()%32==0, "axiRegs: NYI - input type must be 32bit aligned")
     --v[1]:checkLuaValue(v[2])
 
@@ -142,7 +142,8 @@ output wire ]]..k..[[_ready,
   local ModuleName = J.sanitize("Regs_"..tostring(tab).."_"..tostring(port))
 
   local REG_ADDR_BITS = math.ceil(math.log(NREG)/math.log(2))
-
+  --print("REG_ADDR_BITS",NREG,REG_ADDR_BITS)
+  
   local verbose = false
 
   functionList.start = R.newFunction{name="start",inputType=types.Interface(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
@@ -358,7 +359,14 @@ parameter W = 32)(
 
         -- wire instance fns to external fns
         for _,v in pairs(tab) do
-          table.insert(vstring, "assign "..v[1].."_output = "..v[1].."_read1_output;\n")
+          if v[2].functions.write1~=nil then
+            table.insert(vstring, "assign "..v[1].."_write1_input = "..v[1].."_input["..(v[2].type:verilogBits()-1)..":0];\n")
+            table.insert(vstring, "assign "..v[1].."_write1_valid = "..v[1].."_input["..v[2].type:verilogBits().."];\n")
+            table.insert(vstring, "assign "..v[1].."_write1_CE = 1'b1;\n")
+            table.insert(vstring, "assign "..v[1].."_ready = 1'b1;\n")
+          else
+            table.insert(vstring, "assign "..v[1].."_output = "..v[1].."_read1_output;\n")
+          end
         end
         
         table.insert(vstring,[=[
@@ -495,7 +503,15 @@ parameter OK = 2'b00, SLVERR = 2'b10;
 reg r_state = IDLE;
 wire []=]..(REG_ADDR_BITS-1)..[=[:0] r_select;
 assign r_select  = LITE_ARADDR[]=]..(REG_ADDR_BITS+1)..[=[:2];
+]=])
 
+-- async read logic
+for k,v in ipairs(tab) do
+  local range = regRange[k]
+  table.insert(vstring,"assign "..v[1].."_read_input = {"..(32-REG_ADDR_BITS).."'d0,r_select}-32'd"..range[1]..";\n")
+end
+
+table.insert(vstring,[=[
 wire    ar_good;
 assign ar_good = {LITE_ARADDR[31:]=]..(REG_ADDR_BITS+2)..[=[], ]=]..REG_ADDR_BITS..[=['b0, LITE_ARADDR[1:0]} == ]=]..ADDR_BASE..[=[;
 assign LITE_ARREADY = (r_state == IDLE);
@@ -516,9 +532,20 @@ always @(posedge CLK) begin
 
                 if (r_select==]=]..(REG_ADDR_BITS)..[=['d1) begin
                   LITE_RDATA <= donereg;
-                end
+                end]=])
 
-                r_state <= RWAIT;
+        -- read logic
+for k,v in ipairs(tab) do
+  local range = regRange[k]
+
+  table.insert(vstring,[=[
+                if (r_select>=]=]..(REG_ADDR_BITS).."'d"..range[1]..J.sel(k<#tab,[=[ && r_select<]=]..(REG_ADDR_BITS).."'d"..range[2],"")..[=[) begin
+                  LITE_RDATA <= ]=]..v[1]..[=[_read_output;
+                end]=])
+
+end
+       
+table.insert(vstring,[=[                r_state <= RWAIT;
             end
         end
         RWAIT: begin
@@ -540,11 +567,13 @@ wire []=]..(REG_ADDR_BITS-1)..[=[:0] w_select;
 assign w_select  = LITE_AWADDR[]=]..(REG_ADDR_BITS+1)..[=[:2];
 
 ]=])
-        
+
+-- async write logic
 for k,v in ipairs(tab) do
   local range = regRange[k]
 
-  table.insert(vstring,"assign "..v[1].."_write_valid = !w_wrotedata && w_select_r>="..REG_ADDR_BITS.."'d"..range[1]..[=[ && w_select_r<]=]..REG_ADDR_BITS.."'d"..range[2]..[=[ && LITE_WVALID;
+  table.insert(vstring,"assign "..v[1].."_write_valid = !w_wrotedata && w_select_r>="..REG_ADDR_BITS.."'d"..range[1]..J.sel(k<#tab,[=[ && w_select_r<]=]..REG_ADDR_BITS.."'d"..range[2],"")..[=[ && LITE_WVALID;
+assign ]=]..v[1].."_write_CE = "..v[1]..[=[_write_valid;
 assign ]=]..v[1]..[=[_write_input =  {LITE_WDATA,]=]..(32-REG_ADDR_BITS)..[=['d0,w_select_r-]=]..REG_ADDR_BITS.."'d"..range[1]..[=[};
 ]=])
 

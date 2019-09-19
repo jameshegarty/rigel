@@ -5301,10 +5301,15 @@ modules.reg = memoize(function(ty,initial,extraPortIsWrite,read1bits,X)
   ty:checkLuaValue(initial)
   assert(X==nil)
 
-  assert(ty:verilogBits()%read1bits==0)
+  J.err( ty:verilogBits()<32 or ty:verilogBits()%read1bits==0,"reg: request type '"..tostring(ty).."' of bits '"..(ty:verilogBits()).."'  must be divisible by "..read1bits)
   
-  local tab = {name=J.sanitize("Reg_"..tostring(ty).."_read1bits"..tostring(read1bits)), stateful=true, functions={}}
-  tab.functions.read1 = rigel.newFunction{name="read1",inputType=types.Interface(),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  local tab = {name=J.sanitize("Reg_"..tostring(ty).."_read1bits"..tostring(read1bits).."_extraPortIsWrite"..tostring(extraPortIsWrite).."_init"..tostring(initial)), stateful=true, functions={}}
+  if extraPortIsWrite then
+    tab.functions.write1 = rigel.newFunction{name="write1",inputType=types.rv(types.Par(ty)),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+  else
+    tab.functions.read1 = rigel.newFunction{name="read1",inputType=types.Interface(),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  end
+  
   tab.functions.read = rigel.newFunction{name="read",inputType=types.rv(types.Par(types.Uint(32))),outputType=types.rv(types.Par(types.Bits(read1bits))),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
   tab.functions.write = rigel.newFunction{name="write",inputType=types.rv(types.Par(types.Tuple{types.Uint(32),types.Bits(read1bits)})),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
   
@@ -5321,18 +5326,41 @@ modules.reg = memoize(function(ty,initial,extraPortIsWrite,read1bits,X)
     local s = C.automaticSystolicStub(res)
 
     local vstr = {res:vHeader()..[=[
-  reg []=]..(read1bits-1)..[=[:0] r[]=]..((ty:verilogBits()/read1bits)-1)..[=[:0];
+  reg []=]..(read1bits-1)..[=[:0] r[]=]..(math.max(ty:verilogBits()/read1bits,1)-1)..[=[:0];
 ]=]}
 
-    for i=0,(ty:verilogBits()/read1bits)-1 do
-      table.insert(vstr,"assign read1_output["..((i+1)*read1bits-1)..":"..(i*read1bits).."] = r["..i.."];\n")
+    table.insert(vstr,[=[
+assign read_output = r[read_input];
+]=])
+    
+    if extraPortIsWrite~=true then
+      if ty:verilogBits()<32 then
+        table.insert(vstr,"assign read1_output = r[0]["..(ty:verilogBits()-1)..":0];\n")
+      else
+        for i=0,(ty:verilogBits()/read1bits)-1 do
+          table.insert(vstr,"assign read1_output["..((i+1)*read1bits-1)..":"..(i*read1bits).."] = r["..i.."];\n")
+        end
+      end
     end
     
 table.insert(vstr,[=[  always @(posedge CLK) begin
     if (write_CE && write_valid) begin
       r[write_input[31:0]] <= write_input[63:32];
+    end]=])
+
+  if extraPortIsWrite==true then
+    table.insert(vstr," else if(write1_CE && write1_valid) begin\n")
+    if ty:verilogBits()<32 then
+      table.insert(vstr,[=[r[0] <= {]=]..(32-ty:verilogBits()).."'d0,write1_input};\n")
+    else
+      for i=0,(ty:verilogBits()/read1bits)-1 do
+        table.insert(vstr,"assign r["..i.."] = write1_input["..((i+1)*read1bits-1)..":"..(i*read1bits).."];\n")
+      end
     end
+    table.insert(vstr,"end\n")
   end
+
+table.insert(vstr,[=[  end
 endmodule
 
 ]=])

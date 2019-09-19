@@ -3,6 +3,7 @@ local SOC = require "generators.soc"
 local C = require "generators.examplescommon"
 local harness = require "generators.harnessSOC"
 local G = require "generators.core"
+local RM = require "generators.modules"
 local RS = require "rigelSimple"
 local types = require "types"
 local SDF = require "sdf"
@@ -11,7 +12,7 @@ types.export()
 
 local Zynq = require "generators.zynq"
 
-local regs = SOC.axiRegs({offset={u(8),200},lastPx={u(8),0,"input"}},SDF{1,8192}):instantiate("regs")
+local regs = SOC.axiRegs({{"offset",RM.reg(u(8),200)},{"lastPx",RM.reg(u(8),0,true)}},SDF{1,8192}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
