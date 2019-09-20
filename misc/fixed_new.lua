@@ -125,6 +125,15 @@ function fixed.readGlobal( glob )
   return fixed.new{ kind="readGlobal", global=glob, type=glob.type, inputs={}, loc=getloc() }
 end
 
+function fixed.applyNullaryLiftRigel(f)
+  R.isFunction(f)
+  assert( f.inputType==types.Interface() )
+  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
+  
+  return fixed.new{kind="applyNullaryLiftRigel", f=f, inputs={}, type=f.outputType.over.over, loc=getloc()}
+end
+
+
 function fixed.constant( value )
   err(type(value)=="number" or type(value)=="boolean","fixed.constant must be number or bool")
 
@@ -445,7 +454,6 @@ function fixedNewASTFunctions:toSystolic()
         res = S.abs( args[1] )
         res = S.cast( res, n:underlyingType() )
       elseif n.kind=="rcp" then
-
         local numerator, denom, isPositive, uintType
         if n:isSigned() then
           -- signed behavior: basically, remember the sign, take abs, do unsigned div, then add back sign
@@ -462,8 +470,9 @@ function fixedNewASTFunctions:toSystolic()
           numerator = S.constant(math.pow(2,n.inputs[1]:precision()),uintType)
           denom = S.cast( args[1], uintType )
         end
-        
+
         local inst = fpgamodules.div(uintType):instantiate(n.name.."_DIVINST")
+
         table.insert(instances,inst)
         
         res = inst:process(S.tuple{numerator,denom})
@@ -479,6 +488,11 @@ function fixedNewASTFunctions:toSystolic()
         local I = n.f.systolicModule:instantiate(n.name)
         table.insert(instances,I)
         res = I:process(args[1])
+        if n.f.stateful then table.insert(resetStats,I:reset()) end
+      elseif n.kind=="applyNullaryLiftRigel" then
+        local I = n.f.systolicModule:instantiate(n.name)
+        table.insert(instances,I)
+        res = I:process()
         if n.f.stateful then table.insert(resetStats,I:reset()) end
       elseif n.kind=="applyUnaryLiftSystolic" then
         res = n.f(args[1])
@@ -514,7 +528,7 @@ function fixedNewASTFunctions:toSystolic()
       elseif n.kind=="addMSBs" or n.kind=="removeMSBs" then
         res = S.cast(args[1], n:underlyingType() )
       elseif n.kind=="readGlobal" then
-        res = S.readSideChannel(n.global.systolicValue)
+        --res = S.readSideChannel(n.global.systolicValue)
         sideChannels[n.global.systolicValue] = 1
         globals[n.global] = 1
       else
@@ -558,6 +572,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   res.name = name
 
   function res.makeSystolic()
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name) end
     local sys = Ssugar.moduleConstructor(name)
     for _,v in ipairs(instances) do sys:add(v) end
     for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
@@ -569,9 +584,11 @@ function fixedNewASTFunctions:toRigelModule(name,X)
     if res.stateful then
       sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
     end
-    
+
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"COMPLETE") end
     sys:complete()
-    
+
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"DONE") end
     return sys
   end
   

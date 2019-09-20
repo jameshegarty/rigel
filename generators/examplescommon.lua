@@ -1436,6 +1436,7 @@ end)
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
 C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(types.isType(A), "stencilLinebufferRegisterChain: A must be type")
+  err(A:isData(), "stencilLinebufferRegisterChain: A must be datatype")
 
   err(type(T)=="number","stencilLinebufferRegisterChain: T must be number")
   err(type(w)=="number","stencilLinebufferRegisterChain: w must be number")
@@ -1453,7 +1454,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   err(xmax==0,"stencilLinebufferRegisterChain: xmax must be 0")
   err(ymax==0,"stencilLinebufferRegisterChain: ymax must be 0")
 
-  local I = R.input( types.array2d(A,T) )
+  local I = R.input( types.rv(types.Par(types.array2d(A,T))) )
   local SSRSize = w*(-ymin)-xmin+1
   local lb = modules.SSR(A,T,-SSRSize,0)(I)
 
@@ -1463,7 +1464,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
       local idx = y*w+x
       -- SSR module stores values in opposite order of what we want
       local ridx = SSRSize+idx
-      table.insert(tab, C.index(lb.type,ridx,0)(lb) )
+      table.insert(tab, C.index(lb.type.over.over,ridx,0)(lb) )
     end
   end
   
@@ -1823,7 +1824,7 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: "..tostring(t[1]) )
+  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 

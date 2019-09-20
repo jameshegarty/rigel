@@ -90,7 +90,7 @@ function systolicFunctionConstructor:getCE() return self.__CEparameter end
 
 function systolicFunctionConstructor:setOutput( o, oname ) 
   err( self.isComplete==false, "function is already complete"); 
-  err( systolic.isAST(o),":setOutput(), output is not a systolic ast, but is: "..tostring(o)); 
+  err( systolic.isAST(o),":setOutput(), output is not a systolic ast, but is: ",o); 
   err(o.type==types.null() or type(oname)=="string", "output must be given a name")
   self.__output = o;
   self.__outputName = oname

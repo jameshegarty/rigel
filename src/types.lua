@@ -502,7 +502,7 @@ function types.checkExplicitCast(from, to, ast)
 
     if allbits then
       -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
-      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:"..tostring(from).." to "..tostring(to))
+      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:",from," to ",to)
       return true
     elseif #from.list==1 and from.list[1]==to then
       -- casting {A} to A

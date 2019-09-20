@@ -536,9 +536,41 @@ function common.split(t,n)
   return r
 end
 
-function common.err(asst, str)
-  if str==nil then str="MISSING ERROR!" end
-  if asst==false then error(str) end
+-- {...} may be a list of strings or values. We want to pass the values separately,
+-- because calling tostring on the values may blow up (and thus not show any error, which is bad!)
+-- plus, doing the string concat (and calling tostrings) when there is no error wastes time
+function common.err(asst, ...)
+  --if str==nil then str="MISSING ERROR!" end
+  if asst==false then
+    local tab = {...}
+    for k,v in ipairs(tab) do
+      if k==#tab then
+        error(v)
+      else
+        print(v)
+      end
+    end
+  end
+
+  -- remove once fixed
+  if asst==true then
+    local tab = {...}
+    for k,v in ipairs(tab) do
+      if type(v)=="string" and #v>1000 and string.sub(v,1,5)~="stack" and string.sub(v,1,1)~="@" then
+        print("CRAZY ERR STR",#v)
+        print(v)
+        assert(false)
+      end
+    end
+  end
+  
+end
+
+function common.verbose(...)
+  local tab = {...}
+  local str = ""
+  for k,v in ipairs(tab) do str=str..tostring(v) end
+  print(str,collectgarbage("count"),"KB")
 end
 
 function common.broadcast(v,n)

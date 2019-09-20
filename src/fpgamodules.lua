@@ -41,7 +41,7 @@ modules.incIf=memoize(function( inc, ty, X )
   local swinp = S.parameter("process_input", types.tuple{ty,types.bool()})
   
   local ot = S.select( S.index(swinp,1), S.index(swinp,0)+S.constant(inc,ty), S.index(swinp,0) ):disablePipelining()
-  return S.module.new( J.sanitize("incif_"..inc..tostring(ty).."_CE"..tostring(CE)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
+  return S.module.new( J.sanitize("incif_"..inc..tostring(ty)), {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
 end)
 
 -- this will never wrap around (this just stops at top value)

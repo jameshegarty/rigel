@@ -349,7 +349,7 @@ function RS.defineModule(t)
     fifoList = t.fifoList.fifos
   end
 
-  return RM.lambda(t.name or "v"..tostring(ccnt), t.input, out, fifoList )
+  return RM.lambda(t.name or "rigelSimpleUnnamedModule"..tostring(ccnt), t.input, out, fifoList )
 end
 
 function RS.HS(t,handshakeTrigger)
@@ -386,7 +386,7 @@ function RS.modules.fwriteSeq(t)
     local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
     local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
     local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
-    return RS.defineModule{input=inp,output=out}
+    return RS.defineModule{input=inp,output=out,name="rigelsimple_fwriteseq_bool_"..t.filename}
   elseif t.type:toCPUType()~=t.type then
     err( t.type:isArray()==false and t.type:isTuple()==false,"fwriteSeq: NYI - aggregate types ("..tostring(t.type).."). use a cast")
 
@@ -399,7 +399,7 @@ function RS.modules.fwriteSeq(t)
     out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
     out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
     out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
-    return RS.defineModule{input=inp,output=out}
+    return RS.defineModule{input=inp,output=out,name="rigelsimple_FwriteSeq_"..tostring(t.type).."_"..t.filename}
   else
     return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog)
   end

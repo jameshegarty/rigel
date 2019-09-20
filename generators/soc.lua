@@ -56,7 +56,8 @@ end)
 
 SOC.axiRegs = J.memoize(function( tab, rate, X )
   J.err( type(tab)=="table","SOC.axiRegs: input must be table")
-
+  J.err( J.keycount(tab)==#tab, "SOC.axiRegs: input must be an array")
+  
   J.err( X==nil, "soc.axiRegs: too many arguments")
 
   local port = SOC.currentSAXIPort
@@ -1358,17 +1359,17 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
 
   local W = Uniform(W_orig)
   local H = Uniform(H_orig)
-  J.err( types.isType(ty), "readBurst: type must be type, but is: "..tostring(ty))
-  J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: "..tostring(ty))
-  J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: "..tostring(ty))
+  J.err( types.isType(ty), "readBurst: type must be type, but is: ",ty)
+  J.err( types.isBasic(ty), "readBurst: type must be basic type, but is: ",ty)
+  J.err( ty:verilogBits()%8==0,"NYI - readBurst currently required byte-aligned data, but type is: ",ty)
 
   J.err( V==nil or type(V)=="number", "readBurst: V must be number or nil")
   if V==nil then V=0 end
 
-  J.err( framed==nil or type(framed)=="boolean", "framed must be nil or bool, but is: "..tostring(framed))
+  J.err( framed==nil or type(framed)=="boolean", "framed must be nil or bool, but is: ",framed)
   J.err(X==nil, "readBurst: too many arguments")
 
-  J.err( R.isFunction(readFn_orig), "SOC.readBurst: readFn should be rigel function, but is: "..tostring(readFn_orig))
+  J.err( R.isFunction(readFn_orig), "SOC.readBurst: readFn should be rigel function, but is: ",readFn_orig)
 
   local address
   if addressOverride~=nil then
