@@ -21,7 +21,7 @@ local function toTerra(self,name)
 
   local res = self:visitEach(
     function( n, args )
-      if n.kind=="applyUnaryLiftRigel" then
+      if n.kind=="applyUnaryLiftRigel" or n.kind=="applyNullaryLiftRigel" then
         table.insert( Module.entries, {field=n.name, type=n.f.terraModule})
       end
     end)
@@ -119,6 +119,17 @@ local function toTerra(self,name)
         table.insert(stats,quote var[res];
                      var tmp : n.inputs[1].type:toTerraType() = [args[1]] -- input must be lvalue
                      mself.[n.name]:process( &tmp, &res )
+                     end)
+        if n.f.stateful then
+          table.insert(resetStats, quote mself.[n.name]:reset() end )
+        end
+
+        table.insert(initStats, quote mself.[n.name]:init() end )
+        table.insert(freeStats, quote mself.[n.name]:free() end )
+      elseif n.kind=="applyNullaryLiftRigel" then
+        res = symbol(n.type:toTerraType())
+        table.insert(stats,quote var[res];
+                     mself.[n.name]:process( &res )
                      end)
         if n.f.stateful then
           table.insert(resetStats, quote mself.[n.name]:reset() end )

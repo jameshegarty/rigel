@@ -542,14 +542,9 @@ end
 function common.err(asst, ...)
   --if str==nil then str="MISSING ERROR!" end
   if asst==false then
-    local tab = {...}
-    for k,v in ipairs(tab) do
-      if k==#tab then
-        error(v)
-      else
-        print(v)
-      end
-    end
+    local str = {}
+    for k,v in ipairs({...}) do table.insert(str,tostring(v)) end
+    error(table.concat(str))
   end
 
   -- remove once fixed

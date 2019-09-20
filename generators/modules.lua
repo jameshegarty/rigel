@@ -1878,7 +1878,7 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
   err( rigel.isFunction(Schedule), "schedule must be darkroom function")
 
   local log2N = math.ceil(math.log(#inputRates)/math.log(2))
-  err( rigel.lower(Schedule.outputType)==types.uint(log2N), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+  err( rigel.lower(Schedule.outputType)==types.uint(log2N), "schedule function has incorrect output type, ",Schedule.outputType," should be : ",types.Uint(log2N))
   rigel.expectBasic(A)
   assert(X==nil)
 
@@ -4705,7 +4705,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( inputType:isData(),"modules.lift: inputType should be Data Type, but is: "..tostring(inputType))
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
-  err( outputType:isData(),"modules.lift: outputType should be Data Type, but is: "..tostring(outputType))
+  err( outputType==nil or outputType:isData(),"modules.lift: outputType should be Data Type, but is: "..tostring(outputType))
   err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )

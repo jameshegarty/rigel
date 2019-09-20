@@ -33,6 +33,9 @@ function loadRigelImage(rawfile, metafile)
     if string.find(metadata.type,"uint")~=nil then
       bitstring = metadata.type:sub(5)
       signed=false
+    elseif string.find(metadata.type,"NAMEDint")~=nil then
+      bitstring = metadata.type:sub(4+5)
+      signed = true
     else
       bitstring = metadata.type:sub(4)
       signed = true
@@ -49,6 +52,10 @@ function loadRigelImage(rawfile, metafile)
       shift = tonumber(bitstring[2])
     else
       bits = tonumber(bitstring)
+    end
+
+    if type(bits)~="number" then
+      print("Error parsing type:",metadata.type)
     end
     
     if bits<=8 then

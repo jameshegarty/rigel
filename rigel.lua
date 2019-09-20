@@ -407,6 +407,8 @@ function functionGeneratorFunctions:requiresArg(arg)
 end
 
 function functionGeneratorFunctions:complete(arglist)
+  if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
+  
   if self:checkArgs(arglist)==false then
     print("Function generator '"..self.name.."' is missing arguments!")
     for k,v in pairs(self.requiredArgs) do
@@ -449,7 +451,8 @@ function functionGeneratorFunctions:complete(arglist)
             a[kk]=vv
           end
         end
---        err(a.type==nil,"'type' is set somewhere in arglist of '"..self.name.."'? (is "..tostring(a.type)..") Make sure 'type' isn't the name of a type parameter")
+        --        err(a.type==nil,"'type' is set somewhere in arglist of '"..self.name.."'? (is "..tostring(a.type)..") Make sure 'type' isn't the name of a type parameter")
+        if DARKROOM_VERBOSE then print("FunctionGenerator:complete() DONE",self.name) end
         return self.completeFn(a)
       end
       -- finFn should now only be a function of type parameters
@@ -475,7 +478,8 @@ function functionGeneratorFunctions:complete(arglist)
     mod.generator = self
     mod.generatorArgs = arglist
   end
-    
+
+  if DARKROOM_VERBOSE then print("FunctionGenerator:complete() DONE,TRIVIAL",self.name) end
   return mod
 end
 
@@ -521,7 +525,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
   if Ssugar.isModuleConstructor(sm) then sm:complete(); sm=sm.module end
   J.err( S.isModule(sm),"makeSystolic didn't return a systolic module? Returned '",sm,"'. Module: ",tab)
 
-  if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule",tab.name,"CHECK") end
+  if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule","CHECK",tab.name) end
   
   local systolicFns = sm.functions
   local rigelFns = tab.functions
@@ -533,11 +537,11 @@ local function buildAndCheckSystolicModule(tab, isModule)
   for fnname,rigelFn in pairs(rigelFns) do
     local systolicFn = systolicFns[fnname]
 
-    err( systolicFn~=nil, "systolic module function is missing ("..tostring(sm.name)..")")
+    err( systolicFn~=nil, "systolic module function is missing (",sm.name,")")
     
     if rigelFn.outputType~=types.Interface() then
-      err( systolicFn.output~=nil, "module output is not null (is "..tostring(rigelFn.outputType).."), but systolic output is missing")
-      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '"..tab.name.."'? is '"..tostring(systolicFn.output.type).."' but should be '"..tostring(darkroom.lower(rigelFn.outputType)).."' (rigel type "..tostring(rigelFn.outputType)..")" )
+      err( systolicFn.output~=nil, "module output is not null (is ",rigelFn.outputType,"), but systolic output is missing")
+      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '",tab.name,"'? is '",systolicFn.output.type,"' but should be '",darkroom.lower(rigelFn.outputType),"' (rigel type ",rigelFn.outputType,")" )
     end
 
     local shouldHaveCE = (types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType))==false and (rigelFn.stateful or (rigelFn.delay~=nil and rigelFn.delay>0)) and (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false
@@ -595,7 +599,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
   
   rawset(tab,"systolicModule", sm )
 
-  if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule",tab.name,"DONE") end
+  if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule","DONE",tab.name) end
   return sm
 end
 
@@ -2031,7 +2035,7 @@ function darkroomIRFunctions:codegenSystolic( module )
       elseif n.kind=="apply" then
         err( n.fn.systolicModule~=nil, "Error, missing systolic module for "..n.fn.name)
         err( n.fn.systolicModule:lookupFunction("process")~=nil, "Error, missing process fn? "..n.fn.name)
-        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process"):getInput().type).." but should be "..tostring(darkroom.lower(n.fn.inputType)).." (Rigel type: "..tostring(n.fn.inputType)..")" )
+        err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule:lookupFunction("process"):getInput().type," but should be ",darkroom.lower(n.fn.inputType)," (Rigel type: ",n.fn.inputType,")" )
 
         if n.fn.outputType==types.null() then
           err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )

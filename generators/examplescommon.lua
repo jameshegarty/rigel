@@ -467,7 +467,7 @@ C.removeLSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
                       function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
   return mod
 end)
@@ -1976,10 +1976,8 @@ C.oddEvenMergeSort = memoize(
       return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
         function(inp)
           local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
-          print("LR",l.type,r.type)
           l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
           local res = C.flatten2(A,N)(l,r)
-          print("RES",res.type)
           res = C.oddEvenMerge(A,N,op)(res)
           return res
         end}
@@ -1987,13 +1985,14 @@ C.oddEvenMergeSort = memoize(
   end)
 
 C.StridedReader = memoize(
-  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr,readFn)
+  function( filename, totalBytes, itemBytes, stride, offset, readPort, readAddr, readFn, X )
     -- stride,offset is given as # of items
     local G = require "generators.core"
     local SOC = require "generators.soc"
     assert(totalBytes%(itemBytes*stride)==0)
     assert(itemBytes%8==0)
     assert( R.isFunction(readFn) )
+    assert(X==nil)
     
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
@@ -2012,7 +2011,9 @@ C.StridedReader = memoize(
 
 -- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
-  function(filename,W,H,ty,V,noc) -- Nbits: # of bits to read in parallel
+  function(filename,W,H,ty,V,noc,X) -- Nbits: # of bits to read in parallel
+    J.err( R.isInstance(noc),"AXIReadPar: noc should be module instance, but is: ",noc )
+    J.err(X==nil,"AXIReadPar: too many arguments")
     local G = require "generators.core"
     local SOC = require "generators.soc"
     assert( (ty:verilogBits()*V)%64==0)
@@ -2027,7 +2028,9 @@ C.AXIReadPar = memoize(
         local inpb = G.FanOut{N}(inp)
         local out = {}
         for i=0,N-1 do
-          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc["read"..J.sel(i==0,"",tostring(i))])(inpb[i])
+          local readFnName = "read"..J.sel(i==0,"",tostring(i))
+          J.err(noc[readFnName]~=nil,"AXIReadPar: noc is missing function '",readFnName,"'")
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc[readFnName])(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
           SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
