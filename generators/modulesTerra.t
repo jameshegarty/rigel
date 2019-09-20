@@ -1899,7 +1899,7 @@ function MT.lambdaCompile(fn)
           local list = {}
           for dsNode, _ in n:parents(fn.output) do
             if dsNode.kind=="selectStream" then
-              err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
+              err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! ",n.loc)
 
               if n.type:isTuple() then
                 list[dsNode.i+1] = `[args[dsNode]].["_"..dsNode.i]
@@ -1910,11 +1910,11 @@ function MT.lambdaCompile(fn)
                 assert(false)
               end
             else
-              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
+              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a ",dsNode.kind,") ",n.loc )
             end
           end
 
-          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
+          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has ",#list," consumers but expected ",n:outputStreams(),". ",n.loc)
 
           if n.kind=="input" then
             if n.type:isTuple() then
@@ -2055,10 +2055,7 @@ return {`mself.[n.name].ready}
           end
 
           if n.inputs[1]~=nil and n.inputs[1].type~=types.Interface() then
---            print(n.inputs[1],ty,n.inputs[1].type,res[1])
---            print(ty)
---            print(n.inputs[1].type,types.extractReady(n.inputs[1].type),types.extractReady(n.inputs[1].type):toTerraType())
-            err(ty == types.extractReady(n.inputs[1].type):toTerraType(),"Expected terra ready type '"..tostring(types.extractReady(n.inputs[1].type):toTerraType()).."' because input type was '"..tostring(n.inputs[1].type).."' but was '"..tostring(ty).."' "..tostring(res[1]).." "..tostring(n))
+            err(ty == types.extractReady(n.inputs[1].type):toTerraType(),"Expected terra ready type '",types.extractReady(n.inputs[1].type):toTerraType(),"' because input type was '",n.inputs[1].type,"' but was '",ty,"' ",res[1]," ",n)
           end
         end
 

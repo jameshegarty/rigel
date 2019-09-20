@@ -603,7 +603,7 @@ function buildAndCheckTerraModule(tab)
   err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
   err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
   local tm = rawget(tab,"makeTerra")()
-  err( terralib.types.istype(tm) and tm:isstruct(), "makeTerra for module '"..tab.name.."' returned something other than a terra struct? returned: "..tostring(tm))
+  err( terralib.types.istype(tm) and tm:isstruct(), "makeTerra for module '",tab.name,"' returned something other than a terra struct? returned: ",tm)
 
   rawset(tab,"terraModule", tm )
   return tm
