@@ -33,7 +33,7 @@ function SOCMT.axiRegs( mod, tab, X )
   assert(X==nil)
   local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:tuple(bool,bool), write_readyDownstream:bool }
 
-  for _,v in pairs(tab) do
+  for _,v in ipairs(tab) do
     local regname, regmod = v[1], v[2]
     
     table.insert( AxiRegsN.entries,{field=regname.."_value",type=regmod.terraModule})
@@ -45,7 +45,7 @@ function SOCMT.axiRegs( mod, tab, X )
 
   local SELF = symbol(&AxiRegsN)
   
-  for _,v in pairs(tab) do
+  for _,v in ipairs(tab) do
     local regname, regmod = v[1], v[2]
     local ty = regmod.type
 
@@ -83,27 +83,25 @@ function SOCMT.axiRegs( mod, tab, X )
 
   local writeInp = symbol(&types.lower(AXI.WriteIssue(32)):toTerraType(),"writeInp")
   
-  for _,v in pairs(tab) do
+  for _,v in ipairs(tab) do
     local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..v[1]]
     local ty = v[2].type
 
     if v[2].functions.read1~=nil then
-      for i=0,math.ceil(ty:verilogBits()/32)-1 do
-        table.insert(regSet,
-          quote
-            if @AXIT.AWADDR32(writeInp)==[addr+i*4] then
---              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
-              @([&uint](&SELF.[v[1].."_value"])+i) = @AXIT.WDATA32(writeInp)
-            end
-          end)
-
-      end
+      table.insert(regSet,
+        quote
+          if @AXIT.AWADDR32(writeInp)>=addr and @AXIT.AWADDR32(writeInp)<[addr+math.ceil(ty:verilogBits()/32)] then
+              --cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(writeInp), @AXIT.WDATA32(writeInp), @AXIT.WDATA32(writeInp) )
+            var inp = {@AXIT.AWADDR32(writeInp)-[uint](addr),@AXIT.WDATA32(writeInp)}
+            SELF.[v[1].."_value"]:write(&inp)
+          end
+        end)
     end
   end
 
   terra AxiRegsN.methods.write( [SELF], [writeInp], BRESP: &types.lower(AXI.WriteResponse(32)):toTerraType() )
     if @[AXIT.AWVALID(32)](writeInp) then
-      --cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
+      --cstdio.printf("socTerra: WRITE request TO REG. Addr:%x\n",@AXIT.AWADDR32(writeInp))
 
       @AXIT.BRESP32(BRESP) = 0
       @AXIT.BVALID32(BRESP) = true

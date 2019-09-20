@@ -2240,7 +2240,14 @@ function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
 
   local struct Reg {r:chunkType[chunks]}
   terra Reg:read(addr:&uint32,out:&chunkType) @out = self.r[@addr] end
-  terra Reg:write(inp:&tuple(uint32,chunkType)) self.r[inp._0]=inp._1 end
+  terra Reg:write(inp:&tuple(uint32,chunkType))
+    --cstdio.printf("Write Reg addr %u value %u\n",inp._0,inp._1)
+    if inp._0>=chunks then
+      cstdio.printf("Write to reg out of range! addr %u value %u\n",inp._0,inp._1)
+    else              
+      self.r[inp._0]=inp._1
+    end
+  end
 
   if extraPortIsWrite==true then
     terra Reg:write1(inp:&ty:toTerraType())
