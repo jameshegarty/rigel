@@ -128,6 +128,9 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
 
     ZynqNOCTerra.methods["read"..J.sel(i==1,"",i-1).."_calculateReady"] = terra( self:&ZynqNOCTerra, inp:bool )
       self.["MAXI"..I.."_RREADY"] = inp
+
+      -- the testbench just drives this signal directly, so we don't need to mess with it
+      --self.["read"..I.."_ready"] = 
     end
 
   end

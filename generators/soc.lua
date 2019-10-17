@@ -1418,9 +1418,6 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   local res = RM.lambda("ReadBurst_W"..tostring(W_orig).."_H"..tostring(H_orig).."_v"..V.."_port"..SOC.currentMAXIReadPort.."_addr"..tostring(address).."_framed"..tostring(framed).."_"..tostring(ty),inp,out,nil,nil,nil,globalMetadata)
 
   if framed then
-    --out = C.handshakeToHandshakeFramed(out.type,V>0,{{W:toNumberIfPossible(),H:toNumberIfPossible()}})(out)
-    --print("FRAMED",res.outputType)
-    --res.outputType=4
     if V==0 then
       res.outputType = types.RV(types.Seq(types.Par(ty),W_orig,H_orig))
     else

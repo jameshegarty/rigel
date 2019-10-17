@@ -258,7 +258,8 @@ return function(top, options)
   local setTaps = {}
 
   local m = symbol(&Module)
-  
+
+  -- load default values into the registers
   for k,v in pairs(top.globalMetadata) do
     if string.sub(k,0,8)=="Register" then
       local addr = string.sub(k,10)
@@ -314,6 +315,7 @@ return function(top, options)
       if round==0 then [clearOutputs] end
       [readS]
 
+      -- set start bit
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       
       V.activateMasterRead([MREAD_SLAVEOUT[0]])

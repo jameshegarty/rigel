@@ -750,7 +750,7 @@ end
 
 function MT.posSeq(res,W_orig,H,T,asArray)
   local W = Uniform(W_orig)
-  local struct PosSeq { x:uint16, y:uint16 }
+  local struct PosSeq { x:uint, y:uint }
   terra PosSeq:reset() self.x=0; self.y=0 end
 
   if T==0 then
@@ -1710,26 +1710,51 @@ function MT.freadSeq(filename,ty)
 end
 
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
-function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes)
+-- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
+function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes,tokensX,tokensY,X)
   local terraSize = terralib.sizeof(ty:toTerraType())*8
+  assert(X==nil)
   J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
-  
-  local struct FwriteSeq { file : &cstdio.FILE }
+
+  if tokensX==nil then tokensX=0 end
+  if tokensY==nil then tokensY=0 end
+    
+  local struct FwriteSeq { file : &cstdio.FILE, buf:&ty:toTerraType(), tokensSeen:int }
   terra FwriteSeq:init()
     self.file = cstdio.fopen(filename, "wb")
     if self.file==nil then cstdio.perror(["Error opening "..filename.." for writing"]) end
     [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
+    if tokensX*tokensY>0 then
+      self.buf = [&ty:toTerraType()](cstdlib.malloc(tokensX*tokensY*[ty:sizeof()]))
+    end
+    self.tokensSeen=0
   end
 
   terra FwriteSeq:free()
     cstdio.fclose(self.file)
+    if tokensX*tokensY>0 then cstdlib.free(self.buf) end
   end
 
-  terra FwriteSeq:reset() 
+  terra FwriteSeq:reset()
+    self.tokensSeen=0
   end
 
   if passthrough then
     terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
+      if self.tokensSeen>=tokensX*tokensY and self.tokensSeen<tokensX*tokensY*2 then
+        if cstring.memcmp(&self.buf[self.tokensSeen-tokensX*tokensY],inp,[ty:sizeof()])~=0 then
+          cstdio.printf("REGRESSION file '%s' token:%d of transaction:%d old value:\n",filename,self.tokensSeen,tokensX*tokensY)
+          [ty:terraPrint(`&self.buf[self.tokensSeen-tokensX*tokensY])]
+          cstdio.printf("\nNew Value:\n")
+          [ty:terraPrint(`inp)]
+          cstdio.printf("\n")
+          cstdlib.exit(1)
+        end
+      elseif self.tokensSeen<tokensX*tokensY then
+        self.buf[self.tokensSeen] = @inp
+      end
+      self.tokensSeen = self.tokensSeen+1
+
       cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
       cstring.memcpy(out,inp,[ty:sizeof()])
     end
@@ -1760,7 +1785,8 @@ function MT.cropSeqFn(innerInputType,outputType,A, W_orig, H, T, L, R, B, Top )
     var x,y = (inp._0)[0]._0, (inp._0)[0]._1
     data(out) = inp._1
     valid(out) = (x>=L and y>=B and x<[(W-R):toTerra()] and y<H-Top)
-    if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
+
+    if DARKROOM_VERBOSE then cstdio.printf("CROP W %d H %d x %d y %d T %d VO %d\n",[W:toTerra()],H,x,y,T,valid(out)) end
   end
 end
 
@@ -1881,6 +1907,10 @@ function MT.lambdaCompile(fn)
 
   for inst,_ in pairs(fn.instanceMap) do 
     table.insert( initStats, quote [inst:terraReference()] = &mself.[inst.name] end )
+    table.insert( initStats, quote mself.[inst.name]:init() end )
+    table.insert( resetStats, quote mself.[inst.name]:reset() end )
+    table.insert( freeStats, quote mself.[inst.name]:free() end )
+    table.insert( statStats, quote mself.[inst.name]:stats([inst.name]) end )
   end
 
   local readyOutput
@@ -2122,11 +2152,6 @@ return {`mself.[n.name].ready}
           inst = n.inst:terraReference()
         else
           inst = `mself.[n.inst.name]
-          -- only call these inside the module that actually owns it
-          table.insert( statStats, quote inst:stats([n.name]) end )
-          table.insert( resetStats, quote inst:reset() end )
-          table.insert( initStats, quote inst:init() end )
-          table.insert( freeStats, quote inst:free() end )
         end
 
         local instfn = n.inst.module.functions[n.fnname]
@@ -2236,16 +2261,29 @@ function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
   local chunks = math.max(ty:verilogBits()/read1bits,1)
   assert(math.floor(chunks)==chunks)
 
+  assert(read1bits%8==0)
+  local read1bytes = read1bits/8
+  
   local chunkType = types.bits(read1bits):toTerraType()
 
-  local struct Reg {r:chunkType[chunks]}
-  terra Reg:read(addr:&uint32,out:&chunkType) @out = self.r[@addr] end
+  local struct Reg {r:chunkType[chunks],pout:int}
+  terra Reg:read(addr:&uint32,out:&chunkType)
+    var chunkAddr = @addr/read1bytes
+    @out = self.r[chunkAddr]
+  end
+
+  terra Reg:reset()
+    self.pout=10
+  end
+
+  -- address is in bytes
   terra Reg:write(inp:&tuple(uint32,chunkType))
-    --cstdio.printf("Write Reg addr %u value %u\n",inp._0,inp._1)
-    if inp._0>=chunks then
-      cstdio.printf("Write to reg out of range! addr %u value %u\n",inp._0,inp._1)
+    var chunkAddr = inp._0/read1bytes
+--    cstdio.printf("Write Reg byte_addr %u chunk_addr %u value %u\n",inp._0,chunkAddr,inp._1)
+    if chunkAddr>=chunks then
+      cstdio.printf("Write to reg out of range! byte_addr %u value %u\n",inp._0,inp._1)
     else              
-      self.r[inp._0]=inp._1
+      self.r[chunkAddr]=inp._1
     end
   end
 
@@ -2255,7 +2293,16 @@ function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
     end
   else
     terra Reg:read1(out:&ty:toTerraType())
-      cstring.memcpy( out, &self.r, [ty:sizeof()])    
+      cstring.memcpy( out, &self.r, [ty:sizeof()])
+      if self.pout>0 then
+--        cstdio.printf("Reg:read1 %u pout %u init %u\n",@out,self.pout,initial)
+
+--for c=0,chunks do
+--    cstdio.printf("Chunk Value %u\n",self.r[c])
+--end
+
+        self.pout = self.pout-1
+        end
     end
   end
 

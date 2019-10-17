@@ -384,7 +384,7 @@ function RS.modules.fwriteSeq(t)
       -- special case: write out bools as 255 or 0 to make it easy to look @ the file
     local inp = RS.input( types.rv(types.Par(types.bool())) )
     local out = RS.connect{input=RS.concat{inp,RS.constant{value=255,type=RS.uint8},RS.constant{value=0,type=RS.uint8}}, toModule=C.select(RS.uint8)}
-    local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog)}
+    local out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,RS.uint8,t.filenameVerilog,nil,nil,t.tokensX,t.tokensY)}
     local out = RS.connect{input=RS.concat{out,RS.constant{value=255,type=RS.uint8}}, toModule=C.eq(RS.uint8)}
     return RS.defineModule{input=inp,output=out,name="rigelsimple_fwriteseq_bool_"..t.filename}
   elseif t.type:toCPUType()~=t.type then
@@ -397,11 +397,11 @@ function RS.modules.fwriteSeq(t)
     local fwritetype = t.type:toCPUType()
 
     out = RS.connect{input=inp,toModule=C.cast(t.type,fwritetype)}
-    out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog)}
+    out = RS.connect{input=out,toModule=RM.fwriteSeq(t.filename,fwritetype,t.filenameVerilog,nil,nil,t.tokensX,t.tokensY)}
     out = RS.connect{input=out,toModule=C.cast(fwritetype,t.type)}
     return RS.defineModule{input=inp,output=out,name="rigelsimple_FwriteSeq_"..tostring(t.type).."_"..t.filename}
   else
-    return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog)
+    return RM.fwriteSeq(t.filename,t.type,t.filenameVerilog,nil,nil,t.tokensX,t.tokensY)
   end
 end
 
@@ -412,7 +412,7 @@ function RS.writePixels(input,id,imageSize,V,DIR)
   
   local TY = input.type:extractData()
 
-  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw"}
+  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw", tokensX=imageSize[1], tokensY=imageSize[2]}
 
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)
