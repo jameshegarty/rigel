@@ -1103,7 +1103,7 @@ end)
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
-    err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
+    err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is ",fn )
 
     local G = require "generators.core"
 
