@@ -412,14 +412,14 @@ function RS.writePixels(input,id,imageSize,V,DIR)
   
   local TY = input.type:extractData()
 
-  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/dbg_terra_"..id..".raw", filenameVerilog=DIR.."/dbg_verilatorSOC_"..id..".raw", tokensX=imageSize[1], tokensY=imageSize[2]}
+  local mod = RS.modules.fwriteSeq{type=TY, filename=DIR.."/"..id..".terra.writePixels.raw", filenameVerilog=DIR.."/"..id..".verilatorSOC.writePixels.raw", tokensX=imageSize[1], tokensY=imageSize[2]}
 
   if R.isHandshake(input.type) then
      mod = RS.HS(mod)
   end
 
   --
-  local filename = DIR.."/dbg_"..id..".metadata.lua"
+  local filename = DIR.."/"..id..".metadata.lua"
   local file = io.open(filename,"w")
   if file==nil then print("writePixels: Error, could not open file for writing '"..filename.."'") end
   file:write("return {width="..tostring(imageSize[1])..",height="..tostring(imageSize[2])..",type='"..tostring(TY).."'}")

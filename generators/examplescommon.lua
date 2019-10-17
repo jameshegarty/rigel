@@ -109,6 +109,7 @@ C.cast = memoize(function(A,B)
   if terralib~=nil then
     err(A:isTuple()==false, "C.cast: NYI - terra cast from '"..tostring(A).."' to '"..tostring(B).."'") -- not supported by terra
   end
+  
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
@@ -1648,6 +1649,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
   local name = J.sanitize("GeneralizedChangeRate_inputBitsPerCyc"..tostring(inputBitsPerCyc).."_outputBitsPerCyc"..tostring(outputBitsPerCyc).."_minTotalInputBits"..tostring(minTotalInputBits_orig).."_minTotalOutputBits"..tostring(minTotalOutputBits_orig))
 
+  local res
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = minTotalInputBits:max(minTotalOutputBits)
 
@@ -1657,7 +1659,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
     assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
     assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
     
-    return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
+    res={RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
     if inputBitsPerCyc%outputBitsPerCyc==0 then
       local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
@@ -1687,7 +1689,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (Uniform(bts)%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (Uniform(bts)%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     else
       --assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
       --local shifterBits = inputBitsPerCyc
@@ -1713,7 +1715,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     end
   elseif outputBitsPerCyc>inputBitsPerCyc then
     if outputBitsPerCyc%inputBitsPerCyc==0 then
@@ -1732,7 +1734,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     else
       -- outputBitsPerCyc>inputBitsPerCyc
       --assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
@@ -1757,11 +1759,18 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     end
+  else
+    print("NYI GENERALIZE CHANGE RATE", inputBitsPerCyc,outputBitsPerCyc)
+    assert(false)
   end
-  print(inputBitsPerCyc,outputBitsPerCyc)
-  assert(false)
+
+  if terralib~=nil then
+    res[1].terraModule = CT.generalizedChangeRate(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
+  end
+  
+  return res
 end)
 
 function C.gaussian(W,sigma)

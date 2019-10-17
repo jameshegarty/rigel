@@ -5037,6 +5037,8 @@ end)
 -- passthrough: write out the input? default=true
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
 -- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
+-- 'filename' is used for Terra
+-- We don't modify filenames in any way!
 modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
@@ -5048,7 +5050,9 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   if filenameVerilog==nil then filenameVerilog=filename end
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=J.sel(passthrough,ty,types.null()), stateful=true, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
+
   if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
+
   res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
   function res.makeSystolic()

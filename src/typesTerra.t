@@ -114,10 +114,16 @@ function TypeFunctions:terraPrint(terraValue)
     end
     table.insert(Q,quote cstdio.printf("]") end)
     return Q
+  elseif self:isTuple() then
+    return quote cstdio.printf("NYI - Terra Rigel Type Print TUPLE\n") end
   elseif self:isInt() then
     return quote cstdio.printf("%d",@terraValue) end
-  elseif self:isUint() then
-    return quote cstdio.printf("%d",@terraValue) end
+  elseif self:isUint() or self:isBits() then
+    if self:verilogBits()==64 then
+      return quote cstdio.printf("%lu/0x%xu",@terraValue,@terraValue) end
+    else
+      return quote cstdio.printf("%u",@terraValue) end
+    end
   else
     print("NYI - terra Print "..tostring(self))
     assert(false)

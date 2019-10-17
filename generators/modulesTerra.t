@@ -942,36 +942,45 @@ end
 function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
   assert( types.isType(A) and A:isData() )
   assert( ymin<=0 )
-  assert( T>0 )
+  
   assert(X==nil)
   
   local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
 
   if framed then
-  print("LBOUT", res.outputType, res.outputType:lower(), res.outputType:lower():toTerraType() )
-  
-    terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    -- pretend that this happens in one cycle (delays are added later)
-    for i=0,[T] do
-      self.SR:pushBack( &(@inp)[i] )
-    end
+    if T==0 then
+      terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+        self.SR:pushBack( inp )
 
-    for y=[ymin],1 do
-      for x=[-T+1],1 do
-        --var outIdx = (y-ymin)*T+(x+T-1)
-        var peekIdx = x+y*[w]
-        --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
---        var
+        for y=[ymin],1 do
+            var peekIdx = y*[w]
+            var yidx = y-ymin
 
-        var yidx = y-ymin
-        var vidx = x+T-1
---        cstdio.printf("LB %d %d\n",yidx,vidx)
-        (@out)[vidx][yidx] = @(self.SR:peekBack(peekIdx))
+            (@out)[yidx] = @(self.SR:peekBack(peekIdx))
+        end
+      end
+    else
+      terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+        -- pretend that this happens in one cycle (delays are added later)
+        for i=0,[T] do
+          self.SR:pushBack( &(@inp)[i] )
+        end
+
+        for y=[ymin],1 do
+          for x=[-T+1],1 do
+            var peekIdx = x+y*[w]
+
+            var yidx = y-ymin
+            var vidx = x+T-1
+
+            (@out)[vidx][yidx] = @(self.SR:peekBack(peekIdx))
+          end
+        end
       end
     end
-    end
   else
+    assert( T>0 )
     terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
     for i=0,[T] do
@@ -1070,11 +1079,12 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   assert(X==nil)
   assert(xmin<=0)
   assert(ymin<=0)
-  assert(T>0)
+
   assert(types.isType(A))
   assert(A:isData())
-  
-  local SSR = struct{SR:(A:toTerraType())[-xmin+T][-ymin+1]}
+
+  local Tf = math.max(T,1)
+  local SSR = struct{SR:(A:toTerraType())[-xmin+Tf][-ymin+1]}
 
   if framed then
     terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -1086,17 +1096,19 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
       end
 
       for y=0,-ymin+1 do
-        for x=-xmin,-xmin+T do
-          self.SR[y][x] = (@inp)[x+xmin][y]
+        for x=-xmin,-xmin+Tf do
+          self.SR[y][x] = [(function() if T==0 then return `(@inp)[y] else return `(@inp)[x+xmin][y] end end)()]
         end
       end
 
       -- write to output
-      for v=0,T do
+      for v=0,Tf do
         for y=0,-ymin+1 do
           for x=0,-xmin+1 do
             var idx = y*(-xmin+1)+x
-            (@out)[v][idx] = self.SR[y][x+v]
+            --var dest = [(function() if T==0 then return `(@out)[v][idx] else return `(@out)[v][idx] end end)()]
+            --@dest = self.SR[y][x+v]
+            [(function() if T==0 then return `(@out)[idx] else return `(@out)[v][idx] end end)()] = self.SR[y][x+v]
           end
         end
       end
@@ -1104,11 +1116,11 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   else
     terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
-      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+T] end end
-      for y=0,-ymin+1 do for x=-xmin,-xmin+T do self.SR[y][x] = (@inp)[y*T+(x+xmin)] end end
+      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+Tf] end end
+      for y=0,-ymin+1 do for x=-xmin,-xmin+Tf do self.SR[y][x] = (@inp)[y*Tf+(x+xmin)] end end
 
       -- write to output
-      for y=0,-ymin+1 do for x=0,-xmin+T do (@out)[y*(-xmin+T)+x] = self.SR[y][x] end end
+      for y=0,-ymin+1 do for x=0,-xmin+Tf do (@out)[y*(-xmin+Tf)+x] = self.SR[y][x] end end
     end
   end
 
@@ -1718,7 +1730,7 @@ function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes,tokensX,tokensY,X)
 
   if tokensX==nil then tokensX=0 end
   if tokensY==nil then tokensY=0 end
-    
+
   local struct FwriteSeq { file : &cstdio.FILE, buf:&ty:toTerraType(), tokensSeen:int }
   terra FwriteSeq:init()
     self.file = cstdio.fopen(filename, "wb")

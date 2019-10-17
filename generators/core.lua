@@ -804,10 +804,10 @@ end,
 P.SumType("opt",{types.rV(types.Seq(types.Par(P.DataType("T")),P.SizeValue("totalSize")))}),
 P.SumType("opt",{types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("totalSize"))))}))
 
-generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{},
+generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq(args.string,args.T,args.string..".verilatorSOC.raw",true)
+  return RM.fwriteSeq(args.string,args.T,args.filenameVerilog,true)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
