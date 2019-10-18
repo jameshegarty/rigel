@@ -844,12 +844,16 @@ end
 
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
-
+  assert(T>=0)
+  
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:init() end
   terra PadSeq:free() end
   terra PadSeq:stats(name:&int8) end -- not particularly interesting
+
+  local Tf = math.max(T,1)
+  
   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
@@ -858,11 +862,14 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
     if interior then
       data(out) = @inp
     else
-      data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)])
---      cstdio.printf("INBORDER\n")
+      [(function() if T==0 then
+        return quote data(out) = [A:valueToTerra(Value)] end
+      else
+        return quote data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)]) end
+      end end)()]
     end
     
-    self.posX = self.posX+T;
+    self.posX = self.posX+Tf;
     if self.posX==[Uniform(W+L+R):toTerra()] then
       self.posX=0;
       self.posY = self.posY+1;
@@ -1091,7 +1098,7 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       for y=0,-ymin+1 do
         for x=0,-xmin do
-          self.SR[y][x] = self.SR[y][x+T]
+          self.SR[y][x] = self.SR[y][x+Tf]
         end
       end
 
@@ -1108,7 +1115,11 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
             var idx = y*(-xmin+1)+x
             --var dest = [(function() if T==0 then return `(@out)[v][idx] else return `(@out)[v][idx] end end)()]
             --@dest = self.SR[y][x+v]
-            [(function() if T==0 then return `(@out)[idx] else return `(@out)[v][idx] end end)()] = self.SR[y][x+v]
+            [(function() if T==0 then
+               return quote (@out)[idx] = self.SR[y][x+v] end
+              else
+                return quote (@out)[v][idx] = self.SR[y][x+v] end
+              end end)()]
           end
         end
       end

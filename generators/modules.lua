@@ -678,7 +678,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   if handshakeTrigger==nil then handshakeTrigger=true end
   
   local res = {kind="liftDecimate", fn = f}
-  err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn input type should be rv, but is: "..tostring(f.inputType) )
+  err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn '"..f.name.."' input type should be rv, but is: "..tostring(f.inputType) )
   err( f.outputType:isrvV(), "liftDecimate: fn '"..f.name.."' output type should be rvV, but is: "..tostring(f.outputType) )
 
   res.name = "LiftDecimate_"..f.name
@@ -2516,27 +2516,41 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   local R = Uniform(R_orig)
   
   A:checkLuaValue(Value)
-  err(T>=1, "padSeq, T<1")
 
-  err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
-  err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
-  err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
-  err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
+  if T~=0 then
+    err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
+    err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
+    err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
+    err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
+  end
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-  res.inputType = types.array2d(A,T)
-  res.outputType = types.array2d(A,T)
 
+  if T==0 then
+    res.inputType = A
+    res.outputType = A
+  else
+    res.inputType = types.array2d(A,T)
+    res.outputType = types.array2d(A,T)
+  end
+  
   if framed then
-    res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
-    res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+    if T==0 then
+      res.inputType = types.rv(types.Seq( types.Par(res.inputType), W, H ))
+      res.outputType = types.rRvV(types.Seq( types.Par(res.outputType), W+L+R, H+B+Top ))
+    else
+      res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
+      res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+    end
   else
     res.inputType = types.rv(types.Par(res.inputType))
     res.outputType = types.rRvV(types.Par(res.outputType))
   end
   
+  local Tf = math.max(T,1)
+  
   res.stateful = true
-  res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
+  res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
   res.delay=0
   res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
@@ -2545,12 +2559,18 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):setReset(0):instantiate("posX_padSeq") ) 
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-Tf, Tf ) ):CE(true):setInit(0):setReset(0):instantiate("posX_padSeq") ) 
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):setReset(0):instantiate("posY_padSeq") ) 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
     
-    local pinp = S.parameter("process_input", res.inputType.over.over )
+    local pinp
+    if T==0 then
+      pinp = S.parameter("process_input", res.inputType.over.over.over )
+    else
+      pinp = S.parameter("process_input", res.inputType.over.over )
+    end
+    
     local pvalid = S.parameter("process_valid", types.bool() )
     
     local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
@@ -2578,11 +2598,17 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
     
     local pipelines={}
 
-    local incY = S.eq( posX:get(), Uniform(W+L+R-T):toSystolic(types.uint(32))  ):disablePipelining()
+    local incY = S.eq( posX:get(), Uniform(W+L+R-Tf):toSystolic(types.uint(32))  ):disablePipelining()
     pipelines[1] = posY:setBy( incY )
     pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 
-    local ValueBroadcast = S.cast( S.tuple( J.broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+    local ValueBroadcast
+    if T==0 then
+      ValueBroadcast = S.constant(Value,A)
+    else
+      ValueBroadcast = S.cast( S.tuple( J.broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+    end
+    
     local ConstTrue = S.constant(true,types.bool())
 
     local out = S.select( readybit, pinp, ValueBroadcast )

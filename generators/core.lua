@@ -477,12 +477,20 @@ P.SumType("opt",{
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
-  J.err(a.V[2]==1,"Pad NYI - Vh >1")
-  --local A = args.type:arrayOver()
-  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  if a.opt==0 then
+    assert(a.V[2]==1)
+    return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  else
+    return RM.padSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  end
 end,
-types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
-types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut")) ))
+P.SumType("opt",
+          {types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
+           T.rV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
+P.SumType("opt",{
+            types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
+            T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))})
+)
 
 
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},

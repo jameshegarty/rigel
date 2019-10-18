@@ -277,6 +277,8 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
         return nil
       else
         --print("Found lift",liftName,res)
+        --print("Because ",lift[3],":isSupertypeOf",Ttarget)
+        --print("And ",lift[1],":isSupertypeOf",Tparam)
         --for k,v in pairs(vars2) do print("VARS2",k,v) end
         --for k,v in pairs(vars1) do print("VARS1",k,v) end
         local liftFn = lift[5](vars1)
