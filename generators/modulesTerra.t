@@ -750,7 +750,7 @@ end
 
 function MT.posSeq(res,W_orig,H,T,asArray)
   local W = Uniform(W_orig)
-  local struct PosSeq { x:uint16, y:uint16 }
+  local struct PosSeq { x:uint, y:uint }
   terra PosSeq:reset() self.x=0; self.y=0 end
 
   if T==0 then
@@ -844,12 +844,16 @@ end
 
 
 function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
-
+  assert(T>=0)
+  
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
   terra PadSeq:init() end
   terra PadSeq:free() end
   terra PadSeq:stats(name:&int8) end -- not particularly interesting
+
+  local Tf = math.max(T,1)
+  
   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
 
@@ -858,11 +862,14 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
     if interior then
       data(out) = @inp
     else
-      data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)])
---      cstdio.printf("INBORDER\n")
+      [(function() if T==0 then
+        return quote data(out) = [A:valueToTerra(Value)] end
+      else
+        return quote data(out) = arrayof([A:toTerraType()],[J.broadcast(A:valueToTerra(Value),T)]) end
+      end end)()]
     end
     
-    self.posX = self.posX+T;
+    self.posX = self.posX+Tf;
     if self.posX==[Uniform(W+L+R):toTerra()] then
       self.posX=0;
       self.posY = self.posY+1;
@@ -942,36 +949,45 @@ end
 function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
   assert( types.isType(A) and A:isData() )
   assert( ymin<=0 )
-  assert( T>0 )
+  
   assert(X==nil)
   
   local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
 
   if framed then
-  print("LBOUT", res.outputType, res.outputType:lower(), res.outputType:lower():toTerraType() )
-  
-    terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    -- pretend that this happens in one cycle (delays are added later)
-    for i=0,[T] do
-      self.SR:pushBack( &(@inp)[i] )
-    end
+    if T==0 then
+      terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+        self.SR:pushBack( inp )
 
-    for y=[ymin],1 do
-      for x=[-T+1],1 do
-        --var outIdx = (y-ymin)*T+(x+T-1)
-        var peekIdx = x+y*[w]
-        --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
---        var
+        for y=[ymin],1 do
+            var peekIdx = y*[w]
+            var yidx = y-ymin
 
-        var yidx = y-ymin
-        var vidx = x+T-1
---        cstdio.printf("LB %d %d\n",yidx,vidx)
-        (@out)[vidx][yidx] = @(self.SR:peekBack(peekIdx))
+            (@out)[yidx] = @(self.SR:peekBack(peekIdx))
+        end
+      end
+    else
+      terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+        -- pretend that this happens in one cycle (delays are added later)
+        for i=0,[T] do
+          self.SR:pushBack( &(@inp)[i] )
+        end
+
+        for y=[ymin],1 do
+          for x=[-T+1],1 do
+            var peekIdx = x+y*[w]
+
+            var yidx = y-ymin
+            var vidx = x+T-1
+
+            (@out)[vidx][yidx] = @(self.SR:peekBack(peekIdx))
+          end
+        end
       end
     end
-    end
   else
+    assert( T>0 )
     terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
     for i=0,[T] do
@@ -1070,33 +1086,40 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   assert(X==nil)
   assert(xmin<=0)
   assert(ymin<=0)
-  assert(T>0)
+
   assert(types.isType(A))
   assert(A:isData())
-  
-  local SSR = struct{SR:(A:toTerraType())[-xmin+T][-ymin+1]}
+
+  local Tf = math.max(T,1)
+  local SSR = struct{SR:(A:toTerraType())[-xmin+Tf][-ymin+1]}
 
   if framed then
     terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       for y=0,-ymin+1 do
         for x=0,-xmin do
-          self.SR[y][x] = self.SR[y][x+T]
+          self.SR[y][x] = self.SR[y][x+Tf]
         end
       end
 
       for y=0,-ymin+1 do
-        for x=-xmin,-xmin+T do
-          self.SR[y][x] = (@inp)[x+xmin][y]
+        for x=-xmin,-xmin+Tf do
+          self.SR[y][x] = [(function() if T==0 then return `(@inp)[y] else return `(@inp)[x+xmin][y] end end)()]
         end
       end
 
       -- write to output
-      for v=0,T do
+      for v=0,Tf do
         for y=0,-ymin+1 do
           for x=0,-xmin+1 do
             var idx = y*(-xmin+1)+x
-            (@out)[v][idx] = self.SR[y][x+v]
+            --var dest = [(function() if T==0 then return `(@out)[v][idx] else return `(@out)[v][idx] end end)()]
+            --@dest = self.SR[y][x+v]
+            [(function() if T==0 then
+               return quote (@out)[idx] = self.SR[y][x+v] end
+              else
+                return quote (@out)[v][idx] = self.SR[y][x+v] end
+              end end)()]
           end
         end
       end
@@ -1104,11 +1127,11 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   else
     terra SSR:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
-      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+T] end end
-      for y=0,-ymin+1 do for x=-xmin,-xmin+T do self.SR[y][x] = (@inp)[y*T+(x+xmin)] end end
+      for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+Tf] end end
+      for y=0,-ymin+1 do for x=-xmin,-xmin+Tf do self.SR[y][x] = (@inp)[y*Tf+(x+xmin)] end end
 
       -- write to output
-      for y=0,-ymin+1 do for x=0,-xmin+T do (@out)[y*(-xmin+T)+x] = self.SR[y][x] end end
+      for y=0,-ymin+1 do for x=0,-xmin+Tf do (@out)[y*(-xmin+Tf)+x] = self.SR[y][x] end end
     end
   end
 
@@ -1710,26 +1733,51 @@ function MT.freadSeq(filename,ty)
 end
 
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
-function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes)
+-- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
+function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes,tokensX,tokensY,X)
   local terraSize = terralib.sizeof(ty:toTerraType())*8
+  assert(X==nil)
   J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
-  
-  local struct FwriteSeq { file : &cstdio.FILE }
+
+  if tokensX==nil then tokensX=0 end
+  if tokensY==nil then tokensY=0 end
+
+  local struct FwriteSeq { file : &cstdio.FILE, buf:&ty:toTerraType(), tokensSeen:int }
   terra FwriteSeq:init()
     self.file = cstdio.fopen(filename, "wb")
     if self.file==nil then cstdio.perror(["Error opening "..filename.." for writing"]) end
     [J.darkroomAssert]( self.file~=nil, ["Error opening "..filename.." for writing"] )
+    if tokensX*tokensY>0 then
+      self.buf = [&ty:toTerraType()](cstdlib.malloc(tokensX*tokensY*[ty:sizeof()]))
+    end
+    self.tokensSeen=0
   end
 
   terra FwriteSeq:free()
     cstdio.fclose(self.file)
+    if tokensX*tokensY>0 then cstdlib.free(self.buf) end
   end
 
-  terra FwriteSeq:reset() 
+  terra FwriteSeq:reset()
+    self.tokensSeen=0
   end
 
   if passthrough then
     terra FwriteSeq:process(inp : &ty:toTerraType(), out : &ty:toTerraType())
+      if self.tokensSeen>=tokensX*tokensY and self.tokensSeen<tokensX*tokensY*2 then
+        if cstring.memcmp(&self.buf[self.tokensSeen-tokensX*tokensY],inp,[ty:sizeof()])~=0 then
+          cstdio.printf("REGRESSION file '%s' token:%d of transaction:%d old value:\n",filename,self.tokensSeen,tokensX*tokensY)
+          [ty:terraPrint(`&self.buf[self.tokensSeen-tokensX*tokensY])]
+          cstdio.printf("\nNew Value:\n")
+          [ty:terraPrint(`inp)]
+          cstdio.printf("\n")
+          cstdlib.exit(1)
+        end
+      elseif self.tokensSeen<tokensX*tokensY then
+        self.buf[self.tokensSeen] = @inp
+      end
+      self.tokensSeen = self.tokensSeen+1
+
       cstdio.fwrite(inp,[ty:sizeof()],1,self.file)
       cstring.memcpy(out,inp,[ty:sizeof()])
     end
@@ -1760,7 +1808,8 @@ function MT.cropSeqFn(innerInputType,outputType,A, W_orig, H, T, L, R, B, Top )
     var x,y = (inp._0)[0]._0, (inp._0)[0]._1
     data(out) = inp._1
     valid(out) = (x>=L and y>=B and x<[(W-R):toTerra()] and y<H-Top)
-    if DARKROOM_VERBOSE then cstdio.printf("CROP x %d y %d VO %d\n",x,y,valid(out)) end
+
+    if DARKROOM_VERBOSE then cstdio.printf("CROP W %d H %d x %d y %d T %d VO %d\n",[W:toTerra()],H,x,y,T,valid(out)) end
   end
 end
 
@@ -1881,6 +1930,10 @@ function MT.lambdaCompile(fn)
 
   for inst,_ in pairs(fn.instanceMap) do 
     table.insert( initStats, quote [inst:terraReference()] = &mself.[inst.name] end )
+    table.insert( initStats, quote mself.[inst.name]:init() end )
+    table.insert( resetStats, quote mself.[inst.name]:reset() end )
+    table.insert( freeStats, quote mself.[inst.name]:free() end )
+    table.insert( statStats, quote mself.[inst.name]:stats([inst.name]) end )
   end
 
   local readyOutput
@@ -1899,7 +1952,7 @@ function MT.lambdaCompile(fn)
           local list = {}
           for dsNode, _ in n:parents(fn.output) do
             if dsNode.kind=="selectStream" then
-              err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! "..n.loc)
+              err(list[dsNode.i+1]==nil,"Error, 2 selectStream reads of same signal! ",n.loc)
 
               if n.type:isTuple() then
                 list[dsNode.i+1] = `[args[dsNode]].["_"..dsNode.i]
@@ -1910,11 +1963,11 @@ function MT.lambdaCompile(fn)
                 assert(false)
               end
             else
-              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a "..dsNode.kind..") "..n.loc )
+              err( false, "Error, a multi-stream node is being consumed by something other than a selectStream? (a ",dsNode.kind,") ",n.loc )
             end
           end
 
-          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has "..#list.." consumers but expected "..tostring(n:outputStreams())..". "..n.loc)
+          err( n:outputStreams()==#list and #list==J.keycount(list),"a multi-stream node has an incorrect number of consumers. Has ",#list," consumers but expected ",n:outputStreams(),". ",n.loc)
 
           if n.kind=="input" then
             if n.type:isTuple() then
@@ -2055,10 +2108,7 @@ return {`mself.[n.name].ready}
           end
 
           if n.inputs[1]~=nil and n.inputs[1].type~=types.Interface() then
---            print(n.inputs[1],ty,n.inputs[1].type,res[1])
---            print(ty)
---            print(n.inputs[1].type,types.extractReady(n.inputs[1].type),types.extractReady(n.inputs[1].type):toTerraType())
-            err(ty == types.extractReady(n.inputs[1].type):toTerraType(),"Expected terra ready type '"..tostring(types.extractReady(n.inputs[1].type):toTerraType()).."' because input type was '"..tostring(n.inputs[1].type).."' but was '"..tostring(ty).."' "..tostring(res[1]).." "..tostring(n))
+            err(ty == types.extractReady(n.inputs[1].type):toTerraType(),"Expected terra ready type '",types.extractReady(n.inputs[1].type):toTerraType(),"' because input type was '",n.inputs[1].type,"' but was '",ty,"' ",res[1]," ",n)
           end
         end
 
@@ -2125,11 +2175,6 @@ return {`mself.[n.name].ready}
           inst = n.inst:terraReference()
         else
           inst = `mself.[n.inst.name]
-          -- only call these inside the module that actually owns it
-          table.insert( statStats, quote inst:stats([n.name]) end )
-          table.insert( resetStats, quote inst:reset() end )
-          table.insert( initStats, quote inst:init() end )
-          table.insert( freeStats, quote inst:free() end )
         end
 
         local instfn = n.inst.module.functions[n.fnname]
@@ -2233,6 +2278,58 @@ return {`mself.[n.name].ready}
   terra Module.methods.stats( [mself], name:&int8 ) [statStats] end
 
   return Module
+end
+
+function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
+  local chunks = math.max(ty:verilogBits()/read1bits,1)
+  assert(math.floor(chunks)==chunks)
+
+  assert(read1bits%8==0)
+  local read1bytes = read1bits/8
+  
+  local chunkType = types.bits(read1bits):toTerraType()
+
+  local struct Reg {r:chunkType[chunks],pout:int}
+  terra Reg:read(addr:&uint32,out:&chunkType)
+    var chunkAddr = @addr/read1bytes
+    @out = self.r[chunkAddr]
+  end
+
+  terra Reg:reset()
+    self.pout=10
+  end
+
+  -- address is in bytes
+  terra Reg:write(inp:&tuple(uint32,chunkType))
+    var chunkAddr = inp._0/read1bytes
+--    cstdio.printf("Write Reg byte_addr %u chunk_addr %u value %u\n",inp._0,chunkAddr,inp._1)
+    if chunkAddr>=chunks then
+      cstdio.printf("Write to reg out of range! byte_addr %u value %u\n",inp._0,inp._1)
+    else              
+      self.r[chunkAddr]=inp._1
+    end
+  end
+
+  if extraPortIsWrite==true then
+    terra Reg:write1(inp:&ty:toTerraType())
+      cstring.memcpy( &self.r, inp, [ty:sizeof()])    
+    end
+  else
+    terra Reg:read1(out:&ty:toTerraType())
+      cstring.memcpy( out, &self.r, [ty:sizeof()])
+      if self.pout>0 then
+--        cstdio.printf("Reg:read1 %u pout %u init %u\n",@out,self.pout,initial)
+
+--for c=0,chunks do
+--    cstdio.printf("Chunk Value %u\n",self.r[c])
+--end
+
+        self.pout = self.pout-1
+        end
+    end
+  end
+
+  return Reg
 end
 
 return MT

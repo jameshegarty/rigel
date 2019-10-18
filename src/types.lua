@@ -75,14 +75,6 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     else
       res = pre.."("..tostring(ty.over)..")"
     end
---[=[  elseif ty.kind=="InterfaceTuple" then
-    if P.isParam(ty.list) or types.isType(ty.list) then
-      res = "<"..tostring(ty.list)..">"
-    else
-      res = "<"..table.concat(J.map(ty.list, function(n) return tostring(n) end), ",")..">"
-    end
-  elseif ty.kind=="InterfaceArray" then
-  res = "("..tostring(ty.over)..")<"..tostring(ty.size)..">"]=]
   elseif ty.kind=="named" then
     res = "NAMED"..ty.name
   else
@@ -502,7 +494,7 @@ function types.checkExplicitCast(from, to, ast)
 
     if allbits then
       -- we let you cast a tuple of bits {bits(a),bits(b),...} to whatever
-      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:"..tostring(from).." to "..tostring(to))
+      err(from:verilogBits() == to:verilogBits(), "tuple of bits size fail from:",from," to ",to)
       return true
     elseif #from.list==1 and from.list[1]==to then
       -- casting {A} to A
@@ -733,13 +725,15 @@ function TypeFunctions:replaceVar(k,v)
     res = types.VarSeq(cpy.over,cpy.size)
   elseif self:is("array") then
     res = types.array2d(cpy.over,cpy.size)
+  elseif self:isNamed() then
+    res = types.named(cpy.name,cpy.structure,cpy.generator,cpy.params)
   else
     print(":replaceVar() NYI",self.kind)
     assert(false)
   end
 
   err(J.keycount(res)==J.keycount(self),"internal error: replaceVar on "..tostring(self))
-  for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on "..tostring(self).." key "..tostring(kk).." is "..tostring(res[kk]).." but should be:"..tostring(vv)) end
+  for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on ",self," key ",kk," is ",res[kk]," but should be:",vv) end
 
   return res
 end
@@ -747,7 +741,7 @@ end
 function TypeFunctions:isArray()  return self.kind=="array" end
 
 function TypeFunctions:arrayOver()
-  err(self.kind=="array","arrayOver type was not an array, but is: "..tostring(self))
+  err(self.kind=="array","arrayOver type was not an array, but is: ",self)
   return self.over
 end
 

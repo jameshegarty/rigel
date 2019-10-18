@@ -9,6 +9,7 @@ require "generators.core".export()
 local types = require "types"
 types.export()
 local Zynq = require "generators.zynq"
+local J = require "common"
 
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
@@ -35,13 +36,16 @@ function(inp)
   return RemoveMSBs{24}(Rshift{8}(res))
 end}
 
+local V = string.find(arg[0],"%d+")
+if V==nil then V=1 else V=0 end
+
 harness({
   regs.start,
-  AXIReadBurst{"1080p.raw",{1920,1080},u8,1,noc.read},
+  AXIReadBurst{"1080p.raw",{1920,1080},u8,V,noc.read},
   Pad{{8,8,2,1}},
 --  RS.HS(C.print(ar(u(8),1))),
   Stencil{{-3,0,-3,0}},
   conv,
   Crop{{9,7,3,0}},
-  AXIWriteBurst{"out/soc_convgen",noc.write},
+  AXIWriteBurst{"out/soc_convgen"..J.sel(V==0,"_0",""),noc.write},
   regs.done},nil,{regs})

@@ -243,7 +243,9 @@ function systolic.lambdaTab( tab )
 end
 
 function systolic.lambda( name, inputParameter, output, outputName, pipelines, validParameter, CEParameter, X )
-  err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST, but is '"..tostring(inputParameter).."'" )
+  if DARKROOM_VERBOSE then J.verbose("systolic.lambda ",name) end
+  
+  err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST, but is '",inputParameter,"'" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(validParameter) or validParameter==nil, "valid parameter must be a systolic AST or nil" )
   if validParameter~=nil then err(validParameter.kind=="parameter","valid parameter must be parameter") end
@@ -268,6 +270,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   if type(outputName)=="string" then outputName = sanitize(outputName) end
   local t = { name=name, inputParameter=inputParameter, output = output, outputName=outputName, pipelines=pipelines, valid=validParameter, implicitValid=implicitValid, CE=CEParameter }
 
+  if DARKROOM_VERBOSE then print("systolic.lambda ",name,"DONE") end
   return setmetatable(t,systolicFunctionMT)
 end
 
@@ -417,7 +420,7 @@ __newindex = function(table, key, value)
 end,
 __tostring = function(tab)
   local decls = {}
-
+  
   local fin = tab:visitEach(function(n,args)
     local res
     if n.kind=="call" then
@@ -459,10 +462,12 @@ __tostring = function(tab)
       assert(false)
     end
 
-    return res
+    table.insert(decls,n.name.." = "..res)
+    return n.name
   end)
-  
-  return fin
+
+  table.insert(decls,fin)
+  return table.concat(decls,"\n")
 end
 }
 
@@ -505,7 +510,7 @@ end
 
 -- low,high are inclusive
 function systolic.bitSlice( expr, low, high, X )
-  err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast, but is: "..tostring(expr))
+  err( systolicAST.isSystolicAST(expr), "input to bitSlice must be a systolic ast, but is: ",expr)
   err( type(low)=="number", "bitSlice: low must be number")
   err( type(high)=="number", "bitSlice: high must be number")
   err( high>=low, "bitSlice: high<low, (low="..tostring(low)..",high="..tostring(high)..")" )
@@ -578,9 +583,9 @@ function systolicASTFunctions:checkInstances( name, instMap, externalInstances )
   self:visitEach( 
     function(n)
       if n.kind=="call" then
-        err( instMap[n.inst]~=nil or externalInstances[n.inst]~=nil, "Error, instance '"..n.inst.name.."' is not a member of module '"..name.."', "..n.inst.loc )
+        err( instMap[n.inst]~=nil or externalInstances[n.inst]~=nil, "Error, instance '",n.inst.name,"' is not a member of module '",name,"', ",n.inst.loc )
         if externalInstances[n.inst]~=nil then
-          err(externalInstances[n.inst][n.fnname]~=nil,"Error, external instance '"..n.inst.name.."' is missing fn call '"..n.fnname.."' in module  '"..name.."', "..n.inst.loc )
+          err(externalInstances[n.inst][n.fnname]~=nil,"Error, external instance '",n.inst.name,"' is missing fn call '",n.fnname,"' in module  '"..name.."', ",n.inst.loc )
         end
       end
     end)
@@ -744,7 +749,7 @@ end
 function systolicASTFunctions:internalDelay(moduleName)
   if self.kind=="call" then 
     local res = self.inst.module:getDelay( self.fnname ) 
-    err( res==0 or self.pipelined, "Error, could not disable pipelining on module '"..tostring(moduleName).."' due to call of '"..self.inst.module.name.."', "..self.loc)
+    err( res==0 or self.pipelined, "Error, could not disable pipelining on module '",moduleName,"' due to call of '",self.inst.module.name,"', ",self.loc)
     return res, 0
   elseif self.kind=="binop" or self.kind=="select" or self.kind=="unary" then 
     if self.pipelined==nil or self.pipelined then
@@ -921,13 +926,13 @@ function systolicASTFunctions:checkWiring( module, providesMap )
         end
 
         if fn.CE~=nil then
-          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..inst.name.."' (of module "..inst.module.name..") inside module '"..module.name.."' "..inst.loc)
+          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '",fnname,"' on instance '",inst.name,"' (of module "..inst.module.name..") inside module '",module.name,"' ",inst.loc)
 
           if CEState[inst]==nil then CEState[inst]={} end
           if CEState[inst][fn.CE.name]==nil then
             CEState[inst][fn.CE.name]=n.inputs[3]
           else
-            err( CEState[inst][fn.CE.name] == n.inputs[3], "Mismatched CE. Function '"..fnname.."' on instance '"..inst.name.."' in module '"..module.name.."' "..inst.loc.." ----- "..tostring(n.inputs[3]).." vs "..tostring(CEState[inst][fn.CE.name]))
+            err( CEState[inst][fn.CE.name] == n.inputs[3], "Mismatched CE. Function '",fnname,"' on instance '",inst.name,"' in module '",module.name,"' ",inst.loc," ----- ",n.inputs[3]," vs ",CEState[inst][fn.CE.name])
           end
         end
 
@@ -981,7 +986,7 @@ function systolicASTFunctions:checkWiring( module, providesMap )
       end
       
       if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-        err( state[inst][fnname]~=nil or (providesMap[inst]~=nil and providesMap[inst][fnname]~=nil), "No calls to fn '"..fnname.."' on instance '"..inst.name.."' (of module '"..inst.module.name.."') inside module '"..module.name.."'? input type: "..tostring(fn.inputParameter.type).." output:"..tostring(fn.output))
+        err( state[inst][fnname]~=nil or (providesMap[inst]~=nil and providesMap[inst][fnname]~=nil), "No calls to fn '",fnname,"' on instance '",inst.name,"' (of module '",inst.module.name,"') inside module '",module.name,"'? input type: ",fn.inputParameter.type," output:",fn.output)
       end
     end
   end
@@ -1556,7 +1561,7 @@ function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
   if fn.CE==nil and cevar~=nil then
     err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc)
   elseif fn.CE~=nil then
-    err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") "..instance.loc)
+    err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") ",instance.loc)
     local wirename = instance.name.."_"..fn.CE.name
     table.insert(decl,"  assign "..wirename.." = "..cevar..";")
   end
@@ -1622,6 +1627,7 @@ end
 
 function userModuleFunctions:toVerilog()
   if self.verilog==nil then
+    if DARKROOM_VERBOSE then print("Module",self.name,":toVerilog()") end
     local t = {}
 
     local CEseen = {}
@@ -1694,6 +1700,7 @@ function userModuleFunctions:toVerilog()
     table.insert(t,"endmodule\n\n")
 
     self.verilog = table.concat(t,"")
+    if DARKROOM_VERBOSE then print("Module",self.name,":toVerilog() done") end
   end
 
   return self.verilog
@@ -1741,7 +1748,7 @@ end
 function systolic.module.new( name, fns, instances, onlyWire, parameters, verilog, verilogDelay, externalInstances, providesMap, X )
   err( type(name)=="string", "systolic.module.new: name must be string" )
   --name = sanitize(name)
-  err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")" )
+  err( name == sanitize(name), "systolic.module.new: name must be verilog sanitized (",name,") to (",sanitize(name),")" )
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
 
@@ -1794,9 +1801,9 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   -- We let users choose whatever parameter names they want. Check for duplicate variable names in functions.
   local _usedPname = {}
   for k,v in pairs(fns) do
-    if v.output~=nil and v.output.type~=types.null() then err( _usedPname[v.outputName]==nil, "output name "..v.outputName.." used somewhere else in module" ) end
+    if v.output~=nil and v.output.type~=types.null() then err( _usedPname[v.outputName]==nil, "output name ",v.outputName," used somewhere else in module" ) end
     if v.output~=nil and v.output.type~=types.null() then _usedPname[v.outputName]="output" end
-    err( _usedPname[v.inputParameter.name]==nil, "input name "..v.inputParameter.name.." on function '"..v.name.."' used somewhere else in module '"..name.."'? as: "..tostring(_usedPname[v.inputParameter.name]) )
+    err( _usedPname[v.inputParameter.name]==nil, "input name ",v.inputParameter.name," on function '",v.name,"' used somewhere else in module '",name,"'? as: ",tostring(_usedPname[v.inputParameter.name]) )
     _usedPname[v.inputParameter.name]="input to function '"..v.name.."'"
     if _usedPname[v.valid.name]~=nil then
       err( _usedPname[v.valid.name]==nil, "valid bit name '"..v.valid.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.valid.name] )
@@ -1811,7 +1818,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
         v.output:visitEach(
           function(n,args) 
             if n.kind=="parameter" then 
-              err( n.key==v.inputParameter.key or (v.valid~=nil and n.key==v.valid.key) or (v.CE~=nil and n.key==v.CE.key),"Systolic function '"..name.."' has dangling input parameter '"..n.name.."' (should be '"..v.inputParameter.name.."', or the CE or valid bit), "..n.loc) 
+              err( n.key==v.inputParameter.key or (v.valid~=nil and n.key==v.valid.key) or (v.CE~=nil and n.key==v.CE.key),"Systolic function '",name,"' has dangling input parameter '",n.name,"' (should be '",v.inputParameter.name,"', or the CE or valid bit), ",n.loc) 
             end end)
       end
     end
@@ -1820,7 +1827,7 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   -- different functions can have the same stall domains. We consider them identical if they have the same name
   for k,v in pairs(fns) do
     if v.CE~=nil then 
-      if _usedPname[v.CE.name]~=nil then err( false, "CE name '"..v.CE.name.."' for function '"..k.."' used somewhere else in module. Used as ".._usedPname[v.CE.name] ) end
+      if _usedPname[v.CE.name]~=nil then err( false, "CE name '",v.CE.name,"' for function '",k,"' used somewhere else in module. Used as ",_usedPname[v.CE.name] ) end
     end
   end
 
@@ -1839,8 +1846,10 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
     t.ast, pipelineRegisters, t.fndelays = t.ast:pipeline(stallDomains,name)
   end
 
+  if DARKROOM_VERBOSE then J.verbose("CSE START ",name) end
   t.ast = t.ast:CSE() -- call CSE before mergeCallsites to merge identical callsites
-
+  if DARKROOM_VERBOSE then J.verbose("CSE DONE ",name) end
+  
   local delayRegisters
   t.ast, delayRegisters = t.ast:removeDelays(t)
 
@@ -1927,7 +1936,7 @@ function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, valid
   elseif fnname=="get" then
     return instance.name, nil, true
   elseif fnname=="reset" then
-    err( type(validVar)=="string", "reg:reset() was not given a valid var, but expects one "..instance.loc)
+    err( type(validVar)=="string", "reg:reset() was not given a valid var, but expects one ",instance.loc)
     err( CEVar==nil, "reg:reset() was given a CE, but does not expect one")
 
     --instance.verilogCompilerState[module].resetValid = validVar

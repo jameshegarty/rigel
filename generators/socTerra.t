@@ -31,39 +31,50 @@ end
 
 function SOCMT.axiRegs( mod, tab, X )
   assert(X==nil)
-  local struct AxiRegsN { startReg:bool, done_ready:bool, start_ready:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:tuple(bool,bool), write_readyDownstream:bool }
-
-  for k,v in pairs(tab) do
-    local ty = v[1]
-
-    table.insert( AxiRegsN.entries,{field=k.."_value",type=ty:toTerraType()})
-
-    if v[3]=="input" then
-      table.insert( AxiRegsN.entries,{field=k.."_ready",type=bool})
-    end
-  end
-
+  local struct AxiRegsN { startReg:bool, done_ready:bool, start_readyDownstream:bool, doneReg:bool, reading:bool, read_readyDownstream:bool, read_ready:bool, write_ready:tuple(bool,bool), write_readyDownstream:bool }
   local SELF = symbol(&AxiRegsN)
-  
-  for k,v in pairs(tab) do
-    local ty = v[1]
 
-    if v[3]=="input" then
-      AxiRegsN.methods[k] = terra([SELF],inp:&types.lower(types.Handshake(ty)):toTerraType())
-        if valid(@inp) then SELF.[k.."_value"] = data(@inp) end
+  local resetStats = {}
+
+  -- instantiate storage for regs
+  for _,v in ipairs(tab) do
+    local regname, regmod = v[1], v[2]
+    
+    table.insert( AxiRegsN.entries,{field=regname.."_value",type=regmod.terraModule})
+
+    if regmod.functions.write1~=nil then
+      table.insert( AxiRegsN.entries,{field=regname.."_ready",type=bool})
+    end
+
+  end
+
+  -- generate functions for regs
+  for _,v in ipairs(tab) do
+    local regname, regmod = v[1], v[2]
+    local ty = regmod.type
+
+    table.insert(resetStats, quote SELF.[regname.."_value"]:reset() end)
+
+    if regmod.functions.write1~=nil then
+      AxiRegsN.methods[regname] = terra([SELF],inp:&types.lower(types.Handshake(ty)):toTerraType())
+        if valid(@inp) then
+           SELF.[regname.."_value"]:write1(&data(@inp))
+        end
       end
-      AxiRegsN.methods[k.."_calculateReady"] = terra([SELF]) SELF.[k.."_ready"] = true; end
+      AxiRegsN.methods[regname.."_calculateReady"] = terra([SELF]) SELF.[regname.."_ready"] = true; end
     else
-      AxiRegsN.methods[k] = terra([SELF],out:&ty:toTerraType())
-        @out=SELF.[k.."_value"]
+      AxiRegsN.methods[regname] = terra([SELF],out:&ty:toTerraType())
+        SELF.[regname.."_value"]:read1(out)
+--        cstdio.printf("READ REG %s, value: %d\n",regname,@out)
       end
     end
   end
   
-  terra AxiRegsN:reset()
-    self.startReg = false
-    self.doneReg = false
-    self.reading = false
+  terra AxiRegsN.methods.reset([SELF])
+    SELF.startReg = false
+    SELF.doneReg = false
+    SELF.reading = false
+    [resetStats]
   end
 
   local regSet = {}
@@ -72,7 +83,7 @@ function SOCMT.axiRegs( mod, tab, X )
   AxiRegsN.methods.start = terra( [SELF], out : &bool )
     @out = SELF.startReg
 
-    if SELF.startReg and SELF.start_ready then
+    if SELF.startReg and SELF.start_readyDownstream then
       cstdio.printf("socTerra.axiRegs: trigger pipeline start\n")
       SELF.startReg = false
     end
@@ -80,28 +91,26 @@ function SOCMT.axiRegs( mod, tab, X )
 
   local writeInp = symbol(&types.lower(AXI.WriteIssue(32)):toTerraType(),"writeInp")
   
-  for k,v in pairs(tab) do
-    local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..k]
-    local ty = v[1]
+  for _,v in ipairs(tab) do
+    local addr = mod.globalMetadata["AddrOfRegister_InstCall_regs_"..v[1]]
+    local ty = v[2].type
 
-    if v[3]=="input" then
-    else
-      for i=0,math.ceil(ty:verilogBits()/32)-1 do
-        table.insert(regSet,
-          quote
-            if @AXIT.AWADDR32(writeInp)==[addr+i*4] then
---              cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(&W), @AXIT.WDATA32(&W), @AXIT.WDATA32(&W) )
-              @([&uint](&SELF.[k.."_value"])+i) = @AXIT.WDATA32(writeInp)
-            end
-          end)
-
-      end
+    if v[2].functions.read1~=nil then
+      table.insert(regSet,
+        quote
+          if @AXIT.AWADDR32(writeInp)>=addr and @AXIT.AWADDR32(writeInp)<[addr+math.ceil(ty:verilogBits()/32)*4] then
+              --cstdio.printf( "ACCEPT REG WRITE ADDR:%x, DATA:%d/0x%x\n", @AXIT.AWADDR32(writeInp), @AXIT.WDATA32(writeInp), @AXIT.WDATA32(writeInp) )
+            var inp = {@AXIT.AWADDR32(writeInp)-[uint](addr),@AXIT.WDATA32(writeInp)}
+            SELF.[v[1].."_value"]:write(&inp)
+            SELF.[v[1].."_value"]:reset()
+          end
+        end)
     end
   end
 
   terra AxiRegsN.methods.write( [SELF], [writeInp], BRESP: &types.lower(AXI.WriteResponse(32)):toTerraType() )
     if @[AXIT.AWVALID(32)](writeInp) then
-      --cstdio.printf("socTerra: WRITE TO REG. Addr:%x Data:%d\n",@AXIT.AWADDR32(&W),@AXIT.WDATA32(&W))
+      --cstdio.printf("socTerra: WRITE request TO REG. Addr:%x\n",@AXIT.AWADDR32(writeInp))
 
       @AXIT.BRESP32(BRESP) = 0
       @AXIT.BVALID32(BRESP) = true
@@ -167,7 +176,7 @@ function SOCMT.axiRegs( mod, tab, X )
   end
 
   terra AxiRegsN:start_calculateReady(readyDownstream:bool)
-    self.start_ready = readyDownstream
+    self.start_readyDownstream = readyDownstream
     [regReady]
   end
 
@@ -195,6 +204,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, baseAddress_orig, rigelReadF
 
   terra ReadBurst:process( trigger:&bool, dataOut:&R.lower(outputType):toTerraType() )
     if @trigger and self.nextByteToRead >= [totalBytes:toTerra()] then
+      cstdio.printf("READBURST:START READING\n")
       self.nextByteToRead = 0
       self.bytesRead = 0
     end

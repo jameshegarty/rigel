@@ -1,4 +1,5 @@
 local J = require "common"
+local cstdio = terralib.includec("stdio.h")
 
 -- if pointer is true, generate a pointer instead of a value
 -- vectorN = width of the vector [optional]
@@ -102,3 +103,29 @@ function TypeFunctions:sizeof()
   return terralib.sizeof(self:toTerraType())
 end
 
+-- return code quote to print terra value of this type
+-- terraValue should be pointer
+function TypeFunctions:terraPrint(terraValue)
+  if self:isArray() then
+    local Q = {quote cstdio.printf("[") end}
+    for i=1,self:channels() do
+      table.insert(Q,self:arrayOver():terraPrint(`&(@terraValue)[i-1]))
+      table.insert(Q,quote cstdio.printf(",") end)
+    end
+    table.insert(Q,quote cstdio.printf("]") end)
+    return Q
+  elseif self:isTuple() then
+    return quote cstdio.printf("NYI - Terra Rigel Type Print TUPLE\n") end
+  elseif self:isInt() then
+    return quote cstdio.printf("%d",@terraValue) end
+  elseif self:isUint() or self:isBits() then
+    if self:verilogBits()==64 then
+      return quote cstdio.printf("%lu/0x%xu",@terraValue,@terraValue) end
+    else
+      return quote cstdio.printf("%u",@terraValue) end
+    end
+  else
+    print("NYI - terra Print "..tostring(self))
+    assert(false)
+  end
+end

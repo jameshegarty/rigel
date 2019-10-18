@@ -7,13 +7,13 @@ local function typecheck_inner( ast, newNodeFn )
   assert(type(newNodeFn)=="function")
   
   if ast.kind=="constant" then
-    err( types.isType(ast.type), "missing type for constant, "..ast.loc)
+    err( types.isType(ast.type), "missing type for constant, ",ast.loc)
     ast.constLow_1 = ast.value; ast.constHigh_1 = ast.value
   elseif ast.kind=="unary" then
     local expr = ast.inputs[1]
     
     if ast.op=="-" then
-      err( expr.type:isUint()==false, "You're negating a uint, this is probably not what you want to do! "..ast.loc)
+      err( expr.type:isUint()==false, "You're negating a uint, this is probably not what you want to do! ",ast.loc)
       
       ast.type = expr.type
     elseif ast.op=="floor" or ast.op=="ceil" then
@@ -30,7 +30,7 @@ local function typecheck_inner( ast, newNodeFn )
       if expr.type:baseType():isBool() or expr.type:baseType():isInt() or expr.type:baseType():isUint() then
         ast.type = expr.type
       else
-        error("not only works on bools and integers, "..ast.loc)
+        error("not only works on bools and integers, ",ast.loc)
       end
     elseif ast.op=="sin" or ast.op=="cos" or ast.op=="exp" or ast.op=="arctan" or ast.op=="ln" or ast.op=="sqrt" then
       if ast.expr.type==darkroom.type.float(32) then
@@ -142,21 +142,21 @@ local function typecheck_inner( ast, newNodeFn )
   elseif ast.kind=="slice" then
     local expr = ast.inputs[1]
 
-    err(expr.type:isArray() or expr.type:isTuple(), "Error, you can not index into an this type! Type is "..tostring(expr.type)..ast.loc)    
+    err( expr.type:isArray() or expr.type:isTuple(), "Error, you can not index into an this type! Type is ",expr.type,ast.loc)    
     err( ast.idxLow<=ast.idxHigh, "idxLow>idxHigh")
     err( ast.idyLow<=ast.idyHigh, "idyLow>idyHigh")
     
     if expr.type:isArray() then
-      err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, "..tostring(ast.idxLow).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
-      err( ast.idxHigh < (expr.type:arrayLength())[1] and ast.idxHigh>=0, "idxHigh is out of bounds, "..tostring(ast.idxHigh).." but should be <"..tostring((expr.type:arrayLength())[1])..", "..ast.loc)
+      err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, "..tostring(ast.idxLow).." but should be <"..tostring((expr.type:arrayLength())[1])..", ",ast.loc)
+      err( ast.idxHigh < (expr.type:arrayLength())[1] and ast.idxHigh>=0, "idxHigh is out of bounds, "..tostring(ast.idxHigh).." but should be <"..tostring((expr.type:arrayLength())[1])..", ",ast.loc)
       err( ast.idyLow==nil or ast.idyLow < (expr.type:arrayLength())[2] and ast.idyLow>=0, "idy is out of bounds, is "..tostring(ast.idyLow).." but should be <"..tostring((expr.type:arrayLength())[2]))
-      err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2])..", "..ast.loc)
+      err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2])..", ",ast.loc)
       ast.type = types.array2d(expr.type:arrayOver(), ast.idxHigh-ast.idxLow+1, ast.idyHigh-ast.idyLow+1 )
     elseif expr.type:isTuple() then
-      err( ast.idxLow < #expr.type.list, "idxLow is out of bounds of tuple. Index is "..ast.idxLow.." but should be < "..#expr.type.list.." "..ast.loc)
-      err( ast.idxHigh < #expr.type.list, "idxHigh is out of bounds of tuple. Index is "..ast.idxHigh.." but should be < "..#expr.type.list.." "..ast.loc)
-      err( ast.idyLow==nil or ast.idyLow==0, "idyLow should be nil "..ast.loc)
-      err( ast.idyHigh==nil or ast.idyHigh==0, "idyHigh should be nil "..ast.loc)
+      err( ast.idxLow < #expr.type.list, "idxLow is out of bounds of tuple. Index is "..ast.idxLow.." but should be < "..#expr.type.list.." ",ast.loc)
+      err( ast.idxHigh < #expr.type.list, "idxHigh is out of bounds of tuple. Index is "..ast.idxHigh.." but should be < "..#expr.type.list.." ",ast.loc)
+      err( ast.idyLow==nil or ast.idyLow==0, "idyLow should be nil ",ast.loc)
+      err( ast.idyHigh==nil or ast.idyHigh==0, "idyHigh should be nil ",ast.loc)
 
       local outlist = J.slice(expr.type.list, ast.idxLow+1, ast.idxHigh+1)
 
@@ -214,27 +214,27 @@ local function typecheck_inner( ast, newNodeFn )
     end
 
   elseif ast.kind=="tuple" then
-    err( #ast.inputs>0, "no inputs to tuple? "..ast.loc )
+    err( #ast.inputs>0, "no inputs to tuple? ",ast.loc )
     local ty = J.map(ast.inputs, function(t) assert(types.isType(t.type)); return t.type end )
     ast.type = types.tuple(ty)
   elseif ast.kind=="array" then
     local typeOver
     for k,v in pairs(ast.inputs) do
-      if typeOver~=nil then err( v.type==typeOver, "input type to array operator doesn't match, is "..tostring(v.type).." but should be "..tostring(typeOver)..", "..ast.loc) end
+      if typeOver~=nil then err( v.type==typeOver, "input type to array operator doesn't match, is "..tostring(v.type).." but should be "..tostring(typeOver)..", ",ast.loc) end
       typeOver = v.type
     end
     ast.type = types.array2d( typeOver, ast.W, ast.H )
   elseif ast.kind=="cast" then
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
-      error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! "..ast.loc)
+      error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! ",ast.loc)
     end
   elseif ast.kind=="readSideChannel" then
     -- noop
   elseif ast.kind=="writeSideChannel" then
-    err(ast.sideChannel.type==ast.inputs[1].type,"writeSideChannel: input type does not match type of side channel! Input Type:"..tostring(ast.inputs[1].type).." Side Channel Type:"..tostring(ast.sideChannel.type).." "..ast.loc)
+    err(ast.sideChannel.type==ast.inputs[1].type,"writeSideChannel: input type does not match type of side channel! Input Type:"..tostring(ast.inputs[1].type).." Side Channel Type:"..tostring(ast.sideChannel.type).." ",ast.loc)
     ast.type = types.null()
   else
-    error("Internal error, typechecking for "..ast.kind.." isn't implemented! "..ast.loc)
+    error("Internal error, typechecking for "..ast.kind.." isn't implemented! ",ast.loc)
     return nil
   end
 

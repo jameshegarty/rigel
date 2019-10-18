@@ -28,7 +28,7 @@ function(args)
       -- going fully sequential is too slow!
       local seq = args.rate[1][2]:toNumber()/args.rate[1][1]:toNumber()
       local V = (args.size[1]*args.size[2])/seq
-
+      
       V = math.ceil(V)
       while (args.size[1]*args.size[2])%V~=0 do
         V = V + 1
@@ -145,7 +145,7 @@ end)
 
 generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end,T.rv(T.Par(P.NumberType("T"))),T.rv(T.Par(P.NumberType("T"))))
 generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
-generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.type,args.number) end)
+generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
 
 generators.Index = R.FunctionGenerator("core.Index",{},{"number","size"},
 function(a)
@@ -436,29 +436,6 @@ P.SumType("opt",
            T.rv(T.ParSeq(T.Array2d(P.DataType("out"),P.SizeValue("V")),P.SizeValue("size")))})
 )
 
--- bool is "HandshakeTrigger" option
---[=[generators.HS = R.FunctionGenerator("core.HS",{"rigelFunction","type","rate"},{"bool"},
-function(args)
-
-  local mod
-  if R.isFunctionGenerator(args.rigelFunction) and args.type:is("HandshakeFramed") then
-    -- fill in args from HSF
-    --mod = args.rigelFunction{args.type.params.A,types.HSFV(args.type),types.HSFSize(args.type)}
-    mod = args.rigelFunction{ types.StaticFramed( args.type.params.A, args.type.params.mixed, args.type.params.dims ), args.rate }
-  elseif R.isFunctionGenerator(args.rigelFunction) then
-    local r
-    if args.rigelFunction:requiresArg("rate") then r = args.rate end
-    mod = args.rigelFunction{R.extractData(args.type), r}
-  else
-    mod = args.rigelFunction
-  end
-  
-  J.err( R.isFunctionGenerator(mod)==false, "generators.HS: input rigel function is a generator, not a module (arguments must be missing)" )
-  J.err( R.isPlainFunction(mod), "generators.HS: input Rigel function didn't yield a plain Rigel function? (is "..tostring(mod)..")" )
-    
-  return RS.HS(mod,args.bool)
-  end)]=]
-
 generators.Linebuffer = R.FunctionGenerator("core.Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
   local itype
@@ -480,37 +457,7 @@ function(args)
   return mod
 end)
 
---[=[
-generators.Stencil = R.FunctionGenerator("core.Stencil",{"type","bounds","rate"},{},
-function(args)
-
-  if args.type:is("StaticFramed") then
-    local pixelType = types.HSFPixelType(args.type)
-    local size = types.HSFSize(args.type)
-    local V = types.HSFV(args.type)
-
-    for _,v in ipairs(args.bounds) do J.err(v>=0,"Stencil bounds must be >=0") end
-    
-    local a = C.stencilLinebuffer( pixelType, size[1], size[2], V, -args.bounds[1], args.bounds[2], -args.bounds[3], args.bounds[4], true )
-    local b = C.unpackStencil( pixelType, args.bounds[1]+1,args.bounds[3]+1, V, nil, true, size[1], size[2] )
-    local mod = C.compose("generators_Linebuffer_"..a.name.."_"..b.name,b,a)
-    
-    if args.number==0 then
-      mod = C.linearPipeline({C.arrayop(itype,1,1),mod,C.index(mod.outputType,0)},"generators_Linebuffer_0wrap_"..mod.name)
-    end
-    
-    return mod
-  elseif types.isBasic(args.type) then
-    -- fully parallel
-    assert(false)
-  else
-    err(false,"generators.Stencil: unsupported input type: "..tostring(args.type))
-  end
-  end)]=]
-
 generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds"},{},
---function(args)
---  return R.FunctionGenerator("core.Stencil",{},{},
 function(a)
   if a.opt==0 then
     assert(a.V[2]==1)
@@ -523,19 +470,27 @@ function(a)
 end,
 P.SumType("opt",{types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
                  types.rv(types.Seq(types.Par(P.DataType("T")),P.SizeValue("size")))}),
-P.SumType("opt",{--types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),args.bounds[2]-args.bounds[1]+1,args.bounds[4]-args.bounds[3]+1),P.SizeValue("V")),P.SizeValue("size"))),
+P.SumType("opt",{
   types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),P.SizeValue("stSize")),P.SizeValue("V")),P.SizeValue("size"))),
   types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}) 
 )
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
-  J.err(a.V[2]==1,"Pad NYI - Vh >1")
-  --local A = args.type:arrayOver()
-  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  if a.opt==0 then
+    assert(a.V[2]==1)
+    return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  else
+    return RM.padSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  end
 end,
-types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
-types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut")) ))
+P.SumType("opt",
+          {types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
+           T.rV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
+P.SumType("opt",{
+            types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
+            T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))})
+)
 
 
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
@@ -857,10 +812,10 @@ end,
 P.SumType("opt",{types.rV(types.Seq(types.Par(P.DataType("T")),P.SizeValue("totalSize")))}),
 P.SumType("opt",{types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("totalSize"))))}))
 
-generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{},
+generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq(args.string,args.T,args.string..".verilatorSOC.raw",true)
+  return RM.fwriteSeq(args.string,args.T,args.filenameVerilog,true)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
@@ -1072,11 +1027,6 @@ function(args)
 end,
 T.array2d(T.RV(P.ScheduleType("sched")),P.SizeValue("size")),
 T.RV(P.ScheduleType("sched")))
-
---generators.StripFramed = R.FunctionGenerator("core.StripFramed",{"type","rate"},{},
---function(args)
---  return C.stripFramed(args.type)
---end)
 
 function generators.export(t)
   if t==nil then t=_G end

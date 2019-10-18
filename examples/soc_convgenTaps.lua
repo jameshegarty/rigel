@@ -2,7 +2,7 @@ local R = require "rigel"
 R.export()
 local SOC = require "generators.soc"
 local harness = require "generators.harnessSOC"
-local RS = require "rigelSimple"
+local RM = require "generators.modules"
 local C = require "generators.examplescommon"
 require "generators.core".export()
 local T = require "types"
@@ -17,11 +17,11 @@ local inSize = { 1920, 1080 }
 local padSize = { 1920+16, 1080+3 }
 
 local regs = SOC.axiRegs({
-  coeffs={ar(u(32),ConvWidth,ConvWidth),
+  {"coeffs",RM.reg(ar(u(32),ConvWidth,ConvWidth),
           {4, 14, 14,  4,
            14, 32, 32, 14,
            14, 32, 32, 14,
-           4, 14, 14,  4}}},SDF{1,padSize[1]*padSize[2]}):instantiate("regs")
+           4, 14, 14,  4})}},SDF{1,padSize[1]*padSize[2]}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true

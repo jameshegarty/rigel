@@ -109,6 +109,7 @@ C.cast = memoize(function(A,B)
   if terralib~=nil then
     err(A:isTuple()==false, "C.cast: NYI - terra cast from '"..tostring(A).."' to '"..tostring(B).."'") -- not supported by terra
   end
+  
   local docast = RM.lift( J.sanitize("cast_"..tostring(A).."_"..tostring(B)), A, B, 0, function(sinp) return S.cast(sinp,B) end, function() return CT.cast(A,B) end, "C.cast" )
   return docast
 end)
@@ -467,7 +468,7 @@ C.removeLSBs = memoize(function(A,bits)
     J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
-  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,nil,nil,
+  local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
                       function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
   return mod
 end)
@@ -1436,6 +1437,7 @@ end)
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
 C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
   err(types.isType(A), "stencilLinebufferRegisterChain: A must be type")
+  err(A:isData(), "stencilLinebufferRegisterChain: A must be datatype")
 
   err(type(T)=="number","stencilLinebufferRegisterChain: T must be number")
   err(type(w)=="number","stencilLinebufferRegisterChain: w must be number")
@@ -1453,7 +1455,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   err(xmax==0,"stencilLinebufferRegisterChain: xmax must be 0")
   err(ymax==0,"stencilLinebufferRegisterChain: ymax must be 0")
 
-  local I = R.input( types.array2d(A,T) )
+  local I = R.input( types.rv(types.Par(types.array2d(A,T))) )
   local SSRSize = w*(-ymin)-xmin+1
   local lb = modules.SSR(A,T,-SSRSize,0)(I)
 
@@ -1463,7 +1465,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
       local idx = y*w+x
       -- SSR module stores values in opposite order of what we want
       local ridx = SSRSize+idx
-      table.insert(tab, C.index(lb.type,ridx,0)(lb) )
+      table.insert(tab, C.index(lb.type.over.over,ridx,0)(lb) )
     end
   end
   
@@ -1647,6 +1649,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
   local name = J.sanitize("GeneralizedChangeRate_inputBitsPerCyc"..tostring(inputBitsPerCyc).."_outputBitsPerCyc"..tostring(outputBitsPerCyc).."_minTotalInputBits"..tostring(minTotalInputBits_orig).."_minTotalOutputBits"..tostring(minTotalOutputBits_orig))
 
+  local res
   if inputBitsPerCyc==outputBitsPerCyc then
     local bts = minTotalInputBits:max(minTotalOutputBits)
 
@@ -1656,7 +1659,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
     assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
     assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
     
-    return {RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
+    res={RM.makeHandshake(C.identity(types.bits(inputBitsPerCyc))),bts}
   elseif outputBitsPerCyc<inputBitsPerCyc then
     if inputBitsPerCyc%outputBitsPerCyc==0 then
       local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
@@ -1686,7 +1689,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (Uniform(bts)%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (Uniform(bts)%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     else
       --assert(J.isPowerOf2(outputBitsPerCyc)) -- NYI
       --local shifterBits = inputBitsPerCyc
@@ -1712,7 +1715,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     end
   elseif outputBitsPerCyc>inputBitsPerCyc then
     if outputBitsPerCyc%inputBitsPerCyc==0 then
@@ -1731,7 +1734,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     else
       -- outputBitsPerCyc>inputBitsPerCyc
       --assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
@@ -1756,11 +1759,18 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
       assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
 
-      return {RM.lambda(name,inp,out),bts}
+      res = {RM.lambda(name,inp,out),bts}
     end
+  else
+    print("NYI GENERALIZE CHANGE RATE", inputBitsPerCyc,outputBitsPerCyc)
+    assert(false)
   end
-  print(inputBitsPerCyc,outputBitsPerCyc)
-  assert(false)
+
+  if terralib~=nil then
+    res[1].terraModule = CT.generalizedChangeRate(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
+  end
+  
+  return res
 end)
 
 function C.gaussian(W,sigma)
@@ -1823,7 +1833,7 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: "..tostring(t[1]) )
+  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 
@@ -1975,10 +1985,8 @@ C.oddEvenMergeSort = memoize(
       return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
         function(inp)
           local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
-          print("LR",l.type,r.type)
           l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
           local res = C.flatten2(A,N)(l,r)
-          print("RES",res.type)
           res = C.oddEvenMerge(A,N,op)(res)
           return res
         end}
@@ -1986,13 +1994,14 @@ C.oddEvenMergeSort = memoize(
   end)
 
 C.StridedReader = memoize(
-  function(filename,totalBytes,itemBytes,stride,offset,readPort,readAddr,readFn)
+  function( filename, totalBytes, itemBytes, stride, offset, readPort, readAddr, readFn, X )
     -- stride,offset is given as # of items
     local G = require "generators.core"
     local SOC = require "generators.soc"
     assert(totalBytes%(itemBytes*stride)==0)
     assert(itemBytes%8==0)
     assert( R.isFunction(readFn) )
+    assert(X==nil)
     
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
@@ -2011,7 +2020,9 @@ C.StridedReader = memoize(
 
 -- generate N DMA controllers to be able to read things with higher BW than a single axi port can
 C.AXIReadPar = memoize(
-  function(filename,W,H,ty,V,noc) -- Nbits: # of bits to read in parallel
+  function(filename,W,H,ty,V,noc,X) -- Nbits: # of bits to read in parallel
+    J.err( R.isInstance(noc),"AXIReadPar: noc should be module instance, but is: ",noc )
+    J.err(X==nil,"AXIReadPar: too many arguments")
     local G = require "generators.core"
     local SOC = require "generators.soc"
     assert( (ty:verilogBits()*V)%64==0)
@@ -2026,7 +2037,9 @@ C.AXIReadPar = memoize(
         local inpb = G.FanOut{N}(inp)
         local out = {}
         for i=0,N-1 do
-          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc["read"..J.sel(i==0,"",tostring(i))])(inpb[i])
+          local readFnName = "read"..J.sel(i==0,"",tostring(i))
+          J.err(noc[readFnName]~=nil,"AXIReadPar: noc is missing function '",readFnName,"'")
+          local tmp = C.StridedReader(filename,totalBytes,8,N,i,SOC.currentMAXIReadPort,SOC.currentAddr,noc[readFnName])(inpb[i])
           tmp = G.FIFO{128}(tmp)
           table.insert(out, tmp)
           SOC.currentMAXIReadPort = SOC.currentMAXIReadPort+1
@@ -2233,15 +2246,23 @@ function C.automaticSystolicStub( mod )
       fns[readyFnName] = Ssugar.lambdaConstructor(readyFnName,inp.type,readyFnName.."_downstream")
       if out~=nil then fns[readyFnName]:setOutput(out,readyFnName) end
       delays[readyFnName]=0
+    else
+      J.err(fn.delay~=nil,"Fn is missing delay? "..mod.name.." "..fnname)
+      if fn.stateful or fn.delay>0 then
+        fns[fnname]:setCE(S.CE(fnname.."_CE"))
+      end
+      if fn.stateful then
+        fns[fnname]:setValid(fnname.."_valid")
+      end
     end
   end
-
+--[=[
   if modFunctions.process~=nil then
     if types.isBasic(modFunctions.process.inputType) and types.isBasic(modFunctions.process.outputType) and mod.stateful then
       fns.process:setCE(S.CE("CE"))
       fns.process:setValid("process_valid")
     end
-  end
+  end]=]
 
   local res = Ssugar.moduleConstructor(mod.name)
   
@@ -2273,11 +2294,20 @@ function C.automaticSystolicStub( mod )
 
             local defaultFn
             for _,v in pairs(fns) do defaultFn=v end
-            
+
+            local CE
+            local VALID
+            if fn.CE~=nil then
+              CE=S.constant(true,types.Bool)
+            end
+            if fn.valid~=nil then
+              VALID=S.constant(true,types.Bool)
+            end
+
             if fn.inputParameter.type==types.null() then
-              defaultFn:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool())))
+              defaultFn:addPipeline(sinst[fn.name](sinst,nil,S.constant(false,types.bool()),CE))
             else
-              defaultFn:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type)))
+              defaultFn:addPipeline(sinst[fn.name](sinst,S.constant(fn.inputParameter.type:fakeValue(),fn.inputParameter.type),VALID,CE))
             end
           else
             print("NYI - fn of type "..tostring(fn))
@@ -2310,7 +2340,7 @@ end
 C.VerilogFile = J.memoize(function(filename,dependencyList)
   if dependencyList==nil then dependencyList={} end
     
-  local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename) }
+  local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename), delay=0 }
   res.instanceMap={}
   for _,d in pairs(dependencyList) do
     assert(R.isModule(d))

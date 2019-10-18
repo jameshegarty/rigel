@@ -1,5 +1,6 @@
 local cstdlib = terralib.includec("stdlib.h")
 local cstdio = terralib.includec("stdio.h")
+local cstring = terralib.includec("string.h")
 local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
@@ -101,7 +102,7 @@ end
 
 function CT.cast(A,B)
   err(types.isType(B), "examples common cast, B must be type")
-
+  
   if A:isBits() then
     return terra( a : &A:toTerraType(), out : &B:toTerraType() )
       @out = @[&B:toTerraType()](a)
@@ -118,9 +119,11 @@ function CT.cast(A,B)
 end
 
 function CT.bitcast(A,B)
-  assert( terralib.sizeof(A:toTerraType()) == terralib.sizeof(B:toTerraType()) )
+  err( terralib.sizeof(A:toTerraType()) <= terralib.sizeof(B:toTerraType()), "could not terra bitcast "..tostring(A).." (terra type: "..tostring(A:toTerraType())..") to "..tostring(B).." (terra type: "..tostring(B:toTerraType())..") because size shrunk?" )
+  
   return terra( a : &A:toTerraType(), out : &B:toTerraType() )
-    @out = @[&B:toTerraType()](a)
+    --@out = @[&B:toTerraType()](a)
+    cstring.memcpy(out,a,[A:sizeof()])
   end
 end
 
@@ -371,6 +374,67 @@ function CT.stripFramed(res,A)
   end
   terra StripFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
   return MT.new(StripFramed)
+end
+
+function CT.generalizedChangeRate( inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, bts, X)
+  assert(inputBitsPerCyc%8==0)
+  assert(outputBitsPerCyc%8==0)
+
+  local inputType = rigel.Handshake(types.bits(inputBitsPerCyc))
+  local outputType = rigel.Handshake(types.bits(outputBitsPerCyc))
+
+  local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
+  assert(shifterBits%8==0)
+  local shifterBytes = (shifterBits/8)
+  local shifterBytesX2 = (shifterBits/8)*2 -- double the size, so that new writes don't overwrite reads in progress
+
+  print("GCR shifter bits ",shifterBits,shifterBytes)
+  
+  local inputBytesPerCyc = inputBitsPerCyc/8
+  local outputBytesPerCyc = outputBitsPerCyc/8
+
+  assert( (bts%inputFactor):eq(0):assertAlwaysTrue() )
+  assert( (bts%outputFactor):eq(0):assertAlwaysTrue() )
+
+  assert( (bts%shifterBits):eq(0):assertAlwaysTrue() )
+
+  local struct GeneralizedChangeRate{ writePtr:int, readPtr:int, buf:uint8[shifterBytesX2], ready:bool, readyDownstream:bool}
+
+  terra GeneralizedChangeRate:reset()
+    self.writePtr=0
+    self.readPtr=0
+  end
+
+  terra GeneralizedChangeRate:process( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(outputType):toTerraType())
+--    cstdio.printf("GCR START inputBytesPerCyc:%d outputByteperCyc:%d writeptr:%d readptr:%d readyDS:%d ready:%d validIn:%d validOut:%d\n",inputBytesPerCyc,outputBytesPerCyc,self.writePtr,self.readPtr,self.readyDownstream,self.ready, valid(inp), valid(out))
+--    [inputType:extractData():terraPrint(`&data(inp))]
+--    cstdio.printf("\n")
+    
+    if valid(inp) and self.ready then
+      cstring.memcpy(&self.buf[self.writePtr%shifterBytesX2],&data(inp),inputBytesPerCyc)
+      self.writePtr = self.writePtr + inputBytesPerCyc
+    end
+
+    valid(out) = (self.writePtr-self.readPtr)>=outputBytesPerCyc
+    cstring.memcpy( &data(out), &self.buf[self.readPtr%shifterBytesX2], outputBytesPerCyc )
+    
+    if valid(out) and self.readyDownstream then
+      self.readPtr = self.readPtr + outputBytesPerCyc
+    end
+
+--    cstdio.printf("GCR END writeptr:%d readptr:%d readyDS:%d ready:%d validIn:%d validOut:%d\n",self.writePtr,self.readPtr,self.readyDownstream,self.ready, valid(inp), valid(out))
+
+--    [outputType:extractData():terraPrint(`&data(out))]
+--    cstdio.printf("\n")
+
+  end
+
+  terra GeneralizedChangeRate:calculateReady(readyDownstream:bool)
+    self.readyDownstream = readyDownstream
+    self.ready = readyDownstream and (self.writePtr-self.readPtr)<shifterBytes
+  end
+  return MT.new(GeneralizedChangeRate)
+
 end
 
 return CT

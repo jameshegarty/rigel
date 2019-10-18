@@ -59,7 +59,7 @@ end
 modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSDF )
   err( type(name)=="string", "first argument to compose must be name of function")
   err( rigel.isFunction(f), "compose: second argument should be rigel module")
-  err( rigel.isPlainFunction(g) or inputType~=nil, "compose: third argument should be plain rigel function, but is: "..tostring(g))
+  err( rigel.isPlainFunction(g) or inputType~=nil, "compose: third argument should be plain rigel function, but is: ",g)
   if inputType~=nil then
     err( types.isType(inputType), "compose: inputType should be type, but is: "..tostring(inputType) )
     err( SDF.isSDF(inputSDF),"compose: inputSDF should be SDF")
@@ -678,7 +678,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   if handshakeTrigger==nil then handshakeTrigger=true end
   
   local res = {kind="liftDecimate", fn = f}
-  err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn input type should be rv, but is: "..tostring(f.inputType) )
+  err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn '"..f.name.."' input type should be rv, but is: "..tostring(f.inputType) )
   err( f.outputType:isrvV(), "liftDecimate: fn '"..f.name.."' output type should be rvV, but is: "..tostring(f.outputType) )
 
   res.name = "LiftDecimate_"..f.name
@@ -777,10 +777,10 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     if fnname=="process" then prefix="" end
 
     local printInst 
-    if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutputCount %d"):instantiate(prefix.."printInst") ) end
+    --if DARKROOM_VERBOSE then printInst = res:add( S.module.print( types.tuple{types.bool(), srcFn:getInput().type.list[1],types.bool(),srcFn:getOutput().type.list[1],types.bool(),types.bool(),types.bool(),types.uint(16), types.uint(16)}, fnname.." RST %d I %h IV %d O %h OV %d readyDownstream %d ready %d outputCount %d expectedOutputCount %d"):instantiate(prefix.."printInst") ) end
 
     local outputCount
-    if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount") ) end
+    --if STREAMING==false and DARKROOM_VERBOSE then outputCount = res:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIf() ):CE(true):instantiate(prefix.."outputCount") ) end
 
     local pinp = S.parameter(fnname.."_input", srcFn:getInput().type )
 
@@ -849,13 +849,13 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     end
 
     local pipelines = {}
-    if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
-    if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
+    --if DARKROOM_VERBOSE then table.insert( pipelines, printInst:process( S.tuple{ rst, S.index(pinp,0), S.index(pinp,1), S.index(out,0), S.index(out,1), downstreamReady, readyOut, outputCount:get(), S.instanceParameter("OUTPUT_COUNT",types.uint(16)) } ) ) end
+    --if STREAMING==false and DARKROOM_VERBOSE then table.insert(pipelines,  outputCount:setBy(outvalid, S.__not(rst), CE) ) end
     
     res:addFunction( S.lambda(fnname, pinp, out, fnname.."_output", pipelines ) ) 
     
     if pout.type~=types.null() then
-      err(res:lookupFunction("reset")~=nil, "Reset is missing on module '"..systolicModule.name.."'? "..tostring(systolicModule))
+      err(res:lookupFunction("reset")~=nil, "Reset is missing on module '",systolicModule.name,"'? ",systolicModule)
       table.insert(resetPipelines, SR:reset( nil, res:lookupFunction("reset"):getValid() ))
     end
     
@@ -896,7 +896,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = true --f.stateful  valid bit shift register is stateful
 
-  err( type(f.delay)=="number","Module is missing delay? "..tostring(f))
+  err( type(f.delay)=="number","Module is missing delay? ",f)
   res.delay = math.max(1, f.delay)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
@@ -953,7 +953,7 @@ end)
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 modules.map = memoize(function( f, W_orig, H_orig, X )
-  err( rigel.isFunction(f), "first argument to map must be Rigel module, but is "..tostring(f) )
+  err( rigel.isFunction(f), "first argument to map must be Rigel module, but is ",f )
   local W = Uniform(W_orig)  
   --err( Uniform(W)=="number", "width must be number")
   err( X==nil, "map: too many arguments" )
@@ -999,12 +999,12 @@ modules.map = memoize(function( f, W_orig, H_orig, X )
 
     res.inputType = types.array2d( f.inputType.over.over, W, H )
     res.outputType = types.array2d( f.outputType.over.over, W, H )
-    err( type(f.stateful)=="boolean", "Missing stateful annotation "..tostring(f))
+    err( type(f.stateful)=="boolean", "Missing stateful annotation ",f)
 
     res.stateful = f.stateful
     res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
     res.delay = f.delay
-    res.name = sanitize("map_"..f.name.."_W"..tostring(W).."_H"..tostring(H))
+    res.name = sanitize("map_"..f.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig))
 
     res.requires = {}
     for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
@@ -1051,9 +1051,9 @@ end)
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
 modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
-  err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is "..tostring(fn) )
-  err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: "..tostring(fn.inputType) )
-  err( fn.outputType:isrv(),"mapParSeq: output must be rv, but is: "..tostring(fn.outputType) )
+  err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
+  err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
+  err( fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
     
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
 
@@ -1081,7 +1081,7 @@ end)
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
-    err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
+    err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
 
     local G = require "generators.core"
 
@@ -1103,7 +1103,7 @@ end)
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
-    err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is "..tostring(fn) )
+    err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is ",fn )
 
     local G = require "generators.core"
 
@@ -1127,7 +1127,7 @@ end)
 -- if Vw==Vh==W==H==0, just leave that dimension alone (scalar output)
 -- if Vw==Vh==0, have a Seq output, instead of ParSeq
 modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2_orig, H2_orig, X )
-  err( rigel.isFunction(fn), "flatmapParSeq: first argument must be Rigel function, but is "..tostring(fn) )
+  err( rigel.isFunction(fn), "flatmapParSeq: first argument must be Rigel function, but is ",fn )
 
   err( (Vw1==0 and Vh1==0) or fn.inputType.over:is("Par"), "flatmapParSeq: fn input must Par, but input type is: "..tostring(fn.inputType) )
   err( (Vw1==0 and Vh1==0) or fn.inputType.over.over:isArray(), "flatmapParSeq: fn input must be array, but input type is: "..tostring(fn.inputType) )
@@ -1160,145 +1160,6 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
           
     return res
 end)
-
---[=[
-modules.flatmapFramed = memoize(function( fn, w, h, mixed, outputW, outputH, outputMixed, X )
-  err( rigel.isFunction(fn), "mapFramed: first argument to map must be Rigel module, but is "..tostring(fn) )
-  err( type(w)=="number", "mapFramed: width must be number")
-  err( type(h)=="number", "mapFramed: height must be number")
-  err( type(mixed)=="boolean", "mapFramed: mixed must be bool")
-  err( outputW==nil or type(outputW)=="number", "mapFramed: outputW must be number or nil" )
-  err( outputH==nil or type(outputH)=="number", "mapFramed: outputH must be number or nil" )
-  err( outputMixed==nil or type(outputMixed)=="boolean", "mapFramed: outputMixed must be boolean or nil" )
-  err( X==nil, "mapFramed: too many arguments" )
-       
-  local res = {kind="mapFramed",fn=fn,w=w,h=h,mixed=mixed,stateful=fn.stateful,delay=fn.delay}
-  
-  res.name=J.sanitize("MapFramed_"..fn.name.."_W"..tostring(w).."_H"..tostring(h).."_mixed"..tostring(mixed).."_outputW"..tostring(outputW).."_outputH"..tostring(outputH).."_outputMixed"..tostring(outputMixed))
-
-  if fn.sdfInput~=nil then
-    assert(#fn.sdfInput==1)
-    assert(#fn.sdfOutput==1)
-    res.sdfInput=SDF{fn.sdfInput[1][1],fn.sdfInput[1][2]}
-    res.sdfOutput=SDF{fn.sdfOutput[1][1],fn.sdfOutput[1][2]}
-  else
-    res.sdfInput=SDF{1,1}
-    res.sdfOutput=SDF{1,1}
-  end
-  
-  res.requires = {}
-  for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
-  res.provides = {}
-  for inst,fnmap in pairs(fn.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
-
-  res.globalMetadata = {}
-  for k,v in pairs(fn.globalMetadata) do res.globalMetadata[k]=v end
-
-  res.inputType = fn.inputType:addDim(w,h,mixed)
-
-  -- tokens: # of parallel data tokens we process (which is what SDF tells us)
-  -- make sure this ends up being consistant... (ie possible based on given vector widths/SDF)
-  local inTok = w*h
-  if mixed and fn.inputType:is("HandshakeFramed") then
-    inTok = inTok/fn.inputType:FV()
-  elseif mixed then
-    err( types.isBasic(fn.inputType) or fn.inputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.inputType) )
-    local BT = rigel.extractData(fn.inputType)
-    inTok = inTok/BT:channels()
-  end
-
-  local outTok
-  if fn.outputType==types.null() then
-    res.outputType = types.null()
-  elseif outputW==nil then
-    res.outputType = fn.outputType:addDim(w,h,mixed)
-    outTok = w*h
-    if mixed and fn.outputType:is("HandshakeFramed") then
-      outTok = outTok/fn.outputType:FV()
-    elseif mixed then
-      err( types.isBasic(fn.outputType) or fn.outputType:is("Handshake"), "mapFramed unsupported type: "..tostring(fn.outputType) )
-      local BT = rigel.extractData(fn.outputType)
-      outTok = outTok/BT:channels()
-    end
-  else
-    res.outputType = fn.outputType:addDim(outputW,outputH,outputMixed)
-    outTok = outputW*outputH
-
-    if outputMixed then outTok = outTok/fn.outputType:FV() end
-  end
-  
-  if fn.inputType:is("Handshake") then
-    -- sanity check: make sure # of tokens we say we're making is consistant with SDF
-    -- need to scale # of output tokens by SDF
-    -- outputSDF/inputSDF = (out[1]/out[2])/(in[1]/in[2]) = (out[1]*in[2])/(out[2]*in[1])
-    local n,d = fn.sdfOutput[1][1]*fn.sdfInput[1][2], fn.sdfOutput[1][2], fn.sdfInput[1][1]
-    local SDFTok = (inTok*n)/d
-    
-    if outTok~=SDFTok then
-      print("mapFramed: warning, number of input and output tokens not equal based on specified params! inTok:"..tostring(inTok).." outTok:"..tostring(outTok).." SDFTok:"..tostring(SDFTok).." inputW:"..tostring(w).." inputH:"..tostring(h).." outputW:"..tostring(outputW).." outputH:"..tostring(outputH))
-    end
-  end
-  
-  function res.makeSystolic()
-    local sm = Ssugar.moduleConstructor(res.name)
-
-    for inst,fnmap in pairs(res.requires) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addExternalFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addExternalFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    for inst,fnmap in pairs(res.provides) do
-      for fnname,_ in pairs(fnmap) do
-        sm:addProvidesFn(inst:toSystolicInstance(),fnname)
-        local fn = inst.module.functions[fnname]
-        if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
-          sm:addProvidesFn(inst:toSystolicInstance(),fnname.."_ready")
-        end
-      end
-    end
-
-    local inner = sm:add(fn.systolicModule:instantiate("inner"))
-
-    local CE = S.CE("process_CE")
-    local reset_valid = S.parameter("reset",types.bool())
-    if fn.inputType:is("Handshake") and fn.outputType==types.null() then
-      sm:addFunction( S.lambda("ready", S.parameter("ready_downstream",types.null()), inner:ready(), "ready" ) )
-      sm:onlyWire(true)
-      CE=nil
-    elseif (fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed")) and (fn.outputType:is("Handshake") or fn.outputType:is("HandshakeFramed")) then
-      local rds = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", rds, inner:ready(rds), "ready" ) )
-      sm:onlyWire(true)
-      CE=nil
-    elseif fn.inputType:is("StaticFramed") and (fn.outputType:is("StaticFramed") or fn.outputType:is("V")) then
-      --
-    else
-      err(types.isBasic(fn.inputType) and types.isBasic(fn.outputType), "MapFramed NYI - "..tostring(fn.inputType).." "..tostring(fn.outputType) )
-    end
-
-    local I = S.parameter("process_input", rigel.lower(fn.inputType) )
-    sm:addFunction( S.lambda("process",I,inner:process(I),"process_output",nil,nil,CE) )
-
-    if fn.stateful then
-      if fn.inputType:is("Handshake") or fn.inputType:is("HandshakeFramed") then
-        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(nil,reset_valid), "ro", nil, reset_valid)  )
-      else
-        sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), inner:reset(), "ro", nil, S.parameter("reset",types.bool())) )
-      end
-    end
-    
-    return sm
-  end
-
-  function res.makeTerra() return MT.mapFramed(res,fn,w,h,mixed) end
-  
-  return rigel.newFunction(res)
-  end)]=]
 
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
@@ -2017,7 +1878,7 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
   err( rigel.isFunction(Schedule), "schedule must be darkroom function")
 
   local log2N = math.ceil(math.log(#inputRates)/math.log(2))
-  err( rigel.lower(Schedule.outputType)==types.uint(log2N), "schedule function has incorrect output type, "..tostring(Schedule.outputType))
+  err( rigel.lower(Schedule.outputType)==types.uint(log2N), "schedule function has incorrect output type, ",Schedule.outputType," should be : ",types.Uint(log2N))
   rigel.expectBasic(A)
   assert(X==nil)
 
@@ -2655,27 +2516,41 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   local R = Uniform(R_orig)
   
   A:checkLuaValue(Value)
-  err(T>=1, "padSeq, T<1")
 
-  err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
-  err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
-  err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
-  err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
+  if T~=0 then
+    err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
+    err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
+    err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
+    err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
+  end
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-  res.inputType = types.array2d(A,T)
-  res.outputType = types.array2d(A,T)
 
+  if T==0 then
+    res.inputType = A
+    res.outputType = A
+  else
+    res.inputType = types.array2d(A,T)
+    res.outputType = types.array2d(A,T)
+  end
+  
   if framed then
-    res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
-    res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+    if T==0 then
+      res.inputType = types.rv(types.Seq( types.Par(res.inputType), W, H ))
+      res.outputType = types.rRvV(types.Seq( types.Par(res.outputType), W+L+R, H+B+Top ))
+    else
+      res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
+      res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+    end
   else
     res.inputType = types.rv(types.Par(res.inputType))
     res.outputType = types.rRvV(types.Par(res.outputType))
   end
   
+  local Tf = math.max(T,1)
+  
   res.stateful = true
-  res.sdfInput, res.sdfOutput = SDF{ (W*H)/T, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/T}, SDF{1,1}
+  res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
   res.delay=0
   res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
@@ -2684,12 +2559,18 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-T, T ) ):CE(true):setInit(0):setReset(0):instantiate("posX_padSeq") ) 
+    local posX = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap( types.uint(32), W+L+R-Tf, Tf ) ):CE(true):setInit(0):setReset(0):instantiate("posX_padSeq") ) 
     local posY = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), H+Top+B-1) ):CE(true):setInit(0):setReset(0):instantiate("posY_padSeq") ) 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
     
-    local pinp = S.parameter("process_input", res.inputType.over.over )
+    local pinp
+    if T==0 then
+      pinp = S.parameter("process_input", res.inputType.over.over.over )
+    else
+      pinp = S.parameter("process_input", res.inputType.over.over )
+    end
+    
     local pvalid = S.parameter("process_valid", types.bool() )
     
     local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
@@ -2717,11 +2598,17 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
     
     local pipelines={}
 
-    local incY = S.eq( posX:get(), Uniform(W+L+R-T):toSystolic(types.uint(32))  ):disablePipelining()
+    local incY = S.eq( posX:get(), Uniform(W+L+R-Tf):toSystolic(types.uint(32))  ):disablePipelining()
     pipelines[1] = posY:setBy( incY )
     pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
 
-    local ValueBroadcast = S.cast( S.tuple( J.broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+    local ValueBroadcast
+    if T==0 then
+      ValueBroadcast = S.constant(Value,A)
+    else
+      ValueBroadcast = S.cast( S.tuple( J.broadcast(S.constant(Value,A),T)) ,types.array2d(A,T))
+    end
+    
     local ConstTrue = S.constant(true,types.bool())
 
     local out = S.select( readybit, pinp, ValueBroadcast )
@@ -3139,7 +3026,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay=0
-  res.name = verilogSanitize("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..tostring(T).."_A"..tostring(A).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig))
+  res.name = verilogSanitize("SSR_W"..(-xmin+1).."_H"..(-ymin+1).."_T"..tostring(T).."_A"..tostring(A).."_XMIN"..tostring(xmin).."_YMIN"..tostring(ymin).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig))
 
   if terralib~=nil then res.terraModule = MT.SSR(res, A, T, xmin, ymin, framed ) end
 
@@ -3155,11 +3042,11 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
       local x = -xmin+Tf-1
       while(x>=0) do
         if x<-xmin-Tf then
-          SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
+          SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate(J.sanitize("SR_x"..x.."_y"..y)) )
           table.insert( pipelines, SR[y][x]:set(SR[y][x+Tf]:get()) )
           out[y*(-xmin+Tf)+x+1] = SR[y][x]:get()
         elseif x<-xmin then
-          SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate("SR_x"..x.."_y"..y ) )
+          SR[y][x] = systolicModule:add( S.module.reg(A,true):instantiate(J.sanitize("SR_x"..x.."_y"..y) ) )
 
           local val
           if framed and T>0 then
@@ -3420,7 +3307,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     
     local resetPipelines = {}
     table.insert( resetPipelines, SR:reset(nil,rst) )
-    if DARKROOM_VERBOSE then table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
+    --if DARKROOM_VERBOSE then table.insert( resetPipelines, outputCount:set(S.constant(0,types.uint(16)),rst,CE) ) end
     
     systolicModule:addFunction( S.lambda("reset", S.parameter("rst",types.null()), resetOutput, "reset_out", resetPipelines,rst) )
     
@@ -4364,8 +4251,8 @@ local function checkFIFOs(output)
         assert(false)
       end
 
-      J.err( type(res)=="table", "checkFIFOs bad res "..tostring(n) )
-      J.err( #res == types.streamCount(n.type), "checkFIFOs error (res:"..#res..",streamcount:"..types.streamCount(n.type)..",type:"..tostring(n.type)..")- "..tostring(n) )
+      J.err( type(res)=="table", "checkFIFOs bad res ",n )
+      J.err( #res == types.streamCount(n.type), "checkFIFOs error (res:",#res,",streamcount:",types.streamCount(n.type),",type:",n.type,")- ",n )
       return res
     end)
 end
@@ -4548,7 +4435,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   err( type(name) == "string", "lambda: module name must be string" )
   err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
   err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
-  err( rigel.isIR( output ), "modules.lambda: module '"..tostring(name).."' output should be Rigel value, but is: "..tostring(output) )
+  err( rigel.isIR( output ), "modules.lambda: module '",name,"' output should be Rigel value, but is: ",output )
   if instanceList==nil then instanceList={} end
   err( type(instanceList)=="table", "lambda: instances must be nil or a table")
   J.map( instanceList, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
@@ -4603,7 +4490,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   output:visitEach(
     function(n)
       if n.kind=="apply" then
-        err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn "..n.fn.name )
+        err( type(n.fn.stateful)=="boolean", "Missing stateful annotation, fn ",n.fn.name )
         res.stateful = res.stateful or n.fn.stateful
       elseif n.kind=="applyMethod" then
         if rigel.isModule(n.inst.module) then
@@ -4660,7 +4547,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
         if n.kind=="apply" then globalMetadata=n.fn.globalMetadata else globalMetadata=n.inst.module.globalMetadata end
         
         for k,v in pairs(globalMetadata) do
-          err( res.globalMetadata[k]==nil or res.globalMetadata[k]==v,"Error: wrote to global metadata '"..k.."' twice! this value: '"..tostring(v).."', orig value: '"..tostring(res.globalMetadata[k]).."' "..n.loc)
+          err( res.globalMetadata[k]==nil or res.globalMetadata[k]==v,"Error: wrote to global metadata '",k,"' twice! this value: '",v,"', orig value: '",res.globalMetadata[k],"' ",n.loc)
           res.globalMetadata[k] = v
         end
       end
@@ -4742,7 +4629,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     end
     
     for inst,_ in pairs(fn.instanceMap) do
-      err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '"..inst.name.."' of module '"..inst.module.name.."'")
+      err( systolic.isModule(inst.module.systolicModule), "Missing systolic module for instance '",inst.name,"' of module '",inst.module.name,"'")
       -- even though this isn't external here, it may be refered to in other modules (ie some ports may be externalized), so we need to use the same instance
       local I = module:add( inst:toSystolicInstance() )
         
@@ -4802,7 +4689,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     assert(systolic.isAST(out[1]))
 
-    err( out[1].type==rigel.lower(res.outputType), "modules.lambda: Internal error, systolic output type is "..tostring(out[1].type).." but should be "..tostring(rigel.lower(res.outputType)).." function "..name )
+    err( out[1].type==rigel.lower(res.outputType), "modules.lambda: Internal error, systolic output type is ",out[1].type," but should be ",rigel.lower(res.outputType)," function ",name )
 
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
@@ -4830,10 +4717,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     return systolicModule
   end
 
-  --if DARKROOM_VERBOSE then
-  --  print("lambda done '"..name.."'")
-   -- if terralib~=nil then print("lambda terra module size:"..terralib.sizeof(res.terraModule)) end
-  --end
+  if DARKROOM_VERBOSE then  print("lambda done '",name,"'") end
 
   return rigel.newFunction( res )
 end
@@ -4847,7 +4731,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
   err( inputType:isData(),"modules.lift: inputType should be Data Type, but is: "..tostring(inputType))
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
-  err( outputType:isData(),"modules.lift: outputType should be Data Type, but is: "..tostring(outputType))
+  err( outputType==nil or outputType:isData(),"modules.lift: outputType should be Data Type, but is: "..tostring(outputType))
   err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )
   err( sdfOutput==nil or SDFRate.isSDFRate(sdfOutput),"modules.lift: SDF output must be SDF")
   err( makeTerra==nil or type(makeTerra)=="function", "modules.lift: makeTerra argument must be lua function that returns a terra function" )
@@ -5001,7 +4885,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
     
   if instanceMap~=nil then
     for inst,_ in pairs(instanceMap) do
-      J.err(rigel.isInstance(inst),"liftVerilog: instance map should be map of instances, but is: "..tostring(inst))
+      J.err(rigel.isInstance(inst),"liftVerilog: instance map should be map of instances, but is: ",inst)
 
       for inst,fnlist in pairs(inst.module.requires) do
         for fn,_ in pairs(fnlist) do
@@ -5176,9 +5060,12 @@ modules.freadSeq = memoize(function( filename, ty )
   return rigel.newFunction(res)
 end)
 
--- passthrough: write out the input?
+-- passthrough: write out the input? default=true
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
-modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, X )
+-- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
+-- 'filename' is used for Terra
+-- We don't modify filenames in any way!
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
@@ -5189,7 +5076,9 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   if filenameVerilog==nil then filenameVerilog=filename end
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=J.sel(passthrough,ty,types.null()), stateful=true, delay=0, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
-  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough, allowBadSizes) end
+
+  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
+
   res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
   function res.makeSystolic()
@@ -5430,5 +5319,88 @@ endmodule
 
     return rigel.newFunction(res)
   end)
+
+-- extraPortIsWrite: should the extra port be a write port?
+modules.reg = memoize(function(ty,initial,extraPortIsWrite,read1bits,X)
+  if read1bits==nil then read1bits=32 end
+  assert(type(read1bits)=="number")
+  assert(types.isType(ty))
+  assert(ty:isData())
+  ty:checkLuaValue(initial)
+  assert(X==nil)
+
+  J.err( ty:verilogBits()<32 or ty:verilogBits()%read1bits==0,"reg: request type '"..tostring(ty).."' of bits '"..(ty:verilogBits()).."'  must be divisible by "..read1bits)
+  
+  local tab = {name=J.sanitize("Reg_"..tostring(ty).."_read1bits"..tostring(read1bits).."_extraPortIsWrite"..tostring(extraPortIsWrite).."_init"..tostring(initial)), stateful=true, functions={}}
+  if extraPortIsWrite==true then
+    tab.functions.write1 = rigel.newFunction{name="write1",inputType=types.rv(types.Par(ty)),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+  else
+    tab.functions.read1 = rigel.newFunction{name="read1",inputType=types.Interface(),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  end
+  
+  tab.functions.read = rigel.newFunction{name="read",inputType=types.rv(types.Par(types.Uint(32))),outputType=types.rv(types.Par(types.Bits(read1bits))),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false,delay=0}
+  tab.functions.write = rigel.newFunction{name="write",inputType=types.rv(types.Par(types.Tuple{types.Uint(32),types.Bits(read1bits)})),outputType=types.Interface(),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+  
+  local res = rigel.newModule(tab)
+  --assert(res.size==nil)
+  --res.size = ty:verilogBits()
+  assert(res.type==nil)
+  res.type = ty
+  assert(res.init==nil)
+  res.init=initial
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+
+    local vstr = {res:vHeader()..[=[
+  reg []=]..(read1bits-1)..[=[:0] r[]=]..(math.max(ty:verilogBits()/read1bits,1)-1)..[=[:0];
+]=]}
+
+    table.insert(vstr,[=[
+assign read_output = r[read_input];
+]=])
+    
+    if extraPortIsWrite~=true then
+      if ty:verilogBits()<32 then
+        table.insert(vstr,"assign read1_output = r[0]["..(ty:verilogBits()-1)..":0];\n")
+      else
+        for i=0,(ty:verilogBits()/read1bits)-1 do
+          table.insert(vstr,"assign read1_output["..((i+1)*read1bits-1)..":"..(i*read1bits).."] = r["..i.."];\n")
+        end
+      end
+    end
+    
+table.insert(vstr,[=[  always @(posedge CLK) begin
+    if (write_CE && write_valid) begin
+      r[write_input[31:0]] <= write_input[63:32];
+    end]=])
+
+  if extraPortIsWrite==true then
+    table.insert(vstr," else if(write1_CE && write1_valid) begin\n")
+    if ty:verilogBits()<32 then
+      table.insert(vstr,[=[r[0] <= {]=]..(32-ty:verilogBits()).."'d0,write1_input};\n")
+    else
+      for i=0,(ty:verilogBits()/read1bits)-1 do
+        table.insert(vstr,"assign r["..i.."] = write1_input["..((i+1)*read1bits-1)..":"..(i*read1bits).."];\n")
+      end
+    end
+    table.insert(vstr,"end\n")
+  end
+
+table.insert(vstr,[=[  end
+endmodule
+
+]=])
+
+s:verilog(table.concat(vstr,""))
+    
+    return s
+  end
+
+  if terralib~=nil then res.terraModule = MT.reg(ty,initial,extraPortIsWrite,read1bits) end
+  
+  return res
+end)
 
 return modules

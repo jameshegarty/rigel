@@ -125,6 +125,15 @@ function fixed.readGlobal( glob )
   return fixed.new{ kind="readGlobal", global=glob, type=glob.type, inputs={}, loc=getloc() }
 end
 
+function fixed.applyNullaryLiftRigel(f)
+  R.isFunction(f)
+  assert( f.inputType==types.Interface() )
+  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
+  
+  return fixed.new{kind="applyNullaryLiftRigel", f=f, inputs={}, type=f.outputType.over.over, loc=getloc()}
+end
+
+
 function fixed.constant( value )
   err(type(value)=="number" or type(value)=="boolean","fixed.constant must be number or bool")
 
@@ -376,8 +385,8 @@ end
 function fixedNewASTFunctions:toSystolic()
   local instances = {}
   local resetStats = {}
-  local sideChannels = {}
-  local globals = {}
+  local requires = {}
+  local provides = {}
   local inp
   local res = self:visitEach(
     function( n, args )
@@ -445,7 +454,6 @@ function fixedNewASTFunctions:toSystolic()
         res = S.abs( args[1] )
         res = S.cast( res, n:underlyingType() )
       elseif n.kind=="rcp" then
-
         local numerator, denom, isPositive, uintType
         if n:isSigned() then
           -- signed behavior: basically, remember the sign, take abs, do unsigned div, then add back sign
@@ -462,8 +470,9 @@ function fixedNewASTFunctions:toSystolic()
           numerator = S.constant(math.pow(2,n.inputs[1]:precision()),uintType)
           denom = S.cast( args[1], uintType )
         end
-        
+
         local inst = fpgamodules.div(uintType):instantiate(n.name.."_DIVINST")
+
         table.insert(instances,inst)
         
         res = inst:process(S.tuple{numerator,denom})
@@ -479,6 +488,13 @@ function fixedNewASTFunctions:toSystolic()
         local I = n.f.systolicModule:instantiate(n.name)
         table.insert(instances,I)
         res = I:process(args[1])
+        if n.f.stateful then table.insert(resetStats,I:reset()) end
+      elseif n.kind=="applyNullaryLiftRigel" then
+        local I = n.f.systolicModule:instantiate(n.name)
+        for ic,t in pairs(n.f.requires) do assert(requires[ic]==nil);requires[ic]=t end
+        for ic,t in pairs(n.f.provides) do assert(provides[ic]==nil);provides[ic]=t end
+        table.insert(instances,I)
+        res = I:process()
         if n.f.stateful then table.insert(resetStats,I:reset()) end
       elseif n.kind=="applyUnaryLiftSystolic" then
         res = n.f(args[1])
@@ -513,10 +529,6 @@ function fixedNewASTFunctions:toSystolic()
         res = S.cast(res, n:underlyingType() )
       elseif n.kind=="addMSBs" or n.kind=="removeMSBs" then
         res = S.cast(args[1], n:underlyingType() )
-      elseif n.kind=="readGlobal" then
-        res = S.readSideChannel(n.global.systolicValue)
-        sideChannels[n.global.systolicValue] = 1
-        globals[n.global] = 1
       else
         print("fixed_new NYI:",n.kind)
         assert(false)
@@ -534,7 +546,7 @@ function fixedNewASTFunctions:toSystolic()
   end
   --end
 
-  return res, inp, instances, resetStats, sideChannels, globals
+  return res, inp, instances, resetStats, requires, provides
 end
 
 fixed.hists = {}
@@ -547,31 +559,33 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   assert(type(name)=="string")
   assert(X==nil)
 
-  local out, inp, instances, resetStats, sideChannels, globals = self:toSystolic()
+  local out, inp, instances, resetStats, requires, provides = self:toSystolic()
 
   err(out.type==self.type,"toRigelModule type mismatch "..tostring(out.type).." "..tostring(self.type))
   
   local tfn
 
-  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=1, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), globals=globals}
+  local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=1, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), requires=requires,provides=provides}
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 
   function res.makeSystolic()
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name) end
     local sys = Ssugar.moduleConstructor(name)
     for _,v in ipairs(instances) do sys:add(v) end
-    for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
+    --for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
 
     local CE = S.CE("process_CE")
---    local CE
     sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
     
     if res.stateful then
       sys:addFunction( S.lambda("reset",S.parameter("r",types.null()),nil,"ro",resetStats,S.parameter("reset",types.bool())) )
     end
-    
+
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"COMPLETE") end
     sys:complete()
-    
+
+    if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"DONE") end
     return sys
   end
   

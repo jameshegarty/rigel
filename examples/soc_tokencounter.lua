@@ -8,8 +8,9 @@ local types = require "types"
 local SDF = require "sdf"
 types.export()
 local Zynq = require "generators.zynq"
+local RM = require "generators.modules"
 
-local regs = SOC.axiRegs({startCnt={u32,0,"input"},endCnt={u32,0,"input"}},SDF{1,8192}):instantiate("regs")
+local regs = SOC.axiRegs({{"startCnt",RM.reg(u32,0,true)},{"endCnt",RM.reg(u32,0,true)}},SDF{1,8192}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true

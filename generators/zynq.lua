@@ -37,13 +37,13 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
   local instanceList = {}
   if slavePorts~=nil then
     for k,v in pairs(slavePorts) do
-      J.err( R.isFunction(v[1]), "Zynq.SimpleNOC: slave read should be rigel function, but is: "..tostring(v[1]))
+      J.err( R.isFunction(v[1]), "Zynq.SimpleNOC: slave read should be rigel function, but is: ",v[1])
       J.err( v[1].inputType==AXI.ReadAddress32 and v[1].outputType==AXI.ReadData32, "Zynq.SimpleNOC: slave read should have type AXI.ReadAddress32->AXI.ReadData32")
       
-      J.err( R.isFunction(v[2]), "Zynq.SimpleNOC: slave write should be rigel function, but is: "..tostring(v[2]))
+      J.err( R.isFunction(v[2]), "Zynq.SimpleNOC: slave write should be rigel function, but is: ",v[2])
       print("AXIWRITEISSUE32",AXI.WriteIssue32)
       print("AXIWRITERESP32",AXI.WriteResponse32)
-      J.err( v[2].inputType==AXI.WriteIssue32 and v[2].outputType==AXI.WriteResponse32, "Zynq.SimpleNOC: write should have type AXI.WriteIssue32->AXI.WriteResponse32, but is: "..tostring(v[2].inputType).."->"..tostring(v[2].outputType))
+      J.err( v[2].inputType==AXI.WriteIssue32 and v[2].outputType==AXI.WriteResponse32, "Zynq.SimpleNOC: write should have type AXI.WriteIssue32->AXI.WriteResponse32, but is: ",v[2].inputType,"->",v[2].outputType)
       
       table.insert(instanceList,v[1]:instantiate("readSlave"))
       table.insert(instanceList,v[2]:instantiate("writeSlave"))
