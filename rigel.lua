@@ -572,7 +572,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
       end
     elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false then
       err( type(rigelFn.delay)=="number","Error, rigel module missing delay? fnname '",fnname,"' should have been caught earlier ",tab)
-      err( (sm:getDelay(fnname)>0)==(rigelFn.delay>0), "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is ",sm:getDelay(fnname))      
+      err( (sm:getDelay(fnname)>0)==(rigelFn.delay>0), "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is ",sm:getDelay(fnname),sm)      
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)

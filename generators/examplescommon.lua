@@ -344,7 +344,7 @@ C.sum = memoize(function( A, B, outputType, async )
   err(type(async)=="boolean","C.sum: async must be boolean, but is: "..tostring(async))
 
   local delay
-  if async then delay = 0 else delay = 1 end
+  if async then delay = 0 else delay = math.floor(S.delayTable["+"][A:verilogBits()]*S.delayScale) end
 
   local partial = RM.lift(
     J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
@@ -357,7 +357,7 @@ C.sum = memoize(function( A, B, outputType, async )
       return CT.sum(A,B,outputType,async)
     end,
     "C.sum")
-
+  
   return partial
 end)
 

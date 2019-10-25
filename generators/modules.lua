@@ -2249,7 +2249,8 @@ modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
   end
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
-  res.delay = J.sel(T>1,1,0)
+--  res.delay = J.sel(T>1,math.floor(S.delayScale),0)
+  res.delay = J.sel(T>1,math.floor(S.delayTable["+"][bits]*S.delayScale),0)
   res.name = sanitize("PosSeq_W"..tostring(W_orig).."_H"..H.."_T"..T.."_bits"..tostring(bits))
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T,asArray) end
@@ -4053,6 +4054,7 @@ endmodule
 
     local inp = S.parameter("process_input",types.lower(res.inputType))
     fns.process = S.lambda("process",inp,S.tuple{ S.constant(ty:fakeValue(),ty), S.constant(true,types.bool()) }, "process_output")
+    fns.process.isPure = function() return false end
     
     local downstreamReady = S.parameter("ready_downstream", types.bool())
     fns.ready = S.lambda("ready", downstreamReady, downstreamReady, "ready" )

@@ -704,6 +704,7 @@ systolic.delayScale = 1
 -- NOTE: we allow non-integer pipeline delays. The behavior here is we FLOOR the delays to get the # of cycles of each op.
 -- We have to do this consistantly everywhere!!
 local delayTable = {}
+systolic.delayTable = delayTable
 delayTable.abs={[8]=2-0.97, [16]=2-0.57, [24]=2-0.18, [32]=2-0.05}
 delayTable["*"]={[8]=2-0.22, [16]=2-0.01, [24]=2-0.03, [32]=2}
 delayTable["+"]={[8]=2-0.84, [16]=2-0.35, [24]=2-0.44, [32]=2-0.27}
