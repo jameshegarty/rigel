@@ -312,7 +312,8 @@ function makeLK( T, internalW, internalH, window, bits )
   local Ainp = R.apply("Ainp", C.SoAtoAoS(T,1,{dst_type,dst_type},false),R.concat("ainp",{fdx_stencil,fdy_stencil}) )
   local A = R.apply("A", RM.map(Af,T), Ainp)
   local fAinv, AInvType = invert2x2( AType, bits )
-  local Ainv = R.apply("Ainv", RM.map(fAinv,T), A)
+  local FAINVMAP = RM.map(fAinv,T,1,true)
+  local Ainv = R.apply("Ainv", FAINVMAP, A)
   cost = cost + Acost
 
   local fB, BType, Bcost = makeB( dType, window, bits )

@@ -229,6 +229,8 @@ function systolicFunctionMT.__tostring(tab)
   else
     table.insert(res,"\t\tOutputType: no output")
   end
+
+  table.insert(res,"\t\tIsPure: "..tostring(tab:isPure()))
   
   return table.concat(res,"\n")
 end
@@ -926,7 +928,7 @@ function systolicASTFunctions:checkWiring( module, providesMap )
         end
 
         if fn.CE~=nil then
-          err(n.inputs[3]~=nil, "Module expected a CE, but was not given one. Function '",fnname,"' on instance '",inst.name,"' (of module "..inst.module.name..") inside module '",module.name,"' ",inst.loc)
+          err(n.inputs[3]~=nil, "Function expected a CE, but was not given one. Function '",fnname,"' on instance '",inst.name,"' (of module "..inst.module.name..") inside module '",module.name,"' Onlywire:",module.onlyWire," ",inst.loc)
 
           if CEState[inst]==nil then CEState[inst]={} end
           if CEState[inst][fn.CE.name]==nil then
@@ -1468,6 +1470,7 @@ function userModuleMT.__tostring(tab)
   for fnname,fn in pairs(tab.functions) do
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
+    table.insert(res,"\t\tDelay:"..tab:getDelay(fnname))
   end
 
   table.insert(res,"Internal Instances:")

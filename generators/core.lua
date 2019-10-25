@@ -1028,6 +1028,21 @@ end,
 T.array2d(T.RV(P.ScheduleType("sched")),P.SizeValue("size")),
 T.RV(P.ScheduleType("sched")))
 
+generators.SimROM = R.FunctionGenerator("core.SRAMReader",{"string","type"},{},
+function(args)
+  return RM.simROM(args.string,args.type)
+end)
+
+generators.SRAMRead = R.FunctionGenerator("core.SRAMReader",{"type","size","rigelFunction"},{},
+function(args)
+  return R.FunctionGenerator("core.SRAMReader",{},{},
+    function()
+      return args.rigelFunction{T.Array2d(args.type,args.size)}
+    end,
+    T.rv(T.Par(T.Uint(32))),
+    T.rv(T.Par(args.type)))
+end)
+                                            
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end

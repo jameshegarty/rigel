@@ -50,7 +50,9 @@ int main(int argc, char** argv) {
 #endif
 
     top->CLK = CLK;
+#if STATEFUL==true
     top->reset = true;
+#endif
     top->ready_downstream = 1;
 
 #if TAPBITS>0
@@ -99,7 +101,9 @@ int main(int argc, char** argv) {
     // posedge just occured
 
     // set all inputs. DO NOT READ OUTPUTS DIRECTLY. Imagine these inputs come from registers, which should happen _after_ the posedge.
+#if STATEFUL==true
     top->reset = false;
+#endif
     top->ready_downstream = 1;
 #if INBPP>0
     if(ready){

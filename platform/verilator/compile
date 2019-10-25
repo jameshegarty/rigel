@@ -25,6 +25,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TOP=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE topModule)
 HARNESS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE harness)
 INBPP=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE inputBitsPerPixel)
+STATEFUL=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE stateful)
 
 # HACK
 RAMBITS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE ramBits)
@@ -35,4 +36,4 @@ TAPBITS=$(exec luajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE tapBits
 #-Wno-UNOPTFLAT surpresses circular loop errors... we should probably work to not have to enable this
 verilator -Wno-UNOPTFLAT -cc -Mdir $BUILDDIR $VERILOG_FILE $DIR/RAM128X1D.v $DIR/RAMB16_S36_S36.v $DIR/RAMB16_S18_S18.v $DIR/RAMB16_S9_S9.v $DIR/RAMB16_S4_S4.v $DIR/RAMB16_RIGEL.v --top-module $TOP
 make -C $BUILDDIR -f V$TOP.mk
-g++ ${VERILATOR_CFLAGS} -I. -DHARNESS=$HARNESS -DINBPP=$INBPP -DRAMBITS=$RAMBITS -DRAMFILE="\"$RAMFILE\"" -DTAPBITS=$TAPBITS -DVERILATORCLASS="V${TOP}" -DVERILATORFILE="\"${BUILDDIR}/V${TOP}.h\"" ${VERILATOR_INCLUDE}/verilated.cpp $DIR/harness.cpp $BUILDDIR/V${TOP}__ALL.a -o $OUTFILE
+g++ ${VERILATOR_CFLAGS} -I. -DHARNESS=$HARNESS -DINBPP=$INBPP -DSTATEFUL=$STATEFUL -DRAMBITS=$RAMBITS -DRAMFILE="\"$RAMFILE\"" -DTAPBITS=$TAPBITS -DVERILATORCLASS="V${TOP}" -DVERILATORFILE="\"${BUILDDIR}/V${TOP}.h\"" ${VERILATOR_INCLUDE}/verilated.cpp $DIR/harness.cpp $BUILDDIR/V${TOP}__ALL.a -o $OUTFILE
