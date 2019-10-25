@@ -3554,7 +3554,7 @@ modules.triggerFIFO = memoize(function()
   assign load_output = (cnt>32'd0);
 endmodule
 ]=]
-    s:verilog(vstr)
+    s.verilog = vstr
     return s
   end
   

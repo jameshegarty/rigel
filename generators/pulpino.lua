@@ -341,7 +341,7 @@ table.insert(vstr,[=[endmodule
 ]=])
 
     
-    s:verilog(table.concat(vstr,""))
+    s.verilog = table.concat(vstr,"")
     return s
   end
 
