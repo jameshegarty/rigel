@@ -2313,26 +2313,6 @@ FILEMODULE_VERILATOR = true
 
 
 function fileModuleFunctions:instanceToVerilogStart( instance )
---[=[  if instance.callsites.read~=nil and instance.callsites.write==nil then
-    local assn = ""
-    for i=0,(self.type:verilogBits()/8)-1 do
-      assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] <= $fgetc("..instance.name.."_file); "
-    end
-
-    local RST = ""
-    if instance.verilogCompilerState[module].reset~=nil then
-      RST = "if ("..instance.verilogCompilerState[module].reset[2]..") begin r=$fseek("..instance.name.."_file,0,0); end"
-    end
-
-    return [[integer ]]..instance.name..[[_file,r;
-  initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","r"); end
-  always @ (posedge CLK) begin 
-  if (]]..instance.verilogCompilerState[module].read[2]..J.sel(self.hasCE," && "..instance.verilogCompilerState[module].read[3],"")..[[) begin ]]..assn..[[ end 
-    ]]..RST..[[
-  end
-]]
-  elseif instance.callsites.read==nil and instance.callsites.write~=nil then]=]
-
   local res = {}
 
   local fmode = "wb"
@@ -2447,19 +2427,6 @@ assign ]]..instance.name..[[_readOut = {]]..outassn..[[};
   end
   
   return table.concat(res)
---[=[    else
-      return debug..[[integer ]]..instance.name..[[_file,r;
-  initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
-  always @ (posedge CLK) begin 
-    if (]]..instance.name.."_WRITE_VALID"..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin ]]..assn..[[ end 
-    ]]..RST..[[
-
-  end
-]]
-    end
-  else
-    assert(false)
-  end]=]
 end
 
 
