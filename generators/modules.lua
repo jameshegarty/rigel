@@ -5064,26 +5064,46 @@ function modules.constSeq(value,A,w,h,T,X)
   return I
 end
 
-modules.freadSeq = memoize(function( filename, ty )
+-- addressable: if true, this will accept an index, which will seek to the location every cycle
+modules.freadSeq = memoize(function( filename, ty, addressable, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
+  err( X==nil, "freadSeq: too many arguments" )
   rigel.expectBasic(ty)
   local filenameVerilog=filename
-  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=types.null(), outputType=ty, stateful=true, delay=0}
+  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, stateful=true, delay=1}
+
+  if addressable then
+    res.inputType=types.rv(types.Par(types.uint(32)))
+    res.outputType=types.rv(types.Par(ty))
+  else
+    res.inputType=types.null()
+    res.outputType=ty
+  end
+  
   res.sdfInput=SDF{1,1}
   res.sdfOutput=SDF{1,1}
-  if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty) end
-  res.name = "freadSeq_"..verilogSanitize(filename)..verilogSanitize(tostring(ty))
+
+  if addressable==nil then addressable=false end
+  err( type(addressable)=="boolean", "freadSeq: addressable must be bool")
+  if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty,addressable) end
+  res.name = J.sanitize("freadSeq_"..verilogSanitize(filename)..verilogSanitize(tostring(ty)).."_addressable"..tostring(addressable))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true ):instantiate("freadfile") )
-    local inp = S.parameter("process_input", types.null() )
+    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, true, true, false, true ):instantiate("freadfile") )
+    local inp
+    if addressable then
+      inp = S.parameter("process_input", types.uint(32) )
+    else
+      inp = S.parameter("process_input", types.null() )
+    end
+    
     local nilinp = S.parameter("process_nilinp", types.null() )
     local CE = S.CE("CE")
 
-    systolicModule:addFunction( S.lambda("process", inp, sfile:read(), "process_output", nil, nil, CE ) )
+    systolicModule:addFunction( S.lambda("process", inp, sfile:read(inp), "process_output", nil, nil, CE ) )
     systolicModule:addFunction( S.lambda("reset", nilinp, nil, "process_reset", {sfile:reset()}, S.parameter("reset", types.bool() ) ) )
 
     return systolicModule
@@ -5440,6 +5460,8 @@ end)
 modules.simROM = J.memoize(function(filename,ty)
   local tab = {name=J.sanitize("SimRom_"..tostring(filename).."_ty"..tostring(ty)), stateful=true, inputType=types.rv(types.Par(types.Uint(32))),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0}
 
+  if terralib~=nil then tab.terraModule = MT.simROM( filename, ty ) end
+  
   local res = rigel.newFunction(tab)
 
   function res.makeSystolic()

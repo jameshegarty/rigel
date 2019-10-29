@@ -303,7 +303,7 @@ return function(top, options)
       if verbose then cstdio.printf("ROUND %d\n",round) end
 
 
-      V.deactivateMasterRead([MREAD_SLAVEOUT[0]])
+      [ (function() if MAX_READ_PORT>=0 then return quote V.deactivateMasterRead([MREAD_SLAVEOUT[0]]) end else return quote end end end)() ];
       V.deactivateMasterWrite([MWRITE_SLAVEOUT[0]])
       
       [ (function() if MAX_READ_PORT>=1 then return quote V.deactivateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
@@ -318,7 +318,7 @@ return function(top, options)
       -- set start bit
       setReg( IP_CLK, IP_ARESET_N, m, 0xA0000000, 1 )
       
-      V.activateMasterRead([MREAD_SLAVEOUT[0]])
+      [ (function() if MAX_READ_PORT>=0 then return quote V.activateMasterRead([MREAD_SLAVEOUT[0]]) end else return quote end end end)() ];
       V.activateMasterWrite([MWRITE_SLAVEOUT[0]])
 
       [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
@@ -341,13 +341,13 @@ return function(top, options)
       while (doneBitSet==false or cooldownCycles>0 or cycle<totalCycles) do
         if verbose then cstdio.printf("--------------------------- START CYCLE %d (round %d) -----------------------\n",cycle,round) end
 
-        V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]);
+        [ (function() if MAX_READ_PORT>=0 then return quote V.masterReadDataDriveOutputs(verbose,memory,0,[MREAD_SLAVEOUT[0]]) end else return quote end end end)() ];
         [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataDriveOutputs(verbose,memory,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
 
         V.masterWriteDataDriveOutputs(verbose,memory,&slaveState0,0,[MWRITE_SLAVEOUT[0]]);
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataDriveOutputs(verbose,memory,&slaveState1,1,[MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
-        V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]);
+        [ (function() if MAX_READ_PORT>=0 then return quote V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEOUT[0]]) end else return quote end end end)() ];
         V.masterWriteReqDriveOutputs(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEOUT[0]]);
 
         [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadReqDriveOutputs(verbose,MEMBASE,MEMSIZE,1,[MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
@@ -358,11 +358,13 @@ return function(top, options)
         m:calculateReady()
         m:process(nil)
 
-        V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]);
+        [ (function() if MAX_READ_PORT>=0 then return quote V.masterReadDataLatchFlops(verbose,memory,0,[MREAD_SLAVEIN[0]]) end else return quote end end end)() ];
 
         [ (function() if MAX_READ_PORT>=1 then return quote V.masterReadDataLatchFlops(verbose,memory,1,[MREAD_SLAVEIN[1]]) end else return quote end end end)() ];
 
-        if verbose then V.printMasterRead(0,[MREAD_SLAVEIN[0]],[MREAD_SLAVEOUT[0]]); end
+        if verbose then
+          [ (function() if MAX_READ_PORT>=0 then return quote V.printMasterRead(0,[MREAD_SLAVEIN[0]],[MREAD_SLAVEOUT[0]]) end else return quote end end end)() ];
+        end
         if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
 
@@ -373,7 +375,7 @@ return function(top, options)
 
         [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,round==1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
 
-        V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]);
+        [ (function() if MAX_READ_PORT>=0 then return quote V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]) end else return quote end end end)() ];
 
         V.masterWriteReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MWRITE_SLAVEIN[0]]);
 

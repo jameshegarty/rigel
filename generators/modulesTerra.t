@@ -1645,7 +1645,7 @@ function MT.lift( name, inputType, outputType, terraFunction, systolicInput, sys
       err( outputType==types.null(),"MT.lift: systolicOutput is missing, but output type is: "..tostring(outputType).." on fn "..name )
     end
 
-    if inputType==types.Interface() then
+    if inputType==types.Interface() or inputType==types.null() then
       terra LiftModule:process(out:&rigel.lower(outputType):toTerraType())
         @out = [terraOut]
       end
@@ -1716,7 +1716,7 @@ assert( X==nil )
   return MT.new(ConstSeqState)
 end
 
-function MT.freadSeq(filename,ty)
+function MT.freadSeq(filename,ty,addressable)
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:init() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -1724,9 +1724,18 @@ function MT.freadSeq(filename,ty)
   end
   terra FreadSeq:free() cstdio.fclose(self.file) end
   terra FreadSeq:reset() end
-  terra FreadSeq:process(out : &ty:toTerraType())
-    var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
-    [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+
+  if addressable then
+    terra FreadSeq:process(inp :&uint, out : &ty:toTerraType())
+      cstdio.fseek( self.file, (@inp)*[ty:sizeof()], cstdio.SEEK_SET )
+      var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
+      [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+    end
+  else
+    terra FreadSeq:process(out : &ty:toTerraType())
+      var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
+      [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+    end
   end
 
   return MT.new(FreadSeq)
@@ -2331,5 +2340,6 @@ function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
 
   return Reg
 end
+
 
 return MT

@@ -2289,7 +2289,13 @@ function fileModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
   local decl = nil
   local fn = self.functions[fnname]
   if fnname=="read" then
-
+    assert(type(datavar)=="string")
+    assert(type(validvar)=="string")
+    assert(type(cevar)=="string")
+    --decl = declareReg( fn.output.type, instance.name.."_"..fn.outputName)
+    decl = "assign "..instance.name.."_READ_INPUT = "..datavar..";\n"
+    decl = decl.."assign "..instance.name.."_READ_VALID = "..validvar..";\n"
+    decl = decl.."assign "..instance.name.."_READ_CE = "..cevar..";\n"
   elseif fnname=="write" then
     assert(type(datavar)=="string")
     assert(type(validvar)=="string")
@@ -2305,8 +2311,9 @@ end
 -- verilator doesn't suport $fopen etc so hack around it...
 FILEMODULE_VERILATOR = true
 
+
 function fileModuleFunctions:instanceToVerilogStart( instance )
-  if instance.callsites.read~=nil and instance.callsites.write==nil then
+--[=[  if instance.callsites.read~=nil and instance.callsites.write==nil then
     local assn = ""
     for i=0,(self.type:verilogBits()/8)-1 do
       assn = assn .. instance.name.."_out["..((i+1)*8-1)..":"..(i*8).."] <= $fgetc("..instance.name.."_file); "
@@ -2324,7 +2331,38 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
     ]]..RST..[[
   end
 ]]
-  elseif instance.callsites.read==nil and instance.callsites.write~=nil then
+  elseif instance.callsites.read==nil and instance.callsites.write~=nil then]=]
+
+  local res = {}
+
+  local fmode = "wb"
+  if self.hasWrite and self.hasRead then assert(false) end
+  if self.hasWrite==false and self.hasRead then fmode="rb" end
+  
+  table.insert(res,[[  wire ]]..instance.name..[[_RESET;
+  reg [63:0] ]]..instance.name..[[_file;
+  initial begin 
+    $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"]]..fmode..[[\");"); 
+    $c("if(",]]..instance.name..[[_file,"==0){printf(\"ERROR OPENING FILE ]]..self.filename..[[\");exit(1);}else{printf(\"FILEOPENOK\");}");
+  end
+
+]])
+
+  local RST = ""
+
+  table.insert(res,[[  always @(posedge CLK) begin
+]])
+  if FILEMODULE_VERILATOR then
+    table.insert(res, "if ("..instance.name..[[_RESET) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end
+]])
+  else
+    table.insert(res, "if ("..instance.name..[[_RESET) begin r=$fseek(]]..instance.name..[[_file,0,0); end
+]] )
+  end
+table.insert(res,[[  end
+]])
+
+  if self.hasWrite then
     local assn = ""
 
     local debug = ""
@@ -2339,15 +2377,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
         assn = assn .. "$fwrite("..instance.name..[[_file, "%c", ]]..instance.verilogCompilerState[module].write[1].."["..((i+1)*8-1)..":"..(i*8).."] ); "
       end
     end
-
-    local RST = ""
-    if true then
-      if FILEMODULE_VERILATOR then
-        RST = "if ("..instance.name..[[_RESET) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end]]
-      else
-        RST = "if ("..instance.name..[[_RESET) begin r=$fseek(]]..instance.name..[[_file,0,0); end]]
-      end
-    end
+    
     
     if FILEMODULE_VERILATOR then
       local buffers = ""
@@ -2367,18 +2397,13 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
       oassign = oassign..[[    if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name.."_obuffer0 <= "..instance.name.."_WRITE_INPUT".."; end\n"
       oassign = oassign..[[    if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name.."_writeOut <= "..instance.name.."_obuffer0; end\n"
       
-      return [[  wire ]]..instance.name..[[_RESET;
-  wire ]]..instance.name..[[_WRITE_CE;
+      table.insert(res,[[  wire ]]..instance.name..[[_WRITE_CE;
   wire ]]..instance.name..[[_WRITE_VALID;
   wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_WRITE_INPUT;
   reg []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_writeOut;
 ]]..debug..obuffers..buffers..[[
-  reg [63:0] ]]..instance.name..[[_file;
+
   reg ]]..instance.name..[[_dowrite=1'b0;
-  initial begin 
-    $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"wb\");"); 
-    $c("if(",]]..instance.name..[[_file,"==0){printf(\"ERROR OPENING FILE ]]..self.filename..[[\");exit(1);}");
-  end
 
   always @ (posedge CLK) begin 
     ]]..bufferassn..oassign..[[
@@ -2386,10 +2411,43 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
       ]]..assn..[[ 
     end
     if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.name.."_WRITE_VALID"..[[; end 
-    ]]..RST..[[
   end
-]]
-    else
+]])
+
+    end
+  end
+
+  if self.hasRead then
+      local buffers = ""
+      local outassn = ""
+      local assn = ""
+      -- if we don't assign to buffers of the right size, the c escape won't work properly
+      for i=0,math.ceil(self.type:verilogBits()/8)-1 do
+        buffers = buffers.."  reg [7:0] "..instance.name.."_readbuffer_"..tostring(i)..";\n"
+        outassn = instance.name.."_readbuffer_"..tostring(i)..J.sel(i>0,",","")..outassn
+        assn = assn .. [[      $c("if(fread( (void*) &",]]..instance.name.."_readbuffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,")==0){printf(\"READ ERR\\n\");}" );]].."\n"
+--        assn = assn .. [[      $c("printf(\"]]..tostring(i)..[[ %d\\n\", ",]]..instance.name.."_readbuffer_"..tostring(i)..[[,");" );]].."\n"
+      end
+      
+      table.insert(res,[[  wire ]]..instance.name..[[_READ_CE;
+  wire ]]..instance.name..[[_READ_VALID;
+  wire [31:0] ]]..instance.name..[[_READ_INPUT;
+  wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_readOut;
+assign ]]..instance.name..[[_readOut = {]]..outassn..[[};
+]]..buffers..[[
+
+  always @ (posedge CLK) begin 
+    if (]]..instance.name..[[_READ_VALID && ]]..instance.name..[[_READ_CE) begin 
+      $c("fseek((FILE*)",]]..instance.name..[[_file,",",]]..instance.name..[[_READ_INPUT*]]..tostring(self.type:verilogBits()/8)..[[,",SEEK_SET);");
+      ]]..assn..[[ 
+    end
+  end
+]])
+
+  end
+  
+  return table.concat(res)
+--[=[    else
       return debug..[[integer ]]..instance.name..[[_file,r;
   initial begin ]]..instance.name..[[_file = $fopen("]]..self.filename..[[","wb"); end
   always @ (posedge CLK) begin 
@@ -2401,8 +2459,9 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
     end
   else
     assert(false)
-  end
+  end]=]
 end
+
 
 function fileModuleFunctions:toVerilog() return "" end
 function fileModuleFunctions:getDependenciesLL() return {} end
@@ -2424,28 +2483,39 @@ function fileModuleFunctions:getDelay(fnname)
   end
 end
 
-function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, X)
-  J.err( type(hasRead)=="boolean", "systolic.module.file: hasRead must be bool" )
+-- readAddressable: should read take a seek address?
+function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, hasWrite, readAddressable, X)
+  J.err( type(hasRead)=="boolean", "systolic.module.file: hasRead must be bool, but is: ",hasRead )
   J.err( type(passthrough)=="boolean", "systolic.module.file: passthrough must be bool" )
   assert(X==nil)
   assert(type(hasCE)=="boolean")
 
+  if readAddressable==nil then readAddressable=false end
+  if hasWrite==nil then hasWrite= true end
+  
   err(ty:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(ty)..") is not byte aligned. NYI. Use a cast!")
   
-  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, passthrough,externalInstances={} }
+  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, hasRead=hasRead,hasWrite=hasWrite,passthrough,externalInstances={} }
 
   local CE
   if hasCE then CE = systolic.CE("CE") end
   
   res.functions={}
   if hasRead then
-    res.functions.read={name="read",output={type=ty},inputParameter={name="FREAD_INPUT",type=types.null()},outputName="readOut",valid={name="read_valid"},CE=CE}
+    res.functions.read={name="read",output={type=ty},outputName="readOut",valid={name="read_valid"},CE=CE}
+    if readAddressable then
+      res.functions.read.inputParameter={name="FREAD_INPUT",type=types.uint(32)}
+    else
+      res.functions.read.inputParameter={name="FREAD_INPUT",type=types.null()}
+    end
     res.functions.read.isPure = function() return false end
   end
-  
-  res.functions.write={name="write",output={type=J.sel(passthrough,ty,types.null())},inputParameter={name="input",type=ty},outputName="writeOut",valid={name="write_valid"},CE=CE}
-  res.functions.write.isPure = function() return false end
 
+  if hasWrite then
+    res.functions.write={name="write",output={type=J.sel(passthrough,ty,types.null())},inputParameter={name="input",type=ty},outputName="writeOut",valid={name="write_valid"},CE=CE}
+    res.functions.write.isPure = function() return false end
+  end
+  
   res.functions.reset = {name="reset",output={type=types.null()},inputParameter={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
   res.functions.reset.isPure = function() return false end
 
