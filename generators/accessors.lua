@@ -46,7 +46,6 @@ function(args)
   if V>=args.size[1]*args.size[2] then
 --    res.outputType = T.RV(T.Par(T.Array2d(args.type1,args.size[1],args.size[2])))
   else
-    assert(false)
     res.outputType = T.RV(T.ParSeq(T.Array2d(args.type1,V),args.size))
   end
   print("RES",res)
