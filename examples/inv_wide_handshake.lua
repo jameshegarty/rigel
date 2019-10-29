@@ -24,7 +24,7 @@ for i=0,255 do table.insert(invtable, inv(i)) end
 ------------
 ITYPE = types.array2d( types.uint(8), T )
 inp = R.input( types.rv(types.Par(ITYPE)) )
-out = R.apply( "inv", RM.map( RM.lut(types.uint(8), types.uint(8), invtable), T ), inp )
+out = R.apply( "inv", RM.map( RM.lut(types.uint(8), types.uint(8), invtable), T, 1, true ), inp )
 fn = RM.lambda( "pointwise_wide", inp, out )
 ------------
 hsfn = RM.makeHandshake(fn)

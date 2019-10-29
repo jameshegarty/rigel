@@ -160,7 +160,7 @@ function makeCampipe(internalW,internalH)
 --  local ccm = R.apply("ccm",RM.map(CC.makeCCM(ccmtab),internalT),dem)
   CCM = RM.map(CC.makeCCM(ccmtab),internalT)
 --  local gam = R.apply("gam",RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),internalT),ccm)
-  Gamma = RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3),internalT)
+  Gamma = RM.map(RM.map(RM.lut(types.uint(8),types.uint(8),CC.makeGamma(1/gamma)),3,1,true),internalT,1,true)
   --local out = R.apply("addchan",RM.map(CC.addchan(),internalT),gam)
 
   --local campipe = RM.lambda("campipe",inp,out)

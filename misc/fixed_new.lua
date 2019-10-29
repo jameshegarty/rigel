@@ -569,13 +569,16 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
   res.name = name
 
-  function res.makeSystolic()
+  local function makeSystolic()
     if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name) end
     local sys = Ssugar.moduleConstructor(name)
     for _,v in ipairs(instances) do sys:add(v) end
     --for k,_ in pairs(sideChannels) do sys:addSideChannel(k) end
-
-    local CE = S.CE("process_CE")
+    
+    local CE
+    if out:getDelay()>0 then
+      CE = S.CE("process_CE")
+    end
     sys:addFunction( S.lambda("process",inp,out,"process_output",nil,nil,CE ) )
     
     if res.stateful then
@@ -585,9 +588,18 @@ function fixedNewASTFunctions:toRigelModule(name,X)
     if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"COMPLETE") end
     sys:complete()
 
+--    assert( sys:getDelay("process")>0 )
+    
     if DARKROOM_VERBOSE then J.verbose("fixed_new makeSystolic",name,"DONE") end
     return sys
   end
+
+  -- HACK
+  local sm = makeSystolic()
+  res.delay = sm:getDelay("process")
+
+  --res.stateful = res.delay>0
+  res.makeSystolic = function() return sm end
   
   return R.newFunction(res)
 end

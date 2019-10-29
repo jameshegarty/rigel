@@ -603,7 +603,7 @@ endmodule
 
 ]=])
 
-    s:verilog(table.concat(vstring))
+    s.verilog = table.concat(vstring)
     return s
   end
   

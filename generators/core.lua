@@ -820,6 +820,14 @@ end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
 
+generators.Fread = R.FunctionGenerator("core.Fread",{"string","type","type1"},{"filenameVerilog"},
+function(args)
+  --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+  return RM.freadSeq( args.string, args.type1, true )
+end,
+T.rv(T.Par(T.Uint(32))),
+T.rv(T.Par(P.DataType("T"))))
+
 -- assert that the input stream is the same as the file. Early out on errors.
 generators.Fassert = R.FunctionGenerator("core.Fassert",{"type","string"},{},
 function(args)
@@ -1027,6 +1035,13 @@ function(args)
 end,
 T.array2d(T.RV(P.ScheduleType("sched")),P.SizeValue("size")),
 T.RV(P.ScheduleType("sched")))
+
+generators.Const = R.FunctionGenerator("core.Const",{"type1","number"},{},
+function(args)
+  return C.triggerToConstant(args.type1,args.number)
+end,
+T.Interface(),
+T.rv(T.Par(P.DataType("T"))))
 
 function generators.export(t)
   if t==nil then t=_G end

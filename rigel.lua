@@ -540,7 +540,9 @@ local function buildAndCheckSystolicModule(tab, isModule)
     local systolicFn = systolicFns[fnname]
 
     err( systolicFn~=nil, "systolic module function is missing (",sm.name,")")
-    
+
+    err( systolicFn:isPure()~=rigelFn.stateful,"Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with stateful=",rigelFn.stateful," but systolic function isPure=",systolicFn:isPure())
+         
     if rigelFn.outputType~=types.Interface() then
       err( systolicFn.output~=nil, "module output is not null (is ",rigelFn.outputType,"), but systolic output is missing")
       err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '",tab.name,"'? is '",systolicFn.output.type,"' but should be '",darkroom.lower(rigelFn.outputType),"' (rigel type ",rigelFn.outputType,")" )
@@ -562,12 +564,15 @@ local function buildAndCheckSystolicModule(tab, isModule)
       err( rigelFn.inputType==types.Interface() or sm.functions[readyName].output~=nil,"ready fn '"..readyName.."' has no output? module: ",rigelFn)
 
       if rigelFn.inputType~=types.Interface() then
-        err( expectedInputReady==sm.functions[readyName].output.type, "module '"..tab.name.."' systolic ready '"..readyName.."' output type wrong. Systolic ready output type is '"..tostring(sm.functions[readyName].output.type).."', but should be '"..tostring(expectedInputReady).."', because Rigel function input type is '"..tostring(rigelFn.inputType).."'.")
+        err( expectedInputReady==sm.functions[readyName].output.type, "module '"..tab.name.."' systolic ready '",readyName,"' output type wrong. Systolic ready output type is '",sm.functions[readyName].output.type,"', but should be '",expectedInputReady,"', because Rigel function input type is '",rigelFn.inputType,"'.")
       end
 
       if rigelFn.outputType~=types.Interface() then
         err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
       end
+    elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false then
+      err( type(rigelFn.delay)=="number","Error, rigel module missing delay? fnname '",fnname,"' should have been caught earlier ",tab)
+      err( (sm:getDelay(fnname)>0)==(rigelFn.delay>0), "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is ",sm:getDelay(fnname),sm)      
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
@@ -686,7 +691,8 @@ __tostring=function(mod)
   end
 
   table.insert(res,"  Stateful: "..tostring(mod.stateful))
-    
+  table.insert(res,"  Delay: "..tostring(mod.delay))
+  
   table.insert(res,"  Metadata:")
   for k,v in pairs(mod.globalMetadata) do
     table.insert(res,"    "..tostring(k).." = "..tostring(v))
@@ -975,19 +981,12 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
                          local res = darkroom.applyMethod("callinstfn",instance,functionName,i)
                          return res
   end}
-  res.stateful=false
-  res.delay = fn.delay
-  
+
+  assert(darkroom.isPlainFunction(res))
   return res
 end)
-  
--- this function doesn't check that the function struct is valid, it only creates the data structure.
--- (ie that input type is correct, or that requires table is consistant).
-function darkroom.newFunction(tab,X)
-  err( type(tab) == "table", "rigel.newFunction: input must be table" )
-  err( X==nil, "rigel.newFunction: too many arguments")
-  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable?")
-  
+
+local function checkRigelFunction(tab)
   err( type(tab.name)=="string", "rigel.newFunction: name must be string, but is: "..tostring(tab.name) )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
@@ -1012,12 +1011,25 @@ function darkroom.newFunction(tab,X)
   err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
   err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  if (types.isHandshakeAny(tab.inputType) or tab.inputType==types.Interface() or types.isHandshakeAny(tab.outputType) or tab.outputType==types.Interface())==false then
-    err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '"..tab.name.."' inputType:"..tostring(tab.inputType).." outputType:"..tostring(tab.outputType) )
+  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.Interface() and tab.outputType==types.Interface()) then
+    -- no delay needed
+  else
+    err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
   end
   
   --if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   --if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
+  err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
+end
+
+-- this function doesn't check that the function struct is valid, it only creates the data structure.
+-- (ie that input type is correct, or that requires table is consistant).
+function darkroom.newFunction(tab,X)
+  err( type(tab) == "table", "rigel.newFunction: input must be table" )
+  err( X==nil, "rigel.newFunction: too many arguments")
+  err( getmetatable(tab)==nil,"rigel.newFunction: input table already has a metatable?")
+  
+  checkRigelFunction(tab)
   
   if tab.globalMetadata==nil then tab.globalMetadata={} end
 
@@ -1027,7 +1039,6 @@ function darkroom.newFunction(tab,X)
     assert(false)
   end
 
-  err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
 
   if tab.requires==nil then tab.requires={} end
   if tab.provides==nil then tab.provides={} end
@@ -1163,6 +1174,10 @@ function darkroom.newModule( tab, X )
     assert( darkroom.isInstance(inst) )
   end
 
+  for fnname,fn in pairs(tab.functions) do
+    checkRigelFunction(fn)
+  end
+  
   for instance,fnlist in pairs(tab.requires) do
     err( darkroom.isInstance(instance), "Require list should be instance/fnlist table, but is: ",instance )
     for fn,_ in pairs(fnlist) do

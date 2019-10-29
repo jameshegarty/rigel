@@ -344,7 +344,7 @@ C.sum = memoize(function( A, B, outputType, async )
   err(type(async)=="boolean","C.sum: async must be boolean, but is: "..tostring(async))
 
   local delay
-  if async then delay = 0 else delay = 1 end
+  if async then delay = 0 else delay = math.floor(S.delayTable["+"][A:verilogBits()]*S.delayScale) end
 
   local partial = RM.lift(
     J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
@@ -357,7 +357,7 @@ C.sum = memoize(function( A, B, outputType, async )
       return CT.sum(A,B,outputType,async)
     end,
     "C.sum")
-
+  
   return partial
 end)
 
@@ -1149,12 +1149,15 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
     regs = {R.instantiate("f1",RM.triggerFIFO())}
   else
     inp = R.input(R.Handshake(ty))
-    regs = {R.instantiate("f1",RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad))}
+    local FIFOMod = RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad)
+    regs = {R.instantiate("f1",FIFOMod)}
   end
   
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  return RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+
+  return res
 end)
 
 -------------
@@ -2088,7 +2091,7 @@ C.tokenCounterReg = memoize(
         cnt = G.Add{1}(cnt)
         return R.statements{inpb[0],regGlobal(cnt)}
       end}
-    
+
     return res
   end)
 
@@ -2256,14 +2259,7 @@ function C.automaticSystolicStub( mod )
       end
     end
   end
---[=[
-  if modFunctions.process~=nil then
-    if types.isBasic(modFunctions.process.inputType) and types.isBasic(modFunctions.process.outputType) and mod.stateful then
-      fns.process:setCE(S.CE("CE"))
-      fns.process:setValid("process_valid")
-    end
-  end]=]
-
+  
   local res = Ssugar.moduleConstructor(mod.name)
   
   local instances = {}
@@ -2323,6 +2319,7 @@ function C.automaticSystolicStub( mod )
   
   if mod.stateful then
     fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
+    delays.reset = 0
   end
 
 
@@ -2330,6 +2327,18 @@ function C.automaticSystolicStub( mod )
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
   for k,v in pairs(delays) do res:setDelay(k,v) end
+
+  res = res:complete()
+  for fnname,fn in pairs(modFunctions) do
+    -- dangerous hack?
+    res.functions[fnname].isPure = function()
+      return not fn.stateful
+    end
+  end
+
+  if mod.stateful then
+    res.functions.reset.isPure = function() return false end
+  end
   
   return res
 end
@@ -2354,7 +2363,7 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
     local verilog = J.fileToString(R.path..filename)
     verilog = verilog:gsub([[`include "[%w_\.]*"]],"")
     verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */\n\n"
-    s:verilog(verilog)
+    s.verilog = verilog
     return s
   end
 

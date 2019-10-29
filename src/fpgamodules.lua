@@ -321,7 +321,7 @@ modules.fifonoop = memoize(function(ty,addrBits)
   size:setOutput(S.constant(0,types.uint(addrBits)),"size")
   
   -- reset
-  local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )
+  --local reset = fifo:addFunction( Ssugar.lambdaConstructor("reset" ) )
 
   return fifo
 end)

@@ -238,7 +238,7 @@ endmodule
  );
     ]=]
     
-    s:verilog(table.concat(vstr,"\n"))
+    s.verilog = table.concat(vstr,"\n")
     return s
   end
 

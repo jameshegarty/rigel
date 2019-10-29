@@ -1098,13 +1098,10 @@ function types.isBasic(A)
 end
 
 types.Par = J.memoize(function(D,X)
-  assert(X==nil)
---    print("PAR",D,P.isParam(D),D:isData(),types.isBasic(D))
+  err(X==nil, "types.Par: too many arguments")
+
   err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
   err(D~=types.null(),"types.Par: input should not be null")
---  if types.isType(D) then
---    err(D:verilogBits()>0,"types.Par: input should have >0 bits")
---  end
 
   return setmetatable({kind="Par",over=D},TypeMT)
 end)
