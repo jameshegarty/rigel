@@ -5456,31 +5456,4 @@ s.verilog = table.concat(vstr,"")
   return res
 end)
 
--- we will read one 'ty' per clock. Addressing is at the granularity of 'ty'
-modules.simROM = J.memoize(function(filename,ty)
-  local tab = {name=J.sanitize("SimRom_"..tostring(filename).."_ty"..tostring(ty)), stateful=true, inputType=types.rv(types.Par(types.Uint(32))),outputType=types.rv(types.Par(ty)),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0}
-
-  if terralib~=nil then tab.terraModule = MT.simROM( filename, ty ) end
-  
-  local res = rigel.newFunction(tab)
-
-  function res.makeSystolic()
-    local C = require "generators.examplescommon"
-    local s = C.automaticSystolicStub(res)
-
-    local vstr = {res:vHeader().."\n"}
-
-    table.insert(vstr,[=[
-endmodule
-
-]=])
-
-    s.verilog = table.concat(vstr,"")
-
-    return s
-  end
-
-  return res
-end)
-                                        
 return modules

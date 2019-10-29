@@ -2092,7 +2092,6 @@ C.tokenCounterReg = memoize(
         return R.statements{inpb[0],regGlobal(cnt)}
       end}
 
-    print(res)
     return res
   end)
 
