@@ -2401,25 +2401,45 @@ table.insert(res,[[  end
       local buffers = ""
       local outassn = ""
       local assn = ""
+      local assn2 = ""
       -- if we don't assign to buffers of the right size, the c escape won't work properly
       for i=0,math.ceil(self.type:verilogBits()/8)-1 do
         buffers = buffers.."  reg [7:0] "..instance.name.."_readbuffer_"..tostring(i)..";\n"
+        buffers = buffers.."  reg [7:0] "..instance.name.."_readbuffer_"..tostring(i).."_R;\n"
+--        outassn = instance.name.."_readbuffer_"..tostring(i).."_R"..J.sel(i>0,",","")..outassn
         outassn = instance.name.."_readbuffer_"..tostring(i)..J.sel(i>0,",","")..outassn
         assn = assn .. [[      $c("if(fread( (void*) &",]]..instance.name.."_readbuffer_"..tostring(i)..[[,",1,1, (FILE*)",]]..instance.name..[[_file,")==0){printf(\"READ ERR\\n\");}" );]].."\n"
+        assn2 = assn2.."  "..instance.name.."_readbuffer_"..tostring(i).."_R <= "..instance.name.."_readbuffer_"..tostring(i)..";\n"
 --        assn = assn .. [[      $c("printf(\"]]..tostring(i)..[[ %d\\n\", ",]]..instance.name.."_readbuffer_"..tostring(i)..[[,");" );]].."\n"
       end
       
       table.insert(res,[[  wire ]]..instance.name..[[_READ_CE;
   wire ]]..instance.name..[[_READ_VALID;
+  reg ]]..instance.name..[[_READ_VALID_1;
+  reg ]]..instance.name..[[_READ_VALID_2;
   wire [31:0] ]]..instance.name..[[_READ_INPUT;
-  wire []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_readOut;
-assign ]]..instance.name..[[_readOut = {]]..outassn..[[};
+  reg [31:0] ]]..instance.name..[[_READ_INPUT_R;
+  reg []]..(self.type:verilogBits()-1)..[[:0] ]]..instance.name..[[_readOut;
+//assign ]]..instance.name..[[_readOut = {]]..outassn..[[};
 ]]..buffers..[[
 
   always @ (posedge CLK) begin 
-    if (]]..instance.name..[[_READ_VALID && ]]..instance.name..[[_READ_CE) begin 
-      $c("fseek((FILE*)",]]..instance.name..[[_file,",",]]..instance.name..[[_READ_INPUT*]]..tostring(self.type:verilogBits()/8)..[[,",SEEK_SET);");
+    if (]]..instance.name..[[_READ_VALID_2 && ]]..instance.name..[[_READ_CE) begin 
+      ]]..instance.name..[[_readOut <= {]]..outassn..[[};
+    end 
+
+    if (]]..instance.name..[[_READ_VALID_1 && ]]..instance.name..[[_READ_CE) begin 
+      $c("fseek((FILE*)",]]..instance.name..[[_file,",",]]..instance.name..[[_READ_INPUT_R*]]..tostring(self.type:verilogBits()/8)..[[,",SEEK_SET);");
       ]]..assn..[[ 
+    end
+
+    if (]]..instance.name..[[_READ_CE) begin 
+      ]]..instance.name..[[_READ_VALID_1 <= ]]..instance.name..[[_READ_VALID;
+      ]]..instance.name..[[_READ_VALID_2 <= ]]..instance.name..[[_READ_VALID_1;
+
+      if (]]..instance.name..[[_READ_VALID) begin
+        ]]..instance.name..[[_READ_INPUT_R <= ]]..instance.name..[[_READ_INPUT;
+      end
     end
   end
 ]])
@@ -2441,7 +2461,7 @@ function fileModuleFunctions:getDelay(fnname)
       return 0
     end
   elseif fnname=="read" then
-    return 1
+    return 3
   elseif fnname=="reset" then
     return 0
   else
