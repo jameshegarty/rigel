@@ -1,6 +1,6 @@
 module MPSOC_Top
   (
-    output [7:0] LED
+    output wire [7:0] LED
   );
 
   wire [3:0] fclk;
@@ -14,68 +14,140 @@ module MPSOC_Top
 
   assign ARESETN = 1'b1; //fclkresetn[0];
 
-   wire [32:0] IP_SAXI0_ARADDR;
-   wire        IP_SAXI0_ARADDR_ready;
-   wire [32:0] IP_SAXI0_AWADDR;
-   wire        IP_SAXI0_AWADDR_ready;
-   wire [32:0] IP_SAXI0_RDATA;
-   wire        IP_SAXI0_RDATA_ready;
-   wire [32:0] IP_SAXI0_WDATA;
-   wire        IP_SAXI0_WDATA_ready;
-   wire [2:0]  IP_SAXI0_BRESP;   
-   wire        IP_SAXI0_BRESP_ready;
-   wire [11:0] IP_SAXI0_ARID;
-   wire [2:0]  IP_SAXI0_ARPROT;
-   wire [11:0] IP_SAXI0_AWID;
-   wire [2:0]  IP_SAXI0_AWPROT;
-   wire [11:0] IP_SAXI0_BID;
-   wire [11:0] IP_SAXI0_RID;
-   wire        IP_SAXI0_RLAST;
-   wire [1:0]  IP_SAXI0_RRESP;
-   wire [3:0]  IP_SAXI0_WSTRB;
-
-
-   wire [32:0] IP_MAXI0_ARADDR;
-   wire        IP_MAXI0_ARADDR_ready;
-   wire [32:0] IP_MAXI0_AWADDR;
-   wire        IP_MAXI0_AWADDR_ready;
-   wire [2:0]  IP_MAXI0_BRESP;
-   wire        IP_MAXI0_BRESP_ready;
-   wire [64:0] IP_MAXI0_RDATA;
-   wire        IP_MAXI0_RDATA_ready;
-   wire [1:0]  IP_MAXI0_RRESP;
-   wire [64:0] IP_MAXI0_WDATA;
-   wire        IP_MAXI0_WDATA_ready;
-   wire [7:0]  IP_MAXI0_WSTRB;
-   wire        IP_MAXI0_RLAST;
-   wire        IP_MAXI0_WLAST;
-   wire [3:0]  IP_MAXI0_ARLEN;
-   wire [1:0]  IP_MAXI0_ARSIZE;
-   wire [1:0]  IP_MAXI0_ARBURST;
-   wire [3:0]  IP_MAXI0_AWLEN;
-   wire [1:0]  IP_MAXI0_AWSIZE;
-   wire [1:0]  IP_MAXI0_AWBURST;
-
-   wire [32:0] IP_MAXI1_ARADDR;
-   wire        IP_MAXI1_ARADDR_ready;
-   wire [32:0] IP_MAXI1_AWADDR;
-   wire        IP_MAXI1_AWADDR_ready;
-   wire [2:0]  IP_MAXI1_BRESP;
-   wire        IP_MAXI1_BRESP_ready;
-   wire [64:0] IP_MAXI1_RDATA;
-   wire        IP_MAXI1_RDATA_ready;
-   wire [1:0]  IP_MAXI1_RRESP;
-   wire [64:0] IP_MAXI1_WDATA;
-   wire        IP_MAXI1_WDATA_ready;
-   wire [7:0]  IP_MAXI1_WSTRB;
-   wire        IP_MAXI1_RLAST;
-   wire        IP_MAXI1_WLAST;
-   wire [3:0]  IP_MAXI1_ARLEN;
-   wire [1:0]  IP_MAXI1_ARSIZE;
-   wire [1:0]  IP_MAXI1_ARBURST;
-   wire [3:0]  IP_MAXI1_AWLEN;
-   wire [1:0]  IP_MAXI1_AWSIZE;
-   wire [1:0]  IP_MAXI1_AWBURST;
+///////
+   wire [31:0] IP_SAXI0_ARADDR;
+wire [2:0] IP_SAXI0_ARPROT;
+wire [3:0] IP_SAXI0_ARCACHE;
+wire [7:0] IP_SAXI0_ARLEN;
+wire [3:0] IP_SAXI0_ARQOS;
+wire [0:0] IP_SAXI0_ARLOCK;
+wire [5:0] IP_SAXI0_ARUSER;
+wire [3:0] IP_SAXI0_ARREGION;
+wire [11:0] IP_SAXI0_ARID;
+wire [2:0] IP_SAXI0_ARSIZE;
+wire [1:0] IP_SAXI0_ARBURST;
+wire IP_SAXI0_ARVALID;
+wire IP_SAXI0_ARREADY;
+wire [1:0] IP_SAXI0_RRESP;
+wire [0:0] IP_SAXI0_RLAST;
+wire [31:0] IP_SAXI0_RDATA;
+wire [5:0] IP_SAXI0_RUSER;
+wire [11:0] IP_SAXI0_RID;
+wire IP_SAXI0_RVALID;
+wire IP_SAXI0_RREADY;
+wire [1:0] IP_SAXI0_AWBURST;
+wire [0:0] IP_SAXI0_AWLOCK;
+wire [3:0] IP_SAXI0_AWCACHE;
+wire [2:0] IP_SAXI0_AWSIZE;
+wire [3:0] IP_SAXI0_AWQOS;
+wire [31:0] IP_SAXI0_AWADDR;
+wire [7:0] IP_SAXI0_AWLEN;
+wire [5:0] IP_SAXI0_AWUSER;
+wire [11:0] IP_SAXI0_AWID;
+wire [2:0] IP_SAXI0_AWPROT;
+wire [3:0] IP_SAXI0_AWREGION;
+wire IP_SAXI0_AWREADY;
+wire IP_SAXI0_AWVALID;
+wire [31:0] IP_SAXI0_WDATA;
+wire [3:0] IP_SAXI0_WSTRB;
+wire [0:0] IP_SAXI0_WLAST;
+wire [5:0] IP_SAXI0_WUSER;
+wire IP_SAXI0_WREADY;
+wire IP_SAXI0_WVALID;
+wire [11:0] IP_SAXI0_BID;
+wire [5:0] IP_SAXI0_BUSER;
+wire [1:0] IP_SAXI0_BRESP;
+wire IP_SAXI0_BREADY;
+wire IP_SAXI0_BVALID;
+wire [31:0] IP_MAXI0_ARADDR;
+wire [2:0] IP_MAXI0_ARPROT;
+wire [3:0] IP_MAXI0_ARCACHE;
+wire [7:0] IP_MAXI0_ARLEN;
+wire [3:0] IP_MAXI0_ARQOS;
+wire [0:0] IP_MAXI0_ARLOCK;
+wire [5:0] IP_MAXI0_ARUSER;
+wire [3:0] IP_MAXI0_ARREGION;
+wire [11:0] IP_MAXI0_ARID;
+wire [2:0] IP_MAXI0_ARSIZE;
+wire [1:0] IP_MAXI0_ARBURST;
+wire IP_MAXI0_ARVALID;
+wire IP_MAXI0_ARREADY;
+wire [1:0] IP_MAXI0_RRESP;
+wire [0:0] IP_MAXI0_RLAST;
+wire [63:0] IP_MAXI0_RDATA;
+wire [5:0] IP_MAXI0_RUSER;
+wire [11:0] IP_MAXI0_RID;
+wire IP_MAXI0_RVALID;
+wire IP_MAXI0_RREADY;
+wire [1:0] IP_MAXI0_AWBURST;
+wire [0:0] IP_MAXI0_AWLOCK;
+wire [3:0] IP_MAXI0_AWCACHE;
+wire [2:0] IP_MAXI0_AWSIZE;
+wire [3:0] IP_MAXI0_AWQOS;
+wire [31:0] IP_MAXI0_AWADDR;
+wire [7:0] IP_MAXI0_AWLEN;
+wire [5:0] IP_MAXI0_AWUSER;
+wire [11:0] IP_MAXI0_AWID;
+wire [2:0] IP_MAXI0_AWPROT;
+wire [3:0] IP_MAXI0_AWREGION;
+wire IP_MAXI0_AWREADY;
+wire IP_MAXI0_AWVALID;
+wire [63:0] IP_MAXI0_WDATA;
+wire [7:0] IP_MAXI0_WSTRB;
+wire [0:0] IP_MAXI0_WLAST;
+wire [5:0] IP_MAXI0_WUSER;
+wire IP_MAXI0_WREADY;
+wire IP_MAXI0_WVALID;
+wire [11:0] IP_MAXI0_BID;
+wire [5:0] IP_MAXI0_BUSER;
+wire [1:0] IP_MAXI0_BRESP;
+wire IP_MAXI0_BREADY;
+wire IP_MAXI0_BVALID;
+wire [31:0] IP_MAXI1_ARADDR;
+wire [2:0] IP_MAXI1_ARPROT;
+wire [3:0] IP_MAXI1_ARCACHE;
+wire [7:0] IP_MAXI1_ARLEN;
+wire [3:0] IP_MAXI1_ARQOS;
+wire [0:0] IP_MAXI1_ARLOCK;
+wire [5:0] IP_MAXI1_ARUSER;
+wire [3:0] IP_MAXI1_ARREGION;
+wire [11:0] IP_MAXI1_ARID;
+wire [2:0] IP_MAXI1_ARSIZE;
+wire [1:0] IP_MAXI1_ARBURST;
+wire IP_MAXI1_ARVALID;
+wire IP_MAXI1_ARREADY;
+wire [1:0] IP_MAXI1_RRESP;
+wire [0:0] IP_MAXI1_RLAST;
+wire [63:0] IP_MAXI1_RDATA;
+wire [5:0] IP_MAXI1_RUSER;
+wire [11:0] IP_MAXI1_RID;
+wire IP_MAXI1_RVALID;
+wire IP_MAXI1_RREADY;
+wire [1:0] IP_MAXI1_AWBURST;
+wire [0:0] IP_MAXI1_AWLOCK;
+wire [3:0] IP_MAXI1_AWCACHE;
+wire [2:0] IP_MAXI1_AWSIZE;
+wire [3:0] IP_MAXI1_AWQOS;
+wire [31:0] IP_MAXI1_AWADDR;
+wire [7:0] IP_MAXI1_AWLEN;
+wire [5:0] IP_MAXI1_AWUSER;
+wire [11:0] IP_MAXI1_AWID;
+wire [2:0] IP_MAXI1_AWPROT;
+wire [3:0] IP_MAXI1_AWREGION;
+wire IP_MAXI1_AWREADY;
+wire IP_MAXI1_AWVALID;
+wire [63:0] IP_MAXI1_WDATA;
+wire [7:0] IP_MAXI1_WSTRB;
+wire [0:0] IP_MAXI1_WLAST;
+wire [5:0] IP_MAXI1_WUSER;
+wire IP_MAXI1_WREADY;
+wire IP_MAXI1_WVALID;
+wire [11:0] IP_MAXI1_BID;
+wire [5:0] IP_MAXI1_BUSER;
+wire [1:0] IP_MAXI1_BRESP;
+wire IP_MAXI1_BREADY;
+   wire IP_MAXI1_BVALID;
+   
 
    reg [31:0]  clkcnt = 0;
    assign LED = clkcnt[20:13];
@@ -83,6 +155,100 @@ module MPSOC_Top
   always @(posedge FCLK0) begin
      clkcnt <= clkcnt+1;
   end
+
+      wire [159:0] ZynqNOC_write_input; // write issue
+//   assign IP_MAXI0_WUSER = ZynqNOC_write_input[158:153];
+//assign IP_MAXI0_AWQOS = ZynqNOC_write_input[77:74];
+assign IP_MAXI0_WLAST = ZynqNOC_write_input[152:152];
+//assign IP_MAXI0_AWCACHE = ZynqNOC_write_input[60:57];
+//assign IP_MAXI0_AWLOCK = ZynqNOC_write_input[78:78];
+//assign IP_MAXI0_AWUSER = ZynqNOC_write_input[73:68];
+assign IP_MAXI0_WDATA = ZynqNOC_write_input[143:80];
+assign IP_MAXI0_WSTRB = ZynqNOC_write_input[151:144];
+//assign IP_MAXI0_AWID = ZynqNOC_write_input[56:45];
+//assign IP_MAXI0_AWREGION = ZynqNOC_write_input[67:64];
+assign IP_MAXI0_AWSIZE = ZynqNOC_write_input[44:42];
+assign IP_MAXI0_AWADDR = ZynqNOC_write_input[31:0];
+assign IP_MAXI0_AWVALID = ZynqNOC_write_input[79];
+assign IP_MAXI0_AWLEN = ZynqNOC_write_input[39:32];
+assign IP_MAXI0_AWBURST = ZynqNOC_write_input[41:40];
+assign IP_MAXI0_WVALID = ZynqNOC_write_input[159];
+//assign IP_MAXI0_AWPROT = ZynqNOC_write_input[63:61];
+   wire [20:0]  ZynqNOC_write_output; // write response
+   assign ZynqNOC_write_output = {IP_MAXI0_BVALID,IP_MAXI0_BUSER,IP_MAXI0_BID,IP_MAXI0_BRESP};
+   wire ZynqNOC_write_ready_downstream;  
+   assign IP_MAXI0_BREADY = ZynqNOC_write_ready_downstream;
+   wire [1:0] ZynqNOC_write_ready;  
+   assign ZynqNOC_write_ready = {IP_MAXI0_WREADY,IP_MAXI0_AWREADY};  
+
+   ////////////////
+   wire         regs_read_ready_downstream;
+   assign regs_read_ready_downstream = IP_SAXI0_RREADY;
+   wire         regs_read_ready;
+   assign IP_SAXI0_ARREADY = regs_read_ready;
+   wire [79:0] regs_read_input;  // issue read to slave
+   assign regs_read_input = {IP_SAXI0_ARVALID,IP_SAXI0_ARQOS,IP_SAXI0_ARUSER,IP_SAXI0_ARREGION,IP_SAXI0_ARLOCK,IP_SAXI0_ARCACHE,IP_SAXI0_ARPROT,IP_SAXI0_ARID,IP_SAXI0_ARBURST,IP_SAXI0_ARSIZE,IP_SAXI0_ARLEN,IP_SAXI0_ARADDR};
+   wire [53:0] regs_read_output;  // slave read response
+   assign IP_SAXI0_RVALID = regs_read_output[53];
+assign IP_SAXI0_RLAST = regs_read_output[32:32];
+assign IP_SAXI0_RID = regs_read_output[46:35];
+assign IP_SAXI0_RDATA = regs_read_output[31:0];
+assign IP_SAXI0_RUSER = regs_read_output[52:47];
+assign IP_SAXI0_RRESP = regs_read_output[34:33];
+
+   wire         regs_write_ready_downstream;
+   assign regs_write_ready_downstream = IP_SAXI0_BREADY;
+   wire [1:0] regs_write_ready; 
+   assign IP_SAXI0_AWREADY = regs_write_ready[0];
+   assign IP_SAXI0_WREADY = regs_write_ready[1];
+   wire [123:0] regs_write_input;  // issue write to slave
+   assign regs_write_input[79:0] = {IP_SAXI0_AWVALID,IP_SAXI0_AWLOCK,IP_SAXI0_AWQOS,IP_SAXI0_AWUSER,IP_SAXI0_AWREGION,IP_SAXI0_AWPROT,IP_SAXI0_AWCACHE,IP_SAXI0_AWID,IP_SAXI0_AWSIZE,IP_SAXI0_AWBURST,IP_SAXI0_AWLEN,IP_SAXI0_AWADDR};
+   assign regs_write_input[123:80] = {IP_SAXI0_WVALID,IP_SAXI0_WUSER,IP_SAXI0_WLAST,IP_SAXI0_WSTRB,IP_SAXI0_WDATA};
+   wire [20:0] regs_write_output; // return write result from slave
+   assign IP_SAXI0_BVALID = regs_write_output[20];
+assign IP_SAXI0_BID = regs_write_output[13:2];
+assign IP_SAXI0_BUSER = regs_write_output[19:14];
+assign IP_SAXI0_BRESP = regs_write_output[1:0];
+   /////////////////////
+
+   wire         ZynqNOC_read_ready_downstream;
+   assign IP_MAXI0_RREADY = ZynqNOC_read_ready_downstream;
+   wire   ZynqNOC_read_ready;
+   assign ZynqNOC_read_ready = IP_MAXI0_ARREADY;
+   wire [79:0] ZynqNOC_read_input; // read request
+   assign IP_MAXI0_ARADDR = ZynqNOC_read_input[31:0];
+assign IP_MAXI0_ARPROT = ZynqNOC_read_input[59:57];
+assign IP_MAXI0_ARCACHE = ZynqNOC_read_input[63:60];
+assign IP_MAXI0_ARBURST = ZynqNOC_read_input[44:43];
+assign IP_MAXI0_ARLEN = ZynqNOC_read_input[39:32];
+assign IP_MAXI0_ARSIZE = ZynqNOC_read_input[42:40];
+assign IP_MAXI0_ARLOCK = ZynqNOC_read_input[64:64];
+assign IP_MAXI0_ARVALID = ZynqNOC_read_input[79];
+assign IP_MAXI0_ARREGION = ZynqNOC_read_input[68:65];
+assign IP_MAXI0_ARID = ZynqNOC_read_input[56:45];
+assign IP_MAXI0_ARQOS = ZynqNOC_read_input[78:75];
+assign IP_MAXI0_ARUSER = ZynqNOC_read_input[74:69];
+   wire [85:0] ZynqNOC_read_output;    // read response
+   assign ZynqNOC_read_output = {IP_MAXI0_RVALID,IP_MAXI0_RUSER,IP_MAXI0_RID,IP_MAXI0_RRESP,IP_MAXI0_RLAST,IP_MAXI0_RDATA};
+wire         ZynqNOC_read1_ready_downstream;
+   assign IP_MAXI1_RREADY = ZynqNOC_read1_ready_downstream;
+   wire   ZynqNOC_read1_ready;
+   assign ZynqNOC_read1_ready = IP_MAXI1_ARREADY;
+   wire [79:0] ZynqNOC_read1_input; // read request
+   assign IP_MAXI1_ARADDR = ZynqNOC_read1_input[31:0];
+assign IP_MAXI1_ARPROT = ZynqNOC_read1_input[59:57];
+assign IP_MAXI1_ARCACHE = ZynqNOC_read1_input[63:60];
+assign IP_MAXI1_ARBURST = ZynqNOC_read1_input[44:43];
+assign IP_MAXI1_ARLEN = ZynqNOC_read1_input[39:32];
+assign IP_MAXI1_ARSIZE = ZynqNOC_read1_input[42:40];
+assign IP_MAXI1_ARLOCK = ZynqNOC_read1_input[64:64];
+assign IP_MAXI1_ARVALID = ZynqNOC_read1_input[79];
+assign IP_MAXI1_ARREGION = ZynqNOC_read1_input[68:65];
+assign IP_MAXI1_ARID = ZynqNOC_read1_input[56:45];
+assign IP_MAXI1_ARQOS = ZynqNOC_read1_input[78:75];
+assign IP_MAXI1_ARUSER = ZynqNOC_read1_input[74:69];
+   wire [85:0] ZynqNOC_read1_output;    // read response
+   assign ZynqNOC_read1_output = {IP_MAXI1_RVALID,IP_MAXI1_RUSER,IP_MAXI1_RID,IP_MAXI1_RRESP,IP_MAXI1_RLAST,IP_MAXI1_RDATA};
 
    wire CLK;
    assign CLK = FCLK0;
@@ -102,16 +268,16 @@ module MPSOC_Top
 .MAXIGP0AWPROT (),
 .MAXIGP0AWVALID (IP_SAXI0_AWADDR[32]),
 .MAXIGP0AWUSER (),
-.MAXIGP0AWREADY (IP_SAXI0_AWADDR_ready),
+.MAXIGP0AWREADY (IP_SAXI0_AWREADY),
 .MAXIGP0WDATA (IP_SAXI0_WDATA[31:0]),
 .MAXIGP0WSTRB (IP_SAXI0_WSTRB),
 .MAXIGP0WLAST (),
 .MAXIGP0WVALID (IP_SAXI0_WDATA[32]),
-.MAXIGP0WREADY (IP_SAXI0_WDATA_ready),
+.MAXIGP0WREADY (IP_SAXI0_WREADY),
 .MAXIGP0BID (IP_SAXI0_BID),
 .MAXIGP0BRESP (IP_SAXI0_BRESP[1:0]),
 .MAXIGP0BVALID (IP_SAXI0_BRESP[2]),
-.MAXIGP0BREADY (IP_SAXI0_BRESP_ready),
+.MAXIGP0BREADY (IP_SAXI0_BREADY),
 .MAXIGP0ARID (IP_SAXI0_ARID),
 .MAXIGP0ARADDR (IP_SAXI0_ARADDR[31:0]),
 .MAXIGP0ARLEN (),
@@ -122,13 +288,13 @@ module MPSOC_Top
 .MAXIGP0ARPROT (),
 .MAXIGP0ARVALID (IP_SAXI0_ARADDR[32]),
 .MAXIGP0ARUSER (),
-.MAXIGP0ARREADY (IP_SAXI0_ARADDR_ready),
+.MAXIGP0ARREADY (IP_SAXI0_ARREADY),
 .MAXIGP0RID (IP_SAXI0_RID),
 .MAXIGP0RDATA (IP_SAXI0_RDATA[31:0]),
 .MAXIGP0RRESP (IP_SAXI0_RRESP),
 .MAXIGP0RLAST (IP_SAXI0_RLAST),
 .MAXIGP0RVALID (IP_SAXI0_RDATA[32]),
-.MAXIGP0RREADY (IP_SAXI0_RDATA_ready),
+.MAXIGP0RREADY (IP_SAXI0_RREADY),
 .MAXIGP0AWQOS (),
 .MAXIGP0ARQOS (),
 .MAXIGP1ACLK (),
@@ -225,16 +391,16 @@ module MPSOC_Top
 .SAXIGP0AWCACHE (),
 .SAXIGP0AWPROT (),
 .SAXIGP0AWVALID (IP_MAXI0_AWADDR[32]),
-.SAXIGP0AWREADY (IP_MAXI0_AWADDR_ready),
+.SAXIGP0AWREADY (IP_MAXI0_AWREADY),
 .SAXIGP0WDATA (IP_MAXI0_WDATA[63:0]),
 .SAXIGP0WSTRB (IP_MAXI0_WSTRB),
 .SAXIGP0WLAST (IP_MAXI0_WLAST),
 .SAXIGP0WVALID (IP_MAXI0_WDATA[64]),
-.SAXIGP0WREADY (IP_MAXI0_WDATA_ready),
+.SAXIGP0WREADY (IP_MAXI0_WREADY),
 .SAXIGP0BID (),
 .SAXIGP0BRESP (IP_MAXI0_BRESP[1:0]),
 .SAXIGP0BVALID (IP_MAXI0_BRESP[2]),
-.SAXIGP0BREADY (IP_MAXI0_BRESP_ready),
+.SAXIGP0BREADY (IP_MAXI0_BREADY),
 .SAXIGP0ARID (),
 .SAXIGP0ARADDR (IP_MAXI0_ARADDR[31:0]),
 .SAXIGP0ARLEN (IP_MAXI0_ARLEN),
@@ -244,13 +410,13 @@ module MPSOC_Top
 .SAXIGP0ARCACHE (),
 .SAXIGP0ARPROT (),
 .SAXIGP0ARVALID (IP_MAXI0_ARADDR[32]),
-.SAXIGP0ARREADY (IP_MAXI0_ARADDR_ready),
+.SAXIGP0ARREADY (IP_MAXI0_ARREADY),
 .SAXIGP0RID (),
 .SAXIGP0RDATA (IP_MAXI0_RDATA[63:0]),
 .SAXIGP0RRESP (IP_MAXI0_RRESP),
 .SAXIGP0RLAST (IP_MAXI0_RLAST),
 .SAXIGP0RVALID (IP_MAXI0_RDATA[64]),
-.SAXIGP0RREADY (IP_MAXI0_RDATA_ready),
+.SAXIGP0RREADY (IP_MAXI0_RREADY),
 .SAXIGP0AWQOS (),
 .SAXIGP0ARQOS (),
 .SAXIGP0RCOUNT (),
@@ -272,16 +438,16 @@ module MPSOC_Top
 .SAXIGP1AWCACHE (),
 .SAXIGP1AWPROT (),
 .SAXIGP1AWVALID (IP_MAXI1_AWADDR[32]),
-.SAXIGP1AWREADY (IP_MAXI1_AWADDR_ready),
+.SAXIGP1AWREADY (IP_MAXI1_AWREADY),
 .SAXIGP1WDATA (IP_MAXI1_WDATA[63:0]),
 .SAXIGP1WSTRB (IP_MAXI1_WSTRB),
 .SAXIGP1WLAST (IP_MAXI1_WLAST),
 .SAXIGP1WVALID (IP_MAXI1_WDATA[64]),
-.SAXIGP1WREADY (IP_MAXI1_WDATA_ready),
+.SAXIGP1WREADY (IP_MAXI1_WREADY),
 .SAXIGP1BID (),
 .SAXIGP1BRESP (IP_MAXI1_BRESP[1:0]),
 .SAXIGP1BVALID (IP_MAXI1_BRESP[2]),
-.SAXIGP1BREADY (IP_MAXI1_BRESP_ready),
+.SAXIGP1BREADY (IP_MAXI1_BREADY),
 .SAXIGP1ARID (),
 .SAXIGP1ARADDR (IP_MAXI1_ARADDR[31:0]),
 .SAXIGP1ARLEN (IP_MAXI1_ARLEN),
@@ -291,13 +457,13 @@ module MPSOC_Top
 .SAXIGP1ARCACHE (),
 .SAXIGP1ARPROT (),
 .SAXIGP1ARVALID (IP_MAXI1_ARADDR[32]),
-.SAXIGP1ARREADY (IP_MAXI1_ARADDR_ready),
+.SAXIGP1ARREADY (IP_MAXI1_ARREADY),
 .SAXIGP1RID (),
 .SAXIGP1RDATA (IP_MAXI1_RDATA[63:0]),
 .SAXIGP1RRESP (IP_MAXI1_RRESP),
 .SAXIGP1RLAST (IP_MAXI1_RLAST),
 .SAXIGP1RVALID (IP_MAXI1_RDATA[64]),
-.SAXIGP1RREADY (IP_MAXI1_RDATA_ready),
+.SAXIGP1RREADY (IP_MAXI1_RREADY),
 .SAXIGP1AWQOS (),
 .SAXIGP1ARQOS (),
 .SAXIGP1RCOUNT (),

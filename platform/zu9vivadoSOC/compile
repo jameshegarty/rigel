@@ -13,7 +13,7 @@ cat $VERILOG_FILE $DIR/mpsoc_top_LL.sv > $VERILOG_FILE.mpsocwrapper.sv
 cd $BUILDDIR
 echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
 echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e" >> system.tcl
-echo "read_xdc $DIR/../zu9vivado/zu9.xdc" >> system.tcl
+echo "read_xdc $DIR/zu9.xdc" >> system.tcl
 echo "opt_design" >> system.tcl
 echo "place_design" >> system.tcl
 echo "phys_opt_design" >> system.tcl

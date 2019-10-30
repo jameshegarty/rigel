@@ -13,7 +13,7 @@
 #Other net   PACKAGE_PIN AD14     - 3N5824                    Bank   0 - POR_OVERRIDE
 
 #create_clock -add -name FCLK -period 5.00 -waveform {0 4} [get_nets FCLK0];
-create_clock -add -name FCLK -period 1.0 [get_nets FCLK0];
+create_clock -add -name FCLK -period 5.0 [get_nets FCLK0];
 
 set_property PACKAGE_PIN AG14     [get_ports {LED[0]}] ;# Bank  44 VCCO - VCC3V3   - IO_L10P_AD2P_44
 set_property IOSTANDARD  LVCMOS33 [get_ports {LED[0]}] ;# Bank  44 VCCO - VCC3V3   - IO_L10P_AD2P_44
