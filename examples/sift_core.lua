@@ -10,6 +10,7 @@ local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 f.DISABLE_SYNTH=true
 local J = require "common"
+local G = require "generators.core"
 
 local siftCoreHWTerra
 if terralib~=nil then siftCoreHWTerra=require("sift_core_hw_terra") end
@@ -164,12 +165,12 @@ end
 -- input: {dx,dy}
 -- output: descType[BUCKETS], descType
 local function siftDescriptor(dxdyType)
-  local G = calcGaussian(16)
-  G = tileGaussian(G,16,4)
+  local GAUSS = calcGaussian(16)
+  GAUSS = tileGaussian(GAUSS,16,4)
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(ITYPE)))
-  local gweight = R.apply("gweight",RM.constSeq(G,dxdyType,16*16,1,256))
+  local gweight = R.apply("gweight",RM.constSeq(GAUSS,dxdyType,16*16,1,256), G.ValueToTrigger(inp))
   local gweight = R.apply("gwidx",C.index(types.array2d(dxdyType,1),0,0),gweight)
   local dx = R.apply("i0", C.index(ITYPE,0), inp)
   local dy = R.apply("i1", C.index(ITYPE,1), inp)
@@ -359,7 +360,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
     local inp = R.input(types.rv(types.Par(ITYPE)))
     
     local PS = RM.posSeq(internalW,internalH,1)
-    local pos = R.apply("posseq", PS)
+    local pos = R.apply("posseq", PS, G.ValueToTrigger(inp))
     local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
     local pos = R.apply("PS", posSub(15,15), pos)
     
@@ -396,7 +397,7 @@ local function descInner(dxdyType,W,H)
   local out = R.apply("ST",C.stencilLinebuffer(DXDY_PAIR,W,H,1,-15,0,-15,0), inp)
 
   local PS = RM.posSeq(W,H,1)
-  local pos = R.apply("posseq", PS)
+  local pos = R.apply("posseq", PS, G.ValueToTrigger(inp) )
   local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
   
   local out = R.concat("FO",{out,pos})

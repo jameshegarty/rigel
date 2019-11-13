@@ -8,6 +8,10 @@ local types = require("types")
 local J = require "common"
 local soc = require "generators.soc"
 
+local data = macro(function(i) return `i._0 end)
+local valid = macro(function(i) return `i._1 end)
+local ready = macro(function(i) return `i._2 end)
+
 local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapValue,outputFilename,outputType,id,harnessoption,ramFile)
   local out
   local inpSymb
@@ -72,8 +76,8 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local Module = f:toTerra()
 
     local m = symbol(&Module)
-    local valid_in = symbol(bool)
-    local valid_out = symbol(bool)
+    local valid_in = symbol(tuple(&opaque,bool))
+    local valid_out = symbol(tuple(&opaque,bool))
     local incnt = symbol(int)
     
     local callQ, incQ
@@ -116,13 +120,15 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       
       while(cnt<outputCount) do
         m:calculateReady(true)
-        var [valid_in] = (incnt < inputCount)
+        var [valid_in]
+        valid([valid_in])= (incnt < inputCount)
         
         incQ
-        var [valid_out]= false
+        var [valid_out]
+        valid([valid_out])= false
         
         callQ
-        if valid_out then cnt=cnt+1 end
+        if valid(valid_out) then cnt=cnt+1 end
         
         cycles = cycles+1
       end

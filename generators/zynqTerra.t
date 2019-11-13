@@ -2,10 +2,13 @@ local MT = require "generators.modulesTerra"
 local AXI = require "generators.axi"
 local AXIT = require "generators.axiTerra"
 local types = require "types"
+local R = require "rigel"
 local J = require "common"
 
-local makeTerra = J.memoize(function(readPorts,writePorts)
-    print("MAKE ZYNC NOC TERRA",readPorts,writePorts)
+local makeTerra = J.memoize(function( mod, readPorts,writePorts, X)
+  print("MAKE ZYNC NOC TERRA",readPorts,writePorts)
+  assert( R.isModule(mod) )
+  assert(X==nil)
   if readPorts==nil then readPorts=1 end
   if writePorts==nil then writePorts=1 end
   
@@ -207,7 +210,7 @@ local makeTerra = J.memoize(function(readPorts,writePorts)
     self.SAXI0_BID = @AXIT.BID32(inp)
   end
 
-  return MT.new(ZynqNOCTerra)
+  return MT.new( ZynqNOCTerra, mod )
 end)
 
 return makeTerra

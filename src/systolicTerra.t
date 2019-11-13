@@ -145,8 +145,8 @@ function systolicASTFunctions:toTerra( symbols )
         end
         table.insert(stats,q)
         res = s
-      elseif n.kind=="readSideChannel" then
-        res = `[n.sideChannel.global:terraValue()]
+      elseif n.kind=="trigger" then
+        res = `nil
       else
         err(false,"Error, systolicAST:toTerra NYI:"..n.kind)
       end

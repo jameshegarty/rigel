@@ -566,7 +566,7 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   local tfn
 
   local res = {kind="fixed", inputType=inp.type, outputType=out.type,delay=1, sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=(#resetStats>0), requires=requires,provides=provides}
-  if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(self,name) end
+
   res.name = name
 
   local function makeSystolic()
@@ -601,7 +601,11 @@ function fixedNewASTFunctions:toRigelModule(name,X)
   --res.stateful = res.delay>0
   res.makeSystolic = function() return sm end
   
-  return R.newFunction(res)
+  res = R.newFunction(res)
+
+  if terralib~=nil then res.terraModule=fixedTerra.toDarkroom(res,self,name) end
+
+  return res
 end
 
 --------------------------------------------------------

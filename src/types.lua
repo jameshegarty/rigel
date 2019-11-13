@@ -1589,7 +1589,7 @@ end
 function types.hasReady(a)
   if types.isHandshake(a) or types.isHandshakeTrigger(a) or a:isRV() or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
     return true
-  elseif types.isBasic(a) or a:isV() or a:isrv() or a:isrV() or a:isrvV() or a==types.Interface() then
+  elseif types.isBasic(a) or a:isS() or a:isV() or a:isrv() or a:isrV() or a:isrvV() or a==types.Interface() then
     return false
   elseif a:isTuple() then
     for _,v in pairs(a.list) do if types.hasReady(v) then return true end end

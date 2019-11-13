@@ -1135,13 +1135,9 @@ modules.Storv = memoize(function( fn, X )
 
   err( fn.inputType==types.Interface() or fn.inputType:isS(), "Storv: input type must be Inil or S")
   err( fn.outputType==types.Interface() or fn.outputType:isS(), "Storv: output type must be Inil or S")
-  --local G = require "generators.core"
 
   local res = { kind="Storv", delay=fn.delay, sdfInput=fn.sdfInput, sdfOutput=fn.sdfOutput, stateful=fn.stateful }
   res.name = sanitize("Storv_"..fn.name)
-  --local res = G.Module{"Storv_fn"..fn.name, fn.inputType, SDF{1,1}, function(inp) return fn(inp) end }
-  --assert( rigel.isFunction(res) )
-
 
   res.requires = {}
   for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
@@ -1154,14 +1150,13 @@ modules.Storv = memoize(function( fn, X )
   -- hackity hack
   if fn.inputType==types.Interface() then
     if fn.outputType.over:is("Par") then
-      --assert(false)
-      --res.inputType = types.rv(types.ParSeq(types.Array2d(types.Trigger,,),,))
       res.inputType = types.rv(types.Par(types.Trigger))
     else
       print(fn.outputType)
       assert(false)
     end
   else
+    assert(false)
     res.inputType = types.rv(fn.inputType.over)
   end
 
@@ -1188,7 +1183,9 @@ endmodule
 ]=]
     return s
   end
-          
+
+  if terralib~=nil then res.terraModule = MT.Storv( res, fn ) end
+  
   return res
 end)
 
@@ -1794,8 +1791,6 @@ modules.interleveSchedule = memoize(function( N, period )
   local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "InterleveSchedule_"..N.."_"..period
 
-  if terralib~=nil then res.terraModule = MT.interleveSchedule( N, period ) end
-
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
@@ -1816,7 +1811,11 @@ modules.interleveSchedule = memoize(function( N, period )
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+  
+  if terralib~=nil then res.terraModule = MT.interleveSchedule( res, N, period ) end
+
+  return res
 end)
 
 -- wtop is the width of the largest (top) pyramid level
@@ -1829,8 +1828,6 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
 
   local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "PyramidSchedule_depth_"..tostring(depth).."_wtop_"..tostring(wtop).."_T_"..tostring(T)
-
-  if terralib~=nil then res.terraModule = MT.pyramidSchedule( depth, wtop, T ) end
 
   --------------------
   local pattern = {}
@@ -1877,7 +1874,11 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+
+  if terralib~=nil then res.terraModule = MT.pyramidSchedule( res, depth, wtop, T ) end
+
+  return res
 end)
 
 -- WARNING: validOut depends on readyDownstream
@@ -2974,8 +2975,6 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
   res.delay = 0
   res.name = sanitize("SparseLinebuffer_w"..imageW.."_h"..imageH.."_ymin"..ymin.."_A"..tostring(A).."_rowWidth"..tostring(rowWidth))
 
-  if terralib~=nil then res.terraModule = MT.sparseLinebuffer(A, imageW, imageH, rowWidth, ymin, defaultValue) end
-
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
     local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
@@ -3056,7 +3055,11 @@ modules.sparseLinebuffer = memoize(function( A, imageW, imageH, rowWidth, ymin, 
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+
+  if terralib~=nil then res.terraModule = MT.sparseLinebuffer( res, A, imageW, imageH, rowWidth, ymin, defaultValue) end
+
+  return res
 end)
 
 -- xmin, ymin are inclusive
@@ -3477,9 +3480,6 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
     sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=(csimOnly~=true)}
   end
   
-  local terraModule
-  if terralib~=nil then terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
-
   if size==1 and (csimOnly==false) then
     local name = J.sanitize("OneElementFIFO_"..tostring(A))
     local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
@@ -3590,8 +3590,10 @@ return mod
       end
     end
 
-    local res = rigel.newModule{ name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true), makeSystolic=makeSystolic, makeTerra=function() return terraModule end }
-    res.kind="fifo"
+    local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true), makeSystolic=makeSystolic }
+
+    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
+
 return res
   end
 
@@ -3617,6 +3619,8 @@ modules.triggerFIFO = memoize(function(ty)
   local res = rigel.newModule{ name=name, functions={store=storeFunction, load=loadFunction}, stateful=true }
   res.kind="fifo"
 
+  if terralib~=nil then res.terraModule = MT.triggerFIFO( res, ty ) end
+  
   function res.makeSystolic()
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
@@ -3643,18 +3647,6 @@ endmodule
   return res
 end)
 
-modules.dram = memoize(function( A, delay, filename, X )
-  rigel.expectBasic(A)
-  assert(X==nil)
-
-  local res = {kind="dram", inputType=rigel.Handshake(types.uint(32)), outputType=rigel.Handshake(A), registered=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true}
-
-  if terralib~=nil then res.terraModule = MT.dram(res,A,delay,filename) end
-
-  res.name = sanitize("DRAM_"..tostring(A))
-  return rigel.newFunction(res)
-end)
-
 modules.lut = memoize(function( inputType, outputType, values )
   err( types.isType(inputType), "LUT: inputType must be type")
   rigel.expectBasic( inputType )
@@ -3672,8 +3664,6 @@ modules.lut = memoize(function( inputType, outputType, values )
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 1
   res.name = "LUT_"..verilogSanitize(tostring(inputType)).."_"..verilogSanitize(tostring(outputType)).."_"..verilogSanitize(tostring(values))
-
-  if terralib~=nil then res.terraModule = MT.lut(inputType, outputType, values, inputCount) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -3697,7 +3687,11 @@ modules.lut = memoize(function( inputType, outputType, values )
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+
+  if terralib~=nil then res.terraModule = MT.lut( res, inputType, outputType, values, inputCount ) end
+
+  return res
 end)
 
 modules.reduce = memoize(function( f, W, H, X )
@@ -4909,7 +4903,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
       systolicOutput = res.systolicModule.functions.process.output
     end
 
-    local tmod = MT.lift( name, inputType, outputType, makeTerra, systolicInput, systolicOutput )
+    local tmod = MT.lift( res, name, inputType, outputType, makeTerra, systolicInput, systolicOutput )
     if type(tmod)=="function" then
       res.makeTerra = tmod
     elseif terralib.types.istype(tmod) then
@@ -5167,7 +5161,7 @@ modules.freadSeq = memoize(function( filename, ty, addressable, X )
 
   if addressable==nil then addressable=false end
   err( type(addressable)=="boolean", "freadSeq: addressable must be bool")
-  if terralib~=nil then res.terraModule = MT.freadSeq(filename,ty,addressable) end
+
   res.name = J.sanitize("freadSeq_"..verilogSanitize(filename)..verilogSanitize(tostring(ty)).."_addressable"..tostring(addressable))
 
   function res.makeSystolic()
@@ -5190,7 +5184,11 @@ modules.freadSeq = memoize(function( filename, ty, addressable, X )
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+
+  if terralib~=nil then res.terraModule = MT.freadSeq( res, filename, ty, addressable ) end
+  
+  return res
 end)
 
 -- passthrough: write out the input? default=true
@@ -5209,8 +5207,6 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   if filenameVerilog==nil then filenameVerilog=filename end
   
   local res = {kind="fwriteSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, inputType=ty, outputType=J.sel(passthrough,ty,types.null()), stateful=true, delay=2, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
-
-  if terralib~=nil then res.terraModule = MT.fwriteSeq(filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
 
   res.name = verilogSanitize("fwriteSeq_"..filename.."_"..tostring(ty))
 
@@ -5238,7 +5234,11 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
     return systolicModule
   end
 
-  return rigel.newFunction(res)
+  res = rigel.newFunction(res)
+
+  if terralib~=nil then res.terraModule = MT.fwriteSeq( res, filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
+
+  return res
 end)
 
 local function readAll(file)

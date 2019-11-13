@@ -45,7 +45,7 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
 
   local NOC = RM.moduleLambda( "Zynq_NOC", SimpleNOCFns, instanceList )
   NOC.makeSystolic = function() return C.automaticSystolicStub(NOC) end
-  NOC.makeTerra = function() return makeTerra(readPorts,writePorts) end
+  NOC.makeTerra = function() return makeTerra(NOC,readPorts,writePorts) end
   NOC.readPorts = readPorts
   NOC.writePorts = writePorts
 

@@ -1774,7 +1774,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
   end
 
   if terralib~=nil then
-    res[1].terraModule = CT.generalizedChangeRate(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
+    res[1].terraModule = CT.generalizedChangeRate( res[1], inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
   end
   
   return res
@@ -2389,9 +2389,11 @@ C.VRtoRVRaw = J.memoize(function(A)
     return sm
   end
 
-  function res.makeTerra() return CT.VRtoRVRaw(A) end
+  res = rigel.newFunction(res)
   
-  return rigel.newFunction(res)
+  function res.makeTerra() return CT.VRtoRVRaw( res, A ) end
+  
+  return res
 end)
 
 -- fn should be HSVR, and this wraps to return a plain HS function

@@ -16,11 +16,13 @@ CT={}
 
 function CT.identity(A)
   return terra( a : &A:toTerraType(), out : &A:toTerraType() )
-                            @out = @a
-                  end
+    @out = @a
+  end
 end
 
-function CT.fassert(filename,ty)
+function CT.fassert( res, filename, ty, X )
+  assert(rigel.isFunction(res))
+  assert(X==nil)
   assert(ty:verilogBits()%8==0)
   assert(ty:verilogBits()==ty:sizeof()*8)
   local struct Fassert { file : &cstdio.FILE, token:uint }
@@ -44,10 +46,11 @@ function CT.fassert(filename,ty)
     self.token = self.token+1
   end
 
-  return MT.new(Fassert)
+  return MT.new( Fassert, res )
 end
 
-function CT.print(A,str)
+function CT.print( res, A, str, X )
+  assert(rigel.isFunction(res))
   err(types.isBasic(A),"CT.print: type should be basic, but is: "..tostring(A) )
   
   local function doprint(A,symb)
@@ -97,7 +100,7 @@ function CT.print(A,str)
     self.count = 0
   end
 
-  return MT.new(PrintModule)
+  return MT.new( PrintModule, res )
 end
 
 function CT.cast(A,B)
@@ -164,7 +167,10 @@ function CT.multiplyConst(A,constValue)
   end
 end
 
-function CT.tokenCounter(A,str)
+function CT.tokenCounter( res, A, str, X )
+  assert( rigel.isFunction(res) )
+  assert(X==nil)
+  
   if str==nil then str="" end
   assert(type(str)=="string")
   
@@ -180,10 +186,10 @@ function CT.tokenCounter(A,str)
   end
 
   terra TokenCounter:calculateReady(readyDownstream:bool)
-  self.ready = readyDownstream
-end
+    self.ready = readyDownstream
+  end
 
-return MT.new(TokenCounter)
+  return MT.new( TokenCounter, res )
 end
 
 function CT.sum(A,B,outputType,async)
@@ -218,7 +224,7 @@ function CT.shiftAndCastSaturate(from,to,shift)
   return terra( a : &from:toTerraType(), out : &to:toTerraType() ) @out = [uint8](@a >> shift) end
 end
 
-function CT.border(res,A,W,H,L,R,B,T,value)
+function CT.border( res, A,W,H,L,R,B,T,value)
   local struct Border {}
 
   terra Border:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
@@ -231,7 +237,7 @@ function CT.border(res,A,W,H,L,R,B,T,value)
     end end
   end
 
-  return MT.new(Border)
+  return MT.new( Border, res )
 end
 
 function CT.scale( res, A, w, h, scaleX, scaleY )
@@ -248,7 +254,7 @@ function CT.scale( res, A, w, h, scaleX, scaleY )
     end
   end
 
-  return MT.new(ScaleModule)
+  return MT.new( ScaleModule, res )
 end
 
 function CT.broadcast(A,W,H,OT)
@@ -275,7 +281,7 @@ function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
     end
   end
 
-  return MT.new(Stencil)
+  return MT.new( Stencil, res )
 end
 
 function CT.borderSeq( A, W, H, T, L, R, B, Top, Value, inpType )
@@ -299,7 +305,7 @@ function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
     end
   end
 
-  return MT.new(UnpackStencil)
+  return MT.new( UnpackStencil, res )
 end
 
 function CT.sliceTup(inputType,OT,idxLow)
@@ -321,12 +327,10 @@ function CT.sliceArrIdx(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W)
 end
 
 function CT.stripMSB(totalbits)
-return  terra(inp:&uint16, out:&uint8)
---                         @out = @inp
-                         var ot : uint8 = @inp
---                         cstdio.printf("stripmsb %d to %d\n",@inp,ot)
-                         @out = ot
-                       end
+  return  terra(inp:&uint16, out:&uint8)
+    var ot : uint8 = @inp
+    @out = ot
+  end
 end
 
 function CT.plusConsttfn(ty,value_orig)
@@ -346,7 +350,9 @@ function CT.plusConsttfn(ty,value_orig)
   end
 end
 
-function CT.VRtoRVRaw(A)
+function CT.VRtoRVRaw( res, A, X )
+  assert( rigel.isFunction(res) )
+  assert( X==nil )
   err( types.isBasic(A), "expected basic type" )
   local struct VRtoRVRaw {ready:bool}
 
@@ -355,7 +361,7 @@ function CT.VRtoRVRaw(A)
   end
 
   terra VRtoRVRaw:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
-  return MT.new(VRtoRVRaw)
+  return MT.new( VRtoRVRaw, res )
 end
 
 function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
@@ -364,7 +370,7 @@ function CT.handshakeToHandshakeFramed(res,A,mixed,dims)
     @out = @inp
   end
   terra HandshakeToHandshakeFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
-  return MT.new(HandshakeToHandshakeFramed)
+  return MT.new(HandshakeToHandshakeFramed, res )
 end
 
 function CT.stripFramed(res,A)
@@ -373,10 +379,11 @@ function CT.stripFramed(res,A)
     @out = @inp
   end
   terra StripFramed:calculateReady(readyDownstream:bool) self.ready = readyDownstream end
-  return MT.new(StripFramed)
+  return MT.new(StripFramed, res )
 end
 
-function CT.generalizedChangeRate( inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, bts, X)
+function CT.generalizedChangeRate( res, inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, bts, X)
+  assert( rigel.isFunction(res) )
   assert(inputBitsPerCyc%8==0)
   assert(outputBitsPerCyc%8==0)
 
@@ -433,7 +440,7 @@ function CT.generalizedChangeRate( inputBitsPerCyc, minTotalInputBits_orig, inpu
     self.readyDownstream = readyDownstream
     self.ready = readyDownstream and (self.writePtr-self.readPtr)<shifterBytes
   end
-  return MT.new(GeneralizedChangeRate)
+  return MT.new( GeneralizedChangeRate, res )
 
 end
 
