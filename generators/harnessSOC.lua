@@ -19,8 +19,6 @@ return function(fn,t,instances)
     assert(false)
   end
 
-  print("SDF: ", SDF.tostring(fn.sdfInput), SDF.tostring(fn.sdfOutput))
-
   assert(#fn.sdfInput==1)
   assert(#fn.sdfOutput==1)
 
@@ -33,7 +31,6 @@ return function(fn,t,instances)
 
   local filename = string.gsub(arg[0],"%.lua","") --arg[0]
   filename = string.gsub(filename,"%.t","")
-  print("FILENAME",filename)
   
   if backend=="verilog" or backend=="verilator" then
     local outfile = "out/"..filename..".v"

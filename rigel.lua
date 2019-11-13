@@ -352,7 +352,7 @@ functionGeneratorMT.__call=function(tab,...)
       res.curriedArgs = arglist
       return res
     end
-  elseif tab.inputType~=nil and types.Interface():isSupertypeOf(tab.inputType,{}) then
+  elseif tab.inputType~=nil and types.Interface():isSupertypeOf(tab.inputType,{},"") then
     err(#rawarg==0,"Calling a nullary function with an argument?")
 
     local arglist = {}
@@ -834,7 +834,7 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif self.outputType:isrv() and self.outputType.over:is("Par") then
+  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType.over:is("Par") then
     if self.outputType:lower():verilogBits()>0 then
       table.insert(v,", output wire ["..(self.outputType:lower():verilogBits()-1)..":0] "..fnname.."_output")
     end

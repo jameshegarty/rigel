@@ -609,7 +609,6 @@ end
 
 -- varContext: within a tuple list, we allow you to have things that vary per item (with $) and those that shouldn't. varContext is the string that $ gets replaced with.
 function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
-  --if vars==nil then vars={} end
   assert(type(vars)=="table")
   assert(X==nil)
   local params = require "params"
@@ -617,10 +616,6 @@ function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
   err( types.isType(ty) or params.isParam(ty), tostring(self)..":isSubtypeOf("..tostring(ty).."): input should be type or param, but is: "..tostring(ty) )
 
   assert(type(varContext)=="string")
-
---  print(tostring(self)..":isSupertypeOf("..tostring(ty)..")")
-  
-  --print(self,"isSuperTypeOf?",ty)
 
   if self==ty then
     return true
@@ -641,9 +636,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
         if ty[k]~=v then return false end
       elseif k=="list" then
         -- special case for parmaeterized tuple list
-        --print("LIST",self,self.kind,ty)
         if P.isParam(self.list) and self.list.kind=="TypeList" then
-          --assert(false)
 
           -- this is used by specialize
           if types.checkAndSetVar(vars,self.list.name,{},varContext)==false then

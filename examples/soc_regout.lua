@@ -17,7 +17,7 @@ local regs = SOC.axiRegs({{"offset",RM.reg(u(8),200)},{"lastPx",RM.reg(u(8),0,tr
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-local AddReg = G.Generator{"AddReg",types.rv(types.Par(u8)),types.rv(types.Par(u8)),function(i) return G.Add(i,regs.offset()) end}
+local AddReg = G.Generator{"AddReg",types.rv(types.Par(u8)),types.rv(types.Par(u8)),function(i) return G.Add(i,RM.Storv(regs.offset)(G.ValueToTrigger(i))) end}
 
 local RegInOut = G.Module{types.HandshakeTrigger,SDF{1,8192},
   function(i)
@@ -26,7 +26,6 @@ local RegInOut = G.Module{types.HandshakeTrigger,SDF{1,8192},
     pipeOut = G.FanOut{2}(pipeOut)
     local doneFlag = G.AXIWriteBurst{"out/soc_regout",noc.write}(pipeOut[0])
     local writeRegStatement = G.Map{regs.lastPx}(pipeOut[1])
-    print("WRITEREG",writeRegStatement.fn)
     return R.statements{doneFlag,writeRegStatement}
   end}
 

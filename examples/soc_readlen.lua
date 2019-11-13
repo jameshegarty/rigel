@@ -42,7 +42,7 @@ ReadLenDMA = G.Module{ "ReadLenDMA", HandshakeTrigger, SDF{1,Len},
   end}
 
 AddAddr = G.Module{"AddAddr",T.rv(T.Par(ar(u8,8))),
-                   function(i) return R.concat{RM.counter(u32,regs.len)(),i} end}
+                   function(i) return R.concat{RM.counter(u32,regs.len)(G.ValueToTrigger(i)),i} end}
 
 WriteLenDMA = G.Module{ "WriteLenDMA", Handshake(ar(u8,8)),
   function(i)

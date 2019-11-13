@@ -26,18 +26,14 @@ noc.extern=true
 
 OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
   function(i)
-    --local readStream = SOC.axiBurstReadN("frame_128.raw",128*64,regs.readAddress,noc.read)(i)
     local readStream = SOC.readBurst("frame_128.raw",128,64,u8,8,true,readAddress,noc.read)(i)
-    --readStream = G.Bitcast{b(64),ar(u(8),8)}(readStream)
     local offset = G.Add{200}(readStream)
-    --offset = G.HS{C.bitcast(ar(u(8),8),b(64))}(offset)
-    --return SOC.axiBurstWriteN("out/soc_simple_uniform",128*64,regs.writeAddress,noc.write)(offset)
     return SOC.writeBurst("out/soc_simple_uniform",128,64,u8,8,1,true,noc.write,writeAddress)(offset)
   end}
 
 -- tell the system how much memory we want
 SOC.currentAddr = 0x3000c000
-print(OffsetModule)
+
 OffsetModule.globalMetadata["InstCall_ZynqNOC_write_write_W"]=128
 OffsetModule.globalMetadata["InstCall_ZynqNOC_write_write_H"]=64
 

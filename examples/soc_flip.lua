@@ -18,14 +18,11 @@ local W,H = 128,64
 
 addrGen = Generator{ SDF{1,1}, T.rv(T.Par(T.tuple{T.uint(16),T.uint(16)})), T.rv(T.Par(u(32))),
 function(inp)
-  print("ADDRGEN",inp.type)
   local x, y = Index{0}(inp), Index{1}(inp)
   local resx = AddMSBs{16}(x)
   local resy = Mul( Sub(c(H-1,u(32)),AddMSBs{16}(y)),c(W/8,u(32)) )
   return Add(resx,resy)
 end}
-
-print(addrGen)
 
 harness({
   regs.start,

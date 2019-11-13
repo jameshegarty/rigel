@@ -33,7 +33,6 @@ fn = Module{"Top",
 
     local ob = FanOut{2}(o)
     local ob0 = R.selectStream("ob0",ob,0)
-    print("OB0TYPE",ob0.type)
     ob0 = FIFO{128}(ob0)
     local ob1 = R.selectStream("ob1",ob,1)
     ob1 = FIFO{128}(ob1)
@@ -42,8 +41,6 @@ fn = Module{"Top",
     local addrGenOut = AddrGen(posSeqOut)
 
     local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8,nil,noc.write)
-    print("WRITEMOD",WRITEMOD.inputType)
-    print("OB0type",ob0.type)
     o = WRITEMOD(addrGenOut,ob0)
     o = TriggerCounter{(W*H)/8}(o)
     o = regs.done(o)

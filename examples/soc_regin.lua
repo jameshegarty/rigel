@@ -17,7 +17,7 @@ noc.extern=true
 
 local AddReg = G.Generator{"AddReg",
   types.rv(types.Par(u(8))),types.rv(types.Par(u(8))),
-  function(i) return G.Add(i,G.RemoveMSBs{24}(regs.offset())) end}
+  function(i) return G.Add(i,G.RemoveMSBs{24}(RM.Storv(regs.offset)(G.ValueToTrigger(i)))) end}
 
 harness({
   regs.start,

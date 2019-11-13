@@ -38,7 +38,7 @@ function(args)
       local i0 = inp[0]
       local i1 = inp[1]
       local px = AddMSBs{24}(i0)
-      local coeffs = G.Map{regs.coeffs}(i1)
+      local coeffs = G.Map{RM.Storv(regs.coeffs)}(i1)
       local z = Zip(px,coeffs)
       --print("ZIP1OUT",z.type)
       z = Zip(z)

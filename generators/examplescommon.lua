@@ -539,7 +539,7 @@ end)
 -----------------------------
 C.triggerToConstant = memoize(function(ty,value)
   J.err( types.isType(ty), "C.triggerToConstant: type must be type")
-  return RM.lift( "TriggerToConstant_"..tostring(ty), types.null(), ty, 0,
+  return RM.lift( "TriggerToConstant_"..tostring(ty), types.Trigger, ty, 0,
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
@@ -763,9 +763,11 @@ C.convolveConstantTR = memoize(function( A, ConvWidth, ConvHeight, T, tab, shift
   assert(ConvWidth%T==0)
   assert(type(shift)=="number")
   assert(X==nil)
+
+  local G = require "generators.core"
   
   local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth/T, ConvHeight ))) )
-  local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
+  local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ), G.ValueToTrigger(inp) )
 
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth/T,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth/T, ConvHeight ), packed )
@@ -1745,12 +1747,8 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
       res = {RM.lambda(name,inp,out),bts}
     else
-      -- outputBitsPerCyc>inputBitsPerCyc
-      --assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
-      --local shifterBits = outputBitsPerCyc
-      --while shifterBits%inputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
       local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
-      print("SHIFTBITS",shifterBits,"inputBitsPerCyc",inputBitsPerCyc,"outputBitsPerCyc",outputBitsPerCyc)
+
       assert(shifterBits%inputBitsPerCyc==0)
       assert(shifterBits%outputBitsPerCyc==0)
       
@@ -2015,12 +2013,12 @@ C.StridedReader = memoize(
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
       function(inp)
-        print("MAKESTRIDED",stride,offset)
+
         local cnt = C.triggerUp(Nreads)(inp)
         local cnt = G.Map{RM.counter(types.uint(32), Nreads)}(cnt)
         cnt = G.Mul{stride*itemBytes}(cnt)
         local addr = G.Add{offset*itemBytes}(cnt)
-        --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
+
         return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr,readFn)(addr)
       end}
 
@@ -2056,7 +2054,7 @@ C.AXIReadPar = memoize(
         SOC.currentAddr = SOC.currentAddr+totalBytes
 
         out = G.FanIn(unpack(out))
-        print("OUTT",out.type)
+
         return G.Map{C.bitcast(out.type.over.over,types.array2d(ty,V))}(out)
       end}
 

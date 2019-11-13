@@ -1032,17 +1032,11 @@ modules.map = memoize(function( f, W_orig, H_orig, allowStateful, X )
         CE = S.CE("process_CE")
       end
 
-        --print("MAP",f.name,f.inputType,f.outputType,W_orig,H_orig)
-
-
       local finalOutput
       local pipelines
---      if f.outputType:extractData():verilogBits()==0 then
---        pipelines = out
---      else
-        finalOutput = S.cast( S.tuple( out ), res.outputType.over.over )
---      end
-      
+
+      finalOutput = S.cast( S.tuple( out ), res.outputType.over.over )
+
       systolicModule:addFunction( S.lambda("process", inp, finalOutput, "process_output", pipelines, nil, CE ) )
       if f.stateful then
         print("ISTATE",f.name,f.stateful)
@@ -1064,6 +1058,7 @@ end)
 modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
   err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
+  
   err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
     
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
@@ -1073,8 +1068,6 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   local G = require "generators.core"
 
   local fnMapped = modules.map(fn,Vw,Vh)
-
---  print("FNMAPPED",fnMapped,fnMapped.systolicModule)
   
   local res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
   assert( rigel.isPlainFunction(res) )
@@ -5096,10 +5089,10 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   end
 
   local res = { kind="constSeq", A = A, w=w, h=h, value=value, T=T}
-  res.inputType = types.Interface()
+  res.inputType = types.rv(types.Par(types.Trigger))
   local W = w/T
   err( W == math.floor(W), "constSeq T must divide array size")
-  res.outputType = types.array2d(A,W,h)
+  res.outputType = types.rv(types.Par(types.array2d(A,W,h)))
   res.stateful = (T>1)
 
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}  -- well, technically this produces 1 output for every (nil) input
@@ -5129,7 +5122,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
 
     local shiftOut, shiftPipelines, resetPipelines = fpgamodules.addShifterSimple( systolicModule, J.map(sconsts, function(n) return S.constant(n,types.array2d(A,W,h)) end), DARKROOM_VERBOSE )
     
-    local inp = S.parameter("process_input", types.null() )
+    local inp = S.parameter("process_input", types.Trigger )
 
     local CE
     if res.stateful then
@@ -5318,8 +5311,8 @@ modules.triggerCounter = memoize(function(N_orig)
   local N = Uniform(N_orig)
 
   local res = {kind="triggerCounter"}
-  res.inputType = types.Interface()
-  res.outputType = types.rvV()
+  res.inputType = types.rv(types.Par(types.Trigger))
+  res.outputType = types.rvV(types.Par(types.Trigger))
   res.sdfInput = SDF{1,1}
   res.sdfOutput = SDF{1,N}
   res.stateful=true
@@ -5336,12 +5329,14 @@ modules.triggerCounter = memoize(function(N_orig)
     
     --local done = S.eq(sPhase:get(),S.constant(N-1,types.uint(32))):disablePipelining()
     local done = S.eq( sPhase:get(),Uniform(N-1):toSystolic(types.uint(32),systolicModule) ):disablePipelining()
+
+    local out = S.tuple{S.constant(types.Trigger:fakeValue(),types.Trigger),done}
     
     local pipelines = {}
     table.insert( pipelines, sPhase:setBy( S.constant(1,types.uint(32)) ) )
     
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.null() ), done, "process_output", pipelines, nil, CE) )
+    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.Trigger ), out, "process_output", pipelines, nil, CE) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool()) ) )
 
     return systolicModule
@@ -5359,8 +5354,8 @@ local counterInner = memoize(function(ty,N,X)
   J.err( N:ge(1):assertAlwaysTrue(), "modules.counter: N must be >= 1, but is: "..tostring(N) )
   
   local res = {kind="counter"}
-  res.inputType = types.null()
-  res.outputType = ty
+  res.inputType = types.rv(types.Par(types.Trigger))
+  res.outputType = types.rv(types.Par(ty))
   res.sdfInput = SDF{1,1}
   res.sdfOutput = SDF{1,1}
   res.stateful=true
@@ -5383,7 +5378,7 @@ local counterInner = memoize(function(ty,N,X)
     table.insert( pipelines, sPhase:setBy( S.constant(1,ty) ) )
     
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.null() ), sPhase:get(), "process_output", pipelines, nil, CE) )
+    systolicModule:addFunction( S.lambda("process", S.parameter( "inp", types.Trigger ), sPhase:get(), "process_output", pipelines, nil, CE) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {sPhase:reset()},S.parameter("reset",types.bool()) ) )
 
     return systolicModule
