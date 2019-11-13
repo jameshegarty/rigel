@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     top->ready_downstream = 1;
 
 #if TAPBITS>0
-    setDataBuf(&(top->taps_taps),tapBits,0,tapValue);
+    setDataBuf(&(top->taps_taps_output),tapBits,0,tapValue);
 #endif
     
     top->eval();

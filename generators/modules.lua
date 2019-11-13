@@ -1140,11 +1140,24 @@ modules.Storv = memoize(function( fn, X )
   assert(X==nil)
   err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is ",fn )
 
-  local G = require "generators.core"
-  
-  local res = G.Module{"Storv_fn"..fn.name, fn.inputType, SDF{1,1}, function(inp) return fn(inp) end }
-  assert( rigel.isFunction(res) )
+  err( fn.inputType==types.Interface() or fn.inputType:isS(), "Storv: input type must be Inil or S")
+  err( fn.outputType==types.Interface() or fn.outputType:isS(), "Storv: output type must be Inil or S")
+  --local G = require "generators.core"
 
+  local res = { kind="Storv", delay=fn.delay, sdfInput=fn.sdfInput, sdfOutput=fn.sdfOutput, stateful=fn.stateful }
+  res.name = sanitize("Storv_"..fn.name)
+  --local res = G.Module{"Storv_fn"..fn.name, fn.inputType, SDF{1,1}, function(inp) return fn(inp) end }
+  --assert( rigel.isFunction(res) )
+
+
+  res.requires = {}
+  for inst,fnmap in pairs(fn.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
+  res.provides = {}
+  for inst,fnmap in pairs(fn.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
+
+  res.instanceMap = {}
+  res.instanceMap[fn:instantiate("fn")] = 1
+    
   -- hackity hack
   if fn.inputType==types.Interface() then
     if fn.outputType.over:is("Par") then
@@ -1168,6 +1181,19 @@ modules.Storv = memoize(function( fn, X )
     end
   else
     res.outputType = types.rv(fn.outputType.over)
+  end
+
+  res = rigel.newFunction(res)
+
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    s.verilog = res:vHeader()..res:vInstances()..[=[
+assign process_output = fn_process_output;
+endmodule
+
+]=]
+    return s
   end
           
   return res

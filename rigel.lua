@@ -864,7 +864,7 @@ function darkroomFunctionFunctions:vHeaderRequires()
       
       if types.isHandshakeAny(fn.outputType) then
         table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output, output wire "..inst.name.."_"..fnname.."_ready_downstream")
-      elseif fn.outputType:isrv() and fn.outputType.over:is("Par") then
+      elseif (fn.outputType:isrv() or fn.outputType:isS()) and fn.outputType.over:is("Par") then
         table.insert(v,", input wire ["..(types.lower(fn.outputType.over.over):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
       else
         print("NYI - require of: "..tostring(inst))

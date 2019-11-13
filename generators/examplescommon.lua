@@ -565,7 +565,7 @@ C.packTap = memoize(function(A,ty,global)
 end)
 
 -----------------------------
-C.packTapBroad = memoize(function(A,ty,tap,N,X)
+C.packTapBroad = memoize(function( A, ty, tap, N, X )
   assert(types.isType(A) and A:isData())
   assert(types.isType(ty) and ty:isData())
   assert(type(N)=="number")
@@ -574,7 +574,7 @@ C.packTapBroad = memoize(function(A,ty,tap,N,X)
   
   local G = require "generators.core"
   return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
-                    return R.concat{i,G.Broadcast{{N,1}}(tap())} end}
+                    return R.concat{i,G.Broadcast{{N,1}}(RM.Storv(tap)(G.ValueToTrigger(i)))} end}
 end)
 
 -----------------------------
