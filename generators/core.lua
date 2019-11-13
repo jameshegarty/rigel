@@ -18,32 +18,35 @@ local generators = {}
 -- takes A to A[N]
 generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"size","rate"},{},
 function(args)
+  --print("BROAD",args.opt,args.size,args.rate)
   if args.opt==2 then
     return C.broadcast(args.T,args.size[1],args.size[2])
   elseif args.opt==0 then
-    J.err(args.size[2]==1,"Broadcast NYI: height>1")
+    --J.err(args.size[2]==1,"Broadcast NYI: height>1")
 
-    if (args.rate[1][1]:toNumber()*args.size[1]*args.size[2])/args.rate[1][2]:toNumber() > 1 then
+--    if (args.rate[1][1]:toNumber()*args.size[1]*args.size[2])/args.rate[1][2]:toNumber() > 1 then
       --assert(false)
-      -- going fully sequential is too slow!
+    -- going fully sequential is too slow!
+      local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
       local seq = args.rate[1][2]:toNumber()/args.rate[1][1]:toNumber()
-      local V = (args.size[1]*args.size[2])/seq
-      
+      local V = (sizeW*sizeH)/seq
+
+      --print("BROADCAST SEQ ",seq," V ",V)
       V = math.ceil(V)
-      while (args.size[1]*args.size[2])%V~=0 do
+      while (sizeW*sizeH)%V~=0 do
         V = V + 1
       end
-      seq = (args.size[1]*args.size[2])/V
+      seq = (sizeW*sizeH)/V
       
-      local res = C.compose("Generators_Broadcast_Parseq_"..tostring(args.size[1]),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
+      local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
 
       -- hackity hack
       res.outputType = T.RV(T.ParSeq(T.Array2d(args.T,V),args.size))
 
       return res
-    else
-      return RM.upsampleXSeq(args.T,0,args.size[1],true)
-    end
+--    else
+--      return RM.upsampleXSeq(args.T,0,args.size[1],true)
+--    end
   elseif args.opt==1 then
     assert(false)
   else
@@ -171,7 +174,7 @@ P.SumType("opt",{
             T.rv(T.Par(P.DataType("T")))
 }))
 
-generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.D) end,T.rv(T.Par(P.DataType("D"))),T.Interface())
+generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.D) end,T.rv(T.Par(P.DataType("D"))),T.rv(T.Par(T.Trigger)))
 
 generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"number"},{},
 function(args)
@@ -387,10 +390,11 @@ function(args)
   return C.Not
 end)
 
-generators.Zip = R.FunctionGenerator("core.Zip",{},{},
+generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},
 function(args)
 --  J.err( args.D:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
 
+  --print("GENEZIP",args.opt,args.type)
   if args.opt==0 then
     local typelist = {}
     for k,v in ipairs(args.list) do
@@ -428,7 +432,7 @@ P.SumType("opt",
           {T.rv(T.Par(T.tuple(P.TypeList("list",T.array2d(P.DataType("D"),P.SizeValue("size")))))),
            T.rv(T.tuple(P.TypeList("list",T.Seq(P.ScheduleType("S"),P.SizeValue("size") )))),
            T.rv(T.tuple(P.TypeList("list",T.VarSeq(P.ScheduleType("S"),P.SizeValue("size") )))),
-           T.rv(T.tuple(P.TypeList("list",T.ParSeq(T.Array2d(P.DataType("D"),P.SizeValue("V")),P.SizeValue("size") ))))}),
+           T.rv(T.tuple(P.TypeList("list",T.ParSeq(T.Array2d(P.DataType("D$"),P.SizeValue("V")),P.SizeValue("size") ))))}),
 P.SumType("opt",
           {T.rv(T.Par(P.DataType("D"))),
            T.rv(T.Seq(P.ScheduleType("S"),P.SizeValue("size"))),
@@ -566,7 +570,7 @@ function(args)
   --end
   return RM.posSeq(args.size[1],args.size[2],args.number)
 end,
-types.Interface(),
+types.rv(types.Par(T.Trigger)),
 types.rv(types.Par(P.DataType("D"))))
 
 generators.Pos = R.FunctionGenerator("core.PosSeq",{"size","rate"},{},
@@ -612,7 +616,7 @@ function(args)
   local fnVars = {}
   local fnType = T.rv(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
   
-  J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
+  J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars,""), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
 
   --for k,v in pairs(fnVars) do print("FNVARS",k,v) end
   return R.FunctionGenerator("core.Reduce",{"rate"},{},
@@ -853,6 +857,7 @@ function(args)
   return SOC.writeBurst(args.string, args.size[1], args.size[2], ty, args.number, 1, false, args.rigelFunction )
 end)
 
+-- string is name
 generators.Module = R.FunctionGenerator("core.Module",{"luaFunction","type"},{"string","rate","instanceList"},
 function(args)
   if args.string==nil then

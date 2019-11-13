@@ -152,7 +152,8 @@ end
 -- module interface looks the same as systolic.module.ram128()
 local sliceRamCache = {}
 local function sliceRamGen(bits)
-
+  assert(bits>0)
+  
     if bits==1 then
 return systolic.module.ram128()
   end

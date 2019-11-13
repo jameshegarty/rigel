@@ -12,6 +12,8 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     res = "bool"
   elseif ty.kind=="null" then
     res = "null"
+  elseif ty.kind=="Trigger" then
+    res = "Trigger"
   elseif ty.kind=="unknown" then
     res = "UnknownType"
   elseif ty.kind=="int" then
@@ -27,7 +29,7 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="tuple" then
     local o,c="{","}"
     if ty:isInterface() then o,c="<",">" end
-    if ty:isSchedule() then o,c="[","]" end
+    if ty:isSchedule() then o,c="ScheduleTuple{","}" end
     
     if P.isParam(ty.list) or types.isType(ty.list) then
       res = o..tostring(ty.list)..c
@@ -70,8 +72,6 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
 
     if ty.over==nil and pre=="S" then
       res = "Inil"
-    elseif ty.over==nil then
-      res = pre.."Trigger"
     else
       res = pre.."("..tostring(ty.over)..")"
     end
@@ -96,6 +96,8 @@ types.Bool = types.bool()
 
 types._null=setmetatable({kind="null"}, TypeMT)
 function types.null() return types._null end
+
+types.Trigger = setmetatable({kind="Trigger"}, TypeMT)
 
 types.Unknown = setmetatable({kind="unknown"},TypeMT)
 
@@ -587,7 +589,26 @@ function types.checkExplicitCast(from, to, ast)
   return false
 end
 
-function TypeFunctions:isSupertypeOf(ty,vars,X)
+function types.checkAndSetVar(vars,k,v,varContext,X)
+  assert(X==nil)
+  assert(type(varContext)=="string")
+  if varContext~="" then
+    local oldK = k
+    k = k:gsub("%$",varContext)
+    --print("VARCONTEXT",varContext,oldK,k)
+  end
+  
+  if vars[k]~=nil and vars[k]~=v then
+    print("isSupertypeOf error: value of '",k,"' inconsistant! previous:",vars[k]," new:",v)
+    return false
+  end
+
+  vars[k] = v
+  return true
+end
+
+-- varContext: within a tuple list, we allow you to have things that vary per item (with $) and those that shouldn't. varContext is the string that $ gets replaced with.
+function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
   --if vars==nil then vars={} end
   assert(type(vars)=="table")
   assert(X==nil)
@@ -595,6 +616,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
 
   err( types.isType(ty) or params.isParam(ty), tostring(self)..":isSubtypeOf("..tostring(ty).."): input should be type or param, but is: "..tostring(ty) )
 
+  assert(type(varContext)=="string")
 
 --  print(tostring(self)..":isSupertypeOf("..tostring(ty)..")")
   
@@ -605,7 +627,6 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
   elseif types.isType(ty) then
     -- do the params of these types match?
     if J.keycount(self)~=J.keycount(ty) then -- might be optional things
---      print("KEYCOUNT MISMATCH")
       return false
     end
     
@@ -619,24 +640,30 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
       if type(v)=="string" or type(v)=="number" or R.isSize(v) then
         if ty[k]~=v then return false end
       elseif k=="list" then
-        -- special case for tuple list
+        -- special case for parmaeterized tuple list
         --print("LIST",self,self.kind,ty)
         if P.isParam(self.list) and self.list.kind=="TypeList" then
           --assert(false)
-          vars[self.list.name]={}
-          for kk,vv in ipairs(ty[k]) do
-            if self.list.constraint:isSupertypeOf(ty[k][kk],vars) then
+
+          -- this is used by specialize
+          if types.checkAndSetVar(vars,self.list.name,{},varContext)==false then
+return false end
+          
+          for kk,vv in ipairs(ty.list) do
+            if self.list.constraint:isSupertypeOf(ty.list[kk],vars,tostring(kk)) then
               vars[self.list.name][kk]=vv
             else
               return false
             end
           end
         else
+          -- this is a non-parameterized list - just check everything is OK
           for kk,vv in ipairs(v) do
-            if vv:isSupertypeOf(ty[k][kk],vars) then
+            if vv:isSupertypeOf(ty[k][kk],vars,varContext) then
               if params.isParam(vv) then
                 --print("SET VAR",vv.name,ty[k][kk])
-                vars[vv.name]=ty[k][kk]
+                if types.checkAndSetVar(vars,vv.name,ty[k][kk],varContext)==false then
+return false end
               end
             else
               return false
@@ -645,10 +672,11 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
         end
       elseif types.isType(v) or params.isParam(v) then
         --print("CHECKSUPERTYPE",v,k,ty[k],self,ty)
-        if v:isSupertypeOf(ty[k],vars) then
+        if v:isSupertypeOf(ty[k],vars,varContext) then
           if params.isParam(v) then
             --print("SET VAR",v.name,ty[k])
-            vars[v.name]=ty[k]
+            if types.checkAndSetVar(vars,v.name,ty[k],varContext)==false then
+return false end
           end
         else
           return false
@@ -664,10 +692,16 @@ function TypeFunctions:isSupertypeOf(ty,vars,X)
     -- recurse into it. Ie it's Array(T)
     --    return self.over:isSupertypeOf(ty.over,vars)
   elseif params.isParam(ty) and ty.kind=="SumType" then
-    assert(#ty.list==1) -- NYI
-    vars[ty.name]=0 -- we chose index 0
+    --assert(#ty.list==1) -- NYI
+    --vars[ty.name]=0 -- we chose index 0
     --print("RECURSE INTO SUMTYPE",ty,ty.list[1])
-    return self:isSupertypeOf(ty.list[1],vars)
+    for k,v in ipairs(ty.list) do
+      if self:isSupertypeOf(v,vars,varContext) then
+        if types.checkAndSetVar(vars,ty.name,k-1,varContext) then
+return true end          
+      end
+    end
+    return false
   elseif params.isParam(ty) then
     -- params always more general than specific types
     return false
@@ -775,7 +809,7 @@ end
 function TypeFunctions:verilogBits()
   if self:isBool() then 
     return 1
-  elseif self==types.null() then
+  elseif self==types.null() or self==types.Trigger then
     return 0
   elseif self:isTuple() then
     local sz = 0
@@ -859,6 +893,7 @@ function TypeFunctions:isNumber()
   return self.kind=="float" or self.kind=="uint" or self.kind=="int"
 end
 
+types.TriggerFakeValue = {} -- table indices can't be nil
 function TypeFunctions:fakeValue()
   if self:isInt() or self:isUint() or self:isFloat() or self:isBits() then
     return 0
@@ -878,6 +913,8 @@ function TypeFunctions:fakeValue()
     return self.structure:fakeValue()
   elseif self==types.null() then
     return nil
+  elseif self==types.Trigger then
+    return types.TriggerFakeValue
   else
     err(false, "could not create fake value for "..tostring(self))
   end
@@ -912,6 +949,8 @@ function TypeFunctions:checkLuaValue(v)
     return self.structure:checkLuaValue(v)
   elseif self==types.null() then
     return v==nil
+  elseif self==types.Trigger then
+    return v==types.TriggerFakeValue
   else
     print("NYI - :checkLuaValue with type ",self)
     assert(false)
@@ -1083,6 +1122,8 @@ function types.isBasic(A)
     return true
   elseif A:is("null") then
     return false
+  elseif A:is("Trigger") then
+    return true
   elseif A:isInterface() then
     return false
   elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") or A:is("VarSeq") then
@@ -1344,7 +1385,7 @@ function types.HSFPixelType(A)
   end
 end
 
-types.HandshakeTrigger = types.Interface(nil,types.bool(),types.bool())
+types.HandshakeTrigger = types.Interface(types.Par(types.Trigger),types.bool(),types.bool())
 --[=[
 function TypeFunctions:FV() return types.HSFV(self) end
 function TypeFunctions:FW() return types.HSFSize(self)[1] end
@@ -1483,7 +1524,7 @@ function TypeFunctions:lower() return types.lower(self) end
 -- Handshake(A) => {A,bool}
 function types.lower( a )
   err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-       
+
   if a:isTuple() then
     local res = {}
     for _,v in ipairs(a.list) do table.insert(res,types.lower(v)) end
@@ -1494,11 +1535,13 @@ function types.lower( a )
     if a==types.Interface() then
       return types.null()
     else
-      local over = a.over
-      if over~=nil then over = types.lower(over) end
-      if over~=nil and a.V~=nil then return types.tuple{over,a.V} end
-      if over~=nil then  return over end
+      --local over = a.over
+      --if over~=nil then over = types.lower(a.over) end
+      
+      if a.over~=nil and a.V~=nil then return types.tuple{a.over:lower(),a.V} end
+      if a.over~=nil then return a.over:lower() end
       if a.V~=nil then return a.V end
+      print("COULD NOT LOWER ",a,over,over:lower(),over:lower():verilogBits(),a.V)
       assert(false)
     end
   elseif a:isSchedule() then

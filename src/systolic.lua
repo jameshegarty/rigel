@@ -85,6 +85,7 @@ function systolic.declareWire( ty, name, str, comment )
   end
 
   assert( ty~=types.null() )
+  assert( ty:verilogBits()>0 )
   if ty:isBool() then
     return "wire "..name..";"..str..comment
   else
@@ -201,7 +202,7 @@ end
 function systolicModuleFunctions:instantiate( name, parameters, X )
   err( type(name)=="string", "instantiation name must be a string")
   err( X==nil,"instantiate: too many arguments" )
-  err( name==sanitize(name), "instantiate: name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
+  err( name==sanitize(name), "instantiate: instance name must be verilog sanitized ("..name..") to ("..sanitize(name)..")")
 
   err( parameters==nil or type(parameters)=="table", "parameters must be table")
 
@@ -534,9 +535,9 @@ function systolic.tuple( tab )
   local res = {kind="tuple",inputs={}, loc=getloc()}
   J.map(tab, function(v,k) err( systolicAST.isSystolicAST(v), "input to tuple should be table of ASTs"); res.inputs[k]=v end )
 
-  for k,v in ipairs(tab) do
-    err(v.type:verilogBits()>0,"tuple input "..tostring(k-1).." size must be >0")
-  end
+  --for k,v in ipairs(tab) do
+  --  err(v.type:verilogBits()>0,"tuple input "..tostring(k-1).." size must be >0")
+  --end
   
   return typecheck(res)
 end
@@ -554,6 +555,9 @@ end
 
 local __NULLTAB = systolicAST.new({kind="null",type=types.null(),inputs={},loc="Null LOC"})
 function systolic.null() return __NULLTAB end
+
+systolic.trigger = systolicAST.new({kind="trigger",type=types.Trigger,inputs={},loc="Trigger LOC"})
+
 
 function systolic.select( cond, a, b )
   err( systolicAST.isSystolicAST(cond), "cond must be a systolic AST")
@@ -766,7 +770,7 @@ function systolicASTFunctions:internalDelay(moduleName)
     else
       return 0,0 -- if pipelining is disabled on an op
     end
-  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" then
+  elseif self.kind=="tuple" or self.kind=="fndefn" or self.kind=="parameter" or self.kind=="slice" or self.kind=="cast" or self.kind=="module" or self.kind=="constant" or self.kind=="null" or self.kind=="bitSlice" or self.kind=="trigger" then
     return 0,0 -- purely wiring, or inputs
   elseif self.kind=="delay" then
     return 0,0
@@ -1133,11 +1137,17 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
             return systolic.valueToVerilog(val, ty)
           end
         end
-        finalResult = "("..cconst(n.type,n.value)..")"
+        if n.type:verilogBits()==0 then
+          finalResult = "___CONST_OF_ZERO_BITS"
+        else
+          finalResult = "("..cconst(n.type,n.value)..")"
+        end
         const = true
       elseif n.kind=="fndefn" then
         --table.insert(declarations,"  // function: "..n.fn.name..", pure="..tostring(n.fn:isPure()))
-        if n.fn.output~=nil and n.fn.output.type~=types.null() then table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";") end
+        if n.fn.output~=nil and n.fn.output.type~=types.null() and n.fn.output.type:verilogBits()>0 then
+          table.insert(declarations,"assign "..n.fn.outputName.." = "..args[1]..";")
+        end
         finalResult = "_ERR_NULL_FNDEFN"
       elseif n.kind=="module" then
         for _,v in pairs(n.module.functions) do
@@ -1158,7 +1168,9 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
           finalResult = inp.."["..n.high..":"..n.low.."]"
         end
       elseif n.kind=="slice" then
-        if n.inputs[1].type:isArray() then
+        if n.inputs[1].type:verilogBits()==0 then
+          finalResult = "___SLICE_OF_ZERO_BIT_VALUE"
+        elseif n.inputs[1].type:isArray() then
           local inp = systolic.wireIfNecessary( wired, declarations, n.inputs[1].type, n.inputs[1].name, args[1], " // wire for array index" )
           local sz = n.inputs[1].type:arrayOver():verilogBits()
           local W = (n.inputs[1].type:arrayLength())[1]
@@ -1341,6 +1353,9 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
         wire=true
       elseif n.kind=="null" then
         finalResult = "__SYSTOLIC_NULL"
+        wire = true
+      elseif n.kind=="trigger" then
+        finalResult = "__SYSTOLIC_TRIGGER"
         wire = true
       elseif n.kind=="select" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
@@ -1536,11 +1551,11 @@ function userModuleFunctions:instanceToVerilogStart( instance, providesMap )
   for inst,fnmap in pairs(self.externalInstances) do
     for fnname,_ in pairs(fnmap) do
       local fn = inst.module.functions[fnname]
-      if fn.inputParameter.type~=types.null() then
+      if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then
         table.insert(arglist,", ."..inst.name.."_"..fn.inputParameter.name.."("..inst.name.."_"..fn.inputParameter.name..")")
       end
 
-      if fn.output~=nil and fn.output.type~=types.null() then
+      if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
         table.insert(arglist,", ."..inst.name.."_"..fn.outputName.."("..inst.name.."_"..fn.outputName..")")
       end
     end
@@ -1660,10 +1675,10 @@ function userModuleFunctions:toVerilog()
     for inst,fnmap in pairs(self.externalInstances) do
       for fnname,_ in pairs(fnmap) do
         local fn = inst.module.functions[fnname]
-        if fn.inputParameter.type~=types.null() then
+        if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then
           table.insert( portlist, {inst.name.."_"..fn.inputParameter.name, fn.inputParameter.type, false} )
         end
-        if fn.output~=nil and fn.output.type~=types.null() then
+        if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
           table.insert( portlist, {inst.name.."_"..fn.outputName, fn.output.type, true} )
         end
       end
@@ -1673,10 +1688,10 @@ function userModuleFunctions:toVerilog()
     for inst,fnmap in pairs(self.providesMap) do
       for fnname,_ in pairs(fnmap) do
         local fn = inst.module.functions[fnname]
-        if fn.inputParameter.type~=types.null() then
+        if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0 then
           table.insert( portlist, {inst.name.."_"..fn.inputParameter.name, fn.inputParameter.type, true} )
         end
-        if fn.output~=nil and fn.output.type~=types.null() then
+        if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
           table.insert( portlist, {inst.name.."_"..fn.outputName, fn.output.type, false} )
         end
       end

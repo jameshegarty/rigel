@@ -6,7 +6,7 @@ local ParamMT = {__index=ParamFunctions,__tostring=function(p)
                    if p.kind=="SumType" then
                      local res = ""
                      for k,v in ipairs(p.list) do
-                       res = res.."|"..tostring(v)
+                       res = res.."|\n"..tostring(v)
                      end
                      return res
                    elseif p.kind=="TypeList" then
@@ -51,7 +51,9 @@ function params.isParamValue(t) return getmetatable(t)==ParamMT and t.isValue en
 params.UintValue = makeParam("UintValue",true)
 params.SizeValue = makeParam("SizeValue",true)
 
+
 params.DataType = makeParam("DataType",false)
+params.TriggerType = makeParam("TriggerType",false,params.DataType("tmp"))
 params.NumberType = makeParam("NumberType",false,params.DataType("tmp"))
 params.IntType = makeParam("IntType",false,params.NumberType("tmp"))
 params.UintType = makeParam("UintType",false,params.NumberType("tmp"))
@@ -130,23 +132,31 @@ local function valueOrTypeToParam(V)
 end
 
 -- is this param a supertype of P?
-function ParamFunctions:isSupertypeOf(P,vars)
+function ParamFunctions:isSupertypeOf(P,vars,varContext)
   local types = require "types"
   local uniform = require "uniform"
   local R = require "rigel"
 
   J.err(P~=nil,":isSupertypeOf: type must not be nil")
+  assert(type(varContext)=="string")
   
   if self.kind=="SumType" then
-    assert(false)
+    --assert(false)
     -- hack
-    assert(#self.list==1)
-    vars[P.name]=0
-    return self.list[1]:isSupertypeOf(P,vars)
+    --assert(#self.list==1)
+    --vars[P.name]=0
+    --return self.list[1]:isSupertypeOf(P,vars)
+    for k,v in ipairs(self.list) do
+      if v:isSupertypeOf(P,vars,varContext) then
+        vars[self.name]=k-1
+        return true
+      end
+    end
+    return false
   elseif params.isParam(P) then
     if self.kind==P.kind then return true end
     if P.super==nil then return false end -- this kind has no super, and doesn't match self
-    return self:isSupertypeOf(P.super,vars)
+    return self:isSupertypeOf(P.super,vars,varContext)
 
   elseif self.kind=="InterfaceType" then
     if P:isInterface()==false then return false end
@@ -164,7 +174,7 @@ function ParamFunctions:isSupertypeOf(P,vars)
       vars[self.name] = types.rvV
     elseif P:isrRvV() then
       vars[self.name] = types.rRvV
-    elseif P:isInil() then
+    elseif P:isS() then
       vars[self.name] = types.Interface
     else
       print("NYI interf - "..tostring(P))
@@ -175,7 +185,7 @@ function ParamFunctions:isSupertypeOf(P,vars)
       return self.over==P.over
     end
     
-    local res = self.over:isSupertypeOf(P.over,vars)
+    local res = self.over:isSupertypeOf(P.over,vars,varContext)
     --print("Param interface here",self.over,P.over,res)
     return res
   elseif self.kind=="ScheduleType" then
@@ -192,7 +202,7 @@ function ParamFunctions:isSupertypeOf(P,vars)
         return false
       end
       
-      local res = self.over:isSupertypeOf(P.over,vars)
+      local res = self.over:isSupertypeOf(P.over,vars,varContext)
       if res==false then return false end
       
       if P:is("Par") then
@@ -208,7 +218,7 @@ function ParamFunctions:isSupertypeOf(P,vars)
       return true
     end
   elseif types.isType(P) or type(P)=="number" or R.isSize(P) then
-    return self:isSupertypeOf(valueOrTypeToParam(P),vars)
+    return self:isSupertypeOf(valueOrTypeToParam(P),vars,varContext)
   end
 
   print("Error, checking "..tostring(self)..":isSupertypeOf("..tostring(P)..")")

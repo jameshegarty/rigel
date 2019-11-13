@@ -532,8 +532,8 @@ end)
 -----------------------------
 C.valueToTrigger = memoize(function(ty)
   err( R.isBasic(ty), "C.valueToTrigger: input type should be basic, but is: "..tostring(ty))
-  return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
-    function(sinp) end, nil,"C.valueToTrigger")
+  return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.Trigger, 0,
+    function(sinp) return S.trigger end, nil,"C.valueToTrigger")
 end)
 
 -----------------------------
@@ -1144,9 +1144,14 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
   if includeSizeFn==nil then includeSizeFn=false end
   
   local inp, regs
-  if ty==nil then
-    inp = R.input(types.HandshakeTrigger)
-    regs = {R.instantiate("f1",RM.triggerFIFO())}
+  if ty==nil or ty:extractData():verilogBits()==0 then
+    if ty==nil then
+      inp = R.input(types.HandshakeTrigger)
+    else
+      inp = R.input(types.RV(ty))
+    end
+    
+    regs = {R.instantiate("f1",RM.triggerFIFO(ty))}
   else
     inp = R.input(R.Handshake(ty))
     local FIFOMod = RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad)
@@ -1570,7 +1575,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), types.lower(inputType), types.lower(OT), 0,
+    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType:extractData(), OT:extractData(), 0,
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
@@ -1625,7 +1630,8 @@ function C.index( inputType, idx, idy, X )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end
-  return C.slice( inputType, idx, idx, idy, idy, true )
+  local res = C.slice( inputType, idx, idx, idy, idy, true )
+  return res
 end
 
 

@@ -8,6 +8,7 @@ local C = require "generators.examplescommon"
 local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 local J = require "common"
+local G = require "generators.core"
 
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
@@ -443,7 +444,7 @@ function sift.addPos(dxdyType,W,H,subX,subY)
   local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4))))
 
   local PS = RM.posSeq(W,H,1)
-  local pos = R.apply("posseq", PS)
+  local pos = R.apply("posseq", PS, G.ValueToTrigger(inp))
   local pos = R.apply("pidx", C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0), pos )
   
   if subX~=nil then

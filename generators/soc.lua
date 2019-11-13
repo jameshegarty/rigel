@@ -33,7 +33,7 @@ SOC.regStub = J.memoize(function(tab)
     J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     v[1]:checkLuaValue(v[2])
-    fns[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+    fns[k] = R.newFunction{name=k, inputType=types.rv(types.Par(types.Trigger)), outputType=types.rv(types.Par(v[1])), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   end
 
   local name = J.sanitize("RegStub_"..tostring(tab))
@@ -42,7 +42,7 @@ SOC.regStub = J.memoize(function(tab)
     local fns = {}
     local delays = {}
     for k,v in pairs(tab) do
-      local inp = S.parameter(k.."_input",types.null())
+      local inp = S.parameter(k.."_input",types.Trigger)
       fns[k] = S.lambda(k,inp,S.constant(v[2],v[1]),k)
       delays[k]=0
     end
@@ -98,7 +98,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     if regmod.functions.write1~=nil then
       functionList[regname] = R.newFunction{name=regname, inputType=R.Handshake(regmod.type), outputType=types.Interface(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
     else
-      functionList[regname] = R.newFunction{name=regname, inputType=types.Interface(), outputType=regmod.type, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[regname] = R.newFunction{name=regname, inputType=types.rv(types.Par(types.Trigger)), outputType=types.rv(types.Par(regmod.type)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
     end
     
     SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(regmod.type:verilogBits()/32)*4
