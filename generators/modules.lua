@@ -1143,7 +1143,7 @@ end)
 -- convert S interface to rv
 modules.Storv = memoize(function( fn, X )
   assert(X==nil)
-  err( rigel.isFunction(fn), "mapVarSeq: first argument to map must be Rigel module, but is ",fn )
+  err( rigel.isFunction(fn), "Storv: first argument to map must be Rigel module, but is ",fn )
 
   err( fn.inputType==types.Interface() or fn.inputType:isS(), "Storv: input type must be Inil or S")
   err( fn.outputType==types.Interface() or fn.outputType:isS(), "Storv: output type must be Inil or S")
@@ -1810,7 +1810,7 @@ modules.interleveSchedule = memoize(function( N, period )
 
   local log2N = math.ceil(math.log(N)/math.log(2))
   
-  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
+  local res = {kind="interleveSchedule", N=N, period=period, delay=0, inputType=types.rv(types.Par(types.Trigger)), outputType=types.rv(types.Par(types.uint(log2N))), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "InterleveSchedule_"..N.."_"..period
 
   function res.makeSystolic()
@@ -1848,7 +1848,7 @@ modules.pyramidSchedule = memoize(function( depth, wtop, T )
 
   local log2N = math.ceil(math.log(depth)/math.log(2))
 
-  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.null(), outputType=types.uint(log2N), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
+  local res = {kind="pyramidSchedule", wtop=wtop, depth=depth, T=T, delay=0, inputType=types.rv(types.Par(types.Trigger)), outputType=types.rv(types.Par(types.uint(log2N))), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true }
   res.name = "PyramidSchedule_depth_"..tostring(depth).."_wtop_"..tostring(wtop).."_T_"..tostring(T)
 
   --------------------
@@ -2022,7 +2022,7 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
     
     assert( Schedule.systolicModule:getDelay("process")==0 )
     local schedulerCE = readyDownstream
-    local nextFIFO = scheduler:process(nil,stepSchedule, schedulerCE)
+    local nextFIFO = scheduler:process(S.trigger,stepSchedule, schedulerCE)
     
     table.insert( resetPipelines, scheduler:reset(nil, resetValid ) )
     

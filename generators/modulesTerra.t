@@ -520,7 +520,7 @@ function MT.interleveSchedule( res, N, period, X )
   
   local struct InterleveSchedule { phase: uint8 }
   terra InterleveSchedule:reset() self.phase=0 end
-  terra InterleveSchedule:process( out : &uint8 )
+  terra InterleveSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
     @out = (self.phase >> period) % N
     self.phase = self.phase+1
   end
@@ -537,7 +537,7 @@ function MT.pyramidSchedule( res, depth, wtop, T, X )
   terra PyramidSchedule:reset() self.depth=0; self.w=0 end
   terra PyramidSchedule:init() end
   terra PyramidSchedule:free() end
-  terra PyramidSchedule:process( out : &uint8 )
+  terra PyramidSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
     @out = self.depth
     var targetW : int = (wtop*cmath.pow(2,depth-1))/cmath.pow(4,self.depth)
     if targetW<T then
@@ -595,7 +595,7 @@ end
 
 function MT.serialize( res, A, inputRates, Schedule)
   local struct Serialize { schedule: Schedule.terraModule; nextId : uint8, ready:uint8, readyDownstream:bool}
-  terra Serialize:reset() self.schedule:reset(); self.schedule:process(&self.nextId) end
+  terra Serialize:reset() self.schedule:reset(); self.schedule:process(nil,&self.nextId) end
   terra Serialize:init() self.schedule:init() end
   terra Serialize:free() self.schedule:free() end
   terra Serialize:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -605,7 +605,7 @@ function MT.serialize( res, A, inputRates, Schedule)
         data(out) = data(inp)
         -- step the schedule
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE\n") end
-        self.schedule:process( &self.nextId)
+        self.schedule:process( nil, &self.nextId)
       else
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: invalid input\n") end
         valid(out) = [#inputRates]
@@ -901,7 +901,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
 end
 
 function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
-  assert(outputRate>0)
+  assert(outputRate>=0)
   assert(inputRate>=0)
   assert(H>0)
   
@@ -909,21 +909,32 @@ function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, i
 
   if inputRate>outputRate then
     terra ChangeRate:reset() self.phase = 0; end
-    terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", self.phase) end
-      if self.phase==0 then
+
+    local SELF = symbol(&ChangeRate)
+    local out = symbol(&rigel.lower(res.outputType):toTerraType())
+
+    local DOSET
+    if outputRate==0 then
+      assert(A:verilogBits()==0)
+      DOSET = quote end
+    else
+      DOSET = quote for y=0,H do
+        for i=0,outputRate do (data(out))[i+y*outputRate] = SELF.buffer[i+SELF.phase*outputRate+y*inputRate] end
+      end end
+    end
+    terra ChangeRate.methods.process( [SELF], inp : &rigel.lower(res.inputType):toTerraType(), [out]  )
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", SELF.phase) end
+      if SELF.phase==0 then
         for y=0,H do
-          for i=0,inputRate do self.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
+          for i=0,inputRate do SELF.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
         end
       end
 
-      for y=0,H do
-        for i=0,outputRate do (data(out))[i+y*outputRate] = self.buffer[i+self.phase*outputRate+y*inputRate] end
-      end
+      DOSET
       valid(out) = true
 
-      self.phase = self.phase + 1
-      if  self.phase>=outputCount then self.phase=0 end
+      SELF.phase = SELF.phase + 1
+      if  SELF.phase>=outputCount then SELF.phase=0 end
 
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out)) end
     end

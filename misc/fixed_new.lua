@@ -128,7 +128,7 @@ end
 function fixed.applyNullaryLiftRigel(f)
   R.isFunction(f)
   assert( f.inputType==types.Interface() )
-  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
+  err( f.outputType:isrv() and f.outputType.over:is("Par"), "applyNullaryLiftRigel: output must be rvPar, but is: ",f.outputType )
   
   return fixed.new{kind="applyNullaryLiftRigel", f=f, inputs={}, type=f.outputType.over.over, loc=getloc()}
 end
@@ -304,7 +304,7 @@ function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType,operateOnUnderlyi
 
   if outputType==nil then outputType = f.outputType end
   
-  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=outputType, loc=getloc(), operateOnUnderlyingType=operateOnUnderlyingType}
+  return fixed.new{kind="applyUnaryLiftRigel", f=f, inputs={self}, type=outputType:extractData(), loc=getloc(), operateOnUnderlyingType=operateOnUnderlyingType}
 end
 
 -- f should be a unary function that takes in a single systolic value, and returns a systolic value
@@ -486,6 +486,8 @@ function fixedNewASTFunctions:toSystolic()
         res = S.neg(args[1])
       elseif n.kind=="applyUnaryLiftRigel" then
         local I = n.f.systolicModule:instantiate(n.name)
+        for ic,t in pairs(n.f.requires) do assert(requires[ic]==nil);requires[ic]=t end
+        for ic,t in pairs(n.f.provides) do assert(provides[ic]==nil);provides[ic]=t end
         table.insert(instances,I)
         res = I:process(args[1])
         if n.f.stateful then table.insert(resetStats,I:reset()) end
