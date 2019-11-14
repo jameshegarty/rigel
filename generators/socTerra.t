@@ -14,7 +14,8 @@ local valid = macro(function(i) return `i._1 end)
 
 local SOCMT = {}
 
-function SOCMT.regStub( tab, X )
+function SOCMT.regStub( mod, tab, X )
+  assert( R.isModule(mod) )
   assert(X==nil)
   local struct RegStub {}
 
@@ -27,7 +28,7 @@ function SOCMT.regStub( tab, X )
     end
   end
 
-  return MT.new( RegStub )
+  return MT.new( RegStub, mod )
 end
 
 function SOCMT.axiRegs( mod, tab, X )

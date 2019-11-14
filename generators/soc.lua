@@ -49,8 +49,10 @@ SOC.regStub = J.memoize(function(tab)
     return S.module.new( name,fns,{},true,nil,"",delays)
   end
 
-  local res = R.newModule{ name=name, functions=fns, stateful=false, makeSystolic=makeSystolic, makeTerra=function() return SOCMT.regStub(tab) end }
+  local res = R.newModule{ name=name, functions=fns, stateful=false, makeSystolic=makeSystolic }
 
+  res.makeTerra=function() return SOCMT.regStub( res, tab ) end
+  
   return res
 end)
 
@@ -1560,7 +1562,6 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
 
   local ChangeRateModule, totalBits = CR[1], CR[2]
-  --print("TOTALBITS",totalBits)
   
   assert( Uniform(totalBits%(128*8)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits%inputBits):eq(0):assertAlwaysTrue() )
