@@ -187,7 +187,7 @@ function types.array2d( _type, w, h, X )
     err( w==math.floor(w), "non integer array width "..tostring(w))
     err( h==math.floor(h), "non integer array height "..tostring(h))
   
-    err( w*h>0,"types.array2d: w*h must be >0" )
+    err( w*h>0,"types.array2d: w*h must be >0, but is w:",w," h:",h )
 
     local R = require "rigel"
     size = R.Size(w,h)
@@ -462,6 +462,8 @@ function types.meet( a, b, op, loc)
     else
       error("NYI - bit meet "..op)
     end
+  elseif a==b then
+    return a,a,a
   else
     error("Type error, meet not implemented for "..tostring(a).." and "..tostring(b)..", op "..op..", "..loc)
   end

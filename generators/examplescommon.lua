@@ -1397,12 +1397,20 @@ end)
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
-C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
+C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
   err(X==nil, "cropHelperSeq, too many arguments")
   err(type(T)=="number","T must be number")
-  if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
-
-  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
+  local W = Uniform(W_orig):toNumber()
+  err( type(H)=="number", "H must be number")
+  err( type(L)=="number", "L must be number")
+  err( type(R)=="number", "R must be number")
+  err( type(B)=="number", "B must be number")
+  err( type(Top)=="number", "Top must be number")
+  
+  if T==0 or (L%T==0 and R%T==0) then return modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ) end
+  if framed==nil then framed=false end
+  
+  err( T==0 or (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
   local inp = rigel.input( types.rv(types.Par(types.array2d( A, T ))) )
@@ -1410,7 +1418,28 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
 
-  return modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top), inp, out )
+  local res = modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_framed"..tostring(framed)), inp, out )
+
+  local niType, noType
+  if framed then
+    print("CROPHELPERFR",res.inputType,res.outputType)
+    if T==0 then
+      niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
+      noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
+    else
+      niType = types.rv(types.ParSeq(res.inputType:extractData(),W_orig,H))
+      noType = types.rvV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
+    end
+
+    assert(res.inputType:lower()==niType:lower())
+    assert(res.outputType:lower()==noType:lower())
+
+    res.inputType = niType
+    res.outputType = noType
+    print("CROPHELPDONE")
+  end
+
+  return res
 end)
 
 
@@ -1850,69 +1879,6 @@ function C.linearPipeline( t, modulename, rate, instances, X )
 
   return RM.lambda( modulename, inp, out, instances )
 end
-
--- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
---[=[C.handshakeToHandshakeFramed = memoize(
-  function( A, mixed, dims, X )
-    err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
-    err( type(mixed)=="boolean", "handshakeToHandshakeFramed: mixed should be bool")
-    assert(X==nil)
-    err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake, but is: "..tostring(A))
-    err(A.over:is("Par"),"handshakeToHandshakeFramed: input should be par")
-    local res = {inputType=A,outputType=types.RV(A.over.over,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
-    local nm = "HandshakeToHandshakeFramed_"..tostring(A).."_mixed"..tostring(mixed).."_dims"..tostring(dims)
-    res.name=J.sanitize(nm)
-
-    function res.makeSystolic()
-      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
-      local r = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", r, r, "ready") )
-      local I = S.parameter("process_input", R.lower(A) )
-      sm:addFunction( S.lambda("process",I,I,"process_output") )
-      --sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
-      return sm
-    end
-    function res.makeTerra()
-      return CT.handshakeToHandshakeFramed(res,A,mixed,dims)
-    end
-    
-    return rigel.newFunction(res)
-  end)
-
-C.stripFramed = memoize(
-  function( A, X)
-    err(A:is("HandshakeFramed") or A:is("HandshakeArrayFramed"),"StripFramed: input should be framed, but is: "..tostring(A) )
-    assert(X==nil)
-
-    
-    local res = {inputType=A,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
-
-    if A:is("HandshakeFramed") then
-      res.outputType = types.Handshake(A.params.A)
-    elseif A:is("HandshakeArrayFramed") then
-      res.outputType = types.HandshakeArray(A.params.A,A.params.W,A.params.H)
-    else
-      assert(false)
-    end
-    
-    res.name=J.sanitize("StripFramed_"..tostring(A))
-    
-    function res.makeSystolic()
-      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
-      local r = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", r, r, "ready") )
-      local I = S.parameter("process_input", R.lower(A) )
-      sm:addFunction( S.lambda("process",I,I,"process_output") )
-
-      return sm
-    end
-    function res.makeTerra()
-      return CT.stripFramed(res,A)
-    end
-    
-    return rigel.newFunction(res)
-
-  end)]=]
 
 -- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}
 -- if ser==false, takes A[W*H/ratio,W,H}->A[W,H]

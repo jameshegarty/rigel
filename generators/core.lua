@@ -25,13 +25,14 @@ function(args)
     local seq = args.rate[1][2]:toNumber()/args.rate[1][1]:toNumber()
     local V = (sizeW*sizeH)/seq
 
-      --print("BROADCAST SEQ ",seq," V ",V)
+    print("BROADCAST SEQ ",seq," V ",V)
     V = math.ceil(V)
     while (sizeW*sizeH)%V~=0 do
       V = V + 1
     end
     seq = (sizeW*sizeH)/V
-      
+    print("BROADCAST SEQ ",seq," V ",V)
+    
     local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
 
     -- hackity hack
@@ -464,9 +465,11 @@ generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
   if a.opt==0 then
     assert(a.V[2]==1)
-    return RM.cropSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+    local res = C.cropHelperSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+    return res
   elseif a.opt==1 then
-    return RM.cropSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+    local res = C.cropHelperSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+    return res
   else
     print("OPT",a.opt)
     assert(false)

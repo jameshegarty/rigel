@@ -1005,6 +1005,9 @@ local function checkRigelFunction(tab)
   err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
   err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
 
+  err( darkroom.SDF==false or tab.sdfInput:nonzero(), "rigel.newFunction: sdf input rate is not >0, but is: "..tostring(tab.sdfInput) )
+  err( darkroom.SDF==false or tab.sdfOutput:nonzero(), "rigel.newFunction: sdf output rate is not >0, but is: "..tostring(tab.sdfOutput) )
+
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 

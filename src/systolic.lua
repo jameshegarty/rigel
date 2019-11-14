@@ -85,7 +85,11 @@ function systolic.declareWire( ty, name, str, comment )
   end
 
   assert( ty~=types.null() )
-  assert( ty:verilogBits()>0 )
+  --assert( ty:verilogBits()>0 )
+  if ty:verilogBits()==0 then
+    return ""
+  end
+    
   if ty:isBool() then
     return "wire "..name..";"..str..comment
   else
@@ -1919,6 +1923,10 @@ setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
 regModuleMT={__index=regModuleFunctions}
 
 function regModuleFunctions:instanceToVerilogStart( instance )
+  if self.type:verilogBits()==0 then
+return nil
+  end
+  
   local decl = declareReg(self.type, instance.name, self.initial)
   
   if self.resetValue~=nil then
@@ -1930,6 +1938,10 @@ end
 
 function regModuleFunctions:instanceToVerilog( instance, fnname, inputVar, validVar, CEVar )
 
+  if self.type:verilogBits()==0 then
+return "___ZERO_BIT_REG",nil,true
+  end
+  
   if fnname=="delay" or fnname=="set" then
     local decl = ""
     
@@ -1978,7 +1990,7 @@ function systolic.module.reg( ty, hasCE, initial, hasValid, resetValue, delayMod
   assert(X==nil)
   err(types.isType(ty),"type must be a type")
   err( types.isBasic(ty),"reg: type must be basic type, but is: "..tostring(ty) )
-  err( ty:verilogBits()>0, "0 bit size register?")
+  --err( ty:verilogBits()>0, "0 bit size register?")
   err(type(hasCE)=="boolean", "hasCE must be bool")
   if initial~=nil then ty:checkLuaValue(initial) end
   assert(hasValid==nil or type(hasValid)=="boolean")

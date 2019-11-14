@@ -143,7 +143,7 @@ local function typecheck_inner( ast, newNodeFn )
     local expr = ast.inputs[1]
 
     err( expr.type:isArray() or expr.type:isTuple(), "Error, you can not index into an this type! Type is ",expr.type,ast.loc)    
-    err( ast.idxLow<=ast.idxHigh, "idxLow>idxHigh")
+    err( ast.idxLow<=ast.idxHigh, "slice error: idxLow>idxHigh. inputType:",expr.type," idxLow:",ast.idxLow," idxHigh:",ast.idxHigh)
     err( ast.idyLow<=ast.idyHigh, "idyLow>idyHigh")
     
     if expr.type:isArray() then
