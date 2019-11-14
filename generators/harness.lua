@@ -113,10 +113,10 @@ function harnessTop(t)
 
   local outputCountFrac = {t.outSize[1]*t.outSize[2], outputP}
 
-  if R.SDF and iover~=types.null() then
+  if R.SDF and iover~=types.null() and iover:verilogBits()>0 then
     local expectedOutputCountFrac = {inputCount*fn.sdfOutput[1][1]*fn.sdfInput[1][2],fn.sdfOutput[1][2]*fn.sdfInput[1][1]}
 
-    err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..")")
+    err( SDFRate.fracEq(expectedOutputCountFrac,outputCountFrac), "Error, SDF predicted output tokens ("..tostring(SDFRate.fracToNumber(expectedOutputCountFrac))..") does not match stated output tokens ("..tostring(SDFRate.fracToNumber(outputCountFrac))..") on fn ",t.fn.name)
   end
 
   if backend=="verilog" or backend=="verilator" then

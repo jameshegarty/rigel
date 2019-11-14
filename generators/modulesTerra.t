@@ -58,6 +58,8 @@ function MT.new( Module, rigelFnMod )
     else
       J.err(Module.methods[fnname].type.parameters[2]==&rigelFn.inputType:lower():toTerraType(),"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 2 (fn input) type was:",Module.methods[fnname].type.parameters[2]," but should be:",rigelFn.inputType:lower():toTerraType()," because rigel fn input type was:",rigelFn.inputType)
 
+      J.err(Module.methods[fnname].type.parameters[3]~=nil,"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function parameter 3 missing!")
+      
       J.err(Module.methods[fnname].type.parameters[3]==&rigelFn.outputType:lower():toTerraType(),"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 3 (fn output) type was:",Module.methods[fnname].type.parameters[3]," but should be:",rigelFn.outputType:lower():toTerraType())
     end
   end
@@ -1663,7 +1665,8 @@ end
 function MT.freadSeq( res, filename, ty, addressable, X )
   assert( rigel.isFunction(res) )
   assert( X==nil )
-  
+  assert( ty:isData() )
+
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:init() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -1679,7 +1682,7 @@ function MT.freadSeq( res, filename, ty, addressable, X )
       [J.darkroomAssert](outBytes==[ty:sizeof()], ["Error, addressable freadSeq of '"..filename.."' failed, probably end of file?"])
     end
   else
-    terra FreadSeq:process(out : &ty:toTerraType())
+    terra FreadSeq:process( inp:&res.inputType:lower():toTerraType(), out : &ty:toTerraType() )
       var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
       [J.darkroomAssert](outBytes==[ty:sizeof()], ["Error, freadSeq of '"..filename.."' failed, probably end of file?"])
     end

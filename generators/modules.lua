@@ -1057,28 +1057,40 @@ end)
 -- basically the same as regular map, but for parseq
 modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
-  err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
-  
-  err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
-    
-  local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)  
-
   err( X==nil, "mapParSeq: too many arguments" )
+
+  local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)
+
+  local res
 
   local G = require "generators.core"
 
-  local fnMapped = modules.map(fn,Vw,Vh)
-  
-  local res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
-  assert( rigel.isPlainFunction(res) )
+  if fn.inputType:isRV() or fn.outputType:isRV() then
+    -- special case
+    err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1!")
 
+    assert(fn.inputType:extractSchedule():is("Par"))
+    local ty = fn.inputType:extractData()
+    
+    res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),types.RV(types.Par(types.Array2d(ty,1,1))),SDF{1,1},function(inp) return fn(G.Index{0}(inp)) end}
+  else
+    err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
+    err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
+
+
+    local fnMapped = modules.map(fn,Vw,Vh)
+  
+    res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
+    assert( rigel.isPlainFunction(res) )
+  end
+  
   -- hackity hack
   if fn.inputType~=types.Interface() then
-    res.inputType = fn.inputType:replaceVar("over",types.ParSeq(fnMapped.inputType.over.over,W_orig,H_orig))
+    res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
   end
 
   if fn.outputType~=types.Interface() then
-    res.outputType = fn.outputType:replaceVar("over",types.ParSeq(fnMapped.outputType.over.over,W_orig,H_orig))
+    res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
   end
 
   return res
@@ -5132,7 +5144,7 @@ modules.constSeqInner = memoize(function( value, A, w, h, T, X )
   return rigel.newFunction( res )
 end)
 
-function modules.constSeq(value,A,w,h,T,X)
+function modules.constSeq( value, A, w, h, T, X )
   err( type(value)=="table", "constSeq: value should be a lua array of values to shift through")
   local UV = J.uniq(value)
   local I = modules.constSeqInner(UV,A,w,h,T,X)
@@ -5143,6 +5155,7 @@ end
 modules.freadSeq = memoize(function( filename, ty, addressable, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
+  err( ty:verilogBits()>0, "freadSeq: type has zero size?" )
   err( X==nil, "freadSeq: too many arguments" )
   rigel.expectBasic(ty)
   local filenameVerilog=filename
@@ -5152,8 +5165,8 @@ modules.freadSeq = memoize(function( filename, ty, addressable, X )
     res.inputType=types.rv(types.Par(types.uint(32)))
     res.outputType=types.rv(types.Par(ty))
   else
-    res.inputType=types.null()
-    res.outputType=ty
+    res.inputType=types.rv(types.Par(types.Trigger))
+    res.outputType=types.rv(types.Par(ty))
   end
   
   res.sdfInput=SDF{1,1}

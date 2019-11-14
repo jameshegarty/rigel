@@ -29,7 +29,7 @@ local PosToAddr = G.Module{"PosToAddr",
                            --types.rv(types.Par(ar(u16,2))),
                            types.rv(types.Par(types.array2d(u16,2))),SDF{1,1},
   function(loc)
-    local i = G.PosSeq{{8,1},0}() -- inner loop from 0...2
+    local i = G.PosSeq{{8,1},0}(G.ValueToTrigger(loc)) -- inner loop from 0...2
     local x = G.Mul(G.Add(loc[0],i[0]),R.constant(4,u16)) -- (x+i.x)*4
     return C.cast(u16,u32)(G.Add(G.Mul(loc[1],R.constant(1920*8,u16)),x))
   end}
@@ -49,11 +49,11 @@ local CachedReadModule = G.Module{ "CachedReadModule", R.HandshakeTrigger, SDF{1
     --local pos = G.PosSeq{{W,H},0}(i)
     local pos = G.Pos{{W,H}}(i)
 
-        print("LOLXX",pos.rate,pos.type)
-        local posDup = G.Broadcast{{8,1}}(pos)
-        print("POSTUP",posDup.rate,posDup.type)
+    print("LOLXX",pos.rate,pos.type)
+    local posDup = G.BroadcastSeq{{8,1},0}(pos)
+    print("POSTUP",posDup.rate,posDup.type)
     local addr = G.Map{PosToAddr}(posDup) -- mult coords by 8
-        print("LOLb",addr.rate,addr.type)
+    print("LOLb",addr.rate,addr.type)
     local stencil
     if NOCACHE then
       stencil = G.Map{SlowRead}(addr)

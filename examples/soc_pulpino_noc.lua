@@ -54,7 +54,7 @@ local PTop = G.Module{"PTop",types.HandshakeTrigger,
     done_plus200 = G.FIFO{128}(done_plus200)
     done_inv = G.FIFO{128}(done_inv)
     
-    return G.FanIn(done_plus200,done_inv)
+    return G.ValueToTrigger(G.FanIn(done_plus200,done_inv))
   end}
 
 print(PTop)

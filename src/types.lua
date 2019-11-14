@@ -1567,7 +1567,6 @@ function TypeFunctions:extractData()
   return types.extractData(self)
 end
 
-
 -- extract underlying actual data type.
 -- V(A) => A
 -- RV(A) => A

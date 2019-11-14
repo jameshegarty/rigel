@@ -539,6 +539,7 @@ end,
 types.RV(T.Par(T.Trigger)),
 types.RV(P.ScheduleType("D")))
 
+-- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
 function(args)
   local res = generators.Function{"Flatten_VW"..tostring(args.inner[1]).."_VH"..tostring(args.inner[2]).."_W"..tostring(args.outer[1]).."_H"..tostring(args.outer[2]),T.RV(T.Seq(T.Par(T.Array2d(args.D,args.inner)),args.outer)),SDF{1,1},function(inp) return inp end}

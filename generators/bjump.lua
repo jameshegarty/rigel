@@ -21,7 +21,7 @@ function Bjump.AXICachedRead( ty, itemsPerBlock, sets, readFn )
   local INP = R.input(types.Handshake(types.uint(32)))
   print("INP",INP)
   local readFnInst = readFn:instantiate("read")
-  local out = R.statements{RM.makeHandshake(C.bitcast(types.uint(32),ty))(INP),readFnInst(RM.makeHandshake(C.const(types.uint(32),0))())}
+  local out = R.statements{RM.makeHandshake(C.bitcast(types.uint(32),ty))(INP),readFnInst(RM.makeHandshake(C.const(types.uint(32),0))(G.ValueToTrigger(INP)))}
   local res = RM.lambda("Bjump_AXICachedRead",INP,out,{readFnInst})
   
   local bsg_defines = C.VerilogFile("generators/bsg_ip_cores/bsg_misc/bsg_defines.v")
