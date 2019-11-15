@@ -10,3 +10,6 @@
 [submodule "modules/pulpino/common_cells"]
 	path = generators/pulpino/common_cells
 	url = https://github.com/pulp-platform/common_cells.git
+[submodule "generators/basejump_stl"]
+	path = generators/basejump_stl
+	url = https://github.com/bespoke-silicon-group/basejump_stl.git
