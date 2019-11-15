@@ -45,7 +45,10 @@ jobs:
       - run: sudo apt-get install luajit flex bison
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: sudo apt-get install luajit verilator
-      - run: cd examples; make bjump
+      - run: cd examples
+      - run: make out/soc_bjump_cache.v
+      - run: cat out/soc_bjump_cache.v
+      - run: make bjump
       - run: test -e examples/out/bjump_done.txt || exit      
   pulpino:
     docker:
