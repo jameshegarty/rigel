@@ -14,7 +14,9 @@ local valid = macro(function(i) return `i._1 end)
 
 local SOCMT = {}
 
-function SOCMT.regStub(tab)
+function SOCMT.regStub( mod, tab, X )
+  assert( R.isModule(mod) )
+  assert(X==nil)
   local struct RegStub {}
 
   for regname,v in pairs(tab) do
@@ -26,7 +28,7 @@ function SOCMT.regStub(tab)
     end
   end
 
-  return MT.new(RegStub)
+  return MT.new( RegStub, mod )
 end
 
 function SOCMT.axiRegs( mod, tab, X )
@@ -80,8 +82,8 @@ function SOCMT.axiRegs( mod, tab, X )
   local regSet = {}
   local regReady = {}
 
-  AxiRegsN.methods.start = terra( [SELF], out : &bool )
-    @out = SELF.startReg
+  AxiRegsN.methods.start = terra( [SELF], out : &tuple(&opaque,bool) )
+    valid(out) = SELF.startReg
 
     if SELF.startReg and SELF.start_readyDownstream then
       cstdio.printf("socTerra.axiRegs: trigger pipeline start\n")
@@ -133,8 +135,8 @@ function SOCMT.axiRegs( mod, tab, X )
     self.write_readyDownstream = readyDownstream
   end
 
-  terra AxiRegsN:done( inp : &bool )
-    if @inp then
+  terra AxiRegsN:done( inp : &tuple(&opaque,bool) )
+    if valid(inp) then
       cstdio.printf("axiRegsN: PIPELINE DONE\n")
       self.doneReg = true
     end
@@ -180,10 +182,11 @@ function SOCMT.axiRegs( mod, tab, X )
     [regReady]
   end
 
-  return MT.new(AxiRegsN)
+  return MT.new( AxiRegsN, mod )
 end
 
 function SOCMT.axiBurstReadN( mod, totalBytes_orig, baseAddress_orig, rigelReadFn, X )
+  assert( R.isPlainFunction(mod) )
   assert(X==nil)
   --assert(type(baseAddress)=="number")
   local baseAddress = Uniform(baseAddress_orig)
@@ -202,8 +205,9 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, baseAddress_orig, rigelReadF
     self.readFn:reset()
   end
 
-  terra ReadBurst:process( trigger:&bool, dataOut:&R.lower(outputType):toTerraType() )
-    if @trigger and self.nextByteToRead >= [totalBytes:toTerra()] then
+  terra ReadBurst:process( trigger:&mod.inputType:lower():toTerraType(),
+                           dataOut:&R.lower(outputType):toTerraType() )
+    if valid(trigger) and self.nextByteToRead >= [totalBytes:toTerra()] then
       cstdio.printf("READBURST:START READING\n")
       self.nextByteToRead = 0
       self.bytesRead = 0
@@ -258,7 +262,7 @@ function SOCMT.axiBurstReadN( mod, totalBytes_orig, baseAddress_orig, rigelReadF
     self.readyDownstream = readyDownstream
   end
 
-  return MT.new(ReadBurst)
+  return MT.new( ReadBurst, mod )
 end
 
 
@@ -279,7 +283,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, baseAddress_orig, writeFn )
     self.writeFirst = false
   end
 
-  terra WriteBurst:process( dataIn:&R.lower(inputType):toTerraType(), done:&bool )
+  terra WriteBurst:process( dataIn:&R.lower(inputType):toTerraType(), done:&mod.outputType:lower():toTerraType() )
     var W : types.lower(AXI.WriteIssue64):toTerraType()
     var BRESP : types.lower(AXI.WriteResponse64):toTerraType()
   
@@ -347,7 +351,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, baseAddress_orig, writeFn )
       end
     end
     
-    @done = (self.writtenBytes==[Nbytes:toTerra()]) and (self.doneReg==false)
+    valid(done) = (self.writtenBytes==[Nbytes:toTerra()]) and (self.doneReg==false)
 
     if (self.writtenBytes==[Nbytes:toTerra()]) and self.readyDownstream then
       self.doneReg = true
@@ -363,7 +367,7 @@ function SOCMT.axiBurstWriteN( mod, Nbytes_orig, baseAddress_orig, writeFn )
     self.readyDownstream = readyDownstream
   end
 
-  return MT.new(WriteBurst)
+  return MT.new( WriteBurst, mod )
 end
 
 function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
@@ -424,7 +428,7 @@ function SOCMT.axiReadBytes( mod, Nbytes, port, addressBase_orig, readFn )
     self.ready = self.readFnInst.ready
   end
 
-  return MT.new(ReadBytes)
+  return MT.new( ReadBytes, mod )
 end
 
 function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
@@ -467,7 +471,7 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
     @AXIT.WSTRB64(&W) = 255
 
     self.writeFnInst:process(&W,&BRESP)
-    @dataOut = @AXIT.BVALID64(&BRESP)
+    valid(dataOut) = @AXIT.BVALID64(&BRESP)
   end
 
   terra WriteBytes:calculateReady(readyDownstream:bool)
@@ -475,7 +479,7 @@ function SOCMT.axiWriteBytes( mod, Nbytes, port, addressBase_orig, writeFn )
     self.ready = self.writeFnInst.ready
   end
 
-  return MT.new(WriteBytes)
+  return MT.new( WriteBytes, mod )
 end
 
 return SOCMT

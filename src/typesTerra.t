@@ -43,7 +43,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = terralib.types.tuple( unpack(J.map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
   elseif self.kind=="opaque" then
     ttype = &terralib.types.opaque
-  elseif self.kind=="null" then
+  elseif self.kind=="null" or self.kind=="Trigger" then
     ttype = &terralib.types.opaque
   else
     print(":toTerraType",self)

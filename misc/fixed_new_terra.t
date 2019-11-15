@@ -223,7 +223,7 @@ local function toTerra(self,name)
   return res,stats, inp, Module, mself, resetStats, initStats, freeStats
 end
 
-function fixedNewTerra.toDarkroom(ast,name)
+function fixedNewTerra.toDarkroom( res, ast, name )
   local terraout, stats,terrainp, Module, mself, resetStats, initStats, freeStats = toTerra(ast,name)
 
   terra Module.methods.process([mself],[terrainp], out:&ast.type:toTerraType() )
@@ -237,7 +237,7 @@ function fixedNewTerra.toDarkroom(ast,name)
   terra Module.methods.init( [mself] ) [initStats] end
   terra Module.methods.free( [mself] ) [freeStats] end
 
-  return MT.new(Module)
+  return MT.new( Module, res )
 end
 
 return fixedNewTerra

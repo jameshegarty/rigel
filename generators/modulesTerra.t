@@ -26,7 +26,9 @@ function MT.terraReference(inst)
   return global( &inst.module.terraModule, nil, inst.name )
 end
 
-function MT.new(Module)
+function MT.new( Module, rigelFnMod )
+  J.err( rigelFnMod~=nil, "MT.new: rigel Fn/Module not passed for ",Module )
+
   if Module.methods.init==nil then terra Module:init() end end
   if Module.methods.free==nil then terra Module:free() end end
   if Module.methods.reset==nil then terra Module:reset() end end
@@ -38,10 +40,34 @@ function MT.new(Module)
   assert(Module.methods.free~=nil)
   assert(Module.methods.reset~=nil)
 
+  local fnlist = {}
+  fnlist.process = rigelFnMod
+  if rigel.isModule(rigelFnMod) then
+    fnlist = rigelFnMod.functions
+  end
+
+  for fnname,rigelFn in pairs(fnlist) do
+    J.err(Module.methods[fnname]~=nil, "Terra module method missing")
+
+    if rigelFn.inputType==types.Interface() or rigelFn.outputType==types.Interface() then
+      local tt = rigelFn.inputType
+      if rigelFn.inputType==types.Interface() then tt = rigelFn.outputType end
+
+      J.err(Module.methods[fnname].type.parameters[2]==&tt:lower():toTerraType(),"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 2 type was:",Module.methods[fnname].type.parameters[2]," but should be:",tt:lower():toTerraType())
+      J.err(Module.methods[fnname].type.parameters[3]==nil,"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 3 type was:",Module.methods[fnname].type.parameters[3]," but should have been nil")
+    else
+      J.err(Module.methods[fnname].type.parameters[2]==&rigelFn.inputType:lower():toTerraType(),"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 2 (fn input) type was:",Module.methods[fnname].type.parameters[2]," but should be:",rigelFn.inputType:lower():toTerraType()," because rigel fn input type was:",rigelFn.inputType)
+
+      J.err(Module.methods[fnname].type.parameters[3]~=nil,"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function parameter 3 missing!")
+      
+      J.err(Module.methods[fnname].type.parameters[3]==&rigelFn.outputType:lower():toTerraType(),"ModuleTerra.new error: function '",fnname,"' on module '",rigelFnMod.name,"', terra function input 3 (fn output) type was:",Module.methods[fnname].type.parameters[3]," but should be:",rigelFn.outputType:lower():toTerraType())
+    end
+  end
+
   return Module
 end
 
-function MT.SoAtoAoS(res,W,H,typelist,asArray)
+function MT.SoAtoAoS( res, W, H, typelist, asArray )
   local struct PackTupleArrays { }
 
   terra PackTupleArrays:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -57,10 +83,10 @@ function MT.SoAtoAoS(res,W,H,typelist,asArray)
     end
   end
 
-  return MT.new(PackTupleArrays)
+  return MT.new( PackTupleArrays, res )
 end
 
-function MT.packTuple(res,typelist)
+function MT.packTuple( res, typelist )
   local struct PackTuple { ready:res.inputType:extractReady():toTerraType(), readyDownstream:bool, outputCount:uint32}
 
   -- ignore the valid bit on const stuff: it is always considered valid
@@ -115,10 +141,11 @@ function MT.packTuple(res,typelist)
       end
   end
 
-  return MT.new(PackTuple)
+  return MT.new( PackTuple, res )
 end
 
-function MT.liftBasic(res,f)
+function MT.liftBasic( res, f, X )
+  assert(X==nil)
   local struct LiftBasic { inner : f.terraModule}
   terra LiftBasic:reset() self.inner:reset() end
   terra LiftBasic:init() self.inner:init() end
@@ -127,7 +154,7 @@ function MT.liftBasic(res,f)
     self.inner:process(inp,&data(out))
     valid(out) = true
   end
-  return MT.new(LiftBasic)
+  return MT.new( LiftBasic, res )
 end
 
 
@@ -144,7 +171,7 @@ function MT.reduceThroughput(res,A,factor)
     self.ready = (self.phase==0) 
   end
 
-  return MT.new(ReduceThroughput)
+  return MT.new(ReduceThroughput,res)
 end
 
 function MT.waitOnInput(res,f)
@@ -170,7 +197,7 @@ function MT.waitOnInput(res,f)
   end
   terra WaitOnInput:calculateReady() self.inner:calculateReady(); self.ready = self.inner.ready end
 
-  return MT.new(WaitOnInput)
+  return MT.new(WaitOnInput,res)
 end
 
 function MT.liftDecimate(res,f)
@@ -205,7 +232,7 @@ function MT.liftDecimate(res,f)
 
   terra LiftDecimate:calculateReady() self.ready=true end
 
-  return MT.new(LiftDecimate)
+  return MT.new(LiftDecimate,res)
 end
 
 
@@ -224,7 +251,7 @@ function MT.RPassthrough(res,f)
     self.ready = readyDownstream and self.inner.ready
   end
 
-  return MT.new(RPassthrough)
+  return MT.new(RPassthrough,res)
 end
 
 function MT.liftHandshake(res,f,delay)
@@ -284,11 +311,11 @@ function MT.liftHandshake(res,f,delay)
     self.ready = readyDownstream and self.inner.ready 
   end
 
-  return LiftHandshake
+  return MT.new( LiftHandshake, res )
 end
 
 
-function MT.map(res,f,W,H)
+function MT.map( res, f, W, H )
   local struct MapModule {fn:f.terraModule}
   terra MapModule:reset() self.fn:reset() end
   terra MapModule:init() self.fn:init() end
@@ -296,7 +323,7 @@ function MT.map(res,f,W,H)
   terra MapModule:process( inp : &types.lower(res.inputType):toTerraType(), out : &types.lower(res.outputType):toTerraType() )
     for i=0,W*H do self.fn:process( &((@inp)[i]), &((@out)[i])  ) end
   end
-  return MT.new(MapModule)
+  return MT.new(MapModule,res)
 end
 
 function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
@@ -341,7 +368,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
       if self.phase==invrate then self.phase = 0 end    
     end
 
-    return FilterSeq
+    return MT.new( FilterSeq, res )
 
   else
     local struct FilterSeq {  }
@@ -355,7 +382,7 @@ function MT.filterSeq( res, A, W,H, rate, fifoSize, coerce )
       data(out) = inp._0
     end
 
-    return FilterSeq
+    return MT.new( FilterSeq, res )
 
   end
   
@@ -383,7 +410,7 @@ function MT.upsampleXSeq( res, A, T, scale_orig, ITYPE )
   end
   terra UpsampleXSeq:calculateReady()  self.ready = (self.phase==0) end
 
-  return UpsampleXSeq
+  return MT.new( UpsampleXSeq, res )
 end
 
 function MT.triggeredCounter(res,TY,N,stride,X)
@@ -409,7 +436,7 @@ function MT.triggeredCounter(res,TY,N,stride,X)
   end
   terra TriggeredCounter:calculateReady()  self.ready = (self.phase==0) end
 
-  return MT.new(TriggeredCounter)
+  return MT.new( TriggeredCounter, res )
 end
 
 function MT.triggerCounter( res, N_orig, X )
@@ -418,17 +445,18 @@ function MT.triggerCounter( res, N_orig, X )
   
   local struct TriggerCounter { phase:int, ready:bool }
   terra TriggerCounter:reset() self.phase=0; end
-  terra TriggerCounter:process( out : &rigel.lower(res.outputType):toTerraType() )
+  terra TriggerCounter:process( inp : &rigel.lower(res.inputType):toTerraType(),
+                                out : &rigel.lower(res.outputType):toTerraType() )
     self.phase = self.phase + 1
     if self.phase==[N:toTerra()] then
       self.phase=0
-      @out = true
+      valid(out) = true
     else
-      @out = false
+      valid(out) = false
     end
   end
 
-  return MT.new(TriggerCounter)
+  return MT.new( TriggerCounter, res )
 end
 
 function MT.downsampleYSeqFn(innerInputType,outputType,scale)
@@ -467,9 +495,6 @@ end
 function MT.upsampleYSeq( res,A, W, H, T, scale,ITYPE )
   local struct UpsampleYSeq { buffer : (ITYPE:toTerraType())[W/T], phase:int, xpos: int, ready:bool }
   terra UpsampleYSeq:reset() self.phase=0; self.xpos=0; end
-  terra UpsampleYSeq:stats(name:&int8)  end
-  terra UpsampleYSeq:init() end
-  terra UpsampleYSeq:free() end
   terra UpsampleYSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     valid(out) = true
     if self.phase==0 then
@@ -485,28 +510,34 @@ function MT.upsampleYSeq( res,A, W, H, T, scale,ITYPE )
   end
   terra UpsampleYSeq:calculateReady()  self.ready = (self.phase==0) end
 
-  return UpsampleYSeq
+  return MT.new( UpsampleYSeq, res )
 end
 
-function MT.interleveSchedule( N, period )
+function MT.interleveSchedule( res, N, period, X )
+  assert(type(N)=="number")
+  assert(type(period)=="number")
+  assert(X==nil)
+  
   local struct InterleveSchedule { phase: uint8 }
   terra InterleveSchedule:reset() self.phase=0 end
-  terra InterleveSchedule:init()  end
-  terra InterleveSchedule:free()  end
-  terra InterleveSchedule:process( out : &uint8 )
+  terra InterleveSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
     @out = (self.phase >> period) % N
     self.phase = self.phase+1
   end
 
-  return InterleveSchedule
+  return MT.new( InterleveSchedule, res )
 end
 
-function MT.pyramidSchedule( depth, wtop, T )
+function MT.pyramidSchedule( res, depth, wtop, T, X )
+  assert(type(depth)=="number")
+  assert(type(T)=="number")
+  assert(X==nil)
+  
   local struct PyramidSchedule { depth: uint8; w:uint }
   terra PyramidSchedule:reset() self.depth=0; self.w=0 end
   terra PyramidSchedule:init() end
   terra PyramidSchedule:free() end
-  terra PyramidSchedule:process( out : &uint8 )
+  terra PyramidSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
     @out = self.depth
     var targetW : int = (wtop*cmath.pow(2,depth-1))/cmath.pow(4,self.depth)
     if targetW<T then
@@ -529,15 +560,11 @@ function MT.pyramidSchedule( depth, wtop, T )
     end
   end
 
-  return PyramidSchedule
+  return MT.new( PyramidSchedule, res )
 end
 
-function MT.toHandshakeArrayOneHot( res,A, inputRates )
+function MT.toHandshakeArrayOneHot( res, A, inputRates )
   local struct ToHandshakeArrayOneHot {ready:bool[#inputRates], readyDownstream:uint8}
-  terra ToHandshakeArrayOneHot:reset()  end
-  terra ToHandshakeArrayOneHot:init() end
-  terra ToHandshakeArrayOneHot:free() end
-  terra ToHandshakeArrayOneHot:stats( name: &int8 ) end
   terra ToHandshakeArrayOneHot:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     if self.readyDownstream < [#inputRates] then -- is ready bit true?
       if valid((@inp)[self.readyDownstream]) then
@@ -563,15 +590,14 @@ function MT.toHandshakeArrayOneHot( res,A, inputRates )
     end
   end
 
-  return ToHandshakeArrayOneHot
+  return MT.new( ToHandshakeArrayOneHot, res )
 end
 
 function MT.serialize( res, A, inputRates, Schedule)
   local struct Serialize { schedule: Schedule.terraModule; nextId : uint8, ready:uint8, readyDownstream:bool}
-  terra Serialize:reset() self.schedule:reset(); self.schedule:process(&self.nextId) end
+  terra Serialize:reset() self.schedule:reset(); self.schedule:process(nil,&self.nextId) end
   terra Serialize:init() self.schedule:init() end
   terra Serialize:free() self.schedule:free() end
-  terra Serialize:stats( name: &int8 ) end
   terra Serialize:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     if self.readyDownstream then
       if valid(inp) then
@@ -579,7 +605,7 @@ function MT.serialize( res, A, inputRates, Schedule)
         data(out) = data(inp)
         -- step the schedule
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE\n") end
-        self.schedule:process( &self.nextId)
+        self.schedule:process( nil, &self.nextId)
       else
         if DARKROOM_VERBOSE then cstdio.printf("STEPSCHEDULE FAIL: invalid input\n") end
         valid(out) = [#inputRates]
@@ -597,10 +623,10 @@ function MT.serialize( res, A, inputRates, Schedule)
     end
   end
 
-  return MT.new(Serialize)
+  return MT.new( Serialize, res )
 end
 
-function MT.Arbitrate( res, A, inputRates, tmuxed)
+function MT.Arbitrate( res, A, inputRates, tmuxed )
   assert( types.isType(A) and A:isSchedule() )
   local N = #inputRates
   local struct Arbitrate { buffer:A:extractData():toTerraType()[N], hasItem:bool[N], ready:bool[N], readyDownstream:bool}
@@ -645,10 +671,10 @@ function MT.Arbitrate( res, A, inputRates, tmuxed)
     end
   end
 
-  return MT.new(Arbitrate)
+  return MT.new( Arbitrate, res )
 end
 
-function MT.demux( res,A, rates)
+function MT.demux( res, A, rates )
   -- HACK: we don't have true bidirectional data transfer in the simulator, so fake it with a FIFO
   local struct Demux { fifo: simmodules.fifo( rigel.lower(res.inputType):toTerraType(), 8, "makeHandshake"), ready:bool, readyDownstream:bool[#rates]}
   terra Demux:reset() self.fifo:reset() end
@@ -686,10 +712,10 @@ function MT.demux( res,A, rates)
     self.ready = (self.fifo:full()==false)
   end
 
-  return MT.new(Demux)
+  return MT.new( Demux, res )
 end
 
-function MT.flattenStreams( res, A, rates)
+function MT.flattenStreams( res, A, rates )
   local struct FlattenStreams { ready:bool, readyDownstream:bool}
 
   terra FlattenStreams:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -701,10 +727,10 @@ function MT.flattenStreams( res, A, rates)
     self.ready = readyDownstream
   end
 
-  return MT.new(FlattenStreams)
+  return MT.new( FlattenStreams, res )
 end
 
-function MT.broadcastStream(res,W,H,X)
+function MT.broadcastStream( res, W, H, X)
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(X==nil)
@@ -745,10 +771,10 @@ function MT.broadcastStream(res,W,H,X)
     end
   end
 
-  return MT.new(BroadcastStream)
+  return MT.new( BroadcastStream, res )
 end
 
-function MT.posSeq(res,W_orig,H,T,asArray)
+function MT.posSeq( res, W_orig, H, T, asArray )
   local W = Uniform(W_orig)
   local struct PosSeq { x:uint, y:uint }
   terra PosSeq:reset() self.x=0; self.y=0 end
@@ -762,14 +788,15 @@ function MT.posSeq(res,W_orig,H,T,asArray)
     else
       assign = quote (@out) = {slf.x,slf.y} end
     end
-    terra PosSeq.methods.process( [slf], [out]  )
+    terra PosSeq.methods.process( [slf], inp : &rigel.lower(res.inputType):toTerraType(), [out]  )
       [assign]
       slf.x = slf.x + 1
       if slf.x==[W:toTerra()] then slf.x=0; slf.y=slf.y+1 end
       if slf.y==H then slf.y=0 end
     end
   else
-    terra PosSeq:process( out : &rigel.lower(res.outputType):toTerraType() )
+    terra PosSeq:process( inp : &rigel.lower(res.inputType):toTerraType(),
+                          out : &rigel.lower(res.outputType):toTerraType() )
       for i=0,T do 
         (@out)[i] = {self.x,self.y}
         self.x = self.x + 1
@@ -779,7 +806,7 @@ function MT.posSeq(res,W_orig,H,T,asArray)
     end
   end
 
-  return MT.new(PosSeq)
+  return MT.new( PosSeq, res )
 end
 
 function MT.pad( res, A, W, H, L, R, B, Top, Value )
@@ -799,16 +826,11 @@ function MT.pad( res, A, W, H, L, R, B, Top, Value )
     end
   end
   
-  return MT.new(Pad)
+  return MT.new( Pad, res )
 end
 
 function MT.downsample( res, A, W, H, scaleX, scaleY )
   local struct Downsample {}
-  terra Downsample:reset() end
-  terra Downsample:init() end
-  terra Downsample:free() end
-  terra Downsample:stats(name:&int8) end -- not particularly interesting
-  
   local outW = W/scaleX
   
   terra Downsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -819,17 +841,13 @@ function MT.downsample( res, A, W, H, scaleX, scaleY )
     end
   end
 
-  return MT.new(Downsample)
+  return MT.new( Downsample, res )
 end
 
 function MT.upsample( res, A, W, H, scaleX, scaleY )
   local struct Upsample {}
-  terra Upsample:reset() end
-  terra Upsample:init() end
-  terra Upsample:free() end
-  terra Upsample:stats(name:&int8) end -- not particularly interesting
-  
-  local outW = W*scaleX
+
+local outW = W*scaleX
   
   terra Upsample:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     for y=0,H*scaleY do
@@ -839,7 +857,7 @@ function MT.upsample( res, A, W, H, scaleX, scaleY )
     end
   end
   
-  return MT.new(Upsample)
+  return MT.new( Upsample, res )
 end
 
 
@@ -848,9 +866,6 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   
   local struct PadSeq {posX:int; posY:int, ready:bool}
   terra PadSeq:reset() self.posX=0; self.posY=0; end
-  terra PadSeq:init() end
-  terra PadSeq:free() end
-  terra PadSeq:stats(name:&int8) end -- not particularly interesting
 
   local Tf = math.max(T,1)
   
@@ -882,37 +897,44 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   end
   terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
 
-  return MT.new(PadSeq)
+  return MT.new( PadSeq, res )
 end
 
 function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
-  assert(outputRate>0)
+  assert(outputRate>=0)
   assert(inputRate>=0)
   assert(H>0)
   
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
-  terra ChangeRate:stats(name:&int8) end
-  terra ChangeRate:init() end
-  terra ChangeRate:free() end
-
   if inputRate>outputRate then
     terra ChangeRate:reset() self.phase = 0; end
-    terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", self.phase) end
-      if self.phase==0 then
+
+    local SELF = symbol(&ChangeRate)
+    local out = symbol(&rigel.lower(res.outputType):toTerraType())
+
+    local DOSET
+    if outputRate==0 then
+      assert(A:verilogBits()==0)
+      DOSET = quote end
+    else
+      DOSET = quote for y=0,H do
+        for i=0,outputRate do (data(out))[i+y*outputRate] = SELF.buffer[i+SELF.phase*outputRate+y*inputRate] end
+      end end
+    end
+    terra ChangeRate.methods.process( [SELF], inp : &rigel.lower(res.inputType):toTerraType(), [out]  )
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", SELF.phase) end
+      if SELF.phase==0 then
         for y=0,H do
-          for i=0,inputRate do self.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
+          for i=0,inputRate do SELF.buffer[i+y*inputRate] = (@inp)[i+y*inputRate] end
         end
       end
 
-      for y=0,H do
-        for i=0,outputRate do (data(out))[i+y*outputRate] = self.buffer[i+self.phase*outputRate+y*inputRate] end
-      end
+      DOSET
       valid(out) = true
 
-      self.phase = self.phase + 1
-      if  self.phase>=outputCount then self.phase=0 end
+      SELF.phase = SELF.phase + 1
+      if  SELF.phase>=outputCount then SELF.phase=0 end
 
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out)) end
     end
@@ -943,7 +965,7 @@ function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, i
     terra ChangeRate:calculateReady()  self.ready = true end
   end
 
-  return MT.new(ChangeRate)
+  return MT.new( ChangeRate, res )
 end
 
 function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
@@ -1005,16 +1027,16 @@ function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
     end
   end
 
-  return MT.new(Linebuffer)
+  return MT.new( Linebuffer, res )
 end
 
-function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
+function MT.sparseLinebuffer( res, A, imageW, imageH, rowWidth, ymin, defaultValue, X )
+  assert(rigel.isPlainFunction(res))
+  assert(X==nil)
   assert(ymin<=0)
 
   local struct SparseLinebuffer { 
     currentX : uint16,
---    xlocs : uint[-ymin], 
---    staging : (A:toTerraType())[-ymin+1]
     -- index 0 is ymin+1 row, index 1 is ymin+2 row etc
     -- remember ymin is <0
     fifos : (simmodules.fifo( A:toTerraType(), rowWidth, "sparseLinebuffer FIFO" ))[-ymin]
@@ -1079,7 +1101,7 @@ function MT.sparseLinebuffer( A, imageW, imageH, rowWidth, ymin, defaultValue )
     if self.currentX==imageW then self.currentX=0 end
   end
 
-  return MT.new(SparseLinebuffer)
+  return MT.new( SparseLinebuffer, res )
 end
 
 function MT.SSR(res, A, T, xmin, ymin, framed, X )
@@ -1135,10 +1157,10 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
     end
   end
 
-  return MT.new(SSR)
+  return MT.new( SSR, res )
 end
 
-function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput, X)
+function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, X)
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)
   
@@ -1170,10 +1192,10 @@ function MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput, X)
   end
   terra SSRPartial:calculateReady()  self.ready = (self.phase==0) end
 
-  return MT.new(SSRPartial)
+  return MT.new( SSRPartial, res )
 end
 
-function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
+function MT.makeHandshake( res, f, tmuxRates, nilhandshake )
   local delay = math.max( 1, f.delay )
   --assert(delay>0)
   -- we don't need an input fifo here b/c ready is always true
@@ -1208,7 +1230,7 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
       end
     end
   elseif f.inputType==types.Interface() and nilhandshake==true then
-    terra MakeHandshake:process( inp : &bool,
+    terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(),
                                  out : &rigel.lower(res.outputType):toTerraType())
       if self.readyDownstream then
         if self.delaysr:size()==delay then
@@ -1221,9 +1243,9 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
 
         var tout : rigel.lower(res.outputType):toTerraType()
         
-        valid(tout) = @inp;
+        valid(tout) = valid(inp);
 
-        if (@inp~=validFalse) then self.inner:process(&data(tout)) end -- don't bother if invalid
+        if (valid(inp)~=validFalse) then self.inner:process(&data(tout)) end -- don't bother if invalid
 
         self.delaysr:pushBack(&tout)
       end
@@ -1235,19 +1257,18 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
     end
   elseif f.outputType==types.Interface() and nilhandshake==true then
     terra MakeHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), 
-                                 out : &bool)
+                                 out : &rigel.lower(res.outputType):toTerraType())
       if self.readyDownstream then
         if self.delaysr:size()==delay then
           var ot = self.delaysr:popFront()
           @out = @ot
         else
-          @out=validFalse
+          valid(out) = validFalse
         end
 
-        var tout : bool
+        var tout : rigel.lower(res.outputType):toTerraType()
         
-        tout = valid(inp);
-
+        valid(tout) = valid(inp);
         if (valid(inp)~=validFalse) then self.inner:process(&data(inp)) end -- don't bother if invalid
 
         self.delaysr:pushBack(&tout)
@@ -1300,14 +1321,15 @@ function MT.makeHandshake(res, f, tmuxRates, nilhandshake )
     end
   end
 
-  return MT.new(MakeHandshake)
+  return MT.new( MakeHandshake, res )
 end
 
 
-function MT.fifo( inputType, outputType, A, size, nostall, W, H, T, csimOnly)
+function MT.fifo( res, inputType, outputType, A, size, nostall, W, H, T, csimOnly, X )
+  assert( rigel.isModule(res) )
+  assert(X==nil)
   local struct Fifo { fifo : simmodules.fifo(A:lower():toTerraType(),size,"fifofifo"), store_ready:bool, readyDownstream:bool }
   terra Fifo:reset() self.fifo:reset() end
-  terra Fifo:stats(name:&int8)  end
   terra Fifo:store( inp : &rigel.lower(inputType):toTerraType())
     if DARKROOM_VERBOSE then cstdio.printf("FIFO STORE ready:%d valid:%d\n",self.store_ready,valid(inp)) end
     -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
@@ -1334,7 +1356,7 @@ function MT.fifo( inputType, outputType, A, size, nostall, W, H, T, csimOnly)
   terra Fifo:store_calculateReady() self.store_ready = (self.fifo:full()==false) end
   terra Fifo:load_calculateReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
 
-  return MT.new(Fifo)
+  return MT.new( Fifo, res )
 end
 
 FR = terralib.includecstring([[
@@ -1350,82 +1372,15 @@ fread(*mem,1,*fsize,file);
 
 ]])
 
-function MT.dram( res, A, delay, filename )
-  local struct Dram { fifo : simmodules.fifo(int,delay,"dramfifo"), ready:bool, readyDownstream:bool, mem:&A:toTerraType(), fsize:uint }
-  terra Dram:reset() self.fifo:reset() end
-
-  terra Dram:init() 
-    var file = cstdio.fopen(filename, "rb") 
-    [J.darkroomAssert](file~=nil, ["file "..filename.." doesnt exist"])
-
-    --var n : int = 0
-    --while cstdio.fread(self.mem+n,1,[A:sizeof()],file)>0 do n=n+1 end
-    FR.fr(file,[&&uint8](&self.mem),&self.fsize)
-    
-    cstdio.fclose(file)
-  end
-
-  terra Dram:free() cstdlib.free(self.mem) end
-
-  local VV = false
-
-  terra Dram:store( inp : &rigel.lower(res.inputType):toTerraType())
-    if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM ADDR REQUEST ready:%d valid:%d\n",self.ready,valid(inp)) end
-    -- if ready==false, ignore then input (if it's behaving correctly, the input module will be stalled)
-    -- 'ready' argument was the ready value we agreed on at start of cycle. Note this this may change throughout the cycle! That's why we can't just call the :storeReady() method
-    if valid(inp) and self.ready then
-      var a :int = data(inp)
-      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM STORE, valid input %d\n",a) end
-
-      if a>self.fsize then
-        cstdio.printf("DRAM SEGFAULT %d\n",a)
-      end
-      
-      self.fifo:pushBack(&a)
-    elseif self.ready then
-      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM STORE, invalid input, ready=%d\n",self.ready) end
-      var a : int = -1
-      self.fifo:pushBack(&a)
-    end
-  end
-
-  terra Dram:load( out : &rigel.lower(res.outputType):toTerraType())
-    if self.readyDownstream then
-      if self.fifo:hasData() and @(self.fifo:peekFront(0))>=0 then
-        var addr : int = @(self.fifo:popFront())
-        if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, hasData. addr=%d size=%d\n", addr,self.fifo:size()) end
-        valid(out) = true
-
-
-        data(out) = self.mem[addr]
-      else
-        if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, no data. sizee=%d\n", self.fifo:size()) end
-        valid(out) = false
-
-        if self.fifo:hasData() then
-          -- remove bubbles
-          self.fifo:popFront()
-        end
-      end
-    else
-      if VV or DARKROOM_VERBOSE then cstdio.printf("DRAM LOAD, not ready. FIFO size: %d\n", self.fifo:size()) end
-    end
-  end
-
-  terra Dram:calculateStoreReady() self.ready = (self.fifo:full()==false) end
-  terra Dram:calculateLoadReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
-
-  return MT.new(Dram)
-end
-
-function MT.lut(inputType, outputType, values, inputCount)
+function MT.lut( res, inputType, outputType, values, inputCount, X )
+  assert( rigel.isPlainFunction(res) )
   local struct LUTModule { lut : (outputType:toTerraType())[inputCount] }
   terra LUTModule:reset() self.lut = arrayof([outputType:toTerraType()], values) end
   terra LUTModule:process( inp:&inputType:toTerraType(), out:&outputType:toTerraType())
     @out = self.lut[@inp]
   end
 
-  return MT.new(LUTModule)
+  return MT.new( LUTModule, res )
 end
 
 function MT.reduce(res,f, W, H)
@@ -1453,10 +1408,10 @@ function MT.reduce(res,f, W, H)
     @out = foldout
   end
 
-  return MT.new(ReduceModule)
+  return MT.new( ReduceModule, res )
 end
 
-function MT.reduceSeq(res,f, Vw,Vh,X)
+function MT.reduceSeq( res, f, Vw, Vh, X )
   assert(X==nil)
   assert(Vw>=1)
   assert(Vh>=1)
@@ -1487,10 +1442,10 @@ function MT.reduceSeq(res,f, Vw,Vh,X)
     end
   end
 
-  return MT.new(ReduceSeq)
+  return MT.new( ReduceSeq, res )
 end
 
-function MT.overflow(res,A,count)
+function MT.overflow( res, A, count )
   local struct Overflow {cnt:int}
   terra Overflow:reset() self.cnt=0 end
   terra Overflow:process( inp : &A:toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
@@ -1502,11 +1457,11 @@ function MT.overflow(res,A,count)
     self.cnt = self.cnt+1
   end
 
-  return MT.new(Overflow)
+  return MT.new( Overflow, res )
 end
 
 
-function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue ) 
+function MT.underflow( res,  A, count, cycles, upstream, tooSoonCycles, waitForValid, overflowValue ) 
   local struct Underflow {ready:bool; readyDownstream:bool; cycles:uint32; outputCount:uint32; counting:bool}
   terra Underflow:reset()
     self.cycles=0;
@@ -1556,11 +1511,11 @@ function MT.underflow(res,  A, count, cycles, upstream, tooSoonCycles, waitForVa
 
   terra Underflow:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
 
-  return MT.new(Underflow)
+  return MT.new( Underflow, res )
 end
 
 
-function MT.underflowNew(res, ty, cycles, count)
+function MT.underflowNew( res, ty, cycles, count)
   local struct UnderflowNew{ready:bool; readyDownstream:bool; remainingItems:uint32; remainingCycles:uint32; deadCycles:uint32 }
 
   local DEADCYCLES = 1024
@@ -1605,7 +1560,7 @@ function MT.underflowNew(res, ty, cycles, count)
 
   terra UnderflowNew:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
 
-  return MT.new(UnderflowNew)
+  return MT.new( UnderflowNew, res )
 end
 
 function MT.cycleCounter( res, A, count )
@@ -1616,11 +1571,12 @@ function MT.cycleCounter( res, A, count )
   end
   terra CycleCounter:calculateReady(readyDownstream:bool) self.ready = readyDownstream; self.readyDownstream=readyDownstream end
 
-  return MT.new(CycleCounter)
+  return MT.new( CycleCounter, res )
 end
 
-function MT.lift( name, inputType, outputType, terraFunction, systolicInput, systolicOutput, X)
+function MT.lift( res, name, inputType, outputType, terraFunction, systolicInput, systolicOutput, X)
   assert(type(name)=="string")
+  assert(rigel.isFunction(res))
   err(types.isType(inputType),"modules terra lift: input type must be type")
   assert(X==nil)
 
@@ -1669,7 +1625,7 @@ function MT.lift( name, inputType, outputType, terraFunction, systolicInput, sys
       else
         terra LiftModule:process(inp:&rigel.lower(inputType):toTerraType(),out:&rigel.lower(outputType):toTerraType()) tfn(inp,out) end
       end
-      return MT.new(LiftModule)
+      return MT.new( LiftModule, res )
     end
   elseif terralib.isfunction(terraFunction) then
     err(types.isType(outputType),"modules terra lift: output type must be type")
@@ -1687,7 +1643,7 @@ function MT.lift( name, inputType, outputType, terraFunction, systolicInput, sys
     assert(false)
   end
 
-  return MT.new(LiftModule)
+  return MT.new( LiftModule, res )
 end
 
 function MT.constSeq( res, value, A, w, h, T, W, X )
@@ -1707,16 +1663,21 @@ assert( X==nil )
     end
   end
   terra ConstSeqState.methods.reset([mself]) mself.phase = 0; [initstats] end
-  terra ConstSeqState:process( out : &rigel.lower(res.outputType):toTerraType() )
+  terra ConstSeqState:process( inp : &rigel.lower(res.inputType):toTerraType(),
+                               out : &rigel.lower(res.outputType):toTerraType() )
     @out = self.data[self.phase]
     self.phase = self.phase + 1
     if self.phase == T then self.phase = 0 end
   end
 
-  return MT.new(ConstSeqState)
+  return MT.new( ConstSeqState, res )
 end
 
-function MT.freadSeq(filename,ty,addressable)
+function MT.freadSeq( res, filename, ty, addressable, X )
+  assert( rigel.isFunction(res) )
+  assert( X==nil )
+  assert( ty:isData() )
+
   local struct FreadSeq { file : &cstdio.FILE }
   terra FreadSeq:init() 
     self.file = cstdio.fopen(filename, "rb") 
@@ -1729,21 +1690,22 @@ function MT.freadSeq(filename,ty,addressable)
     terra FreadSeq:process(inp :&uint, out : &ty:toTerraType())
       cstdio.fseek( self.file, (@inp)*[ty:sizeof()], cstdio.SEEK_SET )
       var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
-      [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+      [J.darkroomAssert](outBytes==[ty:sizeof()], ["Error, addressable freadSeq of '"..filename.."' failed, probably end of file?"])
     end
   else
-    terra FreadSeq:process(out : &ty:toTerraType())
+    terra FreadSeq:process( inp:&res.inputType:lower():toTerraType(), out : &ty:toTerraType() )
       var outBytes = cstdio.fread(out,1,[ty:sizeof()],self.file)
-      [J.darkroomAssert](outBytes==[ty:sizeof()], "Error, freadSeq failed, probably end of file?")
+      [J.darkroomAssert](outBytes==[ty:sizeof()], ["Error, freadSeq of '"..filename.."' failed, probably end of file?"])
     end
   end
 
-  return MT.new(FreadSeq)
+  return MT.new( FreadSeq, res )
 end
 
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
 -- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
-function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes,tokensX,tokensY,X)
+function MT.fwriteSeq( res, filename, ty, passthrough, allowBadSizes, tokensX, tokensY, X )
+  assert( rigel.isPlainFunction(res) )
   local terraSize = terralib.sizeof(ty:toTerraType())*8
   assert(X==nil)
   J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
@@ -1796,19 +1758,7 @@ function MT.fwriteSeq(filename,ty,passthrough,allowBadSizes,tokensX,tokensY,X)
     end
   end
 
-  return MT.new(FwriteSeq)
-end
-
-function MT.seqMap(f, W, H, T)
-  local struct SeqMap { inner: f.terraModule}
-  terra SeqMap:reset() self.inner:reset() end
-  terra SeqMap:stats() self.inner:stats("TOP") end
-  terra SeqMap:process( inp:&types.Interface():toTerraType(), out:&types.Interface():toTerraType())
-    var o : darkroom.lower(f.outputType):toTerraType()
-    for i=0,W*H do self.inner:process(nil,&o) end
-  end
-
-  return SeqMap
+  return MT.new( FwriteSeq, res )
 end
 
 function MT.cropSeqFn(innerInputType,outputType,A, W_orig, H, T, L, R, B, Top )
@@ -1824,10 +1774,6 @@ end
 
 function MT.crop( res, A, W, H, L, R, B, Top )
   local struct Crop {}
-  terra Crop:reset() end
-  terra Crop:init() end
-  terra Crop:free() end
-  terra Crop:stats(name:&int8) end -- not particularly interesting
   
   local outW = W-L-R
   
@@ -1839,13 +1785,13 @@ function MT.crop( res, A, W, H, L, R, B, Top )
     end
   end
   
-  return Crop
+  return MT.new( Crop, res )
 end
 
 function MT.counter( res, ty, N )
   local struct Counter {buf:ty:toTerraType()}
 
-  terra Counter:process( out:&ty:toTerraType() )
+  terra Counter:process( inp:&res.inputType:lower():toTerraType(), out:&ty:toTerraType() )
     @out = self.buf
     if self.buf==[(N-1):toTerra()] then
       self.buf = 0
@@ -1856,7 +1802,7 @@ function MT.counter( res, ty, N )
 
   terra Counter:reset() self.buf=0 end
 
-  return MT.new(Counter)
+  return MT.new( Counter, res )
 end
 
 function MT.filterSeqPar(res,A,N)
@@ -1885,7 +1831,7 @@ function MT.filterSeqPar(res,A,N)
     self.ready = r0 or (r1 and r2)
   end
 
-  return MT.new(FilterSeqPar)
+  return MT.new( FilterSeqPar, res )
 end
 
 function MT.lambdaCompile(fn)
@@ -2289,7 +2235,7 @@ return {`mself.[n.name].ready}
   return Module
 end
 
-function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
+function MT.reg( ty, initial, extraPortIsWrite, read1bits, X )
   local chunks = math.max(ty:verilogBits()/read1bits,1)
   assert(math.floor(chunks)==chunks)
 
@@ -2327,19 +2273,56 @@ function MT.reg(ty,initial,extraPortIsWrite,read1bits,X)
     terra Reg:read1(out:&ty:toTerraType())
       cstring.memcpy( out, &self.r, [ty:sizeof()])
       if self.pout>0 then
---        cstdio.printf("Reg:read1 %u pout %u init %u\n",@out,self.pout,initial)
-
---for c=0,chunks do
---    cstdio.printf("Chunk Value %u\n",self.r[c])
---end
-
         self.pout = self.pout-1
-        end
+      end
     end
   end
 
   return Reg
 end
 
+function MT.Storv( res, f )
+  local struct Storv { fn:f.terraModule }
+  terra Storv:reset() self.fn:reset() end
+  terra Storv:init() self.fn:init() end
+  terra Storv:free() self.fn:free() end
 
+  J.err( f.inputType==types.Interface(), "NYI - Storv only supports nil input", f)
+
+  terra Storv:process( inp : &types.lower(res.inputType):toTerraType(),
+                       out : &types.lower(res.outputType):toTerraType() )
+    self.fn:process( out )
+  end
+
+  return MT.new( Storv, res )
+end
+
+function MT.triggerFIFO( res, ty )
+  local struct TriggerFIFO { cnt:uint, store_ready:bool, readyDownstream:bool }
+  terra TriggerFIFO:reset() self.cnt=0 end
+
+  terra TriggerFIFO:store( inp : &rigel.lower(res.functions.store.inputType):toTerraType())
+    if valid(inp) and self.store_ready then
+      self.cnt = self.cnt+1
+    end
+  end
+
+  terra TriggerFIFO:load( out : &rigel.lower(res.functions.load.outputType):toTerraType())
+    if self.readyDownstream then
+      if self.cnt>0 then
+        valid(out) = true
+        self.cnt = self.cnt-1
+      else
+        valid(out) = false
+      end    
+    end
+  end
+
+  terra TriggerFIFO:store_calculateReady() self.store_ready = (self.cnt < [math.pow(2,32)-1]) end
+  terra TriggerFIFO:load_calculateReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
+
+  return MT.new( TriggerFIFO, res )
+
+end
+        
 return MT

@@ -5,6 +5,7 @@ local harness = require "generators.harness"
 local harris = require "harris_core"
 local C = require "generators.examplescommon"
 local f = require "fixed_float"
+local G = require "generators.core"
 
 W = 256
 H = 256
@@ -28,7 +29,7 @@ local inpraw = R.input( types.rv(types.Par(types.array2d(types.bool(),1))) )
 local inp = R.apply("ir0", C.index(types.array2d(types.bool(),1),0,0), inpraw)
 
 local PS = RM.posSeq(W,H,1)
-local pos = R.apply("posseq", PS)
+local pos = R.apply("posseq", PS, G.ValueToTrigger(inpraw) )
 local pos = R.apply("idx0", C.index(PS.outputType:extractData(),0,0), pos )
 local pos = R.apply("cst", touint8pair, pos)
 

@@ -4,6 +4,7 @@ local types = require("types")
 local harness = require "generators.harness"
 local f = require "fixed"
 local C = require "generators.examplescommon"
+local G = require "generators.core"
 
 W = 512
 H = 1
@@ -18,7 +19,7 @@ local inpraw = R.input(types.rv(types.Par(types.array2d(types.uint(8),1))))
 local inp = R.apply("ir0", C.index(types.array2d(types.uint(8),1),0,0), inpraw)
 
 local PS = RM.posSeq(W,H,1)
-local pos = R.apply("posseq", PS)
+local pos = R.apply("posseq", PS, G.ValueToTrigger(inpraw))
 local pos = R.apply("idx0", C.index(PS.outputType.over.over,0,0), pos )
 local pos = R.apply("idx1", C.index(PS.outputType.over.over:arrayOver(),0,0), pos )
 local pos = R.apply("CST", C.cast(types.uint(16),types.uint(8)), pos)

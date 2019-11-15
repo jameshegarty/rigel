@@ -19,6 +19,18 @@ function SDFFunctions:allLE1()
   return true
 end
 
+function SDFFunctions:nonzero()
+  for _,v in ipairs(self) do
+    local res = v[1]:gt(0):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
+  end
+
+  return true
+end
+
 function SDFFunctions:tonumber()
   J.err( #self==1,"Could not convert multi-stream SDF rate to a number: "..tostring(self))
   return self[1][1]/self[1][2]

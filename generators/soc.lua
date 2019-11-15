@@ -33,7 +33,7 @@ SOC.regStub = J.memoize(function(tab)
     J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
     J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     v[1]:checkLuaValue(v[2])
-    fns[k] = R.newFunction{name=k, inputType=types.null(), outputType=v[1], sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+    fns[k] = R.newFunction{name=k, inputType=types.Interface(), outputType=types.S(types.Par(v[1])), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   end
 
   local name = J.sanitize("RegStub_"..tostring(tab))
@@ -43,14 +43,16 @@ SOC.regStub = J.memoize(function(tab)
     local delays = {}
     for k,v in pairs(tab) do
       local inp = S.parameter(k.."_input",types.null())
-      fns[k] = S.lambda(k,inp,S.constant(v[2],v[1]),k)
+      fns[k] = S.lambda(k,inp,S.constant(v[2],v[1]),k.."_output")
       delays[k]=0
     end
     return S.module.new( name,fns,{},true,nil,"",delays)
   end
 
-  local res = R.newModule{ name=name, functions=fns, stateful=false, makeSystolic=makeSystolic, makeTerra=function() return SOCMT.regStub(tab) end }
+  local res = R.newModule{ name=name, functions=fns, stateful=false, makeSystolic=makeSystolic }
 
+  res.makeTerra=function() return SOCMT.regStub( res, tab ) end
+  
   return res
 end)
 
@@ -98,7 +100,7 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
     if regmod.functions.write1~=nil then
       functionList[regname] = R.newFunction{name=regname, inputType=R.Handshake(regmod.type), outputType=types.Interface(), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
     else
-      functionList[regname] = R.newFunction{name=regname, inputType=types.Interface(), outputType=regmod.type, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
+      functionList[regname] = R.newFunction{name=regname, inputType=types.Interface(), outputType=types.S(types.Par(regmod.type)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
     end
     
     SOC.currentRegAddr = SOC.currentRegAddr + math.ceil(regmod.type:verilogBits()/32)*4
@@ -1560,7 +1562,6 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
   local CR = C.generalizedChangeRate( inputBits, desiredTotalInputBits,1, 64,0,128*8  )
 
   local ChangeRateModule, totalBits = CR[1], CR[2]
-  --print("TOTALBITS",totalBits)
   
   assert( Uniform(totalBits%(128*8)):eq(0):assertAlwaysTrue() )
   assert( Uniform(totalBits%inputBits):eq(0):assertAlwaysTrue() )

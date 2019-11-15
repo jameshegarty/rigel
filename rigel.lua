@@ -83,10 +83,10 @@ end
 
 darkroom.Async={}
 
-darkroom.Size = J.memoize(function(w,h,X)
+darkroom.Size = J.memoize(function( w, h, X )
   local Uniform = require "uniform"
-  err(type(w)=="number" or Uniform.isUniform(w),"Size: w must be number, but is: "..tostring(w))
-  err(type(h)=="number" or Uniform.isUniform(h),"Size: h must be number, but is: "..tostring(h))
+  err(type(w)=="number" or Uniform.isUniform(w),"Size: w must be number, but is: ",w)
+  err(type(h)=="number" or Uniform.isUniform(h),"Size: h must be number, but is: ",h)
   assert(X==nil)
   return setmetatable({w,h},SizeMT)
 end)
@@ -143,6 +143,8 @@ local function typeToKey(t)
         outk="address"
         v=v[1]
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
+        outk="size"
+      elseif darkroom.isSize(v) then
         outk="size"
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
              and type(v[3])=="number" and type(v[4])=="number" then
@@ -225,19 +227,21 @@ end
 
 
 -- find how to lift parameterized type Tparam to match Ttarget
-local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
+local function findLifts( fn, Ttarget, Tparam, TparamOutput, X )
   assert(X==nil)
-  
   --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   
   local finVars = {}
-  if Tparam:isSupertypeOf(Ttarget,finVars) then
+  if Tparam:isSupertypeOf(Ttarget,finVars,"") then
     err(finVars.type==nil,"findLifts: argument 'type' already set? Don't use 'type' as a parameter name")
 
     finVars.type = darkroom.specialize(Tparam,finVars)
+    local origFn = fn
     fn = fn(finVars)
     err(fn~=nil,"findLifts: generator function returned nil?")
-    
+    J.err( darkroom.isPlainFunction(fn),"findLifts: input function should return plain function, but instead returned: ",fn )
+    J.err( fn.inputType==Ttarget,"findLifts: generator returned a type that doesn't conform to interface it promised? \nTarget:",Ttarget," \npromised:",Tparam," \nreturned:",fn.inputType,fn)
+
     return fn
   else
     --print("Trivial check failed")
@@ -250,11 +254,11 @@ local function findLifts(fn,Ttarget,Tparam,TparamOutput,X)
   for liftName,lift in pairs(L) do
     local vars1, vars2, vars3 = {},{},{}
     --print("check1",lift[3],"isSupertypeOf",Ttarget)
-    local check1 = lift[3]:isSupertypeOf(Ttarget,vars1)
+    local check1 = lift[3]:isSupertypeOf(Ttarget,vars1,"")
     --print("check2",lift[1],":isSupertypeOf",Tparam)
-    local check2 = lift[1]:isSupertypeOf(Tparam,vars2)
+    local check2 = lift[1]:isSupertypeOf(Tparam,vars2,"")
     --print("check3",lift[2],":isSupertypeOf",TparamOutput)
-    local check3 = lift[2]:isSupertypeOf(TparamOutput,vars3)
+    local check3 = lift[2]:isSupertypeOf(TparamOutput,vars3,"")
 
     --print("Try lift",liftName,check1,check2,check3)
 
@@ -348,7 +352,7 @@ functionGeneratorMT.__call=function(tab,...)
       res.curriedArgs = arglist
       return res
     end
-  elseif tab.inputType~=nil and types.Interface():isSupertypeOf(tab.inputType,{}) then
+  elseif tab.inputType~=nil and types.Interface():isSupertypeOf(tab.inputType,{},"") then
     err(#rawarg==0,"Calling a nullary function with an argument?")
 
     local arglist = {}
@@ -429,6 +433,7 @@ function functionGeneratorFunctions:complete(arglist)
     local outputTypeList = ""
     for k,v in ipairs(self.inputType.list) do
       local inputType, outputType = self.inputType.list[k],self.outputType.list[k]
+      J.err( self.outputType.list[k]~=nil, "size of input and output sum type list don't match?")
       inputTypeList = inputTypeList..tostring(inputType).."|"
       outputTypeList = outputTypeList..tostring(outputType).."|"
       local finFn = function(a)
@@ -460,7 +465,9 @@ function functionGeneratorFunctions:complete(arglist)
       -- finFn should now only be a function of type parameters
       
       
-      --print("Parametric call findLifts for: "..tab.name)
+      --print("findlifts",inputType,outputType)
+      J.err( types.isType(inputType), "Generator ",self.name," missing input type" )
+      J.err( types.isType(outputType) , "Generator ",self.name," missing output type" )
       mod = findLifts( finFn, arglist.type, inputType, outputType )
       
       if mod~=nil then
@@ -469,7 +476,7 @@ function functionGeneratorFunctions:complete(arglist)
       end
     end
     
-    err(liftFound,"Failed to find a lift for fn '",self.name,"' with input type '",inputTypeList,"', output type '",outputTypeList,"' to convert to type '",arglist.type,"'")
+    err(liftFound,"Failed to find a lift for fn '",self.name,"' with \ninput type:'",inputTypeList,"' \noutput type '",outputTypeList,"' \nto convert to type:'",arglist.type,"'")
   else
     mod = self.completeFn(arglist)
   end
@@ -543,8 +550,9 @@ local function buildAndCheckSystolicModule(tab, isModule)
 
     err( systolicFn:isPure()~=rigelFn.stateful,"Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with stateful=",rigelFn.stateful," but systolic function isPure=",systolicFn:isPure())
          
-    if rigelFn.outputType~=types.Interface() then
-      err( systolicFn.output~=nil, "module output is not null (is ",rigelFn.outputType,"), but systolic output is missing")
+    if rigelFn.outputType==types.Interface() then
+    else
+      err( systolicFn.output~=nil, "module '",tab.name,"' output is not null (is ",rigelFn.outputType,", lowered to: ",rigelFn.outputType:lower(),"), but systolic output is missing")
       err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '",tab.name,"'? is '",systolicFn.output.type,"' but should be '",darkroom.lower(rigelFn.outputType),"' (rigel type ",rigelFn.outputType,")" )
     end
 
@@ -576,7 +584,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
-    err( expectedInput==systolicFn.inputParameter.type, "systolic module input type wrong? Rigel input type:"..tostring(rigelFn.inputType).." Rigel Lowered:",expectedInput," module type:"..tostring(systolicFn.inputParameter.type) )
+    err( expectedInput==systolicFn.inputParameter.type, "systolic module input type wrong? fnname:'",fnname,"' module:'",tab.name,"' Rigel input type:"..tostring(rigelFn.inputType).." Rigel Lowered:",expectedInput," module type:"..tostring(systolicFn.inputParameter.type) )
     
   end
 
@@ -808,8 +816,10 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready" end
     table.insert(v,", input wire ["..(types.lower(self.inputType):verilogBits()-1)..":0] "..fnname.."_input, output wire ["..(types.extractReady(self.inputType):verilogBits()-1)..":0] "..readyName)
   elseif self.inputType:isrv() then
-    table.insert(v,", input wire ["..(self.inputType:extractData():verilogBits()-1)..":0] "..fnname.."_input")
-
+    if self.inputType:lower():verilogBits()>0 then
+      table.insert(v,", input wire ["..(self.inputType:lower():verilogBits()-1)..":0] "..fnname.."_input")
+    end
+    
     if self.stateful or (self.delay~=nil and self.delay>0) then
       table.insert(v,", input wire "..fnname.."_CE, input wire "..fnname.."_valid")
     end
@@ -824,8 +834,10 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif self.outputType:isrv() and self.outputType.over:is("Par") then
-    table.insert(v,", output wire ["..(self.outputType.over.over:verilogBits()-1)..":0] "..fnname.."_output")
+  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType.over:is("Par") then
+    if self.outputType:lower():verilogBits()>0 then
+      table.insert(v,", output wire ["..(self.outputType:lower():verilogBits()-1)..":0] "..fnname.."_output")
+    end
   else
     print("vHeaderInOut NYI",self.outputType)
     assert(false)
@@ -852,7 +864,7 @@ function darkroomFunctionFunctions:vHeaderRequires()
       
       if types.isHandshakeAny(fn.outputType) then
         table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output, output wire "..inst.name.."_"..fnname.."_ready_downstream")
-      elseif fn.outputType:isrv() and fn.outputType.over:is("Par") then
+      elseif (fn.outputType:isrv() or fn.outputType:isS()) and fn.outputType.over:is("Par") then
         table.insert(v,", input wire ["..(types.lower(fn.outputType.over.over):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
       else
         print("NYI - require of: "..tostring(inst))
@@ -992,6 +1004,9 @@ local function checkRigelFunction(tab)
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
   err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
+
+  err( darkroom.SDF==false or tab.sdfInput:nonzero(), "rigel.newFunction: sdf input rate is not >0, but is: "..tostring(tab.sdfInput) )
+  err( darkroom.SDF==false or tab.sdfOutput:nonzero(), "rigel.newFunction: sdf output rate is not >0, but is: "..tostring(tab.sdfOutput) )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
@@ -1739,6 +1754,7 @@ function darkroomIRFunctions:typecheck()
     
     err( fn.registered==false or fn.registered==nil, "Error, applying registered type! "..fn.name)
     if #n.inputs==0 then
+      -- verilogbits==0 => this is just a trigger, so no input required when rv
       err( fn.inputType==types.Interface(), "Missing function argument, (expected input type ",fn.inputType," on function '",fn.name,"') ",n.loc)
     else
       assert( types.isType( n.inputs[1].type ) )
@@ -1771,7 +1787,15 @@ function darkroomIRFunctions:typecheck()
       -- there's no reason for HandshakeTuple to exist...
 --      err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
     elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
+      -- perform automatic zip
       n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but input "..tostring(k).." is "..tostring(v.type)); return v.type.over.over end) )))
+    elseif n.inputs[1].type:isrv() then
+      n.type = types.rv(types.tuple( J.map(n.inputs,
+                                  function(v,k)
+                                    err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but idx "..tostring(k).." is "..tostring(v.type));
+                                    return v.type.over
+      end) ))
+
     else
       err(false,"concat: unsupported input type "..tostring(n.inputs[1].type))
     end
@@ -2055,8 +2079,10 @@ function darkroomIRFunctions:codegenSystolic( module )
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule:lookupFunction("process"):getInput().type," but should be ",darkroom.lower(n.fn.inputType)," (Rigel type: ",n.fn.inputType,")" )
 
         if n.fn.outputType==types.null() then
-          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule.functions.process.output).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule.functions.process.output," but should be ",darkroom.lower(n.fn.outputType) )
         else
+          err( n.fn.systolicModule:lookupFunction("process").output~=nil, "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is (NONEXISTANT) but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          
           err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process").output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
         end
         
@@ -2146,7 +2172,8 @@ end
 
 -- sdfRateOverride: override the firing rate of this apply. useful for nullary modules.
 function darkroom.apply( name, fn, input, sdfRateOverride )
-  err( type(name) == "string", "first argument to apply must be name" )
+  err( type(name) == "string", "apply: first argument to apply must be name" )
+  err( name==J.verilogSanitize(name),"apply: name must be verilog sanitized, from '",name,"' to '",J.verilogSanitize(name),"'")
   err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
   err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )

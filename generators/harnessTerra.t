@@ -8,38 +8,25 @@ local types = require("types")
 local J = require "common"
 local soc = require "generators.soc"
 
+local data = macro(function(i) return `i._0 end)
+local valid = macro(function(i) return `i._1 end)
+local ready = macro(function(i) return `i._2 end)
+
 local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapValue,outputFilename,outputType,id,harnessoption,ramFile)
   local out
   local inpSymb
   local instances = {}
   local dram, dramAddr
   
-  if inputType~=types.null() then
+  if inputType~=types.null() and inputType:lower():verilogBits()>0 then
     inpSymb = R.input(R.HandshakeTrigger)
     
     out = R.apply( "fread", RM.makeHandshake(RM.freadSeq(inputFilename,R.extractData(inputType)),nil,true), inpSymb )
     local hsfninp = out
-  
---    if tapType~=nil then
---      local tapv = R.apply("tap",RM.makeHandshake(RM.constSeq({tapValue},tapType,1,1,1)))
---      tapv = R.apply("tapidx",RM.makeHandshake(C.index(types.array2d(tapType,1,1),0)),tapv)
---      hsfninp = R.apply("HFN",RM.packTuple({inputType,tapType}), R.concat("hsfninp",{out,tapv}))
---    end
-
-    if harnessoption==2 then
-      dram = R.instantiateRegistered("dram", RM.dram( fn.inputType.params.list[2],10,ramFile))
-      table.insert(instances,dram)
-      local dramData = R.applyMethod("dramData", dram, "load" )
-      hsfninp = R.concat("hsfninp2",{out,dramData})
-    end
-    
     out = R.apply("HARNESS_inner", fn, hsfninp )
-
-    if harnessoption==2 then
-      local daddr = R.selectStream("s1",out,1)
-      out = R.selectStream("s0",out,0)
-      dramAddr = R.applyMethod("dramAddr", dram, "store",daddr )
-    end
+  elseif inputType:lower():verilogBits()==0 then
+    inpSymb = R.input(R.HandshakeTrigger)
+    out = R.apply("HARNESS_inner", fn, inpSymb )
   else
     out = R.apply("HARNESS_inner", fn )
   end
@@ -72,8 +59,8 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
     local Module = f:toTerra()
 
     local m = symbol(&Module)
-    local valid_in = symbol(bool)
-    local valid_out = symbol(bool)
+    local valid_in = symbol(tuple(&opaque,bool))
+    local valid_out = symbol(tuple(&opaque,bool))
     local incnt = symbol(int)
     
     local callQ, incQ
@@ -116,13 +103,15 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       
       while(cnt<outputCount) do
         m:calculateReady(true)
-        var [valid_in] = (incnt < inputCount)
+        var [valid_in]
+        valid([valid_in])= (incnt < inputCount)
         
         incQ
-        var [valid_out]= false
+        var [valid_out]
+        valid([valid_out])= false
         
         callQ
-        if valid_out then cnt=cnt+1 end
+        if valid(valid_out) then cnt=cnt+1 end
         
         cycles = cycles+1
       end

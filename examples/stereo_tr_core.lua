@@ -5,6 +5,7 @@ local f = require "fixed"
 local types = require "types"
 local S = require "systolic"
 local J = require "common"
+local G = require "generators.core"
 
 local stereoTRCoreTerra
 if terralib~=nil then stereoTRCoreTerra=require("stereo_tr_core_terra") end
@@ -93,7 +94,7 @@ function argmin(A, T, SearchWindow, SADWidth, OffsetX, reduceType, RGBA)
     idx[i] = SearchWindow+OffsetX-(i-1)
   end
 
-  local indices = R.apply( "convKernel", RM.constSeq( idx, types.uint(8), SearchWindow, 1, 1/T ) ) -- uint8[perCycleSearch]
+  local indices = R.apply( "convKernel", RM.constSeq( idx, types.uint(8), SearchWindow, 1, 1/T ), G.ValueToTrigger(inp) ) -- uint8[perCycleSearch]
 
   -------
   local LOWER_SUM_INP = f.parameter("LOWER_SUM_INP", reduceType)

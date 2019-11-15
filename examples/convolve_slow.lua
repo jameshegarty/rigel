@@ -1,5 +1,6 @@
 R = require "rigelSimple"
 local types = require "types"
+local G = require "generators.core"
 
 P = 1/4
 inSize = { 1920, 1080 }
@@ -8,7 +9,7 @@ padSize = { 1920+16, 1080+3 }
 function makePartialConvolve()
   local convolveInput = R.input( types.rv(types.Par(R.array2d(R.uint8,4*P,4))) )
 
-  local filterCoeff = R.connect{ input=nil, toModule =
+  local filterCoeff = R.connect{ input=G.ValueToTrigger(convolveInput), toModule =
     R.modules.constSeq{ type=R.array2d(R.uint8,4,4), P=1/P, value = 
       { 4, 14, 14,  4,
         14, 32, 32, 14,

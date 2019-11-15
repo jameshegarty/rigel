@@ -396,7 +396,7 @@ Uniform.isNumber = J.memoize(
     elseif n.kind=="binop" or n.kind=="unary" then
       return boolOps[n.op]==nil
     elseif n.kind=="apply" then
-      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType:isS())
       assert(n.instance.module.outputType.over:is("Par"))
       assert(n.instance.module.outputType.over.over:isData())
       return n.instance.module.outputType.over.over:isNumber()
@@ -719,7 +719,7 @@ Uniform.canRepresentUsing = J.memoize(
       local ot = types.valueToType(n.value)
       return ot:canSafelyConvertTo(ty)
     elseif n.kind=="apply" then
-      assert(n.instance.module.outputType:isrv())
+      assert(n.instance.module.outputType:isS())
       assert(n.instance.module.outputType.over:is("Par"))
       return n.instance.module.outputType.over.over:canSafelyConvertTo(ty)
     elseif n.kind=="binop" then

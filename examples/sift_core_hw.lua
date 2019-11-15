@@ -8,6 +8,7 @@ local C = require "generators.examplescommon"
 local f = require "fixed_float"
 local SDFRate = require "sdfrate"
 local J = require "common"
+local G = require "generators.core"
 
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
@@ -190,14 +191,14 @@ function sift.siftDescriptor(dxdyType)
     assert(dxdyType==types.float(32))
   end
 
-  local G = calcGaussian(GAUSS_SIGMA,TILES_X*4,TILES_Y*4) -- sigma was 5
-  G = tileGaussian(G,TILES_X*4,TILES_Y*4,4)
+  local GAUSS = calcGaussian(GAUSS_SIGMA,TILES_X*4,TILES_Y*4) -- sigma was 5
+  GAUSS = tileGaussian(GAUSS,TILES_X*4,TILES_Y*4,4)
 
   local calcType = types.float(32)
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(ITYPE)))
-  local gweight = R.apply("gweight",RM.constSeq(G,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16)))
+  local gweight = R.apply("gweight",RM.constSeq(GAUSS,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16)),G.ValueToTrigger(inp))
   local gweight = R.apply("gwidx",C.index(types.array2d(calcType,1),0,0),gweight)
   local dx = R.apply("i0", C.index(ITYPE,0), inp)
   local dy = R.apply("i1", C.index(ITYPE,1), inp)
@@ -443,7 +444,7 @@ function sift.addPos(dxdyType,W,H,subX,subY)
   local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4))))
 
   local PS = RM.posSeq(W,H,1)
-  local pos = R.apply("posseq", PS)
+  local pos = R.apply("posseq", PS, G.ValueToTrigger(inp))
   local pos = R.apply("pidx", C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0), pos )
   
   if subX~=nil then

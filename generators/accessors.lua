@@ -35,12 +35,9 @@ function(args)
   end
   
   local readFn = RM.makeHandshake(args.rigelFunction{T.rv(T.Par(T.uint(32))),T.Array2d(args.type1,readFnV),SDF{1,1}})
-  print("READFN",readFn)
   
   local cntr = RM.triggeredCounter(T.uint(32),seq)
-  print("CNTR",cntr)
   local res = C.compose("A_ReadArrays",readFn,cntr)
-  print("RES1",res)
   
   -- hack
   if V>=args.size[1]*args.size[2] then
@@ -48,7 +45,7 @@ function(args)
   else
     res.outputType = T.RV(T.ParSeq(T.Array2d(args.type1,V),args.size))
   end
-  print("RES",res)
+
   return res
 end,
 T.RV(T.Par(T.Uint(32))),

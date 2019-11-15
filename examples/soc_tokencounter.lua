@@ -21,7 +21,6 @@ local RegInOut = G.Module{
     o = C.tokenCounterReg(o.type,regs.startCnt,128*64*2048)(o)
     o = G.Map{C.downsampleSeq( u8, 128, 64, 1, 2, 2)}(o)
     o = C.tokenCounterReg(o.type,regs.endCnt,128*64*2048)(o)
-    print("OT",o.type)
     return G.AXIWriteBurstSeq{"out/soc_tokencounter",{64,32},1,noc.write}(o)
   end}
 

@@ -532,14 +532,14 @@ end)
 -----------------------------
 C.valueToTrigger = memoize(function(ty)
   err( R.isBasic(ty), "C.valueToTrigger: input type should be basic, but is: "..tostring(ty))
-  return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.null(), 0,
-    function(sinp) end, nil,"C.valueToTrigger")
+  return RM.lift( "ValueToTrigger_"..tostring(ty), ty, types.Trigger, 0,
+    function(sinp) return S.trigger end, nil,"C.valueToTrigger")
 end)
 
 -----------------------------
 C.triggerToConstant = memoize(function(ty,value)
   J.err( types.isType(ty), "C.triggerToConstant: type must be type")
-  return RM.lift( "TriggerToConstant_"..tostring(ty), types.null(), ty, 0,
+  return RM.lift( "TriggerToConstant_"..tostring(ty), types.Trigger, ty, 0,
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
@@ -565,7 +565,7 @@ C.packTap = memoize(function(A,ty,global)
 end)
 
 -----------------------------
-C.packTapBroad = memoize(function(A,ty,tap,N,X)
+C.packTapBroad = memoize(function( A, ty, tap, N, X )
   assert(types.isType(A) and A:isData())
   assert(types.isType(ty) and ty:isData())
   assert(type(N)=="number")
@@ -574,7 +574,7 @@ C.packTapBroad = memoize(function(A,ty,tap,N,X)
   
   local G = require "generators.core"
   return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
-                    return R.concat{i,G.Broadcast{{N,1}}(tap())} end}
+                    return R.concat{i,G.Broadcast{{N,1}}(RM.Storv(tap)(G.ValueToTrigger(i)))} end}
 end)
 
 -----------------------------
@@ -763,9 +763,11 @@ C.convolveConstantTR = memoize(function( A, ConvWidth, ConvHeight, T, tab, shift
   assert(ConvWidth%T==0)
   assert(type(shift)=="number")
   assert(X==nil)
+
+  local G = require "generators.core"
   
   local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth/T, ConvHeight ))) )
-  local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ) )
+  local r = R.apply( "convKernel", RM.constSeq( tab, A, ConvWidth, ConvHeight, T ), G.ValueToTrigger(inp) )
 
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth/T,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local conv = R.apply( "partial", RM.map( C.multiply(A,A,types.uint(32)), ConvWidth/T, ConvHeight ), packed )
@@ -1144,9 +1146,14 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
   if includeSizeFn==nil then includeSizeFn=false end
   
   local inp, regs
-  if ty==nil then
-    inp = R.input(types.HandshakeTrigger)
-    regs = {R.instantiate("f1",RM.triggerFIFO())}
+  if ty==nil or ty:extractData():verilogBits()==0 then
+    if ty==nil then
+      inp = R.input(types.HandshakeTrigger)
+    else
+      inp = R.input(types.RV(ty))
+    end
+    
+    regs = {R.instantiate("f1",RM.triggerFIFO(ty))}
   else
     inp = R.input(R.Handshake(ty))
     local FIFOMod = RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad)
@@ -1390,12 +1397,20 @@ end)
 
 -- This is the same as CropSeq, but lets you have L,R not be T-aligned
 -- All it does is throws in a shift register to alter the horizontal phase
-C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
+C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
   err(X==nil, "cropHelperSeq, too many arguments")
   err(type(T)=="number","T must be number")
-  if L%T==0 and R%T==0 then return modules.cropSeq( A, W, H, T, L, R, B, Top ) end
-
-  err( (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
+  local W = Uniform(W_orig):toNumber()
+  err( type(H)=="number", "H must be number")
+  err( type(L)=="number", "L must be number")
+  err( type(R)=="number", "R must be number")
+  err( type(B)=="number", "B must be number")
+  err( type(Top)=="number", "Top must be number")
+  
+  if T==0 or (L%T==0 and R%T==0) then return modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ) end
+  if framed==nil then framed=false end
+  
+  err( T==0 or (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
   local inp = rigel.input( types.rv(types.Par(types.array2d( A, T ))) )
@@ -1403,7 +1418,28 @@ C.cropHelperSeq = memoize(function( A, W, H, T, L, R, B, Top, X )
   out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
   out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
 
-  return modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..W.."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top), inp, out )
+  local res = modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_framed"..tostring(framed)), inp, out )
+
+  local niType, noType
+  if framed then
+    print("CROPHELPERFR",res.inputType,res.outputType)
+    if T==0 then
+      niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
+      noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
+    else
+      niType = types.rv(types.ParSeq(res.inputType:extractData(),W_orig,H))
+      noType = types.rvV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
+    end
+
+    assert(res.inputType:lower()==niType:lower())
+    assert(res.outputType:lower()==noType:lower())
+
+    res.inputType = niType
+    res.outputType = noType
+    print("CROPHELPDONE")
+  end
+
+  return res
 end)
 
 
@@ -1570,7 +1606,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     assert( index )
     local OT = inputType.list[idxLow+1]
 
-    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), types.lower(inputType), types.lower(OT), 0,
+    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType:extractData(), OT:extractData(), 0,
       function(systolicInput) return S.index( systolicInput, idxLow ) end,
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
@@ -1625,7 +1661,8 @@ function C.index( inputType, idx, idy, X )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end
-  return C.slice( inputType, idx, idx, idy, idy, true )
+  local res = C.slice( inputType, idx, idx, idy, idy, true )
+  return res
 end
 
 
@@ -1739,12 +1776,8 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
 
       res = {RM.lambda(name,inp,out),bts}
     else
-      -- outputBitsPerCyc>inputBitsPerCyc
-      --assert(J.isPowerOf2(inputBitsPerCyc)) -- NYI
-      --local shifterBits = outputBitsPerCyc
-      --while shifterBits%inputBitsPerCyc~=0 do shifterBits = shifterBits*2 end
       local shifterBits = J.lcm(inputBitsPerCyc,outputBitsPerCyc)
-      print("SHIFTBITS",shifterBits,"inputBitsPerCyc",inputBitsPerCyc,"outputBitsPerCyc",outputBitsPerCyc)
+
       assert(shifterBits%inputBitsPerCyc==0)
       assert(shifterBits%outputBitsPerCyc==0)
       
@@ -1770,7 +1803,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
   end
 
   if terralib~=nil then
-    res[1].terraModule = CT.generalizedChangeRate(inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
+    res[1].terraModule = CT.generalizedChangeRate( res[1], inputBitsPerCyc, minTotalInputBits_orig, inputFactor, outputBitsPerCyc, minTotalOutputBits_orig, outputFactor, res[2], X)
   end
   
   return res
@@ -1846,69 +1879,6 @@ function C.linearPipeline( t, modulename, rate, instances, X )
 
   return RM.lambda( modulename, inp, out, instances )
 end
-
--- Hacky module for internal use: just convert a Handshake to a HandshakeFramed
---[=[C.handshakeToHandshakeFramed = memoize(
-  function( A, mixed, dims, X )
-    err( type(dims)=="table", "handshakeToHandshakeFramed: dims should be table")
-    err( type(mixed)=="boolean", "handshakeToHandshakeFramed: mixed should be bool")
-    assert(X==nil)
-    err(R.isHandshake(A),"handshakeToHandshakeFramed: input should be handshake, but is: "..tostring(A))
-    err(A.over:is("Par"),"handshakeToHandshakeFramed: input should be par")
-    local res = {inputType=A,outputType=types.RV(A.over.over,mixed,dims),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
-    local nm = "HandshakeToHandshakeFramed_"..tostring(A).."_mixed"..tostring(mixed).."_dims"..tostring(dims)
-    res.name=J.sanitize(nm)
-
-    function res.makeSystolic()
-      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
-      local r = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", r, r, "ready") )
-      local I = S.parameter("process_input", R.lower(A) )
-      sm:addFunction( S.lambda("process",I,I,"process_output") )
-      --sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
-      return sm
-    end
-    function res.makeTerra()
-      return CT.handshakeToHandshakeFramed(res,A,mixed,dims)
-    end
-    
-    return rigel.newFunction(res)
-  end)
-
-C.stripFramed = memoize(
-  function( A, X)
-    err(A:is("HandshakeFramed") or A:is("HandshakeArrayFramed"),"StripFramed: input should be framed, but is: "..tostring(A) )
-    assert(X==nil)
-
-    
-    local res = {inputType=A,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
-
-    if A:is("HandshakeFramed") then
-      res.outputType = types.Handshake(A.params.A)
-    elseif A:is("HandshakeArrayFramed") then
-      res.outputType = types.HandshakeArray(A.params.A,A.params.W,A.params.H)
-    else
-      assert(false)
-    end
-    
-    res.name=J.sanitize("StripFramed_"..tostring(A))
-    
-    function res.makeSystolic()
-      local sm = Ssugar.moduleConstructor(res.name):onlyWire(true)
-      local r = S.parameter("ready_downstream",types.bool())
-      sm:addFunction( S.lambda("ready", r, r, "ready") )
-      local I = S.parameter("process_input", R.lower(A) )
-      sm:addFunction( S.lambda("process",I,I,"process_output") )
-
-      return sm
-    end
-    function res.makeTerra()
-      return CT.stripFramed(res,A)
-    end
-    
-    return rigel.newFunction(res)
-
-  end)]=]
 
 -- if ser==true, takes A[W,H]->A[W*H/ratio,W,H}
 -- if ser==false, takes A[W*H/ratio,W,H}->A[W,H]
@@ -2009,12 +1979,12 @@ C.StridedReader = memoize(
     local Nreads = (totalBytes/(itemBytes*stride))
     local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
       function(inp)
-        print("MAKESTRIDED",stride,offset)
+
         local cnt = C.triggerUp(Nreads)(inp)
         local cnt = G.Map{RM.counter(types.uint(32), Nreads)}(cnt)
         cnt = G.Mul{stride*itemBytes}(cnt)
         local addr = G.Add{offset*itemBytes}(cnt)
-        --return SOC.read(filename,totalBytes,types.bits(itemBytes*8))(addr)
+
         return SOC.axiReadBytes(filename,itemBytes,readPort,readAddr,readFn)(addr)
       end}
 
@@ -2050,7 +2020,7 @@ C.AXIReadPar = memoize(
         SOC.currentAddr = SOC.currentAddr+totalBytes
 
         out = G.FanIn(unpack(out))
-        print("OUTT",out.type)
+
         return G.Map{C.bitcast(out.type.over.over,types.array2d(ty,V))}(out)
       end}
 
@@ -2385,9 +2355,11 @@ C.VRtoRVRaw = J.memoize(function(A)
     return sm
   end
 
-  function res.makeTerra() return CT.VRtoRVRaw(A) end
+  res = rigel.newFunction(res)
   
-  return rigel.newFunction(res)
+  function res.makeTerra() return CT.VRtoRVRaw( res, A ) end
+  
+  return res
 end)
 
 -- fn should be HSVR, and this wraps to return a plain HS function

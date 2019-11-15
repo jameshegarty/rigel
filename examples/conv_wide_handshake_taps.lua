@@ -6,6 +6,7 @@ local S = require("systolic")
 local harness = require("generators.harness")
 require "common".export()
 local soc = require "generators.soc"
+local G = require "generators.core"
 
 R.SDF=false -- for taps
 
@@ -39,13 +40,13 @@ regs.extern = true
 local ITYPE = STTYPE
 inp = R.input( types.rv(types.Par(ITYPE)) )
 --local tapv = R.readGlobal("tg",regs.coeffs)
-packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), R.concat("tc",{inp,regs.taps()}) )
+packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{types.uint(8),types.uint(8)}), R.concat("tc",{inp,RM.Storv(regs.taps)(G.ValueToTrigger(inp))}) )
 conv = R.apply( "partial", RM.map( partial, ConvWidth, ConvWidth ), packed )
 conv = R.apply( "sum", RM.reduce( reduceSumInt32, ConvWidth, ConvWidth ), conv )
 conv = R.apply( "touint8", touint8, conv )
 
 convolve = RM.lambda( "convolve", inp, conv )
-print(convolve)
+
 -------------
 BASE_TYPE = types.array2d( types.uint(8), T )
 ITYPE = BASE_TYPE

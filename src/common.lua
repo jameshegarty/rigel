@@ -265,7 +265,9 @@ function common.lcm(a,b)
   return (a*b)/common.gcd(a,b)
 end
 
+-- simplify a fraction (a/b)
 function common.ratioFactor(a,b)
+  if a==0 and b==0 then return a,b end
   local g = common.gcd(a,b)
   assert(a%g==0)
   assert(b%g==0)

@@ -21,7 +21,6 @@ local cyc = tonumber(string.sub(arg[0],first,flen))
 local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,SDF{1,1024/cyc},
   function(i)
     local trig = G.Const{types.Uint(32),0}(i)
-    print("TRIG",trig)
     local readStream = A.ReadArrays{types.uint(8),{128,64},G.Fread{"frame_128.raw"}}(trig)
     local offset = G.Add{200}(readStream)
     return G.AXIWriteBurst{"out/soc_readarrays_"..tostring(cyc),noc.write}(offset)

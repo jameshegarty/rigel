@@ -30,8 +30,6 @@ local noc = Pulpino.AXIInterconnect(2,2,{{zynqNOC.read,zynqNOC.write}}):instanti
 --noc:addSlaveRead(ZynqNoc.read)
 --noc:addSlaveWrite(ZynqNoc.write)
 
-print(ZynqNOC)
-
 local IP_plus200 = C.linearPipeline({
     G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },
     G.FIFO{512},
@@ -54,12 +52,8 @@ local PTop = G.Module{"PTop",types.HandshakeTrigger,
     done_plus200 = G.FIFO{128}(done_plus200)
     done_inv = G.FIFO{128}(done_inv)
     
-    return G.FanIn(done_plus200,done_inv)
+    return G.ValueToTrigger(G.FanIn(done_plus200,done_inv))
   end}
-
-print(PTop)
-
-print(noc.module)
 
 local Top = C.linearPipeline({regs.start,PTop,regs.done},"Top",nil,{regs,noc})
 
@@ -67,6 +61,4 @@ Top.globalMetadata.InstCall_PulpinoNOC_write1_write_filename=nil
 Top.globalMetadata.InstCall_PulpinoNOC_write_write_filename="out/soc_pulpino_noc"
 Top.globalMetadata.InstCall_PulpinoNOC_write_write_H=64
 
-print(Top)
---harness({regs.start,PTop,regs.done},nil,{regs,noc})
 harness(Top)

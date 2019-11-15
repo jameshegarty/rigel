@@ -7,6 +7,7 @@ local harness = require "generators.harness"
 local C = require "generators.examplescommon"
 local RS = require "rigelSimple"
 local f = require "fixed_new"
+local G = require "generators.core"
 
 W = 128
 H = 64
@@ -18,7 +19,7 @@ padSize = {W+pad[1],H+pad[2]}
 ------------
 inp = R.input( types.rv(types.Par(types.uint(8))) )
 local posSeqMod = RS.modules.posSeq{size=padSize,V=1}
-pos = RS.connect{toModule=posSeqMod}
+pos = RS.connect{toModule=posSeqMod,input=G.ValueToTrigger(inp)}
 
 local pbinp = f.parameter("pbinp",posSeqMod.outputType.over.over):index(0)
 local pbx = pbinp:index(0):mod(8):eq(f.constant(7))

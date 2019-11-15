@@ -31,7 +31,7 @@ local conv = Generator{ T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))),
                         T.rv(T.Par(u8)),
 function(inp)
   inp = AddMSBs{24}(inp)
-  local z = Zip(inp,regs.coeffs())
+  local z = Zip(inp,RM.Storv(regs.coeffs)(ValueToTrigger(inp)))
   local out = Mul(z)
   local res = Reduce{Add{R.Async}}(out)
   return RemoveMSBs{24}(Rshift{8}(res))

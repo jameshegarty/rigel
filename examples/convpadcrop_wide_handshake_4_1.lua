@@ -75,7 +75,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   out1 = R.apply("out1fifo",C.fifo(BASE_TYPE,128),out1)
 
   local trig = R.apply("trig", RM.makeHandshake(C.valueToTrigger(BASE_TYPE),nil,true), out0)
-  local tapinp = R.apply("RT", RM.makeHandshake(taps.taps,nil,true), trig)
+  local tapinp = R.apply("RT", RM.makeHandshake(RM.Storv(taps.taps),nil,true), trig)
   
   local convpipeinp = R.apply("CPI", RM.packTuple({types.RV(types.Par(BASE_TYPE)),types.RV(types.Par(TAP_TYPE))}), R.concat("CONVPIPEINP",{out1,tapinp}))
 
