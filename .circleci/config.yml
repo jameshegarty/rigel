@@ -42,9 +42,9 @@ jobs:
     steps:
       - checkout
       - run: git submodule update --init
-      - run: sudo apt-get install luajit flex bison
+#      - run: sudo apt-get install luajit flex bison
 #      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
-#      - run: sudo apt-get install luajit verilator
+      - run: sudo apt-get install luajit verilator
       - run: cd examples; make bjump
       - run: test -e examples/out/bjump_done.txt || exit      
   pulpino:
