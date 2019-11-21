@@ -253,8 +253,8 @@ int main(int argc, char** argv) {
 
           printf("STR %s\n",tmp);
           unsigned long data = strtoul(tmp,NULL,16);
-          printf("try to Set Reg addr:%x with data:%x\n",addr,data);
-          setReg( top, verbose, addr+i*4, data);
+          printf("try to Set Reg addr:%x with data:%x\n",addr+numints*4-4-i*4,data);
+          setReg( top, verbose, addr+numints*4-4-i*4, data);
         }
         
         curArg+=2;

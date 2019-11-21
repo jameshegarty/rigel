@@ -1514,18 +1514,28 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
 end)
 
 -- has rate T->1. Returns each stencil over 1/T cycles
-C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed_orig, X )
+    --J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+    --local T = Uniform(T_orig)
+    --local w = Uniform(W_orig)
+    J.err(Uniform.isUniform(w) or type(w)=="number","C.stencilLinebufferPartial: w must be number, but is:",w)
+    J.err(Uniform.isUniform(h) or type(h)=="number","C.stencilLinebufferPartial: h must be number, but is:",h)
+    J.err(Uniform.isUniform(T) or type(T)=="number","C.stencilLinebufferPartial: T must be number, but is:",T)
+    
   assert(T>=1);
-  assert(w>0);
+  assert(Uniform(w):gt(0):assertAlwaysTrue())
   assert(h>0);
-  assert(xmin<xmax)
+  J.err(xmin<=xmax,"C.stencilLinebufferPartial: xmin must be less than or equal to xmax, but is xmin=",xmin," xmax=",xmax)
   assert(ymin<ymax)
   assert(xmax==0)
   assert(ymax==0)
+  assert(X==nil)
 
+  local framed = framed_orig
+  if framed==nil then framed=false end
+  assert(type(framed)=="boolean")
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )), "C.stencilLinebufferPartial" )
+  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial" )
 end)
 
 
@@ -2040,6 +2050,7 @@ C.AXIReadPar = memoize(
   end)
 
 -- collect the number of tokens seen, and write it to a global
+-- N: counts up to this number and then resets?
 C.tokenCounterReg = memoize(
   function( A, regGlobal, N)
     J.err( types.isType(A),"tokenCounterReg: a must be type" )

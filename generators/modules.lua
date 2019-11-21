@@ -178,8 +178,8 @@ end)
 -- takes rv([A{W,H},B{W,H},C{W,H}]) to rv({A,B,C}{W,H})
 -- typelist: list of {A,B,C} schedule types
 modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
-  err( type(W)=="number", "ZipSchedules: first argument should be number (width)")
-  err( type(H)=="number", "ZipSchedules: second argument should be number (height)")
+  err( Uniform.isUniform(W) or type(W)=="number", "ZipSchedules: first argument should be number (width), but is:",W)
+  err( Uniform.isUniform(H) or type(H)=="number", "ZipSchedules: second argument should be number (height), but is:",H)
   err( type(typelist)=="table", "ZipSchedules: typelist must be table")
   err( J.keycount(typelist)==#typelist, "ZipSchedules: typelist must be lua array")
   assert(type(mode)=="string")
@@ -686,6 +686,11 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
 
   res.delay = f.delay
 
+  res.requires = {}
+  for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
+  res.provides = {}
+  for inst,fnmap in pairs(f.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
+
   if terralib~=nil then res.terraModule = MT.liftDecimate(res,f) end
 
   function res.makeSystolic()
@@ -693,7 +698,9 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
     return liftDecimateSystolic( f.systolicModule, {"process"}, {}, handshakeTrigger, {f.stateful or f.delay>0} )
   end
 
-  return rigel.newFunction(res)
+  local res = rigel.newFunction(res)
+
+  return res
 end)
 
 -- converts V->RV to RV->RV
@@ -894,6 +901,11 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
 
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful --f.stateful  valid bit shift register is stateful
+
+  res.requires = {}
+  for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
+  res.provides = {}
+  for inst,fnmap in pairs(f.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
 
   if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,res.delay) end
 
@@ -2533,7 +2545,6 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
 
   -- HACK
   if framed then
-    print("CROPHACK",res.inputType,res.outputType)
     if V==0 then
       res.inputType = types.rv(types.Seq(types.Par(res.inputType.over.over),W_orig,H))
       res.outputType = types.rvV(types.Seq(types.Par(res.outputType.over.over.list[1]),W_orig-L-R,H-B-Top))
@@ -3212,37 +3223,62 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   return rigel.newFunction(res)
 end)
 
-modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
+modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, framed_orig, framedW_orig, framedH_orig, X )
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)
 
+  local framed = framed_orig
+  if framed==nil then
+    framed=false
+  end
+  
   if stride==nil then
     local Weach = (-xmin+1)/T
-    assert(Weach==math.floor(Weach))
+    err(Weach==math.floor(Weach),"SSRPartial: requested parallelism does not divide stencil size. xmin=",xmin," ymin=",ymin," T=",T)
     stride=Weach
   end
 
   if fullOutput==nil then fullOutput=false end 
 
-  local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin, stride=stride, fullOutput=fullOutput }
-  res.inputType = types.rv(types.Par(types.array2d(A,1,-ymin+1)))
-  res.stateful = true
+  local res = {kind="SSRPartial", type=A, T=T, xmin=xmin, ymin=ymin, stride=stride, fullOutput=fullOutput, stateful=true }
 
-  if fullOutput then
-    res.outputType = types.rRvV(types.Par(types.array2d(A,(-xmin+1),-ymin+1)))
+  if framed then
+    err(type(framedW_orig)=="number" or Uniform.isUniform(framedW_orig),"SSR: framedW must be uniform or number")
+    err(type(framedH_orig)=="number" or Uniform.isUniform(framedH_orig),"SSR: framedH must be uniform or number")
+--    if T==0 then
+--      res.inputType = types.Seq( types.Par(types.array2d(A,1,-ymin+1)),framedW_orig,framedH_orig)
+--      res.outputType = types.Seq(types.Par(types.array2d(A,-xmin+1,-ymin+1)),framedW_orig,framedH_orig)
+--    else
+    res.inputType = types.rv(types.ParSeq(types.array2d(types.array2d(A,1,-ymin+1),1),framedW_orig,framedH_orig))
+    res.outputType = types.rRvV(types.Seq(types.ParSeq(types.array2d(A,(-xmin+1)/T,-ymin+1),-xmin+1,-ymin+1),framedW_orig,framedH_orig))
+--    end
+
+    assert(fullOutput==false)
   else
-    res.outputType = types.rRvV(types.Par(types.array2d(A,(-xmin+1)/T,-ymin+1)))
-  end
+    res.inputType = types.rv(types.Par(types.array2d(A,1,-ymin+1)))
 
+    if fullOutput then
+      res.outputType = types.rRvV(types.Par(types.array2d(A,(-xmin+1),-ymin+1)))
+    else
+      res.outputType = types.rRvV(types.Par(types.array2d(A,(-xmin+1)/T,-ymin+1)))
+    end
+  end
+  
   res.sdfInput, res.sdfOutput = SDF{1,T},SDF{1,1}
   res.delay=0
-  res.name = sanitize("SSRPartial_"..tostring(A).."_T"..tostring(T))
+  res.name = sanitize("SSRPartial_"..tostring(A).."_T"..tostring(T).."_fullOutput"..tostring(fullOutput).."_framed"..tostring(framed_orig).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig))
 
-  if terralib~=nil then res.terraModule =  MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput) end
+  if terralib~=nil then res.terraModule =  MT.SSRPartial(res,A, T, xmin, ymin, stride, fullOutput, framed ) end
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
-    local sinp = S.parameter("process_input", rigel.lower(res.inputType) )
+    local sinp_orig = S.parameter("process_input", rigel.lower(res.inputType) )
+
+    local sinp= sinp_orig
+    if framed then
+      sinp = S.index(sinp_orig,0)
+    end
+    
     local P = T
     
     local shiftValues = {}
@@ -3263,7 +3299,7 @@ modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, X )
     
     local processValid = S.parameter("process_valid",types.bool())
     local CE = S.CE("CE")
-    systolicModule:addFunction( S.lambda("process", sinp, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid, CE) )
+    systolicModule:addFunction( S.lambda("process", sinp_orig, S.tuple{ shifterOut, processValid }, "process_output", shifterPipelines, processValid, CE) )
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", shifterResetPipelines,S.parameter("reset",types.bool())) )
     systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), shifterReading, "ready", {} ) )
 
@@ -3299,7 +3335,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     res.sdfInput, res.sdfOutput = SDF(tmuxRates), SDF(tmuxRates)
   else
     err( f.inputType:isrv() or f.inputType==types.Interface(),"makeHandshake: fn '"..f.name.."' input type should be rv or null, but is "..tostring(f.inputType) )
-    err( f.outputType:isrv() or f.outputType==types.Interface(),"makeHandshake: fn output type should be rv or null, but is "..tostring(f.outputType))
+    err( f.outputType:isrv() or f.outputType==types.Interface(),"makeHandshake: fn '"..f.name.."' output type should be rv or null, but is "..tostring(f.outputType))
 
     if f.inputType==types.Interface() and nilhandshake==true then
       res.inputType = rigel.HandshakeTrigger

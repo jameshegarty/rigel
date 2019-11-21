@@ -1160,7 +1160,7 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   return MT.new( SSR, res )
 end
 
-function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, X)
+function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, framed, X)
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)
   
@@ -1174,7 +1174,14 @@ function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, X)
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
       for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
-      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
+
+      [(function() if framed then
+        return quote for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[0][y*SStride+(x+xmin)] end end end
+      else
+        return quote for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end end
+      end
+      end)()]
+      
       self.phase = terralib.select([T==1],0,1)
     else
       if self.phase<[T]-1 then 

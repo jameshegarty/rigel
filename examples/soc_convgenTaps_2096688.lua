@@ -35,15 +35,15 @@ function(args)
 --  print("MAKE CONF INNER",args.type)
   local res =  G.Module{"ConvolveInner_"..tostring(args.type), args.type, args.rate,
     function(inp)
-      local i0 = inp[0]
-      local i1 = inp[1]
-      local px = AddMSBs{24}(i0)
-      local coeffs = G.Map{RM.Storv(regs.coeffs)}(i1)
-      local z = Zip(px,coeffs)
+--      local i0 = inp[0]
+--      local i1 = inp[1]
+--      local px = AddMSBs{24}(i0)
+      --local coeffs = G.Map{RM.Storv(regs.coeffs)}(i1)
+      --local z = Zip(px,coeffs)
       --print("ZIP1OUT",z.type)
-      z = Zip(z)
+      --z = Zip(z)
       --print("ZIP2OUT",z.type)
-      local out = Mul(z)
+      local out = Mul(inp)
       --print("MULOUT",out.type)
       local res = Reduce{Add{R.Async}}(out)
       return RemoveMSBs{24}(Rshift{8}(res))
@@ -52,14 +52,14 @@ function(args)
   return res
 end,
 P.SumType("opt",{
-  T.rv( T.ParSeq(T.array2d(T.Tuple{P.DataType("T"),T.Trigger},P.SizeValue("V")),P.SizeValue("size"))),
-  T.rv( T.Tuple{T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")),T.Seq(T.Par(T.Trigger),P.SizeValue("size"))} ),
-  T.rv( T.Tuple{T.Par(T.array2d(P.DataType("T"),P.SizeValue("size"))),T.Par(T.array2d(T.Trigger,P.SizeValue("size")))} )
+  T.RV( T.ParSeq(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("V")),P.SizeValue("size"))),
+  T.RV( T.Seq(T.Par(T.Tuple{P.DataType("L"),P.DataType("R")}),P.SizeValue("size")) ),
+  T.rv( T.Par(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size"))))
 }),
 P.SumType("opt",{
-  T.rv(T.Par(P.DataType("T"))),
-  T.rv(T.Par(P.DataType("T"))),
-  T.rv(T.Par(P.DataType("T")))}) )
+  T.RV(P.ScheduleType("S")),
+  T.RV(P.ScheduleType("S")),
+  T.rv( T.Par(P.DataType("D")) )}) )
 
 
 local Conv = G.Module{"Conv",SDF{1,cycles},
@@ -79,17 +79,39 @@ local Conv = G.Module{"Conv",SDF{1,cycles},
     local trig = G.Broadcast{R.Size(Uniform(1920+8+8),1080+2+1)}(ii1)
 
     print("TRIG",trig.type)
+    
+    local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
+
+    print("coeff",coeffs.type,coeffs.rate)
+    coeffs = G.Reshape(coeffs)
+    print("coeff2",coeffs.type)
+    coeffs = G.Reshape(coeffs)
+    print("coeff3",coeffs.type)
+    
     --print("PADTRIG",pad.type,trig.type)
     
-    res = Stencil{{-3,0,-3,0}}(pad)
-    print("ST",res.type)
+    local st = Stencil{{-3,0,-3,0}}(pad)
+    print("ST",st.type)
+    st = G.Reshape(st)
+    print("ST",st.type)
+    st = G.Reshape(st)
+    print("ST",st.type)
+
+    --st = G.Fwrite{"out/st.raw"}(st)
+    
+    st = AddMSBs{24}(st)
     --print(padTrig)
     --print("PADD",pad.type,padTrig.type)
-    local padFanIn = G.FanIn(res,trig)
-    --print("PadFanIn",padFanIn)
+    local padFanIn = G.FanIn(st,coeffs)
+    print("PadFanIn",padFanIn.type)
     local padZip = G.Zip(padFanIn)
     print("ZIP",padZip.type)
+    padZip = G.Zip(padZip)
+    print("ZIP2",padZip.type)
     res = ConvInner(padZip)
+    print(res.fn)
+    --print(res.terraModule.meth)
+    --res.fn.terraModule.methods.process:printpretty(false)
     print("CONV",res.type)
     res = Crop{{9,7,3,0}}(res)
     print("CRP",res.type)

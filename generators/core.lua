@@ -226,8 +226,8 @@ end,
 P.SumType("opt",{types.tuple(P.TypeList("list",types.RV(P.ScheduleType("S")))),
                  types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size")),
                  types.tuple(P.TypeList("list",types.RV()))}),
-P.SumType("opt",{types.RV(types.tuple(P.TypeList("list",P.ScheduleType("S")))),
-                 types.RV(P.ScheduleType("S"),P.SizeValue("size")),
+P.SumType("opt",{types.RV(P.ScheduleType("S")),
+                 types.RV(P.ScheduleType("S")),
                  types.RV()})
 )
 
@@ -417,22 +417,36 @@ function(args)
   return mod
 end)
 
-generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
+
   if a.opt==0 then
-    assert(a.V[2]==1)
-    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-  elseif a.opt==1 then
-    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], 0, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    print("MAKE LINEBUFFER",a.rate,a.opt,a.V)
+    --assert(false)
+    assert(Uniform(a.V[1]):toNumber()==1)
+    assert(Uniform(a.V[2]):toNumber()==1)
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
-    assert(false)
+    if a.opt==1 then
+      assert(a.V[2]==1)
+      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    elseif a.opt==2 then
+      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], 0, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    else
+      assert(false)
+    end
   end
 end,
-P.SumType("opt",{types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+P.SumType("opt",{types.RV(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+                 types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
                  types.rv(types.Seq(types.Par(P.DataType("T")),P.SizeValue("size")))}),
 P.SumType("opt",{
+  types.RV(types.Seq(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("stSize")),P.SizeValue("size"))),
   types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),P.SizeValue("stSize")),P.SizeValue("V")),P.SizeValue("size"))),
-  types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}) 
+  types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}),
+{{SDF{0,1},SDF{0,1}},
+  {SDF{0,1},SDF{math.huge,1}},
+  {SDF{0,1},SDF{math.huge,1}}}
 )
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
@@ -627,7 +641,62 @@ end,
 P.SumType("opt",{T.rV(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size"))))}),
 P.SumType("opt",{T.rRV(P.ScheduleType("S"))}))
 
+local SerToWidthArrayToScalar = J.memoize(function(ty,size)
+    local res = generators.Module{
+      "SerToWidth_Convert_Array_to_scalar_"..tostring(ty), SDF{1,1},
+      T.rV(T.Par(T.array2d(ty,1,1))),
+      function(inp)
+        return generators.Index{0}(inp)
+    end}
+    assert(R.isPlainFunction(res))
+
+    res.inputType = types.rV(types.ParSeq(T.array2d(ty,1,1),size))
+    res.outputType = types.rRV(types.Seq(T.Par(ty),size))
+
+    return res
+end)
+
+-- for legacy reasons, changerate returns stuff in column major order.
+-- instead, do row major
+-- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
+local ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
+  local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
+
+  assert( (W*H)%outputItemsPerCyc == 0 )
+  assert( outputItemsPerCyc<W or outputItemsPerCyc%W==0 )
+
+  print("CRRWOMAJOR",Vw,Vh,outputItemsPerCyc)
+
+  local V2w, V2h = outputItemsPerCyc, 1
+  if outputItemsPerCyc>W then
+    V2w, V2h = W, outputItemsPerCyc/W
+  end
+
+  local inputType, outputType
+  if Vw==W and Vh==H then
+    inputType = types.RV(types.Par(T.array2d(ty,Vw,Vh)))
+  else
+    inputType = types.RV(types.ParSeq(T.array2d(ty,Vw,Vh),W,H))
+  end
+  
+  outputType = types.RV(types.ParSeq(T.array2d(ty,V2w,V2h),W,H))
+
+  local res = generators.Module{
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(types.Par(T.array2d(ty,Vw,Vh))),
+      function(inp)
+        return generators.ReshapeArray{{V2w,V2h}}(generators.Map{cr}(generators.ReshapeArray{{Vw*Vh,1}}(inp)))
+  end}
+  assert(R.isPlainFunction(res))
+  assert( res.outputType:lower()==outputType:lower() )
+  assert( res.inputType:lower()==inputType:lower() )
+  res.inputType=inputType
+  res.outputType=outputType
+  
+  return res
+end)
+
 -- serialize to a particular vector width ("number")
+-- width is the number of items to produce per cycle (not literally the width)
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
 function(args)
   if args.number==0 then
@@ -641,20 +710,11 @@ function(args)
           if a.V[1]*a.V[2]==1 and args.number==0 then
             -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
 
-            local res = generators.Module{
-              "SerToWidth_Convert_Array_to_scalar_"..tostring(a.T), SDF{1,1},
-              T.rV(T.Par(T.array2d(a.T,1,1))),
-              function(inp)
-                return generators.Index{0}(inp)
-            end}
-            assert(R.isPlainFunction(res))
-
-            res.inputType = types.rV(types.ParSeq(T.array2d(a.T,1,1),a.size))
-            res.outputType = types.rRV(types.Seq(T.Par(a.T),a.size))
-
-            return res
+            return SerToWidthArrayToScalar( a.T, a.size )
           else
-           return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+            assert(false)
+            return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+            --return ChangeRateRowMajor(a.T,a.V[1],a.V[2],args.number,a.size[1],a.size[2])
           end
         else
           assert(false)
@@ -671,19 +731,21 @@ function(args)
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
-          return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true, a.size[1], a.size[2] )
-        elseif a.opt==1 then                
-          return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+          --return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true, a.size[1], a.size[2] )
+          return ChangeRateRowMajor(a.T,a.size[1],a.size[2],args.number,a.size[1],a.size[2])
+        elseif a.opt==1 then
+          return ChangeRateRowMajor( a.T, a.V[1], a.V[2], args.number, a.size[1], a.size[2] )
+          --return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
         else
           assert(false)
         end
       end,
       P.SumType("opt",{
-            T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
-            T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
+            T.RV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
       P.SumType("opt",{
-            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
   end
 end)
 
@@ -846,13 +908,15 @@ function(args)
           if ty.over:isArray() then
             -- if not an array, can't really do anything
 
-            local chan = ty.over.size[1]*ratio -- NYI, 2d
+            local chan = ty.over.size[1]*ty.over.size[2]*ratio -- NYI, 2d
             if chan<1 then chan=0 end
             local res = generators.SerToWidth{chan}
 
             return res
           else
-            assert(false)
+            --assert(false)
+            -- cant' do anything
+            return generators.Identity
           end
         elseif ty:is("Seq") then
             -- already fully sequential, try to apply to inner dim?

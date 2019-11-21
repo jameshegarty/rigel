@@ -227,8 +227,9 @@ end
 
 
 -- find how to lift parameterized type Tparam to match Ttarget
-local function findLifts( fn, Ttarget, Tparam, TparamOutput, X )
+local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
   assert(X==nil)
+  assert(type(generatorName)=="string")
   --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   
   local finVars = {}
@@ -238,10 +239,11 @@ local function findLifts( fn, Ttarget, Tparam, TparamOutput, X )
     finVars.type = darkroom.specialize(Tparam,finVars)
     local origFn = fn
     fn = fn(finVars)
+
     err(fn~=nil,"findLifts: generator function returned nil?")
     J.err( darkroom.isPlainFunction(fn),"findLifts: input function should return plain function, but instead returned: ",fn )
-    J.err( fn.inputType==Ttarget,"findLifts: generator returned a type that doesn't conform to interface it promised? \nTarget:",Ttarget," \npromised:",Tparam," \nreturned:",fn.inputType,fn)
-
+    J.err( fn.inputType==Ttarget,"findLifts: generator '",generatorName,"' returned a type that doesn't conform to interface it promised? \nTarget:",Ttarget," \npromised:",Tparam," \nreturned:",fn.inputType,"\n",fn)
+    J.err( TparamOutput:isSupertypeOf(fn.outputType,{},""), "findLifts: '",generatorName,"' returned an output type that doesn't conform to interface it promised? \npromised:",TparamOutput," \nreturned:",fn.outputType)
     return fn
   else
     --print("Trivial check failed")
@@ -275,7 +277,7 @@ local function findLifts( fn, Ttarget, Tparam, TparamOutput, X )
       
       liftsFound = true
 
-      local res = findLifts(fn,newTtarget,Tparam,TparamOutput)
+      local res = findLifts( generatorName, fn, newTtarget, Tparam, TparamOutput )
 
       if res==nil then
         return nil
@@ -285,6 +287,7 @@ local function findLifts( fn, Ttarget, Tparam, TparamOutput, X )
         --print("And ",lift[1],":isSupertypeOf",Tparam)
         --for k,v in pairs(vars2) do print("VARS2",k,v) end
         --for k,v in pairs(vars1) do print("VARS1",k,v) end
+
         local liftFn = lift[5](vars1)
         return liftFn(res)
       end
@@ -348,7 +351,7 @@ functionGeneratorMT.__call=function(tab,...)
       return tab:complete(arglist)
     else
       -- not done yet, return curried generator
-      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.outputType )
+      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.outputType, tab.rateList )
       res.curriedArgs = arglist
       return res
     end
@@ -436,6 +439,17 @@ function functionGeneratorFunctions:complete(arglist)
       J.err( self.outputType.list[k]~=nil, "size of input and output sum type list don't match?")
       inputTypeList = inputTypeList..tostring(inputType).."|"
       outputTypeList = outputTypeList..tostring(outputType).."|"
+
+      if self.rateList~=nil then
+        J.err(self.rateList[k]~=nil,"size of rate list doesn't match type list?")
+        J.err(arglist.rate~=nil,"rate not passed as arg to something with rate list?")
+        if arglist.rate:lt(self.rateList[k][1]) or arglist.rate:ge(self.rateList[k][2]) then
+          -- this option doesn't work with this rate
+          --print("SKIPPING LIFT DUE TO RATE",inputType,outputType,arglist.rate)
+    goto continue
+        end
+      end
+        
       local finFn = function(a)
         --for kk,vv in pairs(a) do print("FINFN",self.name,kk,vv) end
         
@@ -468,12 +482,14 @@ function functionGeneratorFunctions:complete(arglist)
       --print("findlifts",inputType,outputType)
       J.err( types.isType(inputType), "Generator ",self.name," missing input type" )
       J.err( types.isType(outputType) , "Generator ",self.name," missing output type" )
-      mod = findLifts( finFn, arglist.type, inputType, outputType )
+
+      mod = findLifts( self.name, finFn, arglist.type, inputType, outputType )
       
       if mod~=nil then
         liftFound = true
         break
       end
+       ::continue::
     end
     
     err(liftFound,"Failed to find a lift for fn '",self.name,"' with \ninput type:'",inputTypeList,"' \noutput type '",outputTypeList,"' \nto convert to type:'",arglist.type,"'")
@@ -492,7 +508,7 @@ function functionGeneratorFunctions:complete(arglist)
   return mod
 end
 
-function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType, X )
+function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType, rateList, X )
   assert(X==nil)
   err( type(name)=="string", "FunctionGenerator: name must be string, but is: "..tostring(name) )
   err( type(requiredArgs)=="table", "FunctionGenerator: requiredArgs must be table, but is: "..tostring(requiredArgs) )
@@ -521,7 +537,7 @@ function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, in
     requiredArgs.rate=true
   end
 
-  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, outputType=outputType }, functionGeneratorMT )
+  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, outputType=outputType, rateList=rateList }, functionGeneratorMT )
 end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
@@ -553,7 +569,7 @@ local function buildAndCheckSystolicModule(tab, isModule)
     if rigelFn.outputType==types.Interface() then
     else
       err( systolicFn.output~=nil, "module '",tab.name,"' output is not null (is ",rigelFn.outputType,", lowered to: ",rigelFn.outputType:lower(),"), but systolic output is missing")
-      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "module output type wrong on module '",tab.name,"'? is '",systolicFn.output.type,"' but should be '",darkroom.lower(rigelFn.outputType),"' (rigel type ",rigelFn.outputType,")" )
+      err( darkroom.lower(rigelFn.outputType)==systolicFn.output.type, "systolic module output type wrong on module '",tab.name,"'? systolic output is '",systolicFn.output.type,"' but should be '",darkroom.lower(rigelFn.outputType),"' (because rigel type is ",rigelFn.outputType,")" )
     end
 
     local shouldHaveCE = (types.isHandshakeAny(rigelFn.inputType) or types.isHandshakeAny(rigelFn.outputType))==false and (rigelFn.stateful or (rigelFn.delay~=nil and rigelFn.delay>0)) and (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false
