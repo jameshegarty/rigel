@@ -15,22 +15,34 @@ local __unnamedID = 0
 
 local generators = {}
 
+local function canonicalV( rate, size, X )
+  assert(R.isSize(size))
+  local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
+  local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
+  local V = (sizeW*sizeH)/seq
+
+  if V<1 then
+    return 0
+  else
+    V = math.ceil(V)
+    while (sizeW*sizeH)%V~=0 do
+      V = V + 1
+    end
+    
+    return V
+  end
+end
+
 -- takes A to A[N]
 generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"size","rate"},{},
 function(args)
   if args.opt==2 then
     return C.broadcast(args.T,args.size[1],args.size[2])
   elseif args.opt==0 then
+    local V = canonicalV( args.rate, args.size )
     local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
-    local seq = args.rate[1][2]:toNumber()/args.rate[1][1]:toNumber()
-    local V = (sizeW*sizeH)/seq
-
-    print("BROADCAST SEQ ",seq," V ",V)
-    V = math.ceil(V)
-    while (sizeW*sizeH)%V~=0 do
-      V = V + 1
-    end
-    seq = (sizeW*sizeH)/V
+    if V==0 then V=1 end
+    local seq = (sizeW*sizeH)/V
     print("BROADCAST SEQ ",seq," V ",V)
     
     local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
@@ -122,18 +134,18 @@ T.rv(T.Par(P.DataType("TypeOut"))))
 
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
-  if args.opt==1 then
-    return C.print( args.T, args.string )
-  elseif args.opt==0 then
-    return C.print( T.Array2d(args.T,args.size), args.string )
-  else
-    assert(false)
-  end
+  return C.print( args.T, args.string )
 end,
-P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
-            T.rv(T.Par(P.NumberType("T")))}),
-P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
-                 T.rv(T.Par(P.NumberType("T")))}))
+T.rv(T.Par(P.DataType("T"))),
+T.rv(T.Par(P.DataType("T"))))
+
+generators.PrintArray = R.FunctionGenerator("core.PrintArray",{"type","rate"},{"string"},
+function(args)
+  return C.print( T.Array2d(args.T,args.size), args.string )
+end,
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
+
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -377,7 +389,6 @@ function(args)
       for k,v in ipairs(args.list) do
         schedulelist[k] = v.over
       end
-
       return RM.ZipSeq( mode, schedulelist, args.size[1], args.size[2] )
     end
   else
@@ -660,16 +671,17 @@ end)
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
 local ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
+  J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
   local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
 
-  assert( (W*H)%outputItemsPerCyc == 0 )
-  assert( outputItemsPerCyc<W or outputItemsPerCyc%W==0 )
+  J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
+  assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
 
   print("CRRWOMAJOR",Vw,Vh,outputItemsPerCyc)
 
   local V2w, V2h = outputItemsPerCyc, 1
-  if outputItemsPerCyc>W then
-    V2w, V2h = W, outputItemsPerCyc/W
+  if outputItemsPerCyc>Uniform(W):toNumber() then
+    V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
   end
 
   local inputType, outputType
@@ -699,8 +711,8 @@ end)
 -- width is the number of items to produce per cycle (not literally the width)
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
 function(args)
+  J.err( math.floor(args.number)==args.number, "SerToWidth: width is not an integer, is: ",args.number) 
   if args.number==0 then
-
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
@@ -712,7 +724,8 @@ function(args)
 
             return SerToWidthArrayToScalar( a.T, a.size )
           else
-            assert(false)
+            print("SERTOWDITH",a.V,a.size,args.number)
+            --assert(false)
             return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
             --return ChangeRateRowMajor(a.T,a.V[1],a.V[2],args.number,a.size[1],a.size[2])
           end
@@ -726,13 +739,12 @@ function(args)
       P.SumType("opt",{
                   T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut"))),
                   T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))}) )
-
   else
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
           --return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true, a.size[1], a.size[2] )
-          return ChangeRateRowMajor(a.T,a.size[1],a.size[2],args.number,a.size[1],a.size[2])
+          return ChangeRateRowMajor( a.T, a.size[1], a.size[2], args.number, a.size[1], a.size[2] )
         elseif a.opt==1 then
           return ChangeRateRowMajor( a.T, a.V[1], a.V[2], args.number, a.size[1], a.size[2] )
           --return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
@@ -793,6 +805,14 @@ function(args)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
+
+generators.FwriteArray = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
+function(args)
+  --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+  return RM.fwriteSeq(args.string,T.Array2d(args.T,args.size),args.filenameVerilog,true)
+end,
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
 
 generators.Fread = R.FunctionGenerator("core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)
@@ -908,8 +928,15 @@ function(args)
           if ty.over:isArray() then
             -- if not an array, can't really do anything
 
-            local chan = ty.over.size[1]*ty.over.size[2]*ratio -- NYI, 2d
-            if chan<1 then chan=0 end
+            --local chan = ty.over.size[1]*ty.over.size[2]*ratio -- NYI, 2d
+            --if chan<1 then chan=0 end
+--            local chan
+--            if ty:is("ParSeq") then
+--              chan = canonicalV( args.rate, ty.size )
+--            else
+              local chan = canonicalV( args.rate, ty.over.size )
+--            end
+            print("SERTOWDITH",ty,args.rate,ty.over.size,chan)
             local res = generators.SerToWidth{chan}
 
             return res
@@ -932,6 +959,16 @@ function(args)
     end
   end
 
+  -- even if ratio==1, we still want it to break T[1;W,H} into T{W,H} canonical form
+  if ratio==1 and args.type:extractSchedule():is("ParSeq") and
+    args.type:extractSchedule().over:isArray() and
+    Uniform(args.type:extractSchedule().over.size[1]):toNumber()==1 and
+    Uniform(args.type:extractSchedule().over.size[2]):toNumber()==1 
+  then
+    --assert(false)
+    return generators.SerToWidth{0}
+  end
+  
   -- if ratio >=1, don't do anything:
   return generators.Identity
 end)

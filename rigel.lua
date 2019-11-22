@@ -230,7 +230,7 @@ end
 local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
   assert(X==nil)
   assert(type(generatorName)=="string")
-  --print("findLifts Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
+  --print("findLifts ",generatorName," Target(input):",Ttarget,"ParameterizedTypeInput:",Tparam,"ParameterizedTypeOutput:",TparamOutput)
   
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars,"") then
@@ -243,7 +243,7 @@ local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
     err(fn~=nil,"findLifts: generator function returned nil?")
     J.err( darkroom.isPlainFunction(fn),"findLifts: input function should return plain function, but instead returned: ",fn )
     J.err( fn.inputType==Ttarget,"findLifts: generator '",generatorName,"' returned a type that doesn't conform to interface it promised? \nTarget:",Ttarget," \npromised:",Tparam," \nreturned:",fn.inputType,"\n",fn)
-    J.err( TparamOutput:isSupertypeOf(fn.outputType,{},""), "findLifts: '",generatorName,"' returned an output type that doesn't conform to interface it promised? \npromised:",TparamOutput," \nreturned:",fn.outputType)
+    J.err( TparamOutput:isSupertypeOf(fn.outputType,{},""), "findLifts: '",generatorName,"' returned an output type that doesn't conform to interface it promised? \npromised:",TparamOutput," \nreturned:",fn.outputType,"\ninputType:",fn.inputType)
     return fn
   else
     --print("Trivial check failed")

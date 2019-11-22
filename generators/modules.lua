@@ -127,7 +127,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
     out = rigel.apply( "cflat", C.flatten2( types.tuple(typelist), W*H ), out)
     out = rigel.apply( "cflatar", C.cast( types.array2d( types.tuple(typelist), W*H ), types.array2d( types.tuple(typelist), W,H ) ), out)
 
-    res = modules.lambda(verilogSanitize("SoAtoAoS_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH)), I, out)
+    res = modules.lambda(verilogSanitize("SoAtoAoS_pow2_W"..tostring(W).."_H"..tostring(H).."_types"..tostring(typelist).."_asArray"..tostring(asArray).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH)), I, out)
 
   else
     res = { kind="SoAtoAoS", W=W, H=H, asArray = asArray }
@@ -165,8 +165,12 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
 
   if framedW~=nil then
     -- hackity hack
-    res.inputType = types.rv(types.tuple( J.map(typelist, function(t) return types.ParSeq(types.array2d(t,W,H),framedW,framedH) end) ))
-    res.outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    local inputType = types.rv(types.tuple( J.map(typelist, function(t) return types.ParSeq(types.array2d(t,W,H),framedW,framedH) end) ))
+    local outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    assert(res.inputType:lower()==inputType:lower())
+    assert(res.outputType:lower()==outputType:lower())
+    res.inputType = inputType
+    res.outputType = outputType
   end
 
   if terralib~=nil then res.terraModule = MT.SoAtoAoS(res,W,H,typelist,asArray) end
@@ -209,7 +213,15 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   local inputType = types.rv(types.tuple(itype))
 
   local G = require "generators.core"
-  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,inputType,SDF{1,1},function(inp) return inp end}
+
+  print("ZIPSCHEU",inputType,inputType:lower())
+  --local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
+  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
+
+  assert(res.inputType:lower()==inputType:lower())
+  res.inputType = inputType
+--  print
+--  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,inputType:lower(),SDF{1,1},function(inp) return G.Fwrite{"out/zipsc.data"}(inp) end}
 
   local typeOut = types.Tuple(typelist)
   if terminal then
@@ -221,11 +233,17 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   end
   
   -- hackity hack
+  local outputType
   if mode=="VarSeq" then
-    res.outputType = types.rv(types.VarSeq(typeOut,W,H))
+    outputType = types.rv(types.VarSeq(typeOut,W,H))
   else
-    res.outputType = types.rv(types.Seq(typeOut,W,H))
+    outputType = types.rv(types.Seq(typeOut,W,H))
   end
+
+  assert(res.outputType:lower()==outputType:lower())
+  res.outputType = outputType
+
+--  function res.makeTerra() return MT.ZipSeq(res) end
   
   return res
 end)
@@ -1067,10 +1085,14 @@ end)
 
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
-modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
+-- scalar: is fn a scalar type?
+modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, scalar, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
   err( X==nil, "mapParSeq: too many arguments" )
 
+  if scalar==nil then scalar=true end
+  assert(type(scalar)=="boolean")
+  
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)
 
   local res
@@ -1090,8 +1112,14 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
     err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
 
 
-    local fnMapped = modules.map(fn,Vw,Vh)
-  
+    local fnMapped
+    if scalar then
+      fnMapped = modules.map(fn,Vw,Vh)
+    else
+      fnMapped = fn
+      assert(fn.inputType:extractData():isArray())
+    end
+    
     res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
     assert( rigel.isPlainFunction(res) )
   end
@@ -1111,23 +1139,40 @@ end)
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
-    err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
+  err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
 
-    local G = require "generators.core"
+  local G = require "generators.core"
     
-    local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
-    assert( rigel.isFunction(res) )
+  local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
 
-    -- hackity hack
-    if fn.inputType~=types.Interface() then
-      res.inputType = fn.inputType:replaceVar("over",types.Seq(res.inputType.over,W_orig,H_orig))
-    end
+  assert( rigel.isPlainFunction(res) )
 
-    if fn.outputType~=types.Interface() then
-      res.outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
-    end
-          
-    return res
+
+--  if terralib~=nil then
+--  print(res.terraModule)
+--  end
+  
+  -- hackity hack
+  if fn.inputType~=types.Interface() then
+    local inputType = fn.inputType:replaceVar("over",types.Seq(fn.inputType.over,W_orig,H_orig))
+    assert(res.inputType:lower()==inputType:lower())
+    res.inputType = inputType
+  end
+
+  if fn.outputType~=types.Interface() then
+    local outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
+    assert(res.outputType:lower()==outputType:lower())
+    res.outputType = outputType
+  end
+
+
+
+
+
+
+--  function res.makeTerra() return MT.mapSeq(res,fn,W_orig,H_orig) end
+  
+  return res
 end)
 
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
@@ -4358,7 +4403,7 @@ local function checkFIFOs(output)
           assert(#arg==1)
           assert(#arg[1]==types.streamCount(fn.inputType) )
           for i=1,types.streamCount(fn.inputType) do
-            J.err( fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx "..(i-1)..". "..tostring(types.streamCount(fn.inputType)).." input streams) "..n.loc)
+            J.err( fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams) ",n.loc)
           end
 
           -- Is this right???? if we got this far, we did have a fifo along this brach...

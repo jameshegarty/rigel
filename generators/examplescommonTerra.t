@@ -52,36 +52,8 @@ end
 function CT.print( res, A, str, X )
   assert(rigel.isFunction(res))
   err(types.isBasic(A),"CT.print: type should be basic, but is: "..tostring(A) )
+  assert(X==nil)
   
-  local function doprint(A,symb)
-    assert(symb~=nil)
-
-    if A:isArray() then
-      local tab = {}
-      table.insert(tab,quote cstdio.printf("[") end)
-      for i=0,A:channels()-1 do
-        table.insert(tab,doprint(A:arrayOver(),`symb[i]))
-        if i~=A:channels()-1 then table.insert(tab,quote cstdio.printf(",") end) end
-      end
-      table.insert(tab,quote cstdio.printf("]") end)
-      return quote [tab] end
-    elseif A:isTuple() then
-      local tab = {}
-      table.insert(tab,quote cstdio.printf("{") end)
-      for i=1,#A.list do
-        table.insert(tab,doprint(A.list[i],`symb.["_"..(i-1)]))
-        if i~=#A.list then table.insert(tab,quote cstdio.printf(",") end) end
-      end
-      table.insert(tab,quote cstdio.printf("}") end)
-      return quote [tab] end      
-    elseif A:isUint() or A:isInt() or A:isBits() then
-      return quote cstdio.printf("%d/%#x",symb,symb) end
-    else
-      print(A)
-      assert(false)
-    end
-  end
-
   local printS = quote end
   if str~=nil then printS = quote cstdio.printf("%s ",str) end  end
 
@@ -91,7 +63,7 @@ function CT.print( res, A, str, X )
     printS
     cstdio.printf("(firing:%d) ",self.count)
     self.count = self.count+1
-    [doprint(A,aa)]
+    [A:terraPrint(a)]
     cstdio.printf("\n")
     @out = @a
   end

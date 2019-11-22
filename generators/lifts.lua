@@ -37,6 +37,13 @@ lifts.mapParSeq={
   P.SumType("O",{T.rv(T.ParSeq(T.array2d(P.DataType("B"), P.SizeValue("V")),P.SizeValue("Size"))),T.Interface()}),
   function(args) return function(f) return RM.mapParSeq(f,args.V[1],args.V[2],args.Size[1],args.Size[2]) end end}
 
+lifts.mapParSeqArray={
+  P.SumType("I",{T.rv(T.Par(T.array2d(P.DataType("A"), P.SizeValue("V")))),T.Interface()}),
+  P.SumType("O",{T.rv(T.Par(T.array2d(P.DataType("B"), P.SizeValue("V")))),T.Interface()}),
+  P.SumType("I",{T.rv(T.ParSeq(T.array2d(P.DataType("A"), P.SizeValue("V")),P.SizeValue("Size"))),T.Interface()}),
+  P.SumType("O",{T.rv(T.ParSeq(T.array2d(P.DataType("B"), P.SizeValue("V")),P.SizeValue("Size"))),T.Interface()}),
+  function(args) return function(f) return RM.mapParSeq(f,args.V[1],args.V[2],args.Size[1],args.Size[2],false) end end}
+
 -- special case: we can map RV when V=1
 --[=[lifts.mapParSeqScalar={
   P.SumType("I",{P.InterfaceType("InterfaceIn",T.Par(P.DataType("A"))),T.Interface()}),

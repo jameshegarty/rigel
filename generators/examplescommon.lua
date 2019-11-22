@@ -96,7 +96,7 @@ C.print = memoize(function(A,str)
     return sm
   end
   
-  function res.makeTerra() return CT.print(A,str) end
+  function res.makeTerra() return CT.print(res,A,str) end
   
   return rigel.newFunction(res)
 end)

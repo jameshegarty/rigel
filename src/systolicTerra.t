@@ -1,5 +1,6 @@
 local J = require "common"
 local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h")   
 local err = J.err
 
 -- return a terra quote
@@ -29,6 +30,7 @@ function systolicASTFunctions:toTerra( symbols )
           res = `[args[1]] * [args[2]]
         elseif n.op==">>" then
           res = `[args[1]] >> [args[2]]
+          --res = quote var x = [args[1]] >> [args[2]]; cstdio.printf("RSHIFT %d %d %d\n",[args[1]],[args[2]],x);  in x end
         elseif n.op=="<<" then
           res = `[args[1]] << [args[2]]
         elseif n.op=="<" then

@@ -1024,7 +1024,7 @@ SOC.axiBurstWriteNInner = J.memoize(function( filename, Nbytes, address, writeFn
   assert( Uniform.isUniform(Nbytes) )
   assert( Uniform.isUniform(address) )
   
-  J.err( R.isFunction(writeFn_orig), "axiBurstWriteN: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
+  J.err( R.isFunction(writeFn_orig), "axiBurstWriteN: writeFn should be rigel function, but is: ",writeFn_orig)
   J.err( X==nil, "axiBurstWriteN: too many arguments" )
 
   J.err( Uniform(Nbytes%128):eq(0):assertAlwaysTrue(), "SOC.axiBurstWriteN: Nbytes ("..tostring(Nbytes)..") not 128-byte aligned")
@@ -1398,7 +1398,7 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   local ChangeRateModule, totalBits = CR[1], CR[2]
 
   assert( (Uniform(totalBits)%(128*8)):eq(0):assertAlwaysTrue() )
-  assert( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue() )
+  J.err( (Uniform(totalBits)%Uniform(outputBits)):eq(0):assertAlwaysTrue(),"readBurst: error, totalBits does not divide outputBits? totalBits=",totalBits," outputBits=",outputBits )
   assert( Uniform(totalBits):ge(desiredTotalOutputBits):assertAlwaysTrue() )
 
   local BRN = SOC.axiBurstReadN( filename, totalBits/8, address, readFn_orig )
@@ -1533,7 +1533,7 @@ SOC.writeBurst = J.memoize(function( filename, W_orig, H_orig, ty, Vw, Vh, frame
 
   if framed==nil then framed=false end
   J.err( type(framed)=="boolean","writeBurst: framed must be boolean, but is: "..tostring(framed))
-  J.err( R.isFunction(writeFn_orig), "writeBurst: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
+  J.err( R.isFunction(writeFn_orig), "writeBurst: writeFn should be rigel function, but is: ",writeFn_orig)
   J.err(X==nil, "writeBurst: too many arguments")
 
   assert(type(SOC.currentAddr)=="number")
@@ -1615,7 +1615,7 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
   end
   if syncAddrData==nil then syncAddrData=false end
   assert( type(syncAddrData)=="boolean" )
-  J.err( R.isFunction(writeFn_orig), "soc.write: writeFn should be rigel function, but is: "..tostring(writeFn_orig))
+  J.err( R.isFunction(writeFn_orig), "soc.write: writeFn should be rigel function, but is: ",writeFn_orig)
   local W = Uniform(W_orig)
   if V==nil then V=1 end
 
