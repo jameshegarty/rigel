@@ -70,15 +70,7 @@ end
 function MT.SoAtoAoS( res, W, H, typelist, asArray )
   local struct PackTupleArrays { }
 
---print("SOAAOS",res.inputType,res.outputType, rigel.lower(res.inputType):toTerraType(), rigel.lower(res.outputType):toTerraType() )
---assert(false)
-
   terra PackTupleArrays:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
---    cstdio.printf("INP:\n")
---    [rigel.lower(res.inputType):terraPrint(inp)]
---    cstdio.printf("\n")
-    
-    --cstdio.printf(["SOATOTS "..res.name.."\n"])
     for c = 0, [W*H] do
       escape
       if asArray then
@@ -89,50 +81,9 @@ function MT.SoAtoAoS( res, W, H, typelist, asArray )
       end
       end
     end
---    cstdio.printf("out:\n")
---    [rigel.lower(res.outputType):terraPrint(out)]
---        cstdio.printf("\n")
   end
 
   return MT.new( PackTupleArrays, res )
-end
-
-function MT.mapSeq( res, fn, W, H )
-  local struct MapSeq { inner:fn.terraModule, ready:bool, readyDownstream:bool}
-  terra MapSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    cstdio.printf("MAPSEQ\n")
-    [rigel.lower(res.inputType):terraPrint(inp)]
-    cstdio.printf("\n")
-    
-    self.inner:process(inp,out)
-  end
-
-  terra MapSeq:reset() self.inner:reset() end
-  terra MapSeq:init() self.inner:init() end
-  terra MapSeq:free() self.inner:free() end
-      
-  if res.inputType:isRV() then
-    terra MapSeq:calculateReady(readyDownstream:bool)
-      self.inner:calculateReady(readyDownstream)
-      self.ready=self.inner.ready
-    end
-  end
-
-  return MT.new(MapSeq,res)
-end
-
-function MT.ZipSeq( res )
-  local struct ZipSeq { }
-  terra ZipSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    cstdio.printf("ZIPSEQ\n")
-    [rigel.lower(res.inputType):terraPrint(inp)]
-    cstdio.printf("\n")
-    
-    --self.inner:process(inp,out)
-    @out = @inp
-  end
-
-  return MT.new(ZipSeq,res)
 end
 
 function MT.packTuple( res, typelist )

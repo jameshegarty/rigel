@@ -115,7 +115,6 @@ function TypeFunctions:terraPrint(terraValue)
     table.insert(Q,quote cstdio.printf("]") end)
     return quote Q end
   elseif self:isTuple() then
-    --return quote cstdio.printf("NYI - Terra Rigel Type Print TUPLE\n") end
     local Q = {quote cstdio.printf("{") end}
     for k,ty in ipairs(self.list) do
       table.insert(Q,ty:terraPrint(`&(@terraValue).["_"..(k-1)]))

@@ -84,11 +84,18 @@ end
 darkroom.Async={}
 
 darkroom.Size = J.memoize(function( w, h, X )
-  local Uniform = require "uniform"
-  err(type(w)=="number" or Uniform.isUniform(w),"Size: w must be number, but is: ",w)
-  err(type(h)=="number" or Uniform.isUniform(h),"Size: h must be number, but is: ",h)
   assert(X==nil)
-  return setmetatable({w,h},SizeMT)
+  local Uniform = require "uniform"
+  if darkroom.isSize(w) then
+    assert(h==nil)
+    return w
+  elseif (type(w)=="number" or Uniform.isUniform(w)) and (type(h)=="number" or Uniform.isUniform(h)) then
+    return setmetatable({w,h},SizeMT)
+  elseif type(w)=="table" and h==nil and w[1]~=nil and w[2]~=nil then
+    return darkroom.Size(w[1],w[2])
+  else
+    err(false, "Passed strange arguments to rigel.Size? w=",w," h=",h)
+  end
 end)
 
 local function discoverName(x)

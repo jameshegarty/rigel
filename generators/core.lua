@@ -16,7 +16,7 @@ local __unnamedID = 0
 local generators = {}
 
 local function canonicalV( rate, size, X )
-  assert(R.isSize(size))
+  J.err(R.isSize(size),"canonicalV: expected size, but is: ",size)
   local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
   local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
   local V = (sizeW*sizeH)/seq
@@ -39,11 +39,10 @@ function(args)
   if args.opt==2 then
     return C.broadcast(args.T,args.size[1],args.size[2])
   elseif args.opt==0 then
-    local V = canonicalV( args.rate, args.size )
+    local V = canonicalV( args.rate, R.Size(args.size) )
     local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
     if V==0 then V=1 end
     local seq = (sizeW*sizeH)/V
-    print("BROADCAST SEQ ",seq," V ",V)
     
     local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
 
@@ -138,14 +137,14 @@ function(args)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
-
+--[=[
 generators.PrintArray = R.FunctionGenerator("core.PrintArray",{"type","rate"},{"string"},
 function(args)
   return C.print( T.Array2d(args.T,args.size), args.string )
 end,
 T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
 T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
-
+]=]
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -432,8 +431,6 @@ generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
 
   if a.opt==0 then
-    print("MAKE LINEBUFFER",a.rate,a.opt,a.V)
-    --assert(false)
     assert(Uniform(a.V[1]):toNumber()==1)
     assert(Uniform(a.V[2]):toNumber()==1)
     return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
@@ -677,8 +674,6 @@ local ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H
   J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
   assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
 
-  print("CRRWOMAJOR",Vw,Vh,outputItemsPerCyc)
-
   local V2w, V2h = outputItemsPerCyc, 1
   if outputItemsPerCyc>Uniform(W):toNumber() then
     V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
@@ -724,10 +719,7 @@ function(args)
 
             return SerToWidthArrayToScalar( a.T, a.size )
           else
-            print("SERTOWDITH",a.V,a.size,args.number)
-            --assert(false)
             return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
-            --return ChangeRateRowMajor(a.T,a.V[1],a.V[2],args.number,a.size[1],a.size[2])
           end
         else
           assert(false)
@@ -743,11 +735,9 @@ function(args)
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
-          --return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true, a.size[1], a.size[2] )
           return ChangeRateRowMajor( a.T, a.size[1], a.size[2], args.number, a.size[1], a.size[2] )
         elseif a.opt==1 then
           return ChangeRateRowMajor( a.T, a.V[1], a.V[2], args.number, a.size[1], a.size[2] )
-          --return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
         else
           assert(false)
         end
@@ -763,8 +753,6 @@ end)
 
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
-  --J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
-
   J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
 end,
@@ -806,6 +794,7 @@ end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
 
+--[=[
 generators.FwriteArray = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
@@ -813,6 +802,7 @@ function(args)
 end,
 T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
 T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
+]=]
 
 generators.Fread = R.FunctionGenerator("core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)
@@ -915,9 +905,7 @@ P.SumType("opt",{types.HandshakeTrigger,types.HandshakeTrigger}) )
 
 generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
-
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
-
 
   if ratio<1 then
     if args.type:isRV() then
@@ -928,20 +916,11 @@ function(args)
           if ty.over:isArray() then
             -- if not an array, can't really do anything
 
-            --local chan = ty.over.size[1]*ty.over.size[2]*ratio -- NYI, 2d
-            --if chan<1 then chan=0 end
---            local chan
---            if ty:is("ParSeq") then
---              chan = canonicalV( args.rate, ty.size )
---            else
-              local chan = canonicalV( args.rate, ty.over.size )
---            end
-            print("SERTOWDITH",ty,args.rate,ty.over.size,chan)
+            local chan = canonicalV( args.rate, ty.over.size )
             local res = generators.SerToWidth{chan}
 
             return res
           else
-            --assert(false)
             -- cant' do anything
             return generators.Identity
           end
@@ -965,7 +944,6 @@ function(args)
     Uniform(args.type:extractSchedule().over.size[1]):toNumber()==1 and
     Uniform(args.type:extractSchedule().over.size[2]):toNumber()==1 
   then
-    --assert(false)
     return generators.SerToWidth{0}
   end
   

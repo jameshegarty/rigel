@@ -214,14 +214,10 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
 
   local G = require "generators.core"
 
-  print("ZIPSCHEU",inputType,inputType:lower())
-  --local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
   local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
 
   assert(res.inputType:lower()==inputType:lower())
   res.inputType = inputType
---  print
---  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,inputType:lower(),SDF{1,1},function(inp) return G.Fwrite{"out/zipsc.data"}(inp) end}
 
   local typeOut = types.Tuple(typelist)
   if terminal then
@@ -242,8 +238,6 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
 
   assert(res.outputType:lower()==outputType:lower())
   res.outputType = outputType
-
---  function res.makeTerra() return MT.ZipSeq(res) end
   
   return res
 end)
@@ -1146,11 +1140,6 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
   local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
 
   assert( rigel.isPlainFunction(res) )
-
-
---  if terralib~=nil then
---  print(res.terraModule)
---  end
   
   -- hackity hack
   if fn.inputType~=types.Interface() then
@@ -1164,13 +1153,6 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
     assert(res.outputType:lower()==outputType:lower())
     res.outputType = outputType
   end
-
-
-
-
-
-
---  function res.makeTerra() return MT.mapSeq(res,fn,W_orig,H_orig) end
   
   return res
 end)
