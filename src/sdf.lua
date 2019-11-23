@@ -68,6 +68,12 @@ function SDFFunctions:ge(other)
   return self:toNumber()>=other:toNumber()
 end
 
+function SDFFunctions:gt(other)
+  assert(#self==1)
+  J.err( sdf.isSDF(other), "SDF:ge(), other table isn't an SDF" )
+  return self:toNumber()>other:toNumber()
+end
+
 function SDFMT.__tostring(tab)
   local mt = getmetatable(tab)
   setmetatable(tab,nil)

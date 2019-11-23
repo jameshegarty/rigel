@@ -2414,4 +2414,73 @@ C.Stall = J.memoize(function(A,VR)
   return res
 end)
 
+local IdxGT = J.memoize(function()
+    local G = require "generators.core"
+    return G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
+end)
+
+-- input type: {{A,bool},u8} -> {A,u8}
+local IDXBTS = 32
+local BoolToIdxInner = J.memoize(function(A,X)
+  assert(X==nil)
+  local G = require "generators.core"
+  local res = G.Module{"BoolToIdxInner", SDF{1,1}, types.rv(types.Par(types.tuple{types.Tuple{A,types.Bool},types.Uint(IDXBTS)})),
+                  function(i) return R.concat{i[0][0],G.Sel(i[0][1],i[1],R.c(0,types.uint(IDXBTS)))} end}
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+local BoolToIdx = J.memoize(function (A,P,X)
+  assert(types.isType(A))
+  assert(type(P)=="number")
+  assert(X==nil)
+  local G = require "generators.core"
+  
+  local res = G.Module{"BoolToIdx",SDF{1,1},types.rv(types.Par(types.Array2d(types.Tuple{A,types.Bool},P))),
+                  function(i)
+                    local tmp = R.c(J.reverse(J.range(1,P)),types.array2d(types.uint(IDXBTS),P))
+                    tmp = G.Zip(i,tmp)
+                    return G.Map{BoolToIdxInner(A)}(tmp)
+                  end}
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+-- {A,u8}->{A,bool} (if u8>0)
+local IdxToBool = J.memoize(function(A,X)
+  assert(X==nil)
+  local G = require "generators.core"
+  local res = G.Module{"IdxToBool", SDF{1,1}, types.rv(types.Par(types.Tuple{A,types.Uint(IDXBTS)})), function(i) return R.concat{i[0],G.GT{0}(i[1])} end }
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+-- do the sorting nonsense needed for FilterSeqPar
+C.FilterSeqPar = J.memoize(function( ty, N, rate, framed, framedW, framedH, X )
+  local G = require "generators.core"
+
+  local res = G.Module{"C_FilterSeqPar", types.RV(types.Par(types.Array2d(types.Tuple{ty,types.Bool},N))), SDF{1,1},
+    function(i)                   
+      local o = G.Map{BoolToIdx(ty,N)}(i)
+      o = G.Sort{IdxGT()}(o)
+      --print("IDXTOB",o.type)
+      o = G.Map{IdxToBool(ty)}(o)
+      o = G.Map{RM.filterSeqPar(ty,N,SDF(rate))}(o)
+      return o
+    end}
+
+  assert(R.isPlainFunction(res))
+
+  if framed then
+    local inputType = types.RV(types.ParSeq(types.array2d( types.tuple{ty,types.bool()}, N ),framedW,framedH) )
+    local outputType = types.RV(types.VarSeq(types.Par(ty),framedW,framedH))
+    assert(res.inputType:lower()==inputType:lower())
+    assert(res.outputType:lower()==outputType:lower())
+    res.inputType = inputType
+    res.outputType = outputType
+  end
+  
+  return res
+end)
+  
 return C

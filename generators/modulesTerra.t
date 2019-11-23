@@ -797,8 +797,14 @@ function MT.posSeq( res, W_orig, H, T, asArray )
   else
     terra PosSeq:process( inp : &rigel.lower(res.inputType):toTerraType(),
                           out : &rigel.lower(res.outputType):toTerraType() )
-      for i=0,T do 
-        (@out)[i] = {self.x,self.y}
+      for i=0,T do
+        [(function() if asArray then
+             return quote (@out)[i][0]=self.x; (@out)[i][1]=self.y; end
+           else
+             return quote (@out)[i] = {self.x,self.y} end
+           end
+           end)()]
+
         self.x = self.x + 1
         if self.x==[W:toTerra()] then self.x=0; self.y=self.y+1 end
         if self.y==H then self.y=0 end
@@ -971,10 +977,11 @@ end
 function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
   assert( types.isType(A) and A:isData() )
   assert( ymin<=0 )
-  
+
+  J.err(w*(-ymin+1)+T>0, "requested a 0 length line buffer? ymin=",ymin," w=",w," T=",T)
   assert(X==nil)
   
-  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
+  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin+1)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
 
   if framed then
@@ -1832,10 +1839,13 @@ function MT.filterSeqPar(res,A,N)
   end
 
   terra FilterSeqPar:calculateReady() 
-    var r0 = (self.buffer[0]._1==false)
-    var r1 = (self.buffer[0]._1==true)
-    var r2 = (self.buffer[1]._1==false)
-    self.ready = r0 or (r1 and r2)
+    -- this logic allows us to overlap the read and the write - however, it drops the last item sometimes! not good.
+    -- just wait until we fully flush
+    --    var r0 = (self.buffer[0]._1==false)
+    --    var r1 = (self.buffer[0]._1==true)
+    --    var r2 = (self.buffer[1]._1==false)
+    --    self.ready = r0 or (r1 and r2)
+    self.ready = (self.buffer[0]._1==false)
   end
 
   return MT.new( FilterSeqPar, res )

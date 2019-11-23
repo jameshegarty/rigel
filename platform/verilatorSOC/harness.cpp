@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
   bool errored = false;
   
   unsigned int cyclesToDoneSignal;
-  const int ROUNDS = 2;
+  const int ROUNDS = 1;
   for(int round=0; round<ROUNDS; round++){
     printf("ROUND %d\n",round);
     

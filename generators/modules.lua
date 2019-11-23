@@ -1282,10 +1282,11 @@ end)
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
-modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce, framed, X )
+modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, framed, X )
   assert(types.isType(A))
-  err(type(W)=="number", "W must be number")
-  err(type(H)=="number", "H must be number")
+  local W = Uniform(W_orig):toNumber()
+  --err(type(W)=="number", "filterSeq: W must be number, but is: ",W)
+  err(type(H)=="number", "filterSeq: H must be number, but is: ",H)
   err( SDFRate.isFrac(rate), "filterSeq: rate must be {n,d} format fraction" )
   err(type(fifoSize)=="number", "fifoSize must be number")
   if framed==nil then framed=false end
@@ -1298,8 +1299,8 @@ modules.filterSeq = memoize(function( A, W,H, rate, fifoSize, coerce, framed, X 
   local res = { kind="filterSeq", A=A }
   -- this has type basic->V (decimate)
   if framed then
-    res.inputType = types.rv(types.Seq(types.Par(types.tuple{A,types.bool()}),W,H))
-    res.outputType = types.rvV(types.VarSeq(types.Par(A),W,H))
+    res.inputType = types.rv(types.Seq(types.Par(types.tuple{A,types.bool()}),W_orig,H))
+    res.outputType = types.rvV(types.VarSeq(types.Par(A),W_orig,H))
   else
     res.inputType = types.rv(types.Par(types.tuple{A,types.bool()}))
     res.outputType = types.rvV(types.Par(A))
@@ -1429,15 +1430,26 @@ end)
 --   So, our output rate really needs to be <1/N, or else we will not be able to keep up with throughput
 -- restrictions: input array of valids must be sorted (valids come first)
 -- 'rate' is % of tokens that will survive the filter. (ie 1/2 means half elements will be filtered)
-modules.filterSeqPar = memoize(function( A, N, rate )
+modules.filterSeqPar = memoize(function( A, N, rate, framed, framedW, framedH, X )
   err( types.isType(A), "filterSeqPar: input type must be type" )
-  err( type(N)=="number", "filterSeqPar: N must be number" )
+  err( type(N)=="number", "filterSeqPar: N must be number, but is: "..tostring(N) )
   err( N>0,"filterSeqPar: N must be > 0")
   err( SDF.isSDF(rate), "filterSeqPar: rate must be SDF rate" )
+  assert(X==nil)
 
+  if framed==nil then framed=false end
+  assert(type(framed)=="boolean")
+  
   local res = {kind="filterSeqPar"}
-  res.inputType = types.rv(types.Par(types.array2d( types.tuple{A,types.bool()}, N )) )
-  res.outputType = types.rRvV( types.Par(A) )
+
+  if framed then
+    res.inputType = types.rv(types.ParSeq(types.array2d( types.tuple{A,types.bool()}, N ),framedW,framedH) )
+    res.outputType = types.rRvV(types.VarSeq(types.Par(A),framedW,framedH))
+  else
+    res.inputType = types.rv(types.Par(types.array2d( types.tuple{A,types.bool()}, N )) )
+    res.outputType = types.rRvV( types.Par(A) )
+  end
+  
   res.sdfInput = SDF{1,1}
 
   -- we have N elements coming in, but we only write out 1 per cycle, so include that factor
@@ -1454,11 +1466,11 @@ modules.filterSeqPar = memoize(function( A, N, rate )
 
     local buffer = systolicModule:add( S.module.reg( res.inputType.over.over, true, fakeVA, true, fakeVA ):instantiate("buffer") )
 
-    local readyForMore0 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
-    local readyForMore1 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(true,types.bool()) )
-    local readyForMore2 = S.eq( S.index(S.index(buffer:get(),1),1), S.constant(false,types.bool()) )
-    local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
-
+    --local readyForMore0 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
+    --local readyForMore1 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(true,types.bool()) )
+    --local readyForMore2 = S.eq( S.index(S.index(buffer:get(),1),1), S.constant(false,types.bool()) )
+    --local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
+    local readyForMore = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
     local sinp = S.parameter( "inp", res.inputType.over.over )
 
     -- shift phase
@@ -2375,21 +2387,27 @@ modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
 
   local res = {kind="posSeq", T=T, W=W, H=H }
   res.inputType = types.rv(types.Par(types.Trigger))
-
+  
   local sizeType = types.tuple({types.uint(bits),types.uint(bits)})
   if asArray then sizeType = types.array2d(types.uint(bits),2) end
   if T==0 then
     res.outputType = sizeType
-    if framed then res.outputType = types.rv(types.Seq(types.Par(res.outputType),W_orig,H)) end
+    if framed then
+      res.outputType = types.rv(types.Seq(types.Par(res.outputType),W_orig,H))
+      res.inputType = types.rv(types.Seq(types.Par(types.Trigger),W_orig,H))
+    end
   else
     res.outputType = types.array2d(sizeType,T)
-    if framed then res.outputType = types.StaticFramed(res.outputType,true,{{W,H}}) end
+    if framed then
+      res.outputType = types.rv(types.ParSeq(res.outputType,W_orig,H))
+      res.inputType = types.rv(types.ParSeq(types.Array2d(types.Trigger,T),W_orig,H))
+    end
   end
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
 --  res.delay = J.sel(T>1,math.floor(S.delayScale),0)
   res.delay = J.sel(T>1,math.floor(S.delayTable["+"][bits]*S.delayScale),0)
-  res.name = sanitize("PosSeq_W"..tostring(W_orig).."_H"..H.."_T"..T.."_bits"..tostring(bits))
+  res.name = sanitize("PosSeq_W"..tostring(W_orig).."_H"..H.."_T"..T.."_bits"..tostring(bits).."_framed"..tostring(framed))
 
   if terralib~=nil then res.terraModule = MT.posSeq(res,W,H,T,asArray) end
 
@@ -2424,11 +2442,19 @@ modules.posSeq = memoize(function( W_orig, H, T, bits, framed, asArray, X )
         finout = S.cast(finout,types.array2d(types.uint(bits),2))
       end
     else
-      finout = S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(bits),types.uint(bits)},T))
-      assert(asArray==false) -- NYI
+      if asArray then
+        local newout = {}
+        for _,v in ipairs(out) do
+          table.insert(newout, S.cast(v,types.array2d(types.uint(bits),2)) )
+        end
+        finout = S.cast(S.tuple(newout),types.array2d(types.Array2d(types.uint(bits),2),T))
+      else
+        finout = S.cast(S.tuple(out),types.array2d(types.tuple{types.uint(bits),types.uint(bits)},T))
+      end
+      --assert(asArray==false) -- NYI
     end
     
-    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",types.Trigger), finout, "process_output", pipelines, nil, CE ) )
+    systolicModule:addFunction( S.lambda("process", S.parameter("pinp",res.inputType:lower()), finout, "process_output", pipelines, nil, CE ) )
 
     systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {posX:reset(), posY:reset()}, S.parameter("reset",types.bool())) )
 

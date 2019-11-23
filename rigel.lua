@@ -249,7 +249,7 @@ local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
 
     err(fn~=nil,"findLifts: generator function returned nil?")
     J.err( darkroom.isPlainFunction(fn),"findLifts: input function should return plain function, but instead returned: ",fn )
-    J.err( fn.inputType==Ttarget,"findLifts: generator '",generatorName,"' returned a type that doesn't conform to interface it promised? \nTarget:",Ttarget," \npromised:",Tparam," \nreturned:",fn.inputType,"\n",fn)
+    J.err( fn.inputType==Ttarget,"findLifts: generator '",generatorName,"' returned an input type that doesn't conform to interface it promised? \nTarget Input:",Ttarget," \nPromised Input:",Tparam," \nReturned Input Type:",fn.inputType,"\n",fn)
     J.err( TparamOutput:isSupertypeOf(fn.outputType,{},""), "findLifts: '",generatorName,"' returned an output type that doesn't conform to interface it promised? \npromised:",TparamOutput," \nreturned:",fn.outputType,"\ninputType:",fn.inputType)
     return fn
   else
@@ -450,9 +450,15 @@ function functionGeneratorFunctions:complete(arglist)
       if self.rateList~=nil then
         J.err(self.rateList[k]~=nil,"size of rate list doesn't match type list?")
         J.err(arglist.rate~=nil,"rate not passed as arg to something with rate list?")
-        if arglist.rate:lt(self.rateList[k][1]) or arglist.rate:ge(self.rateList[k][2]) then
+
+        local inclusive = self.rateList[k][3]
+        if inclusive==nil then inclusive=false end
+        
+        if arglist.rate:lt(self.rateList[k][1]) or
+          (inclusive and arglist.rate:gt(self.rateList[k][2])) or
+        (inclusive==false and arglist.rate:ge(self.rateList[k][2])) then
           -- this option doesn't work with this rate
-          --print("SKIPPING LIFT DUE TO RATE",inputType,outputType,arglist.rate)
+--          print("SKIPPING LIFT opt ",k-1," DUE TO RATE",inputType,outputType,arglist.rate,"EXPECTED:",self.rateList[k][1],self.rateList[k][2])
     goto continue
         end
       end

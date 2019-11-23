@@ -221,7 +221,7 @@ return function(top, options)
 
     var srVerbose = true
     ----------------------------------------------- send start cmd
-    if verbose or srVerbose then cstdio.printf("harnessTerra: WRITE REG addr:%x data:%d\n",addr,writeData) end
+    if verbose or srVerbose then cstdio.printf("harnessTerra: WRITE REG addr:%x data:%d/0x%x\n",addr,writeData,writeData) end
   
     if NOC.SAXI0_AWREADY==false then
       cstdio.printf("IP_SAXI0_AWREADY should be true\n");
@@ -267,10 +267,11 @@ return function(top, options)
       local bytes = #v/2
       local addr = tonumber("0x"..addr)
 
-      for b=0,math.ceil(bytes/4)-1 do
+      local numints = math.ceil(bytes/4)-1
+      for b=0,numints do
         local dat = string.sub(v,b*8+1,(b+1)*8)
         local data = tonumber("0x"..dat)
-        table.insert(setTaps,quote setReg([IP_CLK],[IP_ARESET_N],[m],[addr+b*4],data) end)
+        table.insert(setTaps,quote setReg([IP_CLK],[IP_ARESET_N],[m],[addr+(numints+1)*4-4-b*4],data) end)
       end
     end
   end
