@@ -797,8 +797,14 @@ function MT.posSeq( res, W_orig, H, T, asArray )
   else
     terra PosSeq:process( inp : &rigel.lower(res.inputType):toTerraType(),
                           out : &rigel.lower(res.outputType):toTerraType() )
-      for i=0,T do 
-        (@out)[i] = {self.x,self.y}
+      for i=0,T do
+        [(function() if asArray then
+             return quote (@out)[i][0]=self.x; (@out)[i][1]=self.y; end
+           else
+             return quote (@out)[i] = {self.x,self.y} end
+           end
+           end)()]
+
         self.x = self.x + 1
         if self.x==[W:toTerra()] then self.x=0; self.y=self.y+1 end
         if self.y==H then self.y=0 end
@@ -971,10 +977,11 @@ end
 function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
   assert( types.isType(A) and A:isData() )
   assert( ymin<=0 )
-  
+
+  J.err(w*(-ymin+1)+T>0, "requested a 0 length line buffer? ymin=",ymin," w=",w," T=",T)
   assert(X==nil)
   
-  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin)+T, "linebuffer")}
+  local struct Linebuffer { SR: simmodules.shiftRegister( A:toTerraType(), w*(-ymin+1)+T, "linebuffer")}
   terra Linebuffer:reset() self.SR:reset() end
 
   if framed then
@@ -1160,7 +1167,7 @@ function MT.SSR(res, A, T, xmin, ymin, framed, X )
   return MT.new( SSR, res )
 end
 
-function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, X)
+function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, framed, X)
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)
   
@@ -1174,7 +1181,14 @@ function MT.SSRPartial(res, A, T, xmin, ymin, stride, fullOutput, X)
       -- Shift in the new inputs. have this happen in 1 cycle (inputs are immediately visible on outputs in same cycle)
       var SStride = 1
       for y=0,-ymin+1 do for x=0,-xmin do self.SR[y][x] = self.SR[y][x+SStride] end end
-      for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end
+
+      [(function() if framed then
+        return quote for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[0][y*SStride+(x+xmin)] end end end
+      else
+        return quote for y=0,-ymin+1 do for x=-xmin,-xmin+SStride do self.SR[y][x] = (@inp)[y*SStride+(x+xmin)] end end end
+      end
+      end)()]
+      
       self.phase = terralib.select([T==1],0,1)
     else
       if self.phase<[T]-1 then 
@@ -1286,7 +1300,7 @@ function MT.makeHandshake( res, f, tmuxRates, nilhandshake )
         var ot = self.delaysr:peekFront(0)
 
         --cstring.memcpy( &out, &ot, [res.outputType:lower():sizeof()])
-        cstring.memcpy( &data(out), &data(ot), [f.outputType:extractData():sizeof()])
+        cstring.memcpy( &data(out), &data(ot), [f.outputType:lower():sizeof()])
         valid(out) = valid(ot)
         
         if self.readyDownstream then
@@ -1825,10 +1839,13 @@ function MT.filterSeqPar(res,A,N)
   end
 
   terra FilterSeqPar:calculateReady() 
-    var r0 = (self.buffer[0]._1==false)
-    var r1 = (self.buffer[0]._1==true)
-    var r2 = (self.buffer[1]._1==false)
-    self.ready = r0 or (r1 and r2)
+    -- this logic allows us to overlap the read and the write - however, it drops the last item sometimes! not good.
+    -- just wait until we fully flush
+    --    var r0 = (self.buffer[0]._1==false)
+    --    var r1 = (self.buffer[0]._1==true)
+    --    var r2 = (self.buffer[1]._1==false)
+    --    self.ready = r0 or (r1 and r2)
+    self.ready = (self.buffer[0]._1==false)
   end
 
   return MT.new( FilterSeqPar, res )

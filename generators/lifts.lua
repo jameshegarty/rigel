@@ -22,38 +22,12 @@ lifts.mapVarSeq={
   
   function(args) return function(f) return RM.mapVarSeq(f,args.Size[1],args.Size[2]) end end}
 
---[=[
--- lift pointwise to Seq: S(A)->S(B) to S(A{w,h})->S(B{w,h})
-lifts.mapSeqInilOut={
-  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn",P.DataType("A"))), T.Interface(),
-  P.InterfaceType("InterfaceIn",T.Seq(P.ScheduleType("SchedIn",P.DataType("A")),P.SizeValue("Size"))), T.Interface(),
-  function(args) return function(f) return RM.mapSeq(f,args.Size[1],args.Size[2]) end end}
-]=]
-
 lifts.mapParSeq={
   P.SumType("I",{T.rv(T.Par(P.DataType("A"))),T.Interface()}),
   P.SumType("O",{T.rv(T.Par(P.DataType("B"))),T.Interface()}),
   P.SumType("I",{T.rv(T.ParSeq(T.array2d(P.DataType("A"), P.SizeValue("V")),P.SizeValue("Size"))),T.Interface()}),
   P.SumType("O",{T.rv(T.ParSeq(T.array2d(P.DataType("B"), P.SizeValue("V")),P.SizeValue("Size"))),T.Interface()}),
   function(args) return function(f) return RM.mapParSeq(f,args.V[1],args.V[2],args.Size[1],args.Size[2]) end end}
-
--- special case: we can map RV when V=1
---[=[lifts.mapParSeqScalar={
-  P.SumType("I",{P.InterfaceType("InterfaceIn",T.Par(P.DataType("A"))),T.Interface()}),
-  P.SumType("O",{P.InterfaceType("InterfaceOut",T.Par(P.DataType("B"))),T.Interface()}),
-  P.SumType("I",{P.InterfaceType("InterfaceIn",T.ParSeq(T.array2d(P.DataType("A"), 1, 1),P.SizeValue("Size"))),T.Interface()}),
-  P.SumType("O",{P.InterfaceType("InterfaceOut",T.ParSeq(T.array2d(P.DataType("B"), 1, 1),P.SizeValue("Size"))),T.Interface()}),
-  function(args) return function(f) return RM.mapParSeq(f,1,1,args.Size[1],args.Size[2]) end end}
-]=]
-
---[=[
-lifts.mapParSeq={
-  T.rv(T.Par(P.DataType("A"))),
-  T.rv(T.Par(P.DataType("B"))),
-  T.rv(T.ParSeq(T.array2d(P.DataType("A"), P.SizeValue("V")),P.SizeValue("Size"))),
-  T.rv(T.ParSeq(T.array2d(P.DataType("B"), P.SizeValue("V")),P.SizeValue("Size"))),
-  function(args) return function(f) return RM.mapParSeq(f,args.V[1],args.V[2],args.Size[1],args.Size[2]) end end}
-]=]
 
 -- lift stateless modules to RV: S(A)->S(B) to RV(A)->RV(B)
 lifts.makeHandshake={
@@ -92,11 +66,5 @@ lifts.arrayMap={
   T.rv(T.Par(T.array2d(P.DataType("A"),P.SizeValue("Size")))),
   T.rv(T.Par(T.array2d(P.DataType("B"),P.SizeValue("Size")))),
   function(args) return function(f) return RM.map(f,args.Size[1],args.Size[2]) end end}
---[=[
-lifts.mapStateless={
-  T.S(T.Par(P.DataType("A"))),T.S(T.Par(P.DataType("B"))),
-  T.S(T.Par(T.array2d(P.DataType("A"),P.SizeValue("Size")))),
-  T.S(T.Par(T.array2d(P.DataType("B"),P.SizeValue("Size")))),
-  function(args) return function(f) return RM.map(f,args.Size[1],args.Size[2]) end end}
-]=]
+
 return lifts

@@ -15,45 +15,77 @@ local __unnamedID = 0
 
 local generators = {}
 
--- takes A to A[N]
-generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"size","rate"},{},
-function(args)
-  if args.opt==2 then
-    return C.broadcast(args.T,args.size[1],args.size[2])
-  elseif args.opt==0 then
-    local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
-    local seq = args.rate[1][2]:toNumber()/args.rate[1][1]:toNumber()
-    local V = (sizeW*sizeH)/seq
-
-    print("BROADCAST SEQ ",seq," V ",V)
+local function canonicalV( rate, size, X )
+  J.err(R.isSize(size),"canonicalV: expected size, but is: ",size)
+  local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
+  local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
+  local V = (sizeW*sizeH)/seq
+  
+  if V<=1 then
+    return 0
+  else
     V = math.ceil(V)
     while (sizeW*sizeH)%V~=0 do
       V = V + 1
     end
-    seq = (sizeW*sizeH)/V
-    print("BROADCAST SEQ ",seq," V ",V)
     
-    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
-
-    -- hackity hack
-    res.outputType = T.RV(T.ParSeq(T.Array2d(args.T,V),args.size))
-
-    return res
-  elseif args.opt==1 then
-    assert(false)
-  else
-    print("OPT",args.opt)
-    assert(false)
+    return V
   end
-end,
-P.SumType("opt",{
-            T.RV(T.Par(P.DataType("T"))),
-            T.RV(T.Par(P.DataType("T"))),
-            T.rv(T.Par(P.DataType("T")))}),
-P.SumType("opt",{
-            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("outSize"))),
-            T.RV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("outSize"))),
-            T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("outSize"))))}))
+end
+
+-- takes A to A[N]
+generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"size"},{},
+function(a)                                           
+
+  return R.FunctionGenerator("core.Broadcast",{"rate"},{},
+  function(args)
+    local V = canonicalV( args.rate, R.Size(a.size) )
+
+    if args.opt==2 then
+      return C.broadcast(args.T,a.size[1],a.size[2])
+    elseif args.opt==1 then
+      local sizeW, sizeH = Uniform(a.size[1]):toNumber(), Uniform(a.size[2]):toNumber()
+      
+      J.err(V>=1,"BROADCAST RT ",args.rate,a.size)
+      --if V==0 then V=1 end
+      local seq = (sizeW*sizeH)/V
+
+      local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(a.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
+        
+      -- hackity hack
+      res.outputType = T.RV(T.ParSeq(T.Array2d(args.T,V),a.size))
+        
+      return res
+      
+    elseif args.opt==0 then
+      assert(V==0)
+
+      -- hack: convert upsampleXSeq to write out a W,H size
+      local res = generators.Module{
+        "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(a.size[1]).."_Y"..tostring(a.size[2]), SDF{1,1},
+        T.RV(T.Par(args.T)),function(inp) return RM.upsampleXSeq(args.T,0,a.size[1]*a.size[2],true)(inp) end}
+
+      local ot = T.RV(T.Seq(T.Par(args.T),a.size))
+      assert(ot:lower()==res.outputType:lower())
+      res.outputType = ot
+      return res
+    else
+      print("OPT",args.opt)
+      assert(false)
+    end
+  end,
+  P.SumType("opt",{
+              T.RV(T.Par(P.DataType("T"))),
+              T.RV(T.Par(P.DataType("T"))),
+              T.rv(T.Par(P.DataType("T")))}),
+  P.SumType("opt",{
+              T.RV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("outSize"))),
+              T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("outSize"))),
+              T.rv(T.Par(T.array2d(P.DataType("T"),P.SizeValue("outSize"))))}),
+  {{SDF{0,1},SDF{1,a.size[1]*a.size[2]},true},
+    {SDF{1,a.size[1]*a.size[2]},SDF{1,1}},
+    {SDF{1,1},SDF{math.huge,1}}})
+end)
 
 
 generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"size","number"},{},
@@ -122,18 +154,18 @@ T.rv(T.Par(P.DataType("TypeOut"))))
 
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
-  if args.opt==1 then
-    return C.print( args.T, args.string )
-  elseif args.opt==0 then
-    return C.print( T.Array2d(args.T,args.size), args.string )
-  else
-    assert(false)
-  end
+  return C.print( args.T, args.string )
 end,
-P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
-            T.rv(T.Par(P.NumberType("T")))}),
-P.SumType("opt",{T.rv(T.Par(T.array2d(P.NumberType("T"),P.SizeValue("size")))),
-                 T.rv(T.Par(P.NumberType("T")))}))
+T.rv(T.Par(P.DataType("T"))),
+T.rv(T.Par(P.DataType("T"))))
+--[=[
+generators.PrintArray = R.FunctionGenerator("core.PrintArray",{"type","rate"},{"string"},
+function(args)
+  return C.print( T.Array2d(args.T,args.size), args.string )
+end,
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
+]=]
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -175,7 +207,10 @@ P.SumType("opt",{
             T.rv(T.Par(P.DataType("T")))
 }))
 
-generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{}, function(args) return C.valueToTrigger(args.D) end,T.rv(T.Par(P.DataType("D"))),T.rv(T.Par(T.Trigger)))
+generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{},
+function(args) return C.valueToTrigger(args.D) end,
+T.rv(T.Par(P.DataType("D"))),
+T.rv(T.Par(T.Trigger)))
 
 generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"number"},{},
 function(args)
@@ -226,8 +261,8 @@ end,
 P.SumType("opt",{types.tuple(P.TypeList("list",types.RV(P.ScheduleType("S")))),
                  types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size")),
                  types.tuple(P.TypeList("list",types.RV()))}),
-P.SumType("opt",{types.RV(types.tuple(P.TypeList("list",P.ScheduleType("S")))),
-                 types.RV(P.ScheduleType("S"),P.SizeValue("size")),
+P.SumType("opt",{types.RV(P.ScheduleType("S")),
+                 types.RV(P.ScheduleType("S")),
                  types.RV()})
 )
 
@@ -377,7 +412,6 @@ function(args)
       for k,v in ipairs(args.list) do
         schedulelist[k] = v.over
       end
-
       return RM.ZipSeq( mode, schedulelist, args.size[1], args.size[2] )
     end
   else
@@ -417,22 +451,34 @@ function(args)
   return mod
 end)
 
-generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
+
   if a.opt==0 then
-    assert(a.V[2]==1)
-    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-  elseif a.opt==1 then
-    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], 0, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    assert(Uniform(a.V[1]):toNumber()==1)
+    assert(Uniform(a.V[2]):toNumber()==1)
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
-    assert(false)
+    if a.opt==1 then
+      assert(a.V[2]==1)
+      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    elseif a.opt==2 then
+      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], 0, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    else
+      assert(false)
+    end
   end
 end,
-P.SumType("opt",{types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+P.SumType("opt",{types.RV(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
+                 types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
                  types.rv(types.Seq(types.Par(P.DataType("T")),P.SizeValue("size")))}),
 P.SumType("opt",{
+  types.RV(types.Seq(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("stSize")),P.SizeValue("size"))),
   types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),P.SizeValue("stSize")),P.SizeValue("V")),P.SizeValue("size"))),
-  types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}) 
+  types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}),
+{{SDF{0,1},SDF{0,1}},
+  {SDF{0,1},SDF{math.huge,1}},
+  {SDF{0,1},SDF{math.huge,1}}}
 )
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
@@ -530,17 +576,31 @@ types.rv(types.Par(P.DataType("D"))))
 
 generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate"},{},
 function(args)
-  local V = (args.size[1]*args.size[2]*args.rate[1][1]:toNumber())/args.rate[1][2]:toNumber()
-  local V0 = V
-  if V<1 then V=0;V0=1 end
-  local res = generators.Function{"Pos_With_Trig",T.RV(T.Par(T.Trigger)),SDF{1,args.size[1]*args.size[2]/V0},
-    function(inp) return generators.Map{RM.posSeq(args.size[1],args.size[2],V,nil,true,true)}(generators.TriggerBroadcast{args.size[1]*args.size[2]/V0}(inp)) end}
-
+  local V = canonicalV( args.rate, R.Size(args.size) )
+  local res = generators.Function{"Pos_With_Trig",T.RV(T.Par(T.Trigger)),args.rate,
+                                  function(inp)
+      local PS = RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+      local trig = generators.Broadcast{{args.size[1],args.size[2]}}(inp)
+      return generators.Map{PS}(trig)
+    end}
+  
   return res
---  return RM.posSeq( args.size[1], args.size[2], V, nil, true, true )
 end,
 types.RV(T.Par(T.Trigger)),
 types.RV(P.ScheduleType("D")))
+
+-- unlike Pos above, this expects a trigger for every pixel
+generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{},
+function(args)
+  local V = 0
+  if args.opt==0 then assert(args.V[2]==1);V=args.V[1] end
+  return RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+end,
+P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Trigger,P.SizeValue("V")),P.SizeValue("size"))),
+                 types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}),
+P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Array2d(T.Uint(16),2),P.SizeValue("V")),P.SizeValue("size"))),
+                 types.rv(T.Seq(T.Par(T.Array2d(T.Uint(16),2)),P.SizeValue("size")))})
+)
 
 -- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
@@ -627,11 +687,65 @@ end,
 P.SumType("opt",{T.rV(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size"))))}),
 P.SumType("opt",{T.rRV(P.ScheduleType("S"))}))
 
+local SerToWidthArrayToScalar = J.memoize(function(ty,size)
+    local res = generators.Module{
+      "SerToWidth_Convert_Array_to_scalar_"..tostring(ty), SDF{1,1},
+      T.rV(T.Par(T.array2d(ty,1,1))),
+      function(inp)
+        return generators.Index{0}(inp)
+    end}
+    assert(R.isPlainFunction(res))
+
+    res.inputType = types.rV(types.ParSeq(T.array2d(ty,1,1),size))
+    res.outputType = types.rRV(types.Seq(T.Par(ty),size))
+
+    return res
+end)
+
+-- for legacy reasons, changerate returns stuff in column major order.
+-- instead, do row major
+-- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
+local ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
+  J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
+  local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
+
+  J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
+  assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
+
+  local V2w, V2h = outputItemsPerCyc, 1
+  if outputItemsPerCyc>Uniform(W):toNumber() then
+    V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
+  end
+
+  local inputType, outputType
+  if Vw==W and Vh==H then
+    inputType = types.RV(types.Par(T.array2d(ty,Vw,Vh)))
+  else
+    inputType = types.RV(types.ParSeq(T.array2d(ty,Vw,Vh),W,H))
+  end
+  
+  outputType = types.RV(types.ParSeq(T.array2d(ty,V2w,V2h),W,H))
+
+  local res = generators.Module{
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(types.Par(T.array2d(ty,Vw,Vh))),
+      function(inp)
+        return generators.ReshapeArray{{V2w,V2h}}(generators.Map{cr}(generators.ReshapeArray{{Vw*Vh,1}}(inp)))
+  end}
+  assert(R.isPlainFunction(res))
+  assert( res.outputType:lower()==outputType:lower() )
+  assert( res.inputType:lower()==inputType:lower() )
+  res.inputType=inputType
+  res.outputType=outputType
+  
+  return res
+end)
+
 -- serialize to a particular vector width ("number")
+-- width is the number of items to produce per cycle (not literally the width)
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number"},{},
 function(args)
+  J.err( math.floor(args.number)==args.number, "SerToWidth: width is not an integer, is: ",args.number) 
   if args.number==0 then
-
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
@@ -641,20 +755,9 @@ function(args)
           if a.V[1]*a.V[2]==1 and args.number==0 then
             -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
 
-            local res = generators.Module{
-              "SerToWidth_Convert_Array_to_scalar_"..tostring(a.T), SDF{1,1},
-              T.rV(T.Par(T.array2d(a.T,1,1))),
-              function(inp)
-                return generators.Index{0}(inp)
-            end}
-            assert(R.isPlainFunction(res))
-
-            res.inputType = types.rV(types.ParSeq(T.array2d(a.T,1,1),a.size))
-            res.outputType = types.rRV(types.Seq(T.Par(a.T),a.size))
-
-            return res
+            return SerToWidthArrayToScalar( a.T, a.size )
           else
-           return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+            return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
           end
         else
           assert(false)
@@ -666,31 +769,28 @@ function(args)
       P.SumType("opt",{
                   T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut"))),
                   T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))}) )
-
   else
     return R.FunctionGenerator("core.SerToWidth",{},{},
       function(a)
         if a.opt==0 then
-          return RM.changeRate( a.T, a.size[2], a.size[1], args.number, true, a.size[1], a.size[2] )
-        elseif a.opt==1 then                
-          return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+          return ChangeRateRowMajor( a.T, a.size[1], a.size[2], args.number, a.size[1], a.size[2] )
+        elseif a.opt==1 then
+          return ChangeRateRowMajor( a.T, a.V[1], a.V[2], args.number, a.size[1], a.size[2] )
         else
           assert(false)
         end
       end,
       P.SumType("opt",{
-            T.rV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
-            T.rV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
+            T.RV(T.Par(T.array2d(P.DataType("T"),P.SizeValue("size")))),
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")))}),
       P.SumType("opt",{
-            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
-            T.rRV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut"))),
+            T.RV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("VOut")),P.SizeValue("sizeOut")))}) )
   end
 end)
 
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
-  --J.err( args.type:isArray(), "generators.SerSeq: type should be array, but is: "..tostring(args.type) )
-
   J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
 end,
@@ -731,6 +831,16 @@ function(args)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
+
+--[=[
+generators.FwriteArray = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
+function(args)
+  --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
+  return RM.fwriteSeq(args.string,T.Array2d(args.T,args.size),args.filenameVerilog,true)
+end,
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
+T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
+]=]
 
 generators.Fread = R.FunctionGenerator("core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)
@@ -833,9 +943,7 @@ P.SumType("opt",{types.HandshakeTrigger,types.HandshakeTrigger}) )
 
 generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
-
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
-
 
   if ratio<1 then
     if args.type:isRV() then
@@ -846,13 +954,13 @@ function(args)
           if ty.over:isArray() then
             -- if not an array, can't really do anything
 
-            local chan = ty.over.size[1]*ratio -- NYI, 2d
-            if chan<1 then chan=0 end
+            local chan = canonicalV( args.rate, ty.over.size )
             local res = generators.SerToWidth{chan}
 
             return res
           else
-            assert(false)
+            -- cant' do anything
+            return generators.Identity
           end
         elseif ty:is("Seq") then
             -- already fully sequential, try to apply to inner dim?
@@ -868,6 +976,15 @@ function(args)
     end
   end
 
+  -- even if ratio==1, we still want it to break T[1;W,H} into T{W,H} canonical form
+  if ratio==1 and args.type:extractSchedule():is("ParSeq") and
+    args.type:extractSchedule().over:isArray() and
+    Uniform(args.type:extractSchedule().over.size[1]):toNumber()==1 and
+    Uniform(args.type:extractSchedule().over.size[2]):toNumber()==1 
+  then
+    return generators.SerToWidth{0}
+  end
+  
   -- if ratio >=1, don't do anything:
   return generators.Identity
 end)
@@ -927,10 +1044,17 @@ T.rv(T.Par(P.DataType("D"))))
 
 generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{},
 function(args)
-  return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, 0, false, true )
+  if args.opt==1 then
+    assert(args.V[2]==1)
+    return C.FilterSeqPar( args.T, args.V[1], SDF(args.size), true, args.insize[1], args.insize[2] )
+  else
+    return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, 0, false, true )
+  end
 end,
-types.rv( T.Seq( T.Par( T.tuple{P.DataType("T"),T.bool()}),P.SizeValue("insize") )),
-types.rvV( T.VarSeq( T.Par(P.DataType("T")), P.SizeValue("sizeOut") )) )
+P.SumType("opt",{types.rv( T.Seq( T.Par( T.tuple{P.DataType("T"),T.bool()}),P.SizeValue("insize") )),
+                 types.RV( T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeValue("insize") ))}),
+P.SumType("opt",{types.rvV( T.VarSeq( T.Par(P.DataType("T")), P.SizeValue("sizeOut") )),
+                 types.RV( T.VarSeq( T.Par(P.DataType("T")), P.SizeValue("sizeOut") ))}) )
 
 generators.Arbitrate = R.FunctionGenerator("core.Arbitrate",{"rate"},{},
 function(args)

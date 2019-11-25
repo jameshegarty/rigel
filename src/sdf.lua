@@ -31,9 +31,9 @@ function SDFFunctions:nonzero()
   return true
 end
 
-function SDFFunctions:tonumber()
+function SDFFunctions:toNumber()
   J.err( #self==1,"Could not convert multi-stream SDF rate to a number: "..tostring(self))
-  return self[1][1]/self[1][2]
+  return self[1][1]:toNumber()/self[1][2]:toNumber()
 end
 
 function SDFFunctions:equals(other)
@@ -54,6 +54,24 @@ function SDFFunctions:equals(other)
     --if v[1]~=other[k][1] or v[2]~=other[k][2] then return false end
   end
   return true
+end
+
+function SDFFunctions:lt(other)
+  assert(#self==1)
+  J.err( sdf.isSDF(other), "SDF:lt(), other table isn't an SDF" )
+  return self:toNumber()<other:toNumber()
+end
+
+function SDFFunctions:ge(other)
+  assert(#self==1)
+  J.err( sdf.isSDF(other), "SDF:ge(), other table isn't an SDF" )
+  return self:toNumber()>=other:toNumber()
+end
+
+function SDFFunctions:gt(other)
+  assert(#self==1)
+  J.err( sdf.isSDF(other), "SDF:ge(), other table isn't an SDF" )
+  return self:toNumber()>other:toNumber()
 end
 
 function SDFMT.__tostring(tab)

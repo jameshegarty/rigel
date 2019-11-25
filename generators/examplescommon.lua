@@ -96,7 +96,7 @@ C.print = memoize(function(A,str)
     return sm
   end
   
-  function res.makeTerra() return CT.print(A,str) end
+  function res.makeTerra() return CT.print(res,A,str) end
   
   return rigel.newFunction(res)
 end)
@@ -1514,18 +1514,26 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
 end)
 
 -- has rate T->1. Returns each stencil over 1/T cycles
-C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax )
-  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed_orig, X )
+  J.err(Uniform.isUniform(w) or type(w)=="number","C.stencilLinebufferPartial: w must be number, but is:",w)
+  J.err(Uniform.isUniform(h) or type(h)=="number","C.stencilLinebufferPartial: h must be number, but is:",h)
+  J.err(Uniform.isUniform(T) or type(T)=="number","C.stencilLinebufferPartial: T must be number, but is:",T)
+    
   assert(T>=1);
-  assert(w>0);
+  assert(Uniform(w):gt(0):assertAlwaysTrue())
   assert(h>0);
-  assert(xmin<xmax)
+  J.err(xmin<=xmax,"C.stencilLinebufferPartial: xmin must be less than or equal to xmax, but is xmin=",xmin," xmax=",xmax)
   assert(ymin<ymax)
   assert(xmax==0)
   assert(ymax==0)
+  assert(X==nil)
+
+  local framed = framed_orig
+  if framed==nil then framed=false end
+  assert(type(framed)=="boolean")
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin )), "C.stencilLinebufferPartial" )
+  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial" )
 end)
 
 
@@ -2040,6 +2048,7 @@ C.AXIReadPar = memoize(
   end)
 
 -- collect the number of tokens seen, and write it to a global
+-- N: counts up to this number and then resets?
 C.tokenCounterReg = memoize(
   function( A, regGlobal, N)
     J.err( types.isType(A),"tokenCounterReg: a must be type" )
@@ -2405,4 +2414,73 @@ C.Stall = J.memoize(function(A,VR)
   return res
 end)
 
+local IdxGT = J.memoize(function()
+    local G = require "generators.core"
+    return G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
+end)
+
+-- input type: {{A,bool},u8} -> {A,u8}
+local IDXBTS = 32
+local BoolToIdxInner = J.memoize(function(A,X)
+  assert(X==nil)
+  local G = require "generators.core"
+  local res = G.Module{"BoolToIdxInner", SDF{1,1}, types.rv(types.Par(types.tuple{types.Tuple{A,types.Bool},types.Uint(IDXBTS)})),
+                  function(i) return R.concat{i[0][0],G.Sel(i[0][1],i[1],R.c(0,types.uint(IDXBTS)))} end}
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+local BoolToIdx = J.memoize(function (A,P,X)
+  assert(types.isType(A))
+  assert(type(P)=="number")
+  assert(X==nil)
+  local G = require "generators.core"
+  
+  local res = G.Module{"BoolToIdx",SDF{1,1},types.rv(types.Par(types.Array2d(types.Tuple{A,types.Bool},P))),
+                  function(i)
+                    local tmp = R.c(J.reverse(J.range(1,P)),types.array2d(types.uint(IDXBTS),P))
+                    tmp = G.Zip(i,tmp)
+                    return G.Map{BoolToIdxInner(A)}(tmp)
+                  end}
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+-- {A,u8}->{A,bool} (if u8>0)
+local IdxToBool = J.memoize(function(A,X)
+  assert(X==nil)
+  local G = require "generators.core"
+  local res = G.Module{"IdxToBool", SDF{1,1}, types.rv(types.Par(types.Tuple{A,types.Uint(IDXBTS)})), function(i) return R.concat{i[0],G.GT{0}(i[1])} end }
+  assert(R.isPlainFunction(res))
+  return res
+end)
+
+-- do the sorting nonsense needed for FilterSeqPar
+C.FilterSeqPar = J.memoize(function( ty, N, rate, framed, framedW, framedH, X )
+  local G = require "generators.core"
+
+  local res = G.Module{"C_FilterSeqPar", types.RV(types.Par(types.Array2d(types.Tuple{ty,types.Bool},N))), SDF{1,1},
+    function(i)                   
+      local o = G.Map{BoolToIdx(ty,N)}(i)
+      o = G.Sort{IdxGT()}(o)
+      --print("IDXTOB",o.type)
+      o = G.Map{IdxToBool(ty)}(o)
+      o = G.Map{RM.filterSeqPar(ty,N,SDF(rate))}(o)
+      return o
+    end}
+
+  assert(R.isPlainFunction(res))
+
+  if framed then
+    local inputType = types.RV(types.ParSeq(types.array2d( types.tuple{ty,types.bool()}, N ),framedW,framedH) )
+    local outputType = types.RV(types.VarSeq(types.Par(ty),framedW,framedH))
+    assert(res.inputType:lower()==inputType:lower())
+    assert(res.outputType:lower()==outputType:lower())
+    res.inputType = inputType
+    res.outputType = outputType
+  end
+  
+  return res
+end)
+  
 return C
