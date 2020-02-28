@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# print all commands
+# set -x
+
+# early exit on errors (so that verilator warnings are errors)
+set -e
+
+VERILOG_FILE=$1
+METADATA_FILE=$2
+BUILDDIR=$3
+OUTFILE=$4
+
+mkdir -p $BUILDDIR
+cd $BUILDDIR
+
+echo "read_verilog $VERILOG_FILE" >> cmd.txt
+echo "synth -run coarse" >> cmd.txt
+echo "stat -top Top" >> cmd.txt
+yosys -s cmd.txt > $BUILDDIR/log.txt
+
+touch $OUTFILE
