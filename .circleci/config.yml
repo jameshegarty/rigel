@@ -80,6 +80,16 @@ jobs:
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
       - run: test -e examples/out/terra_done.txt || exit
+  yosysSOC:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get update
+      - run: sudo apt-get install z3 luajit yosys
+      - run: yosys -V
+      - run: cd examples; make -k yosysSOC
+      - run: test -e examples/out/yosysSOC_done.txt || exit   
 #  state:
 #    docker:
 #      - image: circleci/python:3.7.1
@@ -103,3 +113,4 @@ workflows:
       - bjump
 #      - state
       - pulpino
+      - yosysSOC
