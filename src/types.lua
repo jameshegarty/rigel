@@ -164,7 +164,7 @@ end
 types._array={}
 
 function types.array2d( _type, w, h, X )
-  err( types.isType(_type) or P.isParamType(_type), "first index to array2d must be Rigel type, but is: "..tostring(_type) )
+  err( types.isType(_type) or P.isParamType(_type), "first index to array2d must be Rigel type, but is: ",_type )
 
   local Uniform = require "uniform"
   if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
@@ -180,8 +180,8 @@ function types.array2d( _type, w, h, X )
     size = w
   else
 
-    err( type(w)=="number", "types.array2d: second argument must be numeric width but is "..tostring(w)..","..tostring(type(w)) )
-    err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..tostring(h)..","..type(h))
+    err( type(w)=="number", "types.array2d: second argument must be numeric width but is ",w,",",type(w) )
+    err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..tostring(h),",",type(h) )
     if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
 
     err( w==math.floor(w), "non integer array width "..tostring(w))
@@ -1554,10 +1554,11 @@ end
 function TypeFunctions:extractSchedule()
   if self:isSchedule() then
     return self
-  elseif self:isInterface() then
+  elseif self:isInterface() and self:isInil()==false then
     if self:is("Interface") then
       return self.over:extractSchedule()
     else
+      print("Could not extract schedule from ",self)
       assert(false)
     end
   else

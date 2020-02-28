@@ -2348,16 +2348,18 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   
   table.insert(res,[[  wire ]]..instance.name..[[_RESET;
   reg [63:0] ]]..instance.name..[[_file;
+//synopsys translate_off
   initial begin 
     $c(]]..instance.name..[[_file," = (QData)fopen(\"]]..self.filename..[[\",\"]]..fmode..[[\");"); 
     $c("if(",]]..instance.name..[[_file,"==0){printf(\"ERROR OPENING FILE ]]..self.filename..[[\");exit(1);}else{printf(\"FILEOPENOK\");}");
   end
-
+//synopsys translate_on
 ]])
 
   local RST = ""
 
-  table.insert(res,[[  always @(posedge CLK) begin
+  table.insert(res,[[//synopsys translate_off
+  always @(posedge CLK) begin
 ]])
   if FILEMODULE_VERILATOR then
     table.insert(res, "if ("..instance.name..[[_RESET) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end
@@ -2367,6 +2369,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
 ]] )
   end
 table.insert(res,[[  end
+//synopsys translate_on
 ]])
 
   if self.hasWrite then
@@ -2455,10 +2458,12 @@ table.insert(res,[[  end
       ]]..instance.name..[[_readOut <= {]]..outassn..[[};
     end 
 
+//synopsys translate_off
     if (]]..instance.name..[[_READ_VALID_1 && ]]..instance.name..[[_READ_CE) begin 
       $c("fseek((FILE*)",]]..instance.name..[[_file,",",]]..instance.name..[[_READ_INPUT_R*]]..tostring(self.type:verilogBits()/8)..[[,",SEEK_SET);");
       ]]..assn..[[ 
     end
+//synopsys translate_on
 
     if (]]..instance.name..[[_READ_CE) begin 
       ]]..instance.name..[[_READ_VALID_1 <= ]]..instance.name..[[_READ_VALID;
@@ -2613,7 +2618,9 @@ function assertModuleFunctions:instanceToVerilog( instance, fnname, datavar, val
   end
   local finish = "$finish(); "
   if self.exit==false then finish="" end
-  local decl = [[always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME);]]..finish..[[ end end]]
+  local decl = [[//synopsys translate_off
+always @(posedge CLK) begin if(]]..datavar..[[ == 1'b0 && ]]..validvar..[[==1'b1]]..CES..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME);]]..finish..[[ end end
+//synopsys translate_on]]
   return "___NULL_ASSERT_OUT", decl, true
 end
 
