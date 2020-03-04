@@ -86,6 +86,19 @@ end
 local SDFTOPMT = {} -- this is just a hack so that we can call apply on the thing we return from the file
 setmetatable(sdf,SDFTOPMT)
 
+-- memoize SDF so that they can work as generator keys
+local makeSDF = J.memoize(function(...)
+  local rawarg = {...}
+  local tab = {}
+  local i=1
+  while rawarg[i]~=nil do
+    table.insert(tab,{rawarg[1],rawarg[2]})
+    i = i + 2
+  end
+  
+  return setmetatable(tab,SDFMT)
+end)
+
 SDFTOPMT.__call = function(tab,arg,X)
   assert(X==nil)
 
@@ -103,10 +116,12 @@ SDFTOPMT.__call = function(tab,arg,X)
     --J.err(Uniform(v[2]):gt(0):assertAlwaysTrue(),"SDF: denominator should not be 0!")
     --J.err( (Uniform(v[1])/Uniform(v[2])):gt(0):assertAlwaysTrue(),"SDF: rate is 0?")
     local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
-    table.insert(uarg,{n,d})
+    --table.insert(uarg,{n,d})
+    table.insert(uarg,n)
+    table.insert(uarg,d)
   end
 
-  return setmetatable(uarg,SDFMT)
+  return makeSDF(unpack(uarg))
 end
   
 function sdf.isSDF(tab) return getmetatable(tab)==SDFMT end

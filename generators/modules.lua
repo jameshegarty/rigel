@@ -5641,7 +5641,7 @@ table.insert(vstr,[=[  always @(posedge CLK) begin
       table.insert(vstr,[=[r[0] <= {]=]..(32-ty:verilogBits()).."'d0,write1_input};\n")
     else
       for i=0,(ty:verilogBits()/read1bits)-1 do
-        table.insert(vstr,"assign r["..i.."] = write1_input["..((i+1)*read1bits-1)..":"..(i*read1bits).."];\n")
+        table.insert(vstr,"r["..i.."] = write1_input["..((i+1)*read1bits-1)..":"..(i*read1bits).."];\n")
       end
     end
     table.insert(vstr,"end\n")

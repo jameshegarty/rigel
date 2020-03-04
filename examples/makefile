@@ -10,6 +10,10 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_SOC))
 
+YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(SRCS_SOC))
+
 # state_flowcontrol.t
 SRCS_STATE = state_simple.t
 
@@ -299,6 +303,10 @@ verilatorSOC: $(VERILATOR_SOC)
 	touch $(BUILDDIR)/verilatorSOC_done.txt
 	date
 
+yosysSOC: $(YOSYS_SOC)
+	touch $(BUILDDIR)/yosysSOC_done.txt
+	date
+
 bjump: $(BJUMP)
 	touch $(BUILDDIR)/bjump_done.txt
 	date
@@ -468,5 +476,17 @@ $(BUILDDIR)/%.zu9vivado.mhzcorrect.txt: $(BUILDDIR)/%.zu9vivado.mhz.txt
 
 $(BUILDDIR)/%.zu9vivado.perfcorrect.txt: $(BUILDDIR)/%.zu9vivado.lutscorrect.txt $(BUILDDIR)/%.zu9vivado.bramscorrect.txt $(BUILDDIR)/%.zu9vivado.dspscorrect.txt $(BUILDDIR)/%.zu9vivado.mhzcorrect.txt
 	touch $@
+
+$(BUILDDIR)/%.yosysSOC.cells.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "Number of cells:" | tail -n 1 | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.cellscorrect.txt: $(BUILDDIR)/%.yosysSOC.cells.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.cells.txt $@ 0 smallerIsBetter
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "RAMB16_S9_S9" | tail -n 1 | grep -P -o "[0-9]+" | tail -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt: $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAMB16_S9_S9.txt $@ 0 smallerIsBetter
 
 include ../platform/platform.mk

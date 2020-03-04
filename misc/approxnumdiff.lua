@@ -2,11 +2,23 @@
 -- only write 'out' if LEFT_FILE<RIGHT_FILE*(1+SLACK)
 
 local f0 = assert(io.open(arg[1], "r"))
-local NEW = tonumber(f0:read("*all"))
+local f0str = f0:read("*all")
+local NEW
+if f0str=="" then
+  NEW = 0
+else
+  NEW = tonumber(f0str)
+end
 f0:close()
 
 local f1 = assert(io.open(arg[2], "r"))
-local TARGET = tonumber(f1:read("*all"))
+local f1str = f1:read("*all")
+local TARGET
+if f1str=="" then
+  TARGET = 0
+else
+  TARGET = tonumber(f1str)
+end
 f1:close()
 
 local SLACK = tonumber(arg[4])
