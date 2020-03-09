@@ -21,7 +21,7 @@ inp = R.input( types.rv(types.Par(types.uint(8))) )
 local posSeqMod = RS.modules.posSeq{size=padSize,V=1}
 pos = RS.connect{toModule=posSeqMod,input=G.ValueToTrigger(inp)}
 
-local pbinp = f.parameter("pbinp",posSeqMod.outputType.over.over):index(0)
+local pbinp = f.parameter("pbinp",posSeqMod.outputType:extractData()):index(0)
 local pbx = pbinp:index(0):mod(8):eq(f.constant(7))
 local pby = pbinp:index(1):mod(8):eq(f.constant(7))
 local pb = pbx:__and(pby)

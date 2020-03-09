@@ -420,13 +420,13 @@ function(args)
 end,
 P.SumType("opt",
           {T.rv(T.Par(T.tuple(P.TypeList("list",T.array2d(P.DataType("D$"),P.SizeValue("size")))))),
-           T.rv(T.tuple(P.TypeList("list",T.Seq(P.ScheduleType("S"),P.SizeValue("size") )))),
-           T.rv(T.tuple(P.TypeList("list",T.VarSeq(P.ScheduleType("S"),P.SizeValue("size") )))),
+           T.rv(T.tuple(P.TypeList("list",T.Seq(P.DataType("D"),P.SizeValue("size") )))),
+           T.rv(T.tuple(P.TypeList("list",T.VarSeq(P.DataType("D"),P.SizeValue("size") )))),
            T.rv(T.tuple(P.TypeList("list",T.ParSeq(T.Array2d(P.DataType("D$"),P.SizeValue("V")),P.SizeValue("size") ))))}),
 P.SumType("opt",
           {T.rv(T.Par(P.DataType("D"))),
-           T.rv(T.Seq(P.ScheduleType("S"),P.SizeValue("size"))),
-           T.rv(T.VarSeq(P.ScheduleType("S"),P.SizeValue("size"))),
+           T.rv(T.Seq(P.DataType("D"),P.SizeValue("size"))),
+           T.rv(T.VarSeq(P.DataType("D"),P.SizeValue("size"))),
            T.rv(T.ParSeq(T.Array2d(P.DataType("out"),P.SizeValue("V")),P.SizeValue("size")))})
 )
 

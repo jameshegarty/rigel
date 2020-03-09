@@ -262,12 +262,13 @@ local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
   local liftsFound = false
   for liftName,lift in pairs(L) do
     local vars1, vars2, vars3 = {},{},{}
-    --print("check1",lift[3],"isSupertypeOf",Ttarget)
+  
     local check1 = lift[3]:isSupertypeOf(Ttarget,vars1,"")
-    --print("check2",lift[1],":isSupertypeOf",Tparam)
+    --print("check1",lift[3],"isSupertypeOf",Ttarget, check1)
     local check2 = lift[1]:isSupertypeOf(Tparam,vars2,"")
-    --print("check3",lift[2],":isSupertypeOf",TparamOutput)
+    --print("check2",lift[1],":isSupertypeOf",Tparam, check2)
     local check3 = lift[2]:isSupertypeOf(TparamOutput,vars3,"")
+    --print("check3",lift[2],":isSupertypeOf",TparamOutput, check3)
 
     --print("Try lift",liftName,check1,check2,check3)
 
@@ -863,7 +864,7 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType.over:is("Par") then
+  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType:deInterface():isData() then
     if self.outputType:lower():verilogBits()>0 then
       table.insert(v,", output wire ["..(self.outputType:lower():verilogBits()-1)..":0] "..fnname.."_output")
     end
@@ -893,8 +894,8 @@ function darkroomFunctionFunctions:vHeaderRequires()
       
       if types.isHandshakeAny(fn.outputType) then
         table.insert(v,", input wire ["..(types.lower(fn.outputType):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output, output wire "..inst.name.."_"..fnname.."_ready_downstream")
-      elseif (fn.outputType:isrv() or fn.outputType:isS()) and fn.outputType.over:is("Par") then
-        table.insert(v,", input wire ["..(types.lower(fn.outputType.over.over):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
+      elseif (fn.outputType:isrv() or fn.outputType:isS()) and fn.outputType:deInterface():isData() then
+        table.insert(v,", input wire ["..(types.lower(fn.outputType:deInterface()):verilogBits()-1)..":0] "..inst.name.."_"..fnname.."_output")
       else
         print("NYI - require of: "..tostring(inst))
         assert(false)
@@ -1812,12 +1813,9 @@ function darkroomIRFunctions:typecheck()
                                     err(darkroom.isHandshake(v.type),"concat: if one input is Handshake, all inputs must be Handshake, but idx "..tostring(k).." is "..tostring(v.type));
                                     return v.type
                                   end) )
---    elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
-      -- there's no reason for HandshakeTuple to exist...
---      err( false, "HandshakeTriggers should be concatinated with 'concatArray2d', not 'concat'")
-    elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
+    elseif n.inputs[1].type:isrv() and n.inputs[1].type:deInterface():isData() then
       -- perform automatic zip
-      n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but input "..tostring(k).." is "..tostring(v.type)); return v.type.over.over end) )))
+      n.type = types.rv(types.Par(types.tuple( J.map(n.inputs, function(v,k) err(v.type:isrv(),"concat: if one input is rv, all inputs must be rv, but input "..tostring(k).." is "..tostring(v.type)); return v.type:deInterface() end) )))
     elseif n.inputs[1].type:isrv() then
       n.type = types.rv(types.tuple( J.map(n.inputs,
                                   function(v,k)
@@ -1832,11 +1830,11 @@ function darkroomIRFunctions:typecheck()
     J.map( n.inputs, function(i,k) err(i.type==n.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k-1).." is type "..tostring(i.type)..", but index 0 is "..tostring(n.inputs[1].type)) end )
     
     if darkroom.isHandshake(n.inputs[1].type) then
-      n.type = types.array2d(types.RV( n.inputs[1].type:extractSchedule() ), n.W, n.H )
+      n.type = types.array2d(types.RV( n.inputs[1].type:deInterface() ), n.W, n.H )
     elseif n.inputs[1].type:is("HandshakeFramed") then
       n.type = types.HandshakeArrayFramed( darkroom.extractData(n.inputs[1].type), n.inputs[1].type.params.mixed, n.inputs[1].type.params.dims, n.W, n.H )
-    elseif n.inputs[1].type:isrv() and n.inputs[1].type.over:is("Par") then
-      n.type = types.rv(types.Par(types.array2d( n.inputs[1].type.over.over, n.W, n.H )))
+    elseif n.inputs[1].type:isrv() and n.inputs[1].type:deInterface():isData() then
+      n.type = types.rv(types.array2d( n.inputs[1].type:deInterface(), n.W, n.H ))
     elseif darkroom.isHandshakeTrigger(n.inputs[1].type) then
       for k,v in ipairs(n.inputs) do
         err(types.isHandshakeTrigger(v.type),"concat: is one input is HandshakeTrigger, all inputs must be HandshakeTrigger")
@@ -2142,7 +2140,7 @@ function darkroomIRFunctions:codegenSystolic( module )
           return {I:process(inputs[1][1])}
         end
       elseif n.kind=="constant" then
-        return {S.constant( n.value, n.type.over.over )}
+        return {S.constant( n.value, n.type:extractData() )}
       elseif n.kind=="concat" then
         return {S.tuple( J.map(inputs,function(i) return i[1] end) ) }
       elseif n.kind=="concatArray2d" then

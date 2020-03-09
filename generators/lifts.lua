@@ -14,11 +14,11 @@ lifts.mapSeq={
   function(args) return function(f) return RM.mapSeq(f,args.Size[1],args.Size[2]) end end}
 
 lifts.mapVarSeq={
-  P.InterfaceType("InterfaceIn",P.ScheduleType("SchedIn")),
-  P.InterfaceType("InterfaceOut",P.ScheduleType("SchedOut")),
+  P.InterfaceType("InterfaceIn",P.DataType("SchedIn")),
+  P.InterfaceType("InterfaceOut",P.DataType("SchedOut")),
   
-  P.InterfaceType("InterfaceIn",T.VarSeq(P.ScheduleType("SchedIn"),P.SizeValue("Size"))),
-  P.InterfaceType("InterfaceOut",T.VarSeq(P.ScheduleType("SchedOut"),P.SizeValue("Size"))),
+  P.InterfaceType("InterfaceIn",T.VarSeq(P.DataType("SchedIn"),P.SizeValue("Size"))),
+  P.InterfaceType("InterfaceOut",T.VarSeq(P.DataType("SchedOut"),P.SizeValue("Size"))),
   
   function(args) return function(f) return RM.mapVarSeq(f,args.Size[1],args.Size[2]) end end}
 
