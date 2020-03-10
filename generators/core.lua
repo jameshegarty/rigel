@@ -41,7 +41,6 @@ function(args)
   local sz = R.Size(args.size)
   local V = canonicalV( args.rate, sz )
 
---  print("BROADCAST",sz,V,args.rate)
   if V==sz[1]*sz[2] then
     return C.broadcast( args.T, sz[1], sz[2] )
   elseif V>0 then
@@ -73,16 +72,13 @@ end,
 P.DataType("T"))
 
 
-generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"size","number"},{},
+generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"type","rate","size","number"},{},
 function(args)
   assert(args.size[2]==1)
   if args.number==0 then
-    return R.FunctionGenerator("core.BroadcastSeq",{"type","rate"},{},
-      function(a)
-        return RM.upsampleXSeq(a.T,0,args.size[1],true)
-      end,
-      T.RV(T.Par(P.DataType("T"))),
-      T.RV(T.Seq(T.Par(P.DataType("T")),args.size)) )
+    return R.FunctionGenerator("core.BroadcastSeq_internal",{"type","rate","size","number"},{},
+                               function(a) return RM.upsampleXSeq(a.T,0,args.size[1],true) end,
+      P.DataType("T") ):complete(args)
   else
     assert(false)
   end
@@ -143,24 +139,16 @@ function(args)
 end,
 T.rv(T.Par(P.DataType("T"))),
 T.rv(T.Par(P.DataType("T"))))
---[=[
-generators.PrintArray = R.FunctionGenerator("core.PrintArray",{"type","rate"},{"string"},
-function(args)
-  return C.print( T.Array2d(args.T,args.size), args.string )
-end,
-T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))),
-T.rv(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size")))))
-]=]
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
 generators.PartitionBits = R.FunctionGenerator("core.PartitionBits",{"type","number"},{},function(args) return C.partitionBits(args.type,args.number) end)
 
-generators.Rshift = R.FunctionGenerator("core.Rshift",{},{"number"}, function(args)
+generators.Rshift = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}, function(args)
   if args.number~=nil then
-    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshiftConst(a.T,args.number) end,T.rv(T.Par(P.NumberType("T"))),T.rv(T.Par(P.NumberType("T"))) )
+    return R.FunctionGenerator("core.Rshift",{},{"number"},function(a) return C.rshiftConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
   else
-    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift(a.T1,a.T2) end,T.rv(T.Par(types.Tuple{P.NumberType("T1"),P.NumberType("T2")})),T.rv(T.Par(P.NumberType("T1"))) )
+    return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift( a.T1, a.T2 ) end, types.Tuple{P.NumberType("T1"),P.NumberType("T2")} ):complete(args)
   end
 end)
 
@@ -263,11 +251,9 @@ function(args)
   local res = {}
   if args.number~=nil then
     -- add a const (unary op)
-    local tmp = R.FunctionGenerator( "core.AddConst", {}, {"async","number"}, function(a) return C.plusConst( a.T, args.number ) end, P.NumberType("T") )
-    return tmp(args)
+    return R.FunctionGenerator( "core.AddConst", {}, {"async","number"}, function(a) return C.plusConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
   else
-    local tmp = R.FunctionGenerator("core.AddNonconst", {}, {"async","number"}, function(a) return C.sum( a.T, a.T, a.T, args.async ) end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))) )
-    return tmp(args)
+    return R.FunctionGenerator("core.AddNonconst", {}, {"async","number"}, function(a) return C.sum( a.T, a.T, a.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
   end
 end)
 
@@ -293,14 +279,13 @@ function(args)
   return C.sub( args.T, args.T, args.T, args.async )
 end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))))
 
-generators.Mul = R.FunctionGenerator("core.Mul",{},{"number","async"},
+generators.Mul = R.FunctionGenerator("core.Mul",{"type","rate"},{"number","async"},
 function(args)
   if args.number~=nil then
-    return R.FunctionGenerator("core.Mul",{},{"async"},
-      function(a) return C.multiplyConst( a.T, args.number, a.async ) end,
-      T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))))
+    return R.FunctionGenerator("core.Mul",{},{"async","number"},
+      function(a) return C.multiplyConst( a.T, args.number, a.async ) end, P.NumberType("T") ):complete(args)
   else
-    return R.FunctionGenerator("core.Mul",{},{"bool"},function(args) return C.multiply( args.T, args.T, args.T, args.async ) end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})), T.rv(T.Par(P.NumberType("T"))))
+    return R.FunctionGenerator("core.Mul",{},{"async","number"},function(a) return C.multiply( a.T, a.T, a.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")}):complete(args)
   end
 end)
 
@@ -541,8 +526,7 @@ generators.PosSeq = R.FunctionGenerator("core.PosSeq",{"size","number"},{},
 function(args)
   return RM.posSeq(args.size[1],args.size[2],args.number)
 end,
-types.rv(types.Par(T.Trigger)),
-types.rv(types.Par(P.DataType("D"))))
+T.Trigger)
 
 generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate"},{},
 function(args)
@@ -556,8 +540,8 @@ function(args)
   
   return res
 end,
-types.RV(T.Par(T.Trigger)),
-types.RV(P.ScheduleType("D")))
+T.Trigger )
+
 
 -- unlike Pos above, this expects a trigger for every pixel
 generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{},
@@ -584,21 +568,19 @@ function(args)
 
   return res
 end,
-T.RV(T.Seq(T.Par(T.Array2d(P.DataType("D"),P.SizeValue("inner"))),P.SizeValue("outer"))),
-T.RV(T.ParSeq(T.Array2d(P.DataType("D"),P.SizeValue("inner")),P.SizeValue("outer"))))
+T.Seq(T.Par(T.Array2d(P.DataType("D"),P.SizeValue("inner"))),P.SizeValue("outer"))  )
 
-generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction"},{},
+generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction","type","rate"},{},
 function(args)
-  J.err(R.isPlainFunction(args.rigelFunction),"core.Map should only work on plain functions")
+  J.err(R.isPlainFunction(args.rigelFunction),"core.FMap should only work on plain functions")
 
-  return R.FunctionGenerator("core.Map",{},{},function(a) return args.rigelFunction end,
-                             args.rigelFunction.inputType,
-                             args.rigelFunction.outputType)
+  return R.FunctionGenerator("core.FMap_internal",{"rigelFunction"},{},function(a) return args.rigelFunction end,
+                             args.rigelFunction.inputType:deInterface() ):complete(args)
 end)
 
-generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction"},{},
+generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{},
 function(args)
-  local fn = args.rigelFunction:specializeToType( types.rv(args.D), args.rate )
+  local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
   
   if args.size==args.V then
@@ -611,46 +593,23 @@ function(args)
 
   assert(false)
 end,
-T.Array2d(P.DataType("D"),P.SizeValue("size"),P.SizeValue("V")))
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
+  local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{args.T,args.T}), SDF{1,1} )
 
-  local fnVars = {}
-  local fnType = T.rv(T.Par(types.tuple{P.DataType("T"),P.DataType("T")}))
+  J.err( fn.inputType:isrv() and fn.outputType:isrv(),"Reduce: error, reduce can only operator over rv functions, but fn had type: ",fn.inputType,"->",fn.outputType)
   
-  J.err( fnType:isSupertypeOf(args.rigelFunction.inputType,fnVars,""), "Reduce: input fn should have type: "..tostring(fnType)..", but instead has type: "..tostring(args.rigelFunction.inputType) )
-
-  return R.FunctionGenerator("core.Reduce",{"rate","type"},{},
-    function(a)
-
-      local ty = a.type:deSchedule()
-      assert(ty:isArray())
-      
-      local joinset = J.joinSet(fnVars,a,true)
-
-      local spType = R.specialize(args.rigelFunction.inputType, joinset )
-
-      local fn = args.rigelFunction{spType,SDF{1,1}}
-      assert(R.isPlainFunction(fn))
-        
-      if a.V[1]==0 and a.V[2]==0 then
-        return RM.reduceSeq( fn, a.size[1], a.size[2], true)
-      elseif a.V[1]<a.size[1] or a.V[2]<a.size[2] then
-        return RM.reduceParSeq( fn, a.V[1], a.V[2], a.size[1], a.size[2] )
-      else
-        return RM.reduce( fn, a.size[1],a.size[2])
-      end
-    end,
-    P.SumType("opt",{
-                types.rv(types.Seq(T.Par(fnVars.T),P.SizeValue("size"))),
-                types.rv(types.ParSeq(T.array2d(fnVars.T,P.SizeValue("V")),P.SizeValue("size"))),
-                types.rv(types.Par(types.array2d(fnVars.T,P.SizeValue("size"))))}),
-    P.SumType("opt",{
-                types.rvV(types.Par(fnVars.T)),
-                types.rvV(types.Par(fnVars.T)),
-                types.rv(types.Par(fnVars.T))}))
-end)
+  if args.V[1]==0 and args.V[2]==0 then
+    return RM.reduceSeq( fn, args.size[1], args.size[2], true)
+  elseif args.V[1]<args.size[1] or args.V[2]<args.size[2] then
+    return RM.reduceParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
+  else
+    return RM.reduce( fn, args.size[1],args.size[2])
+  end
+end,
+T.Array2d(P.DataType("T"),P.SizeValue("size"),P.SizeValue("V")))
 
 generators.ReduceSeq = R.FunctionGenerator("core.ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
@@ -781,8 +740,7 @@ function(args)
   J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
 end,
-types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
-types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))) )
+types.array2d(P.DataType("T"),P.SizeValue("size")) )
 
 
 generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},

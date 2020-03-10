@@ -167,6 +167,7 @@ local function typeToKey(t)
         v=v[1]
       elseif type(v)=="table" and J.keycount(v)==2 and #v==2 and type(v[1])=="number" and type(v[2])=="number" then
         outk="size"
+        v = darkroom.Size(v)
       elseif darkroom.isSize(v) then
         outk="size"
       elseif type(v)=="table" and J.keycount(v)==4 and #v==4 and type(v[1])=="number" and type(v[2])=="number"
@@ -219,10 +220,6 @@ local function findLifts( generatorName, fn, Ttarget, Tparam, TparamOutput, X )
   local finVars = {}
   if Tparam:isSupertypeOf(Ttarget,finVars,"") then
     err(finVars.type==nil,"findLifts: argument 'type' already set? Don't use 'type' as a parameter name")
-
---    finVars.type = darkroom.specialize(Tparam,finVars)
---    local origFn = fn
---    fn = fn(finVars)
 
     err(fn~=nil,"findLifts: generator function returned nil?")
 
@@ -312,20 +309,18 @@ functionGeneratorMT.__call=function(tab,...)
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
 
     if arglist.type==nil and (tab.requiredArgs.type~=nil or tab.optArgs.type~=nil) then arglist.type = arg.type end
-    
-    --if arglist.type~=nil and (tab.requiredArgs.type1~=nil or tab.optArgs.type1~=nil) then
-      -- special case: user has asked for a _second_ type as an explicit argument. But we always assign input to 'type'. SO reshuffle
-   --   arglist.type1 = arglist.type
-   --   arglist.type = arg.type
-    --end
     if arglist.rate==nil and (tab.requiredArgs.rate~=nil or tab.optArgs.rate~=nil) then arglist.rate = arg.rate end
 
-    return tab:complete(arglist)(arg)
+    local rfn = tab:complete(arglist)
+
+    err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+    
+    return rfn(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
     -- calling with a list of generator params. Either complete, or curry.
     
     local arg = rawarg[1]
-    err( J.keycount(arg)>0, "Calling a function generator with an empty parameter list?" )
+    err( J.keycount(arg)>0, "Calling function generator '",tab.name,"' with an empty parameter list?" )
             
     arg = typeToKey(arg)
 
@@ -381,7 +376,7 @@ functionGeneratorMT.__index = functionGeneratorFunctions
 
 
 -- this will specialize the generator to the given type. It must return a plain function.
--- This returns nil if specialization failed.
+-- This function may fail to return you exactly what you want, but it will try, and return something.
 function functionGeneratorFunctions:specializeToType( ty, rate )
   err( types.isType(ty),"specializeToType: first arg should be a type, but is: ",ty)
   err( ty:isInterface(),"specializeToType: first arg should be interface type, but is: ",ty)
@@ -411,9 +406,9 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
   end
 
   if self:checkArgs(arglist)==false then
-    print("Could not specialize to type, missing args")
+    print("Could not specialize '",self.name,"' to type, missing args")
     for k,v in pairs(self.requiredArgs) do
-      if self.curriedArgs[k]==nil then print("Requires argument '"..k.."'") end
+      if self.curriedArgs[k]==nil and arglist[k]==nil then print("Requires argument '"..k.."'") end
     end
 
     return nil
@@ -425,19 +420,31 @@ end
 -- return true if done, false if not done
 function functionGeneratorFunctions:checkArgs(arglist)
   local reqArgs = {}
-
+  
   for k,v in pairs(arglist) do
-    if self.requiredArgs[k]==nil and self.optArgs[k]==nil and k~="type" then -- we always pass "type"
+    if self.requiredArgs[k]==nil and self.optArgs[k]==nil then
       print("Error, arg '"..k.."' is not in list of required or optional args on function generator '"..self.name.."'!" )
       print("Required Args: ")
       for k,v in pairs(self.requiredArgs) do print(k..",") end
       print("Curried Args: ")
       for k,v in pairs(self.curriedArgs) do print(k..",") end
       assert(false)
+    elseif self.requiredArgs[k]~=nil then
+      reqArgs[k]=1
     end
-    if self.requiredArgs[k]~=nil then reqArgs[k]=1 end
+    -- if it's optional, we don't care: we're only checking if all required args are set
   end
 
+  for k,v in pairs(self.curriedArgs) do
+    if arglist[k]~=nil and arglist[k]~=v then
+      print("error, '",self.name,"' overrided a curried arg with another value? k:",k," curried:",v," passed:",arglist[k])
+      return false
+    end
+    if self.requiredArgs[k]~=nil then
+      reqArgs[k] = 1
+    end
+  end
+  
   return J.keycount(reqArgs)==J.keycount(self.requiredArgs)
 end
 
@@ -454,13 +461,16 @@ function functionGeneratorFunctions:requiresArg(arg)
 end
 
 -- this function either returns a plain function, or fails
-function functionGeneratorFunctions:complete(arglist)
+-- This may not return a function with exactly the type you asked for! You need to check for that!
+function functionGeneratorFunctions:complete( arglist, X )
+  assert( X==nil )
+  
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
   
   if self:checkArgs(arglist)==false then
     print("Function generator '"..self.name.."' is missing arguments!")
     for k,v in pairs(self.requiredArgs) do
-      if self.curriedArgs[k]==nil then print("Requires argument '"..k.."'") end
+      if arglist[k]==nil and self.curriedArgs[k]==nil then print("Requires argument '"..k.."'") end
     end
     assert(false)
   end
@@ -479,14 +489,15 @@ function functionGeneratorFunctions:complete(arglist)
 
     for k,v in pairs(newlist) do a[k]=v end
   end
-  
+
   local fn = self.completeFn(a)
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
   if self.requiredArgs.type~=nil then -- if we don't know type, we can't lift
     local mod = findLifts( self.name, fn, arglist.type, fn.inputType, fn.outputType )
-    err( mod~=nil, "Failed to find a lift for fn '",fn.name,"' with \ninput type:'",fn.inputType,"' \noutput type '",fn.outputType,"' \nto convert to type:'",arglist.type,"'")
-    fn = mod
+
+    --err( requireTypeMatch==false or mod~=nil, "Failed to find a lift for fn '",fn.name,"' with \ninput type:'",fn.inputType,"' \noutput type '",fn.outputType,"' \nto convert to type:'",arglist.type,"'")
+    if mod~=nil then fn = mod end
   end
   
   fn.generator = self
@@ -754,6 +765,11 @@ __tostring=function(mod)
 end
 }
 
+
+function darkroomFunctionFunctions:specializeToType( ty, rate )
+  -- maybe do lifts?
+  return self
+end
 
 -- takes SDF input rate I and returns output rate after I is processed by this function
 -- I is the format: {{A_sdfrate,B_sdfrate},{A_converged,B_converged}}

@@ -1702,8 +1702,8 @@ end)
 
 -- this has type V->RV
 modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
-  err( types.isType(A), "upsampleXSeq: first argument must be rigel type ")
-  err( rigel.isBasic(A),"upsampleXSeq: type must be basic type")
+  err( types.isType(A), "upsampleXSeq: first argument must be rigel type, but is: ",A)
+  err( rigel.isBasic(A),"upsampleXSeq: type must be basic type, but is: ",A)
   err( type(T)=="number", "upsampleXSeq: vector width must be number")
   if framed==nil then framed=false end
   err( type(framed)=="boolean", "upsampleXSeq: framed must be bool" )

@@ -203,7 +203,11 @@ function ParamFunctions:isSupertypeOf( P, vars, varContext )
       return true
     end
   elseif types.isType(P) or type(P)=="number" or R.isSize(P) then
-    if self:isSupertypeOf( valueOrTypeToParam(P), vars, varContext ) then
+    if self.kind=="DataType" and types.isType(P) and P:isArray() and P.size~=P.V then
+      -- detect scheduled arrays
+      -- errr, we should really deal with this better
+      return false
+    elseif self:isSupertypeOf( valueOrTypeToParam(P), vars, varContext ) then
       vars[self.name] = P
       return true
     else
