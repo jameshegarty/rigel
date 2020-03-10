@@ -1842,8 +1842,8 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function(ty, value_orig, async)
-  err(types.isType(ty),"plus100: expected type input")
+C.plusConst = memoize(function( ty, value_orig, async)
+  err(types.isType(ty),"plus100: first argument should be type, but is: ",ty)
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
 

@@ -119,7 +119,7 @@ local function valueOrTypeToParam(V)
 end
 
 -- is this param a supertype of P?
-function ParamFunctions:isSupertypeOf(P,vars,varContext)
+function ParamFunctions:isSupertypeOf( P, vars, varContext )
   local types = require "types"
   local uniform = require "uniform"
   local R = require "rigel"
@@ -203,11 +203,28 @@ function ParamFunctions:isSupertypeOf(P,vars,varContext)
       return true
     end
   elseif types.isType(P) or type(P)=="number" or R.isSize(P) then
-    return self:isSupertypeOf(valueOrTypeToParam(P),vars,varContext)
+    if self:isSupertypeOf( valueOrTypeToParam(P), vars, varContext ) then
+      vars[self.name] = P
+      return true
+    else
+      return false
+    end
   end
 
   print("Error, checking "..tostring(self)..":isSupertypeOf("..tostring(P)..")")
   assert(false)
+end
+
+function ParamFunctions:specialize( vars )
+  J.err(vars[self.name]~=nil,"specialize: looking for var '"..self.name.."', but wasn't found in table")
+  
+  if type(vars[self.name])=="function" then
+    -- for InterfaceType, ScheduleType
+    return vars[self.name](self.over:specialize(vars))
+  else
+    return vars[self.name]
+  end
+
 end
 
 return params

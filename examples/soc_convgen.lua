@@ -25,14 +25,18 @@ noc.extern=true
 local conv = Generator{ types.rv(types.Par(ar(u(8),ConvWidth,ConvWidth))),
                         types.rv(types.Par(u8)),
 function(inp)
+  print("CONV",inp.rate)
   inp = AddMSBs{24}(inp)
+  print("CONV",inp.type)
   local coeff = c({4, 14, 14,  4,
                    14, 32, 32, 14,
                    14, 32, 32, 14,
                    4, 14, 14,  4},ar(u(32),ConvWidth,ConvWidth))
   local z = Zip(inp,coeff)
   local out = Mul(z)
+  print("MUL",out.type,out.rate)
   local res = Reduce{Add{R.Async}}(out)
+  print("RED",res.type,res.fn)
   return RemoveMSBs{24}(Rshift{8}(res))
 end}
 

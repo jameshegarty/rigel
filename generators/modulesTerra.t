@@ -906,10 +906,13 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   return MT.new( PadSeq, res )
 end
 
-function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
+function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
+  assert(A:isData())
   assert(outputRate>=0)
   assert(inputRate>=0)
   assert(H>0)
+
+  print(res.inputType,res.inputType:lower(),res.outputType,res.outputType:lower())
   
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
@@ -1432,7 +1435,7 @@ function MT.reduceSeq( res, f, Vw, Vh, X )
   
   local struct ReduceSeq { phase:int; result : f.outputType:lower():toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
-  terra ReduceSeq:process( inp : &f.outputType:lower():toTerraType(), out : &rigel.lower(res.outputType):toTerraType())
+  terra ReduceSeq:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType())
     if self.phase==0 and Vw*Vh==1 then -- T==1 mean this is a noop, passthrough
       self.phase = 0
       valid(out) = true
@@ -2168,7 +2171,7 @@ return {`mself.[n.name].ready}
 --          assert(false)
         end
       elseif n.kind=="constant" then
-        table.insert( stats, quote (@out) = [n.type.over.over:valueToTerra(n.value)] end )
+        table.insert( stats, quote (@out) = [n.type:extractData():valueToTerra(n.value)] end )
         res = {out}
       elseif n.kind=="concat" then
         J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])

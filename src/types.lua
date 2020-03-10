@@ -172,14 +172,14 @@ local function parsePolyArgs( args, i )
     err( args[i].kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(args[i]))
     return args[i], i+1
   else
-    err( type(args[i])=="number", "types.array2d: second argument must be numeric width but is ",args[i],",",type(args[i]) )
-    err( type(args[i+1])=="number" or args[i+1]==nil, "array2d h must be nil or number, but is:",args[i+1],",",type(args[i+1]) )
+    err( type(args[i])=="number" or Uniform.isUniform(args[i]), "types.array2d: second argument must be numeric width or uniform but is ",args[i],",",type(args[i]) )
+    err( type(args[i+1])=="number" or args[i+1]==nil or Uniform.isUniform(args[i+1]), "array2d h must be nil or number or Uniform, but is:",args[i+1],",",type(args[i+1]) )
     
     local w,h = args[i], args[i+1]
     if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
     
-    err( w==math.floor(w), "non integer array width "..tostring(w))
-    err( h==math.floor(h), "non integer array height "..tostring(h))
+    err( Uniform(w):isInteger(), "non integer array width "..tostring(w))
+    err( Uniform(h):isInteger(), "non integer array height "..tostring(h))
     
     return R.Size(w,h), i+2
   end
@@ -192,6 +192,7 @@ end
 -- if size and V are passed as numbers: both dimensions must be given
 -- however, in the end, we store size and V as a rigel.Size
 function types.array2d( _type, ... )
+  local Uniform = require "uniform"
   err( types.isType(_type) or P.isParamType(_type), "first argument to array2d must be Rigel type, but is: ",_type )
 
   local args = {...}
@@ -199,7 +200,7 @@ function types.array2d( _type, ... )
   local size, nexti = parsePolyArgs( args, 1 )
 
   local R = require "rigel"
-  err( R.isSize(size)==false or size[1]*size[2]>0,"types.array2d: w*h must be >0, but is w:",size[1]," h:",size[2] )
+  err( R.isSize(size)==false or (Uniform(size[1])*Uniform(size[2])):gt(0),"types.array2d: w*h must be >0, but is w:",size[1]," h:",size[2] )
 
   local V
   if args[nexti]==nil then
@@ -210,7 +211,7 @@ function types.array2d( _type, ... )
   end
 
   if R.isSize(size) and R.isSize(V) then
-    err( size[1]*size[2]>=V[1]*V[2],"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
+    err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
   end
   
   -- dedup the arrays
@@ -606,7 +607,7 @@ function types.checkAndSetVar(vars,k,v,varContext,X)
   end
   
   if vars[k]~=nil and vars[k]~=v then
-    print("isSupertypeOf error: value of '",k,"' inconsistant! previous:",vars[k]," new:",v)
+    --print("isSupertypeOf error: value of '",k,"' inconsistant! previous:",vars[k]," new:",v)
     return false
   end
 
@@ -1153,7 +1154,6 @@ types.VarSeq = J.memoize(function(D, ...)
   local Uniform = require "uniform"
   err( types.isType(D) or P.isParam(D),"types.VarSeq must be over a type, but is: "..tostring(D))
   err( D:isData(), "types.VarSeq: input to VarSeq should be a data type, but is: "..tostring(D) )
-  err(X==nil,"VarSeq: too many arguments")
 
   local args = {...}
 
@@ -1403,20 +1403,22 @@ function TypeFunctions:lower() return types.lower(self) end
 -- Handshake(A) => {A,bool}
 function types.lower( a )
   err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-
+  local Uniform = require "uniform"
+  
   if a:isTuple() then
     local res = {}
     for _,v in ipairs(a.list) do table.insert(res,types.lower(v)) end
     return types.tuple(res)
   elseif a:isArray() then
-    return types.array2d(types.lower(a.over),a.V)
+    if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
+      return types.lower(a:arrayOver())
+    else
+      return types.array2d(types.lower(a:arrayOver()),a.V)
+    end
   elseif a:is("Interface") then
     if a==types.Interface() then
       return types.null()
     else
-      --local over = a.over
-      --if over~=nil then over = types.lower(a.over) end
-      
       if a.over~=nil and a.V~=nil then return types.tuple{a.over:lower(),a.V} end
       if a.over~=nil then return a.over:lower() end
       if a.V~=nil then return a.V end
@@ -1431,23 +1433,6 @@ function types.lower( a )
   assert(false)
 end
 
---[=[
-function TypeFunctions:extractSchedule()
-  if self:isSchedule() then
-    return self
-  elseif self:isInterface() and self:isInil()==false then
-    if self:is("Interface") then
-      return self.over:extractSchedule()
-    else
-      print("Could not extract schedule from ",self)
-      assert(false)
-    end
-  else
-    err(false,":extractSchedule: type doesn't not contain a schedule type? "..tostring(self) )
-  end
-end
-]=]
-
 function TypeFunctions:extractData()
   return types.extractData(self)
 end
@@ -1461,11 +1446,20 @@ end
 -- Handshake(A) => A
 types.extractData = J.memoize(function(a)
   assert(types.isType(a))
+  local Uniform = require "uniform"
   if a:is("Interface") then
     if a.over==nil then return types.null() end
     return types.extractData(a.over)
   elseif a:isData() then
     return a
+  elseif a:isArray() then
+    -- this is a scheduled array - we need to return type of data bus
+    assert(a:isSchedule())
+    if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
+      return a:arrayOver() -- special case for not vectorized
+    else
+      return types.array2d(a:arrayOver(),a.V)
+    end
   elseif a:isTuple() or a:isArray() then
     print(a,a:isSchedule())
     assert(false)
@@ -1600,6 +1594,33 @@ function types.isStreaming(A)
   else
     err(false, "NYI isStreaming "..tostring(A))
   end
+end
+
+function TypeFunctions:specialize( vars )
+  if self:isTuple() then
+    -- special case for tuples (!)
+    local lst = self.list
+    if P.isParam(self.list) and self.list.kind=="TypeList" then
+      lst = vars[self.list.name]
+    end
+    
+    local newList = {}
+    for k,v in ipairs(lst) do
+      table.insert( newList, v:specialize(vars) )
+    end
+    return types.tuple(newList)
+  else
+    local newT = self
+    for k,v in pairs(self) do
+      if P.isParam(v) or types.isType(v) then
+        newT = newT:replaceVar( k, v:specialize( vars ) )
+      end
+    end
+    
+    return newT
+  end
+
+  assert(false)
 end
 
 if terralib~=nil then require("typesTerra") end

@@ -1248,36 +1248,32 @@ end)
 modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2_orig, H2_orig, X )
   err( rigel.isFunction(fn), "flatmapParSeq: first argument must be Rigel function, but is ",fn )
 
-  err( (Vw1==0 and Vh1==0) or fn.inputType.over:is("Par"), "flatmapParSeq: fn input must Par, but input type is: "..tostring(fn.inputType) )
-  err( (Vw1==0 and Vh1==0) or fn.inputType.over.over:isArray(), "flatmapParSeq: fn input must be array, but input type is: "..tostring(fn.inputType) )
+  err( (Vw1==0 and Vh1==0) or fn.inputType:deInterface():isData(), "flatmapParSeq: fn input must Par, but input type is: "..tostring(fn.inputType) )
+  err( (Vw1==0 and Vh1==0) or fn.inputType:extractData():isArray(), "flatmapParSeq: fn input must be array, but input type is: "..tostring(fn.inputType) )
   
-  err( (Vw2==0 and Vh2==0) or fn.outputType.over:is("Par"), "flatmapParSeq: fn output must be Par, but output type is: "..tostring(fn.outputType) )
-  err( (Vw2==0 and Vh2==0) or fn.outputType.over.over:isArray(), "flatmapParSeq: fn output must be array, but output type is: "..tostring(fn.outputType) )
+  err( (Vw2==0 and Vh2==0) or fn.outputType:deInterface():isData(), "flatmapParSeq: fn output must be Par, but output type is: "..tostring(fn.outputType) )
+  err( (Vw2==0 and Vh2==0) or fn.outputType:extractData():isArray(), "flatmapParSeq: fn output must be array, but output type is: "..tostring(fn.outputType) )
   
-    --err(fn.inputType:isrv() and fn.inputType.over:is("Par"),"mapSeq: fn input should be rvPar, but is "..tostring(fn.inputType))
-    --err(fn.outputType:isrv() and fn.outputType.over:is("Par"),"mapSeq: fn output should be rvPar, but is "..tostring(fn.outputType))
+  local G = require "generators.core"
 
-    local G = require "generators.core"
+  local res = G.Module{"flatmapParSeq_fn"..fn.name.."_Vw1"..tostring(Vw1).."_Vh1"..tostring(Vh1).."_W1"..tostring(W1_orig).."_H1"..tostring(H1_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+  assert( rigel.isFunction(res) )
 
-    local res = G.Module{"flatmapParSeq_fn"..fn.name.."_Vw1"..tostring(Vw1).."_Vh1"..tostring(Vh1).."_W1"..tostring(W1_orig).."_H1"..tostring(H1_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
-    assert( rigel.isFunction(res) )
+  -- hackity hack
+  if Vw1>0 or Vh1>0 then
+    res.inputType = fn.inputType:replaceVar("over",types.ParSeq( res.inputType:extractData(), W1_orig, H1_orig ))
+  elseif W1_orig>0 or H1_orig>0 then
+    res.inputType = fn.inputType:replaceVar("over",types.Seq(types.Par( res.inputType:extractData()) ,W1_orig, H1_orig ))
+  end
+  
+  if Vw2>0 or Vh2>0 then
+    res.outputType = fn.outputType:replaceVar("over",types.ParSeq( res.outputType:extractData(), W2_orig, H2_orig ))
+  elseif W2_orig>0 or H2_orig>0 then
+    res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
+  end
 
-    -- hackity hack
-    if Vw1>0 or Vh1>0 then
-      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType.over.over,W1_orig,H1_orig))
-    elseif W1_orig>0 or H1_orig>0 then
-      res.inputType = fn.inputType:replaceVar("over",types.Seq(types.Par(res.inputType.over.over),W1_orig,H1_orig))
-    end
-
-    if Vw2>0 or Vh2>0 then
-      res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType.over.over,W2_orig,H2_orig))
-    elseif W2_orig>0 or H2_orig>0 then
-      res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par(res.outputType.over.over),W2_orig,H2_orig))
-    end
-    
-    --print("MAPSEQ",fn.inputType,fn.outputType,res.inputType,res.outputType)
-          
-    return res
+  print(res)
+  return res
 end)
 
 -- type {A,bool}->A
