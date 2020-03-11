@@ -4,10 +4,10 @@ local types = require "types"
 local S = require "systolic"
 local systolic = S
 local Ssugar = require "systolicsugar"
-local cstring = terralib.includec("string.h")
-local cmath = terralib.includec("math.h")
-local cstdlib = terralib.includec("stdlib.h")
-local cstdio = terralib.includec("stdio.h")
+local cstring = terralib.includec("string.h", {"-Wno-nullability-completeness"})
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 local J = require "common"
@@ -538,7 +538,7 @@ function MT.pyramidSchedule( res, depth, wtop, T, X )
   terra PyramidSchedule:init() end
   terra PyramidSchedule:free() end
   terra PyramidSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
-    @out = self.depth
+  @out = self.depth
     var targetW : int = (wtop*cmath.pow(2,depth-1))/cmath.pow(4,self.depth)
     if targetW<T then
       cstdio.printf("Error, targetW < T\n")
@@ -1387,7 +1387,7 @@ fseek(file,0,SEEK_SET);
 fread(*mem,1,*fsize,file);
 }
 
-]])
+]], {"-Wno-nullability-completeness"})
 
 function MT.lut( res, inputType, outputType, values, inputCount, X )
   assert( rigel.isPlainFunction(res) )

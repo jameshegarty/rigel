@@ -1,6 +1,6 @@
-local cstdlib = terralib.includec("stdlib.h")
-local cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
+local cstring = terralib.includec("string.h",{"-Wno-nullability-completeness"})
 local rigel = require "rigel"
 local types = require "types"
 local J = require "common"

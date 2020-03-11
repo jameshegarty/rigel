@@ -1,5 +1,5 @@
-local cmath = terralib.includec("math.h")
-local cstdlib = terralib.includec("stdlib.h")
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
 local types = require("types")
 
 local fixedTerra={}

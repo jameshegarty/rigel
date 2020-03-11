@@ -1,4 +1,4 @@
-local cmath = terralib.includec("math.h")
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
 
 local fixedFloatTerra={}
 

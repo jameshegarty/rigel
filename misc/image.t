@@ -1,13 +1,13 @@
 require "common"
 
-local cstdio = terralib.includec("stdio.h")
-local cstdlib = terralib.includec("stdlib.h")
-local cstring = terralib.includec("string.h")
+local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstring = terralib.includec("string.h", {"-Wno-nullability-completeness"})
 
 pageSize = 4*1024
 verbose = false
 
-local chack = terralib.includecstring [[
+local chack = terralib.includecstring([[
 #include<stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -623,7 +623,7 @@ unsigned char* readRawImg(char* imgName,
   return (unsigned char*)img;
 }
 
-]]
+]], {"-Wno-nullability-completeness"})
 
 
 

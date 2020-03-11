@@ -1,5 +1,5 @@
 local J = require "common"
-local cstdlib = terralib.includec("stdlib.h")
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
 local err = J.err
 
 -- return a terra quote

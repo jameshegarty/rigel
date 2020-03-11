@@ -1,5 +1,5 @@
-local cstdio = terralib.includec("stdio.h")
-local cstdlib = terralib.includec("stdlib.h")
+local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
 
 local commonTerra = {}
 
@@ -30,7 +30,7 @@ terra commonTerra.downToNearestTerra(roundto:int,x:int)
   return ox
 end
 
-local Ctmp = terralib.includecstring [[
+local Ctmp = terralib.includecstring([[
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -45,7 +45,7 @@ local Ctmp = terralib.includecstring [[
   return tv.tv_sec + tv.tv_usec / 1000000.0;
                                  }
 
-                                   ]]
+                                   ]], {"-Wno-nullability-completeness","-Wno-expansion-to-defined"})
 
 --darkroom.currentTimeInSeconds = Ctmp.CurrentTimeInSeconds
 
