@@ -56,7 +56,7 @@ function(args)
     return res
   elseif V==0 then
     -- hack: convert upsampleXSeq to write out a W,H size
-    local res = generators.Module{
+    local res = generators.Function{
       "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(sz[1]).."_Y"..tostring(sz[2]), SDF{1,1},
       T.RV(T.Par(args.T)),function(inp) return RM.upsampleXSeq(args.T,0,sz[1]*sz[2],true)(inp) end}
     
@@ -270,7 +270,8 @@ T.rv(T.Par(P.IntType("T"))) )
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
   return C.sub( args.T, args.T, args.T, args.async )
-end, T.rv(T.Par(T.tuple{P.NumberType("T"),P.NumberType("T")})),T.rv(T.Par(P.NumberType("T"))))
+end,
+T.tuple{P.NumberType("T"),P.NumberType("T")} )
 
 generators.Mul = R.FunctionGenerator("core.Mul",{"type","rate"},{"number","async"},
 function(args)

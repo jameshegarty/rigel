@@ -31,21 +31,21 @@ local noc = Pulpino.AXIInterconnect(2,2,{{zynqNOC.read,zynqNOC.write}}):instanti
 --noc:addSlaveWrite(ZynqNoc.write)
 
 local IP_plus200 = C.linearPipeline({
-    G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },
+    G.AXIReadBurst{ "frame_128.raw", {128,32}, type=types.HandshakeTrigger, type1=types.u8, 8, noc.read, SDF{1,(128*32)/8}, R.Address(0x30008000) },
     G.FIFO{512},
-    G.Add{200},
+    G.Map{G.Add{200}},
     G.AXIWriteBurst{"out/soc_simple_plus200",noc.write, R.Address(0x3000C000)} },"IP_plus100")
 
-local Inv = G.Module{"Inv",types.rv(types.Par(types.u(8))),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
+local Inv = G.Function{"Inv",types.rv(types.Par(types.u(8))),SDF{1,1},function(i) return G.Sub(R.c(255,types.u8),i) end}
 
 local IP_inv = C.linearPipeline({
-    G.AXIReadBurst{ "frame_128.raw", {128,32}, types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },
+    G.AXIReadBurst{ "frame_128.raw", {128,32}, type=types.HandshakeTrigger, type1=types.u8, 8, noc.read1, SDF{1,(128*32)/8}, R.Address(0x3000A000) },
     G.FIFO{512},
-    G.Add{100},
-    G.Add{100},
+    G.Map{G.Add{100}},
+    G.Map{G.Add{100}},
     G.AXIWriteBurst{"out/soc_simple_inv",noc.write1, R.Address(0x3000D000)}},"IP_inv")
 
-local PTop = G.Module{"PTop",types.HandshakeTrigger,
+local PTop = G.Function{"PTop",types.HandshakeTrigger,
   function(i)
     local st = G.FanOut{2}(i)
     local done_plus200, done_inv = IP_plus200(st[0]), IP_inv(st[1])

@@ -1130,7 +1130,7 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
 
   local G = require "generators.core"
     
-  local res = G.Module{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+  local res = G.Function{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
 
   assert( rigel.isPlainFunction(res) )
   
@@ -1248,7 +1248,7 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
   
   local G = require "generators.core"
 
-  local res = G.Module{"flatmapParSeq_fn"..fn.name.."_Vw1"..tostring(Vw1).."_Vh1"..tostring(Vh1).."_W1"..tostring(W1_orig).."_H1"..tostring(H1_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+  local res = G.Function{"flatmapParSeq_fn"..fn.name.."_Vw1"..tostring(Vw1).."_Vh1"..tostring(Vh1).."_W1"..tostring(W1_orig).."_H1"..tostring(H1_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
   assert( rigel.isFunction(res) )
 
   -- hackity hack

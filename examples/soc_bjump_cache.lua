@@ -24,8 +24,7 @@ local regs = SOC.axiRegs({},SDF{1,W*H*8*8}):instantiate("regs")
 noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-local PosToAddr = G.Module{"PosToAddr",
-                           types.rv(types.Par(types.array2d(u16,2))),SDF{1,1},
+local PosToAddr = G.Function{"PosToAddr", types.rv(types.Par(types.array2d(u16,2))),SDF{1,1},
   function(loc)
     local i = G.PosSeq{{8,1},0}(G.ValueToTrigger(loc)) -- inner loop from 0...2
     local x = G.Mul( G.Add(loc[0],i[0]), R.constant(4,u16) ) -- (x+i.x)*4
@@ -37,7 +36,7 @@ local SlowRead = C.compose("SlowRead",SOC.read("1080p.raw",1920*1080,ar(u8,4),no
 local SlowReadBurst = C.compose("SlowReadBurst",SOC.read("1080p.raw",1920*1080,ar(u8,4*8),noc.read,false),RM.liftHandshake(RM.reduceThroughput(types.uint(32),8)))
 local SlowBurstReadSer = C.compose("SlowBurstReadSer",G.SerSeq{8},SlowReadBurst)
 
-local CachedReadModule = G.Module{ "CachedReadModule", R.HandshakeTrigger, SDF{1,(W*H*8)},
+local CachedReadModule = G.Function{ "CachedReadModule", R.HandshakeTrigger, SDF{1,(W*H*8)},
   function(i)
     local pos = G.Pos{{W,H}}(i)
     local posDup = G.Map{G.BroadcastSeq{{8,1},0}}(pos)
