@@ -152,8 +152,8 @@ generators.Rshift = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}
   end
 end)
 
-generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end,T.rv(T.Par(P.NumberType("T"))),T.rv(T.Par(P.NumberType("T"))))
-generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
+generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end, P.NumberType("T") )
+generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, P.NumberType("T") )
 generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
 
 generators.Index = R.FunctionGenerator("core.Index",{"type"},{"number","size"},
@@ -210,23 +210,16 @@ function(args)
   return RM.broadcastStream( args.type:deInterface(), size[1], size[2] )
 end)
 
-generators.FanIn = R.FunctionGenerator("core.FanIn",{},{"bool"},
+generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
-  if args.opt==0 then
-    return RM.packTuple(args.list,args.bool)
-  elseif args.opt==1 or args.opt==2 then
-    return RM.packTuple(args.list,args.bool,args.size)
+  if args.type:isTuple() then
+    return RM.packTuple( args.type.list, args.bool )
+  elseif args.type:isArray() then
+    return RM.packTuple( args.type, args.bool, args.type.size )
   else
-    J.err(false, "FanIn: expected handshake tuple input, but is: "..tostring(args.type))
+    J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(args.type))
   end
-end,
-P.SumType("opt",{types.tuple(P.TypeList("list",types.RV(P.ScheduleType("S")))),
-                 types.array2d(T.RV(P.ScheduleType("S")),P.SizeValue("size")),
-                 types.tuple(P.TypeList("list",types.RV()))}),
-P.SumType("opt",{types.RV(P.ScheduleType("S")),
-                 types.RV(P.ScheduleType("S")),
-                 types.RV()})
-)
+end)
 
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool"},
 function(args)
@@ -340,16 +333,14 @@ end)
 
 generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},
 function(args)
---  J.err( args.D:isTuple(), "generators.Zip: type should be tuple, but is: "..tostring(args.type) )
-
-  if args.opt==0 then
+--  if args.opt==0 then
     local typelist = {}
     for k,v in ipairs(args.list) do
       typelist[k] = v:arrayOver()
     end
   
     return RM.SoAtoAoS( args.size[1], args.size[2], typelist )
-  elseif args.opt==1 or args.opt==2 or args.opt==3 then
+--[=[  elseif args.opt==1 or args.opt==2 or args.opt==3 then
 
     local mode = "Seq"
     if args.opt==2 then mode="VarSeq" end
@@ -371,19 +362,10 @@ function(args)
     end
   else
     assert(false)
-  end
+  end]=]
 end,
-P.SumType("opt",
-          {T.rv(T.Par(T.tuple(P.TypeList("list",T.array2d(P.DataType("D$"),P.SizeValue("size")))))),
-           T.rv(T.tuple(P.TypeList("list",T.Seq(P.DataType("D"),P.SizeValue("size") )))),
-           T.rv(T.tuple(P.TypeList("list",T.VarSeq(P.DataType("D"),P.SizeValue("size") )))),
-           T.rv(T.tuple(P.TypeList("list",T.ParSeq(T.Array2d(P.DataType("D$"),P.SizeValue("V")),P.SizeValue("size") ))))}),
-P.SumType("opt",
-          {T.rv(T.Par(P.DataType("D"))),
-           T.rv(T.Seq(P.DataType("D"),P.SizeValue("size"))),
-           T.rv(T.VarSeq(P.DataType("D"),P.SizeValue("size"))),
-           T.rv(T.ParSeq(T.Array2d(P.DataType("out"),P.SizeValue("V")),P.SizeValue("size")))})
-)
+T.tuple(P.TypeList("list",T.array2d(P.DataType("D$"),P.SizeValue("size")))) )
+
 
 generators.Linebuffer = R.FunctionGenerator("core.Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
@@ -408,50 +390,23 @@ end)
 
 generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
+--  if a.opt==0 then
+--    assert(Uniform(a.V[1]):toNumber()==1)
+--    assert(Uniform(a.V[2]):toNumber()==1)
+--    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+--  else
 
-  if a.opt==0 then
-    assert(Uniform(a.V[1]):toNumber()==1)
-    assert(Uniform(a.V[2]):toNumber()==1)
-    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-  else
-    if a.opt==1 then
-      assert(a.V[2]==1)
-      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-    elseif a.opt==2 then
-      return C.stencilLinebuffer( a.T, a.size[1], a.size[2], 0, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-    else
-      assert(false)
-    end
-  end
+  assert(a.V[2]==1)
+  return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
 end,
-P.SumType("opt",{types.RV(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(types.Seq(types.Par(P.DataType("T")),P.SizeValue("size")))}),
-P.SumType("opt",{
-  types.RV(types.Seq(types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("stSize")),P.SizeValue("size"))),
-  types.rv(types.ParSeq(types.array2d(types.array2d(P.DataType("T"),P.SizeValue("stSize")),P.SizeValue("V")),P.SizeValue("size"))),
-  types.rv(types.Seq(types.Par(types.array2d(P.DataType("T"),P.SizeValue("stSize"))),P.SizeValue("size")))}),
-{{SDF{0,1},SDF{0,1}},
-  {SDF{0,1},SDF{math.huge,1}},
-  {SDF{0,1},SDF{math.huge,1}}}
-)
+types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
-  if a.opt==0 then
-    assert(a.V[2]==1)
-    return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
-  else
-    return RM.padSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
-  end
+  assert( a.V[2]==1 ) -- NYI
+  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
 end,
-P.SumType("opt",
-          {types.rV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ),
-           T.rV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
-P.SumType("opt",{
-            types.rRV( T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
-            T.rRV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))})
-)
+T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
 
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
@@ -464,25 +419,10 @@ end)
 
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
-  if a.opt==0 then
-    assert(a.V[2]==1)
-    local res = C.cropHelperSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
-    return res
-  elseif a.opt==1 then
-    local res = C.cropHelperSeq(a.T,a.size[1],a.size[2],0,a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
-    return res
-  else
-    print("OPT",a.opt)
-    assert(false)
-  end
+  assert(a.V[2]==1)
+  return C.cropHelperSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
 end,
-P.SumType("opt",{
-            T.rv(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))),
-            T.rv(T.Seq(T.Par(P.DataType("T")),P.SizeValue("size")))}),
-P.SumType("opt",{
-            T.rvV(T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("sizeOut"))),
-            T.rvV(T.Seq(T.Par(P.DataType("T")),P.SizeValue("sizeOut")))})
-)
+T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"size"},{},
 function(args)
@@ -821,7 +761,7 @@ function(args)
 end)
 
 -- string is name
-generators.Module = R.FunctionGenerator("core.Module",{"luaFunction","type"},{"string","rate","instanceList"},
+generators.Function = R.FunctionGenerator("core.Function",{"luaFunction","type"},{"string","rate","instanceList"},
 function(args)
   if args.string==nil then
     args.string = "unnamedModuleGen"..__unnamedID
@@ -835,27 +775,28 @@ function(args)
   return RM.lambda( args.string, input, out, args.instanceList )
 end)
 
-generators.Function = generators.Module
+--generators.Function = generators.Module
 
-generators.Generator = R.FunctionGenerator("core.Module",{"luaFunction","type","type1"},{"string","rate","instanceList"},
+--[=[
+generators.Generator = R.FunctionGenerator("core.Generator",{"luaFunction","type","type1"},{"string","rate1","instanceList"},
 function(args)
   if args.string==nil then
     args.string = "unnamedModuleGen"..__unnamedID
     __unnamedID = __unnamedID+1
   end
 
-  return R.FunctionGenerator(args.string,{"type","rate"},{},
+  return R.FunctionGenerator( args.string,{"type","luaFunction","type1"},{"string","instanceList","rate"},
     function(a)
       local input = R.input( a.type, args.rate )
       local out = args.luaFunction(input)
       J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
       return RM.lambda( args.string, input, out, args.instanceList )
-    end,args.type,args.type1)
-end)
+    end,args.type1:deInterface()):complete(args)
+  end)]=]
 
 -- rigelFunction: the fn to call to perform the AXI read
-generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type1","rate","rigelFunction"},{"number","address"},
+generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","type1","rate","rigelFunction"},{"number","address"},
 function(args)
   local numb = args.number
   if numb==nil then

@@ -1477,7 +1477,12 @@ types.deInterface = J.memoize(function(ty)
     res = ty
   elseif ty:is("Interface") then
     res = ty.over
+  elseif ty:isTuple() then -- InterfaceTuple
+    local newlist = {}
+    for k,v in ipairs(ty.list) do newlist[k] = v:deInterface() end
+    return types.Tuple(newlist)
   else
+    print("deInterface NYI - ",ty)
     assert(false)
   end
 

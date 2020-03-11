@@ -197,7 +197,7 @@ C.ArrayToTuple = memoize(function(T,W,H,X)
   err( X==nil,"ArrayToTuple: too many arguments")
 
   local G = require "generators.core"
-  return G.Module{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H),types.rv(types.Par(types.array2d(T,W,H))),
+  return G.Function{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H), types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)
       local res = {}
       for y=0,H-1 do
@@ -573,7 +573,7 @@ C.packTapBroad = memoize(function( A, ty, tap, N, X )
   assert(X==nil)
   
   local G = require "generators.core"
-  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
+  return G.Function{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
                     return R.concat{i,G.Broadcast{{N,1}}(RM.Storv(tap)(G.ValueToTrigger(i)))} end}
 end)
 

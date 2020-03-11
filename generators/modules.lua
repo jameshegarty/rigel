@@ -255,14 +255,6 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
   
   J.map(typelist, function(t) err(t:isRV(),"packTuple: should be list of RV types, but is: "..tostring(t)) end )
 
-  --if typelist[1]==types.null() then
-    -- handshake trigger mode
- --   res.inputType = types.HandshakeTriggerArray(#typelist)
---    res.outputType = types.HandshakeTrigger
---  else
---    res.inputType = rigel.HandshakeTuple(typelist)
---    res.outputType = rigel.Handshake( types.tuple(typelist) )
-  --  end
   if arraySize==nil then
     res.inputType = types.tuple(typelist)
     local schedList = {}
@@ -1115,7 +1107,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, scal
       assert(fn.inputType:extractData():isArray())
     end
     
-    res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
     assert( rigel.isPlainFunction(res) )
   end
   

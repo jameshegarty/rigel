@@ -327,12 +327,16 @@ functionGeneratorMT.__call=function(tab,...)
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
     for k,v in pairs(arg) do
-      if k=="type" and tab.requiredArgs.type1~=nil then
-        -- weird special case: if user passes a type explicitly, we put it in 'type1', since 'type' is always the input type
-        assert( arglist.type1==nil )
-        arglist.type1 = v
+      if k=="type" and arg.type1==nil and tab.requiredArgs.type1~=nil then
+        -- special case: explicitly passing a type will put it in type1. Fix behavior later
+        J.err( arglist.type1==nil or arglist.type1==v, "Argument 'type1' was already passed to function generator '"..tab.name.."'" )
+        arglist.type1=v
+      elseif k=="rate" and arg.rate1==nil and (tab.requiredArgs.rate1~=nil or tab.optArgs.rate1~=nil) then
+        -- special case: explicitly passing a type will put it in type1. Fix behavior later
+        J.err( arglist.rate1==nil or arglist.rate1==v, "Argument 'rate1' was already passed to function generator '"..tab.name.."'" )
+        arglist.rate1=v
       else
-        J.err( arglist[k]==nil or arglist[k]==v, "Argument '"..k.."' was already passed to function generator '"..tab.name.."'" )
+        J.err( arglist[k]==nil or arglist[k]==v, "Argument '"..k.."' was already passed to function generator '"..tab.name.."', prev:",arglist[k]," new:",v )
         arglist[k] = v
       end
     end
@@ -394,7 +398,7 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
     end
   end
 
-  if self.requiredArgs.rate~=nil then
+  if self.requiredArgs.rate~=nil or self.optArgs.rate~=nil then
     if self.curriedArgs.rate~=nil then
       if self.curriedArgs.rate~=rate then
         print("specializeToType error: rate was already set to something different")
@@ -1013,7 +1017,7 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
 
   local G = require "generators.core"
 
-  local res = G.Module{"InstCall_"..instance.name.."_"..functionName, fn.inputType, fn.sdfInput,
+  local res = G.Function{"InstCall_"..instance.name.."_"..functionName, fn.inputType, fn.sdfInput,
                        function(i)
                          local res = darkroom.applyMethod("callinstfn",instance,functionName,i)
                          return res
@@ -2205,12 +2209,13 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   end
   
   if darkroom.isFunctionGenerator(fn) then
-    local arglist = {}
+--[=[    local arglist = {}
     for k,v in pairs(fn.curriedArgs) do arglist[k] = v end
     local ty, rate
     if arglist.type==nil then ty=input.type end
     if arglist.rate==nil then rate=input.rate end
-    fn = fn{ty,rate}
+  fn = fn{ty,rate}]=]
+return fn(input)    
   end
 
   if darkroom.isPlainFunction(fn)==false then
