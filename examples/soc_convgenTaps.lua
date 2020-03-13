@@ -27,12 +27,11 @@ local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNO
 noc.extern=true
 
 
-local conv = Generator{ T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))),
-                        T.rv(T.Par(u8)),
+local conv = Function{ "conv", T.rv(T.Par(ar(u(8),ConvWidth,ConvWidth))), SDF{1,1},
 function(inp)
-  inp = AddMSBs{24}(inp)
+  inp = Map{AddMSBs{24}}(inp)
   local z = Zip(inp,RM.Storv(regs.coeffs)(ValueToTrigger(inp)))
-  local out = Mul(z)
+  local out = Map{Mul}(z)
   local res = Reduce{Add{R.Async}}(out)
   return RemoveMSBs{24}(Rshift{8}(res))
 end}
@@ -42,7 +41,7 @@ harness({
   AXIReadBurst{"1080p.raw",{1920,1080},u(8),1,noc.read},
   Pad{{8,8,2,1}},
   Stencil{{-3,0,-3,0}},
-  conv,
+  Map{conv},
   Crop{{9,7,3,0}},
   AXIWriteBurst{"out/soc_convgenTaps",noc.write},
   regs.done},nil,{regs})

@@ -84,6 +84,7 @@ end)
 modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
   err( type(W)=="number", "SoAtoAoS: first argument should be number (width)")
   err( type(H)=="number", "SoAtoAoS: second argument should be number (height)")
+  err( W*H>0, "SoAtoAoS: W*H must be >0, W: ",W," H:",H)
   err( type(typelist)=="table", "SoAtoAoS: typelist must be table")
   err( J.keycount(typelist)==#typelist, "SoAtoAoS: typelist must be lua array")
   err( asArray==nil or type(asArray)=="boolean", "SoAtoAoS: asArray must be bool or nil")
@@ -181,12 +182,12 @@ end)
 -- Zips Seq types (this is just a trivial conversion)
 -- takes rv([A{W,H},B{W,H},C{W,H}]) to rv({A,B,C}{W,H})
 -- typelist: list of {A,B,C} schedule types
-modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
+modules.ZipSeq = memoize(function( var, typelist, W, H, Vw, Vh, X )
   err( Uniform.isUniform(W) or type(W)=="number", "ZipSchedules: first argument should be number (width), but is:",W)
   err( Uniform.isUniform(H) or type(H)=="number", "ZipSchedules: second argument should be number (height), but is:",H)
   err( type(typelist)=="table", "ZipSchedules: typelist must be table")
   err( J.keycount(typelist)==#typelist, "ZipSchedules: typelist must be lua array")
-  assert(type(mode)=="string")
+  assert(type(var)=="boolean")
 
   local typeString = ""
   local itype = {}
@@ -201,12 +202,10 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
     end
     
     typeString = typeString.."_"..tostring(v)
-    if mode=="VarSeq" then
+    if var then
       table.insert(itype,types.VarSeq(v,W,H))
-    elseif mode=="Seq" then
-      table.insert(itype,types.Seq(v,W,H))
     else
-      assert(false)
+      table.insert(itype,types.Seq(v,W,H))
     end
   end
 
@@ -214,7 +213,7 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
 
   local G = require "generators.core"
 
-  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_"..mode..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
+  local res = G.Function{"ZipSchedules_W"..tostring(W).."_H"..tostring(H).."_var"..tostring(var)..typeString,types.rv(types.Par(inputType:lower())),SDF{1,1},function(inp) return inp end}
 
   assert(res.inputType:lower()==inputType:lower())
   res.inputType = inputType
@@ -230,7 +229,7 @@ modules.ZipSeq = memoize(function( mode, typelist, W, H, Vw, Vh, X )
   
   -- hackity hack
   local outputType
-  if mode=="VarSeq" then
+  if var then
     outputType = types.rv(types.VarSeq(typeOut,W,H))
   else
     outputType = types.rv(types.Seq(typeOut,W,H))
@@ -1264,7 +1263,6 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
     res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
   end
 
-  print(res)
   return res
 end)
 
@@ -2512,10 +2510,8 @@ end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
 modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, X )
-
   local BITS = 32
-
-  err( types.isType(A), "cropSeq: type must be rigel type ")
+  err( types.isType(A), "cropSeq: type must be rigel type, but is: ",A)
   err( rigel.isBasic(A),"cropSeq: expects basic type, but is: "..tostring(A))
   local W = Uniform(W_orig)
   err( W:gt(0):assertAlwaysTrue(),"cropSeq: W must be >=0, but is: "..tostring(W) )

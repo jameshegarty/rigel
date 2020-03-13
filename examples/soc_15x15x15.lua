@@ -15,12 +15,7 @@ noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
 ------------
---inp = R.input( types.rv(types.Par(types.uint(8))) )
---a = R.apply("a", C.plus100(types.uint(8)), inp)
---b = R.apply("b", C.plus100(types.uint(8)), a)
---p200 = RM.lambda( "p200", inp, b )
-local p200 = G.Generator{"p200",
-  types.rv(types.Par(types.uint(8))), types.rv(types.Par(types.uint(8))),
+local p200 = G.Function{"p200", types.rv(types.Par(types.uint(8))), SDF{1,1},
   function(inp) return C.plus100(types.uint(8))(C.plus100(types.uint(8))(inp)) end}
 ------------
 --hsfn = RM.makeHandshake(p200)
@@ -28,6 +23,6 @@ local p200 = G.Generator{"p200",
 harness({
   regs.start,
   G.AXIReadBurst{"15x15.raw",{15,15},u(8),15,noc.read},
-  p200,
+  G.Map{p200},
   G.AXIWriteBurst{"out/soc_15x15x15",noc.write},
   regs.done},{cycles=800},{regs})

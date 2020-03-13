@@ -367,8 +367,6 @@ function CT.generalizedChangeRate( res, inputBitsPerCyc, minTotalInputBits_orig,
   local shifterBytes = (shifterBits/8)
   local shifterBytesX2 = (shifterBits/8)*2 -- double the size, so that new writes don't overwrite reads in progress
 
-  print("GCR shifter bits ",shifterBits,shifterBytes)
-  
   local inputBytesPerCyc = inputBitsPerCyc/8
   local outputBytesPerCyc = outputBitsPerCyc/8
 

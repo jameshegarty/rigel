@@ -18,11 +18,11 @@ noc.extern=true
 local first,flen = string.find(arg[0],"%d+")
 local cyc = tonumber(string.sub(arg[0],first,flen))
 
-local OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,SDF{1,1024/cyc},
+local OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,1024/cyc},
   function(i)
     local trig = G.Const{types.Uint(32),0}(i)
     local readStream = A.ReadArrays{types.uint(8),{128,64},G.Fread{"frame_128.raw"}}(trig)
-    local offset = G.Add{200}(readStream)
+    local offset = G.Map{G.Add{200}}(readStream)
     return G.AXIWriteBurst{"out/soc_readarrays_"..tostring(cyc),noc.write}(offset)
   end}
 

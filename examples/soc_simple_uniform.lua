@@ -24,7 +24,7 @@ writeAddress:addProperty(writeAddress:le(0x30008000+(128*64)))
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
+OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger,
   function(i)
     local readStream = SOC.readBurst("frame_128.raw",128,64,u8,8,true,readAddress,noc.read)(i)
     local offset = G.Map{G.Add{200}}(readStream)

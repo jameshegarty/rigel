@@ -911,8 +911,6 @@ function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, 
   assert(outputRate>=0)
   assert(inputRate>=0)
   assert(H>0)
-
-  print(res.inputType,res.inputType:lower(),res.outputType,res.outputType:lower())
   
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 

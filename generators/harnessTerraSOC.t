@@ -25,7 +25,6 @@ local Ctmp = terralib.includecstring([[
                                           #include <stdlib.h>
                                           #include <sys/time.h>
                                           #include <assert.h>
-                                          #include <pthread.h>
                                           #include <stdint.h>
                                           #include <inttypes.h>
                                           double CurrentTimeInSecondsHT() {

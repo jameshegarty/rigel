@@ -26,11 +26,11 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
     res = "float"..ty.precision
   elseif ty.kind=="array" then
     if ty.size==ty.V then
-      res = tostring(ty.over).."["..tostring(ty.size).."]"
+      res = tostring(ty.over).."["..J.sel(ty.var,"<=","")..tostring(ty.size).."]"
     elseif ty.V[1]==0 and ty.V[2]==0 then
-      res = tostring(ty.over).."{"..tostring(ty.size).."}"
+      res = tostring(ty.over).."{"..J.sel(ty.var,"<=","")..tostring(ty.size).."}"
     else
-      res = tostring(ty.over).."["..tostring(ty.V)..";"..tostring(ty.size).."}"
+      res = tostring(ty.over).."["..tostring(ty.V)..";"..J.sel(ty.var,"<=","")..tostring(ty.size).."}"
     end
   elseif ty.kind=="tuple" then
     local o,c="{","}"
@@ -46,8 +46,6 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
       end
       res = res..c
     end
-  elseif ty.kind=="VarSeq" then
-    res = tostring(ty.over).."{<="..tostring(ty.size).."}"
   elseif ty.kind=="Interface" then
     local pre = ""
     if ty.I~=nil then pre=pre.."I" end
@@ -191,6 +189,7 @@ end
 -- Vector width is optional: by default, vector width equals size
 -- if size and V are passed as numbers: both dimensions must be given
 -- however, in the end, we store size and V as a rigel.Size
+-- last argument, var:bool, indicates that this is variable sized
 function types.array2d( _type, ... )
   local Uniform = require "uniform"
   err( types.isType(_type) or P.isParamType(_type), "first argument to array2d must be Rigel type, but is: ",_type )
@@ -200,23 +199,31 @@ function types.array2d( _type, ... )
   local size, nexti = parsePolyArgs( args, 1 )
 
   local R = require "rigel"
-  err( R.isSize(size)==false or (Uniform(size[1])*Uniform(size[2])):gt(0),"types.array2d: w*h must be >0, but is w:",size[1]," h:",size[2] )
+  err( P.isParamValue(size) or (Uniform(size[1])*Uniform(size[2])):gt(0):assertAlwaysTrue(),"types.array2d: w*h must be >0, but is w:",size[1]," h:",size[2] )
 
   local V
   if args[nexti]==nil then
     V = size -- by default: make plain array
   else
     V, nexti = parsePolyArgs( args, nexti )
-    err( args[nexti]==nil, "types.array2d: too many arguments" )
+    --err( args[nexti]==nil, "types.array2d: too many arguments" )
   end
 
   if R.isSize(size) and R.isSize(V) then
-    err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
+    err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
   end
+
+  local var = false
+  if args[nexti]~=nil and type(args[nexti])=="boolean" then
+    var = args[nexti]
+    nexti = nexti+1
+  end
+
+  J.err( args[nexti]==nil, "array2d: too many args!" )
   
   -- dedup the arrays
-  local ty = setmetatable( {kind="array", over=_type, size=size, V=V}, TypeMT )
-  return J.deepsetweak(types._array, {_type,size,V}, ty)
+  local ty = setmetatable( {kind="array", over=_type, size=size, V=V, var=var}, TypeMT )
+  return J.deepsetweak(types._array, {_type,size,V,var}, ty)
 end
 types.Array2d = types.array2d
 
@@ -640,7 +647,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
       end
 
       local R = require "rigel" 
-      if type(v)=="string" or type(v)=="number" or R.isSize(v) then
+      if type(v)=="string" or type(v)=="number" or R.isSize(v) or type(v)=="boolean" then
         if ty[k]~=v then return false end
       elseif k=="list" then
         -- special case for parmaeterized tuple list
@@ -672,10 +679,8 @@ return false end
           end
         end
       elseif types.isType(v) or params.isParam(v) then
-        --print("CHECKSUPERTYPE",v,k,ty[k],self,ty)
         if v:isSupertypeOf(ty[k],vars,varContext) then
           if params.isParam(v) then
-            --print("SET VAR",v.name,ty[k])
             if types.checkAndSetVar(vars,v.name,ty[k],varContext)==false then
 return false end
           end
@@ -689,13 +694,7 @@ return false end
     end
 
     return true
---    err( self.over~=nil and ty.over~=nil, "Could not recurse into type? "..tostring(self).." "..tostring(ty).." "..tostring(self.over).." "..tostring(ty.over) )
-    -- recurse into it. Ie it's Array(T)
-    --    return self.over:isSupertypeOf(ty.over,vars)
   elseif params.isParam(ty) and ty.kind=="SumType" then
-    --assert(#ty.list==1) -- NYI
-    --vars[ty.name]=0 -- we chose index 0
-    --print("RECURSE INTO SUMTYPE",ty,ty.list[1])
     for k,v in ipairs(ty.list) do
       if self:isSupertypeOf(v,vars,varContext) then
         if types.checkAndSetVar(vars,ty.name,k-1,varContext) then
@@ -750,8 +749,6 @@ function TypeFunctions:replaceVar(k,v)
     res = types.uint(cpy.precision)
   elseif self:is("Interface") then
     res = types.Interface(cpy.over,cpy.R,cpy.V,cpy.I,cpy.r,cpy.v,cpy.VRmode)
-  elseif self:is("VarSeq") then
-    res = types.VarSeq(cpy.over,cpy.size)
   elseif self:is("array") then
     res = types.array2d(cpy.over,cpy.size,cpy.V)
   elseif self:isNamed() then
@@ -820,8 +817,6 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isNamed() then
     return self.structure:verilogBits()
-  elseif self:is("Par") or self:is("Seq") or self:is("ParSeq") or self:is("VarSeq") then
-    return self.over:verilogBits()
   else
     err(false,":verilogBits() not implemented for: "..tostring(self))
   end
@@ -844,11 +839,19 @@ function TypeFunctions:isData() return types.isBasic(self) end
 
 -- schedule => this is a scheduled data type
 -- if this is a plain data type, this returns false
+-- if this is an interface data type, this returns false
 function TypeFunctions:isSchedule()
   if self:isData() then return true end
+  if self:isInterface() then return false end
+  
   if self.kind=="array" and self.size~=self.V then
     return true
+  elseif self.kind=="tuple" then
+    for k,v in ipairs(self.list) do
+      if v:isSchedule() then return true end
+    end    
   end
+  
   return false
 end
 
@@ -1116,8 +1119,6 @@ function types.isBasic(A)
     return true
   elseif A:isInterface() then
     return false
-  elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") or A:is("VarSeq") then
-    return false
   elseif A:isNamed() and A.generator=="fixed" then
     return true -- COMPLETE HACK, REMOVE
   elseif A:isNamed() then
@@ -1160,9 +1161,7 @@ types.VarSeq = J.memoize(function(D, ...)
   local size, nexti = parsePolyArgs( args, 1 )
   err( args[nexti]==nil,"VarSeq: too many arguments")
 
-  local res = setmetatable({kind="VarSeq",over=D,size=size},TypeMT)
-
-  return res
+  return types.Array2d( D, size, 0, 0, true )
 end)
 
 types.ParSeq = function( D, ... )
@@ -1441,31 +1440,39 @@ end
 -- this is the type of the data portion of the HW interface
 -- note the difference with 'lower': lower returns data+control signals (like valid).
 --   extractData just returns the data
+-- this removes (lowers) schedule types
 -- V(A) => A
 -- RV(A) => A
 -- Handshake(A) => A
 types.extractData = J.memoize(function(a)
   assert(types.isType(a))
   local Uniform = require "uniform"
+
+  local res
   if a:is("Interface") then
     if a.over==nil then return types.null() end
-    return types.extractData(a.over)
+    res = types.extractData(a.over)
   elseif a:isData() then
-    return a
+    res = a
   elseif a:isArray() then
     -- this is a scheduled array - we need to return type of data bus
     assert(a:isSchedule())
     if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
-      return a:arrayOver() -- special case for not vectorized
+      res = a:arrayOver():extractData() -- special case for not vectorized
     else
-      return types.array2d(a:arrayOver(),a.V)
+      res = types.array2d( a:arrayOver():extractData(), a.V )
     end
-  elseif a:isTuple() or a:isArray() then
-    print(a,a:isSchedule())
+  elseif a:isTuple() then
+    local newlist = {}
+    for k,v in ipairs(a.list) do newlist[k] = v:extractData() end
+    res = types.Tuple(newlist)    
+  else
+    print("extractData: unsupported: "..tostring(a))
     assert(false)
   end
-  print("extractData: unsupported: "..tostring(a))
-  assert(false)
+
+  err( res:isData(), "internal error: extractData() did not return a data type. type:", a, " returned: ", res )
+  return res
 end)
 
 function TypeFunctions:deInterface() return types.deInterface(self) end
@@ -1480,13 +1487,15 @@ types.deInterface = J.memoize(function(ty)
   elseif ty:isTuple() then -- InterfaceTuple
     local newlist = {}
     for k,v in ipairs(ty.list) do newlist[k] = v:deInterface() end
-    return types.Tuple(newlist)
+    res = types.Tuple(newlist)
+  elseif ty:isArray() then
+    res = ty:replaceVar( "over", ty.over:deInterface() )
   else
     print("deInterface NYI - ",ty)
     assert(false)
   end
 
-  assert( res:isSchedule() or res:isData() )
+  J.err( res:isSchedule() or res:isData(), "Internal error, deinterface failed of type: ",ty," which returned: ",res )
   return res
 end)
 
