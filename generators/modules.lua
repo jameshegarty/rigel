@@ -1453,12 +1453,9 @@ modules.filterSeqPar = memoize(function( A, N, rate, framed, framedW, framedH, X
 
     local buffer = systolicModule:add( S.module.reg( res.inputType:extractData(), true, fakeVA, true, fakeVA ):instantiate("buffer") )
 
-    --local readyForMore0 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
-    --local readyForMore1 = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(true,types.bool()) )
-    --local readyForMore2 = S.eq( S.index(S.index(buffer:get(),1),1), S.constant(false,types.bool()) )
     --local readyForMore = S.__or(readyForMore0, S.__and(readyForMore1,readyForMore2)):disablePipelining()
     local readyForMore = S.eq( S.index(S.index(buffer:get(),0),1), S.constant(false,types.bool()) )
-    local sinp = S.parameter( "inp", res.inputType.over.over )
+    local sinp = S.parameter( "inp", res.inputType:lower() )
 
     -- shift phase
     local sptup = {}
