@@ -123,9 +123,10 @@ C.bitSlice = memoize(
     return bitslice
   end)
 
-C.bitcast = memoize(function(A,B)
-  err(types.isType(A),"cast: A should be type")
-  err(types.isType(B),"cast: B should be type")
+C.bitcast = memoize(function( A, B, X)
+  err( X==nil, "C.bitcast: too many args" )
+  err( types.isType(A),"cast: A should be type, but is: ",A)
+  err( types.isType(B),"cast: B should be type, but is: ",B)
   err( R.isBasic(A), "cast: A should be basic type. casting "..tostring(A).." to "..tostring(B) )
   err( R.isBasic(B), "cast: B should be basic type. casting "..tostring(A).." to "..tostring(B) )
 
@@ -197,7 +198,7 @@ C.ArrayToTuple = memoize(function(T,W,H,X)
   err( X==nil,"ArrayToTuple: too many arguments")
 
   local G = require "generators.core"
-  return G.Module{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H),types.rv(types.Par(types.array2d(T,W,H))),
+  return G.Function{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H), types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)
       local res = {}
       for y=0,H-1 do
@@ -573,7 +574,7 @@ C.packTapBroad = memoize(function( A, ty, tap, N, X )
   assert(X==nil)
   
   local G = require "generators.core"
-  return G.Module{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
+  return G.Function{"PackTap_"..tostring(A).."_"..tostring(ty),types.rv(types.Par(A)),SDF{1,1},function(i)
                     return R.concat{i,G.Broadcast{{N,1}}(RM.Storv(tap)(G.ValueToTrigger(i)))} end}
 end)
 
@@ -1237,8 +1238,7 @@ end)
 -- V -> RV
 C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed, X )
   err( types.isType(A) and A:isData(), "C.downsampleSeq: A must be data type")
-  --err( type(W)=="number", "C.downsampleSeq: W must be number")
-  --err( type(H)=="number", "C.downsampleSeq: H must be number")
+
   err( type(T)=="number", "C.downsampleSeq: T must be number")
   err( T>0, "C.downsampleSeq: T must be >0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
@@ -1274,13 +1274,14 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
       out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
     elseif downsampleT>T then assert(false) end
   end
+
   local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H_orig).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
 
   if framed then
     print("FRAMED",A,T,res.inputType,res.outputType)
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
-    res.inputType = types.rV(types.ParSeq(res.inputType.over.over,W_orig,H_orig))
-    res.outputType = types.rRV(types.ParSeq(res.outputType.over.over,math.ceil(W/scaleX),math.ceil(H/scaleY) ))
+    res.inputType = types.rV(types.Array2d(A,W_orig,H_orig,T,1))
+    res.outputType = types.rRV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
     --res.inputType = res.inputType:addDim(W,H,true)
     --res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
   end
@@ -1623,7 +1624,7 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
-    err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W))
+    err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
     err(idxHigh<W, "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")
@@ -1842,8 +1843,8 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function(ty, value_orig, async)
-  err(types.isType(ty),"plus100: expected type input")
+C.plusConst = memoize(function( ty, value_orig, async)
+  err(types.isType(ty),"plus100: first argument should be type, but is: ",ty)
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
 
@@ -1877,7 +1878,7 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]) or R.isInstanceCallsite(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
+  err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 
@@ -1913,7 +1914,7 @@ end)
 C.sortCompare = memoize(
   function(A,op)
     local G = require "generators.core"
-    return G.Module{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,2))),
+    return G.Function{"SortCompare_"..tostring(A).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,2))), SDF{1,1},
       function(inp)
         local res = op(inp[0],inp[1])
         return G.Sel(res,inp,G.TupleToArray(inp[1],inp[0]))
@@ -1930,9 +1931,8 @@ C.oddEvenMerge = memoize(
     if N==2 then
       return C.sortCompare(A,op)
     else
-      return G.Module{"OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
+      return G.Function{ "OddEvenMerge_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))), SDF{1,1}, 
         function(inp)
-
           local even,odd = {},{}
           for i=0,(N/2)-1 do
             table.insert(even,inp[i*2])
@@ -1963,7 +1963,7 @@ C.oddEvenMergeSort = memoize(
     if N==1 then
       return G.Identity --{types.array2d(A,N)}
     else
-      return G.Module{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))),
+      return G.Function{"OddEvenMergeSort_"..tostring(A).."_N"..tostring(N).."_op"..tostring(op.name), types.rv(types.Par(types.array2d(A,N))), SDF{1,1},
         function(inp)
           local l,r = G.Slice{{0,(N/2)-1}}(inp), G.Slice{{N/2,N-1}}(inp)
           l,r = C.oddEvenMergeSort(A,N/2,op)(l), C.oddEvenMergeSort(A,N/2,op)(r)
@@ -1985,11 +1985,12 @@ C.StridedReader = memoize(
     assert(X==nil)
     
     local Nreads = (totalBytes/(itemBytes*stride))
-    local res = G.Module{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset), types.HandshakeTrigger,
+    local res = G.Function{"StridedReader_totalBytes"..tostring(totalBytes).."_itemBytes"..tostring(itemBytes).."_stride"..tostring(stride).."_offset"..tostring(offset),
+                         types.HandshakeTrigger, SDF{1,1},
       function(inp)
 
         local cnt = C.triggerUp(Nreads)(inp)
-        local cnt = G.Map{RM.counter(types.uint(32), Nreads)}(cnt)
+        local cnt = G.Fmap{RM.counter(types.uint(32), Nreads)}(cnt)
         cnt = G.Mul{stride*itemBytes}(cnt)
         local addr = G.Add{offset*itemBytes}(cnt)
 
@@ -2013,7 +2014,7 @@ C.AXIReadPar = memoize(
     local startAddr = SOC.currentAddr
 
     local totalBytes = W*H*(ty:verilogBits()/8)
-    local res = G.Module{"AXIReadPar_"..tostring(W), types.HandshakeTrigger,
+    local res = G.Function{"AXIReadPar_"..tostring(W), types.HandshakeTrigger, SDF{1,1},
       function(inp)
         local inpb = G.FanOut{N}(inp)
         local out = {}
@@ -2029,7 +2030,7 @@ C.AXIReadPar = memoize(
 
         out = G.FanIn(unpack(out))
 
-        return G.Map{C.bitcast(out.type.over.over,types.array2d(ty,V))}(out)
+        return G.Fmap{ C.bitcast( out.type:deInterface(), types.array2d(ty,V) ) }(out)
       end}
 
     res.globalMetadata[noc.read.name.."_read_W"] = W
@@ -2050,11 +2051,12 @@ C.AXIReadPar = memoize(
 -- collect the number of tokens seen, and write it to a global
 -- N: counts up to this number and then resets?
 C.tokenCounterReg = memoize(
-  function( A, regGlobal, N)
+  function( A, regGlobal, N, X )
     J.err( types.isType(A),"tokenCounterReg: a must be type" )
     J.err( A:isRV(),"tokenCounterReg: input should be handshaked, but is: "..tostring(A))
     J.err( N==nil or type(N)=="number","tokenCounterReg: N must be number" )
     J.err( R.isFunction(regGlobal),"tokenCounterReg: reg should be fn")
+    J.err( X==nil, "tokenCounterReg: too many args" )
     
     if N==nil then
       N = math.pow(2,32)-1
@@ -2062,11 +2064,11 @@ C.tokenCounterReg = memoize(
       
     local G = require "generators.core"
 
-    local res = G.Module{"TokenCounterReg_"..tostring(A).."_"..tostring(regGlobal).."_"..tostring(N),A,
+    local res = G.Function{ "TokenCounterReg_"..tostring(A).."_"..tostring(regGlobal).."_"..tostring(N), A, SDF{1,1},
       function(inp)
         local inpb = G.FanOut{2}(inp)
-        local ct = G.Map{C.valueToTrigger(A.over.over)}(inpb[1])
-        local cnt = G.Map{RM.counter(types.uint(32),N)}(ct)
+        local ct = G.Fmap{C.valueToTrigger(A:deInterface())}(inpb[1])
+        local cnt = G.Fmap{RM.counter(types.uint(32),N)}(ct)
         cnt = G.Add{1}(cnt)
         return R.statements{inpb[0],regGlobal(cnt)}
       end}

@@ -20,8 +20,8 @@ local inp = R.apply("ir0", C.index(types.array2d(types.uint(8),1),0,0), inpraw)
 
 local PS = RM.posSeq(W,H,1)
 local pos = R.apply("posseq", PS, G.ValueToTrigger(inpraw))
-local pos = R.apply("idx0", C.index(PS.outputType.over.over,0,0), pos )
-local pos = R.apply("idx1", C.index(PS.outputType.over.over:arrayOver(),0,0), pos )
+local pos = R.apply("idx0", C.index(PS.outputType:lower(),0,0), pos )
+local pos = R.apply("idx1", C.index(PS.outputType:lower():arrayOver(),0,0), pos )
 local pos = R.apply("CST", C.cast(types.uint(16),types.uint(8)), pos)
 
 local filter = R.apply("HS",HS, inp)

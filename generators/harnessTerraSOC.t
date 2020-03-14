@@ -1,8 +1,8 @@
 local SOC = require "generators.soc"
 local SOCMT = require "generators.socTerra"
-local cstdlib = terralib.includec("stdlib.h")
-local cstdio = terralib.includec("stdio.h")
-local clocale = terralib.includec("locale.h")
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
+local clocale = terralib.includec("locale.h", {"-Wno-nullability-completeness"})
 local J = require "common"
 local Uniform = require "uniform"
 local Zynq = require "generators.zynq"
@@ -18,14 +18,13 @@ function script_path()
   return str:match("(.*/)")
 end
 
-V = terralib.includec(script_path().."../platform/verilatorSOC/harness.h")
+V = terralib.includec(script_path().."../platform/verilatorSOC/harness.h", {"-Wno-nullability-completeness"})
 
-local Ctmp = terralib.includecstring [[
+local Ctmp = terralib.includecstring([[
                                         #include <stdio.h>
                                           #include <stdlib.h>
                                           #include <sys/time.h>
                                           #include <assert.h>
-                                          #include <pthread.h>
                                           #include <stdint.h>
                                           #include <inttypes.h>
                                           double CurrentTimeInSecondsHT() {
@@ -33,12 +32,12 @@ local Ctmp = terralib.includecstring [[
   gettimeofday(&tv, NULL);
   return tv.tv_sec + tv.tv_usec / 1000000.0;
                                  }
-                                   ]]
+                                   ]], {"-Wno-nullability-completeness"})
 
-local Locale = terralib.includecstring[[
+local Locale = terralib.includecstring([[
 #include <locale.h>
 void enableCommas(){setlocale(LC_NUMERIC, "");}
-]]
+]], {"-Wno-nullability-completeness"})
 
 local currentTimeInSeconds = Ctmp.CurrentTimeInSecondsHT
 

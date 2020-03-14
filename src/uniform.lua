@@ -397,9 +397,8 @@ Uniform.isNumber = J.memoize(
       return boolOps[n.op]==nil
     elseif n.kind=="apply" then
       assert(n.instance.module.outputType:isS())
-      assert(n.instance.module.outputType.over:is("Par"))
-      assert(n.instance.module.outputType.over.over:isData())
-      return n.instance.module.outputType.over.over:isNumber()
+      assert(n.instance.module.outputType:deInterface():isData())
+      return n.instance.module.outputType:deInterface():isNumber()
     elseif n.kind=="sel" then
       assert(n.inputs[2]:isNumber()==n.inputs[3]:isNumber())
       return n.inputs[2]:isNumber()
@@ -720,8 +719,8 @@ Uniform.canRepresentUsing = J.memoize(
       return ot:canSafelyConvertTo(ty)
     elseif n.kind=="apply" then
       assert(n.instance.module.outputType:isS())
-      assert(n.instance.module.outputType.over:is("Par"))
-      return n.instance.module.outputType.over.over:canSafelyConvertTo(ty)
+      assert(n.instance.module.outputType:deInterface():isData())
+      return n.instance.module.outputType:deInterface():canSafelyConvertTo(ty)
     elseif n.kind=="binop" then
       local minv,maxv = ty:minValue(), ty:maxValue()
       return (n:ge(minv):And(n:le(maxv))):assertAlwaysTrue()

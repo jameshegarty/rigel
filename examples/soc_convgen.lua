@@ -5,7 +5,8 @@ local harness = require "generators.harnessSOC"
 local RS = require "rigelSimple"
 local C = require "generators.examplescommon"
 local SDF = require "sdf"
-require "generators.core".export()
+local G = require "generators.core"
+G.export()
 local types = require "types"
 types.export()
 local Zynq = require "generators.zynq"
@@ -22,17 +23,20 @@ local regs = SOC.axiRegs({},SDF{1,padSize[1]*padSize[2]}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-local conv = Generator{ types.rv(types.Par(ar(u(8),ConvWidth,ConvWidth))),
-                        types.rv(types.Par(u8)),
+local conv = Function{ "Conv", types.rv(types.Par(ar(u(8),ConvWidth,ConvWidth))), SDF{1,1},
 function(inp)
-  inp = AddMSBs{24}(inp)
+  inp = Map{AddMSBs{24}}(inp)
+
   local coeff = c({4, 14, 14,  4,
                    14, 32, 32, 14,
                    14, 32, 32, 14,
                    4, 14, 14,  4},ar(u(32),ConvWidth,ConvWidth))
+
   local z = Zip(inp,coeff)
-  local out = Mul(z)
+  local out = Map{Mul}(z)
+
   local res = Reduce{Add{R.Async}}(out)
+
   return RemoveMSBs{24}(Rshift{8}(res))
 end}
 
@@ -43,9 +47,8 @@ harness({
   regs.start,
   AXIReadBurst{"1080p.raw",{1920,1080},u8,V,noc.read},
   Pad{{8,8,2,1}},
---  RS.HS(C.print(ar(u(8),1))),
   Stencil{{-3,0,-3,0}},
-  conv,
+  G.Map{conv},
   Crop{{9,7,3,0}},
   AXIWriteBurst{"out/soc_convgen"..J.sel(V==0,"_0",""),noc.write},
   regs.done},nil,{regs})

@@ -14,12 +14,10 @@ local fixed={}
 local fixedTerra
 if terralib~=nil then fixedTerra=require("fixed_new_terra") end
 
---local fixed = {}
 -- use Xilinx deeply pipelined multipliers instead of regular multipliers
 fixed.DEEP_MULTIPLY = false
 
 local function getloc()
---  return debug.getinfo(3).source..":"..debug.getinfo(3).currentline
   return debug.traceback()
 end
 
@@ -285,7 +283,6 @@ function fixedNewASTFunctions:rcp()
 end
 
 function fixedNewASTFunctions:neg()
-  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   err( self.type:isInt() or self:isSigned(), "neg value of a non-signed type is futile")
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
@@ -297,8 +294,8 @@ end
 --             but for the fixed representation, we want use the fixed type.
 function fixedNewASTFunctions:applyUnaryLiftRigel(f,outputType,operateOnUnderlyingType)
   R.isFunction(f)
-  assert( f.inputType:isrv() and f.inputType.over:is("Par") )
-  assert( f.outputType:isrv() and f.outputType.over:is("Par") )
+  assert( f.inputType:isrv() and f.inputType:deInterface():isData() )
+  assert( f.outputType:isrv() and f.outputType:deInterface():isData() )
 
   if operateOnUnderlyingType==nil then operateOnUnderlyingType=true end
 

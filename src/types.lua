@@ -25,11 +25,16 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="float" then
     res = "float"..ty.precision
   elseif ty.kind=="array" then
-    res = tostring(ty.over).."["..tostring(ty.size).."]"
+    if ty.size==ty.V then
+      res = tostring(ty.over).."["..J.sel(ty.var,"<=","")..tostring(ty.size).."]"
+    elseif ty.V[1]==0 and ty.V[2]==0 then
+      res = tostring(ty.over).."{"..J.sel(ty.var,"<=","")..tostring(ty.size).."}"
+    else
+      res = tostring(ty.over).."["..tostring(ty.V)..";"..J.sel(ty.var,"<=","")..tostring(ty.size).."}"
+    end
   elseif ty.kind=="tuple" then
     local o,c="{","}"
     if ty:isInterface() then o,c="<",">" end
-    if ty:isSchedule() then o,c="ScheduleTuple{","}" end
     
     if P.isParam(ty.list) or types.isType(ty.list) then
       res = o..tostring(ty.list)..c
@@ -41,14 +46,6 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
       end
       res = res..c
     end
-  elseif ty.kind=="Par" then
-    res = "Par("..tostring(ty.over)..")"
-  elseif ty.kind=="ParSeq" then
-    res = tostring(ty.over.over).."["..tostring(ty.over.size)..";"..tostring(ty.size).."}"
-  elseif ty.kind=="Seq" then
-    res = tostring(ty.over).."{"..tostring(ty.size).."}"
-  elseif ty.kind=="VarSeq" then
-    res = tostring(ty.over).."{<="..tostring(ty.size).."}"
   elseif ty.kind=="Interface" then
     local pre = ""
     if ty.I~=nil then pre=pre.."I" end
@@ -163,43 +160,70 @@ end
 
 types._array={}
 
-function types.array2d( _type, w, h, X )
-  err( types.isType(_type) or P.isParamType(_type), "first index to array2d must be Rigel type, but is: ",_type )
-
+local function parsePolyArgs( args, i )
   local Uniform = require "uniform"
-  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
-    assert(h==nil)
-    assert(X==nil)
-    return types.array2d(_type,w[1],w[2])
-  end
+  local R = require "rigel"
   
-  local size
-  if P.isParamValue(w) then
-    err( w.kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(w))
-    assert(h==nil)
-    size = w
+  if R.isSize(args[i]) then
+    return args[i], i+1
+  elseif P.isParamValue(args[i]) then
+    err( args[i].kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(args[i]))
+    return args[i], i+1
   else
-
-    err( type(w)=="number", "types.array2d: second argument must be numeric width but is ",w,",",type(w) )
-    err( type(h)=="number" or h==nil, "array2d h must be nil or number, but is:"..tostring(h),",",type(h) )
+    err( type(args[i])=="number" or Uniform.isUniform(args[i]), "types.array2d: second argument must be numeric width or uniform but is ",args[i],",",type(args[i]) )
+    err( type(args[i+1])=="number" or args[i+1]==nil or Uniform.isUniform(args[i+1]), "array2d h must be nil or number or Uniform, but is:",args[i+1],",",type(args[i+1]) )
+    
+    local w,h = args[i], args[i+1]
     if h==nil then h=1 end -- by convention, 1d arrays are 2d arrays with height=1
-
-    err( w==math.floor(w), "non integer array width "..tostring(w))
-    err( h==math.floor(h), "non integer array height "..tostring(h))
-  
-    err( w*h>0,"types.array2d: w*h must be >0, but is w:",w," h:",h )
-
-    local R = require "rigel"
-    size = R.Size(w,h)
+    
+    err( Uniform(w):isInteger(), "non integer array width "..tostring(w))
+    err( Uniform(h):isInteger(), "non integer array height "..tostring(h))
+    
+    return R.Size(w,h), i+2
   end
 
-  --err( _type:verilogBits()>0, "types.array2d: array type must have >0 bits" )
-  
-  err( X==nil, "types.array2d: too many arguments" )
+  assert(false)
+end
+
+-- highly polymorphic: this can either take 2 numbers, a param, or a size
+-- Vector width is optional: by default, vector width equals size
+-- if size and V are passed as numbers: both dimensions must be given
+-- however, in the end, we store size and V as a rigel.Size
+-- last argument, var:bool, indicates that this is variable sized
+function types.array2d( _type, ... )
+  local Uniform = require "uniform"
+  err( types.isType(_type) or P.isParamType(_type), "first argument to array2d must be Rigel type, but is: ",_type )
+
+  local args = {...}
+
+  local size, nexti = parsePolyArgs( args, 1 )
+
+  local R = require "rigel"
+  err( P.isParamValue(size) or (Uniform(size[1])*Uniform(size[2])):gt(0):assertAlwaysTrue(),"types.array2d: w*h must be >0, but is w:",size[1]," h:",size[2] )
+
+  local V
+  if args[nexti]==nil then
+    V = size -- by default: make plain array
+  else
+    V, nexti = parsePolyArgs( args, nexti )
+    --err( args[nexti]==nil, "types.array2d: too many arguments" )
+  end
+
+  if R.isSize(size) and R.isSize(V) then
+    err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
+  end
+
+  local var = false
+  if args[nexti]~=nil and type(args[nexti])=="boolean" then
+    var = args[nexti]
+    nexti = nexti+1
+  end
+
+  J.err( args[nexti]==nil, "array2d: too many args!" )
   
   -- dedup the arrays
-  local ty = setmetatable( {kind="array", over=_type, size=size}, TypeMT )
-  return J.deepsetweak(types._array, {_type,w,h}, ty)
+  local ty = setmetatable( {kind="array", over=_type, size=size, V=V, var=var}, TypeMT )
+  return J.deepsetweak(types._array, {_type,size,V,var}, ty)
 end
 types.Array2d = types.array2d
 
@@ -221,17 +245,6 @@ function types.tuple( list, X )
   err(type(list)=="table","input to types.tuple must be table")
   err(J.keycount(list)==#list,"types.tuple: input table is not an array")
   err(#list>0, "no empty tuple types!")
-
-  --[=[
-  for k,v in ipairs(list) do
-    if P.isParam(v) then
-      err( P.DataType("tmp"):isSupertypeOf(v), "types.tuple: all items in list must be data types, but item "..tostring(k).." is: "..tostring(v))
-    else
-      err( types.isType(v), "types.tuple: all items in list must be types, but item "..tostring(k).." is :"..tostring(v))
-      err( types.isBasic(v), "types.tuple: input type must be basic, but is: "..tostring(v) )
-      --err(v:verilogBits()>0,"types.tuple: all types in list must have >0 bits")
-    end
-    end]=]
   
   -- we want to allow a tuple with one item to be a real type, for the same reason we want there to be an array of size 1.
   -- This means we can parameterize a design from tuples with 1->N items and it will work the same way.
@@ -601,7 +614,7 @@ function types.checkAndSetVar(vars,k,v,varContext,X)
   end
   
   if vars[k]~=nil and vars[k]~=v then
-    print("isSupertypeOf error: value of '",k,"' inconsistant! previous:",vars[k]," new:",v)
+    --print("isSupertypeOf error: value of '",k,"' inconsistant! previous:",vars[k]," new:",v)
     return false
   end
 
@@ -634,7 +647,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
       end
 
       local R = require "rigel" 
-      if type(v)=="string" or type(v)=="number" or R.isSize(v) then
+      if type(v)=="string" or type(v)=="number" or R.isSize(v) or type(v)=="boolean" then
         if ty[k]~=v then return false end
       elseif k=="list" then
         -- special case for parmaeterized tuple list
@@ -666,10 +679,8 @@ return false end
           end
         end
       elseif types.isType(v) or params.isParam(v) then
-        --print("CHECKSUPERTYPE",v,k,ty[k],self,ty)
         if v:isSupertypeOf(ty[k],vars,varContext) then
           if params.isParam(v) then
-            --print("SET VAR",v.name,ty[k])
             if types.checkAndSetVar(vars,v.name,ty[k],varContext)==false then
 return false end
           end
@@ -683,13 +694,7 @@ return false end
     end
 
     return true
---    err( self.over~=nil and ty.over~=nil, "Could not recurse into type? "..tostring(self).." "..tostring(ty).." "..tostring(self.over).." "..tostring(ty.over) )
-    -- recurse into it. Ie it's Array(T)
-    --    return self.over:isSupertypeOf(ty.over,vars)
   elseif params.isParam(ty) and ty.kind=="SumType" then
-    --assert(#ty.list==1) -- NYI
-    --vars[ty.name]=0 -- we chose index 0
-    --print("RECURSE INTO SUMTYPE",ty,ty.list[1])
     for k,v in ipairs(ty.list) do
       if self:isSupertypeOf(v,vars,varContext) then
         if types.checkAndSetVar(vars,ty.name,k-1,varContext) then
@@ -744,16 +749,8 @@ function TypeFunctions:replaceVar(k,v)
     res = types.uint(cpy.precision)
   elseif self:is("Interface") then
     res = types.Interface(cpy.over,cpy.R,cpy.V,cpy.I,cpy.r,cpy.v,cpy.VRmode)
-  elseif self:is("ParSeq") then
-    res = types.ParSeq(cpy.over,cpy.size)
-  elseif self:is("Par") then
-    res = types.Par(cpy.over)
-  elseif self:is("Seq") then
-    res = types.Seq(cpy.over,cpy.size)
-  elseif self:is("VarSeq") then
-    res = types.VarSeq(cpy.over,cpy.size)
   elseif self:is("array") then
-    res = types.array2d(cpy.over,cpy.size)
+    res = types.array2d(cpy.over,cpy.size,cpy.V)
   elseif self:isNamed() then
     res = types.named(cpy.name,cpy.structure,cpy.generator,cpy.params)
   else
@@ -762,7 +759,7 @@ function TypeFunctions:replaceVar(k,v)
   end
 
   err(J.keycount(res)==J.keycount(self),"internal error: replaceVar on "..tostring(self))
-  for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on ",self," key ",kk," is ",res[kk]," but should be:",vv) end
+  for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on ",self," key ",kk," is ",res[kk]," but should be:",vv," this means the type constructor changed and you need to update the call in this function.") end
 
   return res
 end
@@ -820,8 +817,6 @@ function TypeFunctions:verilogBits()
     return self.precision
   elseif self:isNamed() then
     return self.structure:verilogBits()
-  elseif self:is("Par") or self:is("Seq") or self:is("ParSeq") or self:is("VarSeq") then
-    return self.over:verilogBits()
   else
     err(false,":verilogBits() not implemented for: "..tostring(self))
   end
@@ -841,7 +836,25 @@ function TypeFunctions:isV() return self.kind=="Interface" and self.r==nil and s
 function TypeFunctions:isrVTrigger() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==nil and self.over==nil end
 function TypeFunctions:isrRVTrigger() return self.kind=="Interface" and self.r==types.bool() and self.v==nil and self.I==nil and self.V==types.bool() and self.R==types.bool() and self.over==nil end
 function TypeFunctions:isData() return types.isBasic(self) end
---function TypeFunctions:isStatic() return self.kind=="Interface" and self.R==nil and self.V==nil and self.I==nil and selfend
+
+-- schedule => this is a scheduled data type
+-- if this is a plain data type, this returns false
+-- if this is an interface data type, this returns false
+function TypeFunctions:isSchedule()
+  if self:isData() then return true end
+  if self:isInterface() then return false end
+  
+  if self.kind=="array" and self.size~=self.V then
+    return true
+  elseif self.kind=="tuple" then
+    for k,v in ipairs(self.list) do
+      if v:isSchedule() then return true end
+    end    
+  end
+  
+  return false
+end
+
 function TypeFunctions:isInterface()
   if self.kind=="tuple" and (types.isType(self.list) or P.isParam(self.list)) then
     return self.list:isInterface()
@@ -856,22 +869,7 @@ function TypeFunctions:isInterface()
 
   return self.kind=="Interface"
 end
---function TypeFunctions:isInterfaceType() return self.kind=="Interface" or self.kind=="InterfaceTuple" end
-function TypeFunctions:isSchedule()
-  if self.kind=="tuple" and (types.isType(self.list) or P.isParam(self.list)) then
-    return self.list:isSchedule()
-  elseif self.kind=="tuple" then
-    for k,v in ipairs(self.list) do
-      if v:isSchedule()==false then return false end
-    end
-    return true
-  elseif self.kind=="array" then
-    return self.over:isSchedule()
-  end
-    
-  return self.kind=="Par" or self.kind=="Seq" or self.kind=="ParSeq" or self.kind=="VarSeq"
-end
---function TypeFunctions:isScheduleType() return types.isScheduleType(self) end
+
 function TypeFunctions:isFloat() return self.kind=="float" end
 function TypeFunctions:isBool() return self.kind=="bool" end
 function TypeFunctions:isInt() return self.kind=="int" end
@@ -1105,7 +1103,7 @@ function types.isBasic(A)
   
   err(types.isType(A),"isBasic: input should be type, but is: "..tostring(A))
   if A:isArray() then
-    return types.isBasic(A:arrayOver()) 
+    return types.isBasic(A:arrayOver()) and A.size==A.V
   elseif A:isTuple() then
     for _,v in ipairs(A.list) do
       if types.isBasic(v)==false then
@@ -1121,8 +1119,6 @@ function types.isBasic(A)
     return true
   elseif A:isInterface() then
     return false
-  elseif A:is("Par") or A:is("ParSeq") or A:is("Seq") or A:is("VarSeq") then
-    return false
   elseif A:isNamed() and A.generator=="fixed" then
     return true -- COMPLETE HACK, REMOVE
   elseif A:isNamed() then
@@ -1133,109 +1129,56 @@ function types.isBasic(A)
   assert(false)
 end
 
-types.Par = J.memoize(function(D,X)
+types.Par = function(D,X)
   err(X==nil, "types.Par: too many arguments")
 
   err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
   err(D~=types.null(),"types.Par: input should not be null")
 
-  return setmetatable({kind="Par",over=D},TypeMT)
-end)
+  return D
+end
 
-types.Seq = J.memoize(function(D,w,h,X)
+types.Seq = function(D, ...)
   local Uniform = require "uniform"
   err( types.isType(D) or P.isParam(D),"types.Seq must be over a type, but is: "..tostring(D))
-  err( D:isSchedule(), "types.Seq: input to Seq should be a schedule type, but is: "..tostring(D) )
-  err(X==nil,"Seq: too many arguments")
-  --print("MakeSeq",D,w,h,type(w),type(h))
-  -- were we passed a {w,h} table?
-  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
-    assert(h==nil)
-    return types.Seq(D,w[1],w[2])
-  end
+  err( D:isData() or D:isSchedule(), "types.Seq: input to Seq should be a basic or schedule type, but is: "..tostring(D) )
 
-  local size
-  if P.isParamValue(w) then
-    err( w.kind=="SizeValue","Seq: parametric size must be size, but is: "..tostring(size))
-    assert(h==nil)
-    size = w
-  else    
-    err( Uniform.isUniform(w) or type(w)=="number", "Seq: w must be number, but is: "..tostring(w))
-    err( Uniform.isUniform(h) or type(h)=="number", "Seq: h must be number, but is: "..tostring(h))
-    local R = require "rigel"
-    size=R.Size(w,h)
-  end
+  local args = {...}
 
---  if types.isDataType(D) then
---    D = types.Par(D)
---  end
+  local size, nexti = parsePolyArgs( args, 1 )
+  err( args[nexti]==nil,"Seq: too many arguments")
   
-  local res = setmetatable({kind="Seq",over=D,size=size},TypeMT)
---  print("MakeSeq",D,w,h,res)
-  return res
-end)
+  return types.Array2d( D, size, 0,0 )
+end
 
-types.VarSeq = J.memoize(function(D,w,h,X)
+types.VarSeq = J.memoize(function(D, ...)
   local Uniform = require "uniform"
   err( types.isType(D) or P.isParam(D),"types.VarSeq must be over a type, but is: "..tostring(D))
-  err( D:isSchedule(), "types.VarSeq: input to VarSeq should be a schedule type, but is: "..tostring(D) )
-  err(X==nil,"VarSeq: too many arguments")
+  err( D:isData(), "types.VarSeq: input to VarSeq should be a data type, but is: "..tostring(D) )
 
-  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
-    assert(h==nil)
-    return types.VarSeq(D,w[1],w[2])
-  end
+  local args = {...}
 
-  local size
-  if P.isParamValue(w) then
-    err( w.kind=="SizeValue","VarSeq: parametric size must be size, but is: "..tostring(size))
-    assert(h==nil)
-    size = w
-  else    
-    err( Uniform.isUniform(w) or type(w)=="number", "VarSeq: w must be number, but is: "..tostring(w))
-    err( Uniform.isUniform(h) or type(h)=="number", "VarSeq: h must be number, but is: "..tostring(h))
-    local R = require "rigel"
-    size=R.Size(w,h)
-  end
+  local size, nexti = parsePolyArgs( args, 1 )
+  err( args[nexti]==nil,"VarSeq: too many arguments")
 
-  local res = setmetatable({kind="VarSeq",over=D,size=size},TypeMT)
-
-  return res
+  return types.Array2d( D, size, 0, 0, true )
 end)
 
--- overlap: each parallel 'tile' overlaps each other (for stenciling)
---          The reason we want to do this, and not just use Seq, is that it's important that the nesting
---          levels don't change between parallel and sequential processing. 
-types.ParSeq = J.memoize(function(D,w,h,X)
+types.ParSeq = function( D, ... )
   local Uniform = require "uniform"
   err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.ParSeq: input to schedule type should be a data type, but is: "..tostring(D) )
   err( D:isArray(), "types.ParSeq: input to schedule type should be array data type, but is: "..tostring(D) )
-  err(X==nil,"ParSeq: too many arguments")
-  
-  -- were we passed a {w,h} table?
-  if type(w)=="table" and Uniform.isUniform(w)==false and P.isParam(w)==false then
-    assert(h==nil)
-    return types.ParSeq(D,w[1],w[2])
-  end
 
-  local size
-  if P.isParamValue(w) then
-    err( w.kind=="SizeValue","ParSeq: parametric size must be size, but is: "..tostring(size))
-    assert(h==nil)
-    size = w
-  else    
-    err( Uniform.isUniform(w) or type(w)=="number", "ParSeq: w must be number, but is: "..tostring(w))
-    err( Uniform.isUniform(h) or type(h)=="number", "ParSeq: h must be number, but is: "..tostring(h))
-    local R = require "rigel"
-    size=R.Size(w,h)
-  end
-  
-  local res = setmetatable({kind="ParSeq",over=D,size=size},TypeMT)
-  return res
-end)
+  local args = {...}
+
+  local V, nexti = parsePolyArgs( args, 1 )
+  err( args[nexti]==nil,"ParSeq: too many arguments")
+
+  return types.Array2d( D.over, V, D.size )
+end
 
 types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
-  err( S==nil or (types.isType(S) and S:isSchedule()) or (P.isParam(S) and S:isSchedule()), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
+  err( S==nil or ( (types.isType(S) or P.isParam(S)) and S:isInterface()==false), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
   err( R==nil or types.isType(R), "types.Interface: Ready bit should be type, but is: "..tostring(R) )
   err( r==nil or types.isType(r), "types.Interface: Ready side fn (r) should be type, but is: "..tostring(r) )
   err( v==nil or types.isType(v), "types.Interface: Valid side fn (v) should be type, but is: "..tostring(v) )
@@ -1293,9 +1236,7 @@ function types.HandshakeFramed(A,mixed,dims)
   assert(false)
 end
 function types.HandshakeArrayFramed(A,mixed,dims,W,H) return makeFramedType("HandshakeArray",A,mixed,dims,W,H) end
---function types.StaticFramed(A,mixed,dims) return makeFramedType("Static",A,mixed,dims) end
---function types.VFramed(A,mixed,dims) return makeFramedType("V",A,mixed,dims) end
---function types.RVFramed(A,mixed,dims) return makeFramedType("RV",A,mixed,dims) end
+
 
 -- Add an extra outermost dim (loop) to the type
 -- mixed: optional, perhaps this is adding dims to a type that already has sequential dimensions
@@ -1381,60 +1322,6 @@ function types.HSFPixelType(A)
 end
 
 types.HandshakeTrigger = types.Interface(types.Par(types.Trigger),types.bool(),types.bool())
---[=[
-function TypeFunctions:FV() return types.HSFV(self) end
-function TypeFunctions:FW() return types.HSFSize(self)[1] end
-function TypeFunctions:FH() return types.HSFSize(self)[2] end
-function TypeFunctions:FPixelType() return types.HSFPixelType(self) end
-
--- this is sort of like arrayOver but for framed types
--- IE A[4,5]{1;3,4} would return A[4,5]
-function TypeFunctions:framedOver()
-  --assert(#self.params.dims==1) -- NYI
-
-  local A = self.params.A
-  if self.params.mixed then A = A:arrayOver() end
-  
-  if self:is("StaticFramed") and #self.params.dims==1 then
-    return A
-  elseif self:is("StaticFramed") and #self.params.dims>1 then
-    return types.StaticFramed(self.params.A,self.params.mixed,J.slice(self.params.dims,1,#self.params.dims-1) )
-  elseif self:is("HandshakeFramed") and #self.params.dims==1 then
-    return types.Handshake(A)
-  else
-    print("framedOver NYI - "..tostring(self))
-    assert(false)
-  end
-  
-end
-]=]
---types.VTrigger = types.named("VTrigger", types.bool(), "VTrigger",{})
---types.RVTrigger = types.named("RVTrigger", types.bool(), "RVTrigger",{})
---
-
---function types.V(A)
---  return types.Interface(A,nil,types.bool())
---end
-
---function types.RV(A)
---  return types.Interface(A,types.bool(),types.bool())
---end
---[=[
-function types.HandshakeArray(A,W,H)
-  err(types.isType(A),"HandshakeArray: argument should be type")
-  err(types.isBasic(A),"HandshakeArray: argument should be basic type")
-  err(type(W)=="number" and W>0,"HandshakeArray: W should be number > 0")
-  if H==nil then H=1 end
-  err(type(H)=="number" and H>0,"HandshakeArray: H should be number > 0")
-  return types.named("HandshakeArray("..tostring(A)..","..tostring(W)..","..tostring(H)..")", types.array2d(types.tuple{A,types.bool()},W,H), "HandshakeArray", {A=A,W=W,H=H} )
-end
-
-function types.HandshakeTriggerArray(W,H)
-  err(type(W)=="number" and W>0,"HandshakeTriggerArray: W should be number > 0")
-  if H==nil then H=1 end
-  err(type(H)=="number" and H>0,"HandshakeTriggerArray: H should be number > 0")
-  return types.named("HandshakeTriggerArray("..tostring(W)..","..tostring(H)..")", types.array2d(types.bool(),W,H), "HandshakeTriggerArray", {W=W,H=H} )
-  end]=]
 
 function types.HandshakeTuple(tab,VR,X)
   assert(X==nil)
@@ -1502,10 +1389,6 @@ function types.isHandshakeAny( a )
   end
 end
 
---function types.isV( a ) return a:isNamed() and a.generator=="V" end
---function types.isVTrigger( a ) return a:isNamed() and a.generator=="VTrigger" end
---function types.isRV( a ) return a:isNamed() and a.generator=="RV" end
---function types.isRVTrigger( a ) return a:isNamed() and a.generator=="RVTrigger" end
 function types.expectBasic( A ) err( types.isBasic(A), "type should be basic but is "..tostring(A) ) end
 function types.expectV( A, er ) if types.isV(A)==false then error(er or "type should be V but is "..tostring(A)) end end
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
@@ -1519,30 +1402,28 @@ function TypeFunctions:lower() return types.lower(self) end
 -- Handshake(A) => {A,bool}
 function types.lower( a )
   err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
-
+  local Uniform = require "uniform"
+  
   if a:isTuple() then
     local res = {}
     for _,v in ipairs(a.list) do table.insert(res,types.lower(v)) end
     return types.tuple(res)
   elseif a:isArray() then
-    return types.array2d(types.lower(a.over),a.size)
+    if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
+      return types.lower(a:arrayOver())
+    else
+      return types.array2d(types.lower(a:arrayOver()),a.V)
+    end
   elseif a:is("Interface") then
     if a==types.Interface() then
       return types.null()
     else
-      --local over = a.over
-      --if over~=nil then over = types.lower(a.over) end
-      
       if a.over~=nil and a.V~=nil then return types.tuple{a.over:lower(),a.V} end
       if a.over~=nil then return a.over:lower() end
       if a.V~=nil then return a.V end
       print("COULD NOT LOWER ",a,over,over:lower(),over:lower():verilogBits(),a.V)
       assert(false)
     end
-  elseif a:isSchedule() then
-    --if a:is("Par") or a:is("ParSeq") then
-    return types.lower(a.over)
-    --end
   elseif types.isBasic(a) then
     return a
   end
@@ -1551,42 +1432,90 @@ function types.lower( a )
   assert(false)
 end
 
-function TypeFunctions:extractSchedule()
-  if self:isSchedule() then
-    return self
-  elseif self:isInterface() and self:isInil()==false then
-    if self:is("Interface") then
-      return self.over:extractSchedule()
-    else
-      print("Could not extract schedule from ",self)
-      assert(false)
-    end
-  else
-    err(false,":extractSchedule: type doesn't not contain a schedule type? "..tostring(self) )
-  end
-end
-
 function TypeFunctions:extractData()
   return types.extractData(self)
 end
 
 -- extract underlying actual data type.
+-- this is the type of the data portion of the HW interface
+-- note the difference with 'lower': lower returns data+control signals (like valid).
+--   extractData just returns the data
+-- this removes (lowers) schedule types
 -- V(A) => A
 -- RV(A) => A
 -- Handshake(A) => A
-function types.extractData(a)
+types.extractData = J.memoize(function(a)
   assert(types.isType(a))
-  if a:is("Interface") or a:isSchedule() then
+  local Uniform = require "uniform"
+
+  local res
+  if a:is("Interface") then
     if a.over==nil then return types.null() end
-    return types.extractData(a.over)
+    res = types.extractData(a.over)
   elseif a:isData() then
-    return a
-  elseif a:isTuple() or a:isArray() then
+    res = a
+  elseif a:isArray() then
+    -- this is a scheduled array - we need to return type of data bus
+    assert(a:isSchedule())
+    if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
+      res = a:arrayOver():extractData() -- special case for not vectorized
+    else
+      res = types.array2d( a:arrayOver():extractData(), a.V )
+    end
+  elseif a:isTuple() then
+    local newlist = {}
+    for k,v in ipairs(a.list) do newlist[k] = v:extractData() end
+    res = types.Tuple(newlist)    
+  else
+    print("extractData: unsupported: "..tostring(a))
     assert(false)
   end
-  print("extractData: unsupported: "..tostring(a))
-  assert(false)
-end
+
+  err( res:isData(), "internal error: extractData() did not return a data type. type:", a, " returned: ", res )
+  return res
+end)
+
+function TypeFunctions:deInterface() return types.deInterface(self) end
+
+-- strip out any interface bits
+types.deInterface = J.memoize(function(ty)
+  local res
+  if ty:isInterface()==false then
+    res = ty
+  elseif ty:is("Interface") then
+    res = ty.over
+  elseif ty:isTuple() then -- InterfaceTuple
+    local newlist = {}
+    for k,v in ipairs(ty.list) do newlist[k] = v:deInterface() end
+    res = types.Tuple(newlist)
+  elseif ty:isArray() then
+    res = ty:replaceVar( "over", ty.over:deInterface() )
+  else
+    print("deInterface NYI - ",ty)
+    assert(false)
+  end
+
+  J.err( res:isSchedule() or res:isData(), "Internal error, deinterface failed of type: ",ty," which returned: ",res )
+  return res
+end)
+
+function TypeFunctions:deSchedule() return types.deSchedule(self) end
+
+-- strip out any schedule bits
+-- deSchedule strips out interface stuff as well
+types.deSchedule = J.memoize(function(ty)
+  ty = ty:deInterface()
+
+  local res
+  if ty:isData() then
+    res = ty
+  else
+    assert(false)
+  end
+
+  assert( res:isData() )
+  return res
+end)
 
 function types.hasReady(a)
   if types.isHandshake(a) or types.isHandshakeTrigger(a) or a:isRV() or types.isHandshakeArray(a) or types.isHandshakeTuple(a) or types.isHandshakeArrayOneHot(a) or types.isHandshakeTmuxed(a) or a:is("HandshakeFramed") or a:is("RVFramed") then
@@ -1631,18 +1560,15 @@ function types.extractValid(a)
   if a:is("Interface") then
     if a.V~=nil then
       return a.V
-    else
+    elseif a.v~=nil then
       return a.v
+    else
+      err(false,"extractValid: type doesn't have a valid bit: ",a)
     end
-  else
-    print("extractValid NYI on "..tostring(a))
-    assert(false)
   end
-  
-  --if types.isHandshakeTmuxed(a) then
---    return types.uint(8)
---  end
---  return types.bool()
+
+  print("extractValid NYI on "..tostring(a))
+  assert(false)
 end
 
 function types.streamCount(A)
@@ -1682,6 +1608,33 @@ function types.isStreaming(A)
   else
     err(false, "NYI isStreaming "..tostring(A))
   end
+end
+
+function TypeFunctions:specialize( vars )
+  if self:isTuple() then
+    -- special case for tuples (!)
+    local lst = self.list
+    if P.isParam(self.list) and self.list.kind=="TypeList" then
+      lst = vars[self.list.name]
+    end
+    
+    local newList = {}
+    for k,v in ipairs(lst) do
+      table.insert( newList, v:specialize(vars) )
+    end
+    return types.tuple(newList)
+  else
+    local newT = self
+    for k,v in pairs(self) do
+      if P.isParam(v) or types.isType(v) then
+        newT = newT:replaceVar( k, v:specialize( vars ) )
+      end
+    end
+    
+    return newT
+  end
+
+  assert(false)
 end
 
 if terralib~=nil then require("typesTerra") end

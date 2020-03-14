@@ -6,7 +6,6 @@ local R = require "rigel"
 local J = require "common"
 
 local makeTerra = J.memoize(function( mod, readPorts,writePorts, X)
-  print("MAKE ZYNC NOC TERRA",readPorts,writePorts)
   assert( R.isModule(mod) )
   assert(X==nil)
   if readPorts==nil then readPorts=1 end
@@ -74,7 +73,6 @@ local makeTerra = J.memoize(function( mod, readPorts,writePorts, X)
   local self = symbol(&ZynqNOCTerra)
   
   for i=1,readPorts do
-    print("ADDPORT",i)
     table.insert( ZynqNOCTerra.entries, {field="read"..J.sel(i==1,"",i-1).."_ready", type=bool})   -- MAXI0_ARREADY (driven by TB)
 
     local I = tostring(i-1)

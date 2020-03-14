@@ -72,7 +72,7 @@ function invert2x2( AType, bits )
     local det = R.apply("det", fdetfn, denom)
     
     ---------
-    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type.over.over} )
+    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
     local fmatrix = finp:index(0)
     local fdet = finp:index(1)
 

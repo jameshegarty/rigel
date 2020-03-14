@@ -1,5 +1,5 @@
-cstdio = terralib.includec("stdio.h")
-local cstring = terralib.includec("string.h")
+cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
+local cstring = terralib.includec("string.h", {"-Wno-nullability-completeness"})
 local M = {}
 local J = require "common"
 

@@ -15,13 +15,12 @@ local regs = SOC.axiRegs({{"offset",RM.reg(u(32),200)}},SDF{1,1024}):instantiate
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-local AddReg = G.Generator{"AddReg",
-  types.rv(types.Par(u(8))),types.rv(types.Par(u(8))),
+local AddReg = G.Function{ "AddReg", types.rv(types.Par(u(8))), SDF{1,1},
   function(i) return G.Add(i,G.RemoveMSBs{24}(RM.Storv(regs.offset)(G.ValueToTrigger(i)))) end}
 
 harness({
   regs.start,
   SOC.readBurst("frame_128.raw",128,64,u(8),8,true,nil,noc.read),
-  AddReg,
+  G.Map{AddReg},
   SOC.writeBurst("out/soc_regin",128,64,u(8),8,1,true,noc.write),
   regs.done},nil,{regs})

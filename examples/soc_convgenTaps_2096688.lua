@@ -34,27 +34,28 @@ if terralib~=nil then ts=".terra" end
 
 local ConvInner = R.FunctionGenerator("ConvInner",{"type","rate"},{},
 function(args)
-  local res =  G.Module{"ConvolveInner_"..tostring(args.type), args.type, args.rate,
+  print("CONVINNER",args.type,args.rate)
+  local ty = args.type
+  if ty:deInterface():isData()==false then
+    ty = T.RV(ty:deInterface())
+  end
+  
+  local res =  G.Function{"ConvolveInner_"..tostring(ty), ty, args.rate,
     function(inp)
-      local out = Mul(inp)
+      print("INN",inp.type)
+      local out = G.Map{Mul}(inp)
+      print("INT",out.type)
       local res = Reduce{Add{R.Async}}(out)
+      print("RED",res.type)
       local sft = Rshift{8}(res)
       return RemoveMSBs{24}(sft)
   end}
   return res
 end,
-P.SumType("opt",{
-  T.RV( T.ParSeq(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("V")),P.SizeValue("size"))),
-  T.RV( T.Seq(T.Par(T.Tuple{P.DataType("L"),P.DataType("R")}),P.SizeValue("size")) ),
-  T.rv( T.Par(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size"))))
-}),
-P.SumType("opt",{
-  T.RV(P.ScheduleType("S")),
-  T.RV(P.ScheduleType("S")),
-  T.rv( T.Par(P.DataType("D")) )}) )
+T.ParSeq(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("V")),P.SizeValue("size")) )
 
 
-local Conv = G.Module{"Conv",SDF{1,cycles},T.HandshakeTrigger,
+local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
   function(i)
     local ii = G.FanOut{2}(i)
     local ii0 = G.FIFO{128}(ii[0])
@@ -68,11 +69,11 @@ local Conv = G.Module{"Conv",SDF{1,cycles},T.HandshakeTrigger,
     local st = Stencil{{-3,0,-3,0}}(pad)
     st = G.Reshape(st)
     st = G.Reshape(st)
-    st = AddMSBs{24}(st)
+    st = G.Map{G.Map{AddMSBs{24}}}(st)
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)
-    padZip = G.Zip(padZip)
-    res = ConvInner(padZip)
+    padZip = G.Map{G.Zip}(padZip)
+    res = G.Map{ConvInner}(padZip)
     res = Crop{{9,7,3,0}}(res)
     return AXIWriteBurst{"out/soc_convgenTaps_"..tostring(cycles),noc.write}(res)
   end}

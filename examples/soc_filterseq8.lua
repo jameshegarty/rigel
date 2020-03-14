@@ -24,58 +24,45 @@ noc.extern=true
 -- We need to do the index thing, b/c we want to keep items in order.
 
 -- input {{A,u8},{A,u8}}, where the u8 is the index. 
-IdxGT = G.Module{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
+IdxGT = G.Function{"IdxGT",function(i) return G.GT(i[0][1],i[1][1]) end}
 
 -- input type: {{A,bool},u8} -> {A,u8}
 -- if bool is true-> return the idx, Else, return 0
-BoolToIdxInner = G.Module{"BoolToIdxInner", types.rv(types.Par(types.tuple{types.tuple{u8,types.bool()},u8})),
+BoolToIdxInner = G.Function{"BoolToIdxInner", types.rv(types.Par(types.tuple{types.tuple{u8,types.bool()},u8})), SDF{1,1},
                           function(i) return R.concat{i[0][0],G.Sel(i[0][1],i[1],R.c(0,u8))} end}
 
-BoolToIdx = G.Module{"BoolToIdx",SDF{1,1},types.rv(types.Par(types.array2d(types.tuple{u8,types.bool()},8))),
+BoolToIdx = G.Function{"BoolToIdx", SDF{1,1}, types.rv(types.Par(types.array2d(types.tuple{u8,types.bool()},8))),
                      function(i)
-                       print("BIX",i.type)
                        local tmp = R.c(J.reverse(J.range(1,8)),types.array2d(u8,8))
                        tmp = G.Zip(i,tmp)
-                       print("TMP",tmp.type)
                        return G.Map{BoolToIdxInner}(tmp)
                      end}
 
 -- {A,u8}->{A,bool} (if u8>0)
-IdxToBool = G.Module{"IdxToBool", types.rv(types.Par(types.tuple{u8,u8})),
+IdxToBool = G.Function{"IdxToBool", types.rv(types.Par(types.tuple{u8,u8})), SDF{1,1},
                      function(i) return R.concat{i[0],G.GT{0}(i[1])} end }
 
-OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
+OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,1},
   function(i)
     local readStream = G.AXIReadBurstSeq{"frame_128.raw",{128,64},u(8),8,noc.read}(i)
-    --    print(readStream.fn)
-    print("READSTRAM",readStream.rate)
+
     local rs = G.FanOut{2}(readStream)
     local rs0 = G.FIFO{128}(rs[0])
     local rs1 = G.FIFO{128}(rs[1])
-    local filt = G.GT{192}(rs1)
-    print("FILTa",filt.type)
+    local filt = G.Map{G.GT{192}}(rs1)
 
-    print("FILT",filt.type)
     local finp = G.FanIn(rs0,filt)
-    print("FINP",finp.type)
     finp = G.Zip(finp)
-    print("FINP",finp.type)
-    finp = G.Map{BoolToIdx}(finp)
-    print("BOOLTOIDX",finp.type)
+    finp = G.Fmap{BoolToIdx}(finp)
     finp = G.Sort{IdxGT}(finp)
     finp = G.Map{IdxToBool}(finp)
-    print("IDXTOBOOL",finp.type)
     
     -- 368
-    local offset = G.Map{RM.filterSeqPar(u8,8,SDF{368,8192})}(finp)
-    print("OFFSET",offset.type,offset,offset.rate)
-    --offset = G.Broadcast{1}(offset) -- deleted 8/19
-    --offset = G.DeserSeq{8}(offset)
-    offset = G.Map{RM.changeRate(u8,1,0,8)}(offset)
+    local offset = G.Fmap{RM.filterSeqPar(u8,8,SDF{368,8192})}(finp)
+    offset = G.Fmap{RM.changeRate(u8,1,0,8)}(offset)
     
     local res = G.AXIWriteBurstSeq{"out/soc_filterseq8",{368,1},8,noc.write}(offset)
-    print("RES",res.rate)
---    print(res.fn)
+
     return res
   end}
 

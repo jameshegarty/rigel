@@ -14,7 +14,7 @@ local regs = SOC.axiRegs({},SDF{1,128}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-OffsetModule = G.Module{ "OffsetModule", R.HandshakeTrigger,
+OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,1}, 
   function(i)
     local tstream = G.TriggerBroadcast{128}(i)
     local addrStream = G.PosSeq{{128,1},0}(tstream)

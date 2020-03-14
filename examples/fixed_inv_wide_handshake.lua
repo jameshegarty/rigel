@@ -19,7 +19,7 @@ local afn = a:toRigelModule("a")
 local lutinv, lutinvtype = C.lutinvert(a.type)
 print("LUTINV TYPE",lutinvtype)
 ------------
-local binp = fixed.parameter("binp", types.tuple{types.uint(8),lutinvtype.over.over} )
+local binp = fixed.parameter("binp", types.tuple{types.uint(8),lutinvtype:extractData()} )
 local b_orig = binp:index(0)
 local b_inv = binp:index(1)
 local constv = fixed.constant(2048, true)

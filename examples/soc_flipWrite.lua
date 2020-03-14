@@ -16,9 +16,8 @@ noc.extern=true
 
 local W,H = 128,64
 
-AddrGen = Generator{SDF{1,1},
+AddrGen = Function{ "AddrGen", SDF{1,1},
   types.rv(types.Par(types.array2d(types.tuple{u16,u16},1))),
-  types.rv(types.Par(u32)),
   function(inp)
     local x, y = Index{0}(Index{0}(inp)), Index{1}(Index{0}(inp))
     local resx = AddMSBs{16}(x)
@@ -26,7 +25,7 @@ AddrGen = Generator{SDF{1,1},
     return Add(resx,resy)
   end}
 
-fn = Module{"Top",
+fn = Function{"Top",
   function(inp)
     local o = regs.start(inp)
     o = SOC.readBurst("frame_128.raw",128,64,u(8),8,nil,nil,noc.read)(o)
@@ -38,7 +37,7 @@ fn = Module{"Top",
     ob1 = FIFO{128}(ob1)
     ob1 = ValueToTrigger(ob1)
     local posSeqOut = PosSeq{{W/8,H},1}(ob1)
-    local addrGenOut = AddrGen(posSeqOut)
+    local addrGenOut = Fmap{AddrGen}(posSeqOut)
 
     local WRITEMOD = SOC.write("out/soc_flipWrite",128,64,u(8),8,nil,noc.write)
     o = WRITEMOD(addrGenOut,ob0)

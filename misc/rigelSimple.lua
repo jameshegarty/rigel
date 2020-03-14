@@ -299,7 +299,7 @@ function RS.index(t)
     return R.apply("v"..tostring(ccnt), RM.makeHandshake(C.index(ty,t.key)), t.input )
   else
     ccnt = ccnt + 1
-    return R.apply("v"..tostring(ccnt), C.index(ty.over.over,t.key), t.input )
+    return R.apply("v"..tostring(ccnt), C.index(ty:extractData(),t.key), t.input )
   end
 end
 
@@ -311,7 +311,7 @@ function RS.fanOut(t)
   --ty = R.extractData(ty)
 
   ccnt = ccnt + 1
-  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty:extractSchedule(),t.branches), t.input )
+  local out = R.apply("v"..tostring(ccnt),RM.broadcastStream(ty:deInterface(),t.branches), t.input )
 
   local res = {}
   for i=1,t.branches do

@@ -430,7 +430,7 @@ function fixedASTFunctions:index(ix,iy)
 
   local ty
   if self.type:isTuple() then
-    assert(ix>=0 and ix<#self.type.list)
+    err( ix>=0 and ix<#self.type.list, "index out of bounds, type:",self.type," ix ",ix," iy ",iy)
     ty = self.type.list[ix+1]
   elseif self.type:isArray() then
     err(ix>=0 and ix<(self.type:arrayLength())[1], "array idx out of bounds. is "..tostring(ix).." but should be < "..tostring((self.type:arrayLength())[1]))

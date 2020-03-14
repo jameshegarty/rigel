@@ -4,10 +4,10 @@ local types = require "types"
 local S = require "systolic"
 local systolic = S
 local Ssugar = require "systolicsugar"
-local cstring = terralib.includec("string.h")
-local cmath = terralib.includec("math.h")
-local cstdlib = terralib.includec("stdlib.h")
-local cstdio = terralib.includec("stdio.h")
+local cstring = terralib.includec("string.h", {"-Wno-nullability-completeness"})
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
 local fpgamodules = require("fpgamodules")
 local SDFRate = require "sdfrate"
 local J = require "common"
@@ -538,7 +538,7 @@ function MT.pyramidSchedule( res, depth, wtop, T, X )
   terra PyramidSchedule:init() end
   terra PyramidSchedule:free() end
   terra PyramidSchedule:process( inp:&res.inputType:lower():toTerraType(), out : &uint8 )
-    @out = self.depth
+  @out = self.depth
     var targetW : int = (wtop*cmath.pow(2,depth-1))/cmath.pow(4,self.depth)
     if targetW<T then
       cstdio.printf("Error, targetW < T\n")
@@ -906,7 +906,8 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   return MT.new( PadSeq, res )
 end
 
-function MT.changeRate(res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
+function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
+  assert(A:isData())
   assert(outputRate>=0)
   assert(inputRate>=0)
   assert(H>0)
@@ -1384,7 +1385,7 @@ fseek(file,0,SEEK_SET);
 fread(*mem,1,*fsize,file);
 }
 
-]])
+]], {"-Wno-nullability-completeness"})
 
 function MT.lut( res, inputType, outputType, values, inputCount, X )
   assert( rigel.isPlainFunction(res) )
@@ -1432,7 +1433,7 @@ function MT.reduceSeq( res, f, Vw, Vh, X )
   
   local struct ReduceSeq { phase:int; result : f.outputType:lower():toTerraType(); inner : f.terraModule}
   terra ReduceSeq:reset() self.phase=0; self.inner:reset() end
-  terra ReduceSeq:process( inp : &f.outputType:lower():toTerraType(), out : &rigel.lower(res.outputType):toTerraType())
+  terra ReduceSeq:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType())
     if self.phase==0 and Vw*Vh==1 then -- T==1 mean this is a noop, passthrough
       self.phase = 0
       valid(out) = true
@@ -2168,7 +2169,7 @@ return {`mself.[n.name].ready}
 --          assert(false)
         end
       elseif n.kind=="constant" then
-        table.insert( stats, quote (@out) = [n.type.over.over:valueToTerra(n.value)] end )
+        table.insert( stats, quote (@out) = [n.type:extractData():valueToTerra(n.value)] end )
         res = {out}
       elseif n.kind=="concat" then
         J.map( inputs, function(m,i) local ty = rigel.lower(rigel.lower(n.type).list[i])

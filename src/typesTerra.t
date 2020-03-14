@@ -1,5 +1,5 @@
 local J = require "common"
-local cstdio = terralib.includec("stdio.h")
+local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
 
 -- if pointer is true, generate a pointer instead of a value
 -- vectorN = width of the vector [optional]

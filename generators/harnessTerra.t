@@ -1,8 +1,8 @@
 local R = require "rigel"
 local RM = require "generators.modules"
 local C = require "generators.examplescommon"
-local cstdlib = terralib.includec("stdlib.h")
-local cstdio = terralib.includec("stdio.h")
+local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
+local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
 local fixed = require "fixed"
 local types = require("types")
 local J = require "common"

@@ -1,9 +1,9 @@
 local R = require "rigel"
 local MT = require "generators.modulesTerra"
 local types = require "types"
-local cstdio = terralib.includec("stdio.h")
-local cstdlib = terralib.includec("stdlib.h")
-local cstring = terralib.includec("string.h")
+local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
+local cstdlib = terralib.includec("stdlib.h",{"-Wno-nullability-completeness"})
+local cstring = terralib.includec("string.h",{"-Wno-nullability-completeness"})
 local J = require "common"
 local Uniform = require "uniform"
 local AXI = require "generators.axi"

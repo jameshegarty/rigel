@@ -48,7 +48,7 @@ function(args)
 
   return res
 end,
-T.RV(T.Par(T.Uint(32))),
-T.RV(T.ParSeq(T.Array2d(P.DataType("D"),P.SizeValue("V")),P.SizeValue("S"))))
+T.Uint(32) )
+
 
 return A

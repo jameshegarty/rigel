@@ -34,39 +34,28 @@ local WriteAddress = Uniform(regs.writeAddress)
 WriteAddress:addProperty( WriteAddress:eq(0x30008000+(128*64)) )
 
 -- This is the actual DMA
-ReadLenDMA = G.Module{ "ReadLenDMA", HandshakeTrigger, SDF{1,Len},
+ReadLenDMA = G.Function{ "ReadLenDMA", HandshakeTrigger, SDF{1,Len},
   function(trig)
     trig = C.triggerUp(regs.len)(trig)
-    local addrStream = G.Map{RM.counter(u32,regs.len)}(trig)
+    local addrStream = G.Fmap{RM.counter(u32,regs.len)}(trig)
     return SOC.read("frame_128.raw",128*64,ar(u8,8),noc.read,nil,regs.readAddress)(addrStream)
   end}
 
-AddAddr = G.Module{"AddAddr",T.rv(T.Par(ar(u8,8))),
+AddAddr = G.Function{ "AddAddr", T.rv(T.Par(ar(u8,8))), SDF{1,1},
                    function(i) return R.concat{RM.counter(u32,regs.len)(G.ValueToTrigger(i)),i} end}
 
-WriteLenDMA = G.Module{ "WriteLenDMA", Handshake(ar(u8,8)),
+WriteLenDMA = G.Function{ "WriteLenDMA", Handshake(ar(u8,8)), SDF{1,1},
   function(i)
-    local addrStream = G.Map{AddAddr}(i)
+    local addrStream = G.Fmap{AddAddr}(i)
     local bresp = SOC.write( "out/soc_readlen", regs.len, 1, ar(u8,8), 0, true, noc.write, regs.writeAddress )(addrStream)
     return RM.triggerCounter(Len)(bresp)
   end}
 
-TestDMA = C.linearPipeline({ReadLenDMA,G.Add{200},WriteLenDMA},"TestDMA")
+TestDMA = C.linearPipeline({ ReadLenDMA, G.Map{G.Add{200}}, WriteLenDMA },"TestDMA")
 
 -- hack
 TestDMA.globalMetadata[noc.write.name.."_write_W"] = 128
 TestDMA.globalMetadata[noc.write.name.."_write_H"] = 64
 TestDMA.globalMetadata[noc.write.name.."_write_bitsPerPixel"] = 8
 
---for k,v in pairs(AXI.ReadAddressVSelect) do print("readAddress",k,v) end
---for k,v in pairs(AXI.ReadDataVSelect(64)) do print("readData",k,v) end
---for k,v in pairs(AXI.WriteIssueVSelect(64)) do print("writeIssue",k,v) end
---for k,v in pairs(AXI.WriteResponseVSelect(64)) do print("writeResponse",k,v) end
-
-
---local Top=C.linearPipeline({regs.start, TestDMA, regs.done},"Top",nil,{regs})
-
---print(Top)
-
---harness(Top,{cycles=1124})
 harness({regs.start, TestDMA, regs.done},{cycles=1124},{regs})
