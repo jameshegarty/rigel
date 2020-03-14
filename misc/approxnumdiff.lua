@@ -26,13 +26,16 @@ local SLACK = tonumber(arg[4])
 --print(LEFT,RIGHT)
 
 if (arg[5]=="smallerIsBetter" and NEW>TARGET*(1+SLACK)) or (arg[5]=="largerIsBetter" and NEW<TARGET*(1-SLACK)) then
-  print("ERROR: stat regressed out of bounds, ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%")
+  print("ERROR: stat regressed out of bounds, ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%",arg[1])
   os.exit(1)
 elseif (arg[5]=="smallerIsBetter" and NEW>TARGET) or (arg[5]=="largerIsBetter" and NEW<TARGET) then
-  print("stat regressed in bounds, ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%")
+  print("stat regressed in bounds, ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%",arg[1])
 elseif NEW==TARGET then
+elseif (arg[5]=="smallerIsBetter" and NEW<TARGET*0.6) or (arg[5]=="largerIsBetter" and NEW>TARGET*1.5) then
+  print("State improved wayyy too much, maybe a bug? Target:",TARGET," New:",NEW,arg[1] )
+  os.exit(1)
 else
-  print("stat improved! ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%")
+  print("stat improved! ","target:",TARGET,"new:",NEW,tostring((NEW/TARGET)*100).."%",arg[1])
 end
 
 local f = assert(io.open(arg[3], "w"))
