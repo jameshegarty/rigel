@@ -844,8 +844,8 @@ function TypeFunctions:isSchedule()
   if self:isData() then return true end
   if self:isInterface() then return false end
   
-  if self.kind=="array" and self.size~=self.V then
-    return true
+  if self:isArray() then
+    return self.V~=self.size or self.over:isSchedule()
   elseif self.kind=="tuple" then
     for k,v in ipairs(self.list) do
       if v:isSchedule() then return true end

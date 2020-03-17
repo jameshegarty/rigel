@@ -483,41 +483,96 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   local function reshape( fnType, targetType )
     assert( fnType:isSchedule() )
     assert( targetType:isSchedule() )
+
+    local res
     
     if fnType:isArray() then
       -- if not an array, nothing we can do!
       if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
         --table.insert( functionStack, RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size )) )
-        return RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
+        res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
       elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
-        assert(false)  -- NYI
+        --assert(false)  -- NYI
+
+        res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
+          function(inp)
+            return C.broadcast( targetType:extractData(), 1, 1 )(inp)
+          end}
+
+        assert( darkroom.isPlainFunction(res) )
+        assert( res.inputType:extractData() == targetType:extractData() )
+        assert( res.outputType:extractData() == fnType:extractData() )
+
+        res.inputType = types.rv(targetType)
+        res.outputType = types.rv(fnType)
+        
+        res = RM.makeHandshake(res)
       elseif fnType.V[1]*fnType.V[2] < targetType.V[1]*targetType.V[2] then
         -- we need to serialize
-        local r = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+        res = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
                                         fnType.V[1]*fnType.V[2],
                                         targetType.size[1], targetType.size[2] )
-
+        
         --print("RESHAPE target ", targetInputType, " IS ",r.inputType )
         --table.insert( functionStack, r )
-        return r
+
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
-
+        
         if fnType.V:eq(0,0) then
-          return RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
         else
           print("NYI")
           assert(false)
         end
       elseif fnType.V==targetType.V  and
-             fnType:arrayOver()==targetType:arrayOver() then
+        fnType:arrayOver()==targetType:arrayOver() then
         -- nothing to do!
-        return nil
+        --return nil
       else
         print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
         assert(false)
       end
+    elseif fnType:isTuple() then
+      assert( targetType:isTuple() and #fnType.list==#targetType.list )
+      res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
+        function(inp)
+          local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
+          local out = {}
+          for k,v in ipairs(targetType.list) do
+            --local 
+            local i = darkroom.selectStream( "str"..k, tmp, k-1 )
+            i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
+            i = C.fifo( v, 128)(i)
+
+            local rec = reshape( fnType.list[k], v )
+
+            if rec==nil then
+              -- this is OK: means no change
+              table.insert( out, i )
+            else
+              table.insert( out, rec(i) )
+              assert( out[#out].type:deInterface()==fnType.list[k] )
+            end
+          end
+
+          local rrr = darkroom.concat(out)
+          print("RRR",fnType,rrr.type)
+          
+          local ptList = {}
+          for k,v in ipairs( fnType.list) do table.insert(ptList,types.RV(v)) end
+          return RM.packTuple( ptList )(rrr)
+        end}
     end
+
+    if res~=nil then
+      err( res.inputType==types.RV(targetType), "convertInterface: conversion function input type should have been: ",types.RV(targetType)," but was: ",res.inputType )
+      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType )
+    else
+      err( targetType==fnType, "convertInterface: conversion function returned noop, but should have been conversion from ",targetType," to ",fnType )
+    end
+    
+    return res
   end
   
   if targetInputType:deInterface()~=fn.inputType:deInterface() then
@@ -2390,8 +2445,12 @@ function darkroom.concat( name, t, X )
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
+
+  for k,v in ipairs(t) do
+    err( darkroom.isIR(v),"concat input ",k-1," is not a darkroom value, is: ",v);
+    table.insert( r.inputs, v )
+  end
   
-  J.map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 

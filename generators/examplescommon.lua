@@ -1602,7 +1602,7 @@ end)
 -- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
-  err( inputType:isData() ,"C.slice: type must be data type, but is:"..tostring(inputType) )
+  err( inputType:isSchedule() ,"C.slice: type must be schedule type, but is:"..tostring(inputType) )
   err( type(idxLow)=="number", "slice idxLow must be number")
   err( type(idxHigh)=="number", "slice idxHigh must be number")
   err( index==nil or type(index)=="boolean", "index must be bool")
@@ -1620,6 +1620,10 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
 
+    -- hack: type may be a schedule type
+    res.inputType = types.rv(inputType)
+    res.outputType = types.rv(OT)
+    
     return res
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
@@ -1640,7 +1644,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
     end
 
-    return modules.lift( J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index)), inputType, OT, 0,
+    local nam = J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index))
+    local res = modules.lift( nam, inputType:extractData(), OT:extractData(), 0,
       function(systolicInput)
         local systolicOutput = S.tuple( J.map( J.range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
         systolicOutput = S.cast( systolicOutput, OT )
@@ -1659,6 +1664,12 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
         end
       end,
       "C.slice")
+
+    -- hack: type may be a schedule type
+    res.inputType = types.rv(inputType)
+    res.outputType = types.rv(OT)
+    
+    return res
   else
     err(false, "C.index input must be tuple or array but is "..tostring(inputType))
   end
@@ -1666,7 +1677,7 @@ end)
 
 function C.index( inputType, idx, idy, X )
   err( types.isType(inputType), "first input to index must be a type, but is: "..tostring(inputType) )
-  err( inputType:isData(),"C.index: type must be data type, but is: "..tostring(inputType) )
+  err( inputType:isSchedule(),"C.index: type must be schedule type, but is: "..tostring(inputType) )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end
