@@ -777,4 +777,36 @@ function common.immutable(t)
   return setmetatable(t, mt)
 end
 
+function common.canonicalV( rate, size, X )
+  local R = require "rigel"
+  local SDF = require "sdf"
+  local Uniform = require "uniform"
+  
+  common.err( SDF.isSDF(rate), "canonicalV: expected SDFRate for first argument, but was: ", rate)
+  common.err( #rate==1, "canonicalV: only works with a single rate!")
+  common.err(R.isSize(size),"canonicalV: expected size, but is: ",size)
+  local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
+  local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
+  local V = (sizeW*sizeH)/seq
+  
+  if V<1 then
+    return R.Size(0,0)
+  elseif V==1 then
+    return R.Size(1,1)
+  else
+    V = math.ceil(V)
+    while (sizeW*sizeH)%V~=0 do
+      V = V + 1
+    end
+
+    if V<sizeW then
+      return R.Size(V,1)
+    else
+      assert( V%sizeW==0 )
+      return R.Size( sizeW, V/sizeW )
+    end
+  end
+end
+
+
 return common

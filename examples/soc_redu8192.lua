@@ -18,8 +18,7 @@ local Conv = G.Function{ "ConvTop", SDF{1,cycles},
     local p = G.AXIReadBurst{"frame_128.raw",{128,64},types.u8,noc.read}(i)
 
     local s = G.Stencil{{-3,0,-3,0}}(p)
-    s = G.Reshape(s)
-    s = G.Reshape(s)
+
     local f = G.Map{G.Map{G.Rshift{4}}}(s)
     local o = G.Map{G.Reduce{G.Add{R.Async}}}(f)
 

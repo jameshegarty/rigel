@@ -1,10 +1,19 @@
 local SDFRate = require "sdfrate"
 local J = require "common"
 
-local SDFFunctions = {}
-local SDFMT = {__index=SDFFunctions}
-
 local sdf = {}
+
+local SDFFunctions = {}
+local SDFMT = {
+  __index=SDFFunctions,
+  __mul = function(lhs,rhs)
+    assert( sdf.isSDF(lhs) )
+    assert( sdf.isSDF(rhs) )
+    assert( #rhs==1 ) -- NYI
+    return sdf(SDFRate.multiply( lhs, rhs[1][1], rhs[1][2] ))
+  end
+}
+
 
 -- return true if all ratios in this rate are <= 1
 function SDFFunctions:allLE1()
@@ -113,10 +122,8 @@ SDFTOPMT.__call = function(tab,arg,X)
   
   local uarg = {}
   for _,v in ipairs(arg) do
-    --J.err(Uniform(v[2]):gt(0):assertAlwaysTrue(),"SDF: denominator should not be 0!")
-    --J.err( (Uniform(v[1])/Uniform(v[2])):gt(0):assertAlwaysTrue(),"SDF: rate is 0?")
     local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
-    --table.insert(uarg,{n,d})
+
     table.insert(uarg,n)
     table.insert(uarg,d)
   end

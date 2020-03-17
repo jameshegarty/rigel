@@ -1322,12 +1322,12 @@ end)
 
 
 -- takes A to A[T] by duplicating the input
-C.broadcast = memoize(function(A,W,H,X)
+C.broadcast = memoize(function( A, W, H, X )
   err( types.isType(A), "C.broadcast: A must be type A")
   err( types.isBasic(A), "C.broadcast: type should be basic, but is: "..tostring(A))
-  err( type(W)=="number", "broadcast: W should be number")
+  err( type(W)=="number", "broadcast: W should be number, but is: ",W)
   if H==nil then return C.broadcast(A,W,1) end
-  err( type(H)=="number", "broadcast: H should be number")
+  err( type(H)=="number", "broadcast: H should be number, but is: ",H)
   assert(X==nil)
   
   local OT = types.array2d(A, W, H)
@@ -2484,5 +2484,63 @@ C.FilterSeqPar = J.memoize(function( ty, N, rate, framed, framedW, framedH, X )
   
   return res
 end)
+
+C.SerToWidthArrayToScalar = J.memoize(function(ty,size)
+  local generators = require "generators.core"
   
+  local res = generators.Function{
+    "SerToWidth_Convert_Array_to_scalar_"..tostring(ty), SDF{1,1},
+    types.rV(types.Par(types.array2d(ty,1,1))),
+    function(inp)
+      return generators.Index{0}(inp)
+  end}
+  assert(R.isPlainFunction(res))
+
+  res.inputType = types.rV(types.ParSeq(types.array2d(ty,1,1),size))
+  res.outputType = types.rRV(types.Seq(types.Par(ty),size))
+
+  return res
+end)
+
+-- for legacy reasons, changerate returns stuff in column major order.
+-- instead, do row major
+-- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
+C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
+  J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
+
+  local generators = require "generators.core"
+    
+  local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
+
+  J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
+  assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
+
+  local V2w, V2h = outputItemsPerCyc, 1
+  if outputItemsPerCyc>Uniform(W):toNumber() then
+    V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
+  end
+
+  local inputType, outputType
+  if Vw==W and Vh==H then
+    inputType = types.RV(types.Par(types.array2d(ty,Vw,Vh)))
+  else
+    inputType = types.RV(types.ParSeq(types.array2d(ty,Vw,Vh),W,H))
+  end
+  
+  outputType = types.RV(types.ParSeq(types.array2d(ty,V2w,V2h),W,H))
+
+  local res = generators.Function{
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(types.Par(types.array2d(ty,Vw,Vh))),
+      function(inp)
+        return generators.ReshapeArray{{V2w,V2h}}(generators.Fmap{cr}(generators.ReshapeArray{{Vw*Vh,1}}(inp)))
+  end}
+  assert(R.isPlainFunction(res))
+  assert( res.outputType:lower()==outputType:lower() )
+  assert( res.inputType:lower()==inputType:lower() )
+  res.inputType=inputType
+  res.outputType=outputType
+  
+  return res
+end)
+
 return C

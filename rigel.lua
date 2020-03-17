@@ -464,13 +464,101 @@ function functionGeneratorFunctions:requiresArg(arg)
   return (self.requiredArgs[arg]~=nil or self.optArgs[arg]~=nil) and (self.curriedArgs[arg]==nil)
 end
 
+-- top level function that implements logic to convert a fn to a given type.
+-- If this fails, it just returns fn
+function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
+  assert( X==nil )
+
+  --print("CONVERT_INTERFACE ",targetInputType,targetInputRate," TO ",fn.inputType,fn.sdfInput )
+  
+  local G = require "generators.core"
+  local C = require "generators.examplescommon"
+  local RM = require "generators.modules"
+  
+  local functionStack = {}
+
+  err( targetInputType:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do")
+  
+  -- does this require a space-time conversion?
+  local function reshape( fnType, targetType )
+    assert( fnType:isSchedule() )
+    assert( targetType:isSchedule() )
+    
+    if fnType:isArray() then
+      -- if not an array, nothing we can do!
+      if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
+        --table.insert( functionStack, RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size )) )
+        return RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
+      elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
+        assert(false)  -- NYI
+      elseif fnType.V[1]*fnType.V[2] < targetType.V[1]*targetType.V[2] then
+        -- we need to serialize
+        local r = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+                                        fnType.V[1]*fnType.V[2],
+                                        targetType.size[1], targetType.size[2] )
+
+        --print("RESHAPE target ", targetInputType, " IS ",r.inputType )
+        --table.insert( functionStack, r )
+        return r
+      elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
+        -- recurse
+
+        if fnType.V:eq(0,0) then
+          return RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+        else
+          print("NYI")
+          assert(false)
+        end
+      elseif fnType.V==targetType.V  and
+             fnType:arrayOver()==targetType:arrayOver() then
+        -- nothing to do!
+        return nil
+      else
+        print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
+        assert(false)
+      end
+    end
+  end
+  
+  if targetInputType:deInterface()~=fn.inputType:deInterface() then
+    local res = reshape( fn.inputType:deInterface(), targetInputType:deInterface() )
+    if res~=nil then
+      table.insert( functionStack, res )
+    end
+  end
+
+  local liftTargetInputType = targetInputType
+  if #functionStack>0 then
+    liftTargetInputType = functionStack[#functionStack].outputType
+  end
+
+  --print("FINDLIFTS", fn.inputType, liftTargetInputType)
+  local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
+
+  if mod~=nil then
+    table.insert( functionStack, mod )
+  else
+    print("WARN: FIND LIFTS FAIL" )
+    table.insert( functionStack, fn )
+  end
+
+  if #functionStack==1 then
+    return functionStack[1]
+  else
+    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
+    J.err( res.inputType == targetInputType, "convertInterface Fail wanted: ",targetInputType," returned: ",res.inputType )
+    return res
+  end
+end
+
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
 function functionGeneratorFunctions:complete( arglist, X )
   assert( X==nil )
   
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
-  
+
+
   if self:checkArgs(arglist)==false then
     print("Function generator '"..self.name.."' is missing arguments!")
     for k,v in pairs(self.requiredArgs) do
@@ -479,29 +567,37 @@ function functionGeneratorFunctions:complete( arglist, X )
     assert(false)
   end
 
-  for k,v in pairs(self.curriedArgs) do
-    err( arglist[k]==nil or arglist[k]==v, ":complete() ",self.name,", value in arglist was already in curried args? k ",k," v ",v," prev ",arglist[k] )
-    arglist[k] = v
-  end
-
+  -- don't mutate input!
   local a = {}
   for k,v in pairs(arglist) do a[k]=v end
 
-  if self.inputType~=nil and self.inputType~=types.Unknown then
-    local newlist = {}
-    err( self.inputType:isSupertypeOf( arglist.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced into type: ", arglist.type:deInterface())
-
-    for k,v in pairs(newlist) do a[k]=v end
+  for k,v in pairs(self.curriedArgs) do
+    err( arglist[k]==nil or arglist[k]==v, ":complete() ",self.name,", value in arglist was already in curried args? k ",k," v ",v," prev ",arglist[k] )
+    a[k] = v
   end
 
-  local fn = self.completeFn(a)
+  if self.inputType~=nil and self.inputType~=types.Unknown then
+    local newlist = {}
+
+    if self.optimized then
+      a.type, a.rate = arglist.type:optimize( arglist.rate )
+      assert( types.isType(a.type) )
+      assert( SDF.isSDF(a.rate) )
+    end
+    
+    err( self.inputType:isSupertypeOf( a.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced/optimized into type: ", a.type:deInterface())
+
+    for k,v in pairs(newlist) do
+      assert(a[k]==nil)
+      a[k] = v
+    end
+  end
+
+  local fn = self.completeFn( a )
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
   if self.requiredArgs.type~=nil then -- if we don't know type, we can't lift
-    local mod = findLifts( self.name, fn, arglist.type, fn.inputType, fn.outputType )
-
-    --err( requireTypeMatch==false or mod~=nil, "Failed to find a lift for fn '",fn.name,"' with \ninput type:'",fn.inputType,"' \noutput type '",fn.outputType,"' \nto convert to type:'",arglist.type,"'")
-    if mod~=nil then fn = mod end
+    fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
   end
   
   fn.generator = self
@@ -511,7 +607,8 @@ function functionGeneratorFunctions:complete( arglist, X )
   return fn
 end
 
-function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType, rateList, X )
+-- optimized: should input type be optimized before being passed to completeFn?
+function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, optimized, X )
   assert(X==nil)
   err( type(name)=="string", "FunctionGenerator: name must be string, but is: "..tostring(name) )
   err( type(requiredArgs)=="table", "FunctionGenerator: requiredArgs must be table, but is: "..tostring(requiredArgs) )
@@ -525,22 +622,19 @@ function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, in
   for k,v in pairs(optArgs) do J.err( type(k)=="string", "FunctionGenerator: optArgs must be set of strings" ) end
   err( type(completeFn)=="function", "FunctionGenerator: completeFn must be lua function" )
 
+  if optimized==nil then optimized=true end
+  err( type(optimized)=="boolean", "FunctionGenerator: 'optimized' should be boolean, but is: ", optimized )
+  
   if inputType==nil or inputType==types.Unknown then
     inputType=types.Unknown
-    outputType=types.Unknown
   else
     err(types.isType(inputType) or P.isParam(inputType),"FunctionGenerator, type should be type, but is: "..tostring(inputType))
-    --err(types.isType(outputType) or P.isParam(outputType),"FunctionGenerator, type should be type, but is: "..tostring(outputType))
 
-    --if inputType.kind~="SumType" then inputType = P.SumType("______SUMopt",{inputType}) end
-    --if outputType.kind~="SumType" then outputType = P.SumType("______SUMopt",{outputType}) end
-
-    -- for the parametric generators, we need to know type/rate, so make sure this is included, even if user doesn't care
     requiredArgs.type=true
     requiredArgs.rate=true
   end
 
-  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, outputType=outputType, rateList=rateList }, functionGeneratorMT )
+  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, optimized=optimized }, functionGeneratorMT )
 end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
