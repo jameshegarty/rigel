@@ -532,6 +532,8 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
     liftTargetInputType = functionStack[#functionStack].outputType
   end
 
+  J.err( liftTargetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", liftTargetInputType )
+  
   --print("FINDLIFTS", fn.inputType, liftTargetInputType)
   local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
 
