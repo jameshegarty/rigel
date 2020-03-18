@@ -39,7 +39,7 @@ local SlowBurstReadSer = C.compose("SlowBurstReadSer",G.SerSeq{8},SlowReadBurst)
 local CachedReadModule = G.Function{ "CachedReadModule", R.HandshakeTrigger, SDF{1,(W*H*8)},
   function(i)
     local pos = G.Pos{{W,H}}(i)
-    local posDup = G.Map{G.BroadcastSeq{{8,1},0}}(pos)
+    local posDup = G.Map{G.Broadcast{{8,1}}}(pos)
     local addr = G.Map{G.Map{PosToAddr}}(posDup) -- mult coords by 8
 
     local stencil

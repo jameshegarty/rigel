@@ -1408,8 +1408,6 @@ function TypeFunctions:optimize( rates )
     return self:replaceVar( "over", recTy ), recRates
   elseif self:isArray() then
     if self:isInterface() then
-      print("OPTIMIZE",self,rates)
-      --assert(false) -- NYI
       for k,v in ipairs(rates) do
         err( SDF(v)==SDF(rates[1]),"Optimize an array of interfaces: all input rates must be the same! is:",v," but other is:",rates[1] )
       end
@@ -1419,7 +1417,6 @@ function TypeFunctions:optimize( rates )
 
       assert( self:deSchedule()==res:deSchedule() )
 
-      print("OPTOUT",res,trate,#rates,rr)
       local rr = SDF(J.broadcast(trate[1],#rates))
 
       return res, rr

@@ -139,7 +139,7 @@ generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(
 generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, P.NumberType("T") )
 generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))) )
 
-generators.Index = R.FunctionGenerator("core.Index",{"type"},{"number","size"},
+generators.Index = R.FunctionGenerator("core.Index",{"type","rate"},{"number","size"},
 function(a)
   local ty = a.type:deInterface()
   J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
@@ -531,12 +531,13 @@ function(args)
   end
 end)
 
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
-  J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
+  J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
 end,
-types.array2d(P.DataType("T"),P.SizeValue("size")) )
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
 
 generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},

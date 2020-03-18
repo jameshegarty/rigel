@@ -60,6 +60,7 @@ modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSD
   err( type(name)=="string", "first argument to compose must be name of function")
   err( rigel.isFunction(f), "compose: second argument should be rigel module")
   err( rigel.isPlainFunction(g) or inputType~=nil, "compose: third argument should be plain rigel function, but is: ",g)
+
   if inputType~=nil then
     err( types.isType(inputType), "compose: inputType should be type, but is: "..tostring(inputType) )
     err( SDF.isSDF(inputSDF),"compose: inputSDF should be SDF")
@@ -72,6 +73,7 @@ modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSD
 
   local inp = rigel.input( inputType, inputSDF )
   local gvalue = rigel.apply(J.verilogSanitize(name.."_g"),g,inp)
+
   return modules.lambda( name, inp, rigel.apply(J.verilogSanitize(name.."_f"),f,gvalue), nil, generatorStr )
 end)
 
@@ -963,7 +965,25 @@ end)
 -- map f:RV(scheduleType)->RV(scheduleType)
 -- over an RV(scheduleType)[W,H] array
 modules.mapOverInterfaces = memoize(function( f, W_orig, H_orig, X )
+  err( rigel.isFunction(f), "first argument to mapOverInterfaces must be Rigel module, but is ",f )
+  err( f.inputType:isRV(), "mapOverInterfaces: fn input must be RV, but is: ",f.inputType )
+  err( f.outputType:isRV(), "mapOverInterfaces: fn output must be RV, but is: ",f.outputType )
 
+  local W = Uniform(W_orig):toNumber()
+  local H = Uniform(H_orig):toNumber()
+    
+  local G = require "generators.core"
+
+  return G.Function{ "MapOverInterfaces_"..f.name.."_"..tostring(W_orig).."_"..tostring(H_orig), types.Array2d( f.inputType, W_orig, H_orig ),
+    function(inp)
+      local outt = {}
+      for h=0,H-1 do
+        for w=0,W-1 do
+          table.insert(outt, f(rigel.selectStream( "str"..tostring(w).."_"..tostring(h), inp, w, h )) )
+        end
+      end
+      return rigel.concatArray2d( "moiout", outt, W, H )
+    end}
 end)
 
 -- f : ( A, B, ...) -> C (darkroom function)
@@ -1097,7 +1117,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
     local ty = fn.inputType:extractData()
     
     res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
-                     types.RV(types.Par(types.Array2d(ty,1,1))), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
+                     types.RV(types.Array2d(ty,1,1)), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
 
     assert( rigel.isPlainFunction(res) )
         

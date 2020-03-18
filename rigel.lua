@@ -346,7 +346,7 @@ functionGeneratorMT.__call=function(tab,...)
       return tab:complete(arglist)
     else
       -- not done yet, return curried generator
-      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.outputType, tab.rateList )
+      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.optimized )
       res.curriedArgs = arglist
       return res
     end
@@ -609,7 +609,6 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
     return functionStack[1]
   else
     local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
-    J.err( res.inputType == targetInputType, "convertInterface Fail wanted: ",targetInputType," returned: ",res.inputType )
     return res
   end
 end
@@ -661,6 +660,7 @@ function functionGeneratorFunctions:complete( arglist, X )
 
   if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil then -- if we don't know type, we can't lift
     fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
+    --J.err( fn.inputType == arglist.type, "convertInterface Fail wanted: ",arglist.type," returned: ",fn.inputType )
   end
   
   fn.generator = self
@@ -2480,7 +2480,7 @@ function darkroom.concatArray2d( name, t, W, H, X )
   return darkroom.newIR( r )
 end
 
-function darkroom.selectStream( name, input, i, X )
+function darkroom.selectStream( name, input, i, j, X )
 
   local r = {kind="selectStream"}
   
@@ -2494,10 +2494,16 @@ function darkroom.selectStream( name, input, i, X )
   end
 
   err( type(i)=="number", "i must be number")
+  err( j==nil or type(j)=="number", "j must be number or nil")
+  if j==nil then j=0 end
+
+  assert( j==0 ) -- NYI
+  
   err( darkroom.isIR(input), "input must be IR")
   err(X==nil,"selectStream: too many arguments")
 
   r.i=i
+  r.j=j
   r.loc = getloc()
   r.inputs={input}
   
