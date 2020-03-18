@@ -2516,40 +2516,59 @@ end)
 -- for legacy reasons, changerate returns stuff in column major order.
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
-C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
+C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X )
+  J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
-
+  J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
+  
   local generators = require "generators.core"
     
   local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
 
-  J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
+  J.err( outputItemsPerCyc==0 or (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
   assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
 
   local V2w, V2h = outputItemsPerCyc, 1
+  if outputItemsPerCyc==0 then V2h = 0 end
   if outputItemsPerCyc>Uniform(W):toNumber() then
     V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
   end
-
+    
   local inputType, outputType
   if Vw==W and Vh==H then
-    inputType = types.RV(types.Par(types.array2d(ty,Vw,Vh)))
+    inputType = types.RV( types.Array2d(ty,Vw,Vh) )
   else
-    inputType = types.RV(types.ParSeq(types.array2d(ty,Vw,Vh),W,H))
+    inputType = types.RV( types.Array2d(ty,W,H,Vw,Vh) )
   end
   
-  outputType = types.RV(types.ParSeq(types.array2d(ty,V2w,V2h),W,H))
+  outputType = types.RV( types.Array2d( ty, W, H, V2w, V2h ) )
 
   local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(types.Par(types.array2d(ty,Vw,Vh))),
-      function(inp)
-        return generators.ReshapeArray{{V2w,V2h}}(generators.Fmap{cr}(generators.ReshapeArray{{Vw*Vh,1}}(inp)))
-  end}
-  assert(R.isPlainFunction(res))
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),
+    function(inp)
+      local inprs
+      if Vw==0 and Vh==0 then
+        inprs = inp
+      else
+        inprs = generators.ReshapeArray{{Vw*Vh,1}}(inp)
+      end
+
+      local out = RM.liftHandshake(cr)(inprs)
+      
+      if outputItemsPerCyc>0 then
+        local res = RM.makeHandshake( C.cast( out.type:deInterface(), types.Array2d( out.type:deInterface().over, V2w, V2h )) )(out)
+        return res
+      else
+        return out
+      end
+    end}
+
+  assert( R.isPlainFunction(res) )
   assert( res.outputType:lower()==outputType:lower() )
   assert( res.inputType:lower()==inputType:lower() )
-  res.inputType=inputType
-  res.outputType=outputType
+  res.inputType = inputType
+  res.outputType = outputType
   
   return res
 end)

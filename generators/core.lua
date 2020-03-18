@@ -16,33 +16,35 @@ local __unnamedID = 0
 local generators = {}
 
 -- takes A to A[N]
-generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"rate","size"},{},
+-- to simplify things, we only take in fully parallel types
+generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size"},{},
 function(args)
-  local sz = R.Size(args.size)
-  local V = J.canonicalV( args.rate, sz )
+  local V = J.canonicalV( args.rate, args.size )
 
-  if V==sz then
-    return C.broadcast( args.T, sz[1], sz[2] )
+  local inputType = args.type:deSchedule()
+  
+  if V==args.size then
+    return C.broadcast( inputType, args.size[1], args.size[2] )
   elseif V:eq(0,0)==false then
-    local sizeW, sizeH = Uniform(sz[1]):toNumber(), Uniform(sz[2]):toNumber()
+    local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
     
     local seq = (sizeW*sizeH)/(V[1]*V[2])
     assert( type(seq)=="number")
     assert( type(V[2])=="number" and V[2]==1 ) -- NYI
     
-    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V[1],seq),RM.makeHandshake(C.broadcast(args.T,V[1],1)))
+    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
     
     -- hackity hack
-    res.outputType = T.RV(T.ParSeq(T.Array2d(args.T,V),args.size))
+    res.outputType = T.RV(T.ParSeq(T.Array2d(inputType,V),args.size))
     
     return res
   elseif V:eq(0,0) then
     -- hack: convert upsampleXSeq to write out a W,H size
     local res = generators.Function{
-      "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(sz[1]).."_Y"..tostring(sz[2]), SDF{1,1},
-      T.RV(T.Par(args.T)),function(inp) return RM.upsampleXSeq(args.T,0,sz[1]*sz[2],true)(inp) end}
+      "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(args.size[1]).."_Y"..tostring(args.size[2]), SDF{1,1},
+      T.RV(inputType),function(inp) return RM.upsampleXSeq(inputType,0,args.size[1]*args.size[2],true)(inp) end}
     
-    local ot = T.RV(T.Seq(T.Par(args.T),sz))
+    local ot = T.RV(T.Seq(T.Par(inputType),args.size))
     assert(ot:lower()==res.outputType:lower())
     res.outputType = ot
     return res
@@ -50,8 +52,7 @@ function(args)
     print("OPT",args.opt)
     assert(false)
   end
-end,
-P.DataType("T"))
+end,nil,false)
 
 
 generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"type","rate","size","number"},{},
@@ -183,7 +184,7 @@ function(args)
 end,
 types.Trigger )
 
-generators.FanOut = R.FunctionGenerator("core.FanOut",{"type"},{"number","size"},
+generators.FanOut = R.FunctionGenerator("core.FanOut",{"type","rate"},{"number","size"},
 function(args)
   local size = args.size
   if args.number~=nil then size={args.number,1} end
@@ -398,12 +399,14 @@ function(args)
 end,
 T.Trigger)
 
-generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate"},{},
+generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate","type"},{},
 function(args)
-  local V = canonicalV( args.rate, R.Size(args.size) )
+  local V = J.canonicalV( args.rate, args.size )
+
+  J.err( (V[1]==0 and V[2]==0) or V[2]==1, "NYI - Pos, vector width is not supported, V: ",V," inputType:",args.type," inputRate:",args.rate)
   local res = generators.Function{"Pos_With_Trig",T.RV(T.Par(T.Trigger)),args.rate,
-                                  function(inp)
-      local PS = RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+    function(inp)
+      local PS = RM.posSeq(args.size[1],args.size[2],V[1],nil,true,true)
       local trig = generators.Broadcast{{args.size[1],args.size[2]}}(inp)
       return generators.Fmap{PS}(trig)
     end}
@@ -583,10 +586,10 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.AXIReadBurstSeq = R.FunctionGenerator("core.AXIReadBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
+generators.AXIReadBurstSeq = R.FunctionGenerator("core.AXIReadBurstSeq",{"type1","string","size","rate","number","rigelFunction"},{},
 function(args)
   -- note: type here should be explicitly passed by the user! This is the type of data we want
-  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false, nil, args.rigelFunction )
+  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type1, args.number, false, nil, args.rigelFunction )
 end)
 
 generators.AXIWriteBurstSeq = R.FunctionGenerator("core.AXIWriteBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
@@ -706,8 +709,8 @@ end)
 -- change dims of array
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
 function(args)
-  J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: "..tostring(args.insize).." requested reshape: "..tostring(args.size[1])..","..tostring(args.size[2]) )
-  return C.cast(T.Array2d(args.T,args.insize),T.Array2d(args.T,args.size))
+  J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
+  return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
 end,
 types.array2d(P.DataType("T"),P.SizeValue("insize")) )
 
@@ -766,7 +769,8 @@ T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeV
 
 generators.Arbitrate = R.FunctionGenerator("core.Arbitrate",{"rate"},{},
 function(args)
-  return RM.arbitrate(args.sched,args.rate)
+  print("ARBITRATE", args.type, args.sched, args.rate )
+  return RM.arbitrate( args.sched, args.rate )
 end,
 T.array2d(P.ScheduleType("sched"),P.SizeValue("size")) )
 

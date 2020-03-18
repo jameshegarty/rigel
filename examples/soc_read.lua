@@ -22,9 +22,9 @@ PosToAddr = G.Function{ "PosToAddr", types.rv(types.Par(ar(u16,2))), SDF{1,1},
 
 ReadStencilDMA = G.Function{ "ReadStencilDMA", Handshake(types.Par(ar(u16,2))), SDF{1,9},
   function(loc)
-    local locb = G.BroadcastSeq{{3*3,1},0}(loc) -- duplicate input (x,y) 9 times
+    local locb = G.Broadcast{{3*3,1}}(loc) -- duplicate input (x,y) 9 times
     local addrStream = G.Map{PosToAddr}(locb)
-    local pxStream = G.Map{G.AXIRead{"frame_128.raw",128*64,noc.read,types.Uint(8)}}(addrStream)
+    local pxStream = G.Map{G.AXIRead{ "frame_128.raw", 128*64, noc.read, types.Uint(8) }}(addrStream)
     return G.Deser{3*3}(pxStream) -- Deserialize 9 reads into 9 element array
   end}
 

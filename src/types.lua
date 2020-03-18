@@ -211,6 +211,10 @@ function types.array2d( _type, ... )
 
   if R.isSize(size) and R.isSize(V) then
     err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
+
+    local veq0 = (Uniform(V[1]):eq(0)):And(Uniform(V[2]):eq(0))
+    local vmulgt0 = (Uniform(V[1])*Uniform(V[2])):gt(0)
+    err( (veq0:Or(vmulgt0)):assertAlwaysTrue(), "types.array2d, Vw*Vh must be >0, or Vw and Vh must both be 0, but are: ", V )
   end
 
   local var = false
@@ -1396,13 +1400,29 @@ function types.expectHandshake( A, er ) if types.isHandshake(A)==false then erro
 
 function TypeFunctions:optimize( rates )
   local SDF = require "sdf"
+
+  assert( SDF.isSDF(rates) )
   
   if self:is("Interface") then
     local recTy, recRates = self.over:optimize(rates)
     return self:replaceVar( "over", recTy ), recRates
   elseif self:isArray() then
     if self:isInterface() then
-      assert(false) -- NYI
+      print("OPTIMIZE",self,rates)
+      --assert(false) -- NYI
+      for k,v in ipairs(rates) do
+        err( SDF(v)==SDF(rates[1]),"Optimize an array of interfaces: all input rates must be the same! is:",v," but other is:",rates[1] )
+      end
+
+      local tty, trate = self.over:optimize(SDF(rates[1]))
+      local res = self:replaceVar("over", tty )
+
+      assert( self:deSchedule()==res:deSchedule() )
+
+      print("OPTOUT",res,trate,#rates,rr)
+      local rr = SDF(J.broadcast(trate[1],#rates))
+
+      return res, rr
     else
       assert(#rates==1)
       if rates:ge(SDF{1,1}) then

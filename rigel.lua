@@ -469,6 +469,8 @@ end
 function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   assert( X==nil )
 
+  assert( types.isType(targetInputType) )
+  err( SDF.isSDF(targetInputRate), "convertInterfaces SDF should be SDF but is: ", targetInputRate )
   --print("CONVERT_INTERFACE ",targetInputType,targetInputRate," TO ",fn.inputType,fn.sdfInput )
   
   local G = require "generators.core"
@@ -477,7 +479,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   
   local functionStack = {}
 
-  err( targetInputType:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do")
+  err( targetInputType:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputType," to ",fn.inputType)
   
   -- does this require a space-time conversion?
   local function reshape( fnType, targetType )
@@ -507,14 +509,11 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
         res.outputType = types.rv(fnType)
         
         res = RM.makeHandshake(res)
-      elseif fnType.V[1]*fnType.V[2] < targetType.V[1]*targetType.V[2] then
+      elseif fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
         -- we need to serialize
         res = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
                                         fnType.V[1]*fnType.V[2],
                                         targetType.size[1], targetType.size[2] )
-        
-        --print("RESHAPE target ", targetInputType, " IS ",r.inputType )
-        --table.insert( functionStack, r )
 
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
@@ -522,13 +521,12 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
         if fnType.V:eq(0,0) then
           res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
         else
-          print("NYI")
+          print("NYI - ", targetType, " to ", fnType )
           assert(false)
         end
       elseif fnType.V==targetType.V  and
         fnType:arrayOver()==targetType:arrayOver() then
         -- nothing to do!
-        --return nil
       else
         print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
         assert(false)
@@ -540,7 +538,6 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
           local out = {}
           for k,v in ipairs(targetType.list) do
-            --local 
             local i = darkroom.selectStream( "str"..k, tmp, k-1 )
             i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
             i = C.fifo( v, 128)(i)
@@ -576,9 +573,20 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   end
   
   if targetInputType:deInterface()~=fn.inputType:deInterface() then
-    local res = reshape( fn.inputType:deInterface(), targetInputType:deInterface() )
-    if res~=nil then
+    if targetInputType:isArray() then
+      err( fn.inputType:isArray(), "ConvertInterface NYI = if input is array of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+      err( targetInputType.size==fn.inputType.size, "ConvertInterface NYI = if input is array of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+      assert( targetInputType.over:is("Interface") )
+      
+      local res = RM.mapOverInterfaces( reshape( fn.inputType.over.over, targetInputType.over.over ), targetInputType.size[1], targetInputType.size[2] )
+      
       table.insert( functionStack, res )
+    else
+      err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
+      local res = reshape( fn.inputType.over, targetInputType.over )
+      if res~=nil then
+        table.insert( functionStack, res )
+      end
     end
   end
 
@@ -589,13 +597,11 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
 
   J.err( liftTargetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", liftTargetInputType )
   
-  --print("FINDLIFTS", fn.inputType, liftTargetInputType)
   local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
 
   if mod~=nil then
     table.insert( functionStack, mod )
   else
-    print("WARN: FIND LIFTS FAIL" )
     table.insert( functionStack, fn )
   end
 
@@ -642,7 +648,7 @@ function functionGeneratorFunctions:complete( arglist, X )
       assert( SDF.isSDF(a.rate) )
     end
     
-    err( self.inputType:isSupertypeOf( a.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced/optimized into type: ", a.type:deInterface())
+    err( self.inputType:isSupertypeOf( a.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced/optimized into type: ", a.type:deInterface()," optimized:",self.optimized)
 
     for k,v in pairs(newlist) do
       assert(a[k]==nil)
@@ -653,7 +659,7 @@ function functionGeneratorFunctions:complete( arglist, X )
   local fn = self.completeFn( a )
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
-  if self.requiredArgs.type~=nil then -- if we don't know type, we can't lift
+  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil then -- if we don't know type, we can't lift
     fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
   end
   

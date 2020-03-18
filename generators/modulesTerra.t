@@ -922,13 +922,18 @@ function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, 
 
     local DOSET
     if outputRate==0 then
-      assert(A:verilogBits()==0)
-      DOSET = quote end
+      assert( H==1 )
+      DOSET = quote data(out) = SELF.buffer[SELF.phase] end
     else
-      DOSET = quote for y=0,H do
-        for i=0,outputRate do (data(out))[i+y*outputRate] = SELF.buffer[i+SELF.phase*outputRate+y*inputRate] end
-      end end
+      DOSET = quote 
+        for y=0,H do
+          for i=0,outputRate do
+            (data(out))[i+y*outputRate] = SELF.buffer[i+SELF.phase*outputRate+y*inputRate]
+          end
+        end
+      end
     end
+
     terra ChangeRate.methods.process( [SELF], inp : &rigel.lower(res.inputType):toTerraType(), [out]  )
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", SELF.phase) end
       if SELF.phase==0 then

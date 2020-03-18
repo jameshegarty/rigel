@@ -960,6 +960,12 @@ modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
 end)
 
 
+-- map f:RV(scheduleType)->RV(scheduleType)
+-- over an RV(scheduleType)[W,H] array
+modules.mapOverInterfaces = memoize(function( f, W_orig, H_orig, X )
+
+end)
+
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 -- allowStateful: allow us to make stateful modules (use this more like 'duplicate')
@@ -1072,53 +1078,64 @@ end)
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
 -- scalar: is fn a scalar type?
-modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, scalar, X )
+modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
   err( X==nil, "mapParSeq: too many arguments" )
 
-  if scalar==nil then scalar=true end
-  assert(type(scalar)=="boolean")
-  
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)
 
   local res
 
   local G = require "generators.core"
-
+  local C = require "generators.examplescommon"
+  
   if fn.inputType:isRV() or fn.outputType:isRV() then
     -- special case
     err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1!")
 
-    assert(fn.inputType:extractSchedule():is("Par"))
+    assert( fn.inputType:deInterface():isData() )
     local ty = fn.inputType:extractData()
     
-    res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),types.RV(types.Par(types.Array2d(ty,1,1))),SDF{1,1},function(inp) return fn(G.Index{0}(inp)) end}
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
+                     types.RV(types.Par(types.Array2d(ty,1,1))), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
+
+    assert( rigel.isPlainFunction(res) )
+        
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
+    end
+    
+    if fn.outputType~=types.Interface() then
+      -- fix: technically, we want this to return a parseq, I guess? But this also works...
+      res.outputType = types.RV( types.Seq(fn.outputType.over,W_orig,H_orig) )
+    end
   else
     err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
     err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
 
 
     local fnMapped
-    if scalar then
-      fnMapped = modules.map(fn,Vw,Vh)
-    else
-      fnMapped = fn
-      assert(fn.inputType:extractData():isArray())
+    fnMapped = modules.map(fn,Vw,Vh)
+    
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
+                     fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
+
+    assert( rigel.isPlainFunction(res) )
+
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
     end
     
-    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
-    assert( rigel.isPlainFunction(res) )
+    if fn.outputType~=types.Interface() then
+      err( res.outputType:extractData():isArray(), "mapParSeq: internal error, function output type should be an array? but was: ",res.outputType)
+      res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
+    end
   end
   
-  -- hackity hack
-  if fn.inputType~=types.Interface() then
-    res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
-  end
-
-  if fn.outputType~=types.Interface() then
-    res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
-  end
-
   return res
 end)
  
@@ -2078,12 +2095,13 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
 end)
 
 -- tmuxed: should we return a tmuxed type? or just a raw Handshake stream (no ids). Default false
-modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
+modules.arbitrate = memoize(function( A, inputRates, tmuxed, X )
   err( types.isType(A), "A must be type, but is: "..tostring(A) )
   err( A:isSchedule(),"arbitrate: type must be schedule type" )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates) )
-  --rigel.expectBasic(A)
+  err( #inputRates>1, "arbitrate: must be passed more than 1 input rate! Or, there's nothing to arbitrate. Passed:",inputRates )
+  
   if tmuxed==nil then tmuxed=false end
   assert(type(tmuxed)=="boolean")
   err(X==nil,"arbitrate: too many arguments")
@@ -2803,6 +2821,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     
     if inputRate==0 then
       assert(framedH==1)
+      assert(H==1)
       res.inputType = types.rv(types.Seq(types.Par(A),framedW,framedH))
     elseif inputRate<framedW then
       assert(H==framedH)
@@ -2816,6 +2835,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
     if outputRate==0 then
       assert(framedH==1)
+      assert(H==1)
       res.outputType = types.rRvV(types.Seq(A,framedW,framedH))
     elseif outputRate<framedW then
       assert(framedH==H)
@@ -2828,6 +2848,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     end
   else
     if inputRate==0 then
+      assert(H==1)
       res.inputType = types.rv(types.Par(A))
     else
       res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
