@@ -1134,7 +1134,7 @@ end)
 -------------
 -- VRLoad: if true, make the load function be HandshakeVR
 -- includeSizeFn: should module have a size fn?
-C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
+C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, name, X)
   err( ty==nil or types.isType(ty), "C.fifo: type must be a type" )
   err( ty==nil or ty:isData() or ty:isSchedule(), "C.fifo: type must be data type or schedule type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
@@ -1157,13 +1157,13 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
     regs = {R.instantiate("f1",RM.triggerFIFO(ty))}
   else
     inp = R.input(R.Handshake(ty))
-    local FIFOMod = RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad)
+    local FIFOMod = RM.fifo( ty, size, nostall, nil, nil, nil, csimOnly, VRLoad, nil, nil, nil, name )
     regs = {R.instantiate("f1",FIFOMod)}
   end
   
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 
   return res
 end)
@@ -1890,6 +1890,11 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
   err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
+
+  if rate==nil then
+    rate = t[1].sdfInput
+  end
+  
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 

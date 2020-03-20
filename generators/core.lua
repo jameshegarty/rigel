@@ -120,7 +120,7 @@ generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
   return C.print( args.T, args.string )
 end,
-T.rv(T.Par(P.DataType("T"))) )
+P.DataType("T") )
 
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
@@ -203,9 +203,9 @@ function(args)
   end
 end)
 
-generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool"},
+generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},
 function(args)
-  return C.fifo( args.type:deInterface(), args.number, args.bool )
+  return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
 end )
   
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
@@ -362,14 +362,14 @@ function(a)
 end,
 T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
-
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
   local A = args.type:deInterface()
   if args.number>0 then A  = args.type:deInterface():arrayOver() end
   
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
-end)
+end,nil,false)
 
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
@@ -448,18 +448,18 @@ function(args)
                              args.rigelFunction.inputType:deInterface() ):complete(args)
 end)
 
-generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{},
+generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
   local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
 
   if args.size==args.V then
-    return RM.map( fn, args.size[1], args.size[2] )
+    return RM.map( fn, args.size[1], args.size[2], args.bool )
   elseif args.V:eq(R.Size(0,0)) then
     return RM.mapSeq( fn, args.size[1], args.size[2] )
   else -- parseq
-    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
+    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.bool )
   end
 
   assert(false)
@@ -539,12 +539,12 @@ function(args)
 end,
 types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
-
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},
 function(args)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]*args.number )
 end,
-types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))) )
+types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
 
 
 -- Number: this is the factor of # of parallel tokens we should concat.
@@ -619,7 +619,7 @@ function(args)
   J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
   return RM.lambda( args.string, input, out, args.instanceList )
-end)
+end,nil,false)
 
 --generators.Function = generators.Module
 
@@ -768,12 +768,13 @@ function(args)
 end,
 T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeValue("insize") ) )
 
+-- Note: we set optimize=false, because arbiters need to have total rates that are <1!
 generators.Arbitrate = R.FunctionGenerator("core.Arbitrate",{"rate"},{},
 function(args)
   print("ARBITRATE", args.type, args.sched, args.rate )
   return RM.arbitrate( args.sched, args.rate )
 end,
-T.array2d(P.ScheduleType("sched"),P.SizeValue("size")) )
+T.array2d(P.ScheduleType("sched"),P.SizeValue("size")), false )
 
 
 generators.Const = R.FunctionGenerator("core.Const",{"type1","number"},{},

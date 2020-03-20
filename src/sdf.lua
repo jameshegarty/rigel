@@ -28,6 +28,19 @@ function SDFFunctions:allLE1()
   return true
 end
 
+-- return true if all ratios in this rate are <= 1
+function SDFFunctions:allGE1()
+  for _,v in ipairs(self) do
+    local res = v[1]:ge(v[2]):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
+  end
+
+  return true
+end
+
 function SDFFunctions:nonzero()
   for _,v in ipairs(self) do
     local res = v[1]:gt(0):assertAlwaysTrue()
@@ -98,10 +111,11 @@ setmetatable(sdf,SDFTOPMT)
 -- memoize SDF so that they can work as generator keys
 local makeSDF = J.memoize(function(...)
   local rawarg = {...}
+
   local tab = {}
   local i=1
   while rawarg[i]~=nil do
-    table.insert(tab,{rawarg[1],rawarg[2]})
+    table.insert(tab,{rawarg[i],rawarg[i+1]})
     i = i + 2
   end
   

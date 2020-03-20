@@ -1345,8 +1345,11 @@ function MT.makeHandshake( res, f, tmuxRates, nilhandshake )
 end
 
 
-function MT.fifo( res, inputType, outputType, A, size, nostall, W, H, T, csimOnly, X )
+function MT.fifo( res, inputType, outputType, A, size, nostall, W, H, T, csimOnly, name, X )
   assert( rigel.isModule(res) )
+  assert( name==nil or type(name)=="string" )
+  if name==nil then name="UNNAMED" end
+
   assert(X==nil)
   local struct Fifo { fifo : simmodules.fifo(A:lower():toTerraType(),size,"fifofifo"), store_ready:bool, readyDownstream:bool }
   terra Fifo:reset() self.fifo:reset() end
@@ -1373,7 +1376,9 @@ function MT.fifo( res, inputType, outputType, A, size, nostall, W, H, T, csimOnl
       if DARKROOM_VERBOSE then cstdio.printf("FIFO %d LOAD, not ready. FIFO size: %d\n", size, self.fifo:size()) end
     end
   end
-  terra Fifo:store_calculateReady() self.store_ready = (self.fifo:full()==false) end
+  terra Fifo:store_calculateReady() 
+  --if self.fifo:full() then cstdio.printf("%s CLOGGED\n",name) end
+  self.store_ready = (self.fifo:full()==false) end
   terra Fifo:load_calculateReady(readyDownstream:bool) self.readyDownstream = readyDownstream end
 
   return MT.new( Fifo, res )

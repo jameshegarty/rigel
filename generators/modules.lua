@@ -1098,7 +1098,7 @@ end)
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
 -- scalar: is fn a scalar type?
-modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
+modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allowStateful, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
   err( X==nil, "mapParSeq: too many arguments" )
 
@@ -1137,7 +1137,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, X )
 
 
     local fnMapped
-    fnMapped = modules.map(fn,Vw,Vh)
+    fnMapped = modules.map( fn, Vw, Vh, allowStateful )
     
     res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
                      fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
@@ -3572,7 +3572,7 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, X )
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
   err( types.isType(A), "fifo: type must be type")
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
@@ -3586,6 +3586,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
   if VRStore==nil then VRStore=false end
   err( type(VRStore)=="boolean","fifo: VRStore should be boolean")
+  assert( dbgname==nil or type(dbgname)=="string" )
 
   if SDFRate==nil then SDFRate=SDF{1,1} end
   err( SDF.isSDF(SDFRate),"modules.fifo: SDFRate must be nil or SDF rate")
@@ -3656,7 +3657,7 @@ endmodule
 ]]
 
     local mod =  modules.liftVerilogModule(name, vstr, {load=loadRigelFn,store=storeRigelFn}, true)
-    if terralib~=nil then mod.terraModule = MT.fifo(storeRigelFn.inputType,loadRigelFn.outputType,A,2,nostall,W,H,T,csimOnly) end
+    if terralib~=nil then mod.terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType, A, 2, nostall, W, H, T, csimOnly, dbname ) end
 return mod
   else
     local bytes = (size*A:verilogBits())/8
@@ -3736,7 +3737,7 @@ return mod
 
     local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true), makeSystolic=makeSystolic }
 
-    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
+    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly, dbgname ) end
 
 return res
   end

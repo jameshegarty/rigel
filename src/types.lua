@@ -501,7 +501,7 @@ function types.checkExplicitCast(from, to, ast)
     return true -- allow padding
   elseif to.kind=="bits" or from.kind=="bits" then
     -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
-    err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
+    err( from:verilogBits()==to:verilogBits(), "Error, casting ",from," to ",to,", types must have same number of bits")
     return true
   elseif from:isArray() and to:isArray() and from:arrayOver()==to:arrayOver() then
     -- we do allow you to explicitly cast arrays of different shapes but the same total size
@@ -1401,9 +1401,11 @@ function types.expectHandshake( A, er ) if types.isHandshake(A)==false then erro
 function TypeFunctions:optimize( rates )
   local SDF = require "sdf"
 
-  assert( SDF.isSDF(rates) )
-  
-  if self:is("Interface") then
+  err( SDF.isSDF(rates), "type: optimize, rates should be SDF but is: ",rates )
+
+  if self:isInil() then
+    return self, rates -- nothing to do
+  elseif self:is("Interface") then
     local recTy, recRates = self.over:optimize(rates)
     return self:replaceVar( "over", recTy ), recRates
   elseif self:isArray() then
@@ -1421,8 +1423,7 @@ function TypeFunctions:optimize( rates )
 
       return res, rr
     else
-      assert(#rates==1)
-      if rates:ge(SDF{1,1}) then
+      if rates:allGE1() then
         -- we're already at 100%, nothing we can do, just return
         return self, rates
       else
@@ -1448,18 +1449,28 @@ function TypeFunctions:optimize( rates )
       end
     end
   elseif self:isTuple() then
-    if self:isInterface() then
-      assert(false) -- NYI
-    else
-      local newlist = {}
-      local rout
-      for _,v in ipairs(self.list) do
-        local recTy, recRate = v:optimize( rates )
-        rout = recRate
-        table.insert( newlist, recTy )
+--    if self:isInterface() then
+--      assert(false) -- NYI
+--    else
+    local newlist = {}
+    local rout = {}
+    
+    for k,v in ipairs(self.list) do
+      local rte = rates
+      if self:isInterface() then
+        rte = rates[k]
       end
-      return types.tuple(newlist), rout
-    end    
+      
+      local recTy, recRate = v:optimize( SDF(rte) )
+      table.insert( rout, recRate[1] )
+      table.insert( newlist, recTy )
+    end
+    
+    if self:isInterface()==false then
+      rout = rout[1]
+    end
+      
+    return types.tuple(newlist), SDF(rout)
   end
 
   return self, rates

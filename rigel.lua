@@ -314,6 +314,7 @@ functionGeneratorMT.__call=function(tab,...)
     local rfn = tab:complete(arglist)
 
     err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+    --err( rfn.sdfInput==arg.rate, "Failed to find a conversion for fn '",rfn.name,"' with input rate:",rfn.sdfInput," to convert to rate:",arg.rate)
     
     return rfn(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
@@ -483,7 +484,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   
   -- does this require a space-time conversion?
   local function reshape( fnType, targetType )
-    assert( fnType:isSchedule() )
+    err( fnType:isSchedule(), "reshape: input should be schedule type, but is: ",fnType )
     assert( targetType:isSchedule() )
 
     local res
@@ -540,7 +541,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
           for k,v in ipairs(targetType.list) do
             local i = darkroom.selectStream( "str"..k, tmp, k-1 )
             i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
-            i = C.fifo( v, 128)(i)
+            i = C.fifo( v, 128, nil, nil, nil, nil, "convertInterface_"..tostring(k))(i)
 
             local rec = reshape( fnType.list[k], v )
 
@@ -548,7 +549,9 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
               -- this is OK: means no change
               table.insert( out, i )
             else
-              table.insert( out, rec(i) )
+              local recres = rec(i)
+--              C.fifo( recres.type:deInterface(), 128, nil, nil, nil, nil, "convertInterface_out_"..tostring(k))(recres)
+              table.insert( out, recres )
               assert( out[#out].type:deInterface()==fnType.list[k] )
             end
           end
@@ -560,6 +563,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
           for k,v in ipairs( fnType.list) do table.insert(ptList,types.RV(v)) end
           return RM.packTuple( ptList )(rrr)
         end}
+      print(res)
     end
 
     if res~=nil then
@@ -581,6 +585,35 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
       local res = RM.mapOverInterfaces( reshape( fn.inputType.over.over, targetInputType.over.over ), targetInputType.size[1], targetInputType.size[2] )
       
       table.insert( functionStack, res )
+    elseif targetInputType:isTuple() then
+      err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+      err( #targetInputType.list==#fn.inputType.list, "ConvertInterface NYI = if input is tuple of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+      assert( targetInputType.list[1]:is("Interface") )
+
+      local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
+        function(inp)
+          local out = {}
+          for k,v in ipairs(targetInputType.list) do
+            local i = darkroom.selectStream( "str"..k, inp, k-1 )
+
+            local rec = reshape( fn.inputType.list[k].over, v.over )
+
+            if rec==nil then
+              -- this is OK: means no change
+              table.insert( out, i )
+            else
+              local recres = rec(i)
+              table.insert( out, recres )
+              assert( out[#out].type==fn.inputType.list[k] )
+            end
+          end
+
+          local rrr = darkroom.concat(out)
+          
+          return rrr
+        end}
+
+      table.insert( functionStack, res )
     else
       err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
       local res = reshape( fn.inputType.over, targetInputType.over )
@@ -591,12 +624,16 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
   end
 
   local liftTargetInputType = targetInputType
+  local liftTargetInputRate = targetInputRate
   if #functionStack>0 then
     liftTargetInputType = functionStack[#functionStack].outputType
+    liftTargetInputRate = functionStack[#functionStack].sdfOutput
   end
 
   J.err( liftTargetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", liftTargetInputType )
-  
+
+  --J.err( liftTargetInputRate==fn.sdfInput, "Reshape failed: function has input rate: ",fn.sdfInput," but reshaped returned rate: ", liftTargetInputRate )
+
   local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
 
   if mod~=nil then
@@ -638,14 +675,14 @@ function functionGeneratorFunctions:complete( arglist, X )
     a[k] = v
   end
 
+  if self.optimized and arglist.rate~=nil then
+    a.type, a.rate = arglist.type:optimize( arglist.rate )
+    assert( types.isType(a.type) )
+    assert( SDF.isSDF(a.rate) )
+  end
+
   if self.inputType~=nil and self.inputType~=types.Unknown then
     local newlist = {}
-
-    if self.optimized then
-      a.type, a.rate = arglist.type:optimize( arglist.rate )
-      assert( types.isType(a.type) )
-      assert( SDF.isSDF(a.rate) )
-    end
     
     err( self.inputType:isSupertypeOf( a.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced/optimized into type: ", a.type:deInterface()," optimized:",self.optimized)
 
@@ -963,7 +1000,7 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
     end
   end
 
-  err( consistantRatio, "SDFTransfer: ratio is not consistant, Input rate: "..tostring(Isdf).." module rate: "..tostring(self.sdfInput) )
+  err( consistantRatio, "SDFTransfer: ratio is not consistant going into function '",self.name,"', Input rate: ",Isdf," function rate: ",self.sdfInput )
   
   local res = {}
   for i=1,#self.sdfOutput do
@@ -1855,8 +1892,8 @@ function darkroomIRFunctions:calcSDF( )
       
       if DARKROOM_VERBOSE then
         print("CONCAT",self.name)
-        for k,v in ipairs(res[2]) do
-          print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+        for k,v in ipairs(res) do
+          print("        concat["..tostring(k).."] ",self.name,"RATE",SDF(v))
         end
       end
     end
