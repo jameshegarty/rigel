@@ -15,52 +15,36 @@ local __unnamedID = 0
 
 local generators = {}
 
-local function canonicalV( rate, size, X )
-  J.err(R.isSize(size),"canonicalV: expected size, but is: ",size)
-  local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
-  local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
-  local V = (sizeW*sizeH)/seq
-  
-  if V<1 then
-    return 0
-  elseif V==1 then
-    return 1
-  else
-    V = math.ceil(V)
-    while (sizeW*sizeH)%V~=0 do
-      V = V + 1
-    end
-    
-    return V
-  end
-end
-
 -- takes A to A[N]
-generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"rate","size"},{},
+-- to simplify things, we only take in fully parallel types
+generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size"},{},
 function(args)
-  local sz = R.Size(args.size)
-  local V = canonicalV( args.rate, sz )
+  local V = J.canonicalV( args.rate, args.size )
 
-  if V==sz[1]*sz[2] then
-    return C.broadcast( args.T, sz[1], sz[2] )
-  elseif V>0 then
-    local sizeW, sizeH = Uniform(sz[1]):toNumber(), Uniform(sz[2]):toNumber()
+  local inputType = args.type:deSchedule()
+  
+  if V==args.size then
+    return C.broadcast( inputType, args.size[1], args.size[2] )
+  elseif V:eq(0,0)==false then
+    local sizeW, sizeH = Uniform(args.size[1]):toNumber(), Uniform(args.size[2]):toNumber()
     
-    local seq = (sizeW*sizeH)/V
+    local seq = (sizeW*sizeH)/(V[1]*V[2])
+    assert( type(seq)=="number")
+    assert( type(V[2])=="number" and V[2]==1 ) -- NYI
     
-    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(args.T,V,seq),RM.makeHandshake(C.broadcast(args.T,V,1)))
+    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
     
     -- hackity hack
-    res.outputType = T.RV(T.ParSeq(T.Array2d(args.T,V),args.size))
+    res.outputType = T.RV(T.ParSeq(T.Array2d(inputType,V),args.size))
     
     return res
-  elseif V==0 then
+  elseif V:eq(0,0) then
     -- hack: convert upsampleXSeq to write out a W,H size
     local res = generators.Function{
-      "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(sz[1]).."_Y"..tostring(sz[2]), SDF{1,1},
-      T.RV(T.Par(args.T)),function(inp) return RM.upsampleXSeq(args.T,0,sz[1]*sz[2],true)(inp) end}
+      "UpsampleXSeq_HACK_"..tostring(args.T).."_X"..tostring(args.size[1]).."_Y"..tostring(args.size[2]), SDF{1,1},
+      T.RV(inputType),function(inp) return RM.upsampleXSeq(inputType,0,args.size[1]*args.size[2],true)(inp) end}
     
-    local ot = T.RV(T.Seq(T.Par(args.T),sz))
+    local ot = T.RV(T.Seq(T.Par(inputType),args.size))
     assert(ot:lower()==res.outputType:lower())
     res.outputType = ot
     return res
@@ -68,8 +52,7 @@ function(args)
     print("OPT",args.opt)
     assert(false)
   end
-end,
-P.DataType("T"))
+end,nil,false)
 
 
 generators.BroadcastSeq = R.FunctionGenerator("core.BroadcastSeq",{"type","rate","size","number"},{},
@@ -105,40 +88,40 @@ generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
 function(args)
   return C.cast(args.T,types.uint(args.T.precision))
 end,
-T.rv(T.Par(P.BitsType("T"))),
-T.rv(T.Par(P.UintType("TypeOut"))))
+T.rv(T.Par(P.BitsType("T")) ) )
+
 
 -- convert Uint to Int
 generators.UtoI = R.FunctionGenerator("core.UtoI",{},{},
 function(args)
   return C.cast(args.T,types.Int(args.T.precision))
 end,
-T.rv(T.Par(P.UintType("T"))),
-T.rv(T.Par(P.IntType("TypeOut"))))
+T.rv(T.Par(P.UintType("T"))) )
+
 
 -- convert Int to Uint
 generators.ItoU = R.FunctionGenerator("core.ItoU",{},{},
 function(args)
   return C.cast(args.T,types.Uint(args.T.precision))
 end,
-T.rv(T.Par(P.IntType("T"))),
-T.rv(T.Par(P.UintType("TypeOut"))))
+T.rv(T.Par(P.IntType("T"))) )
+
 
 generators.LUT = R.FunctionGenerator("core.LUT",{"type1","luaFunction"},{},
 function(args)
   local vals = J.map(J.range(0,math.pow(2,args.T:verilogBits())-1),args.luaFunction)
   return RM.lut(args.T,args.type1,vals)
 end,
-T.rv(T.Par(P.UintType("T"))),
-T.rv(T.Par(P.DataType("TypeOut"))))
+T.rv(T.Par(P.UintType("T"))) )
+
 
 
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
   return C.print( args.T, args.string )
 end,
-T.rv(T.Par(P.DataType("T"))),
-T.rv(T.Par(P.DataType("T"))))
+P.DataType("T") )
+
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -154,9 +137,9 @@ end)
 
 generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end, P.NumberType("T") )
 generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, P.NumberType("T") )
-generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))) )
+generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))) )
 
-generators.Index = R.FunctionGenerator("core.Index",{"type"},{"number","size"},
+generators.Index = R.FunctionGenerator("core.Index",{"type","rate"},{"number","size"},
 function(a)
   local ty = a.type:deInterface()
   J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
@@ -192,8 +175,8 @@ generators.TriggeredCounter = R.FunctionGenerator("core.TriggeredCounter",{"numb
 function(args)
   return RM.triggeredCounter( args.T, args.number, nil, true )
 end,
-types.RV(types.Par(P.DataType("T"))),
-types.RV(types.Seq(types.Par(P.DataType("T")),P.SizeValue("size") )) )
+types.RV(types.Par(P.DataType("T"))) )
+
 
 generators.TriggerBroadcast = R.FunctionGenerator("core.TriggerBroadcast",{"number"},{},
 function(args)
@@ -201,7 +184,7 @@ function(args)
 end,
 types.Trigger )
 
-generators.FanOut = R.FunctionGenerator("core.FanOut",{"type"},{"number","size"},
+generators.FanOut = R.FunctionGenerator("core.FanOut",{"type","rate"},{"number","size"},
 function(args)
   local size = args.size
   if args.number~=nil then size={args.number,1} end
@@ -220,9 +203,9 @@ function(args)
   end
 end)
 
-generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool"},
+generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},
 function(args)
-  return C.fifo( args.type:deInterface(), args.number, args.bool )
+  return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
 end )
   
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
@@ -253,18 +236,18 @@ end)
 -- async: 0 cycle delay
 generators.ArgMax = R.FunctionGenerator("core.ArgMax", {}, {"async"},
 function(a) return C.argmin( a.idx, a.T, a.async, true ) end,
-T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})),
-T.rv(T.Par(T.tuple{P.DataType("idx"),P.NumberType("T")})) )
+T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})) )
+
 
 generators.ArgMin = R.FunctionGenerator("core.ArgMin", {}, {"async"},
 function(a) return C.argmin( a.idx, a.T, a.async, true ) end,
-T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})),
-T.rv(T.Par(T.tuple{P.DataType("idx"),P.NumberType("T")})) )
+T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})) )
+
 
 generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision ) end,
-T.rv(T.Par(P.IntType("T"))),
 T.rv(T.Par(P.IntType("T"))) )
+
 
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
@@ -306,7 +289,7 @@ end)
 
 generators.Abs = R.FunctionGenerator("core.Abs",{},{"async"},
 function(a) return C.Abs( a.T, a.async ) end,
-T.rv(T.Par(P.NumberType("T"))), T.rv(T.Par(P.NumberType("T"))))
+T.rv(T.Par(P.NumberType("T"))) )
 
 generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"async"},
 function(args)
@@ -320,10 +303,7 @@ function(args)
 end,
 P.SumType("opt",
           {types.rv(types.Par(types.tuple{types.bool(),types.bool()})),
-           types.rv(types.Par(types.tuple{P.UintType("T"),P.UintType("T")}))}),
-P.SumType("opt",
-          {types.rv(types.Par(types.bool())),
-           types.rv(types.Par(P.UintType("T")))}) )
+           types.rv(types.Par(types.tuple{P.UintType("T"),P.UintType("T")}))}) )
 
 generators.Not = R.FunctionGenerator("core.Not",{"type","rate"},{"bool"},
 function(args)
@@ -382,14 +362,14 @@ function(a)
 end,
 T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
-
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
 function(args)
   local A = args.type:deInterface()
   if args.number>0 then A  = args.type:deInterface():arrayOver() end
   
   return RM.cropSeq(A,args.size[1],args.size[2],args.number,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
-end)
+end,nil,false)
 
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
@@ -419,12 +399,14 @@ function(args)
 end,
 T.Trigger)
 
-generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate"},{},
+generators.Pos = R.FunctionGenerator("core.Pos",{"size","rate","type"},{},
 function(args)
-  local V = canonicalV( args.rate, R.Size(args.size) )
+  local V = J.canonicalV( args.rate, args.size )
+
+  J.err( (V[1]==0 and V[2]==0) or V[2]==1, "NYI - Pos, vector width is not supported, V: ",V," inputType:",args.type," inputRate:",args.rate)
   local res = generators.Function{"Pos_With_Trig",T.RV(T.Par(T.Trigger)),args.rate,
-                                  function(inp)
-      local PS = RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+    function(inp)
+      local PS = RM.posSeq(args.size[1],args.size[2],V[1],nil,true,true)
       local trig = generators.Broadcast{{args.size[1],args.size[2]}}(inp)
       return generators.Fmap{PS}(trig)
     end}
@@ -442,10 +424,7 @@ function(args)
   return RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
 end,
 P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Trigger,P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}),
-P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Array2d(T.Uint(16),2),P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(T.Seq(T.Par(T.Array2d(T.Uint(16),2)),P.SizeValue("size")))})
-)
+                 types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}) )
 
 -- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
@@ -469,17 +448,18 @@ function(args)
                              args.rigelFunction.inputType:deInterface() ):complete(args)
 end)
 
-generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{},
+generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
+
   local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
-  
+
   if args.size==args.V then
-    return RM.map( fn, args.size[1], args.size[2] )
+    return RM.map( fn, args.size[1], args.size[2], args.bool )
   elseif args.V:eq(R.Size(0,0)) then
     return RM.mapSeq( fn, args.size[1], args.size[2] )
   else -- parseq
-    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
+    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.bool )
   end
 
   assert(false)
@@ -521,101 +501,51 @@ generators.Ser = R.FunctionGenerator("core.Ser",{"number"},{},
 function(args)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.number, true, args.size[1], args.size[2] )
 end,
-P.SumType("opt",{T.rV(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size"))))}),
-P.SumType("opt",{T.rRV(P.ScheduleType("S"))}))
+P.SumType("opt",{T.rV(T.Par(T.Array2d(P.DataType("T"),P.SizeValue("size"))))}) )
 
-local SerToWidthArrayToScalar = J.memoize(function(ty,size)
-    local res = generators.Function{
-      "SerToWidth_Convert_Array_to_scalar_"..tostring(ty), SDF{1,1},
-      T.rV(T.Par(T.array2d(ty,1,1))),
-      function(inp)
-        return generators.Index{0}(inp)
-    end}
-    assert(R.isPlainFunction(res))
-
-    res.inputType = types.rV(types.ParSeq(T.array2d(ty,1,1),size))
-    res.outputType = types.rRV(types.Seq(T.Par(ty),size))
-
-    return res
-end)
-
--- for legacy reasons, changerate returns stuff in column major order.
--- instead, do row major
--- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
-local ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W,H )
-  J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
-  local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
-
-  J.err( (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
-  assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
-
-  local V2w, V2h = outputItemsPerCyc, 1
-  if outputItemsPerCyc>Uniform(W):toNumber() then
-    V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
-  end
-
-  local inputType, outputType
-  if Vw==W and Vh==H then
-    inputType = types.RV(types.Par(T.array2d(ty,Vw,Vh)))
-  else
-    inputType = types.RV(types.ParSeq(T.array2d(ty,Vw,Vh),W,H))
-  end
-  
-  outputType = types.RV(types.ParSeq(T.array2d(ty,V2w,V2h),W,H))
-
-  local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(types.Par(T.array2d(ty,Vw,Vh))),
-      function(inp)
-        return generators.ReshapeArray{{V2w,V2h}}(generators.Fmap{cr}(generators.ReshapeArray{{Vw*Vh,1}}(inp)))
-  end}
-  assert(R.isPlainFunction(res))
-  assert( res.outputType:lower()==outputType:lower() )
-  assert( res.inputType:lower()==inputType:lower() )
-  res.inputType=inputType
-  res.outputType=outputType
-  
-  return res
-end)
 
 -- serialize to a particular vector width ("number")
 -- width is the number of items to produce per cycle (not literally the width)
 generators.SerToWidth = R.FunctionGenerator("core.SerToWidth",{"number","type","rate"},{},
 function(args)
-  J.err( math.floor(args.number)==args.number, "SerToWidth: width is not an integer, is: ",args.number) 
+  J.err( math.floor(args.number)==args.number, "SerToWidth: width is not an integer, is: ",args.number)
+
+  -- b/c we are doing explicit reshapes here, we can't use default behavior of class
+  local Tparam = T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size"))
+  local a = {}
+  assert( Tparam:isSupertypeOf( args.type:deInterface(), a, "" ) )
+
   if args.number==0 then
-    return R.FunctionGenerator("core.SerToWidth",{"number","type","rate"},{},
-      function(a)
-        if a.V[1]*a.V[2]==1 and args.number==0 then
-          -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
-          return SerToWidthArrayToScalar( a.T, a.size )
-        else
-          return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
-        end
-      end,
-      T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ):complete(args)
+    if a.V[1]*a.V[2]==1 and args.number==0 then
+      -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
+      return SerToWidthArrayToScalar( a.T, a.size )
+    else
+      print("CR1",a.V,a.size)
+      return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
+    end
   else
     return R.FunctionGenerator("core.SerToWidth",{"number","type","rate"},{},
       function(a)
         return ChangeRateRowMajor( a.T, a.V[1], a.V[2], args.number, a.size[1], a.size[2] )
-      end,
-      T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) ):complete(args)
+      end):complete(args)
   end
 end)
 
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
 function(args)
-  J.err(args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size")
+  J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]/args.number )
 end,
-types.array2d(P.DataType("T"),P.SizeValue("size")) )
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
-
+-- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},
 function(args)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]*args.number )
 end,
-types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))),
-types.rRV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))) )
+types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
+
 
 -- Number: this is the factor of # of parallel tokens we should concat.
 -- so [1,4;4,4} with factor 2 would end up [2,4;4,4}
@@ -641,8 +571,8 @@ function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
   return RM.fwriteSeq(args.string,args.T,args.filenameVerilog,true)
 end,
-T.rv(T.Par(P.DataType("T"))),
-T.rv(T.Par(P.DataType("T"))))
+T.rv(T.Par(P.DataType("T"))) )
+
 
 generators.Fread = R.FunctionGenerator( "core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)
@@ -657,10 +587,10 @@ function(args)
   return C.fassert(args.string,args.type)
 end)
 
-generators.AXIReadBurstSeq = R.FunctionGenerator("core.AXIReadBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
+generators.AXIReadBurstSeq = R.FunctionGenerator("core.AXIReadBurstSeq",{"type1","string","size","rate","number","rigelFunction"},{},
 function(args)
   -- note: type here should be explicitly passed by the user! This is the type of data we want
-  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type, args.number, false, nil, args.rigelFunction )
+  return SOC.readBurst(args.string, args.size[1], args.size[2], args.type1, args.number, false, nil, args.rigelFunction )
 end)
 
 generators.AXIWriteBurstSeq = R.FunctionGenerator("core.AXIWriteBurstSeq",{"type","string","size","rate","number","rigelFunction"},{},
@@ -689,7 +619,7 @@ function(args)
   J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
   
   return RM.lambda( args.string, input, out, args.instanceList )
-end)
+end,nil,false)
 
 --generators.Function = generators.Module
 
@@ -734,6 +664,7 @@ function(a)
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
+--[=[
 generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
 function(args)
   local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
@@ -774,12 +705,13 @@ function(args)
   -- if ratio >=1, don't do anything:
   return generators.Identity:complete(args)
 end)
+]=]
 
 -- change dims of array
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
 function(args)
-  J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: "..tostring(args.insize).." requested reshape: "..tostring(args.size[1])..","..tostring(args.size[2]) )
-  return C.cast(T.Array2d(args.T,args.insize),T.Array2d(args.T,args.size))
+  J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
+  return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
 end,
 types.array2d(P.DataType("T"),P.SizeValue("insize")) )
 
@@ -836,11 +768,13 @@ function(args)
 end,
 T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeValue("insize") ) )
 
+-- Note: we set optimize=false, because arbiters need to have total rates that are <1!
 generators.Arbitrate = R.FunctionGenerator("core.Arbitrate",{"rate"},{},
 function(args)
-  return RM.arbitrate(args.sched,args.rate)
+  print("ARBITRATE", args.type, args.sched, args.rate )
+  return RM.arbitrate( args.sched, args.rate )
 end,
-T.array2d(P.ScheduleType("sched"),P.SizeValue("size")) )
+T.array2d(P.ScheduleType("sched"),P.SizeValue("size")), false )
 
 
 generators.Const = R.FunctionGenerator("core.Const",{"type1","number"},{},

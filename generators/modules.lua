@@ -60,6 +60,7 @@ modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSD
   err( type(name)=="string", "first argument to compose must be name of function")
   err( rigel.isFunction(f), "compose: second argument should be rigel module")
   err( rigel.isPlainFunction(g) or inputType~=nil, "compose: third argument should be plain rigel function, but is: ",g)
+
   if inputType~=nil then
     err( types.isType(inputType), "compose: inputType should be type, but is: "..tostring(inputType) )
     err( SDF.isSDF(inputSDF),"compose: inputSDF should be SDF")
@@ -72,6 +73,7 @@ modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSD
 
   local inp = rigel.input( inputType, inputSDF )
   local gvalue = rigel.apply(J.verilogSanitize(name.."_g"),g,inp)
+
   return modules.lambda( name, inp, rigel.apply(J.verilogSanitize(name.."_f"),f,gvalue), nil, generatorStr )
 end)
 
@@ -960,6 +962,30 @@ modules.pad = memoize(function( A, W, H, L, R, B, Top, Value )
 end)
 
 
+-- map f:RV(scheduleType)->RV(scheduleType)
+-- over an RV(scheduleType)[W,H] array
+modules.mapOverInterfaces = memoize(function( f, W_orig, H_orig, X )
+  err( rigel.isFunction(f), "first argument to mapOverInterfaces must be Rigel module, but is ",f )
+  err( f.inputType:isRV(), "mapOverInterfaces: fn input must be RV, but is: ",f.inputType )
+  err( f.outputType:isRV(), "mapOverInterfaces: fn output must be RV, but is: ",f.outputType )
+
+  local W = Uniform(W_orig):toNumber()
+  local H = Uniform(H_orig):toNumber()
+    
+  local G = require "generators.core"
+
+  return G.Function{ "MapOverInterfaces_"..f.name.."_"..tostring(W_orig).."_"..tostring(H_orig), types.Array2d( f.inputType, W_orig, H_orig ),
+    function(inp)
+      local outt = {}
+      for h=0,H-1 do
+        for w=0,W-1 do
+          table.insert(outt, f(rigel.selectStream( "str"..tostring(w).."_"..tostring(h), inp, w, h )) )
+        end
+      end
+      return rigel.concatArray2d( "moiout", outt, W, H )
+    end}
+end)
+
 -- f : ( A, B, ...) -> C (darkroom function)
 -- map : ( f, A[n], B[n], ...) -> C[n]
 -- allowStateful: allow us to make stateful modules (use this more like 'duplicate')
@@ -1072,53 +1098,64 @@ end)
 -- lift a fn:DataType->DataType to a fn:DataType[V;S}->fn:DataType[V;S}
 -- basically the same as regular map, but for parseq
 -- scalar: is fn a scalar type?
-modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, scalar, X )
+modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allowStateful, X )
   err( rigel.isPlainFunction(fn), "mapParSeq: first argument to map must be a plain Rigel function, but is ",fn )
   err( X==nil, "mapParSeq: too many arguments" )
 
-  if scalar==nil then scalar=true end
-  assert(type(scalar)=="boolean")
-  
   local Vw,Vh,W,H = Uniform(Vw_orig), Uniform(Vh_orig), Uniform(W_orig), Uniform(H_orig)
 
   local res
 
   local G = require "generators.core"
-
+  local C = require "generators.examplescommon"
+  
   if fn.inputType:isRV() or fn.outputType:isRV() then
     -- special case
     err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1!")
 
-    assert(fn.inputType:extractSchedule():is("Par"))
+    assert( fn.inputType:deInterface():isData() )
     local ty = fn.inputType:extractData()
     
-    res = G.Module{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),types.RV(types.Par(types.Array2d(ty,1,1))),SDF{1,1},function(inp) return fn(G.Index{0}(inp)) end}
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
+                     types.RV(types.Array2d(ty,1,1)), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
+
+    assert( rigel.isPlainFunction(res) )
+        
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
+    end
+    
+    if fn.outputType~=types.Interface() then
+      -- fix: technically, we want this to return a parseq, I guess? But this also works...
+      res.outputType = types.RV( types.Seq(fn.outputType.over,W_orig,H_orig) )
+    end
   else
     err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
     err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
 
 
     local fnMapped
-    if scalar then
-      fnMapped = modules.map(fn,Vw,Vh)
-    else
-      fnMapped = fn
-      assert(fn.inputType:extractData():isArray())
+    fnMapped = modules.map( fn, Vw, Vh, allowStateful )
+    
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
+                     fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
+
+    assert( rigel.isPlainFunction(res) )
+
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
     end
     
-    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),fnMapped.inputType,SDF{1,1},function(inp) return fnMapped(inp) end}
-    assert( rigel.isPlainFunction(res) )
+    if fn.outputType~=types.Interface() then
+      err( res.outputType:extractData():isArray(), "mapParSeq: internal error, function output type should be an array? but was: ",res.outputType)
+      res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
+    end
   end
   
-  -- hackity hack
-  if fn.inputType~=types.Interface() then
-    res.inputType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
-  end
-
-  if fn.outputType~=types.Interface() then
-    res.outputType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
-  end
-
   return res
 end)
  
@@ -2078,12 +2115,13 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
 end)
 
 -- tmuxed: should we return a tmuxed type? or just a raw Handshake stream (no ids). Default false
-modules.arbitrate = memoize(function(A,inputRates,tmuxed,X)
+modules.arbitrate = memoize(function( A, inputRates, tmuxed, X )
   err( types.isType(A), "A must be type, but is: "..tostring(A) )
   err( A:isSchedule(),"arbitrate: type must be schedule type" )
   err( type(inputRates)=="table", "inputRates must be table")
   assert( SDFRate.isSDFRate(inputRates) )
-  --rigel.expectBasic(A)
+  err( #inputRates>1, "arbitrate: must be passed more than 1 input rate! Or, there's nothing to arbitrate. Passed:",inputRates )
+  
   if tmuxed==nil then tmuxed=false end
   assert(type(tmuxed)=="boolean")
   err(X==nil,"arbitrate: too many arguments")
@@ -2774,7 +2812,7 @@ end)
 modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
   err( types.isType(A), "changeRate: A should be a type")
   err( type(H)=="number", "changeRate: H should be number")
-  err( H>0,"changeRate: H must be >0")
+  err( H>0,"changeRate: H must be >0, but is: ",H)
   err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
   err( inputRate>=0, "changeRate: inputRate must be >=0")
   err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
@@ -2803,6 +2841,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     
     if inputRate==0 then
       assert(framedH==1)
+      assert(H==1)
       res.inputType = types.rv(types.Seq(types.Par(A),framedW,framedH))
     elseif inputRate<framedW then
       assert(H==framedH)
@@ -2816,6 +2855,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
     if outputRate==0 then
       assert(framedH==1)
+      assert(H==1)
       res.outputType = types.rRvV(types.Seq(A,framedW,framedH))
     elseif outputRate<framedW then
       assert(framedH==H)
@@ -2828,6 +2868,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     end
   else
     if inputRate==0 then
+      assert(H==1)
       res.inputType = types.rv(types.Par(A))
     else
       res.inputType = types.rv(types.Par(types.array2d(A,inputRate,H)))
@@ -3531,7 +3572,7 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, X )
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
   err( types.isType(A), "fifo: type must be type")
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
@@ -3545,6 +3586,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
   if VRStore==nil then VRStore=false end
   err( type(VRStore)=="boolean","fifo: VRStore should be boolean")
+  assert( dbgname==nil or type(dbgname)=="string" )
 
   if SDFRate==nil then SDFRate=SDF{1,1} end
   err( SDF.isSDF(SDFRate),"modules.fifo: SDFRate must be nil or SDF rate")
@@ -3615,7 +3657,7 @@ endmodule
 ]]
 
     local mod =  modules.liftVerilogModule(name, vstr, {load=loadRigelFn,store=storeRigelFn}, true)
-    if terralib~=nil then mod.terraModule = MT.fifo(storeRigelFn.inputType,loadRigelFn.outputType,A,2,nostall,W,H,T,csimOnly) end
+    if terralib~=nil then mod.terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType, A, 2, nostall, W, H, T, csimOnly, dbname ) end
 return mod
   else
     local bytes = (size*A:verilogBits())/8
@@ -3695,7 +3737,7 @@ return mod
 
     local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true), makeSystolic=makeSystolic }
 
-    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly) end
+    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly, dbgname ) end
 
 return res
   end

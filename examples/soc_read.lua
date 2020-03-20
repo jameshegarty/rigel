@@ -22,10 +22,13 @@ PosToAddr = G.Function{ "PosToAddr", types.rv(types.Par(ar(u16,2))), SDF{1,1},
 
 ReadStencilDMA = G.Function{ "ReadStencilDMA", Handshake(types.Par(ar(u16,2))), SDF{1,9},
   function(loc)
-    local locb = G.BroadcastSeq{{3*3,1},0}(loc) -- duplicate input (x,y) 9 times
+    loc = G.FIFO{128}(loc)
+    local locb = G.Broadcast{{3*3,1}}(loc) -- duplicate input (x,y) 9 times
     local addrStream = G.Map{PosToAddr}(locb)
-    local pxStream = G.Map{G.AXIRead{"frame_128.raw",128*64,noc.read,types.Uint(8)}}(addrStream)
-    return G.Deser{3*3}(pxStream) -- Deserialize 9 reads into 9 element array
+    local pxStream = G.Map{G.AXIRead{ "frame_128.raw", 128*64, noc.read, types.Uint(8) }}(addrStream)
+    local res = G.Deser{3*3}(pxStream) -- Deserialize 9 reads into 9 element array
+    res = G.FIFO{128}(res)
+    return res
   end}
 
 ConvTop = G.Function{ "ConvTop", SDF{1,30*14*9}, types.RV(types.Par(types.Trigger)), 
@@ -37,5 +40,6 @@ ConvTop = G.Function{ "ConvTop", SDF{1,30*14*9}, types.RV(types.Par(types.Trigge
     local fin = G.Map{G.Reduce{G.Add{R.Async}}}(shifted)
     return G.AXIWriteBurst{"out/soc_read",noc.write}(fin)
   end}
+print(ConvTop)
 
 harness({regs.start, ConvTop, regs.done},nil,{regs})

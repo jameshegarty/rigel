@@ -34,7 +34,6 @@ if terralib~=nil then ts=".terra" end
 
 local ConvInner = R.FunctionGenerator("ConvInner",{"type","rate"},{},
 function(args)
-  print("CONVINNER",args.type,args.rate)
   local ty = args.type
   if ty:deInterface():isData()==false then
     ty = T.RV(ty:deInterface())
@@ -42,11 +41,8 @@ function(args)
   
   local res =  G.Function{"ConvolveInner_"..tostring(ty), ty, args.rate,
     function(inp)
-      print("INN",inp.type)
       local out = G.Map{Mul}(inp)
-      print("INT",out.type)
       local res = Reduce{Add{R.Async}}(out)
-      print("RED",res.type)
       local sft = Rshift{8}(res)
       return RemoveMSBs{24}(sft)
   end}
@@ -64,11 +60,7 @@ local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
     local pad = Pad{{8,8,2,1}}(res)
     local trig = G.Broadcast{R.Size(Uniform(1920+8+8),1080+3)}(ii1)
     local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
-    coeffs = G.Reshape(coeffs)
-    coeffs = G.Reshape(coeffs)
     local st = Stencil{{-3,0,-3,0}}(pad)
-    st = G.Reshape(st)
-    st = G.Reshape(st)
     st = G.Map{G.Map{AddMSBs{24}}}(st)
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)

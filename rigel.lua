@@ -314,6 +314,7 @@ functionGeneratorMT.__call=function(tab,...)
     local rfn = tab:complete(arglist)
 
     err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+    --err( rfn.sdfInput==arg.rate, "Failed to find a conversion for fn '",rfn.name,"' with input rate:",rfn.sdfInput," to convert to rate:",arg.rate)
     
     return rfn(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
@@ -346,7 +347,7 @@ functionGeneratorMT.__call=function(tab,...)
       return tab:complete(arglist)
     else
       -- not done yet, return curried generator
-      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.outputType, tab.rateList )
+      local res = darkroom.FunctionGenerator( tab.name, tab.requiredArgs, tab.optArgs, tab.completeFn, tab.inputType, tab.optimized )
       res.curriedArgs = arglist
       return res
     end
@@ -464,13 +465,196 @@ function functionGeneratorFunctions:requiresArg(arg)
   return (self.requiredArgs[arg]~=nil or self.optArgs[arg]~=nil) and (self.curriedArgs[arg]==nil)
 end
 
+-- top level function that implements logic to convert a fn to a given type.
+-- If this fails, it just returns fn
+function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
+  assert( X==nil )
+
+  assert( types.isType(targetInputType) )
+  err( SDF.isSDF(targetInputRate), "convertInterfaces SDF should be SDF but is: ", targetInputRate )
+  --print("CONVERT_INTERFACE ",targetInputType,targetInputRate," TO ",fn.inputType,fn.sdfInput )
+  
+  local G = require "generators.core"
+  local C = require "generators.examplescommon"
+  local RM = require "generators.modules"
+  
+  local functionStack = {}
+
+  err( targetInputType:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputType," to ",fn.inputType)
+  
+  -- does this require a space-time conversion?
+  local function reshape( fnType, targetType )
+    err( fnType:isSchedule(), "reshape: input should be schedule type, but is: ",fnType )
+    assert( targetType:isSchedule() )
+
+    local res
+    
+    if fnType:isArray() then
+      -- if not an array, nothing we can do!
+      if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
+        --table.insert( functionStack, RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size )) )
+        res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
+      elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
+        --assert(false)  -- NYI
+
+        res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
+          function(inp)
+            return C.broadcast( targetType:extractData(), 1, 1 )(inp)
+          end}
+
+        assert( darkroom.isPlainFunction(res) )
+        assert( res.inputType:extractData() == targetType:extractData() )
+        assert( res.outputType:extractData() == fnType:extractData() )
+
+        res.inputType = types.rv(targetType)
+        res.outputType = types.rv(fnType)
+        
+        res = RM.makeHandshake(res)
+      elseif fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
+        -- we need to serialize
+        res = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+                                        fnType.V[1]*fnType.V[2],
+                                        targetType.size[1], targetType.size[2] )
+
+      elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
+        -- recurse
+        
+        if fnType.V:eq(0,0) then
+          res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+        else
+          print("NYI - ", targetType, " to ", fnType )
+          assert(false)
+        end
+      elseif fnType.V==targetType.V  and
+        fnType:arrayOver()==targetType:arrayOver() then
+        -- nothing to do!
+      else
+        print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
+        assert(false)
+      end
+    elseif fnType:isTuple() then
+      assert( targetType:isTuple() and #fnType.list==#targetType.list )
+      res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
+        function(inp)
+          local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
+          local out = {}
+          for k,v in ipairs(targetType.list) do
+            local i = darkroom.selectStream( "str"..k, tmp, k-1 )
+            i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
+            i = C.fifo( v, 128, nil, nil, nil, nil, "convertInterface_"..tostring(k))(i)
+
+            local rec = reshape( fnType.list[k], v )
+
+            if rec==nil then
+              -- this is OK: means no change
+              table.insert( out, i )
+            else
+              local recres = rec(i)
+              table.insert( out, recres )
+              assert( out[#out].type:deInterface()==fnType.list[k] )
+            end
+          end
+
+          local rrr = darkroom.concat(out)
+          
+          local ptList = {}
+          for k,v in ipairs( fnType.list) do table.insert(ptList,types.RV(v)) end
+          return RM.packTuple( ptList )(rrr)
+        end}
+    end
+
+    if res~=nil then
+      err( res.inputType==types.RV(targetType), "convertInterface: conversion function input type should have been: ",types.RV(targetType)," but was: ",res.inputType )
+      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType )
+    else
+      err( targetType==fnType, "convertInterface: conversion function returned noop, but should have been conversion from ",targetType," to ",fnType )
+    end
+    
+    return res
+  end
+  
+  if targetInputType:deInterface()~=fn.inputType:deInterface() then
+    if targetInputType:isArray() then
+      err( fn.inputType:isArray(), "ConvertInterface NYI = if input is array of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+      err( targetInputType.size==fn.inputType.size, "ConvertInterface NYI = if input is array of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+      assert( targetInputType.over:is("Interface") )
+      
+      local res = RM.mapOverInterfaces( reshape( fn.inputType.over.over, targetInputType.over.over ), targetInputType.size[1], targetInputType.size[2] )
+      
+      table.insert( functionStack, res )
+    elseif targetInputType:isTuple() then
+      err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+      err( #targetInputType.list==#fn.inputType.list, "ConvertInterface NYI = if input is tuple of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+      assert( targetInputType.list[1]:is("Interface") )
+
+      local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
+        function(inp)
+          local out = {}
+          for k,v in ipairs(targetInputType.list) do
+            local i = darkroom.selectStream( "str"..k, inp, k-1 )
+
+            local rec = reshape( fn.inputType.list[k].over, v.over )
+
+            if rec==nil then
+              -- this is OK: means no change
+              table.insert( out, i )
+            else
+              local recres = rec(i)
+              table.insert( out, recres )
+              assert( out[#out].type==fn.inputType.list[k] )
+            end
+          end
+
+          local rrr = darkroom.concat(out)
+          
+          return rrr
+        end}
+
+      table.insert( functionStack, res )
+    else
+      err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
+      local res = reshape( fn.inputType.over, targetInputType.over )
+      if res~=nil then
+        table.insert( functionStack, res )
+      end
+    end
+  end
+
+  local liftTargetInputType = targetInputType
+  local liftTargetInputRate = targetInputRate
+  if #functionStack>0 then
+    liftTargetInputType = functionStack[#functionStack].outputType
+    liftTargetInputRate = functionStack[#functionStack].sdfOutput
+  end
+
+  J.err( liftTargetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", liftTargetInputType )
+
+  --J.err( liftTargetInputRate==fn.sdfInput, "Reshape failed: function has input rate: ",fn.sdfInput," but reshaped returned rate: ", liftTargetInputRate )
+
+  local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
+
+  if mod~=nil then
+    table.insert( functionStack, mod )
+  else
+    table.insert( functionStack, fn )
+  end
+
+  if #functionStack==1 then
+    return functionStack[1]
+  else
+    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
+    return res
+  end
+end
+
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
 function functionGeneratorFunctions:complete( arglist, X )
   assert( X==nil )
   
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
-  
+
+
   if self:checkArgs(arglist)==false then
     print("Function generator '"..self.name.."' is missing arguments!")
     for k,v in pairs(self.requiredArgs) do
@@ -479,29 +663,38 @@ function functionGeneratorFunctions:complete( arglist, X )
     assert(false)
   end
 
-  for k,v in pairs(self.curriedArgs) do
-    err( arglist[k]==nil or arglist[k]==v, ":complete() ",self.name,", value in arglist was already in curried args? k ",k," v ",v," prev ",arglist[k] )
-    arglist[k] = v
-  end
-
+  -- don't mutate input!
   local a = {}
   for k,v in pairs(arglist) do a[k]=v end
 
-  if self.inputType~=nil and self.inputType~=types.Unknown then
-    local newlist = {}
-    err( self.inputType:isSupertypeOf( arglist.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced into type: ", arglist.type:deInterface())
-
-    for k,v in pairs(newlist) do a[k]=v end
+  for k,v in pairs(self.curriedArgs) do
+    err( arglist[k]==nil or arglist[k]==v, ":complete() ",self.name,", value in arglist was already in curried args? k ",k," v ",v," prev ",arglist[k] )
+    a[k] = v
   end
 
-  local fn = self.completeFn(a)
+  if self.optimized and arglist.rate~=nil and arglist.type~=nil then
+    a.type, a.rate = arglist.type:optimize( arglist.rate )
+    assert( types.isType(a.type) )
+    assert( SDF.isSDF(a.rate) )
+  end
+
+  if self.inputType~=nil and self.inputType~=types.Unknown then
+    local newlist = {}
+    
+    err( self.inputType:isSupertypeOf( a.type:deInterface(), newlist, "" ), "Input type to generator '",self.name,"' is incorrect!, expected: ",self.inputType," passed:", arglist.type, " which is deinterfaced/optimized into type: ", a.type:deInterface()," optimized:",self.optimized)
+
+    for k,v in pairs(newlist) do
+      assert(a[k]==nil)
+      a[k] = v
+    end
+  end
+
+  local fn = self.completeFn( a )
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
-  if self.requiredArgs.type~=nil then -- if we don't know type, we can't lift
-    local mod = findLifts( self.name, fn, arglist.type, fn.inputType, fn.outputType )
-
-    --err( requireTypeMatch==false or mod~=nil, "Failed to find a lift for fn '",fn.name,"' with \ninput type:'",fn.inputType,"' \noutput type '",fn.outputType,"' \nto convert to type:'",arglist.type,"'")
-    if mod~=nil then fn = mod end
+  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil then -- if we don't know type, we can't lift
+    fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
+    --J.err( fn.inputType == arglist.type, "convertInterface Fail wanted: ",arglist.type," returned: ",fn.inputType )
   end
   
   fn.generator = self
@@ -511,7 +704,8 @@ function functionGeneratorFunctions:complete( arglist, X )
   return fn
 end
 
-function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, outputType, rateList, X )
+-- optimized: should input type be optimized before being passed to completeFn?
+function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, inputType, optimized, X )
   assert(X==nil)
   err( type(name)=="string", "FunctionGenerator: name must be string, but is: "..tostring(name) )
   err( type(requiredArgs)=="table", "FunctionGenerator: requiredArgs must be table, but is: "..tostring(requiredArgs) )
@@ -525,22 +719,19 @@ function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, in
   for k,v in pairs(optArgs) do J.err( type(k)=="string", "FunctionGenerator: optArgs must be set of strings" ) end
   err( type(completeFn)=="function", "FunctionGenerator: completeFn must be lua function" )
 
+  if optimized==nil then optimized=true end
+  err( type(optimized)=="boolean", "FunctionGenerator: 'optimized' should be boolean, but is: ", optimized )
+  
   if inputType==nil or inputType==types.Unknown then
     inputType=types.Unknown
-    outputType=types.Unknown
   else
     err(types.isType(inputType) or P.isParam(inputType),"FunctionGenerator, type should be type, but is: "..tostring(inputType))
-    --err(types.isType(outputType) or P.isParam(outputType),"FunctionGenerator, type should be type, but is: "..tostring(outputType))
 
-    --if inputType.kind~="SumType" then inputType = P.SumType("______SUMopt",{inputType}) end
-    --if outputType.kind~="SumType" then outputType = P.SumType("______SUMopt",{outputType}) end
-
-    -- for the parametric generators, we need to know type/rate, so make sure this is included, even if user doesn't care
     requiredArgs.type=true
     requiredArgs.rate=true
   end
 
-  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, outputType=outputType, rateList=rateList }, functionGeneratorMT )
+  return setmetatable( {name=name, requiredArgs=requiredArgs, optArgs=optArgs, completeFn=completeFn, curriedArgs={}, inputType=inputType, optimized=optimized }, functionGeneratorMT )
 end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
@@ -806,7 +997,7 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
     end
   end
 
-  err( consistantRatio, "SDFTransfer: ratio is not consistant, Input rate: "..tostring(Isdf).." module rate: "..tostring(self.sdfInput) )
+  err( consistantRatio, "SDFTransfer: ratio is not consistant going into function '",self.name,"', Input rate: ",Isdf," function rate: ",self.sdfInput )
   
   local res = {}
   for i=1,#self.sdfOutput do
@@ -1698,8 +1889,8 @@ function darkroomIRFunctions:calcSDF( )
       
       if DARKROOM_VERBOSE then
         print("CONCAT",self.name)
-        for k,v in ipairs(res[2]) do
-          print("        concat["..tostring(k).."] converged=",v,"RATE",res[1][k][1],res[1][k][2])
+        for k,v in ipairs(res) do
+          print("        concat["..tostring(k).."] ",self.name,"RATE",SDF(v))
         end
       end
     end
@@ -2294,8 +2485,12 @@ function darkroom.concat( name, t, X )
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
+
+  for k,v in ipairs(t) do
+    err( darkroom.isIR(v),"concat input ",k-1," is not a darkroom value, is: ",v);
+    table.insert( r.inputs, v )
+  end
   
-  J.map(t, function(n,k) err(darkroom.isIR(n),"tuple input is not a darkroom value"); table.insert(r.inputs,n) end)
   return darkroom.newIR( r )
 end
 
@@ -2319,7 +2514,7 @@ function darkroom.concatArray2d( name, t, W, H, X )
   return darkroom.newIR( r )
 end
 
-function darkroom.selectStream( name, input, i, X )
+function darkroom.selectStream( name, input, i, j, X )
 
   local r = {kind="selectStream"}
   
@@ -2333,10 +2528,16 @@ function darkroom.selectStream( name, input, i, X )
   end
 
   err( type(i)=="number", "i must be number")
+  err( j==nil or type(j)=="number", "j must be number or nil")
+  if j==nil then j=0 end
+
+  assert( j==0 ) -- NYI
+  
   err( darkroom.isIR(input), "input must be IR")
   err(X==nil,"selectStream: too many arguments")
 
   r.i=i
+  r.j=j
   r.loc = getloc()
   r.inputs={input}
   

@@ -211,6 +211,10 @@ function types.array2d( _type, ... )
 
   if R.isSize(size) and R.isSize(V) then
     err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
+
+    local veq0 = (Uniform(V[1]):eq(0)):And(Uniform(V[2]):eq(0))
+    local vmulgt0 = (Uniform(V[1])*Uniform(V[2])):gt(0)
+    err( (veq0:Or(vmulgt0)):assertAlwaysTrue(), "types.array2d, Vw*Vh must be >0, or Vw and Vh must both be 0, but are: ", V )
   end
 
   local var = false
@@ -497,7 +501,7 @@ function types.checkExplicitCast(from, to, ast)
     return true -- allow padding
   elseif to.kind=="bits" or from.kind=="bits" then
     -- we can basically cast anything to/from raw bits. Type Safety?!?!?!
-    err( from:verilogBits()==to:verilogBits(), "Error, casting "..tostring(from).." to "..tostring(to)..", types must have same number of bits")
+    err( from:verilogBits()==to:verilogBits(), "Error, casting ",from," to ",to,", types must have same number of bits")
     return true
   elseif from:isArray() and to:isArray() and from:arrayOver()==to:arrayOver() then
     -- we do allow you to explicitly cast arrays of different shapes but the same total size
@@ -750,7 +754,7 @@ function TypeFunctions:replaceVar(k,v)
   elseif self:is("Interface") then
     res = types.Interface(cpy.over,cpy.R,cpy.V,cpy.I,cpy.r,cpy.v,cpy.VRmode)
   elseif self:is("array") then
-    res = types.array2d(cpy.over,cpy.size,cpy.V)
+    res = types.array2d( cpy.over, cpy.size, cpy.V, cpy.var )
   elseif self:isNamed() then
     res = types.named(cpy.name,cpy.structure,cpy.generator,cpy.params)
   else
@@ -844,8 +848,8 @@ function TypeFunctions:isSchedule()
   if self:isData() then return true end
   if self:isInterface() then return false end
   
-  if self.kind=="array" and self.size~=self.V then
-    return true
+  if self:isArray() then
+    return self.V~=self.size or self.over:isSchedule()
   elseif self.kind=="tuple" then
     for k,v in ipairs(self.list) do
       if v:isSchedule() then return true end
@@ -1394,6 +1398,84 @@ function types.expectV( A, er ) if types.isV(A)==false then error(er or "type sh
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
 function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
 
+function TypeFunctions:optimize( rates )
+  local SDF = require "sdf"
+
+  err( SDF.isSDF(rates), "type: optimize, rates should be SDF but is: ",rates )
+
+  if self:isInil() then
+    return self, rates -- nothing to do
+  elseif self:is("Interface") then
+    local recTy, recRates = self.over:optimize(rates)
+    return self:replaceVar( "over", recTy ), recRates
+  elseif self:isArray() then
+    if self:isInterface() then
+      for k,v in ipairs(rates) do
+        err( SDF(v)==SDF(rates[1]),"Optimize an array of interfaces: all input rates must be the same! is:",v," but other is:",rates[1] )
+      end
+
+      local tty, trate = self.over:optimize(SDF(rates[1]))
+      local res = self:replaceVar("over", tty )
+
+      assert( self:deSchedule()==res:deSchedule() )
+
+      local rr = SDF(J.broadcast(trate[1],#rates))
+
+      return res, rr
+    else
+      if rates:allGE1() then
+        -- we're already at 100%, nothing we can do, just return
+        return self, rates
+      else
+        if self.V:eq(0,0) then
+          -- we've done all we can here, try to recurse
+          local recTy, recRates = self.over:optimize( rates )
+          return self:replaceVar( "over", recTy ), recRates
+        else
+          -- try to optimize
+          local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size )
+
+          if V:eq(0,0) then
+            -- remainder was <1, so try to recurse
+            local tmp = self:replaceVar( "V", V )
+            -- this is safe, b/c we know self.V>0 from branch above!
+            local recTy, recRate = tmp.over:optimize( rates*SDF{self.V[1]*self.V[2],1} )
+            return tmp:replaceVar( "over", recTy ), recRate
+          else
+            -- we're done, we've bottomed out
+            return self:replaceVar( "V", V ), SDF{1,1}
+          end
+        end
+      end
+    end
+  elseif self:isTuple() then
+--    if self:isInterface() then
+--      assert(false) -- NYI
+--    else
+    local newlist = {}
+    local rout = {}
+    
+    for k,v in ipairs(self.list) do
+      local rte = rates
+      if self:isInterface() then
+        rte = rates[k]
+      end
+      
+      local recTy, recRate = v:optimize( SDF(rte) )
+      table.insert( rout, recRate[1] )
+      table.insert( newlist, recTy )
+    end
+    
+    if self:isInterface()==false then
+      rout = rout[1]
+    end
+      
+    return types.tuple(newlist), SDF(rout)
+  end
+
+  return self, rates
+end
+
 function TypeFunctions:lower() return types.lower(self) end
 
 -- extract takes the darkroom, and returns the type that should be used by the terra/systolic process function
@@ -1479,11 +1561,15 @@ function TypeFunctions:deInterface() return types.deInterface(self) end
 
 -- strip out any interface bits
 types.deInterface = J.memoize(function(ty)
+  assert( types.isType(ty) )
+
   local res
   if ty:isInterface()==false then
     res = ty
   elseif ty:is("Interface") then
     res = ty.over
+
+    if res==nil then res = types.null() end -- inil
   elseif ty:isTuple() then -- InterfaceTuple
     local newlist = {}
     for k,v in ipairs(ty.list) do newlist[k] = v:deInterface() end
@@ -1502,6 +1588,7 @@ end)
 function TypeFunctions:deSchedule() return types.deSchedule(self) end
 
 -- strip out any schedule bits
+-- NOT THE SAME AS extractData/lower! This returns the fully parallel arrays, not vector-width arrays
 -- deSchedule strips out interface stuff as well
 types.deSchedule = J.memoize(function(ty)
   ty = ty:deInterface()
@@ -1509,7 +1596,17 @@ types.deSchedule = J.memoize(function(ty)
   local res
   if ty:isData() then
     res = ty
+  elseif ty:isArray() then
+    res = ty:replaceVar("over", ty.over:deSchedule() )
+    res = res:replaceVar("V", ty.size )
+  elseif ty:isTuple() then
+    local reslist = {}
+    for _,v in ipairs(ty.list) do
+      table.insert( reslist, v:deSchedule() )
+    end
+    res = types.tuple(reslist)
   else
+    print("NYI: deSchedule of type ", ty)
     assert(false)
   end
 

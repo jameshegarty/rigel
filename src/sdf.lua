@@ -1,15 +1,37 @@
 local SDFRate = require "sdfrate"
 local J = require "common"
 
-local SDFFunctions = {}
-local SDFMT = {__index=SDFFunctions}
-
 local sdf = {}
+
+local SDFFunctions = {}
+local SDFMT = {
+  __index=SDFFunctions,
+  __mul = function(lhs,rhs)
+    assert( sdf.isSDF(lhs) )
+    assert( sdf.isSDF(rhs) )
+    assert( #rhs==1 ) -- NYI
+    return sdf(SDFRate.multiply( lhs, rhs[1][1], rhs[1][2] ))
+  end
+}
+
 
 -- return true if all ratios in this rate are <= 1
 function SDFFunctions:allLE1()
   for _,v in ipairs(self) do
     local res = v[1]:le(v[2]):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
+  end
+
+  return true
+end
+
+-- return true if all ratios in this rate are <= 1
+function SDFFunctions:allGE1()
+  for _,v in ipairs(self) do
+    local res = v[1]:ge(v[2]):assertAlwaysTrue()
 
     if res==false then
       return false
@@ -89,10 +111,11 @@ setmetatable(sdf,SDFTOPMT)
 -- memoize SDF so that they can work as generator keys
 local makeSDF = J.memoize(function(...)
   local rawarg = {...}
+
   local tab = {}
   local i=1
   while rawarg[i]~=nil do
-    table.insert(tab,{rawarg[1],rawarg[2]})
+    table.insert(tab,{rawarg[i],rawarg[i+1]})
     i = i + 2
   end
   
@@ -113,10 +136,8 @@ SDFTOPMT.__call = function(tab,arg,X)
   
   local uarg = {}
   for _,v in ipairs(arg) do
-    --J.err(Uniform(v[2]):gt(0):assertAlwaysTrue(),"SDF: denominator should not be 0!")
-    --J.err( (Uniform(v[1])/Uniform(v[2])):gt(0):assertAlwaysTrue(),"SDF: rate is 0?")
     local n,d = SDFRate.simplify(Uniform(v[1]),Uniform(v[2]))
-    --table.insert(uarg,{n,d})
+
     table.insert(uarg,n)
     table.insert(uarg,d)
   end

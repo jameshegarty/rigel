@@ -1134,7 +1134,7 @@ end)
 -------------
 -- VRLoad: if true, make the load function be HandshakeVR
 -- includeSizeFn: should module have a size fn?
-C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
+C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, name, X)
   err( ty==nil or types.isType(ty), "C.fifo: type must be a type" )
   err( ty==nil or ty:isData() or ty:isSchedule(), "C.fifo: type must be data type or schedule type, but is: "..tostring(ty) )
   err( type(size)=="number" and size>0, "C.fifo: size must be number > 0" )
@@ -1157,13 +1157,13 @@ C.fifo = memoize(function(ty,size,nostall,csimOnly,VRLoad,includeSizeFn,X)
     regs = {R.instantiate("f1",RM.triggerFIFO(ty))}
   else
     inp = R.input(R.Handshake(ty))
-    local FIFOMod = RM.fifo(ty,size,nostall,nil,nil,nil,csimOnly,VRLoad)
+    local FIFOMod = RM.fifo( ty, size, nostall, nil, nil, nil, csimOnly, VRLoad, nil, nil, nil, name )
     regs = {R.instantiate("f1",FIFOMod)}
   end
   
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
 
   return res
 end)
@@ -1322,12 +1322,12 @@ end)
 
 
 -- takes A to A[T] by duplicating the input
-C.broadcast = memoize(function(A,W,H,X)
+C.broadcast = memoize(function( A, W, H, X )
   err( types.isType(A), "C.broadcast: A must be type A")
   err( types.isBasic(A), "C.broadcast: type should be basic, but is: "..tostring(A))
-  err( type(W)=="number", "broadcast: W should be number")
+  err( type(W)=="number", "broadcast: W should be number, but is: ",W)
   if H==nil then return C.broadcast(A,W,1) end
-  err( type(H)=="number", "broadcast: H should be number")
+  err( type(H)=="number", "broadcast: H should be number, but is: ",H)
   assert(X==nil)
   
   local OT = types.array2d(A, W, H)
@@ -1423,7 +1423,6 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
 
   local niType, noType
   if framed then
-    print("CROPHELPERFR",res.inputType,res.outputType)
     if T==0 then
       niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
       noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
@@ -1437,7 +1436,6 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
 
     res.inputType = niType
     res.outputType = noType
-    print("CROPHELPDONE")
   end
 
   return res
@@ -1602,7 +1600,7 @@ end)
 -- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )
   err( types.isType(inputType),"slice first argument must be type" )
-  err( inputType:isData() ,"C.slice: type must be data type, but is:"..tostring(inputType) )
+  err( inputType:isSchedule() ,"C.slice: type must be schedule type, but is:"..tostring(inputType) )
   err( type(idxLow)=="number", "slice idxLow must be number")
   err( type(idxHigh)=="number", "slice idxHigh must be number")
   err( index==nil or type(index)=="boolean", "index must be bool")
@@ -1620,6 +1618,10 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       function() return CT.sliceTup(inputType,OT,idxLow) end,
       "C.slice")
 
+    -- hack: type may be a schedule type
+    res.inputType = types.rv(inputType)
+    res.outputType = types.rv(OT)
+    
     return res
   elseif inputType:isArray() then
     local W = (inputType:arrayLength())[1]
@@ -1640,7 +1642,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
       OT = types.array2d( inputType:arrayOver(), idxHigh-idxLow+1, idyHigh-idyLow+1 )
     end
 
-    return modules.lift( J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index)), inputType, OT, 0,
+    local nam = J.sanitize("slice_type"..tostring(inputType).."_xl"..idxLow.."_xh"..idxHigh.."_yl"..idyLow.."_yh"..idyHigh.."_index"..tostring(index))
+    local res = modules.lift( nam, inputType:extractData(), OT:extractData(), 0,
       function(systolicInput)
         local systolicOutput = S.tuple( J.map( J.range2d(idxLow,idxHigh,idyLow,idyHigh), function(i) return S.index( systolicInput, i[1], i[2] ) end ) )
         systolicOutput = S.cast( systolicOutput, OT )
@@ -1659,6 +1662,12 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
         end
       end,
       "C.slice")
+
+    -- hack: type may be a schedule type
+    res.inputType = types.rv(inputType)
+    res.outputType = types.rv(OT)
+    
+    return res
   else
     err(false, "C.index input must be tuple or array but is "..tostring(inputType))
   end
@@ -1666,7 +1675,7 @@ end)
 
 function C.index( inputType, idx, idy, X )
   err( types.isType(inputType), "first input to index must be a type, but is: "..tostring(inputType) )
-  err( inputType:isData(),"C.index: type must be data type, but is: "..tostring(inputType) )
+  err( inputType:isSchedule(),"C.index: type must be schedule type, but is: "..tostring(inputType) )
   err( type(idx)=="number", "index idx must be number")
   assert(X==nil)
   if idy==nil then idy=0 end
@@ -1879,6 +1888,11 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
   err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
+
+  if rate==nil then
+    rate = t[1].sdfInput
+  end
+  
   local inp = R.input( t[1].inputType, rate )
   local out = inp
 
@@ -2484,5 +2498,82 @@ C.FilterSeqPar = J.memoize(function( ty, N, rate, framed, framedW, framedH, X )
   
   return res
 end)
+
+C.SerToWidthArrayToScalar = J.memoize(function(ty,size)
+  local generators = require "generators.core"
   
+  local res = generators.Function{
+    "SerToWidth_Convert_Array_to_scalar_"..tostring(ty).."_"..tostring(size), SDF{1,1},
+    types.rV(types.Par(types.array2d(ty,1,1))),
+    function(inp)
+      return generators.Index{0}(inp)
+  end}
+  assert(R.isPlainFunction(res))
+
+  res.inputType = types.rV(types.ParSeq(types.array2d(ty,1,1),size))
+  res.outputType = types.rRV(types.Seq(types.Par(ty),size))
+
+  return res
+end)
+
+-- for legacy reasons, changerate returns stuff in column major order.
+-- instead, do row major
+-- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
+C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X )
+  J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
+  J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
+  J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
+  
+  local generators = require "generators.core"
+    
+  local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
+
+  J.err( outputItemsPerCyc==0 or (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
+  assert( outputItemsPerCyc<Uniform(W):toNumber() or outputItemsPerCyc%Uniform(W):toNumber()==0 )
+
+  local V2w, V2h = outputItemsPerCyc, 1
+  if outputItemsPerCyc==0 then V2h = 0 end
+  if outputItemsPerCyc>Uniform(W):toNumber() then
+    V2w, V2h = Uniform(W):toNumber(), outputItemsPerCyc/Uniform(W):toNumber()
+  end
+    
+  local inputType, outputType
+  if Vw==W and Vh==H then
+    inputType = types.RV( types.Array2d(ty,Vw,Vh) )
+  else
+    inputType = types.RV( types.Array2d(ty,W,H,Vw,Vh) )
+  end
+  
+  outputType = types.RV( types.Array2d( ty, W, H, V2w, V2h ) )
+
+  local res = generators.Function{
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),
+    function(inp)
+      local inprs
+      if Vw==0 and Vh==0 then
+        inprs = inp
+      else
+        inprs = generators.ReshapeArray{{Vw*Vh,1}}(inp)
+      end
+
+      local out = RM.liftHandshake(cr)(inprs)
+      
+      if outputItemsPerCyc>0 then
+        local res = RM.makeHandshake( C.cast( out.type:deInterface(), types.Array2d( out.type:deInterface().over, V2w, V2h )) )(out)
+        return res
+      else
+        return out
+      end
+    end}
+
+  assert( R.isPlainFunction(res) )
+  assert( res.outputType:lower()==outputType:lower() )
+  assert( res.inputType:lower()==inputType:lower() )
+  res.inputType = inputType
+  res.outputType = outputType
+  
+  return res
+end)
+
 return C
