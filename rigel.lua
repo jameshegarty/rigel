@@ -550,20 +550,17 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
               table.insert( out, i )
             else
               local recres = rec(i)
---              C.fifo( recres.type:deInterface(), 128, nil, nil, nil, nil, "convertInterface_out_"..tostring(k))(recres)
               table.insert( out, recres )
               assert( out[#out].type:deInterface()==fnType.list[k] )
             end
           end
 
           local rrr = darkroom.concat(out)
-          print("RRR",fnType,rrr.type)
           
           local ptList = {}
           for k,v in ipairs( fnType.list) do table.insert(ptList,types.RV(v)) end
           return RM.packTuple( ptList )(rrr)
         end}
-      print(res)
     end
 
     if res~=nil then
@@ -675,7 +672,7 @@ function functionGeneratorFunctions:complete( arglist, X )
     a[k] = v
   end
 
-  if self.optimized and arglist.rate~=nil then
+  if self.optimized and arglist.rate~=nil and arglist.type~=nil then
     a.type, a.rate = arglist.type:optimize( arglist.rate )
     assert( types.isType(a.type) )
     assert( SDF.isSDF(a.rate) )

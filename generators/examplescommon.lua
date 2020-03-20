@@ -1423,7 +1423,6 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
 
   local niType, noType
   if framed then
-    print("CROPHELPERFR",res.inputType,res.outputType)
     if T==0 then
       niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
       noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
@@ -1437,7 +1436,6 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
 
     res.inputType = niType
     res.outputType = noType
-    print("CROPHELPDONE")
   end
 
   return res
@@ -2505,7 +2503,7 @@ C.SerToWidthArrayToScalar = J.memoize(function(ty,size)
   local generators = require "generators.core"
   
   local res = generators.Function{
-    "SerToWidth_Convert_Array_to_scalar_"..tostring(ty), SDF{1,1},
+    "SerToWidth_Convert_Array_to_scalar_"..tostring(ty).."_"..tostring(size), SDF{1,1},
     types.rV(types.Par(types.array2d(ty,1,1))),
     function(inp)
       return generators.Index{0}(inp)

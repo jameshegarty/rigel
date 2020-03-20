@@ -34,7 +34,6 @@ if terralib~=nil then ts=".terra" end
 
 local ConvInner = R.FunctionGenerator("ConvInner",{"type","rate"},{},
 function(args)
-  print("CONVINNER",args.type,args.rate)
   local ty = args.type
   if ty:deInterface():isData()==false then
     ty = T.RV(ty:deInterface())
