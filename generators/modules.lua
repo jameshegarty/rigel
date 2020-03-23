@@ -3445,6 +3445,8 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   assert(res.inputType~=nil)
   
   err(type(f.delay)=="number","MakeHandshake fn is missing delay? ",f)
+
+  res.delay = f.delay
   res.stateful = (f.delay>0) or f.stateful -- for the shift register of valid bits
   res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
@@ -3595,7 +3597,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   
   assert(X==nil)
 
-  local storeFunction = {name="store", outputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true}
+  local storeFunction = {name="store", outputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true, delay=0}
 
   if VRStore then
     storeFunction.inputType = types.HandshakeVR(A)
@@ -3603,7 +3605,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
     storeFunction.inputType = types.Handshake(A)
   end
 
-  local loadFunction = {name="load", inputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true}
+  local loadFunction = {name="load", inputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true, delay=0}
   
   if VRLoad then
     loadFunction.outputType = types.HandshakeVR(A)
@@ -4473,10 +4475,7 @@ local function checkFIFOs(output)
         end
       elseif n.kind=="statements" then
         res = arg[1]
-      elseif n.kind=="readGlobal" then
-        -- is this right???
-        res = J.broadcast(true,types.streamCount(n.type))
-      elseif n.kind=="constant" or n.kind=="writeGlobal" then
+      elseif n.kind=="constant" then
         res = {}
       else
         print("NYI ",n.kind)
@@ -4658,6 +4657,32 @@ function modules.lambdaTab(tab)
   return modules.lambda(tab.name,tab.input,tab.output,tab.instanceList, tab.generatorStr, tab.generatorParams, tab.globalMetadata)
 end
 
+local function allocateFIFOs(out)
+
+  local statements = {}
+  local ofTerms = {}
+  
+  -- construct the SMT problem
+  -- each node returns the expression
+  out:visitEach(
+    function( n, args )
+      if n.kind=="input" then
+        table.insert( statements, "(declare-const "..n.name.." Int)" )
+        table.insert( statements, "(assert (= "..n.name.." 0))" )
+      elseif n.kind=="apply" or n.kind=="applyMethod" then
+        table.insert( statements, "(declare-const "..n.name.." Int)" )
+      elseif n.kind=="selectStream" then
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+      elseif n.kind=="statements" then
+      elseif n.kind=="constant" then
+      else
+        print("NYI - allocate FIFOS ",n.kind)
+      end
+    end)
+
+  return out
+end
+
 -- function definition
 -- output, inputs
 function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
@@ -4675,6 +4700,16 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
   err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
 
+  -- should we compile thie module as handshaked or not?
+  -- For handshaked modules, the input/output type is _not_ necessarily handshaked
+  -- for example, input/output type could be null, but the internal connections may be handshaked
+  -- so, check if we handshake anywhere
+  local HANDSHAKE_MODE = rigel.handshakeMode(output)
+
+  if HANDSHAKE_MODE then
+    output = allocateFIFOs(output)
+  end
+  
   local instanceMap = J.invertTable(instanceList)
   instanceList=nil -- now invalid
 
@@ -4739,46 +4774,38 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
   for inst,_ in pairs(res.instanceMap) do
     res.stateful = res.stateful or inst.module.stateful
-  end
+  end  
 
-  -- should we compile thie module as handshaked or not?
-  -- For handshaked modules, the input/output type is _not_ necessarily handshaked
-  -- for example, input/output type could be null, but the internal connections may be handshaked
-  -- so, check if we handshake anywhere
-  local HANDSHAKE_MODE = rigel.handshakeMode(output)
-  
-
-  --if input~=nil and input.type~=types.Interface() and rigel.isStreaming(input.type)==false and rigel.isStreaming(output.type)==false then
-  if HANDSHAKE_MODE==false then
-    res.delay = output:visitEach(
-      function(n, inputs)
-        local res
-        if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
-          res = 0
-        elseif n.kind=="concat" or n.kind=="concatArray2d" then
-          res = math.max(unpack(inputs))
-        elseif n.kind=="apply" then
-          if n.fn.inputType==types.Interface() or (n.fn.inputType:isrv() and n.fn.inputType:extractData():verilogBits()==0) then res = n.fn.delay
-          else
-            err(n.fn.delay~=nil,"Error: fn "..n.fn.name.." is missing delay? "..tostring(n.fn.inputType).." "..tostring(n.fn.outputType))
-            res = inputs[1] + n.fn.delay
-          end
-        elseif n.kind=="applyMethod" then
-          if n.inst.module.functions[n.fnname].inputType==types.null() then
-            res = n.inst.module.functions[n.fnname].delay
-          else
-            res = inputs[1] + n.inst.module.functions[n.fnname].delay
-          end
+  res.delay = output:visitEach(
+    function(n, inputs)
+      local res
+      if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
+        res = 0
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        res = math.max(unpack(inputs))
+      elseif n.kind=="apply" then
+        if n.fn.inputType==types.Interface() or (n.fn.inputType:isrv() and n.fn.inputType:extractData():verilogBits()==0) then res = n.fn.delay
         else
-          print(n.kind,input.type,output.type)
-          assert(false)
+          err(n.fn.delay~=nil,"Error: fn "..n.fn.name.." is missing delay? "..tostring(n.fn.inputType).." "..tostring(n.fn.outputType))
+          res = inputs[1] + n.fn.delay
         end
-
-        err( type(res)=="number",n.kind.." returned a non-numeric delay? ",n)
-        return res
-      end)
-    assert(type(res.delay)=="number")
-  end
+      elseif n.kind=="applyMethod" then
+        if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
+          res = n.inst.module.functions[n.fnname].delay
+        else
+          res = inputs[1] + n.inst.module.functions[n.fnname].delay
+        end
+      elseif n.kind=="statements" then
+        res = inputs[1]
+      else
+        print("delay BYI - ",n.kind,input.type,output.type)
+        assert(false)
+      end
+      
+      err( type(res)=="number",n.kind.." returned a non-numeric delay? ",n)
+      return res
+    end)
+  assert(type(res.delay)=="number")
 
   -- collect metadata
   output:visitEach(
@@ -4859,6 +4886,8 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset
 
+    local rateMonitors = { usValid={}, dsValid={}, dsReady={}, delay={}, rate={} }
+    
     if fn.stateful then
       reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
     end
@@ -4915,7 +4944,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       end
     end
 
-    local out = fn.output:codegenSystolic( module )
+    local out = fn.output:codegenSystolic( module, rateMonitors )
 
 
     if HANDSHAKE_MODE==false then
@@ -4931,11 +4960,6 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     err( out[1].type==rigel.lower(res.outputType), "modules.lambda: Internal error, systolic output type is ",out[1].type," but should be ",rigel.lower(res.outputType)," function ",name )
 
-    assert(Ssugar.isFunctionConstructor(process))
-    process:setOutput( out[1], "process_output" )
-
-    err( module:lookupFunction("process"):isPure() ~= res.stateful, "Module '"..res.name.."' is declared stateful=",res.stateful," but systolic AST is pure=",module:lookupFunction("process"):isPure()," which doesn't match!",out[1] )
-
     -- for the non-handshake (purely systolic) modules, the ready bit doesn't flow from outputs to inputs,
     -- it flows from inputs to outputs. The reason is that upstream things can't stall downstream things anyway, so there's really no point of doing it the 'right' way.
     -- this is kind of messed up!
@@ -4946,9 +4970,22 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     elseif fn.inputType:isrV() and fn.outputType:isrRV() then
       local readyfn = module:addFunction( S.lambda("ready", S.parameter("RINIL",types.null()), out[2], "ready", {} ) )
     elseif HANDSHAKE_MODE then
-      local readyinp, readyout, readyPipelines = fn.output:codegenSystolicReady( module )
+      local readyinp, readyout, readyPipelines = fn.output:codegenSystolicReady( module, rateMonitors )
       local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", readyPipelines ) )
     end
+
+    -- insert rate monitors
+    assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsValid) )
+    assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsReady) )
+
+    for k,v in pairs(rateMonitors.usValid) do
+      process:addPipeline( S.rateMonitor( rateMonitors.usValid[k], rateMonitors.dsValid[k], rateMonitors.dsReady[k], rateMonitors.delay[k], rateMonitors.rate[k], k ) )
+    end
+
+    assert(Ssugar.isFunctionConstructor(process))
+    process:setOutput( out[1], "process_output" )
+
+    err( module:lookupFunction("process"):isPure() ~= res.stateful, "Module '"..res.name.."' is declared stateful=",res.stateful," but systolic AST is pure=",module:lookupFunction("process"):isPure()," which doesn't match!",out[1] )
 
     return module
   end
@@ -5094,12 +5131,12 @@ function modules.moduleLambda( name, functionList, instanceList, X )
 end
 
 function modules.liftVerilogTab(tab)
-  return modules.liftVerilog(tab.name,tab.inputType,tab.outputType,tab.vstr,tab.globalMetadata,tab.sdfInput,tab.sdfOutput,tab.instanceMap)
+  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay )
 end
 
 -- requires: this is a map of instance callsites (for external requirements)
 -- instanceMap: this is a map of rigel instances of modules this depends on
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
@@ -5111,7 +5148,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
   
-  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap }
+  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap, delay = delay }
   res.stateful = true
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)

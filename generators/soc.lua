@@ -71,8 +71,8 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
   local globalMetadata = {}
   local functionList = {}
 
-  functionList.read = R.newFunction{name="Read",inputType=AXI.ReadAddress32,outputType=AXI.ReadData32,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
-  functionList.write = R.newFunction{name="Write",inputType=AXI.WriteIssue32, outputType=AXI.WriteResponse32, sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false}
+  functionList.read = R.newFunction{name="Read",inputType=AXI.ReadAddress32,outputType=AXI.ReadData32,sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, delay=0}
+  functionList.write = R.newFunction{name="Write",inputType=AXI.WriteIssue32, outputType=AXI.WriteResponse32, sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false, delay=0}
 
   local NREG = 2
   local curDataBit = 64 -- for start/done
@@ -113,8 +113,8 @@ SOC.axiRegs = J.memoize(function( tab, rate, X )
   
   local verbose = false
 
-  functionList.start = R.newFunction{name="start",inputType=types.Interface(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
-  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.Interface(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true}
+  functionList.start = R.newFunction{name="start",inputType=types.Interface(), outputType=R.HandshakeTrigger, sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true, delay=0}
+  functionList.done = R.newFunction{name="done", inputType=R.HandshakeTrigger, outputType=types.Interface(), sdfInput=rate,sdfOutput=rate, sdfExact=true, stateful=true, delay=0}
 
   local res = RM.moduleLambda( ModuleName, functionList, instanceList )
   res.globalMetadata = globalMetadata
@@ -847,7 +847,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
   
-  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap }
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=1 }
 
   if terralib~=nil then
     res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, address, readFn ) end
@@ -1327,7 +1327,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
 
-  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap }
+  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=1 }
 
   if terralib~=nil then
     res.makeTerra = nil

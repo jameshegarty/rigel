@@ -464,6 +464,8 @@ __tostring = function(tab)
       for k,v in ipairs(args) do res = res.."ModuleFn:\n"..v.."\n" end
     elseif n.kind=="delay" then
       res = "delay("..args[1]..")"
+    elseif n.kind=="rateMonitor" then
+      res = "rateMonitor('"..n.monitorName.."')"
     else
       print("NYI - tostring of systolicAST "..tostring(n.kind))
       assert(false)
@@ -531,6 +533,18 @@ function systolic.constant( v, ty )
   err( ty~=types.null(),"constant with null type?")
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
+end
+
+function systolic.rateMonitor( usValid, dsValid, dsReady, delay, rate, name, X )
+  err( systolicAST.isSystolicAST(usValid), "usValid to rateMonitor must be a systolic ast, but is: ", usValid )
+  err( systolicAST.isSystolicAST(dsValid), "dsValid to rateMonitor must be a systolic ast, but is: ", dsValid )
+  err( systolicAST.isSystolicAST(dsReady), "dsReady to rateMonitor must be a systolic ast, but is: ", dsReady )
+  local SDF = require "sdf"
+  err( SDF.isSDF(rate), "rateMonitor: rate must be SDF rate, but is: ", rate)
+  err( type(delay)=="number", "rateMonitor: delay must be number, but is: ",delay)
+  err( type(name)=="string", "rateMonitor, name must be string, but is: ",name )
+
+  return typecheck{ kind="rateMonitor", monitorRate=rate, monitorDelay=delay, monitorName=name, inputs={usValid,dsValid,dsReady}, loc=getloc() }
 end
 
 function systolic.tuple( tab )
@@ -1417,8 +1431,12 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
         end
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
+      elseif n.kind=="rateMonitor" then
+        table.insert( declarations, [[// Rate Monitor for ]]..n.name..[[
+]])
+        finalResult = "__@#$#@$#@_RATE_MONITOR"
       else
-        print(n.kind)
+        print("NYI - ",n.kind)
         assert(false)
       end
 

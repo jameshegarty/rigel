@@ -2368,7 +2368,7 @@ end)
 -- you should only use this if it's safe! (on the output of fns)
 C.VRtoRVRaw = J.memoize(function(A)
   err( types.isBasic(A), "expected basic type" )
-  local res = {inputType=types.HandshakeVR(A),outputType=types.Handshake(A),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+  local res = { inputType=types.HandshakeVR(A), outputType=types.Handshake(A), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   res.name = J.sanitize("VRtoRVRaw_"..tostring(A))
 
   function res.makeSystolic()

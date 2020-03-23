@@ -1246,12 +1246,30 @@ local function checkRigelFunction(tab)
   err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
   err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.Interface() and tab.outputType==types.Interface()) then
-    -- no delay needed
-  else
-    err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+--  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.Interface() and tab.outputType==types.Interface()) then
+--    err( type(tab.delay)=="number" or type(tab.delay)=="table","rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+
+--    if tab.inputType:isRV() then
+
+--    elseif tab.inputType:isArray() or tab.inputType:isTuple() then
+      -- delay must be a table
+--    else
+    
+--    end
+  --  else
+
+  -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
+  -- expand this to a per-stream delay at some point, if needed
+  err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+--  end
+
+  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
+    if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
+    if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
+    err( type(tab.inputBurstiness)=="number", "rigel.newFunction: missing inputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+    err( type(tab.outputBurstiness)=="number", "rigel.newFunction: missing outputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
   end
-  
+
   --if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
   --if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
@@ -2052,7 +2070,10 @@ function darkroomIRFunctions:typecheck()
   end
 end
 
-function darkroomIRFunctions:codegenSystolicReady( module )
+function darkroomIRFunctions:codegenSystolicReady( module, rateMonitors, X )
+  assert( type(rateMonitors)=="table" )
+  assert( X==nil )
+          
   local readyinp
   local readyout
 
@@ -2166,6 +2187,8 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         assert(readyout==nil)
         readyout = input
       elseif n.kind=="apply" then
+        rateMonitors.dsReady[n.name] = input
+        
         res = {module:lookupInstance(n.name):ready(input)}
         if n.fn.inputType==types.Interface() then
           table.insert(readyPipelines, res[1])
@@ -2277,8 +2300,11 @@ function darkroomIRFunctions:codegenSystolicReady( module )
   return readyinp, readyout, readyPipelines
 end
 
-function darkroomIRFunctions:codegenSystolic( module )
-  assert(Ssugar.isModuleConstructor(module))
+function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
+  assert( Ssugar.isModuleConstructor(module) )
+  assert( type(rateMonitors) == "table" )
+  assert( X==nil )
+  
   return self:visitEach(
     function(n, inputs)
       if n.kind=="input" then
@@ -2326,8 +2352,18 @@ function darkroomIRFunctions:codegenSystolic( module )
         elseif n.type:isrRvV() then
           -- the strange basic->RV case
           err( false, "You shouldn't use Basic->RV directly, loc "..n.loc )
-        else
-          return {I:process(inputs[1][1])}
+        else -- RV
+          local ooo = I:process( inputs[1][1] )
+
+          if n.inputs[1].type:isRV() then
+            print("INSERT MONITOR", n.fn.name, n.inputs[1].type, inputs[1][1], ooo )
+            rateMonitors.usValid[n.name] = S.index(inputs[1][1],1)
+            rateMonitors.dsValid[n.name] = S.index(ooo,1)
+            rateMonitors.rate[n.name] = n.rate
+            rateMonitors.delay[n.name] = n.fn.delay
+          end
+          
+          return {ooo}
         end
       elseif n.kind=="constant" then
         return {S.constant( n.value, n.type:extractData() )}
