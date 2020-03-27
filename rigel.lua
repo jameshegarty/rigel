@@ -1149,6 +1149,10 @@ parameter INSTANCE_NAME="INST";
 end
 
 -- verilog value of input data (if handshaked)
+function darkroomFunctionFunctions:vInput()
+  return "process_input"
+end
+
 function darkroomFunctionFunctions:vInputData()
   assert(types.isHandshakeAny(self.inputType))
   return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
@@ -1164,6 +1168,10 @@ end
 function darkroomFunctionFunctions:vInputReady()
   assert(types.isHandshakeAny(self.inputType))
   return "ready"
+end
+
+function darkroomFunctionFunctions:vOutput()
+  return "process_output"
 end
 
 -- verilog value of output data (if handshaked)
@@ -2304,7 +2312,7 @@ function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
   assert( Ssugar.isModuleConstructor(module) )
   assert( type(rateMonitors) == "table" )
   assert( X==nil )
-  
+
   return self:visitEach(
     function(n, inputs)
       if n.kind=="input" then
@@ -2342,6 +2350,11 @@ function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
             module:lookupFunction("reset"):addPipeline( I:reset() )
           end
         end
+
+        -- this is a total hack, for the FIFO monitors: pass the start valid bit into them so they know when to start monitoring for tokens
+        if n.fn.systolicModule.functions.startMonitorTrigger~=nil then
+          module:lookupFunction("process"):addPipeline( I:startMonitorTrigger( S.index(module:lookupFunction("process"):getInput(),1) ) )
+        end
         
         if n.fn.inputType==types.Interface() then
           return { I:process() }
@@ -2355,12 +2368,13 @@ function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
         else -- RV
           local ooo = I:process( inputs[1][1] )
 
-          if n.inputs[1].type:isRV() then
-            print("INSERT MONITOR", n.fn.name, n.inputs[1].type, inputs[1][1], ooo )
+          if n.inputs[1].type:isRV() and n.fn.outputType:isRV() then
+            -- note: no Inils
             rateMonitors.usValid[n.name] = S.index(inputs[1][1],1)
             rateMonitors.dsValid[n.name] = S.index(ooo,1)
             rateMonitors.rate[n.name] = n.rate
             rateMonitors.delay[n.name] = n.fn.delay
+            rateMonitors.functionName[n.name] = n.fn.name
           end
           
           return {ooo}

@@ -576,7 +576,9 @@ modules.waitOnInput = memoize(function( f, X )
   res.stateful = f.stateful
   res.delay = f.delay
   res.name = "WaitOnInput_"..f.name
-
+  res.inputBurstiness = f.inputBurstiness
+  res.outputBurstiness = f.outputBurstiness
+    
   if terralib~=nil then res.terraModule = MT.waitOnInput(res,f) end
 
   function res.makeSystolic()
@@ -683,6 +685,9 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   res.inputType = types.rV(f.inputType.over)
   res.outputType = types.rRV(f.outputType.over)
 
+  res.inputBurstiness = f.inputBurstiness
+  res.outputBurstiness = f.outputBurstiness
+  
   err(type(f.stateful)=="boolean", "Missing stateful annotation for "..f.kind)
   res.stateful = f.stateful
 
@@ -894,6 +899,9 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
 
   res.inputType = types.RV(f.inputType.over)
   res.outputType = types.RV(f.outputType.over)
+
+  res.inputBurstiness = f.inputBurstiness
+  res.outputBurstiness = f.outputBurstiness
   
   res.name = "LiftHandshake_"..f.name
 
@@ -2328,7 +2336,7 @@ modules.broadcastStream = memoize(function(A,W,H,X)
   err( type(H)=="number", "broadcastStream: H must be number")
   assert(X==nil)
 
-  local res = {kind="broadcastStream", A=A, W=W, H=H,  stateful=false}
+  local res = {kind="broadcastStream", A=A, W=W, H=H,  stateful=false, delay=0}
 
   res.inputType = types.RV(A)
   res.outputType = types.array2d(types.RV(A), W, H)
@@ -2628,6 +2636,9 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   else
     res.outputType = types.rvV(types.Par(res.outputType:deInterface().list[1]))
   end
+
+  res.outputBurstiness = 6
+  res.delay = 64
   
   return res
 end)
@@ -2703,6 +2714,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
 
+  res.inputBurstiness = 120
+  
   if T==0 then
     res.inputType = A
     res.outputType = A
@@ -3759,8 +3772,8 @@ modules.triggerFIFO = memoize(function(ty)
   end
   
   local SDFRate = SDF{1,1}
-  local storeFunction = rigel.newFunction{name="store", inputType=portType,  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
-  local loadFunction = rigel.newFunction{name="load", inputType=types.null(), outputType=portType, sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true}
+  local storeFunction = rigel.newFunction{name="store", inputType=portType,  outputType=types.null(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true, delay=0}
+  local loadFunction = rigel.newFunction{name="load", inputType=types.null(), outputType=portType, sdfInput=SDFRate, sdfOutput=SDFRate, stateful=true, sdfExact=true, delay=0}
 
   local name = J.verilogSanitize("TriggerFIFO_"..tostring(ty))
   local res = rigel.newModule{ name=name, functions={store=storeFunction, load=loadFunction}, stateful=true }
@@ -4683,6 +4696,47 @@ local function allocateFIFOs(out)
   return out
 end
 
+local function insertFIFOs( out, delayTable, moduleName )
+  local C = require "generators.examplescommon"
+
+  local depth = {}
+  local maxDepth=0
+  out:visitEach(
+    function( n, args )
+      local d = 0
+
+      if #n.inputs>0 then
+        d = math.max(unpack(args))+1
+      end
+
+      depth[n] = d
+      if d>maxDepth then maxDepth=d end
+      return d
+    end)
+  
+  local fr = out:process(
+    function( n, orig )
+      n = rigel.newIR(n)
+      local res = n
+
+      if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
+
+        local NAME = depth[orig].."_"..maxDepth.."_"..n.name
+        local IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
+        local OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.rate, false, NAME, n.fn.name, moduleName )
+
+        res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, n.inputs[1] )
+        res = rigel.apply( n.name, n.fn, res )
+        res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
+      end
+
+      return res
+    end)
+  print(fr)
+  
+  return fr
+end
+
 -- function definition
 -- output, inputs
 function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
@@ -4706,10 +4760,6 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   -- so, check if we handshake anywhere
   local HANDSHAKE_MODE = rigel.handshakeMode(output)
 
-  if HANDSHAKE_MODE then
-    output = allocateFIFOs(output)
-  end
-  
   local instanceMap = J.invertTable(instanceList)
   instanceList=nil -- now invalid
 
@@ -4725,10 +4775,54 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       err( false,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'")
     end
   end
+  
+  local delayTable = {}
+  local resdelay = output:visitEach(
+    function(n, inputs)
+      local res
+      if n.kind=="input" or n.kind=="constant" then
+        res = 0
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        res = math.max(unpack(inputs))
+      elseif n.kind=="apply" then
+        local extra = 0
+        if n.fn.inputType:isRV() and n.fn.inputBurstiness>0 then extra = extra+1 end
+        if n.fn.outputType:isRV() and n.fn.outputBurstiness>0 then extra = extra+1 end
+        
+        if n.fn.inputType==types.Interface() or (n.fn.inputType:isrv() and n.fn.inputType:extractData():verilogBits()==0) then
+          res = n.fn.delay
+        else
+          err(n.fn.delay~=nil,"Error: fn "..n.fn.name.." is missing delay? "..tostring(n.fn.inputType).." "..tostring(n.fn.outputType))
+          res = inputs[1] + n.fn.delay
+        end
+      elseif n.kind=="applyMethod" then
+        if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
+          res = n.inst.module.functions[n.fnname].delay
+        else
+          res = inputs[1] + n.inst.module.functions[n.fnname].delay
+        end
+      elseif n.kind=="statements" then
+        res = inputs[1]
+      elseif n.kind=="selectStream" then
+        res = inputs[1]
+      else
+        print("delay NYI - ",n.kind,input.type,output.type)
+        assert(false)
+      end
+      
+      err( type(res)=="number",n.kind.." returned a non-numeric delay? returned:", res, n)
+      delayTable[n] = res
+      return res
+    end)
+  assert(type(resdelay)=="number")
+
+  if HANDSHAKE_MODE and input~=null and input.type:isInil()==false then
+    output = insertFIFOs( output, delayTable, name )
+  end
 
   name = J.verilogSanitize(name)
 
-  local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requires, provides=provides, globalMetadata={} }
+  local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requires, provides=provides, globalMetadata={}, delay = resdelay }
 
   if input==nil then
     res.inputType = types.null()
@@ -4776,36 +4870,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     res.stateful = res.stateful or inst.module.stateful
   end  
 
-  res.delay = output:visitEach(
-    function(n, inputs)
-      local res
-      if n.kind=="input" or n.kind=="constant" or n.kind=="readGlobal" or n.kind=="writeGlobal" then
-        res = 0
-      elseif n.kind=="concat" or n.kind=="concatArray2d" then
-        res = math.max(unpack(inputs))
-      elseif n.kind=="apply" then
-        if n.fn.inputType==types.Interface() or (n.fn.inputType:isrv() and n.fn.inputType:extractData():verilogBits()==0) then res = n.fn.delay
-        else
-          err(n.fn.delay~=nil,"Error: fn "..n.fn.name.." is missing delay? "..tostring(n.fn.inputType).." "..tostring(n.fn.outputType))
-          res = inputs[1] + n.fn.delay
-        end
-      elseif n.kind=="applyMethod" then
-        if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
-          res = n.inst.module.functions[n.fnname].delay
-        else
-          res = inputs[1] + n.inst.module.functions[n.fnname].delay
-        end
-      elseif n.kind=="statements" then
-        res = inputs[1]
-      else
-        print("delay BYI - ",n.kind,input.type,output.type)
-        assert(false)
-      end
-      
-      err( type(res)=="number",n.kind.." returned a non-numeric delay? ",n)
-      return res
-    end)
-  assert(type(res.delay)=="number")
+  
 
   -- collect metadata
   output:visitEach(
@@ -4886,7 +4951,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     local process = module:addFunction( Ssugar.lambdaConstructor( "process", rigel.lower(fn.inputType), "process_input") )
     local reset
 
-    local rateMonitors = { usValid={}, dsValid={}, dsReady={}, delay={}, rate={} }
+    local rateMonitors = { usValid={}, dsValid={}, dsReady={}, delay={}, rate={}, functionName={} }
     
     if fn.stateful then
       reset = module:addFunction( Ssugar.lambdaConstructor( "reset", types.null(), "resetNILINPUT", "reset") )
@@ -4946,7 +5011,6 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     local out = fn.output:codegenSystolic( module, rateMonitors )
 
-
     if HANDSHAKE_MODE==false then
       err( (out[1]:getDelay()>0) == (res.delay>0), "Module '"..res.name.."' is declared with delay=",res.delay," but systolic AST delay=",out[1]:getDelay()," which doesn't match")
     end
@@ -4975,12 +5039,13 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     end
 
     -- insert rate monitors
-    assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsValid) )
-    assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsReady) )
+    --assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsValid) )
+    --assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsReady) )
 
-    for k,v in pairs(rateMonitors.usValid) do
-      process:addPipeline( S.rateMonitor( rateMonitors.usValid[k], rateMonitors.dsValid[k], rateMonitors.dsReady[k], rateMonitors.delay[k], rateMonitors.rate[k], k ) )
-    end
+--    for k,v in pairs(rateMonitors.usValid) do
+--      err( rateMonitors.dsReady[k]~=nil, "dsReady is missing for ",k)
+--      process:addPipeline( S.rateMonitor( rateMonitors.usValid[k], rateMonitors.dsValid[k], rateMonitors.dsReady[k], rateMonitors.delay[k], rateMonitors.rate[k], k, rateMonitors.functionName[k] ) )
+--    end
 
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
@@ -5131,12 +5196,12 @@ function modules.moduleLambda( name, functionList, instanceList, X )
 end
 
 function modules.liftVerilogTab(tab)
-  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay )
+  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay, tab.inputBurstiness, tab.outputBurstiness )
 end
 
 -- requires: this is a map of instance callsites (for external requirements)
 -- instanceMap: this is a map of rigel instances of modules this depends on
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, inputBurstiness, outputBurstiness, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
@@ -5148,7 +5213,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
   
-  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap, delay = delay }
+  local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap, delay = delay, inputBurstiness=inputBurstiness, outputBurstiness=outputBurstiness }
   res.stateful = true
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)

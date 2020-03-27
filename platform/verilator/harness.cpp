@@ -96,6 +96,8 @@ int main(int argc, char** argv) {
   //  #else
   //  bool ready = true;
   //  #endif
+
+  printf("Start Sim\n");
   
   while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
     // posedge just occured
@@ -144,10 +146,28 @@ int main(int argc, char** argv) {
     }
   }
 
+  printf("Verilator Cycles: %d\n", (int)totalCycles);
+
+  // dumb hack: put it back into reset, to signal fifos to print errors on being too large
+  CLK = true;
+  for(int i=0; i<2; i++){
+    CLK = !CLK;
+    top->CLK = CLK;
+    
+#if STATEFUL==true
+    top->reset = true;
+#endif
+    top->eval();
+
+    //    if( Verilated::gotFinish() ){
+      // we got an error
+    //      printf("VERILOTOR FINIS\n");
+    //      exit(1);
+    //    }
+  }
+    
   top->final();
   delete top;
-
-  printf("Verilator Cycles: %d\n", (int)totalCycles);
 
   std::string cycfile = argv[2];
   cycfile = cycfile.substr(0,cycfile.size()-3)+std::string("cycles.txt");

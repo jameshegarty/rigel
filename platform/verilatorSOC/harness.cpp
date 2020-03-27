@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
     curArg+=2;
   }
 
+  int argBeforeInit = curArg;
+  
   SlaveState slaveState0;
   SlaveState slaveState1;
   initSlaveState(&slaveState0);
@@ -207,7 +209,8 @@ int main(int argc, char** argv) {
     
     if(verbose){printSlave(S0LIST);}
 
-    if(round==0){
+    if(true || round==0){
+      printf("DORESET\n");
       for(int i=0; i<100; i++){
         CLK = !CLK;
         
@@ -226,6 +229,7 @@ int main(int argc, char** argv) {
 
       top->IP_ARESET_N=true;
 
+      curArg = argBeforeInit;
       curArg++; // for "--registers"
       while(strcmp(argv[curArg],"--outputs")!=0){
         printf("PARSE ARG %s %s\n",argv[curArg],argv[curArg+1]);

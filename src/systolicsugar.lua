@@ -113,7 +113,7 @@ end
 
 function systolicFunctionConstructor:addPipeline( p ) 
   err( self.isComplete==false, "function is already complete"); 
-  err( systolic.isAST(p), "systolicFunctionConstructor:addPipeline(), input should be systolic AST, but is: "..tostring(p) )
+  err( systolic.isAST(p), "systolicFunctionConstructor:addPipeline(), input should be systolic AST, but is: ", p )
   table.insert( self.__pipelines, p )
 end
 

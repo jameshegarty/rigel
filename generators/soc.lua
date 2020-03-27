@@ -847,7 +847,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
   
-  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=1 }
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=4, inputBurstiness=2 }
 
   if terralib~=nil then
     res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, address, readFn ) end
@@ -1327,7 +1327,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
 
-  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=1 }
+  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=4, inputBurstiness=128 }
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1356,6 +1356,7 @@ SOC.bulkRamWrite = J.memoize(function(port)
   return BRR
 end)
 
+-- this generator wraps a readFn (which always does a 128 byte burst), and makes it able to service any W/H/V that's requested
 SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, addressOverride, readFn_orig, X )
   J.err( type(filename)=="string","readBurst: filename must be string")
 
