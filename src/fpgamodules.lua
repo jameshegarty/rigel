@@ -185,11 +185,12 @@ return sliceRamCache[bits]
   return ram
 end
 
-modules.fifo = memoize(function(ty,items,verbose,nostall)
+modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   err(types.isType(ty),"fifo type must be type")
   err(type(items)=="number","fifo items must be number")
   err(type(verbose)=="boolean","fifo verbose must be bool")
   err( items>1,"fifo: items must be >1")
+  assert( X==nil )
   
   local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items.."_nostall"..tostring(nostall)) )
   -- writeAddr, readAddr hold the address we will read/write from NEXT time we do a read/write
@@ -206,7 +207,8 @@ modules.fifo = memoize(function(ty,items,verbose,nostall)
   elseif items <= 128 then
     rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
-    ram = fifo:add(modules.bramSDP(true,items*bytes,bytes,bytes,nil,true):instantiate("ram"))
+    err( J.isPowerOf2(items), "fifo NYI, items must be power of 2, but is: ",items )
+    ram = fifo:add(modules.bramSDP( true, items*bytes, bytes, bytes, nil, true ):instantiate("ram"))
   end
 
   -- size

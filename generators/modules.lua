@@ -2714,7 +2714,9 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
 
-  res.inputBurstiness = 120
+  res.inputBurstiness = J.upToNearest(128+W*B, 1024)
+  res.outputBurstiness = 128 -- hack: module starts up at time=0, regardless of when triggered
+  res.delay = 3
   
   if T==0 then
     res.inputType = A
@@ -2741,7 +2743,6 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   
   res.stateful = true
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
-  res.delay=0
   res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
@@ -2846,6 +2847,10 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
   local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
 
+  res.inputBurstiness = 128
+  res.outputBurstiness = 128
+  res.delay = math.max( inputRate, outputRate )
+  
   if framed then
     err(type(framedW)=="number", "changeRate: if framed, framedW should be number, but is: "..tostring(framedW))
     assert(type(framedH)=="number")
@@ -2896,7 +2901,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
   end
   
   res.stateful = true
-  res.delay = 0
+
   res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH))
 
   if inputRate>outputRate then -- 8 to 4
@@ -3688,8 +3693,10 @@ return mod
     else
       makeSystolic = function()
         local systolicModule = Ssugar.moduleConstructor(name)
-        
-        local fifo = systolicModule:add( fpgamodules.fifo(A:lower(),size,DARKROOM_VERBOSE,nostall):instantiate("FIFO") )
+
+        local allocSize = J.upToNearest( 1024, size )
+        if size<=128 then allocSize=size end
+        local fifo = systolicModule:add( fpgamodules.fifo( A:lower(), allocSize, DARKROOM_VERBOSE, nostall ):instantiate("FIFO") )
         
         --------------
         -- basic -> R
@@ -4720,10 +4727,9 @@ local function insertFIFOs( out, delayTable, moduleName )
       local res = n
 
       if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
-
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
-        local IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
-        local OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.rate, false, NAME, n.fn.name, moduleName )
+        local IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
+        local OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
 
         res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, n.inputs[1] )
         res = rigel.apply( n.name, n.fn, res )
@@ -4732,7 +4738,6 @@ local function insertFIFOs( out, delayTable, moduleName )
 
       return res
     end)
-  print(fr)
   
   return fr
 end
@@ -5011,7 +5016,8 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     local out = fn.output:codegenSystolic( module, rateMonitors )
 
-    if HANDSHAKE_MODE==false then
+    --if HANDSHAKE_MODE==false then
+    if fn.inputType:isrv() and fn.outputType:isrv() then
       err( (out[1]:getDelay()>0) == (res.delay>0), "Module '"..res.name.."' is declared with delay=",res.delay," but systolic AST delay=",out[1]:getDelay()," which doesn't match")
     end
     

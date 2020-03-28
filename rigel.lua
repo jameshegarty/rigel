@@ -541,7 +541,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
           for k,v in ipairs(targetType.list) do
             local i = darkroom.selectStream( "str"..k, tmp, k-1 )
             i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
-            i = C.fifo( v, 128, nil, nil, nil, nil, "convertInterface_"..tostring(k))(i)
+            i = C.fifo( v, 128, nil, nil, nil, nil, "fannedconvertInterface_"..tostring(k))(i)
 
             local rec = reshape( fnType.list[k], v )
 
@@ -788,9 +788,9 @@ local function buildAndCheckSystolicModule(tab, isModule)
       if rigelFn.outputType~=types.Interface() then
         err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
       end
-    elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false then
+    elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false and rigelFn.outputType:isrv() then
       err( type(rigelFn.delay)=="number","Error, rigel module missing delay? fnname '",fnname,"' should have been caught earlier ",tab)
-      err( (sm:getDelay(fnname)>0)==(rigelFn.delay>0), "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is ",sm:getDelay(fnname),sm)      
+      err( sm:getDelay(fnname)==rigelFn.delay, "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is:",sm:getDelay(fnname)," Module ",sm)      
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
@@ -1155,6 +1155,7 @@ end
 
 function darkroomFunctionFunctions:vInputData()
   assert(types.isHandshakeAny(self.inputType))
+  assert( self.inputType~=types.HandshakeTrigger )
   return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
 end
 
@@ -1177,6 +1178,7 @@ end
 -- verilog value of output data (if handshaked)
 function darkroomFunctionFunctions:vOutputData()
   assert(types.isHandshakeAny(self.outputType))
+  err( self.outputType~=types.HandshakeTrigger, "vOutputData(): attempting to get data channel of a HandshakeTrigger" )
   return "process_output["..(types.extractData(self.outputType):verilogBits()-1)..":0]"
 end
 
@@ -1268,7 +1270,7 @@ local function checkRigelFunction(tab)
 
   -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
   -- expand this to a per-stream delay at some point, if needed
-  err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+  err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType," delay is: ",tab.delay )
 --  end
 
   if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
