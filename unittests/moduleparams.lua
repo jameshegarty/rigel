@@ -21,6 +21,20 @@ for k,v in ipairs(configs.downsampleSeq) do
   meta.downsampleSeq[k].outputImageSize={v.size[1]/v.scale[1], v.size[2]/v.scale[2]}
 end
 
+configs.downsampleXSeq = J.cartesian{type=Type, size={IS}, V=NumP, scale={2,4,8} }
+meta.downsampleXSeq = {}
+for k,v in ipairs(configs.downsampleXSeq) do
+  meta.downsampleXSeq[k] = {inputP=v.V, outputP=v.V, inputImageSize=v.size}
+  meta.downsampleXSeq[k].outputImageSize={v.size[1]/v.scale, v.size[2]}
+end
+
+configs.downsampleYSeq = J.cartesian{type=Type, size={IS}, V=NumP, scale={2,4,8} }
+meta.downsampleYSeq = {}
+for k,v in ipairs(configs.downsampleYSeq) do
+  meta.downsampleYSeq[k] = {inputP=v.V, outputP=v.V, inputImageSize=v.size}
+  meta.downsampleYSeq[k].outputImageSize={v.size[1], v.size[2]/v.scale}
+end
+
 configs.upsampleSeq = J.cartesian{type=Type, size={IS}, V=NumP, scale={ {1,1},{2,1},{1,2},{2,2} } }
 meta.upsampleSeq = {}
 for k,v in ipairs(configs.upsampleSeq) do
@@ -84,6 +98,10 @@ meta.sub={{inputP=1,outputP=1,inputImageSize={32,32},outputImageSize={32,32}}}
 configs.rcp = {{type=types.uint(8)}}
 meta.rcp={{inputP=1,outputP=1,inputImageSize=IS,outputImageSize=IS}}
 
+for k,v in pairs(configs) do
+  if k~="cropSeq" then configs[k]=nil end
+end
+
 local function configToName(t)
   local name = ""
 
@@ -122,15 +140,7 @@ for k,v in pairs(configs) do
 
     local met = meta[k][configk]
 
-    -- TODO: hack to get around axi burst nonsense
---    local valid = true
-    
     local targets = {"metadata","verilog","terra"}
---    if valid then 
---      table.insert(targets,"terra") 
---    else
---      print("SKIPPING TERRA BUILD")
---    end
     
     for _,bk in pairs(targets) do
       R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=met.inputImageSize, outSize=met.outputImageSize, backend=bk }

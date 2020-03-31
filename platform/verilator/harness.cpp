@@ -7,16 +7,17 @@
 bool calcThrottle( bool isInput, unsigned int N, unsigned int D, unsigned int delay, unsigned int cycles ){
   float vLast = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)) );
   if(vLast<0.f){vLast=0.f;}
-  float v = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)+1.f) );
+  float vf = (float(N)/float(D))*(float(cycles)-float(delay)+1.f);
+  float v = ceilf( vf );
   if(v<0.f){v=0.f;}
   
   unsigned int viLast = vLast;
   unsigned int vi = v;
 
   if( isInput ){
-    //printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d\n",N,D,cycles,v,vi);
+    //    printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f\n",N,D,cycles,v,vi,vf);
   }else{
-    //  printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d delay:%d\n",N,D,cycles,v,vi,delay);
+    //    printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f delay:%d\n",N,D,cycles,v,vi,vf,delay);
   }
   
   return vi != viLast;
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
     bool outValid = getValid( &(top->process_output), outbpp*outP );
 
     if( outValid!=oThrottle ){
-      printf("Error: DUT output valid was not as expected! expected:%d valid:%d in cycle:%lu delay:%d\n", oThrottle, outValid, totalCycles, delay );
+      printf("Error: DUT output valid was not as expected! expected:%d valid:%d in cycle:%lu delay:%d validCount:%d/%d\n", oThrottle, outValid, totalCycles, delay, validcnt, outPackets );
       kill = true;
     }
     

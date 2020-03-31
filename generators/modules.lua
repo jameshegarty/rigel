@@ -1607,7 +1607,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
     -- tricky: each token contains multiple pixels, any of of which can be valid
     assert(scale%T==0)
     sdfOverride = {{1,scale/T}}
-    if terralib~=nil then tfn = MT.downsampleXSeqFn(innerInputType,outputType,scale) end
+    if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale ) end
   else -- scale <= T... for every token, we output 1 token
     sdfOverride = {{1,1}}
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
@@ -1644,7 +1644,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
 
   res.outputType = newType
   res.delay = 4
-  res.outputBurstiness = scale + 2
+  res.outputBurstiness = 128
     
   return res
 end)
@@ -2643,8 +2643,10 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
     res.outputType = types.rvV(types.Par(res.outputType:deInterface().list[1]))
   end
 
-  res.outputBurstiness = 6
-  res.delay = 64
+  local ff = Uniform(W_orig):toNumber()*math.max(Top,B,1)
+  res.inputBurstiness = ff*3
+  res.outputBurstiness = ff
+  res.delay = ff*2
   
   return res
 end)
