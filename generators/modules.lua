@@ -1560,9 +1560,12 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
     end, nil, {{1,scale}})
 
   local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, T )
-  --print("DOWNYSEQ",res)
-  -- hack
+
   res.outputType = types.rvV(types.Par(inputType))
+
+  res.delay = 2
+  res.outputBurstiness = Uniform(W_orig):toNumber()
+  
   return res
 end)
 
@@ -1634,12 +1637,15 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
     sdfOverride)
 
   local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, T )
+
   -- hack
   local newType = types.rvV(types.Par(types.array2d(A,outputT)))
   assert(res.outputType:lower()==newType:lower())
-  --assert(res.outputType:lower():toTerraType()==newType:lower():toTerraType())
+
   res.outputType = newType
-  
+  res.delay = 4
+  res.outputBurstiness = scale + 2
+    
   return res
 end)
 
@@ -2716,7 +2722,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
 
   res.inputBurstiness = J.upToNearest(128+W*B, 1024)
   res.outputBurstiness = 128 -- hack: module starts up at time=0, regardless of when triggered
-  res.delay = 3
+  res.delay = 4
   
   if T==0 then
     res.inputType = A
@@ -2849,7 +2855,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
   res.inputBurstiness = 128
   res.outputBurstiness = 128
-  res.delay = math.max( inputRate, outputRate )
+  res.delay = math.max( inputRate, outputRate )*2
   
   if framed then
     err(type(framedW)=="number", "changeRate: if framed, framedW should be number, but is: "..tostring(framedW))
@@ -4821,7 +4827,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     end)
   assert(type(resdelay)=="number")
 
-  if HANDSHAKE_MODE and input~=null and input.type:isInil()==false then
+  if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
     output = insertFIFOs( output, delayTable, name )
   end
 

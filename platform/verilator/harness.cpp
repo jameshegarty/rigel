@@ -4,11 +4,29 @@
 #include "harness.h"
 #include VERILATORFILE
 
+bool calcThrottle( bool isInput, unsigned int N, unsigned int D, unsigned int delay, unsigned int cycles ){
+  float vLast = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)) );
+  if(vLast<0.f){vLast=0.f;}
+  float v = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)+1.f) );
+  if(v<0.f){v=0.f;}
+  
+  unsigned int viLast = vLast;
+  unsigned int vi = v;
+
+  if( isInput ){
+    //printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d\n",N,D,cycles,v,vi);
+  }else{
+    //  printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d delay:%d\n",N,D,cycles,v,vi,delay);
+  }
+  
+  return vi != viLast;
+}
+
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=13 && argc!=14){
-    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP tapBits tapValue [simCycles]");
+  if(argc!=18 && argc!=19){
+    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP inN inD outW outH outputBitsPerPixel outP outN outD  tapBits tapValue [simCycles]");
     exit(1);
   }
 
@@ -20,16 +38,22 @@ int main(int argc, char** argv) {
   unsigned int inH = atoi(argv[4]);
   unsigned int inbpp = atoi(argv[5]);
   unsigned int inP = atoi(argv[6]);
+  unsigned int inN = atoi(argv[7]);
+  unsigned int inD = atoi(argv[8]);
+      
+  unsigned int outW = atoi(argv[9]);
+  unsigned int outH = atoi(argv[10]);
+  unsigned int outbpp = atoi(argv[11]);
+  unsigned int outP = atoi(argv[12]);
+  unsigned int outN= atoi(argv[13]);
+  unsigned int outD = atoi(argv[14]);
 
-  unsigned int outW = atoi(argv[7]);
-  unsigned int outH = atoi(argv[8]);
-  unsigned int outbpp = atoi(argv[9]);
-  unsigned int outP = atoi(argv[10]);
-
-  int tapBits = atoi(argv[11]);
+  unsigned int delay = atoi(argv[15]);
+      
+  int tapBits = atoi(argv[16]);
 
   unsigned char* tapValue = (unsigned char*)malloc(tapBits/8);
-  char* pos = argv[12];
+  char* pos = argv[17];
 
   for(int count = 0; count < tapBits/8; count++) {
     sscanf(pos, "%2hhx", &tapValue[(tapBits/8)-count-1]);
@@ -37,7 +61,7 @@ int main(int argc, char** argv) {
   }
 
   int simCycles = 0;
-  if(argc==14){simCycles = atoi(argv[13]);}
+  if(argc==19){simCycles = atoi(argv[18]);}
   
   unsigned int inPackets = (inW*inH)/inP;
   unsigned int outPackets = (outW*outH)/outP;
@@ -45,9 +69,7 @@ int main(int argc, char** argv) {
   for(int i=0; i<100; i++){
     CLK = !CLK;
 
-    //#if INBPP>0
     setValid(&(top->process_input),inbpp*inP,false);
-    //#endif
 
     top->CLK = CLK;
 #if STATEFUL==true
@@ -91,50 +113,68 @@ int main(int argc, char** argv) {
   top->CLK = true;
   top->eval();
 
-  //  #if INBPP>0
   bool ready = top->ready;
-  //  #else
-  //  bool ready = true;
-  //  #endif
 
   printf("Start Sim\n");
-  
-  while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
-    // posedge just occured
 
+  bool kill = false;
+  while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
+    // posedge just occured, registers from last cycle were latched
+
+    bool iThrottle = calcThrottle( true, inN, inD, 0, totalCycles );
+    bool oThrottle = calcThrottle( false, outN, outD, delay, totalCycles );
+    
     // set all inputs. DO NOT READ OUTPUTS DIRECTLY. Imagine these inputs come from registers, which should happen _after_ the posedge.
 #if STATEFUL==true
     top->reset = false;
 #endif
-    top->ready_downstream = 1;
-    //#if INBPP>0
-    if(ready){
-      if(validInCnt>=inPackets){
+    top->ready_downstream = oThrottle || (validcnt==0);
+
+    //    if(ready){
+      if( validInCnt>=inPackets || iThrottle==false){ // either we're done, or throttled
         setValid(&(top->process_input),inbpp*inP,false);
       }else{
         setData(&(top->process_input),inbpp*inP,infile);
         setValid(&(top->process_input),inbpp*inP,true);
-        validInCnt++;
+        //        validInCnt++;
       }
-    }
-    //#endif
+      //    }else{
+      //    }
       
     top->eval();
 
-    // flip to negedge
-    top->CLK = false;
-    top->eval();
+    if( top->ready ){
+      if( validInCnt<inPackets ){
+        validInCnt++;
+      }
+    }
+
+    if( iThrottle != top->ready ){
+      printf("Error: DUT input ready wasn't as expected in cycle %lu. expected:%d ready:%d rate:%d/%d delay:%d\n", totalCycles, iThrottle,top->ready,inN, inD, delay);
+      kill = true;
+    }
 
     // read outputs
-    if(getValid( &(top->process_output), outbpp*outP ) ){
+    bool outValid = getValid( &(top->process_output), outbpp*outP );
+
+    if( outValid!=oThrottle ){
+      printf("Error: DUT output valid was not as expected! expected:%d valid:%d in cycle:%lu delay:%d\n", oThrottle, outValid, totalCycles, delay );
+      kill = true;
+    }
+    
+    if( outValid ){
       validcnt++;
       getData(&(top->process_output),outbpp*outP,outfile);
     }
 
-    //#if INBPP>0
-    ready = top->ready;
-    //#endif
+    // flip to negedge.
+    top->CLK = false;
+    top->eval();
 
+
+    //    ready = top->ready;
+
+    //    printf("READY: %d\n", ready);
     // activate posedge
     top->CLK = true;
     top->eval();
@@ -142,6 +182,10 @@ int main(int argc, char** argv) {
     totalCycles++;
     if(totalCycles>outPackets*256){
       printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
+      exit(1);
+    }
+
+    if(kill){
       exit(1);
     }
   }

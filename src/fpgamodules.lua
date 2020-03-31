@@ -207,8 +207,8 @@ modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   elseif items <= 128 then
     rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
-    err( J.isPowerOf2(items), "fifo NYI, items must be power of 2, but is: ",items )
-    ram = fifo:add(modules.bramSDP( true, items*bytes, bytes, bytes, nil, true ):instantiate("ram"))
+    --err( J.isPowerOf2(items), "fifo NYI, items must be power of 2, but is: ",items )
+    ram = fifo:add(modules.bramSDP( true, J.nearestPowerOf2(items)*bytes, bytes, bytes, nil, true ):instantiate("ram"))
   end
 
   -- size

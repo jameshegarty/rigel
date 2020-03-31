@@ -1144,11 +1144,13 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
   err( type(name)=="string" )
   err( X==nil, "C.fifo: too many arguments" )
 
+  local internalFIFOMod
   local internalFIFO
   local inst = {}
 
   if size>0 then
-    internalFIFO = C.fifo( ty, size ):instantiate("internalFIFO")
+    internalFIFOMod = C.fifo( ty, size )
+    internalFIFO = internalFIFOMod:instantiate("internalFIFO")
     inst[internalFIFO] = 1
   end
 
@@ -1167,16 +1169,22 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
 ]]
     verilog = verilog..res:vInstances()
     
-    verilog = verilog..[[reg monitorStarted = 1'b0;
-reg [31:0] cyclesSinceStart = 32'd0;
-reg signed [31:0] monitorNCount = -32'sd]]..tostring(N*delay)..[[;
-wire signed [31:0] monitorNCountNext;
-assign monitorNCountNext = $signed(monitorNCount)+32'sd]]..tostring(N)..[[;
-reg [31:0] monitorReferenceCountReg = 32'd0;
+    verilog = verilog..[[reg monitorStarted;
+reg [31:0] cyclesSinceStart;
+reg signed [31:0] monitorNCountReg;
+wire signed [31:0] monitorNCount;
+assign monitorNCount = $signed(monitorNCountReg) + (( startMonitorTrigger || monitorStarted )?(32'd1):(32'd0));
+reg [31:0] monitorReferenceCountReg;
 wire [31:0] monitorReferenceCount;
 reg [31:0] monitorReferenceCountLast;
 assign monitorReferenceCount = monitorReferenceCountReg + (($signed(monitorNCount)>32'sd0)?(32'd1):(32'd0));
-reg [31:0] monitorOutputCount = 32'd0;
+reg [31:0] monitorOutputCountReg;
+wire [31:0] monitorOutputCount;
+reg [31:0] monitorInputCountReg;
+wire [31:0] monitorInputCount;
+assign monitorInputCount = monitorInputCountReg + (( ]]..res:vInputReady().." && "..res:vInputValid()..[[)?(32'd1):(32'd0));
+assign monitorOutputCount = monitorOutputCountReg + (( ]]..res:vOutputReady().." && "..res:vOutputValid()..[[)?(32'd1):(32'd0));
+
 reg [31:0] cyclesSinceValid = 32'd0;
 
 // hack: we don't know whether an error is a real error, or the end of time.
@@ -1185,41 +1193,43 @@ reg errorQ = 1'b0;
 reg [31:0] errorCyclesSinceStart = 32'd0;
 reg [31:0] errorMonitorReferenceCount = 32'd0;
 reg [31:0] errorMonitorOutputCount = 32'd0;
+reg [31:0] errorMonitorInputCount = 32'd0;
 reg [31:0] errorFifoSize = 32'd0;
 reg errorThrottle = 1'b0;
 reg errorThrottleLast = 1'b0;
 reg errorReadyDownstream = 1'b0;
 reg errorValidDownstream = 1'b0;
-reg signed [31:0] errorMonitorNCountNext;
+reg signed [31:0] errorMonitorNCount;
 
 // hack: verilator won't write out all the errors if we do $finish, so delay calling $finish
 reg killNextCyc =  1'b0;
 
-reg [31:0] fifoSize = 32'd0;
-reg [31:0] fifoMax = 32'd0;
+reg [31:0] fifoSize;
+reg [31:0] fifoMax;
 reg anyValidsSeen = 1'b0;
 
 // we always start ready
 wire throttle;
-//assign throttle = monitorReferenceCount != monitorReferenceCountLast;
-assign throttle = ($signed(monitorNCountNext)>32'sd]]..tostring(D)..[[ ) || (monitorReferenceCount==32'd0 && ($signed(monitorNCountNext)>32'sd0) );
-reg throttleLast;
 ]]
 
     if inputSide then
-      if size==0 then
-        verilog = verilog.."assign "..res:vInputReady().." = "..res:vOutputReady()..";\n"
-        verilog = verilog.."assign "..res:vOutput().." = "..res:vInput()..";\n"
-      else
-        verilog = verilog.."assign "..internalFIFO:vOutputReady().." = "..res:vOutputReady()..";\n"
-        verilog = verilog.."assign "..res:vInputReady().." = "..internalFIFO:vInputReady()..";\n"
-        verilog = verilog.."assign "..res:vOutput().." = "..internalFIFO:vOutput()..";\n"
-        verilog = verilog.."assign "..internalFIFO:vInput().." = "..res:vInput()..";\n"
-      end
+      verilog = verilog.."assign throttle = (monitorReferenceCount!=monitorReferenceCountLast)  || monitorReferenceCount==32'd0;\n"
     else
-      if size==0 then
-        verilog = verilog.."assign "..res:vInputReady().." = "..res:vOutputReady()..";\n"
-        verilog = verilog.."assign "..res:vOutput().." = "..res:vInput()..";\n"
+      verilog = verilog.."assign throttle = monitorReferenceCount!=monitorReferenceCountLast;\n"
+    end
+
+    if size==0 then
+      verilog = verilog.."assign "..res:vInputReady().." = "..res:vOutputReady()..";\n"
+      verilog = verilog.."assign "..res:vOutput().." = "..res:vInput()..";\n"
+    else
+      if inputSide then
+        verilog = verilog.."assign "..internalFIFO:vOutputReady().." = "..res:vOutputReady()..";\n"
+        verilog = verilog.."assign "..res:vInputReady().." = "..internalFIFO:vInputReady().." && throttle;\n"
+        verilog = verilog.."assign "..res:vOutput().." = "..internalFIFO:vOutput()..";\n"
+        if ty~=types.Trigger then
+          verilog = verilog.."assign "..internalFIFO:vInputData().." = "..res:vInputData()..";\n"
+        end
+        verilog = verilog.."assign "..internalFIFO:vInputValid().." = "..res:vInputValid().." && throttle;\n"
       else
         verilog = verilog.."assign "..internalFIFO:vOutputReady().." = "..res:vOutputReady().." && throttle;\n"
         verilog = verilog.."assign "..res:vInputReady().." = "..internalFIFO:vInputReady()..";\n"
@@ -1231,32 +1241,34 @@ reg throttleLast;
         verilog = verilog.."assign "..internalFIFO:vInputValid().." = "..res:vInputValid()..";\n"
       end
     end
-
+    
     verilog = verilog..[[
 always @(posedge CLK) begin
   if (startMonitorTrigger) begin 
     monitorStarted <= 1'b1; 
+  
+    if( ]]..res:vInputReady()..[[==1'b0 ) begin
+      $display("ready not true at start!\n");
+      killNextCyc <= 1'b1;
+    end
   end
 
-throttleLast <= throttle;
-]]
+//   $display("]]..J.sel(inputSide,"I","O")..[[ FIFO cyclesSinceStart:%0d MonitorReferenceCount:%0d monitor]]..J.sel(inputSide,"Input","Output")..[[Count:%0d MonitorNCount:%0d/]]..D..[[ throttle:%0d startMonitorTrigger:%0d fifoSz:%0d/]]..size..[[ iv:%0d ir:%0d ov:%0d or:%0d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"Input","Output")..[[Count, monitorNCount, throttle, startMonitorTrigger, fifoSize, ]]..res:vInputValid()..","..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[ );
 
-    if inputSide then
-      verilog = verilog..[[    if (]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[) ]]
-    else
-      verilog = verilog..[[    if (]]..res:vOutputValid()..[[ && ]]..res:vOutputReady()..[[) ]]
-    end
-    
-verilog = verilog..[[begin 
-  monitorOutputCount <= monitorOutputCount+32'd1;
+if (]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[) begin
+  monitorInputCountReg <= monitorInputCountReg+32'd1;
+end
+
+if (]]..res:vOutputValid()..[[ && ]]..res:vOutputReady()..[[) begin
+  monitorOutputCountReg <= monitorOutputCountReg+32'd1;
 end
 
   if (monitorStarted || startMonitorTrigger) begin
-    if (monitorNCountNext>32'sd]]..tostring(D)..[[ ) begin
+    if (monitorNCount>=32'sd]]..tostring(D)..[[ ) begin
       monitorReferenceCountReg <= monitorReferenceCountReg + 32'd1;
-      monitorNCount <= $signed(monitorNCountNext)-32'sd]]..tostring(D)..[[;
+      monitorNCountReg <= $signed(monitorNCount)-32'sd]]..tostring(D)..[[;
     end else begin
-      monitorNCount <= monitorNCountNext;
+      monitorNCountReg <= monitorNCount;
     end
   end
 
@@ -1264,15 +1276,15 @@ end
 ]]
 
 if inputSide then
-  verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0) begin
-    $display("\n]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, ]]..res:vOutputReady()..[[ );
+  verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1) begin
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, ]]..res:vOutputReady()..[[ );
     killNextCyc <= 1'b1;
   end
 ]]
 
 else
   verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vOutputReady()..[[==1'b0 && throttle==1'b1) begin
-    $display("\n]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ output CLOGGED in cycle %d\n", cyclesSinceStart );
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:%0d/]]..size..[[ output CLOGGED in cycle:%0d throttle:%0d dsReady:%0d expected:%0d inputsSeen:%0d outputsSeen:%0d\n", fifoSize, cyclesSinceStart, throttle, ]]..res:vOutputReady()..[[, monitorReferenceCount, monitorInputCount, monitorOutputCount );
     killNextCyc <= 1'b1;
   end
 ]]
@@ -1281,7 +1293,14 @@ else
     -- output side: check that the FIFO itself never stalls!
   verilog = verilog..[[
   if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1) begin
-    $display("\n]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO FULL? in cycle %d fifoSize:%d/]]..size..[[ expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
+    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO FULL? in cycle %d fifoSize:%d/]]..size..[[ expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
+    killNextCyc <= 1'b1;
+  end
+]]
+
+    verilog = verilog..[[
+  if ( (monitorStarted || startMonitorTrigger) && ]]..internalFIFO:vOutputValid()..[[==1'b0 && throttle==1'b1) begin
+    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO Drained? (probably means delay is too small!) in cycle %d fifoSize:%d/]]..size..[[ expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
     killNextCyc <= 1'b1;
   end
 ]]
@@ -1294,10 +1313,14 @@ verilog = verilog..[[
   if( reset ) begin
     monitorStarted <= 1'b0;
     cyclesSinceStart <= 32'd0;
-    monitorNCount <= -32'sd]]..tostring(N*delay)..[[;
+    monitorNCountReg <= -32'sd]]..tostring(N*math.max(delay,0))..[[;
     monitorReferenceCountReg <= 32'd0;
-    monitorOutputCount <= 32'd0;
+    monitorOutputCountReg <= 32'd0;
+    monitorInputCountReg <= 32'd0;
+    cyclesSinceValid <= 32'd0;
     errorQ <= 1'b0;
+    fifoSize <= 32'd0;
+    fifoMax <= 32'd0;
 //    $display("FIFOWithMonitor Reset");
   end else begin
     if( monitorStarted || startMonitorTrigger ) begin
@@ -1311,21 +1334,21 @@ verilog = verilog..[[
     cyclesSinceValid <= cyclesSinceValid + 32'd1;
   end
 
-  if ( monitorOutputCount != monitorReferenceCount && errorQ==1'b0) begin
+  if ( ]]..J.sel(inputSide,"monitorInputCount","monitorOutputCount")..[[ != monitorReferenceCount && errorQ==1'b0) begin
     errorQ <= 1'b1;
     errorMonitorOutputCount <= monitorOutputCount;
+    errorMonitorInputCount <= monitorInputCount;
     errorMonitorReferenceCount <= monitorReferenceCount;
     errorCyclesSinceStart <= cyclesSinceStart;
     errorThrottle <= throttle;
-    errorThrottleLast <= throttleLast;
     errorFifoSize <= fifoSize;
-    errorMonitorNCountNext <= monitorNCountNext;
+    errorMonitorNCount <= monitorNCount;
     errorReadyDownstream <= ]]..res:vOutputReady()..[[;
     errorValidDownstream <= ]]..res:vOutputValid()..[[;
   end
 
   if (errorQ && ]]..res:vInputValid()..[[) begin
-    $display("\n]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ didn't match expected number of ]]..J.sel(inputSide,"INPUTS","OUTPUTS")..[[! delay:]]..delay..[[ internalDelay:]]..internalDelay..[[ rate:]]..tostring(rate)..[[ fifoSz@error:%d/]]..size..[[ expected:%d seen:%d validDownstream@error:%d readyDownstream@error:%d readyDownstreamNow:%d cyclesSinceStart@error:%d cyclesSinceStartNow:%d cyclesSinceValidNow:%d monitorNCount@error:%d monitorNCountNow:%d/]]..D..[[ throttle@error:%d throttleLast:%d throttleNow:%d\n", errorFifoSize, errorMonitorReferenceCount, errorMonitorOutputCount, errorValidDownstream, errorReadyDownstream, ]]..res:vOutputReady()..[[, errorCyclesSinceStart, cyclesSinceStart, cyclesSinceValid, errorMonitorNCountNext, monitorNCount, errorThrottle, errorThrottleLast, throttle );
+    $display("\n]]..J.sel(size>0,"* ","")..J.sel(inputSide,"I ","O ")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ didn't match expected number of ]]..J.sel(inputSide,"INPUTS","OUTPUTS")..[[! delay:]]..delay..[[ internalDelay:]]..internalDelay..[[ rate:]]..tostring(rate)..[[ fifoSz@error:%0d/]]..size..[[ expected:%0d outputCount:%0d inputCount:%0d validDownstream@error:%0d readyDownstream@error:%0d cyclesSinceStart@error:%0d cyclesSinceStartNow:%0d monitorNCount@error:%0d/]]..D..[[ throttle@error:%0d \n", errorFifoSize, errorMonitorReferenceCount, errorMonitorOutputCount, errorMonitorInputCount, errorValidDownstream, errorReadyDownstream, errorCyclesSinceStart, cyclesSinceStart,  errorMonitorNCount, errorThrottle );
 //    $finish();
 killNextCyc <= 1'b1;
   end
@@ -1378,8 +1401,18 @@ end
     s.verilog = verilog
     return s
   end
-  return res
 
+
+  function res.makeTerra()
+    if size==0 then
+      local mod = RM.makeHandshake(C.identity(ty))
+      return mod.terraModule
+    else
+      return internalFIFOMod.terraModule
+    end
+  end
+  
+  return res
 end)
 
 -------------
@@ -1533,8 +1566,6 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
     res.inputType = types.rV(types.Array2d(A,W_orig,H_orig,T,1))
     res.outputType = types.rRV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
-    --res.inputType = res.inputType:addDim(W,H,true)
-    --res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
   end
 
   return res

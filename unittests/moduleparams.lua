@@ -106,6 +106,11 @@ local function configToName(t)
   return name
 end
 
+local wrap = J.memoize(function(mod)
+  local G = require "generators.core"
+  return G.Function{"W"..mod.name, mod.inputType, mod.sdfInput, function(inp) return mod(inp) end}
+end)
+
 for k,v in pairs(configs) do
   print("DO configs of ",k)
 
@@ -113,18 +118,19 @@ for k,v in pairs(configs) do
     local name = k.."_"..configToName(config)
     print("DOCONFIG",name)
 
-    local mod = R.HS(R.modules[k](config),false)
+    local mod = wrap( R.HS(R.modules[k](config),false) )
+
     local met = meta[k][configk]
 
     -- TODO: hack to get around axi burst nonsense
-    local valid = true
+--    local valid = true
     
-    local targets = {"metadata","verilog"}
-    if valid then 
-      table.insert(targets,"terra") 
-    else
-      print("SKIPPING TERRA BUILD")
-    end
+    local targets = {"metadata","verilog","terra"}
+--    if valid then 
+--      table.insert(targets,"terra") 
+--    else
+--      print("SKIPPING TERRA BUILD")
+--    end
     
     for _,bk in pairs(targets) do
       R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=met.inputImageSize, outSize=met.outputImageSize, backend=bk }
