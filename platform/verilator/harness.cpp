@@ -15,9 +15,9 @@ bool calcThrottle( bool isInput, unsigned int N, unsigned int D, unsigned int de
   unsigned int vi = v;
 
   if( isInput ){
-    //    printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f\n",N,D,cycles,v,vi,vf);
+    //        printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f\n",N,D,cycles,v,vi,vf);
   }else{
-    //    printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f delay:%d\n",N,D,cycles,v,vi,vf,delay);
+    //        printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f delay:%d\n",N,D,cycles,v,vi,vf,delay);
   }
   
   return vi != viLast;

@@ -2646,7 +2646,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   local ff = Uniform(W_orig):toNumber()*math.max(Top,B,1)
   res.inputBurstiness = ff*3
   res.outputBurstiness = ff
-  res.delay = ff*2
+  res.delay = ff*2+32
   
   return res
 end)
@@ -3600,7 +3600,7 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
+modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
   err( types.isType(A), "fifo: type must be type")
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
@@ -3700,11 +3700,11 @@ return mod
       end
     else
       makeSystolic = function()
-        local systolicModule = Ssugar.moduleConstructor(name)
+        local systolicModule = Ssugar.moduleConstructor(name.."_CORE")
 
-        local allocSize = J.upToNearest( 1024, size )
-        if size<=128 then allocSize=size end
-        local fifo = systolicModule:add( fpgamodules.fifo( A:lower(), allocSize, DARKROOM_VERBOSE, nostall ):instantiate("FIFO") )
+        --local allocSize = J.upToNearest( 1024, size )
+        --if size<=128 then allocSize=size end
+        local fifo = systolicModule:add( fpgamodules.fifo( A:lower(), size, DARKROOM_VERBOSE, nostall ):instantiate("FIFO") )
         
         --------------
         -- basic -> R
@@ -3760,6 +3760,8 @@ return mod
         systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset",J.sel(includeSizeFn,"size",nil)}, false, {true} )
         systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset",J.sel(includeSizeFn,"size",nil)})
         systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset",J.sel(includeSizeFn,"size",nil)},{true,false},{true,true},true)
+
+        systolicModule:setName(name)
         
         return systolicModule
       end
@@ -3773,6 +3775,63 @@ return res
   end
 
   assert(false)
+end)
+
+-- this is a complete hack: on the read (load) side, our stupid FIFO has a pipeline with 1 cycle of delay
+-- => if load_ready_downstream is false, we will never assert valid=true, even if FIFO has data
+-- so, this wrapper asserts load_ready_downstream=true, until outputValid=true, to unclog the pipe
+-- this won't work in general: but since we know this load has a one cycle delay, this should be ok...
+-- this also only applies if size>128, since that is when we use the BRAMS, which have delay=1
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
+  local res = modules.fifoInner( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
+  
+  if size>128 and (csimOnly==false or csimOnly==nil) then
+    assert( includeSizeFn==false or includeSizeFn==nil )
+    local resHack = {}
+    for k,v in pairs(res) do resHack[k] = v end
+    resHack.name = "HACKWRAP_"..resHack.name
+    resHack.functions={load={},store={}}
+    for k,v in pairs(res.functions.load) do resHack.functions.load[k] = v end
+    resHack.functions.load = rigel.newFunction(resHack.functions.load)
+    for k,v in pairs(res.functions.store) do resHack.functions.store[k] = v end
+    resHack.functions.store = rigel.newFunction(resHack.functions.store)
+
+    local inst = {}
+    local internalFIFO = res:instantiate("internalFIFO")
+    inst[internalFIFO] = 1
+    resHack.instanceMap = inst
+    
+    resHack = rigel.newModule(resHack)
+    function resHack.makeSystolic()
+      local C = require "generators.examplescommon"
+      local s = C.automaticSystolicStub( resHack )
+
+      local verilog = resHack:vHeader()..resHack:vInstances()..[[
+reg loadValidLast=1'b0;
+reg loadReadyLast=1'b0;
+always @(posedge CLK) begin
+  loadValidLast <= ]]..internalFIFO:vOutputValid("load")..[[;
+  loadReadyLast <= ]]..internalFIFO:vOutputReady("load")..[[;
+end
+
+wire drainThePipe;
+assign drainThePipe = ((loadValidLast==1'b0)&&(loadReadyLast==1'b0));
+
+assign ]]..resHack:vOutput("load").." = "..internalFIFO:vOutput("load")..[[;
+assign ]]..internalFIFO:vOutputReady("load").." = "..resHack:vOutputReady("load")..[[ || drainThePipe;
+assign ]]..internalFIFO:vInput("store").." = "..resHack:vInput("store")..[[;
+assign ]]..resHack:vInputReady("store").." = "..internalFIFO:vInputReady("store")..[[;
+endmodule
+
+]]
+      s.verilog = verilog
+      return s
+    end
+
+    return resHack
+  else
+    return res
+  end
 end)
 
 modules.triggerFIFO = memoize(function(ty)
@@ -4831,6 +4890,15 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
   if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
     output = insertFIFOs( output, delayTable, name )
+  elseif input~=nil and input.type:isInil()==false then
+    output:visitEach(
+      function(n)
+        if n.kind=="apply" then
+          err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: inputBurstiness must be 0 for non-handshaked modules! module:",name,":",input.type,"->",output.type," contains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," inputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness) )
+        end
+    end)
+  else
+    print("NYI - FIFO ALLOCATION FOR INIL MODULE")
   end
 
   name = J.verilogSanitize(name)
@@ -4882,8 +4950,6 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   for inst,_ in pairs(res.instanceMap) do
     res.stateful = res.stateful or inst.module.stateful
   end  
-
-  
 
   -- collect metadata
   output:visitEach(

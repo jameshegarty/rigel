@@ -773,7 +773,7 @@ end
 function systolicASTFunctions:internalDelay(moduleName)
   if self.kind=="call" then 
     local res = self.inst.module:getDelay( self.fnname ) 
-    err( res==0 or self.pipelined, "Error, could not disable pipelining on module '",moduleName,"' due to call of '",self.inst.module.name,"', ",self.loc)
+    err( res==0 or self.pipelined, "Error, could not disable pipelining on module '",moduleName,"' due to call of '",self.inst.module.name,"' function '"..self.fnname.."' which has delay "..res..", ",self.loc)
     return res, 0
   elseif self.kind=="binop" or self.kind=="select" or self.kind=="unary" then 
     if self.pipelined==nil or self.pipelined then

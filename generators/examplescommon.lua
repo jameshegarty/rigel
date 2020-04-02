@@ -1168,7 +1168,7 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
     verilog = verilog..[[parameter INSTANCE_NAME="INST";
 ]]
     verilog = verilog..res:vInstances()
-    
+
     verilog = verilog..[[reg monitorStarted;
 reg [31:0] cyclesSinceStart;
 reg signed [31:0] monitorNCountReg;
@@ -1200,6 +1200,14 @@ reg errorThrottleLast = 1'b0;
 reg errorReadyDownstream = 1'b0;
 reg errorValidDownstream = 1'b0;
 reg signed [31:0] errorMonitorNCount;
+
+reg errorInputClogged = 1'b0;
+reg errorInputCloggedReadyDownstream;
+
+reg errorOutputClogged = 1'b0;
+reg errorOutputCloggedReadyDownstream;
+
+reg errorOutputDrained = 1'b0;
 
 // hack: verilator won't write out all the errors if we do $finish, so delay calling $finish
 reg killNextCyc =  1'b0;
@@ -1277,15 +1285,23 @@ end
 
 if inputSide then
   verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1) begin
-    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, ]]..res:vOutputReady()..[[ );
-    killNextCyc <= 1'b1;
+    errorInputClogged <= 1'b1;
+    errorInputCloggedReadyDownstream <= ]]..res:vOutputReady()..[[;
+  end
+
+  if (errorInputClogged && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, errorInputCloggedReadyDownstream );
   end
 ]]
 
 else
   verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vOutputReady()..[[==1'b0 && throttle==1'b1) begin
-    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:%0d/]]..size..[[ output CLOGGED in cycle:%0d throttle:%0d dsReady:%0d expected:%0d inputsSeen:%0d outputsSeen:%0d\n", fifoSize, cyclesSinceStart, throttle, ]]..res:vOutputReady()..[[, monitorReferenceCount, monitorInputCount, monitorOutputCount );
-    killNextCyc <= 1'b1;
+    errorOutputClogged <= 1'b1; 
+    errorOutputCloggedReadyDownstream <= ]]..res:vOutputReady()..[[;
+  end
+
+  if (errorOutputClogged && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:%0d/]]..size..[[ output CLOGGED in cycle:%0d throttle:%0d dsReady:%0d expected:%0d inputsSeen:%0d outputsSeen:%0d\n", fifoSize, cyclesSinceStart, throttle, errorOutputCloggedReadyDownstream, monitorReferenceCount, monitorInputCount, monitorOutputCount );
   end
 ]]
 
@@ -1300,8 +1316,11 @@ else
 
     verilog = verilog..[[
   if ( (monitorStarted || startMonitorTrigger) && ]]..internalFIFO:vOutputValid()..[[==1'b0 && throttle==1'b1) begin
+    errorOutputDrained <= 1'b1;
+  end
+
+  if (errorOutputDrained && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
     $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO Drained? (probably means delay is too small!) in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[  expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
-    killNextCyc <= 1'b1;
   end
 ]]
   end
@@ -1541,31 +1560,39 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     return C.identity(A)
   end
 
-  local inp = rigel.input( types.rV(types.Par(types.array2d(A,T))) )
+  local inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
   local out = inp
   if scaleY>1 then
-    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY )), out)
+    out = rigel.apply("downsampleSeq_Y", modules.liftHandshake(modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY ))), out)
   end
   if scaleX>1 then
-    local mod = modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX ))
+    local mod = modules.liftHandshake(modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX )))
 
-    if scaleY>1 then mod=modules.RPassthrough(mod) end
+    --if scaleY>1 then mod=modules.RPassthrough(mod) end
 
     out = rigel.apply("downsampleSeq_X", mod, out)
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
-    elseif downsampleT>T then assert(false) end
+      out = rigel.apply("downsampleSeq_incrate", modules.liftHandshake(modules.changeRate(A,1,downsampleT,T)), out )
+    elseif downsampleT>T then
+      assert(false)
+    end
   end
 
   local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H_orig).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
-
+  
   if framed then
     print("FRAMED",A,T,res.inputType,res.outputType)
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
-    res.inputType = types.rV(types.Array2d(A,W_orig,H_orig,T,1))
-    res.outputType = types.rRV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
+    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,1))
+    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
+
+    assert( itype:lower()==res.inputType )
+    assert( oype:lower()==res.outputType )
+    
+    res.inputType = itype
+    res.outputType = otype
   end
 
   return res

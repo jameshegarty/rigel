@@ -736,7 +736,7 @@ end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
-local function buildAndCheckSystolicModule(tab, isModule)
+local function buildAndCheckSystolicModule( tab, isModule )
   if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule",tab.name) end
   -- build the systolic module as needed
   err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
@@ -753,6 +753,8 @@ local function buildAndCheckSystolicModule(tab, isModule)
     rigelFns = {["process"]=tab}
   end
 
+  err( tab.name==sm.name, "systolic module name doesn't match rigel module name! rigelName:'",tab.name,"' systolicName:'",sm.name,"'")
+  
   for fnname,rigelFn in pairs(rigelFns) do
     local systolicFn = systolicFns[fnname]
 
@@ -915,6 +917,8 @@ __tostring=function(mod)
 
   table.insert(res,"  Stateful: "..tostring(mod.stateful))
   table.insert(res,"  Delay: "..tostring(mod.delay))
+  table.insert(res,"  InputBurstiness: "..tostring(mod.inputBurstiness))
+  table.insert(res,"  OutputBurstiness: "..tostring(mod.outputBurstiness))
   
   table.insert(res,"  Metadata:")
   for k,v in pairs(mod.globalMetadata) do
@@ -1153,6 +1157,10 @@ function darkroomFunctionFunctions:vInput()
   return "process_input"
 end
 
+function darkroomModuleFunctions:vInput( fnname )
+  return fnname.."_input"
+end
+
 function darkroomFunctionFunctions:vInputData()
   assert(types.isHandshakeAny(self.inputType))
   assert( self.inputType~=types.HandshakeTrigger )
@@ -1171,8 +1179,18 @@ function darkroomFunctionFunctions:vInputReady()
   return "ready"
 end
 
+function darkroomModuleFunctions:vInputReady( fnname )
+  assert( self.functions[fnname]~=nil )
+  assert( types.isHandshakeAny(self.functions[fnname].inputType) )
+  return fnname.."_ready"
+end
+
 function darkroomFunctionFunctions:vOutput()
   return "process_output"
+end
+
+function darkroomModuleFunctions:vOutput( fnname )
+  return fnname.."_output"
 end
 
 -- verilog value of output data (if handshaked)
@@ -1192,6 +1210,12 @@ end
 function darkroomFunctionFunctions:vOutputReady()
   assert(types.isHandshakeAny(self.outputType))
   return "ready_downstream"
+end
+
+function darkroomModuleFunctions:vOutputReady( fnname )
+  assert( self.functions[fnname]~=nil )
+  assert( types.isHandshakeAny(self.functions[fnname].outputType))
+  return fnname.."_ready_downstream"
 end
 
 function darkroomFunctionFunctions:instantiate(name,X)
@@ -1256,32 +1280,18 @@ local function checkRigelFunction(tab)
   err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
   err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
---  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.Interface() and tab.outputType==types.Interface()) then
---    err( type(tab.delay)=="number" or type(tab.delay)=="table","rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
-
---    if tab.inputType:isRV() then
-
---    elseif tab.inputType:isArray() or tab.inputType:isTuple() then
-      -- delay must be a table
---    else
-    
---    end
-  --  else
-
   -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
   -- expand this to a per-stream delay at some point, if needed
   err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType," delay is: ",tab.delay )
---  end
+
+  if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
+  if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
 
   if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
-    if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
-    if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
     err( type(tab.inputBurstiness)=="number", "rigel.newFunction: missing inputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
     err( type(tab.outputBurstiness)=="number", "rigel.newFunction: missing outputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
   end
 
-  --if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
-  --if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
 end
 
@@ -1439,6 +1449,7 @@ function darkroom.newModule( tab, X )
 
   for fnname,fn in pairs(tab.functions) do
     checkRigelFunction(fn)
+    err( darkroom.isPlainFunction(fn),"newModule error, function '"..fnname.."' is not a plain Rigel function? is: ", fn)
   end
   
   for instance,fnlist in pairs(tab.requires) do
@@ -1671,9 +1682,11 @@ darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
   return MT.terraReference(tab)
 end)
 
-function darkroomInstanceFunctions:vInput()
+function darkroomInstanceFunctions:vInput( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_input"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_input"
   else
     assert(false)
   end
@@ -1695,17 +1708,21 @@ function darkroomInstanceFunctions:vInputValid()
   end
 end
 
-function darkroomInstanceFunctions:vInputReady()
+function darkroomInstanceFunctions:vInputReady( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_ready"
   else
     assert(false)
   end
 end
 
-function darkroomInstanceFunctions:vOutput()
+function darkroomInstanceFunctions:vOutput( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_output"    
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_output"
   else
     assert(false)
   end
@@ -1719,17 +1736,22 @@ function darkroomInstanceFunctions:vOutputData()
   end
 end
 
-function darkroomInstanceFunctions:vOutputValid()
+function darkroomInstanceFunctions:vOutputValid( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_output["..(types.lower(self.module.outputType):verilogBits()-1).."]"
+  elseif darkroom.isPlainModule(self.module) then
+    assert( self.module.functions[fnname] ~= nil )
+    return self.name.."_"..fnname.."_output["..( self.module.functions[fnname].outputType:lower():verilogBits()-1).."]"
   else
     assert(false)
   end
 end
 
-function darkroomInstanceFunctions:vOutputReady()
+function darkroomInstanceFunctions:vOutputReady( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready_downstream"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_ready_downstream"
   else
     assert(false)
   end
@@ -2013,7 +2035,7 @@ function darkroomIRFunctions:typecheck()
     -- spaghetti code: see case in 'apply' above
     assert( darkroom.isModule(n.inst.module) )
           
-    err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
+    err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' does not have a method named '",n.fnname,"'!")
     
     if n.inputs[1]==nil then
       err( n.inst.module.functions[n.fnname].inputType==types.Interface(), "Error, method '"..n.fnname.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' was passed no input, but expected an input (of type "..tostring(n.inst.module.functions[n.fnname].inputType)..")")

@@ -99,7 +99,7 @@ configs.rcp = {{type=types.uint(8)}}
 meta.rcp={{inputP=1,outputP=1,inputImageSize=IS,outputImageSize=IS}}
 
 for k,v in pairs(configs) do
-  if k~="cropSeq" then configs[k]=nil end
+--  if k~="downsampleSeq" then configs[k]=nil end
 end
 
 local function configToName(t)
