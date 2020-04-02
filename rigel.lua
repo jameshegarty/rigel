@@ -19,6 +19,8 @@ local darkroom = {}
 darkroom.SDF = true
 darkroom.default_nettype_none = true
 
+darkroom.MONITOR_FIFOS = false
+
 -- path to root of rigel repo
 darkroom.path = string.sub(debug.getinfo(1).source,2,#debug.getinfo(1).source-9)
 
@@ -1311,7 +1313,6 @@ function darkroom.newFunction(tab,X)
     print("systolic module already exists?", tab.name, getmetatable(tab))
     assert(false)
   end
-
 
   if tab.requires==nil then tab.requires={} end
   if tab.provides==nil then tab.provides={} end

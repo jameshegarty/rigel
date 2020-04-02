@@ -743,7 +743,7 @@ function fixedASTFunctions:toRigelModule(name,X)
   local inpType
   self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  return RM.lift( name, inpType, self.type, J.sel(self.kind=="disablePipelining",0,1), 
+  return RM.lift( name, inpType, self.type, nil, --J.sel(self.kind=="disablePipelining",0,1), 
     function(inp)
       local out, instances = self:toSystolic(inp)
       return out, instances

@@ -2644,9 +2644,9 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   end
 
   local ff = Uniform(W_orig):toNumber()*math.max(Top,B,1)
-  res.inputBurstiness = ff*3
-  res.outputBurstiness = ff
-  res.delay = ff*2+32
+  res.inputBurstiness = math.min(ff*3,1024)
+  res.outputBurstiness = math.min(ff,1024)
+  res.delay = math.min(ff*2+32,1024)
   
   return res
 end)
@@ -3690,7 +3690,7 @@ return mod
   else
     local bytes = (size*A:verilogBits())/8
     
-    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly))
+    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_dbgname"..tostring(dbgname))
     
     local makeSystolic
     local fifo
@@ -4795,12 +4795,31 @@ local function insertFIFOs( out, delayTable, moduleName )
 
       if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
-        local IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
-        local OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
 
-        res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, n.inputs[1] )
+        err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
+        err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
+        
+        local IFIFO, OFIFO
+        if rigel.MONITOR_FIFOS==false then
+          if n.fn.inputBurstiness>0 then
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, nil,nil,nil,nil,  NAME )
+          end
+          if n.fn.outputBurstiness>0 then
+            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness, nil,nil,nil,nil,  NAME )
+          end
+        else
+          IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
+          OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
+        end
+
+        res = n.inputs[1]
+        if IFIFO~=nil then
+          res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
+        end
         res = rigel.apply( n.name, n.fn, res )
-        res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
+        if OFIFO~=nil then
+          res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
+        end
       end
 
       return res
@@ -5197,7 +5216,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     end
 
     local CE
-    if systolicOutput~=nil and delay>0 then
+    if systolicOutput~=nil and (delay==nil or delay>0) then
       if (systolicOutput:isPure()==false or systolicOutput:getDelay()>0) then
         CE = S.CE("process_CE")
       end
@@ -5211,11 +5230,13 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
 
   J.err(types.isType(res.outputType),"modules.lift: missing outputType")
 
-  local res = rigel.newFunction( res )
-
   if res.delay==nil then
-    res.delay = res.systolicModule:getDelay("process")
+    local SM = res.makeSystolic()
+    res.delay = SM:getDelay("process")
+    function res.makeSystolic() return SM end
   end
+
+  local res = rigel.newFunction( res )
 
   if terralib~=nil then 
     local systolicInput, systolicOutput

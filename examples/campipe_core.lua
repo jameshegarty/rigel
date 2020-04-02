@@ -22,7 +22,8 @@ function CC.blackLevel( pedestal )
   local a = f.constant(255,false,out:precision(),0)
   --print(a.type,out.type)
   out = f.select(out:gt(f.constant(255,false,8)),a,out)
-  return out:truncate(8):lower():toRigelModule("blackLevel")
+  local res = out:truncate(8):lower():toRigelModule("blackLevel")
+  return res
 end
 
 function CC.demosaic(internalW,internalH,internalT,DEMOSAIC_W,DEMOSAIC_H,DEMOSAIC_R,DEMOSAIC_G,DEMOSAIC_B)

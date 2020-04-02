@@ -742,7 +742,7 @@ delayTable["not"]={[0]=0}
 delayTable["or"]={[0]=0}
 delayTable["select"]={[0]=0}
 
-local function interp(tab,bits)
+function systolic.interp( tab, bits )
   local lowerk,lowerv,higherk,higherv
   for k,v in pairs(tab) do
     if k<=bits and (lowerk==nil or k>lowerk) then
@@ -781,7 +781,7 @@ function systolicASTFunctions:internalDelay(moduleName)
       if self.kind=="select" then assert(op==nil); op="select" end
       local tab = delayTable[op]
       err(tab~=nil,"Pipelining error: no data for op '"..op.."'")
-      local id = interp(tab,self.type:verilogBits())
+      local id = systolic.interp(tab,self.type:verilogBits())
       id = id*systolic.delayScale
       return id,id
     else

@@ -215,10 +215,14 @@ end)
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
   err( types.isType(A), "C.multiply: A must be type")
+  assert( A:isData() )
   err( types.isType(B), "C.multiply: B must be type")
+  assert( B:isData() )
   err( types.isType(outputType), "C.multiply: outputType must be type")
-
-  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 2,
+  assert( outputType:isData() )
+  
+  local bits 
+  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, nil, --S.interp(S.delayTable["*"],outputType:verilogBits()),
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end,
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
@@ -234,7 +238,7 @@ C.multiplyConst = memoize(function( A, constValue, X )
   err( type(constValue)=="number","C.multiplyConst: value must be number, but is: "..tostring(constValue) )
   err(X==nil,"C.multiplyConst: too many arguments" )
   
-  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, nil,
     function(sinp) return sinp*S.constant(constValue,A) end,
     function() return CT.multiplyConst(A,constValue) end,
     "C.multiplyConst" )
@@ -960,7 +964,7 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
   local padL = internalL-L
   local padR = internalR-Right
   local fnOutType = R.extractData(internalFn.outputType):arrayOver()
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0))), out)
+  local out = R.apply("crop",C.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0), out)
 
   if timingFifo then
     -- this FIFO is only for improving timing
@@ -1189,7 +1193,7 @@ reg [31:0] cyclesSinceValid = 32'd0;
 
 // hack: we don't know whether an error is a real error, or the end of time.
 // so: buffer errors, and don't print them until we see another input. If it's the last token, error is surpressed
-reg errorQ = 1'b0;
+reg errorQ;
 reg [31:0] errorCyclesSinceStart = 32'd0;
 reg [31:0] errorMonitorReferenceCount = 32'd0;
 reg [31:0] errorMonitorOutputCount = 32'd0;
@@ -1201,13 +1205,17 @@ reg errorReadyDownstream = 1'b0;
 reg errorValidDownstream = 1'b0;
 reg signed [31:0] errorMonitorNCount;
 
-reg errorInputClogged = 1'b0;
+reg errorInputClogged;
 reg errorInputCloggedReadyDownstream;
 
-reg errorOutputClogged = 1'b0;
+reg errorOutputClogged;
 reg errorOutputCloggedReadyDownstream;
 
-reg errorOutputDrained = 1'b0;
+reg errorOutputDrained;
+reg [31:0] errorOutputDrainedFifoSize;
+reg [31:0] errorOutputDrainedMonitorReferenceCount;
+reg [31:0] errorOutputDrainedMonitorOutputCount;
+reg [31:0] errorOutputDrainedCyclesSinceStart;
 
 // hack: verilator won't write out all the errors if we do $finish, so delay calling $finish
 reg killNextCyc =  1'b0;
@@ -1317,10 +1325,14 @@ else
     verilog = verilog..[[
   if ( (monitorStarted || startMonitorTrigger) && ]]..internalFIFO:vOutputValid()..[[==1'b0 && throttle==1'b1) begin
     errorOutputDrained <= 1'b1;
+    errorOutputDrainedFifoSize <= fifoSize;
+    errorOutputDrainedMonitorReferenceCount <= monitorReferenceCount;
+    errorOutputDrainedMonitorOutputCount <= monitorOutputCount;
+    errorOutputDrainedCyclesSinceStart <= cyclesSinceStart;
   end
 
   if (errorOutputDrained && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
-    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO Drained? (probably means delay is too small!) in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[  expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
+    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO Drained? (probably means delay is too small!) in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[  expected:%d seen:%d\n",  errorOutputDrainedCyclesSinceStart,  errorOutputDrainedFifoSize,  errorOutputDrainedMonitorReferenceCount,  errorOutputDrainedMonitorOutputCount );
   end
 ]]
   end
@@ -1338,6 +1350,9 @@ verilog = verilog..[[
     monitorInputCountReg <= 32'd0;
     cyclesSinceValid <= 32'd0;
     errorQ <= 1'b0;
+    errorInputClogged <= 1'b0;
+    errorOutputClogged <= 1'b0;
+    errorOutputDrained <= 1'b0;
     fifoSize <= 32'd0;
     fifoMax <= 32'd0;
 //    $display("FIFOWithMonitor Reset");
@@ -1723,21 +1738,21 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
   err( T==0 or (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
-  local inp = rigel.input( types.rv(types.Par(types.array2d( A, T ))) )
-  local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
-  out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
-  out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
+  local inp = rigel.input( types.RV(types.array2d( A, T )) )
+  local out = rigel.apply( "SSR", modules.makeHandshake(modules.SSR( A, T, -RResidual, 0 )), inp)
+  out = rigel.apply( "slice", modules.makeHandshake(C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0)), out)
+  out = rigel.apply( "crop", modules.liftHandshake(modules.liftDecimate(modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top))), out )
 
   local res = modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_framed"..tostring(framed)), inp, out )
 
   local niType, noType
   if framed then
     if T==0 then
-      niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
-      noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
+      niType = types.RV(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
+      noType = types.RV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
     else
-      niType = types.rv(types.ParSeq(res.inputType:extractData(),W_orig,H))
-      noType = types.rvV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
+      niType = types.RV(types.ParSeq(res.inputType:extractData(),W_orig,H))
+      noType = types.RV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
     end
 
     assert(res.inputType:lower()==niType:lower())

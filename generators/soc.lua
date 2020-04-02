@@ -912,7 +912,7 @@ endmodule
   local instanceMap = {[readFnInst]=1}
   instanceMap = J.joinSet(instanceMap,addressBase:getInstances())
   
-  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.Handshake(types.uint(32)), outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,burstCount}}, sdfOutput={{1,1}}, instanceMap=instanceMap }
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.Handshake(types.uint(32)), outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,burstCount}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=4 }
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1007,7 +1007,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,addressBase:getInstances())
   
   -- input format is {addr,data}
-  local res = RM.liftVerilogTab{ name=ModuleName, inputType=inputType, outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1},{1,1}}, sdfOutput={{1,1}}, instanceMap=instanceMap}
+  local res = RM.liftVerilogTab{ name=ModuleName, inputType=inputType, outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1},{1,1}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=4}
 
   if terralib~=nil then
     res.makeTerra = nil
