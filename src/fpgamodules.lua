@@ -303,10 +303,14 @@ end)
 
 modules.fifo128 = memoize(function(ty,verbose) return modules.fifo(ty,128,verbose) end)
 
-modules.fifonoop = memoize(function(ty,addrBits)
+modules.fifonoop = memoize(function( ty, addrBits, moduleName )
   assert(types.isType(ty))
 
-  local fifo = Ssugar.moduleConstructor(J.sanitize("fifonoop_"..tostring(ty).."_addrbits"..tostring(addrBits))):onlyWire(true)
+  if moduleName==nil then
+    moduleName = J.sanitize("fifonoop_"..tostring(ty).."_addrbits"..tostring(addrBits))
+  end
+  
+  local fifo = Ssugar.moduleConstructor( moduleName ):onlyWire(true)
 
   local internalData = systolic.parameter("store_input",types.tuple{ty,types.bool()})
   local internalReady = systolic.parameter("load_ready_downstream",types.bool())
@@ -768,7 +772,7 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   --print(ramCount,"BRAMS needed","maxPossibleBWBits",maxPossibleBWBits,"addressable",addressable,"sizeInBytes",sizeInBytes,"inputBytes",inputBytes,"outputBytes",outputBytes)
 
   -- it's ok to require <1 bram (like half a bram)
-  err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed?")
+  err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed? sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," addressable:",addressable)
 
   -- number of input bits of the actual bram we chose
   -- if ram BW is more than we need, prefer to have the input/output port match real port size (# allocate too many addressible items).

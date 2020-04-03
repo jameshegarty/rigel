@@ -660,7 +660,7 @@ C.absoluteDifference = memoize(function(A,outputType,X)
     assert(false)
   end
 
-  local partial = RM.lift( J.sanitize("absoluteDifference_"..tostring(A).."_"..tostring(outputType)), TY, outputType, 1,
+  local partial = RM.lift( J.sanitize("absoluteDifference_"..tostring(A).."_"..tostring(outputType)), TY, outputType, 2,
     function(sinp)
       local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
       local out = S.cast(subabs, internalType_uint)
@@ -1732,7 +1732,7 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
   err( type(B)=="number", "B must be number")
   err( type(Top)=="number", "Top must be number")
   
-  if T==0 or (L%T==0 and R%T==0) then return modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ) end
+  if T==0 or (L%T==0 and R%T==0) then return modules.liftHandshake(modules.liftDecimate(modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ))) end
   if framed==nil then framed=false end
   
   err( T==0 or (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))

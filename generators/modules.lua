@@ -2004,6 +2004,7 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
   res.stateful = false
   res.name = sanitize("ToHandshakeArrayOneHot_"..tostring(A).."_"..#inputRates)
 
+  res.delay = 0
 --  function res:sdfTransfer( I, loc ) 
 --    err(#I[1]==#inputRates, "toHandshakeArrayOneHot: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
 --    return I 
@@ -2078,6 +2079,7 @@ modules.sequence = memoize(function( A, inputRates, Schedule, X )
   res.stateful = Schedule.stateful
   res.name = sanitize("Sequence_"..tostring(A).."_"..#inputRates)
 
+  res.delay = 0
   local sdfSum = SDFRate.sum(inputRates)
 
   err( Uniform(sdfSum[1]):eq(sdfSum[2]):assertAlwaysTrue(), "inputRates must sum to 1, but are: "..tostring(SDF(inputRates)).." sum:"..tostring(sdfSum[1]).."/"..tostring(sdfSum[2]))
@@ -2302,6 +2304,8 @@ modules.flattenStreams = memoize( function( A, rates, X )
   res.sdfOutput = SDF{1,1}
   res.name = sanitize("FlattenStreams_"..tostring(A).."_"..#rates)
 
+  res.delay = 0
+  
   if terralib~=nil then res.terraModule = MT.flattenStreams(res,A,rates) end
 
   function res.makeSystolic()
@@ -3696,7 +3700,7 @@ return mod
     local fifo
     if csimOnly then
       makeSystolic = function()
-        return fpgamodules.fifonoop(A,addrBits)
+        return fpgamodules.fifonoop( A, addrBits, name )
       end
     else
       makeSystolic = function()
@@ -4875,16 +4879,22 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
         res = 0
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
         res = math.max(unpack(inputs))
-      elseif n.kind=="apply" then
+      elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
+
+        local fn = n.fn
+        if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then
+          fn = n.inst.module
+        end
+
         local extra = 0
-        if n.fn.inputType:isRV() and n.fn.inputBurstiness>0 then extra = extra+1 end
-        if n.fn.outputType:isRV() and n.fn.outputBurstiness>0 then extra = extra+1 end
+        if fn.inputType:isRV() and fn.inputBurstiness>0 then extra = extra+1 end
+        if fn.outputType:isRV() and fn.outputBurstiness>0 then extra = extra+1 end
         
-        if n.fn.inputType==types.Interface() or (n.fn.inputType:isrv() and n.fn.inputType:extractData():verilogBits()==0) then
-          res = n.fn.delay
+        if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
+          res = fn.delay
         else
-          err(n.fn.delay~=nil,"Error: fn "..n.fn.name.." is missing delay? "..tostring(n.fn.inputType).." "..tostring(n.fn.outputType))
-          res = inputs[1] + n.fn.delay
+          err(fn.delay~=nil,"Error: fn "..fn.name.." is missing delay? "..tostring(fn.inputType).." "..tostring(fn.outputType))
+          res = inputs[1] + fn.delay
         end
       elseif n.kind=="applyMethod" then
         if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
@@ -4907,19 +4917,21 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     end)
   assert(type(resdelay)=="number")
 
-  if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
-    output = insertFIFOs( output, delayTable, name )
-  elseif input~=nil and input.type:isInil()==false then
-    output:visitEach(
-      function(n)
-        if n.kind=="apply" then
-          err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: inputBurstiness must be 0 for non-handshaked modules! module:",name,":",input.type,"->",output.type," contains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," inputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness) )
-        end
-    end)
-  else
-    print("NYI - FIFO ALLOCATION FOR INIL MODULE")
+  if rigel.AUTO_FIFOS~=false then
+    if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
+      output = insertFIFOs( output, delayTable, name )
+    elseif input~=nil and input.type:isInil()==false then
+      output:visitEach(
+        function(n)
+          if n.kind=="apply" then
+            err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: inputBurstiness must be 0 for non-handshaked modules! module:",name,":",input.type,"->",output.type," contains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," inputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness) )
+          end
+      end)
+    else
+      print("NYI - FIFO ALLOCATION FOR INIL MODULE")
+    end
   end
-
+  
   name = J.verilogSanitize(name)
 
   local res = {kind = "lambda", name=name, input = input, output = output, instanceMap=instanceMap, generator=generatorStr, params=generatorParams, requires = requires, provides=provides, globalMetadata={}, delay = resdelay }

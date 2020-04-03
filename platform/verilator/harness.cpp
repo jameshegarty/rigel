@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     }
     
     if(ready){
-      if( validInCnt>=inPackets || iThrottle==false){ // either we're done, or throttled
+      if( validInCnt>=inPackets || (iThrottle==false && MONITOR_FIFOS)){ // either we're done, or throttled
         setValid(&(top->process_input),inbpp*inP,false);
       }else{
         setData(&(top->process_input),inbpp*inP,infile);

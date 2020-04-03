@@ -9,6 +9,8 @@ local SDFRate = require "sdfrate"
 local J = require "common"
 local soc = require "generators.soc"
 
+R.AUTO_FIFOS = false
+
 T = 4 -- throughput
 outputT = 8
 A = types.uint(8)

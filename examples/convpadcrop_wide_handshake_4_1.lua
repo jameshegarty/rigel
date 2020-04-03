@@ -88,7 +88,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
     out = C.fifo(types.array2d(types.uint(8),T),2048,NOSTALL)(out)
   end
 
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
+  local out = R.apply("crop",C.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0), out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,T,8)), out )
 
   if #fifos>0 then
