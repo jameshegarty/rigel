@@ -2145,7 +2145,8 @@ modules.arbitrate = memoize(function( A, inputRates, tmuxed, X )
   local res = {kind="arbitrate", A=A, inputRates=inputRates}
   res.name = sanitize("Arbitrate_"..tostring(A).."_"..#inputRates)
   res.stateful = false
-
+  res.delay = 0
+  
   res.inputType = types.array2d( types.RV(A), #inputRates )
 
   if tmuxed then
@@ -2240,6 +2241,8 @@ modules.demux = memoize(function( A, rates, X )
   res.sdfInput = SDF(rates)
   res.sdfOutput = SDF(rates)
 
+  res.delay = 0
+  
   if terralib~=nil then res.terraModule = MT.demux(res,A,rates) end
 
   function res.makeSystolic()
@@ -4928,7 +4931,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
           end
       end)
     else
-      print("NYI - FIFO ALLOCATION FOR INIL MODULE")
+--      print("NYI - FIFO ALLOCATION FOR INIL MODULE")
     end
   end
   
@@ -5502,7 +5505,7 @@ modules.freadSeq = memoize(function( filename, ty, addressable, X )
   err( X==nil, "freadSeq: too many arguments" )
   rigel.expectBasic(ty)
   local filenameVerilog=filename
-  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, stateful=true, delay=1}
+  local res = {kind="freadSeq", filename=filename, filenameVerilog=filenameVerilog, type=ty, stateful=true, delay=3}
 
   if addressable then
     res.inputType=types.rv(types.Par(types.uint(32)))

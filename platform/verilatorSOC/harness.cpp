@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
 
           printf("STR %s\n",tmp);
           unsigned long data = strtoul(tmp,NULL,16);
-          printf("try to Set Reg addr:%x with data:%x\n",addr+numints*4-4-i*4,data);
+          printf("try to Set Reg addr:%x with data:%lx\n",addr+numints*4-4-i*4,data);
           setReg( top, verbose, addr+numints*4-4-i*4, data);
         }
         
@@ -368,7 +368,7 @@ int main(int argc, char** argv) {
       if(pct>lastPct){
         double t = CurrentTimeInSeconds() - startSec;
         setlocale(LC_NUMERIC,"");
-        printf("Sim round %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+        printf("Sim round %d: %d %% complete! (%'lu/%'lu cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
         lastPct = pct;
       }
       

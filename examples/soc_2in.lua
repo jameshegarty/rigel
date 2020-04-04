@@ -17,7 +17,7 @@ noc.extern=true
 local inp = R.input(R.HandshakeTrigger)
 local inpFO = G.FanOut{2}(inp)
 local inp0, inp1 = inpFO[0], inpFO[1]
-print("INPOFO",inpFO,inp0,inp1)
+--print("INPOFO",inpFO,inp0,inp1)
 local a = SOC.readBurst("frame_128.raw",128,64,u(8),8,nil,nil,noc.read)(inp0)
 local bb = SOC.readBurst("frame_128_inv.raw",128,64,u(8),8,nil,nil,noc.read1)(inp1)
 local out = G.FanIn{true}(a,bb)

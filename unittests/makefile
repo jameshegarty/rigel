@@ -1,4 +1,5 @@
 SRCS = $(wildcard *.lua)
+SRCS := $(filter-out moduleparams_core.lua,$(SRCS))
 
 BUILDDIR := out
 
@@ -31,6 +32,14 @@ $(BUILDDIR)/moduleparams.compiles.txt: moduleparams.lua
 $(BUILDDIR)/moduleparams.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	# no extra checks
 	touch $(BUILDDIR)/moduleparams.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_downsample.compiles.txt: moduleparams_downsample.lua
+	../rigelTerra moduleparams_downsample.lua
+
+$(BUILDDIR)/moduleparams_downsample.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_downsample.correct.txt
 
 #################
 $(BUILDDIR)/fixedtest.compiles.txt: fixedtest.lua

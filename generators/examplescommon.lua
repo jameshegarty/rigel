@@ -1603,8 +1603,8 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,1))
     local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
 
-    assert( itype:lower()==res.inputType )
-    assert( oype:lower()==res.outputType )
+    err( itype:lower()==res.inputType:lower(), "internal error, downsampleSeq framed. Module input type:",res.inputType, " lowered: ",res.inputType:lower()," framed type:",itype, " lowered:",itype:lower() )
+    err( otype:lower()==res.outputType:lower() )
     
     res.inputType = itype
     res.outputType = otype

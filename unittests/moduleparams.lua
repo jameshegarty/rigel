@@ -2,14 +2,7 @@ local R = require "rigelSimple"
 local types = require "types"
 local J = require "common"
 
---local Type = {types.bool(), types.uint(7), types.int(16)}
---local Type = {types.bool(), types.uint(8), types.uint(7)}
-local Type = {types.uint(8), types.array2d(types.uint(8),1,1), types.tuple{types.uint(8)}}
-local NumP = {1,2,8}
-local NumPZ = {0,3,8}
-local Num = {-8,-3,0,2,7}
-local LRBT = { {0,0,0,0}, {8,3,1,4}, {0,7,34,1} }
-local IS = {64,32}
+dofile("moduleparams_core.lua")
 
 local configs = {}
 local meta = {}
@@ -64,8 +57,6 @@ for k,v in ipairs(configs.cropSeq) do
     
   meta.cropSeq[k] = { inputP=v.V, outputP=v.V, inputImageSize=v.size }
   meta.cropSeq[k].outputImageSize={v.size[1]-v.crop[1]-v.crop[2], v.size[2]-v.crop[3]-v.crop[4]}
-  print("CCCCCS","V",v.V,v.crop[1],v.crop[2],v.crop[3],v.crop[4])
-  print("CS",v.size[1],v.size[2],meta.cropSeq[k].outputImageSize[1],meta.cropSeq[k].outputImageSize[2],v.V)
 end
 
 configs.changeRate = J.cartesian{type=Type, H={1}, inW=NumP, outW=NumP}
@@ -98,56 +89,7 @@ meta.sub={{inputP=1,outputP=1,inputImageSize={32,32},outputImageSize={32,32}}}
 configs.rcp = {{type=types.uint(8)}}
 meta.rcp={{inputP=1,outputP=1,inputImageSize=IS,outputImageSize=IS}}
 
-for k,v in pairs(configs) do
---  if k~="padSeq" then configs[k]=nil end
-end
-
-local function configToName(t)
-  local name = ""
-
-  for k,v in pairs(t) do
-    local key = tostring(k).."_"
-    if type(k)=="number" then key="" end -- not interesting!
-
-    if type(v)=="number" or type(v)=="boolean" or type(v)=="string" or types.isType(v) then
-      name = name..key..J.verilogSanitize(tostring(v)).."_"
-    elseif type(v)=="table" then
-      local rec = configToName(v)
-      if #rec>20 then rec = string.sub(rec,1,20) end
-      name = name..key..rec.."_"
-    else
-      print("CONFIGTONAME",type(v))
-      assert(false)
-    end
-  end
-
-  return name
-end
-
-local wrap = J.memoize(function(mod)
-  local G = require "generators.core"
-  return G.Function{"W"..mod.name, mod.inputType, mod.sdfInput, function(inp) return mod(inp) end}
-end)
-
-for k,v in pairs(configs) do
-  print("DO configs of ",k)
-
-  for configk,config in ipairs(v) do
-    local name = k.."_"..configToName(config)
-    print("DOCONFIG",name)
-
-    local mod = wrap( R.HS(R.modules[k](config),false) )
-
-    local met = meta[k][configk]
-
-    local targets = {"metadata","verilog","terra"}
-    
-    for _,bk in pairs(targets) do
-      R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=met.inputImageSize, outSize=met.outputImageSize, backend=bk }
-    end
-
-  end
-end
+runTests( configs, meta )
 
 file = io.open("out/moduleparams.compiles.txt", "w")
 file:write("Hello World")

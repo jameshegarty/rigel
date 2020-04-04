@@ -604,28 +604,47 @@ end
 -- makes a module that implements a large ram out of N smaller rams
 local function makeRamArray(
     writeAndReturnOriginal,
-    sizeInBytes,
+    sizeInBytes, -- total size to allocate
     inputBytes,
     outputBytes,
     init,
     CE,
 
-    ramCount, -- # of rams to make. Can be <1 (means make 1, but underutilize it)
+    -- next, we specify the number of rams we have chosen to service the requirements above
+    -- there is a tradeoff: depending on the size & BW requirements, we may need to under-utilize either the BW
+    -- or the storage.
+    -- ramCount/ramBits indicates which choice we have chosen.
+    -- ramCount is the # of rams (integer)
+    -- ramIn/OutputBits is the BW in bits for the _fully utilized_ rams
+    -- if input/output Bytes won't fully utilize the rams, the last ram in the array is dangling!
+    --    (IE we don't use all its bits)
+    -- NOTE: WE ASSUME USER CHOSE VALID PARAMS HERE! IE: which can successfully service BW/Size requirements above
+
+    ramCount, -- # of rams to make. Can be non-integer (indicates we will underutilize one of the rams)
     ramInputBits, -- input BW of each ram
     ramOutputBits, -- output BW of each ram
     X)
 
+  assert( type(ramCount)=="number" )
+  assert( ramCount==math.floor(ramCount) )
+  assert( ramCount>0 )
+  assert( type(ramInputBits)=="number" )
+  assert( J.isPowerOf2(ramInputBits) )
+  assert( ramOutputBits==nil or type(ramOutputBits)=="number" )
+  assert( ramOutputBits==nil or J.isPowerOf2(ramOutputBits) )
+  assert( ramOutputBits==nil or (ramOutputBits>=1 and ramOutputBits<=32) )
+  
+  assert( ramInputBits>=1 and ramInputBits<=32 ) -- we don't have rams with >32bit bandwidth
 
-  assert( ramInputBits>=1 and ramInputBits<=32 ) -- don't have rams outside this range
-  assert( ramInputBits*math.max(ramCount,1) == inputBytes*8 )
+  -- THIS IS NOT TRUE: ramInputBits is the BW for the fully utilized rams, not the dangling rams at the end!!
+  --assert( ramInputBits*ramCountInt == inputBytes*8 )
 
-  local ramInputAddrBits = math.log((2048*8)/ramInputBits)/math.log(2)
+  -- # of address bits for each actual ram. We may not fully utilize ram, so round up!
+  local ramInputAddrBits = math.ceil(math.log((2048*8)/(ramInputBits))/math.log(2))
 
   local ramOutputAddrBits
   if outputBytes~=nil then
-    assert( ramOutputBits>=1 and ramOutputBits<=32 )
-    assert( ramOutputBits*math.max(ramCount,1)==outputBytes*8 )
-    ramOutputAddrBits = math.log( (2048*8)/ramOutputBits)/math.log(2)
+    ramOutputAddrBits = math.ceil(math.log( (2048*8)/(ramOutputBits))/math.log(2))
   end
 
   local inputAddrBits = math.log(sizeInBytes/inputBytes)/math.log(2)
@@ -633,10 +652,30 @@ local function makeRamArray(
   if outputBytes~=nil then outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2) end
 
   if init~=nil then
+    --print("INIT",sizeInBytes,ramCount, inputBytes, outputBytes, ramInputBits, ramOutputBits )
     err( ramCount <= 1, "NYI - inits with striped ram array" )
-    err( ramInputBits==inputBytes*8, "NYI - inits with striped ram array"  )
-    if outputBytes~=nil then err( ramOutputBits==outputBytes*8, "NYI - inits with striped ram array"  ) end
+    --err( ramInputBits==inputBytes*8, "NYI - inits with striped ram array"  )
+    --if outputBytes~=nil then err( ramOutputBits==outputBytes*8, "NYI - inits with striped ram array"  ) end
     err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
+
+    assert( outputBytes==nil or inputBytes==outputBytes )
+    
+    if inputBytes~=ramInputBits*8 then
+      -- we need to pad the bytes
+      local newInit = {}
+      local realBytes = inputBytes
+      local ramInputBytes = ramInputBits/8
+      assert(ramInputBytes==math.floor(ramInputBytes))
+      local padBytes = ramInputBytes-inputBytes
+
+      for item=0,(sizeInBytes/inputBytes)-1 do
+        for b=0,realBytes-1 do table.insert(newInit, init[item*inputBytes+b+1] ) end
+        for b=0,padBytes-1 do table.insert(newInit, 0 ) end
+      end
+      init = newInit
+    end
+
+    -- pad out to fill ram entries we're not using
     while #init < 2048 do
       table.insert(init,0)
     end
@@ -659,30 +698,22 @@ local function makeRamArray(
 
     local out = {}
     local rams = {}
-    for ram=0,math.max(1,ramCount)-1 do
+    local writeRamLoc = 0
+    for ram=0,ramCount-1 do
       rams[ram] =  mod:add( systolic.module.bram2KSDP( writeAndReturnOriginal, ramInputBits, ramOutputBits, CE, init ):instantiate("bram_"..ram) )
-      local inp
 
-      if ramInputBits==inputBytes*8 then
-        inp = inpData
-      elseif ramInputBits>inputBytes*8 then
-        -- pad it out
-        inp = systolic.cast( inpData, types.bits(ramInputBits) )
-      else
-        inp = systolic.bitSlice( inpData, ram*ramInputBits, (ram+1)*ramInputBits-1 )
-      end
+      local writeRamLocNext = math.min(writeRamLoc+ramInputBits, inputBytes*8)
+      local inp = systolic.bitSlice( inpData, writeRamLoc, writeRamLocNext-1 )
+      inp = systolic.cast( inp, types.bits(ramInputBits) ) -- potentially pad to width
 
-      
-      table.insert( out, rams[ram]:writeAndReturnOriginal( systolic.tuple{inpAddrPadded,inp} ) )
+      local ot = rams[ram]:writeAndReturnOriginal( systolic.tuple{inpAddrPadded,inp} )
+      ot = systolic.bitSlice( ot, 0, writeRamLocNext-writeRamLoc-1 )
+      table.insert( out, ot )
+
+      writeRamLoc = writeRamLocNext
     end
-
-    local res
-    if ramInputBits>inputBytes*8 then
-      assert(ramCount<1)
-      res = systolic.bitSlice( out[1], 0, inputBytes*8-1 )
-    else
-      res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
-    end
+    
+    local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
     
     mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
 
@@ -696,17 +727,16 @@ local function makeRamArray(
       end
 
       local outRead = {}
-      for ram=0,math.max(1,ramCount)-1 do
-        table.insert( outRead, rams[ram]:read(outAddrPadded) ) 
+      local readLoc = 0
+      for ram=0,ramCount-1 do
+        local ot = rams[ram]:read(outAddrPadded)
+        local readLocNext = math.min( readLoc + ramOutputBits, outputBytes*8 )
+        ot = systolic.bitSlice( ot, 0, readLocNext-readLoc-1 )
+        readLoc = readLocNext
+        table.insert( outRead, ot ) 
       end
 
-      local readRes
-      if ramOutputBits>outputBytes*8 then
-        assert(ramCount<1)
-        readRes = systolic.bitSlice( outRead[1], 0, outputBytes*8-1 )
-      else
-        readRes = systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8))
-      end
+      local readRes = systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8))
 
       mod:addFunction( systolic.lambda("read", sinpRead, readRes, "READ_OUT", nil, nil, J.sel(CE,S.CE("read_CE"),nil) ) ) 
     end
@@ -716,6 +746,33 @@ local function makeRamArray(
     assert(false)
   end
 end
+
+-- the rams are fundamentally limited by the # of addressable items (# of items with addresses)
+-- We an always make more storage space or BW by making rams in parallel, but for now we don't increase # of addressible items
+-- given constraints on BRAMs,
+-- this function returns: # of addressible itmes, bit BW of BRAMS with this # of items
+local function addressableItems( sizeInBytes, bwBytes )
+  local addrs = sizeInBytes/bwBytes
+  err( J.isPowerOf2(addrs),"bramSDP error, number of addresses must be power of 2! We don't support padding out the addressing")
+
+  local addressable = math.max(sizeInBytes/bwBytes,math.pow(2,9)) -- bram with least # of addressable items has 512 addressable items
+  err(addressable<=math.pow(2,14),"Error, bramSDP arguments have more addressable items than are supported by 1 bram (totalSize:"..tostring(sizeInBytes)..", bytes/cycle:"..tostring(bwBytes)..", addressableItems:"..tostring(addressable)..")")
+  assert( J.isPowerOf2(addressable) )
+
+  return addressable
+end
+
+local function ramBWBits( addressable )
+  -- what ram has a small enough port size to support the # of addressable items we need?
+  -- ram with largest port size is 32 bit port size (with 2^9 addressable items).
+  -- smallest port size ram has port size 1 bit (2^14 addressable)
+
+  local maxPossibleBWBits = 32/(addressable/math.pow(2,9)) -- can be non-integer!!
+  assert( maxPossibleBWBits<=32 and maxPossibleBWBits>=1 and J.isPowerOf2(maxPossibleBWBits) )
+
+  return maxPossibleBWBits
+end
+
 ----------------
 -- supports any size/bandwidth by instantiating multiple BRAMs
 -- if outputBits==nil, we don't make a read function (only a write function)
@@ -731,7 +788,8 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   err( type(sizeInBytes)=="number", "sizeInBytes must be a number")
   err( type(inputBytes)=="number", "inputBytes must be a number")
   err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
-
+  err( outputBytes==nil or (math.floor(outputBytes)==outputBytes), "outputBytes not integral "..tostring(outputBytes))
+  
   -- non power of 2 sizes are actually ok: the number of addressable items just needs to be power of 2
   --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
@@ -739,52 +797,55 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   err( math.floor(inputBytes)==inputBytes, "bramSDP: inputBytes not integral "..tostring(inputBytes))
   
   --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
-  local writeAddrs = sizeInBytes/inputBytes
-  err( J.isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
+--  local writeAddrs = sizeInBytes/inputBytes
+--  err( J.isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
 
-  if outputBytes~=nil then
-    err( math.floor(outputBytes)==outputBytes, "outputBytes not integral "..tostring(outputBytes))
-    local readAddrs = sizeInBytes/outputBytes
-    err( J.isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
-  end
-  
+--  if outputBytes~=nil then
+
+--    local readAddrs = sizeInBytes/outputBytes
+--    err( J.isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
+--  end
+--  
   -- the idea here is that we want to pack the data into the smallest # of brams possible.
   -- we are limited by (a) the number of addressable items, and (b) the bw of each bram.
   -- if we have more than 2048 addressable items, we can't pack into brams (would need additional multiplexers)
-  local minbw = inputBytes
-  if outputBytes~=nil then minbw = math.min(inputBytes, outputBytes) end
-  local maxbw = inputBytes
-  if outputBytes~=nil then maxbw = math.max(inputBytes, outputBytes) end
+--  local minbwBytes = inputBytes
+--  if outputBytes~=nil then minbwBytes = math.min(inputBytes, outputBytes) end
+--  local maxbwBytes = inputBytes
+--  if outputBytes~=nil then maxbwBytes = math.max(inputBytes, outputBytes) end
 
-  local addressable = math.max(sizeInBytes/minbw,math.pow(2,9)) -- bram with least # of addressable items has 512 addressable items
-  err(addressable<=math.pow(2,14),"Error, bramSDP arguments have more addressable items than are supported by 1 bram (totalSize:"..tostring(sizeInBytes)..", inputBytes/cycle:"..tostring(inputBytes)..", outputBytes/cycle:"..tostring(outputBytes)..", addressableItems:"..tostring(addressable)..")")
+--  local addressable = math.max(sizeInBytes/minbwBytes,math.pow(2,9)) -- bram with least # of addressable items has 512 addressable items
+--  err(addressable<=math.pow(2,14),"Error, bramSDP arguments have more addressable items than are supported by 1 bram (totalSize:"..tostring(sizeInBytes)..", inputBytes/cycle:"..tostring(inputBytes)..", outputBytes/cycle:"..tostring(outputBytes)..", addressableItems:"..tostring(addressable)..")")
 
   -- find the # brams if we're bw limited, or address limited
 
-  -- what ram has a small enough port size to support the # of addressable items we need?
-  -- ram with largest port size is 32 bit port size (with 2^9 addressable items).
-  -- smallest port size ram has port size 1 bit (2^14 addressable)
-  local maxPossibleBWBits = 32/(addressable/math.pow(2,9))
-  assert(maxPossibleBWBits<=32 and maxPossibleBWBits>=1)
-  local maxPossibleBWBytes = maxPossibleBWBits/8 -- can be non-integer!!
-  local ramCount = maxbw/maxPossibleBWBytes
+--  local maxPossibleBWBytes = maxPossibleBWBits/8 -- can be non-integer!!
+--  local ramCount = maxbwBytes/maxPossibleBWBytes
+--  local ramCountInt = math.ceil(ramCount)
   
-  --print(ramCount,"BRAMS needed","maxPossibleBWBits",maxPossibleBWBits,"addressable",addressable,"sizeInBytes",sizeInBytes,"inputBytes",inputBytes,"outputBytes",outputBytes)
-
   -- it's ok to require <1 bram (like half a bram)
-  err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed? sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," addressable:",addressable)
+  -- it's ok to have non-integer number of rams! This just means we have more BW than we need. Example: we want 15 bytes!
+  --err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed? sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," addressable:",addressable, " max BW per ram with that number of addressable (bytes):", maxPossibleBWBytes )
 
   -- number of input bits of the actual bram we chose
   -- if ram BW is more than we need, prefer to have the input/output port match real port size (# allocate too many addressible items).
   -- ... this make it easier to deal with init values
-  local ramInputBits = math.min((inputBytes*8)/ramCount,inputBytes*8)
+--  local ramInputBits = (inputBytes*8)/ramCountInt
+--  err( ramInputBits==math.floor(ramInputBits),"ram input bits is non-integer. sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," maxPossibleBWBits:",maxPossibleBWBits)
+  
+--  local ramOutputBits, ramOutputAddrBits
+--  if outputBytes~=nil then
+--    ramOutputBits = (outputBytes*8)/ramCountInt
+--  end
 
-  local ramOutputBits, ramOutputAddrBits
-  if outputBytes~=nil then
-    ramOutputBits = math.min((outputBytes*8)/ramCount,outputBytes*8)
-  end
+  err ( outputBytes==nil or inputBytes==outputBytes, "NYI: different read and write BW!")
+  
+  local addressable  = addressableItems( sizeInBytes, inputBytes )
+  local bwBits = ramBWBits( addressable )
 
-  return makeRamArray( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, ramCount, ramInputBits, ramOutputBits )
+  local ramCount = math.ceil((inputBytes*8)/bwBits)
+  
+  return makeRamArray( writeAndReturnOriginal, sizeInBytes, inputBytes, outputBytes, init, CE, ramCount, bwBits, J.sel(outputBytes==nil,nil,bwBits) )
 end)
 
 function script_path()
