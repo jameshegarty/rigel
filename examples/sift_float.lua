@@ -1,3 +1,6 @@
+local rigel = require "rigel"
+rigel.AUTO_FIFOS = false
+
 local types = require("types")
 local harness = require "generators.harness"
 local sift = require "sift_core"

@@ -1,6 +1,6 @@
 local J = require "common"
 local cstdio = terralib.includec("stdio.h", {"-Wno-nullability-completeness"})
-
+      
 -- if pointer is true, generate a pointer instead of a value
 -- vectorN = width of the vector [optional]
 function TypeFunctions:toTerraType(pointer, vectorN)
@@ -38,7 +38,10 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     ttype = terralib.types.int16
   elseif self:isArray() then
     assert(vectorN==nil)
-    ttype = (self.over:toTerraType())[self:channels()]
+    local chan = self:channels()
+    local Uniform = require "uniform"
+    if Uniform.isUniform(chan) then chan = chan:toNumber() end
+    ttype = (self.over:toTerraType())[chan]
   elseif self.kind=="tuple" then
     ttype = terralib.types.tuple( unpack(J.map(self.list, function(n) return n:toTerraType(pointer, vectorN) end)) )
   elseif self.kind=="opaque" then

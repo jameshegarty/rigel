@@ -931,7 +931,7 @@ break
       cycle = cycle + 1
     end
 
-    common.err(tokenCountRef==tokenCount,"Number of output tokens was not as expected at end of time! expected:",tokenCountRef," seen:",tokenCount)
+    common.err(tokenCountRef==tokenCount,"Number of output tokens was not as expected at end of time! expected:",tokenCountRef," seen:",tokenCount, name, " totalInputs:",totalInputs)
 
     if file~=nil then file:close() end
     

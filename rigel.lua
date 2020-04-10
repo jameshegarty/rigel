@@ -1061,7 +1061,7 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType:deInterface():isData() then
+  elseif (self.outputType:isrv() or self.outputType:isS()) then
     if self.outputType:lower():verilogBits()>0 then
       table.insert(v,", output wire ["..(self.outputType:lower():verilogBits()-1)..":0] "..fnname.."_output")
     end
@@ -1286,7 +1286,9 @@ local function checkRigelFunction(tab)
   -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
   -- expand this to a per-stream delay at some point, if needed
   err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType," delay is: ",tab.delay )
-
+  err( tostring(tab.delay)~="inf","rigel.newFunction: delay is inf?")
+  err( tostring(tab.delay)~="nan","rigel.newFunction: delay is nan?")
+  
   if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
   if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
 

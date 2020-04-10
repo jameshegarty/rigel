@@ -2352,5 +2352,22 @@ function MT.triggerFIFO( res, ty )
   return MT.new( TriggerFIFO, res )
 
 end
+
+function MT.shiftRegister( res, ty, N, X )
+  assert(X==nil)
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( N>0 )
+
+  local ShiftRegister = struct{SR:(ty:lower():toTerraType())[N]}
+
+  -- this is really confusing! Delays are provided by handshake wrapper in terra simulator, so this module actually becomes a noop!!
+  -- (IE statically timed modules actually always take 0 cycles)
+  terra ShiftRegister:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType() )
+    @out = @inp
+  end
+
+  return MT.new( ShiftRegister, res )
+end
         
 return MT

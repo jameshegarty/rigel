@@ -40,6 +40,5 @@ ConvTop = G.Function{ "ConvTop", SDF{1,30*14*9}, types.RV(types.Par(types.Trigge
     local fin = G.Map{G.Reduce{G.Add{R.Async}}}(shifted)
     return G.AXIWriteBurst{"out/soc_read",noc.write}(fin)
   end}
-print(ConvTop)
 
 harness({regs.start, ConvTop, regs.done},nil,{regs})

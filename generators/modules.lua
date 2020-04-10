@@ -2844,7 +2844,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   print("PREF DONE")
   ]=]
 
-  res.delay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/T )
+  res.delay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
   
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
@@ -2957,7 +2957,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     -- 4->8
     res.inputBurstiness = 0
     res.outputBurstiness = 0
-    res.delay = outputRate/inputRate
+    res.delay = math.max(outputRate,1)/math.max(inputRate,1)
   end
   
   
@@ -3758,13 +3758,13 @@ modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoa
 
   if size==1 and (csimOnly==false) then
     local name = J.sanitize("OneElementFIFO_"..tostring(A).."_dbgname"..dbgname)
-    local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
+    local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:lower():verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:lower():verilogBits())..[[:0] store_input);
   parameter INSTANCE_NAME="INST";
   reg hasItem;
-  reg []]..tostring(A:verilogBits()-1)..[[:0] dataBuffer;
+  reg []]..tostring(A:lower():verilogBits()-1)..[[:0] dataBuffer;
 
   wire store_valid;
-  assign store_valid = store_input[]]..tostring(A:verilogBits())..[[];
+  assign store_valid = store_input[]]..tostring(A:lower():verilogBits())..[[];
 
   always @(posedge CLK) begin
     if (reset) begin
@@ -3773,7 +3773,7 @@ modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoa
       if (store_valid && (load_ready_downstream || hasItem==1'b0) ) begin
         // input is valid and we can accept it
         hasItem <= 1'b1;
-        dataBuffer <= store_input[]]..tostring(A:verilogBits()-1)..[[:0];
+        dataBuffer <= store_input[]]..tostring(A:lower():verilogBits()-1)..[[:0];
       end else if (load_ready_downstream) begin
         // buffer is being emptied
         hasItem <= 1'b0;
@@ -4905,13 +4905,11 @@ local function insertFIFOs( out, delayTable, moduleName )
       local res = n
 
       if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
-
-
         assert( #orig.inputs==1 )
         err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
         assert( type(delayTable[orig])=="number" )
         local iDelayThis = delayTable[orig]-orig.fn.delay
-        err( delayTable[orig.inputs[1]] == iDelayThis )
+        err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inp:",delayTable[orig.inputs[1]]," this:",iDelayThis," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
                
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
 
@@ -4962,7 +4960,30 @@ local function insertFIFOs( out, delayTable, moduleName )
           
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
-      else
+      elseif n.kind=="apply" or n.kind=="applyMethod" then
+        -- this is things like VR mode, tuples of handshakes, etc
+        -- hopefully we can just ignore this...
+        
+        local fn = n.fn
+        if n.kind=="applyMethod" then
+          if rigel.isPlainFunction(n.inst.module) then
+            fn = n.inst.module
+          else
+            fn = n.inst.module.functions[n.fnname]
+          end
+        end
+        assert( rigel.isPlainFunction(fn) )
+
+        err( fn.inputBurstiness==0 )
+        err( fn.outputBurstiness==0 )
+
+        if #orig.inputs==1 then
+          err( delayTable[orig.inputs[1]]==delayTable[orig]-fn.delay, "NYI - auto fifo unsupported call type, and the delays don't match! inputDelay:",delayTable[orig.inputs[1]]," this:",orig )
+        else
+          err( #orig.inputs==0, "apply with multiple inputs? ",#orig.inputs, orig )
+        end
+        
+      elseif n.kind~="statements" then
         for k,inp in pairs(orig.inputs) do
           assert( type(delayTable[inp])=="number" )
           assert( type(delayTable[orig])=="number" )
@@ -4971,9 +4992,11 @@ local function insertFIFOs( out, delayTable, moduleName )
           local delayDiff = delayTable[orig] - delayTable[inp]
           if delayDiff>0 then
             -- insert shift register
-            assert( inp.type:isRV() )
-            assert( orig.kind~="apply" )
-            res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deSchedule(), delayDiff ))(res.inputs[k])
+            assert( orig.kind~="apply" and orig.kind~="applyMethod" )
+            
+            err( inp.type:isRV(),"input to shift register is not RV? is: ",inp.type," this:", orig )
+
+            res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
           end
           --J.err( delayTable[inp]==delayTable[orig], "NYI - delay buffers input ",k," inputDelay:",delayTable[inp]," thisDelay:",delayTable[orig],orig.loc,orig )
           
@@ -6069,29 +6092,36 @@ modules.shiftRegister = J.memoize(function(ty, N)
   local modname = J.sanitize("ShiftRegister_"..tostring(ty).."_DELAY"..tostring(N))
   local res = rigel.newFunction{ inputType = types.rv(ty), outputType = types.rv(ty), name = modname, delay=N, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
 
+  if terralib~=nil then res.terraModule = MT.shiftRegister( res, ty, N ) end
+  
   function res.makeSystolic()
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
     
     s.verilog = res:vHeader()
 
-    for i=1,N do
-      s.verilog = s.verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
-    end
-    s.verilog = s.verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
-
-    s.verilog = s.verilog..[[always @(posedge CLK) begin
+    -- it's possible ty is a trigger...
+    if ty:lower():verilogBits()>0 then
+      for i=1,N do
+        s.verilog = s.verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
+      end
+      s.verilog = s.verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
+      
+      s.verilog = s.verilog..[[always @(posedge CLK) begin
   if( process_CE && process_valid ) begin
     DELAY_1 <= ]]..res:vInput()..[[;
 ]]
 
-    for i=2,N do
-      s.verilog = s.verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
+      for i=2,N do
+        s.verilog = s.verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
+      end
+
+      s.verilog = s.verilog..[[  end
+end
+]]
     end
     
-    s.verilog = s.verilog..[[  end
-end
-
+    s.verilog = s.verilog..[[
 endmodule
 
 ]]
