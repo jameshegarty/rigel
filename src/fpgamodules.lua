@@ -189,7 +189,7 @@ modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   err(types.isType(ty),"fifo type must be type")
   err(type(items)=="number","fifo items must be number")
   err(type(verbose)=="boolean","fifo verbose must be bool")
-  err( items>1,"fifo: items must be >1")
+  err( items>1,"fifo: items must be >1, but is: ",items)
   assert( X==nil )
   
   local fifo = Ssugar.moduleConstructor( J.sanitize("fifo_"..tostring(ty).."_"..items.."_nostall"..tostring(nostall)) )

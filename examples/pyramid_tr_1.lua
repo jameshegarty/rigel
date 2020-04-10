@@ -1,4 +1,5 @@
 local R = require "rigel"
+R.AUTO_FIFOS = false
 local RM = require "generators.modules"
 local RS = require "rigelSimple"
 local types = require("types")
@@ -8,8 +9,6 @@ local P = require "pyramid_core"
 local SDFRate = require "sdfrate"
 local J = require "common"
 local soc = require "generators.soc"
-
-R.AUTO_FIFOS = false
 
 T = 4 -- throughput
 outputT = 8

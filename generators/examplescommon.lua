@@ -2543,7 +2543,7 @@ function C.automaticSystolicStub( mod )
     if fn.outputType~=types.Interface() then
       fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),fnname.."_output")
     end
-    delays[fnname]=0
+    delays[fnname]=fn.delay
 
 
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then

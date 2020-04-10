@@ -1563,8 +1563,21 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
 
   res.outputType = types.rvV(types.Par(inputType))
 
-  res.delay = 2
-  res.outputBurstiness = Uniform(W_orig):toNumber()
+  local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
+  
+  local function downYSim()
+    for y=0,H-1 do
+      for x=0,W-1,math.max(T,1) do
+        if y%scale==0 then
+          coroutine.yield(true)
+        else
+          coroutine.yield(false)
+        end
+      end
+    end
+  end
+
+  res.delay, res.outputBurstiness = J.simulateFIFO( downYSim, res.sdfOutput, modname, false )
   
   return res
 end)
@@ -1603,17 +1616,36 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
 
   local tfn, sdfOverride
 
+  local modname = J.sanitize("DownsampleXSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
+
+  local delay, outputBurstiness
+  
   if scale>T then -- A[T] to A[1]
     -- tricky: each token contains multiple pixels, any of of which can be valid
     assert(scale%T==0)
     sdfOverride = {{1,scale/T}}
     if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale ) end
+
+    local function downXSim()
+      for y=0,H-1 do
+        for x=0,W-1,math.max(T,1) do
+
+          if x%scale==0 then
+            coroutine.yield(true)
+          else
+            coroutine.yield(false)
+          end
+        end
+      end
+    end
+
+    delay, outputBurstiness = J.simulateFIFO( downXSim, SDF(sdfOverride), modname, false )
   else -- scale <= T... for every token, we output 1 token
     sdfOverride = {{1,1}}
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
+    delay = 0
+    outputBurstiness = 0
   end
-
-  local modname = J.sanitize("DownsampleXSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -1643,8 +1675,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   assert(res.outputType:lower()==newType:lower())
 
   res.outputType = newType
-  res.delay = 4
-  res.outputBurstiness = 128
+  res.delay, res.outputBurstiness = delay, outputBurstiness
     
   return res
 end)
@@ -2651,10 +2682,26 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   end
 
   local ff = Uniform(W_orig):toNumber()*math.max(Top,B,1)
-  res.inputBurstiness = math.min(ff*3,1024)
-  res.outputBurstiness = math.min(ff,1024)
-  res.delay = math.min(ff*2+32,1024)
+
+  local W_n = Uniform(W_orig):toNumber()
+  local R_n = Uniform(R_orig):toNumber()
   
+  local cropSim = function()
+    for y=0,H-1 do
+      for x=0,W_n-1,math.max(V,1) do
+
+        if x>=L and x<(W_n-R_n) and y>=B and y<(H-Top) then
+          coroutine.yield(true)
+        else
+          coroutine.yield(false)
+        end
+      end
+    end
+  end
+  
+  res.inputBurstiness = 0
+  res.delay, res.outputBurstiness = J.simulateFIFO( cropSim, res.sdfOutput, modname, false )
+    
   return res
 end)
 
@@ -2728,10 +2775,6 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   end
 
   local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
-
-  res.inputBurstiness = J.upToNearest(128+W*B, 1024)
-  res.outputBurstiness = 128 -- hack: module starts up at time=0, regardless of when triggered
-  res.delay = 4
   
   if T==0 then
     res.inputType = A
@@ -2760,6 +2803,49 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
   res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
+  res.outputBurstiness = 1 -- hack: module starts up at time=0, regardless of when triggered. Do this to throttle it.
+
+  local R_n = R:toNumber()
+  local padSim = function()
+    local totalOut = 0
+    for y=0,(H+B+Top)-1 do
+      for x=0,(W+L+R_n)-1,math.max(T,1) do
+        if x>=L and x<(W+L) and y>=B and y<(H+B) then
+          totalOut = totalOut+1
+          coroutine.yield(true)
+        else
+          coroutine.yield(false)
+        end
+      end
+    end
+  end
+
+  --[=[
+  print("FILLPADSIM")
+  local psim = {}
+  for y=0,(H+B+Top)-1 do
+    for x=0,(W+L+R_n)-1,math.max(T,1) do
+      if x>=L and x<(W+L) and y>=B and y<(H+B) then
+        table.insert(psim,true)
+      else
+        table.insert(psim,false)
+      end
+    end
+  end
+  print("PSIMDONE")
+
+  local pref = {}
+  local N = res.sdfOutput[1][1]:toNumber()
+  local D = res.sdfOutput[1][2]:toNumber()
+  print("FILLPREF",N,D)
+  for i=0,#psim-1 do
+    table.insert(pref,J.calcThrottle(N,D,0,i))
+  end
+  print("PREF DONE")
+  ]=]
+
+  res.delay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/T )
+  
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
   function res.makeSystolic()
@@ -2862,9 +2948,18 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
   local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
 
-  res.inputBurstiness = 128
-  res.outputBurstiness = 128
-  res.delay = math.max( inputRate, outputRate )*2
+  if inputRate>outputRate then
+    -- 8->4
+    res.inputBurstiness = 0
+    res.outputBurstiness = 0
+    res.delay = 0
+  else
+    -- 4->8
+    res.inputBurstiness = 0
+    res.outputBurstiness = 0
+    res.delay = outputRate/inputRate
+  end
+  
   
   if framed then
     err(type(framedW)=="number", "changeRate: if framed, framedW should be number, but is: "..tostring(framedW))
@@ -3617,6 +3712,7 @@ modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoa
   err(H==nil or type(H)=="number", "H should be nil or number")
   err(T==nil or type(T)=="number", "T should be nil or number")
   assert(csimOnly==nil or type(csimOnly)=="boolean")
+  if csimOnly==nil then csimOnly=false end
   if VRLoad==nil then VRLoad=false end
   err( type(VRLoad)=="boolean","fifo: VRLoad should be boolean")
   if VRStore==nil then VRStore=false end
@@ -3659,9 +3755,9 @@ modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoa
   if includeSizeFn then
     sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=(csimOnly~=true)}
   end
-  
+
   if size==1 and (csimOnly==false) then
-    local name = J.sanitize("OneElementFIFO_"..tostring(A))
+    local name = J.sanitize("OneElementFIFO_"..tostring(A).."_dbgname"..dbgname)
     local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:verilogBits())..[[:0] store_input);
   parameter INSTANCE_NAME="INST";
   reg hasItem;
@@ -3692,7 +3788,7 @@ endmodule
 ]]
 
     local mod =  modules.liftVerilogModule(name, vstr, {load=loadRigelFn,store=storeRigelFn}, true)
-    if terralib~=nil then mod.terraModule = MT.fifo( storeRigelFn.inputType, loadRigelFn.outputType, A, 2, nostall, W, H, T, csimOnly, dbname ) end
+    if terralib~=nil then mod.terraModule = MT.fifo( mod, storeRigelFn.inputType, loadRigelFn.outputType, A, 2, nostall, W, H, T, csimOnly, dbgname ) end
 return mod
   else
     local bytes = (size*A:verilogBits())/8
@@ -4777,6 +4873,7 @@ local function allocateFIFOs(out)
   return out
 end
 
+
 local function insertFIFOs( out, delayTable, moduleName )
   local C = require "generators.examplescommon"
 
@@ -4794,25 +4891,46 @@ local function insertFIFOs( out, delayTable, moduleName )
       if d>maxDepth then maxDepth=d end
       return d
     end)
+
+  --out:visitEach(
+  --  function( n, args )
+  --    assert( type(delayTable[n])=="number" )
+  --  end)
   
+  local fifoBits = 0
+
   local fr = out:process(
     function( n, orig )
       n = rigel.newIR(n)
       local res = n
 
       if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
+
+
+        assert( #orig.inputs==1 )
+        err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
+        assert( type(delayTable[orig])=="number" )
+        local iDelayThis = delayTable[orig]-orig.fn.delay
+        err( delayTable[orig.inputs[1]] == iDelayThis )
+               
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
 
         err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
         err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
+
+        local ibts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
+        local obts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
+
+        err( ibts<20*1024*8, "Input burst FIFO is tooo big! ",ibts/8192,"KB" )
+        err( obts<20*1024*8, "Output burst FIFO is tooo big! ",obts/8192,"KB" )
         
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then
           if n.fn.inputBurstiness>0 then
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, nil,nil,nil,nil,  NAME )
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, nil, nil, nil,nil,  NAME )
           end
           if n.fn.outputBurstiness>0 then
-            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness, nil,nil,nil,nil,  NAME )
+            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness, nil, nil, nil, nil,  NAME )
           end
         else
           IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
@@ -4821,17 +4939,51 @@ local function insertFIFOs( out, delayTable, moduleName )
 
         res = n.inputs[1]
         if IFIFO~=nil then
+          local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
+          --print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", n.fn.name)
+          fifoBits = fifoBits + bts
+
+          if bts>10*1024*8 then
+          --  print("HUGEFIFO I",arg[0],n.fn.name,n.fn.inputType:extractData(),(bts/8192).."KB")
+          end
+          
+          --print("BTS",fifoBits)
           res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
         end
         res = rigel.apply( n.name, n.fn, res )
         if OFIFO~=nil then
+          local bts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
+          --print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", n.fn.name)
+          fifoBits = fifoBits + bts
+          -- print("BTS",fifoBits)
+          if bts>10*1024*8 then
+          --  print("HUGEFIFO O",arg[0],n.fn.name,n.fn.outputType:extractData(),(bts/8192).."KB")
+          end
+          
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
+        end
+      else
+        for k,inp in pairs(orig.inputs) do
+          assert( type(delayTable[inp])=="number" )
+          assert( type(delayTable[orig])=="number" )
+          assert( delayTable[inp]<=delayTable[orig] )
+
+          local delayDiff = delayTable[orig] - delayTable[inp]
+          if delayDiff>0 then
+            -- insert shift register
+            assert( inp.type:isRV() )
+            assert( orig.kind~="apply" )
+            res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deSchedule(), delayDiff ))(res.inputs[k])
+          end
+          --J.err( delayTable[inp]==delayTable[orig], "NYI - delay buffers input ",k," inputDelay:",delayTable[inp]," thisDelay:",delayTable[orig],orig.loc,orig )
+          
         end
       end
 
       return res
     end)
-  
+
+  --print("TOTAL FIFO bits:",fifoBits," bytes:",fifoBits/8," KBs:",fifoBits/(8*1024))
   return fr
 end
 
@@ -5383,7 +5535,7 @@ modules.liftVerilogModule = memoize(function( name, vstr, functionList, stateful
   for _,fn in pairs(functionList) do
     err( rigel.isPlainFunction(fn),"liftVerilogModule: functions in function list should be rigel functions")
   end
-  
+--[=[  
   local function makeSystolic()
     local fns = {}
 
@@ -5422,8 +5574,18 @@ modules.liftVerilogModule = memoize(function( name, vstr, functionList, stateful
     fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
     return S.module.new(name,fns,{},true,nil,vstr,{process=0,ready=0})
   end
+]=]
   
-  return rigel.newModule( name, functionList, stateful, makeSystolic )
+  local res = rigel.newModule{ name=name, functions=functionList, stateful=stateful }
+
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    s.verilog = vstr
+    return s
+  end
+  
+  return res
 end)
 
 modules.constSeqInner = memoize(function( value, A, w, h, T, X )
@@ -5894,6 +6056,48 @@ s.verilog = table.concat(vstr,"")
   end
 
   if terralib~=nil then res.terraModule = MT.reg(ty,initial,extraPortIsWrite,read1bits) end
+  
+  return res
+end)
+
+modules.shiftRegister = J.memoize(function(ty, N)
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( type(N)=="number" )
+  assert( N>0 )
+
+  local modname = J.sanitize("ShiftRegister_"..tostring(ty).."_DELAY"..tostring(N))
+  local res = rigel.newFunction{ inputType = types.rv(ty), outputType = types.rv(ty), name = modname, delay=N, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
+
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    
+    s.verilog = res:vHeader()
+
+    for i=1,N do
+      s.verilog = s.verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
+    end
+    s.verilog = s.verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
+
+    s.verilog = s.verilog..[[always @(posedge CLK) begin
+  if( process_CE && process_valid ) begin
+    DELAY_1 <= ]]..res:vInput()..[[;
+]]
+
+    for i=2,N do
+      s.verilog = s.verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
+    end
+    
+    s.verilog = s.verilog..[[  end
+end
+
+endmodule
+
+]]
+
+    return s
+  end
   
   return res
 end)

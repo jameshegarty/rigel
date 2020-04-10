@@ -1,3 +1,5 @@
+local R = require "rigel"
+R.AUTO_FIFOS = false
 local C = require "generators.examplescommon"
 local harness = require "generators.harness"
 local f = require "fixed"
