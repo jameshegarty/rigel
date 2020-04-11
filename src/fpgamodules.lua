@@ -153,11 +153,11 @@ end
 modules.sliceRamGen = J.memoize(function(bits)
   assert(bits>0)
   
-    if bits==1 then
-return systolic.module.ram128()
-  end
+--    if bits==1 then
+--return systolic.module.ram128()
+--  end
 
-  err( bits%2==0, "NYI - sliceRamGen with non-power of 2 number of bits "..tostring(bits))
+  --err( bits%2==0, "NYI - sliceRamGen with non-power of 2 number of bits "..tostring(bits))
   
   --
 
@@ -182,9 +182,13 @@ return systolic.module.ram128()
     local thisBits = J.nearestPowerOf2(remainingBits)
     if thisBits>1 then thisBits = thisBits/2 end
 
-
-    local m = modules.sliceRamGen(thisBits)
-
+    local m
+    if thisBits==1 then
+      m = systolic.module.ram128()
+    else
+      m = modules.sliceRamGen(thisBits)
+    end
+    
     local inst = ram:add(m:instantiate("subinst_"..i))
 
     table.insert(output, inst:read(readFn:getInput()) )

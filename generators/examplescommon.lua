@@ -1432,7 +1432,7 @@ end
 ]]
 
     verilog = verilog.."endmodule\n\n"
-    s.verilog = verilog
+    s:verilog(verilog)
     return s
   end
 
@@ -2685,7 +2685,7 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
     local verilog = J.fileToString(R.path..filename)
     verilog = verilog:gsub([[`include "[%w_\.]*"]],"")
     verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */\n\n"
-    s.verilog = verilog
+    s:verilog(verilog)
     return s
   end
 

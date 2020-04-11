@@ -3806,7 +3806,7 @@ return mod
       end
     else
 
-      if true then
+--      if true then
         res.makeSystolic = function()
           local C = require "generators.examplescommon"
           local s = C.automaticSystolicStub( res )
@@ -3824,6 +3824,7 @@ return mod
             addrBits = 7
             brammode=false
             ramMod = fpgamodules.sliceRamGen( allocatedBits ):complete()
+            --if Ssugar.isModuleConstructor(ramMod) then ramMod = ramMod:complete() end
             ramInst = ramMod:instantiate("ram")
             s:add( ramInst )
             
@@ -3845,10 +3846,11 @@ return mod
 
             local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
             s:lookupFunction("load"):addPipeline(rd)
-            local wr = ramInst.writeAndReturnOriginal( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(A:lower():verilogBits()))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
+            local wr = ramInst.writeAndReturnOriginal( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(allocatedBits))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
             s:lookupFunction("store"):addPipeline(wr)
           end
 
+          err(S.isModule(ramMod),"ram was not a systolic module? size:",size, " bits ",allocatedBits,ramMod)
           
           local verilog = {res:vHeader()}
           table.insert( verilog, ramMod:instanceToVerilogStart(ramInst) )
@@ -3926,7 +3928,7 @@ endmodule
           
           return s
         end
-
+--[=[
       else
       res.makeSystolic = function()
         local systolicModule = Ssugar.moduleConstructor(name.."_CORE")
@@ -3994,7 +3996,7 @@ endmodule
         
         return systolicModule
       end
-      end
+  end]=]
     end
 
 
@@ -4101,7 +4103,7 @@ modules.triggerFIFO = memoize(function(ty)
   assign load_output = (cnt>32'd0);
 endmodule
 ]=]
-    s.verilog = vstr
+    s:verilog(vstr)
     return s
   end
   
@@ -5666,7 +5668,7 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
 
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
-    s.verilog = vstr
+    s:verilog(vstr)
     return s
   end
   
@@ -6197,7 +6199,7 @@ endmodule
 
 ]=])
 
-s.verilog = table.concat(vstr,"")
+    s:verilog(table.concat(vstr,""))
     
     return s
   end
