@@ -525,10 +525,11 @@ function systolic.bitSlice( expr, low, high, X )
   return typecheck({kind="bitSlice",inputs={expr},low=low,high=high,loc=getloc()})
 end
 
-function systolic.constant( v, ty )
+function systolic.constant( v, ty, X )
   err( types.isType(ty), "constant type must be a type, but is: "..tostring(ty))
   err( types.isBasic(ty),"constant type must be basic, but is: "..tostring(ty))
   err( ty~=types.null(),"constant with null type?")
+  assert(X==nil)
   ty:checkLuaValue(v)
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
@@ -1508,7 +1509,11 @@ function userModuleMT.__tostring(tab)
   for fnname,fn in pairs(tab.functions) do
     table.insert(res,"Function "..fnname)
     table.insert(res,tostring(fn))
-    table.insert(res,"\t\tDelay:"..tab:getDelay(fnname))
+    if tab.onlyWire then
+      table.insert(res,"\t\tDelay: ? (onlyWire)")
+    else
+      table.insert(res,"\t\tDelay:"..tab:getDelay(fnname))
+    end
   end
 
   table.insert(res,"Internal Instances:")

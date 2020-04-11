@@ -1264,11 +1264,11 @@ modules.Storv = memoize(function( fn, X )
   function res.makeSystolic()
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
-    s.verilog = res:vHeader()..res:vInstances()..[=[
+    s:verilog(res:vHeader()..res:vInstances()..[=[
 assign process_output = fn_process_output;
 endmodule
 
-]=]
+]=])
     return s
   end
 
@@ -3702,7 +3702,7 @@ end
 -- csimOnly: hack for large fifos - don't actually allocate hardware
 -- VRLoad: make the load function be HandshakeVR
 -- VRStore: make the store function be HandshakeVR
-modules.fifoInner = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
+modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
   err( types.isType(A), "fifo: type must be type")
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
@@ -3794,15 +3794,141 @@ return mod
     local bytes = (size*A:verilogBits())/8
     
     local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_dbgname"..tostring(dbgname))
-    
-    local makeSystolic
+
+    local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true) }
+
+    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly, dbgname ) end
+
     local fifo
     if csimOnly then
-      makeSystolic = function()
+      res.makeSystolic = function()
         return fpgamodules.fifonoop( A, addrBits, name )
       end
     else
-      makeSystolic = function()
+
+      if true then
+        res.makeSystolic = function()
+          local C = require "generators.examplescommon"
+          local s = C.automaticSystolicStub( res )
+
+          local allocatedItems
+          local allocatedBits
+          local addrBits
+          
+          local ramMod 
+          local ramInst
+          local brammode
+          if size<=128 then
+            allocatedItems = 128
+            allocatedBits = A:lower():verilogBits()
+            addrBits = 7
+            brammode=false
+            ramMod = fpgamodules.sliceRamGen( allocatedBits ):complete()
+            ramInst = ramMod:instantiate("ram")
+            s:add( ramInst )
+            
+            local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
+            s:lookupFunction("load"):addPipeline(rd)
+            local wr = ramInst.write( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(A:lower():verilogBits()))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
+            s:lookupFunction("store"):addPipeline(wr)
+          else
+            brammode=true
+            allocatedItems = J.nearestPowerOf2(size)
+            addrBits = math.log(allocatedItems)/math.log(2)
+            
+            local allocatedBytes = math.ceil(A:lower():verilogBits()/8)
+            allocatedBits = allocatedBytes * 8
+            ramMod = fpgamodules.bramSDP( true, allocatedItems*allocatedBytes, allocatedBytes, allocatedBytes, nil, true ):complete()
+--            print(ramMod)
+            ramInst = ramMod:instantiate("ram")
+            s:add( ramInst )
+
+            local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
+            s:lookupFunction("load"):addPipeline(rd)
+            local wr = ramInst.writeAndReturnOriginal( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(A:lower():verilogBits()))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
+            s:lookupFunction("store"):addPipeline(wr)
+          end
+
+          
+          local verilog = {res:vHeader()}
+          table.insert( verilog, ramMod:instanceToVerilogStart(ramInst) )
+          table.insert( verilog,[[
+reg [31:0] readAddr;
+reg [31:0] writeAddr;
+wire [31:0] size;
+assign size = writeAddr-readAddr;
+assign store_ready = size < 32'd]]..size..[[;
+]] )
+          if brammode then
+            -- brams have a 1 cycle delay on read! we always queue up the next address asap, but if FIFO is empty, we do need to wait one cycle
+table.insert(verilog,[[
+reg load_valid;
+always @(posedge CLK) begin
+  if (load_ready_downstream) begin
+    load_valid <= size>32'd0;
+  end
+end
+]])
+          else
+table.insert(verilog,[[wire load_valid;
+assign load_valid = size>32'd0;
+]])
+end
+
+table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
+
+wire reading;
+assign reading = (size>32'd0) && load_ready_downstream;
+
+assign ram_RE = load_ready_downstream;
+assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
+
+wire store_valid;
+assign store_valid = store_input[]]..(A:lower():verilogBits())..[[];
+
+wire writing;
+assign writing = store_ready && store_valid;
+
+assign ram_WE = 1'b1;
+assign ram_]]..J.sel(brammode,"writeAndReturnOriginal","write")..[[_valid = writing;
+assign ram_writeAddrAndData = {store_input[]]..(A:lower():verilogBits()-1)..[[:0],writeAddr[]]..(addrBits-1)..[[:0]};
+
+always @(posedge CLK) begin
+  if (reset) begin
+    readAddr <= 32'd0;    
+    writeAddr <= 32'd0;
+    ]]..J.sel(brammode,"load_valid<=1'b0;\n","")..[[
+  end else begin
+    if ( readAddr==32'd]]..(allocatedItems-1)..[[ && reading ) begin // we need to wrap around
+      readAddr <= 32'd0;
+      if (writing) begin 
+        writeAddr <= writeAddr - 32'd]]..(allocatedItems-1)..[[; 
+      end else begin
+        writeAddr <= writeAddr - 32'd]]..allocatedItems..[[; 
+      end
+    end else begin
+      if (reading) begin readAddr <= readAddr + 32'd1; end
+      if (writing) begin writeAddr <= writeAddr + 32'd1; end
+    end
+  end 
+
+  //$display("size %d reading %d writing %d readAddr %d readDat %x writeAddr %d writeDat %x",size,reading,writing,readAddr, ram_readOut, writeAddr, ram_writeAddrAndData[71:8]);
+end
+
+]])
+
+          table.insert(verilog,[[
+endmodule
+
+]])
+        
+          s:verilog(table.concat(verilog,""))
+          
+          return s
+        end
+
+      else
+      res.makeSystolic = function()
         local systolicModule = Ssugar.moduleConstructor(name.."_CORE")
 
         --local allocSize = J.upToNearest( 1024, size )
@@ -3868,18 +3994,16 @@ return mod
         
         return systolicModule
       end
+      end
     end
 
-    local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true), makeSystolic=makeSystolic }
-
-    if terralib~=nil then res.terraModule = MT.fifo( res, storeRigelFn.inputType, loadRigelFn.outputType ,A, size, nostall, W, H, T, csimOnly, dbgname ) end
 
 return res
   end
 
   assert(false)
 end)
-
+--[=[
 -- this is a complete hack: on the read (load) side, our stupid FIFO has a pipeline with 1 cycle of delay
 -- => if load_ready_downstream is false, we will never assert valid=true, even if FIFO has data
 -- so, this wrapper asserts load_ready_downstream=true, until outputValid=true, to unclog the pipe
@@ -3936,7 +4060,7 @@ endmodule
     return res
   end
 end)
-
+]=]
 modules.triggerFIFO = memoize(function(ty)
   assert(ty==nil or ty:isSchedule())
 
@@ -5604,7 +5728,7 @@ modules.liftVerilogModule = memoize(function( name, vstr, functionList, stateful
   function res.makeSystolic()
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
-    s.verilog = vstr
+    s:verilog(vstr)
     return s
   end
   
@@ -6098,34 +6222,35 @@ modules.shiftRegister = J.memoize(function(ty, N)
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
     
-    s.verilog = res:vHeader()
+    local verilog = res:vHeader()
 
     -- it's possible ty is a trigger...
     if ty:lower():verilogBits()>0 then
       for i=1,N do
-        s.verilog = s.verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
+        verilog = verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
       end
-      s.verilog = s.verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
+      verilog = verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
       
-      s.verilog = s.verilog..[[always @(posedge CLK) begin
+      verilog = verilog..[[always @(posedge CLK) begin
   if( process_CE && process_valid ) begin
     DELAY_1 <= ]]..res:vInput()..[[;
 ]]
 
       for i=2,N do
-        s.verilog = s.verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
+        verilog = verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
       end
 
-      s.verilog = s.verilog..[[  end
+      verilog = verilog..[[  end
 end
 ]]
     end
     
-    s.verilog = s.verilog..[[
+    verilog = verilog..[[
 endmodule
 
 ]]
 
+    s:verilog(verilog)
     return s
   end
   

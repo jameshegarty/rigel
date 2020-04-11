@@ -2577,6 +2577,8 @@ function C.automaticSystolicStub( mod )
         fns[fnname]:setValid(fnname.."_valid")
       end
     end
+
+    fns[fnname]:setPure( fn.stateful==false )
   end
   
   local res = Ssugar.moduleConstructor(mod.name)
@@ -2638,27 +2640,28 @@ function C.automaticSystolicStub( mod )
   
   if mod.stateful then
     fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
+    fns.reset:setPure(false)
     delays.reset = 0
   end
-
 
   res:onlyWire(true)
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
   for k,v in pairs(delays) do res:setDelay(k,v) end
 
-  res = res:complete()
-  for fnname,fn in pairs(modFunctions) do
+--  res = res:complete()
+--  for fnname,fn in pairs(modFunctions) do
     -- dangerous hack?
-    res.functions[fnname].isPure = function()
-      return not fn.stateful
-    end
-  end
+--    res.functions[fnname].isPure = function()
+--      return not fn.stateful
+--    end
+--  end
 
-  if mod.stateful then
-    res.functions.reset.isPure = function() return false end
-  end
-  
+--  if mod.stateful then
+--    res.functions.reset.isPure = function() return false end
+--  end
+
+  assert( Ssugar.isModuleConstructor(res) )
   return res
 end
 

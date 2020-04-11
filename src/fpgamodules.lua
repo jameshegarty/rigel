@@ -150,40 +150,56 @@ end
 -- build a bits-width ram out of slices.
 -- Saves compile times with large # of bits... always makes constant size modules, even with 10000s of bits
 -- module interface looks the same as systolic.module.ram128()
-local sliceRamCache = {}
-local function sliceRamGen(bits)
+modules.sliceRamGen = J.memoize(function(bits)
   assert(bits>0)
   
     if bits==1 then
 return systolic.module.ram128()
   end
 
-  if sliceRamCache[bits]~=nil then
-return sliceRamCache[bits]
-  end
-
   err( bits%2==0, "NYI - sliceRamGen with non-power of 2 number of bits "..tostring(bits))
   
-  local m = sliceRamGen(bits/2)
+  --
 
   local ram = Ssugar.moduleConstructor( J.sanitize("sliceRamGen_"..tostring(bits)) )
-  local ai, bi = ram:add(m:instantiate("a")), ram:add(m:instantiate("b"))
+  --local ai, bi = ram:add(m:instantiate("a")), ram:add(m:instantiate("b"))
 
   local readFn = ram:addFunction( Ssugar.lambdaConstructor("read",types.uint(7),"readAddr") )
   readFn:setCE(S.CE("RE"))
-  readFn:setOutput( S.cast(S.tuple{ai:read(readFn:getInput()),bi:read(readFn:getInput())},types.bits(bits)),"readOut")
 
-  local writeFn = ram:addFunction( Ssugar.lambdaConstructor("write",types.tuple{types.uint(7),types.bits(bits)},"readAddrDat") )
+  local remainingBits = bits
+
+  local output = {}
+
+
+  local writeFn = ram:addFunction( Ssugar.lambdaConstructor("write",types.tuple{types.uint(7),types.bits(bits)},"writeAddrAndData") )
   writeFn:setCE(S.CE("WE"))
-  local lowbits = S.bitSlice(S.index(writeFn:getInput(),1),0,bits/2-1)
-  local highbits = S.bitSlice(S.index(writeFn:getInput(),1),bits/2,bits-1)
-  local addr = S.index(writeFn:getInput(),0)
-  writeFn:addPipeline( ai:write(S.tuple{addr,lowbits}) )
-  writeFn:addPipeline( bi:write(S.tuple{addr,highbits}) )
 
-  sliceRamCache[bits] = ram
+  local addr = S.index(writeFn:getInput(),0)
+  
+  local i = 0
+  while remainingBits>0 do
+    local thisBits = J.nearestPowerOf2(remainingBits)
+    if thisBits>1 then thisBits = thisBits/2 end
+
+
+    local m = modules.sliceRamGen(thisBits)
+
+    local inst = ram:add(m:instantiate("subinst_"..i))
+
+    table.insert(output, inst:read(readFn:getInput()) )
+
+    local seenBits = bits - remainingBits
+    local thisWriteData = S.bitSlice(S.index(writeFn:getInput(),1),seenBits,seenBits+thisBits-1)
+    writeFn:addPipeline( inst:write(S.tuple{addr,thisWriteData}) )
+
+    remainingBits = remainingBits - thisBits
+    i = i + 1
+  end
+  readFn:setOutput( S.cast(S.tuple(output),types.bits(bits)),"readOut")
+
   return ram
-end
+end)
 
 modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   err(types.isType(ty),"fifo type must be type")
@@ -203,7 +219,7 @@ modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   
   local ram, rams
   if items <= 128 and J.isPowerOf2(bits) then
-    ram = fifo:add( sliceRamGen(bits):instantiate("ram") )
+    ram = fifo:add( modules.sliceRamGen(bits):instantiate("ram") )
   elseif items <= 128 then
     rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
@@ -686,7 +702,7 @@ local function makeRamArray(
     local mod = Ssugar.moduleConstructor( name )
     
     ------------------ WRITE PORT
-    local sinp = systolic.parameter("inp",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
+    local sinp = systolic.parameter("writeAddrAndData",types.tuple{types.uint(inputAddrBits),types.bits(inputBytes*8)})
     local inpAddr = systolic.index(sinp,0)
     local inpData = systolic.index(sinp,1)
 
@@ -715,11 +731,11 @@ local function makeRamArray(
     
     local res = systolic.cast(systolic.tuple(out),types.bits(inputBytes*8))
     
-    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("writeAndReturnOriginal_CE"),nil)) )
+    mod:addFunction( systolic.lambda("writeAndReturnOriginal", sinp, res, "WARO_OUT", nil, nil, J.sel(CE,S.CE("WE"),nil)) )
 
     ----------- READ PORT
     if outputBytes~=nil then
-      local sinpRead = systolic.parameter("inpRead",types.uint(outputAddrBits))
+      local sinpRead = systolic.parameter("readAddr",types.uint(outputAddrBits))
 
       local outAddrPadded = sinpRead
       if ramOutputAddrBits>outputAddrBits then
@@ -738,7 +754,7 @@ local function makeRamArray(
 
       local readRes = systolic.cast(systolic.tuple(outRead),types.bits(outputBytes*8))
 
-      mod:addFunction( systolic.lambda("read", sinpRead, readRes, "READ_OUT", nil, nil, J.sel(CE,S.CE("read_CE"),nil) ) ) 
+      mod:addFunction( systolic.lambda("read", sinpRead, readRes, "readOut", nil, nil, J.sel(CE,S.CE("RE"),nil) ) ) 
     end
 
     return mod

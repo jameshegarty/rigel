@@ -1,4 +1,6 @@
 local R = require "rigel"
+R.AUTO_FIFOS = true
+
 R.export()
 require "generators.core".export()
 local harness = require "generators.harnessSOC"
