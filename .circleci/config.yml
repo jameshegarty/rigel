@@ -5,7 +5,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit time
       - run: cd examples; make wrapper verilog
       - run: test -e examples/out/verilog_done.txt || exit
       - run: test -e examples/out/wrapper_done.txt || exit
