@@ -1647,7 +1647,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
       end
     end
 
-    delay = 0
+    delay = J.sel(T>1,1,0)
     RVDelay, outputBurstiness = J.simulateFIFO( downXSim, SDF(sdfOverride), modname, false )
   else -- scale <= T... for every token, we output 1 token
     sdfOverride = {{1,1}}
