@@ -371,6 +371,7 @@ clean:
 #	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
 
 $(BUILDDIR)/%.v: %.lua
+	time -p $(LUA) $< verilator
 	{ time -p $(LUA) $< verilator; } 2> $(BUILDDIR)/$*.compiletimeraw.txt
 	printf '$*,' > $(BUILDDIR)/$*.compiletime.txt
 	cat $(BUILDDIR)/$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.compiletime.txt
