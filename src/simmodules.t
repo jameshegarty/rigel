@@ -47,7 +47,7 @@ function M.fifo( T, reqMaxSize, name, verbose )
   end
 
   terra FIFO:popFront() : &T
-    J.darkroomAssert( self:hasData(), ["fifo '"..name.."' has no data"])
+    J.darkroomAssert( self:hasData(), ["fifo '"..name.."' size:"..reqMaxSize.." has no data"])
     var cur = &self.data[self.frontAddr % maxSize]
     if verbose then cstdio.printf("fifo %s load addr %d\n", name, self.frontAddr) end
     self.frontAddr = self.frontAddr + 1

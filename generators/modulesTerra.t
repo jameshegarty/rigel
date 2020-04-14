@@ -255,15 +255,42 @@ function MT.RPassthrough(res,f)
 end
 
 function MT.liftHandshake(res,f,delay)
-  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
-                              inner: f.terraModule, ready:bool, readyDownstream:bool}
-  terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
-  terra LiftHandshake:init() self.inner:init() end
-  terra LiftHandshake:free() self.inner:free() end
-  terra LiftHandshake:stats(name:&int8) 
---    cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
-    self.inner:stats(name) 
-  end
+  J.err(delay<20,"TOO BIG DELAY",delay,f)
+  
+  if delay==0 then
+    local struct LiftHandshake{ inner: f.terraModule, ready:bool, readyDownstream:bool}
+
+    terra LiftHandshake:reset() self.inner:reset() end
+    terra LiftHandshake:init() self.inner:init() end
+    terra LiftHandshake:free() self.inner:free() end
+    terra LiftHandshake:stats(name:&int8) self.inner:stats(name)  end
+
+    assert(rigel.isHandshakeTrigger(res.inputType)==false and rigel.isHandshakeTrigger(res.outputType)==false)
+
+    terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if self.readyDownstream then
+        self.inner:process(inp,out)
+      end
+    end
+
+    terra LiftHandshake:calculateReady(readyDownstream:bool) 
+      self.readyDownstream = readyDownstream
+      self.inner:calculateReady()
+      self.ready = readyDownstream and self.inner.ready 
+    end
+
+    return MT.new( LiftHandshake, res )
+
+  else
+    
+    local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
+                                inner: f.terraModule, ready:bool, readyDownstream:bool}
+    terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
+    terra LiftHandshake:init() self.inner:init() end
+    terra LiftHandshake:free() self.inner:free() end
+    terra LiftHandshake:stats(name:&int8) 
+      self.inner:stats(name) 
+    end
 
   if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTrigger(res.outputType) then
     terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -312,6 +339,7 @@ function MT.liftHandshake(res,f,delay)
   end
 
   return MT.new( LiftHandshake, res )
+end
 end
 
 

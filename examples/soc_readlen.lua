@@ -12,6 +12,8 @@ local Uniform = require "uniform"
 local AXI = require "generators.axi"
 local RM = require "generators.modules"
 
+R.AUTO_FIFOS = true
+
 -- this is an example of a simple runtime configurable DMA that loads 64bits/cycle at a configurable address & length
 
 local Regs = SOC.axiRegs({{"readAddress",RM.reg(u(32),0x30008000)},{"writeAddress",RM.reg(u(32),0x30008000+(128*64))},{"len",RM.reg(u32,(128*64)/8)}},SDF{1,(128/8)*64})

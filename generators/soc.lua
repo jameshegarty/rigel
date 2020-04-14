@@ -1661,16 +1661,8 @@ SOC.write = J.memoize(function( filename, W_orig, H, writeType, V, syncAddrData,
     inpAddr = R.selectStream( "inpAddr", inp, 0 )
     inpData = R.selectStream( "inpData", inp, 1 )
   end
-  
-  local writeBytesPerBurst
 
-  --[=[local Scale0 = G.Module{
-    function(inp)
-      local a,b = G.Index{0}(inp), G.Index{1}(inp)
-      a = (a)
-      b = (b)
-      return R.concat("out",{a,b})
-    end}]=]
+  local writeBytesPerBurst
   
   -- scale by type size
   inpAddr = G.Mul{writeType:verilogBits()/8}(inpAddr)

@@ -366,6 +366,7 @@ modules.liftBasic = memoize(function(f)
   res.inputType = f.inputType
   res.outputType = types.rvV(f.outputType.over)
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
+  res.RVDelay = f.RVDelay
   res.delay = f.delay
   res.stateful = f.stateful
   res.name = "LiftBasic_"..f.name
@@ -694,8 +695,9 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
 
+  res.RVDelay = f.RVDelay
   res.delay = f.delay
-
+  
   res.requires = {}
   for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
   res.provides = {}
@@ -909,9 +911,14 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
 
   err( type(f.delay)=="number","Module is missing delay? ",f)
-  res.delay = math.max(1, f.delay)
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
+  if f.RVDelay~=nil then
+    res.delay = f.RVDelay
+  else
+    res.delay = math.max(1, f.delay)
+  end
+  
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
   res.stateful = f.stateful --f.stateful  valid bit shift register is stateful
 
@@ -920,7 +927,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   res.provides = {}
   for inst,fnmap in pairs(f.provides) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.provides,{inst,fnname},1) end end
 
-  if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,res.delay) end
+  if terralib~=nil then res.terraModule = MT.liftHandshake(res,f,f.delay) end
 
   function res.makeSystolic()
     assert( S.isModule(f.systolicModule) )
@@ -1577,7 +1584,8 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
     end
   end
 
-  res.delay, res.outputBurstiness = J.simulateFIFO( downYSim, res.sdfOutput, modname, false )
+  res.delay = J.sel(T>1,1,0)
+  res.RVDelay, res.outputBurstiness = J.simulateFIFO( downYSim, res.sdfOutput, modname, false )
   
   return res
 end)
@@ -1618,7 +1626,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
 
   local modname = J.sanitize("DownsampleXSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_"..tostring(A).."_T"..tostring(T).."_scale"..tostring(scale))
 
-  local delay, outputBurstiness
+  local delay, RVDelay, outputBurstiness
   
   if scale>T then -- A[T] to A[1]
     -- tricky: each token contains multiple pixels, any of of which can be valid
@@ -1639,11 +1647,12 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
       end
     end
 
-    delay, outputBurstiness = J.simulateFIFO( downXSim, SDF(sdfOverride), modname, false )
+    delay = 0
+    RVDelay, outputBurstiness = J.simulateFIFO( downXSim, SDF(sdfOverride), modname, false )
   else -- scale <= T... for every token, we output 1 token
     sdfOverride = {{1,1}}
     if terralib~=nil then tfn = MT.downsampleXSeqFnShort(innerInputType,outputType,scale,outputT) end
-    delay = 0
+    delay = 1
     outputBurstiness = 0
   end
 
@@ -2689,7 +2698,6 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   local cropSim = function()
     for y=0,H-1 do
       for x=0,W_n-1,math.max(V,1) do
-
         if x>=L and x<(W_n-R_n) and y>=B and y<(H-Top) then
           coroutine.yield(true)
         else
@@ -2700,7 +2708,8 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   end
   
   res.inputBurstiness = 0
-  res.delay, res.outputBurstiness = J.simulateFIFO( cropSim, res.sdfOutput, modname, false )
+  res.delay = J.sel(V>1,1,0)
+  res.RVDelay, res.outputBurstiness = J.simulateFIFO( cropSim, res.sdfOutput, modname, false )
     
   return res
 end)
@@ -2844,7 +2853,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   print("PREF DONE")
   ]=]
 
-  res.delay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
+  res.delay = 0
+  res.RVDelay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
   
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
@@ -2957,7 +2967,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     -- 4->8
     res.inputBurstiness = 0
     res.outputBurstiness = 0
-    res.delay = math.max(outputRate,1)/math.max(inputRate,1)
+    res.delay = 0
+    res.RVDelay = math.max(outputRate,1)/math.max(inputRate,1)
   end
   
   
@@ -3574,7 +3585,13 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   
   err(type(f.delay)=="number","MakeHandshake fn is missing delay? ",f)
 
-  res.delay = f.delay
+  if f.RVDelay~=nil then
+    -- not sure why this should be needed, but whatever...
+    res.delay = f.RVDelay
+  else
+    res.delay = f.delay
+  end
+  
   res.stateful = (f.delay>0) or f.stateful -- for the shift register of valid bits
   res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
@@ -5064,7 +5081,7 @@ local function insertFIFOs( out, delayTable, moduleName )
         res = n.inputs[1]
         if IFIFO~=nil then
           local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
-          --print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", n.fn.name)
+--          print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name)
           fifoBits = fifoBits + bts
 
           if bts>10*1024*8 then
@@ -5077,7 +5094,7 @@ local function insertFIFOs( out, delayTable, moduleName )
         res = rigel.apply( n.name, n.fn, res )
         if OFIFO~=nil then
           local bts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
-          --print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", n.fn.name)
+--          print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name)
           fifoBits = fifoBits + bts
           -- print("BTS",fifoBits)
           if bts>10*1024*8 then
@@ -5122,7 +5139,11 @@ local function insertFIFOs( out, delayTable, moduleName )
             
             err( inp.type:isRV(),"input to shift register is not RV? is: ",inp.type," this:", orig )
 
+            local G = require "generators.core"
+            --res.inputs[k] = G.Print{"I"}(res.inputs[k])
             res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
+            --res.inputs[k] = G.Print{"O"}(res.inputs[k])
+            --print("IDELAYBUFFER",delayDiff,k,n,n.loc)
           end
           --J.err( delayTable[inp]==delayTable[orig], "NYI - delay buffers input ",k," inputDelay:",delayTable[inp]," thisDelay:",delayTable[orig],orig.loc,orig )
           
@@ -5943,7 +5964,7 @@ modules.triggeredCounter = memoize(function(TY, N, stride, framed, X)
   res.sdfInput = SDF{1,N}
   res.sdfOutput = SDF{1,1}
   res.stateful=true
-  res.delay = 2
+  res.delay = 3
   res.name = "TriggeredCounter_"..verilogSanitize(tostring(TY)).."_"..tostring(N)
 
   if terralib~=nil then res.terraModule = MT.triggeredCounter(res,TY,N,stride) end
@@ -6234,7 +6255,7 @@ modules.shiftRegister = J.memoize(function(ty, N)
       verilog = verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
       
       verilog = verilog..[[always @(posedge CLK) begin
-  if( process_CE && process_valid ) begin
+  if( process_CE ) begin
     DELAY_1 <= ]]..res:vInput()..[[;
 ]]
 

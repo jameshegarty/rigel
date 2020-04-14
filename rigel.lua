@@ -793,7 +793,8 @@ local function buildAndCheckSystolicModule( tab, isModule )
       if rigelFn.outputType~=types.Interface() then
         err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
       end
-    elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false and rigelFn.outputType:isrv() then
+      --elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false and rigelFn.outputType:isrv() then
+    elseif rigelFn.inputType~=types.Interface() or rigelFn.outputType~=types.Interface() then
       err( type(rigelFn.delay)=="number","Error, rigel module missing delay? fnname '",fnname,"' should have been caught earlier ",tab)
       err( sm:getDelay(fnname)==rigelFn.delay, "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is:",sm:getDelay(fnname)," Module ",sm)      
     end
