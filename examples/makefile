@@ -393,8 +393,11 @@ $(BUILDDIR)/%.coverage.txt: %.lua
 	luacov-coveralls -v
 	touch $@
 
-$(BUILDDIR)/%.terra.raw $(BUILDDIR)/%_half.terra.raw: %.lua
-	$(TERRA) $< terra
+$(BUILDDIR)/%.terra.raw: %.lua
+	{ time -p $(TERRA) $< terra; } 2> $(BUILDDIR)/$*.terra.compiletimeraw.txt
+	printf '$*,' > $(BUILDDIR)/$*.terra.compiletime.txt
+	cat $(BUILDDIR)/$*.terra.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.compiletime.txt
+	rm $(BUILDDIR)/$*.terra.compiletimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
 	#- cp $(BUILDDIR)/$*.cycles.txt $(BUILDDIR)/build_$*
@@ -422,15 +425,15 @@ $(BUILDDIR)/%.hz.txt: $(BUILDDIR)/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum $(BUILDDIR)/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > $(BUILDDIR)/$*.hz.txt
 
-$(BUILDDIR)/%_half.terra.bmp: $(BUILDDIR)/%_half.terra.raw $(BUILDDIR)/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua $(BUILDDIR)/$*_half.terra.raw $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/$*.metadata.lua 0
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/build_$*
-	cp $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/build_$*
+#$(BUILDDIR)/%_half.terra.bmp: $(BUILDDIR)/%_half.terra.raw $(BUILDDIR)/%.metadata.lua
+#	$(LUA) ../misc/raw2bmp.lua $(BUILDDIR)/$*_half.terra.raw $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/$*.metadata.lua 0
+#	# keep copy for future reference
+#	mkdir -p $(BUILDDIR)/build_$*
+#	cp $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/build_$*
 
-$(BUILDDIR)/%_half.terra.correct.txt : $(BUILDDIR)/%_half.terra.bmp
-	diff $(BUILDDIR)/$*_half.terra.bmp gold/$*.bmp > $(BUILDDIR)/$*_half.terra.diff
-	test ! -s $(BUILDDIR)/$*_half.terra.diff && touch $@
+#$(BUILDDIR)/%_half.terra.correct.txt : $(BUILDDIR)/%_half.terra.bmp
+#	diff $(BUILDDIR)/$*_half.terra.bmp gold/$*.bmp > $(BUILDDIR)/$*_half.terra.diff
+#	test ! -s $(BUILDDIR)/$*_half.terra.diff && touch $@
 
 $(BUILDDIR)/%.raw.dup : %.raw
 	cat $*.raw > $@

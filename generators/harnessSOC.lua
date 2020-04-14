@@ -38,8 +38,15 @@ return function(fn,t,instances)
     io.output(outfile)
     io.write(fn:toVerilog())
     io.output():close()
-  elseif backend=="metadata" then
-    local outfile = "out/"..filename..".metadata.lua"
+  elseif backend=="terra" then
+    local doTerraSim = require("generators.harnessTerraSOC")
+    doTerraSim(fn,t)
+  else
+    print("backend",backend)
+    assert(false)
+  end
+
+      local outfile = "out/"..filename..".metadata.lua"
     if t~=nil and t.filename~=nil then outfile=t.filename..".metadata.lua" end
     local f = io.open(outfile,"w")
 
@@ -105,11 +112,5 @@ return function(fn,t,instances)
     
     f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
     f:close()
-  elseif backend=="terra" then
-    local doTerraSim = require("generators.harnessTerraSOC")
-    doTerraSim(fn,t)
-  else
-    print("backend",backend)
-    assert(false)
-  end
+
 end
