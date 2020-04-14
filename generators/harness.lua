@@ -123,7 +123,12 @@ function harnessTop(t)
     H.verilogOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif backend=="terra" then
     H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
-  elseif backend=="metadata" then
+--  elseif backend=="metadata" then
+  else
+    print("unknown build target "..arg[1])
+    assert(false)
+  end
+
     local tapValueString = "x"
     local tapBits = 0
     if t.tapType~=nil then
@@ -155,10 +160,6 @@ function harnessTop(t)
     if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
 
     writeMetadata(outDir.."/"..t.outFile..".metadata.lua", MD)
-  else
-    print("unknown build target "..arg[1])
-    assert(false)
-  end
 
 end
 

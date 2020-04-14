@@ -846,6 +846,11 @@ function common.simulateFIFO( fn, rate, name, inputSide, totalInputs, X )
   common.err( type(name)=="string", "simulateFIFO: name should be string, but is: ",name )
   assert( type(inputSide)=="boolean" )
   assert( X==nil )
+
+  local R = require "rigel"
+  if R.AUTO_FIFOS==false then
+    return nil,0
+  end
   
   local SDF = require "sdf"
   local Uniform = require "uniform"

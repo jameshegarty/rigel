@@ -6,6 +6,8 @@ local harness = require "generators.harness"
 local C = require "generators.examplescommon"
 local J = require "common"
 
+R.AUTO_FIFOS = false
+
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p)
   assert(T>=1)

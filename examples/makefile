@@ -52,7 +52,7 @@ ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.regcorrect.txt,$(SRC
 
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_BJUMP) $(SRCS_PULPINO) $(SRCS_SOC),$(SRCS))
-METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
+#METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
@@ -281,7 +281,7 @@ all: $(RES)
 
 dups: $(DUPS)
 
-metadata: $(METADATA)
+#metadata: $(METADATA)
 
 verilog: $(VERILOG)
 	touch $(BUILDDIR)/verilog_done.txt
@@ -358,17 +358,17 @@ coverage: $(COVERAGE)
 clean:
 	rm -Rf $(BUILDDIR)/*
 
-$(BUILDDIR)/%.metadata.lua: %.lua
-	$(LUA) $< metadata
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
+#$(BUILDDIR)/%.metadata.lua: %.lua
+#	$(LUA) $< metadata
+#	# keep copy for future reference
+#	mkdir -p $(BUILDDIR)/$*_build
+#	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
 
-$(BUILDDIR)/%.metadata.lua: %.t
-	$(TERRA) $< metadata
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
+#$(BUILDDIR)/%.metadata.lua: %.t
+#	$(TERRA) $< metadata
+#	# keep copy for future reference
+#	mkdir -p $(BUILDDIR)/$*_build
+#	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
 
 $(BUILDDIR)/%.v: %.lua
 	{ time -p $(LUA) $< verilator; } 2> $(BUILDDIR)/$*.compiletimeraw.txt
@@ -385,7 +385,7 @@ $(BUILDDIR)/%.v: %.t
 	mkdir -p $(BUILDDIR)/$*_build
 	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
 
-$(BUILDDIR)/%.v.mpsocwrapper.v: $(BUILDDIR)/%.v $(BUILDDIR)/%.metadata.lua
+$(BUILDDIR)/%.v.mpsocwrapper.v: $(BUILDDIR)/%.v 
 	$(LUA) ../platform/axi/wrapper.lua $(BUILDDIR)/$*.v $(BUILDDIR)/$*.metadata.lua $@ ../platform/ mpsoc
 
 $(BUILDDIR)/%.coverage.txt: %.lua
@@ -415,7 +415,7 @@ $(BUILDDIR)/%.axi.v: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir $(BUILDDIR)/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v $(BUILDDIR)/$*.verilator.v
-$(BUILDDIR)/%.verilator: $(BUILDDIR)/%.v $(BUILDDIR)/%.metadata.lua ../platform/verilator/harness.cpp
+$(BUILDDIR)/%.verilator: $(BUILDDIR)/%.v ../platform/verilator/harness.cpp
 	../platform/verilator/compile $(BUILDDIR)/$*.v $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_verilator $@
 
 $(BUILDDIR)/%.hz.txt: $(BUILDDIR)/%.axi.bit
