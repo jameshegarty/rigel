@@ -7,7 +7,7 @@ jobs:
       - checkout
       - run: sudo apt-get install luajit time
       - run: cd examples; make wrapper verilog
-      - run: cat out/*.compiletime.txt
+      - run: cat examples/out/*.compiletime.txt
       - run: test -e examples/out/verilog_done.txt || exit
       - run: test -e examples/out/wrapper_done.txt || exit
   verilator:
@@ -21,7 +21,7 @@ jobs:
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: verilator --version
       - run: cd examples; make verilator
-      - run: cat out/*.compiletime.txt
+      - run: cat examples/out/*.compiletime.txt
       - run: echo "RUNTIME"
       - run: cat out/*.runtime.txt
       - run: test -e examples/out/verilator_done.txt || exit
@@ -83,6 +83,7 @@ jobs:
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
+      - run: cat examples/out/*.terra.compiletime.txt
       - run: test -e examples/out/terra_done.txt || exit
   yosysSOC:
     docker:
