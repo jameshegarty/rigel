@@ -125,7 +125,7 @@ function harnessTop(t)
     H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
 --  elseif backend=="metadata" then
   else
-    print("unknown build target "..arg[1])
+    print("unknown build target ",backend)
     assert(false)
   end
 

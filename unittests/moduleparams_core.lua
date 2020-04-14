@@ -48,7 +48,7 @@ function runTests( configs, meta )
       
       local met = meta[k][configk]
       
-      local targets = {"metadata","verilog","terra"}
+      local targets = {"verilog","terra"}
       
       for _,bk in pairs(targets) do
         R.harness{ outFile=name, fn=mod, inFile="../examples/frame_64.raw", inSize=met.inputImageSize, outSize=met.outputImageSize, backend=bk }
