@@ -422,9 +422,6 @@ function fixedASTFunctions:toRigelModule(name,X)
   local inpType
   self:visitEach( function( n, args ) if n.kind=="parameter" then inpType=n.type end end)
 
-  --local delay = 1
-  --if self.kind=="disablePipelining" then delay=0 end
-    
   local res = modules.lift( name, inpType, self.type, nil, 
     function(inp)
       local out, instances = self:toSystolic(inp)
@@ -432,7 +429,6 @@ function fixedASTFunctions:toRigelModule(name,X)
     end,
     function() return fixedFloatTerra.tfn(self) end)
 
-  --print("FIXEFLOAT",name,res,res.systolicModule)
   return res
 end
 

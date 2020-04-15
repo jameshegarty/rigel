@@ -147,7 +147,6 @@ int main(int argc, char** argv) {
         setValid(&(top->process_input),inbpp*inP,true);
         validInCnt++;
       }
-      //    }else{
     }
 
     if( iThrottle != ready && MONITOR_FIFOS ){
@@ -160,13 +159,6 @@ int main(int argc, char** argv) {
     // flip to negedge.
     top->CLK = false;
     top->eval();
-
-    //    if( top->ready ){
-    //      if( validInCnt<inPackets ){
-    //        validInCnt++;
-    //      }
-    //    }
-
 
     // read outputs
     bool outValid = getValid( &(top->process_output), outbpp*outP );
@@ -181,11 +173,8 @@ int main(int argc, char** argv) {
       getData(&(top->process_output),outbpp*outP,outfile);
     }
 
-
-
     ready = top->ready;
 
-    //    printf("READY: %d\n", ready);
     // activate posedge
     top->CLK = true;
     top->eval();
@@ -215,12 +204,6 @@ int main(int argc, char** argv) {
     top->reset = true;
 #endif
     top->eval();
-
-    //    if( Verilated::gotFinish() ){
-      // we got an error
-    //      printf("VERILOTOR FINIS\n");
-    //      exit(1);
-    //    }
   }
     
   top->final();

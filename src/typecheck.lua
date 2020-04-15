@@ -228,11 +228,6 @@ local function typecheck_inner( ast, newNodeFn )
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
       error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! ",ast.loc)
     end
-  elseif ast.kind=="rateMonitor" then
-    err( ast.inputs[1].type:isBool(), "rateMonitor: usValid type should be bool, but is: ",ast.inputs[1].type )
-    err( ast.inputs[2].type:isBool(), "rateMonitor: dsValid type should be bool, but is: ",ast.inputs[2].type )
-    err( ast.inputs[3].type:isBool(), "rateMonitor: dsReady type should be bool, but is: ",ast.inputs[3].type )
-    ast.type = types.null()
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! ",ast.loc)
     return nil

@@ -2045,10 +2045,6 @@ modules.toHandshakeArrayOneHot = memoize(function( A, inputRates )
   res.name = sanitize("ToHandshakeArrayOneHot_"..tostring(A).."_"..#inputRates)
 
   res.delay = 0
---  function res:sdfTransfer( I, loc ) 
---    err(#I[1]==#inputRates, "toHandshakeArrayOneHot: incorrect number of input streams. Is "..(#I[1]).." but expected "..(#inputRates) )
---    return I 
---  end
   
   if terralib~=nil then res.terraModule = MT.toHandshakeArrayOneHot( res,A, inputRates ) end
 
@@ -2828,30 +2824,6 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
       end
     end
   end
-
-  --[=[
-  print("FILLPADSIM")
-  local psim = {}
-  for y=0,(H+B+Top)-1 do
-    for x=0,(W+L+R_n)-1,math.max(T,1) do
-      if x>=L and x<(W+L) and y>=B and y<(H+B) then
-        table.insert(psim,true)
-      else
-        table.insert(psim,false)
-      end
-    end
-  end
-  print("PSIMDONE")
-
-  local pref = {}
-  local N = res.sdfOutput[1][1]:toNumber()
-  local D = res.sdfOutput[1][2]:toNumber()
-  print("FILLPREF",N,D)
-  for i=0,#psim-1 do
-    table.insert(pref,J.calcThrottle(N,D,0,i))
-  end
-  print("PREF DONE")
-  ]=]
 
   res.delay = 0
   res.RVDelay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
@@ -3822,65 +3794,63 @@ return mod
         return fpgamodules.fifonoop( A, addrBits, name )
       end
     else
-
---      if true then
-        res.makeSystolic = function()
-          local C = require "generators.examplescommon"
-          local s = C.automaticSystolicStub( res )
-
-          local allocatedItems
-          local allocatedBits
-          local addrBits
+      res.makeSystolic = function()
+        local C = require "generators.examplescommon"
+        local s = C.automaticSystolicStub( res )
+        
+        local allocatedItems
+        local allocatedBits
+        local addrBits
+        
+        local ramMod 
+        local ramInst
+        local brammode
+        if size<=128 then
+          allocatedItems = 128
+          allocatedBits = A:lower():verilogBits()
+          addrBits = 7
+          brammode=false
+          ramMod = fpgamodules.sliceRamGen( allocatedBits ):complete()
+          --if Ssugar.isModuleConstructor(ramMod) then ramMod = ramMod:complete() end
+          ramInst = ramMod:instantiate("ram")
+          s:add( ramInst )
           
-          local ramMod 
-          local ramInst
-          local brammode
-          if size<=128 then
-            allocatedItems = 128
-            allocatedBits = A:lower():verilogBits()
-            addrBits = 7
-            brammode=false
-            ramMod = fpgamodules.sliceRamGen( allocatedBits ):complete()
-            --if Ssugar.isModuleConstructor(ramMod) then ramMod = ramMod:complete() end
-            ramInst = ramMod:instantiate("ram")
-            s:add( ramInst )
-            
-            local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
-            s:lookupFunction("load"):addPipeline(rd)
-            local wr = ramInst.write( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(A:lower():verilogBits()))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
-            s:lookupFunction("store"):addPipeline(wr)
-          else
-            brammode=true
-            allocatedItems = J.nearestPowerOf2(size)
-            addrBits = math.log(allocatedItems)/math.log(2)
-            
-            local allocatedBytes = math.ceil(A:lower():verilogBits()/8)
-            allocatedBits = allocatedBytes * 8
-            ramMod = fpgamodules.bramSDP( true, allocatedItems*allocatedBytes, allocatedBytes, allocatedBytes, nil, true ):complete()
---            print(ramMod)
-            ramInst = ramMod:instantiate("ram")
-            s:add( ramInst )
-
-            local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
-            s:lookupFunction("load"):addPipeline(rd)
-            local wr = ramInst.writeAndReturnOriginal( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(allocatedBits))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
-            s:lookupFunction("store"):addPipeline(wr)
-          end
-
-          err(S.isModule(ramMod),"ram was not a systolic module? size:",size, " bits ",allocatedBits,ramMod)
+          local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
+          s:lookupFunction("load"):addPipeline(rd)
+          local wr = ramInst.write( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(A:lower():verilogBits()))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
+          s:lookupFunction("store"):addPipeline(wr)
+        else
+          brammode=true
+          allocatedItems = J.nearestPowerOf2(size)
+          addrBits = math.log(allocatedItems)/math.log(2)
           
-          local verilog = {res:vHeader()}
-          table.insert( verilog, ramMod:instanceToVerilogStart(ramInst) )
-          table.insert( verilog,[[
+          local allocatedBytes = math.ceil(A:lower():verilogBits()/8)
+          allocatedBits = allocatedBytes * 8
+          ramMod = fpgamodules.bramSDP( true, allocatedItems*allocatedBytes, allocatedBytes, allocatedBytes, nil, true ):complete()
+
+          ramInst = ramMod:instantiate("ram")
+          s:add( ramInst )
+          
+          local rd = ramInst.read( ramInst, S.constant(0,types.uint(addrBits)), S.constant(true,types.bool()), S.constant(true,types.bool()) )
+          s:lookupFunction("load"):addPipeline(rd)
+          local wr = ramInst.writeAndReturnOriginal( ramInst, S.tuple{S.constant(0,types.uint(addrBits)),S.constant(0,types.bits(allocatedBits))}, S.constant(true,types.bool()), S.constant(true,types.bool()) )
+          s:lookupFunction("store"):addPipeline(wr)
+        end
+        
+        err(S.isModule(ramMod),"ram was not a systolic module? size:",size, " bits ",allocatedBits,ramMod)
+        
+        local verilog = {res:vHeader()}
+        table.insert( verilog, ramMod:instanceToVerilogStart(ramInst) )
+        table.insert( verilog,[[
 reg [31:0] readAddr;
 reg [31:0] writeAddr;
 wire [31:0] size;
 assign size = writeAddr-readAddr;
 assign store_ready = size < 32'd]]..size..[[;
 ]] )
-          if brammode then
+        if brammode then
             -- brams have a 1 cycle delay on read! we always queue up the next address asap, but if FIFO is empty, we do need to wait one cycle
-table.insert(verilog,[[
+          table.insert(verilog,[[
 reg load_valid;
 always @(posedge CLK) begin
   if (load_ready_downstream) begin
@@ -3888,13 +3858,13 @@ always @(posedge CLK) begin
   end
 end
 ]])
-          else
-table.insert(verilog,[[wire load_valid;
+        else
+          table.insert(verilog,[[wire load_valid;
 assign load_valid = size>32'd0;
 ]])
-end
+        end
 
-table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
+        table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
 
 wire reading;
 assign reading = (size>32'd0) && load_ready_downstream;
@@ -3936,150 +3906,22 @@ end
 
 ]])
 
-          table.insert(verilog,[[
+        table.insert(verilog,[[
 endmodule
 
 ]])
         
-          s:verilog(table.concat(verilog,""))
+        s:verilog(table.concat(verilog,""))
           
-          return s
-        end
---[=[
-      else
-      res.makeSystolic = function()
-        local systolicModule = Ssugar.moduleConstructor(name.."_CORE")
-
-        --local allocSize = J.upToNearest( 1024, size )
-        --if size<=128 then allocSize=size end
-        local fifo = systolicModule:add( fpgamodules.fifo( A:lower(), size, DARKROOM_VERBOSE, nostall ):instantiate("FIFO") )
-        
-        --------------
-        -- basic -> R
-        local store = systolicModule:addFunction( Ssugar.lambdaConstructor( "store", A:lower(), "store_input" ) )
-        local storeCE = S.CE("store_CE")
-        store:setCE(storeCE)
-        store:addPipeline( fifo:pushBack( store:getInput() ) )
-        
-        local storeReady = systolicModule:addFunction( Ssugar.lambdaConstructor( "store_ready" ) )
-        if nostall then
-          storeReady:setOutput( S.constant(true,types.bool()), "store_ready" )
-        else
-          storeReady:setOutput( fifo:ready(), "store_ready" )
-        end
-        --------------
-        -- basic -> V
-        local load = systolicModule:addFunction( Ssugar.lambdaConstructor( "load", types.null(), "process_input" ) )
-        local loadCE = S.CE("load_CE")
-        load:setCE(loadCE)
-        
-        if A==types.null() then
-          load:setOutput( fifo:hasData(), "load_output" )
-        else
-          local res = S.tuple{fifo:popFront( nil, fifo:hasData() ), fifo:hasData() }
-          load:setOutput( res, "load_output" )
-        end
-        --------------
-        local reset = systolicModule:addFunction( Ssugar.lambdaConstructor( "reset",nil,nil,"reset" ) )
-        reset:addPipeline(fifo:pushBackReset())
-        reset:addPipeline(fifo:popFrontReset())
-        --------------
-        if includeSizeFn then
-          local sizeFn = systolicModule:addFunction( Ssugar.lambdaConstructor( "size" ) )
-          sizeFn:setOutput( fifo:size(), "size" )
-        end
-        
-        --------------
-        -- debug
-        if W~=nil then
-          local outputCount = systolicModule:add( Ssugar.regByConstructor( types.uint(32), fpgamodules.incIfWrap(types.uint(32),((W*H)/T)-1,1) ):CE(true):setInit(0):setReset(0):instantiate("outputCount") )
-          load:addPipeline(outputCount:setBy(fifo:hasData()))
-          reset:addPipeline(outputCount:reset())
-          
-          local maxSize = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.max(types.uint(16),true) ):setReset(0):CE(true):setInit(0):instantiate("maxSize") ) 
-          local printInst = systolicModule:add( S.module.print( types.uint(16), "max size %d/"..size, nil, false):instantiate("printInst") )
-          load:addPipeline(maxSize:setBy(S.cast(fifo:size(),types.uint(16))))
-          local lastCycle = S.eq(outputCount:get(), S.constant(((W*H)/T)-1, types.uint(32))):disablePipelining()
-          load:addPipeline(printInst:process(maxSize:get(), lastCycle))
-          reset:addPipeline(maxSize:reset())
-        end
-        --------------
-        
-        systolicModule = liftDecimateSystolic( systolicModule, {"load"}, {"store","reset",J.sel(includeSizeFn,"size",nil)}, false, {true} )
-        systolicModule = runIffReadySystolic( systolicModule,{"store"},{"load","reset",J.sel(includeSizeFn,"size",nil)})
-        systolicModule = liftHandshakeSystolic( systolicModule,{"load","store"},{"reset",J.sel(includeSizeFn,"size",nil)},{true,false},{true,true},true)
-
-        systolicModule:setName(name)
-        
-        return systolicModule
+        return s
       end
-  end]=]
     end
-
-
 return res
   end
 
   assert(false)
 end)
---[=[
--- this is a complete hack: on the read (load) side, our stupid FIFO has a pipeline with 1 cycle of delay
--- => if load_ready_downstream is false, we will never assert valid=true, even if FIFO has data
--- so, this wrapper asserts load_ready_downstream=true, until outputValid=true, to unclog the pipe
--- this won't work in general: but since we know this load has a one cycle delay, this should be ok...
--- this also only applies if size>128, since that is when we use the BRAMS, which have delay=1
-modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
-  local res = modules.fifoInner( A, size, nostall, W, H, T, csimOnly, VRLoad, SDFRate, VRStore, includeSizeFn, dbgname, X )
-  
-  if size>128 and (csimOnly==false or csimOnly==nil) then
-    assert( includeSizeFn==false or includeSizeFn==nil )
-    local resHack = {}
-    for k,v in pairs(res) do resHack[k] = v end
-    resHack.name = "HACKWRAP_"..resHack.name
-    resHack.functions={load={},store={}}
-    for k,v in pairs(res.functions.load) do resHack.functions.load[k] = v end
-    resHack.functions.load = rigel.newFunction(resHack.functions.load)
-    for k,v in pairs(res.functions.store) do resHack.functions.store[k] = v end
-    resHack.functions.store = rigel.newFunction(resHack.functions.store)
 
-    local inst = {}
-    local internalFIFO = res:instantiate("internalFIFO")
-    inst[internalFIFO] = 1
-    resHack.instanceMap = inst
-    
-    resHack = rigel.newModule(resHack)
-    function resHack.makeSystolic()
-      local C = require "generators.examplescommon"
-      local s = C.automaticSystolicStub( resHack )
-
-      local verilog = resHack:vHeader()..resHack:vInstances()..[[
-reg loadValidLast=1'b0;
-reg loadReadyLast=1'b0;
-always @(posedge CLK) begin
-  loadValidLast <= ]]..internalFIFO:vOutputValid("load")..[[;
-  loadReadyLast <= ]]..internalFIFO:vOutputReady("load")..[[;
-end
-
-wire drainThePipe;
-assign drainThePipe = ((loadValidLast==1'b0)&&(loadReadyLast==1'b0));
-
-assign ]]..resHack:vOutput("load").." = "..internalFIFO:vOutput("load")..[[;
-assign ]]..internalFIFO:vOutputReady("load").." = "..resHack:vOutputReady("load")..[[ || drainThePipe;
-assign ]]..internalFIFO:vInput("store").." = "..resHack:vInput("store")..[[;
-assign ]]..resHack:vInputReady("store").." = "..internalFIFO:vInputReady("store")..[[;
-endmodule
-
-]]
-      s.verilog = verilog
-      return s
-    end
-
-    return resHack
-  else
-    return res
-  end
-end)
-]=]
 modules.triggerFIFO = memoize(function(ty)
   assert(ty==nil or ty:isSchedule())
 
@@ -5035,11 +4877,6 @@ local function insertFIFOs( out, delayTable, moduleName )
       return d
     end)
 
-  --out:visitEach(
-  --  function( n, args )
-  --    assert( type(delayTable[n])=="number" )
-  --  end)
-  
   local fifoBits = 0
 
   local fr = out:process(
@@ -5083,12 +4920,6 @@ local function insertFIFOs( out, delayTable, moduleName )
           local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
 --          print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name)
           fifoBits = fifoBits + bts
-
-          if bts>10*1024*8 then
-          --  print("HUGEFIFO I",arg[0],n.fn.name,n.fn.inputType:extractData(),(bts/8192).."KB")
-          end
-          
-          --print("BTS",fifoBits)
           res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
         end
         res = rigel.apply( n.name, n.fn, res )
@@ -5096,11 +4927,6 @@ local function insertFIFOs( out, delayTable, moduleName )
           local bts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
 --          print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name)
           fifoBits = fifoBits + bts
-          -- print("BTS",fifoBits)
-          if bts>10*1024*8 then
-          --  print("HUGEFIFO O",arg[0],n.fn.name,n.fn.outputType:extractData(),(bts/8192).."KB")
-          end
-          
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
       elseif n.kind=="apply" or n.kind=="applyMethod" then
@@ -5140,20 +4966,14 @@ local function insertFIFOs( out, delayTable, moduleName )
             err( inp.type:isRV(),"input to shift register is not RV? is: ",inp.type," this:", orig )
 
             local G = require "generators.core"
-            --res.inputs[k] = G.Print{"I"}(res.inputs[k])
             res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
-            --res.inputs[k] = G.Print{"O"}(res.inputs[k])
-            --print("IDELAYBUFFER",delayDiff,k,n,n.loc)
           end
-          --J.err( delayTable[inp]==delayTable[orig], "NYI - delay buffers input ",k," inputDelay:",delayTable[inp]," thisDelay:",delayTable[orig],orig.loc,orig )
-          
         end
       end
 
       return res
     end)
 
-  --print("TOTAL FIFO bits:",fifoBits," bytes:",fifoBits/8," KBs:",fifoBits/(8*1024))
   return fr
 end
 
@@ -5474,15 +5294,6 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       local readyfn = module:addFunction( S.lambda("ready", readyinp, readyout, "ready", readyPipelines ) )
     end
 
-    -- insert rate monitors
-    --assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsValid) )
-    --assert( J.keycount( rateMonitors.usValid)== J.keycount(rateMonitors.dsReady) )
-
---    for k,v in pairs(rateMonitors.usValid) do
---      err( rateMonitors.dsReady[k]~=nil, "dsReady is missing for ",k)
---      process:addPipeline( S.rateMonitor( rateMonitors.usValid[k], rateMonitors.dsValid[k], rateMonitors.dsReady[k], rateMonitors.delay[k], rateMonitors.rate[k], k, rateMonitors.functionName[k] ) )
---    end
-
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
 
@@ -5705,46 +5516,6 @@ modules.liftVerilogModule = memoize(function( name, vstr, functionList, stateful
   for _,fn in pairs(functionList) do
     err( rigel.isPlainFunction(fn),"liftVerilogModule: functions in function list should be rigel functions")
   end
---[=[  
-  local function makeSystolic()
-    local fns = {}
-
-    for fnname,fn in pairs(functionList) do
-      local inp = S.parameter(fnname.."_input",rigel.lower(fn.inputType))
-
-      local out
-      if fn.outputType~=types.null() then
-        local outv = rigel.lower(fn.outputType):fakeValue()
-        out = S.constant(outv,rigel.lower(fn.outputType))
-      end
-      fns[fnname] = S.lambda(fnname,inp,out,fnname.."_output")
-      
-      if (rigel.hasReady(fn.inputType) or fn.inputType==types.null()) and 
-          (rigel.hasReady(fn.outputType) or fn.outputType==types.null()) then
-
-        local rinp
-        if fn.outputType~=types.null() then
-          rinp =  S.parameter(fnname.."_ready_downstream",rigel.extractReady(fn.outputType))
-        else
-          rinp =  S.parameter(fnname.."_ready_downstream",types.null())
-        end
-
-        local rout
-        if fn.inputType~=types.null() then
-          rout = S.constant(rigel.extractReady(fn.inputType):fakeValue(),rigel.extractReady(fn.inputType))
-        end
-        
-        fns[fnname.."_ready"] = S.lambda( fnname.."_ready", rinp, rout, fnname.."_ready")
-      else
-        print("liftVerilog: unsupported input/output type? inputType: "..tostring(fn.inputType)..", outputType:"..tostring(fn.outputType))
-        assert(false)
-      end
-    end
-    
-    fns.reset = S.lambda("reset",S.parameter("rnil",types.null()),nil,"process_reset",{},S.parameter("reset",types.bool()))
-    return S.module.new(name,fns,{},true,nil,vstr,{process=0,ready=0})
-  end
-]=]
   
   local res = rigel.newModule{ name=name, functions=functionList, stateful=stateful }
 

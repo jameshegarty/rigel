@@ -809,16 +809,11 @@ function common.canonicalV( rate, size, X )
 end
 
 function common.calcThrottle( N, D, delay, cycle )
-  --local SDF = require "sdf"
-  --local Uniform = require "uniform"
-  --assert( SDF.isSDF(rate) )
-  --assert( #rate==1 )
   assert( type(delay)=="number" )
   assert( type(cycle)=="number" )
   assert( delay>=0 )
   assert( cycle>=0 )
   
-  --local N,D = Uniform(rate[1][1]):toNumber(), Uniform(rate[1][2]):toNumber()
   assert( type(N)=="number" )
   assert( type(D)=="number" )
 
@@ -859,16 +854,11 @@ function common.simulateFIFO( fn, rate, name, inputSide, totalInputs, X )
   local N, D = Uniform(rate[1][1]):toNumber(),Uniform(rate[1][2]):toNumber()
   
   local function simulate(delay)
-    --print("SIMULATE", delay)
-    
-    local file = io.open("out/"..name.."_"..delay..".csv","w")
+    local file
+    --local file = io.open("out/"..name.."_"..delay..".csv","w")
     
     local tokenCount = 0
     local tokenCountRef = 0
-    -- max value seen of (tokenCount-tokenCountRef). If 0, this means delay is large enough.
-    -- if >0, this means delay is not big enough (FIFO will be drained)
-    --local tokenCountDiffMax
-    --local tokenCountDiffMin
     local FIFOSize = 0
     local maxFIFOSize
     local minFIFOSize
@@ -905,7 +895,6 @@ function common.simulateFIFO( fn, rate, name, inputSide, totalInputs, X )
 
       startupDelay = startupDelay - 1
       if coroutine.status(fnc)=="dead" then
-        --print("coroutine dead",tokenCount,tokenCountRef)
         -- once fn is dead, we need to run out the clock and fill in the reference line until it matches expected total count
         if tokenCount<=tokenCountRef then
 break
@@ -924,11 +913,9 @@ break
           FIFOSize = FIFOSize - 1
         end
       end
-        
 
       local diff = tokenCountRef - tokenCount
-      --if tokenCountDiffMax==nil or diff>tokenCountDiffMax then tokenCountDiffMax = diff end
-      --if tokenCountDiffMin==nil or diff<tokenCountDiffMin then tokenCountDiffMin = diff end
+
       if maxFIFOSize==nil or FIFOSize > maxFIFOSize then maxFIFOSize = FIFOSize end
       if minFIFOSize==nil or FIFOSize < minFIFOSize then minFIFOSize = FIFOSize end
 
@@ -939,11 +926,8 @@ break
     common.err(tokenCountRef==tokenCount,"Number of output tokens was not as expected at end of time! expected:",tokenCountRef," seen:",tokenCount, name, " totalInputs:",totalInputs)
 
     if file~=nil then file:close() end
-    
-    --print("FIFOSIZE:",minFIFOSize,maxFIFOSize," TC",tokenCountDiffMin, tokenCountDiffMax)
 
     local largestDelay = 0
-    --local smallestDelay
     
     assert( common.keycount(tokenCountInv)==common.keycount(tokenCountRefInv) )
     for tokenCount,cycle in pairs(tokenCountInv) do
@@ -957,7 +941,6 @@ break
       end
       
       if diff>largestDelay then largestDelay = diff end
-      --if tokenCount>0 and (smallestDelay==nil or diff<smallestDelay) then smallestDelay = diff end
     end
 
     return maxFIFOSize, minFIFOSize, largestDelay

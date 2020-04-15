@@ -85,8 +85,9 @@ function darkroom.Address(num)
   return setmetatable({num},AddressMT)
 end
 
-darkroom.Async={}
-darkroom.Unoptimized={}
+-- generator flags
+darkroom.Async={} -- generate async (0 cycle delay) module
+darkroom.Unoptimized={} -- disable rate optimization (at the instance level, instead of globally)
 
 darkroom.Size = J.memoize(function( w, h, X )
   assert(X==nil)

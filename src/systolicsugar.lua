@@ -150,8 +150,6 @@ __newindex = function( tab, key, value )
 end}
 
 function systolicModuleConstructorMT.__tostring(tab)
---  tab:complete()
-  --  return tostring(tab.module)
   return "SystolicModuleConstructor "..tab.__name
 end
 

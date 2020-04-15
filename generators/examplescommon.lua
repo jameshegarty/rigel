@@ -1583,8 +1583,6 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
   if scaleX>1 then
     local mod = modules.liftHandshake(modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX )))
 
-    --if scaleY>1 then mod=modules.RPassthrough(mod) end
-
     out = rigel.apply("downsampleSeq_X", mod, out)
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
@@ -2648,18 +2646,6 @@ function C.automaticSystolicStub( mod )
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
   for k,v in pairs(delays) do res:setDelay(k,v) end
-
---  res = res:complete()
---  for fnname,fn in pairs(modFunctions) do
-    -- dangerous hack?
---    res.functions[fnname].isPure = function()
---      return not fn.stateful
---    end
---  end
-
---  if mod.stateful then
---    res.functions.reset.isPure = function() return false end
---  end
 
   assert( Ssugar.isModuleConstructor(res) )
   return res

@@ -29,7 +29,7 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
   mod:addFunction(S.lambda("process",swinp,ot,"process_output",nil,nil))
   --return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
-  return mod
+
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
@@ -152,17 +152,8 @@ end
 -- module interface looks the same as systolic.module.ram128()
 modules.sliceRamGen = J.memoize(function(bits)
   assert(bits>0)
-  
---    if bits==1 then
---return systolic.module.ram128()
---  end
-
-  --err( bits%2==0, "NYI - sliceRamGen with non-power of 2 number of bits "..tostring(bits))
-  
-  --
 
   local ram = Ssugar.moduleConstructor( J.sanitize("sliceRamGen_"..tostring(bits)) )
-  --local ai, bi = ram:add(m:instantiate("a")), ram:add(m:instantiate("b"))
 
   local readFn = ram:addFunction( Ssugar.lambdaConstructor("read",types.uint(7),"readAddr") )
   readFn:setCE(S.CE("RE"))
@@ -170,7 +161,6 @@ modules.sliceRamGen = J.memoize(function(bits)
   local remainingBits = bits
 
   local output = {}
-
 
   local writeFn = ram:addFunction( Ssugar.lambdaConstructor("write",types.tuple{types.uint(7),types.bits(bits)},"writeAddrAndData") )
   writeFn:setCE(S.CE("WE"))
@@ -227,7 +217,6 @@ modules.fifo = memoize(function( ty, items, verbose, nostall, X )
   elseif items <= 128 then
     rams = J.map( J.range( bits ), function(v) return fifo:add(systolic.module.ram128():instantiate("fifo"..v)) end )
   else
-    --err( J.isPowerOf2(items), "fifo NYI, items must be power of 2, but is: ",items )
     ram = fifo:add(modules.bramSDP( true, J.nearestPowerOf2(items)*bytes, bytes, bytes, nil, true ):instantiate("ram"))
   end
 
@@ -672,10 +661,8 @@ local function makeRamArray(
   if outputBytes~=nil then outputAddrBits = math.log(sizeInBytes/outputBytes)/math.log(2) end
 
   if init~=nil then
-    --print("INIT",sizeInBytes,ramCount, inputBytes, outputBytes, ramInputBits, ramOutputBits )
     err( ramCount <= 1, "NYI - inits with striped ram array" )
-    --err( ramInputBits==inputBytes*8, "NYI - inits with striped ram array"  )
-    --if outputBytes~=nil then err( ramOutputBits==outputBytes*8, "NYI - inits with striped ram array"  ) end
+
     err( #init==sizeInBytes, "init field has size "..(#init).." but should have size "..sizeInBytes )
 
     assert( outputBytes==nil or inputBytes==outputBytes )
@@ -809,55 +796,8 @@ modules.bramSDP = memoize(function( writeAndReturnOriginal, sizeInBytes, inputBy
   err( type(inputBytes)=="number", "inputBytes must be a number")
   err( outputBytes==nil or type(outputBytes)=="number", "outputBytes must be a number")
   err( outputBytes==nil or (math.floor(outputBytes)==outputBytes), "outputBytes not integral "..tostring(outputBytes))
-  
-  -- non power of 2 sizes are actually ok: the number of addressable items just needs to be power of 2
-  --err( isPowerOf2(sizeInBytes), "Size in Bytes must be power of 2, but is "..sizeInBytes)
   err( type(CE)=="boolean", "CE must be boolean")
-
   err( math.floor(inputBytes)==inputBytes, "bramSDP: inputBytes not integral "..tostring(inputBytes))
-  
-  --err( isPowerOf2(inputBytes), "inputBytes is not power of 2")
---  local writeAddrs = sizeInBytes/inputBytes
---  err( J.isPowerOf2(writeAddrs), "writeAddress count isn't a power of 2 (size="..sizeInBytes..",inputBytes="..inputBytes..",writeAddrs="..writeAddrs..")")
-
---  if outputBytes~=nil then
-
---    local readAddrs = sizeInBytes/outputBytes
---    err( J.isPowerOf2(readAddrs), "readAddress count isn't a power of 2")
---  end
---  
-  -- the idea here is that we want to pack the data into the smallest # of brams possible.
-  -- we are limited by (a) the number of addressable items, and (b) the bw of each bram.
-  -- if we have more than 2048 addressable items, we can't pack into brams (would need additional multiplexers)
---  local minbwBytes = inputBytes
---  if outputBytes~=nil then minbwBytes = math.min(inputBytes, outputBytes) end
---  local maxbwBytes = inputBytes
---  if outputBytes~=nil then maxbwBytes = math.max(inputBytes, outputBytes) end
-
---  local addressable = math.max(sizeInBytes/minbwBytes,math.pow(2,9)) -- bram with least # of addressable items has 512 addressable items
---  err(addressable<=math.pow(2,14),"Error, bramSDP arguments have more addressable items than are supported by 1 bram (totalSize:"..tostring(sizeInBytes)..", inputBytes/cycle:"..tostring(inputBytes)..", outputBytes/cycle:"..tostring(outputBytes)..", addressableItems:"..tostring(addressable)..")")
-
-  -- find the # brams if we're bw limited, or address limited
-
---  local maxPossibleBWBytes = maxPossibleBWBits/8 -- can be non-integer!!
---  local ramCount = maxbwBytes/maxPossibleBWBytes
---  local ramCountInt = math.ceil(ramCount)
-  
-  -- it's ok to require <1 bram (like half a bram)
-  -- it's ok to have non-integer number of rams! This just means we have more BW than we need. Example: we want 15 bytes!
-  --err( ramCount==math.floor(ramCount) or ramCount < 1, "non-integer number of BRAMS needed? sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," addressable:",addressable, " max BW per ram with that number of addressable (bytes):", maxPossibleBWBytes )
-
-  -- number of input bits of the actual bram we chose
-  -- if ram BW is more than we need, prefer to have the input/output port match real port size (# allocate too many addressible items).
-  -- ... this make it easier to deal with init values
---  local ramInputBits = (inputBytes*8)/ramCountInt
---  err( ramInputBits==math.floor(ramInputBits),"ram input bits is non-integer. sizeInBytes:",sizeInBytes," inputBytes:",inputBytes," outputBytes:",outputBytes," ramCount:",ramCount," maxPossibleBWBits:",maxPossibleBWBits)
-  
---  local ramOutputBits, ramOutputAddrBits
---  if outputBytes~=nil then
---    ramOutputBits = (outputBytes*8)/ramCountInt
---  end
-
   err ( outputBytes==nil or inputBytes==outputBytes, "NYI: different read and write BW!")
   
   local addressable  = addressableItems( sizeInBytes, inputBytes )
@@ -876,7 +816,7 @@ end
 
 function readAll(file)
   local fn = script_path().."misc/"..file
-  --print("LOAD FILE "..fn)
+
   local f = io.open(fn, "rb")
   err(f~=nil, "could not open file '"..file.."'")
   local content = f:read("*all")

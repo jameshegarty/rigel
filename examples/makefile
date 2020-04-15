@@ -3,7 +3,6 @@ SHELL = /bin/bash
 
 BUILDDIR ?= out
 
-# soc_flipWrite.lua 
 SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua soc_convgenTaps_2096688.lua soc_convgenTaps_524172.lua soc_convgenTaps_1048344.lua soc_convgenTaps_4193376.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
@@ -19,7 +18,6 @@ YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(S
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt,$(SRCS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt,$(SRCS_SOC))
 
-# state_flowcontrol.t
 SRCS_STATE = state_simple.t
 
 STATE = $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_STATE))
@@ -92,12 +90,9 @@ SRCS_TERRA := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_TERRA))
 SRCS_TERRA += $(SRCS_SOC)
 
 TERRAOUT = $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
 SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua, $(SRCS))
@@ -127,12 +122,9 @@ SRCS_VERILATOR := $(filter-out stereo_ov7660.lua stereo_tr_full_4.lua stereo_tr_
 
 VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.raw,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.bmp,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.correct.txt,$(SRCS_VERILATOR))
 
 # too slow
 SRCS_TERRA_ISIM = $(SRCS_TERRA)
@@ -286,8 +278,6 @@ all: $(RES)
 
 dups: $(DUPS)
 
-#metadata: $(METADATA)
-
 verilog: $(VERILOG)
 	touch $(BUILDDIR)/verilog_done.txt
 	date
@@ -363,18 +353,6 @@ coverage: $(COVERAGE)
 clean:
 	rm -Rf $(BUILDDIR)/*
 
-#$(BUILDDIR)/%.metadata.lua: %.lua
-#	$(LUA) $< metadata
-#	# keep copy for future reference
-#	mkdir -p $(BUILDDIR)/$*_build
-#	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
-
-#$(BUILDDIR)/%.metadata.lua: %.t
-#	$(TERRA) $< metadata
-#	# keep copy for future reference
-#	mkdir -p $(BUILDDIR)/$*_build
-#	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
-
 # this crazyness is to be able to write the output (runtime from time) to a file AND to stdout, and exit correctly :o
 $(BUILDDIR)/%.v: %.lua
 	{ time -p $(LUA) $< verilator; } 2>&1 | tee $(BUILDDIR)/$*.compiletimeraw.txt; exit "$${PIPESTATUS[0]}"
@@ -430,16 +408,6 @@ $(BUILDDIR)/%.verilator: $(BUILDDIR)/%.v ../platform/verilator/harness.cpp
 $(BUILDDIR)/%.hz.txt: $(BUILDDIR)/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum $(BUILDDIR)/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > $(BUILDDIR)/$*.hz.txt
-
-#$(BUILDDIR)/%_half.terra.bmp: $(BUILDDIR)/%_half.terra.raw $(BUILDDIR)/%.metadata.lua
-#	$(LUA) ../misc/raw2bmp.lua $(BUILDDIR)/$*_half.terra.raw $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/$*.metadata.lua 0
-#	# keep copy for future reference
-#	mkdir -p $(BUILDDIR)/build_$*
-#	cp $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/build_$*
-
-#$(BUILDDIR)/%_half.terra.correct.txt : $(BUILDDIR)/%_half.terra.bmp
-#	diff $(BUILDDIR)/$*_half.terra.bmp gold/$*.bmp > $(BUILDDIR)/$*_half.terra.diff
-#	test ! -s $(BUILDDIR)/$*_half.terra.diff && touch $@
 
 $(BUILDDIR)/%.raw.dup : %.raw
 	cat $*.raw > $@

@@ -534,19 +534,6 @@ function systolic.constant( v, ty, X )
   return typecheck({ kind="constant", value=J.deepcopy(v), type = ty, loc=getloc(), inputs={} })
 end
 
---[=[function systolic.rateMonitor( usValid, dsValid, dsReady, delay, rate, name, functionName, X )
-  err( systolicAST.isSystolicAST(usValid), "usValid to rateMonitor must be a systolic ast, but is: ", usValid )
-  err( systolicAST.isSystolicAST(dsValid), "dsValid to rateMonitor must be a systolic ast, but is: ", dsValid )
-  err( systolicAST.isSystolicAST(dsReady), "dsReady to rateMonitor must be a systolic ast, but is: ", dsReady )
-  local SDF = require "sdf"
-  err( SDF.isSDF(rate), "rateMonitor: rate must be SDF rate, but is: ", rate)
-  err( type(delay)=="number", "rateMonitor: delay must be number, but is: ",delay)
-  err( type(name)=="string", "rateMonitor, name must be string, but is: ",name )
-  err( type(functionName)=="string", "rateMonitor, functionName must be string, but is: ",name )
-
-  return typecheck{ kind="rateMonitor", monitorRate=rate, monitorDelay=delay, monitorName=name, functionName=functionName, inputs={usValid,dsValid,dsReady}, loc=getloc() }
-  end]=]
-
 function systolic.tuple( tab )
   err( type(tab)=="table", "systolic.tuple: input to tuple should be a table")
   err( #tab==J.keycount(tab), "systolic.tuple: input must be a lua array, but is: "..tostring(tab))
@@ -1431,11 +1418,6 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
         end
       elseif n.kind=="vectorSelect" then
         finalResult = "(("..args[1]..")?("..args[2].."):("..args[3].."))"
---[=[      elseif n.kind=="rateMonitor" then
-        local Uniform = require "uniform"
-        local N = Uniform(n.monitorRate[1][1]):toNumber()
-        table.insert( declarations, )
-  finalResult = "__@#$#@$#@_RATE_MONITOR"]=]
       else
         print("NYI - ",n.kind)
         assert(false)
