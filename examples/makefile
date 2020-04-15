@@ -372,14 +372,15 @@ clean:
 #	mkdir -p $(BUILDDIR)/$*_build
 #	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
 
+# this crazyness is to be able to write the output (runtime from time) to a file AND to stdout, and exit correctly :o
 $(BUILDDIR)/%.v: %.lua
-	{ time -p $(LUA) $< verilator; } 2> $(BUILDDIR)/$*.compiletimeraw.txt
+	{ time -p $(LUA) $< verilator; } 2>&1 | tee $(BUILDDIR)/$*.compiletimeraw.txt; exit "$${PIPESTATUS[0]}"
 	printf '$*,' > $(BUILDDIR)/$*.compiletime.txt
 	cat $(BUILDDIR)/$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.compiletime.txt
 	rm $(BUILDDIR)/$*.compiletimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
+	cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
 
 $(BUILDDIR)/%.v: %.t
 	$(TERRA) $< verilator

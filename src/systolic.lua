@@ -2569,8 +2569,28 @@ printModuleFunctions={}
 setmetatable(printModuleFunctions,{__index=systolicModuleFunctions})
 printModuleMT={__index=printModuleFunctions}
 
-function printModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+function printModuleFunctions:instanceToVerilogStart( instance )
+return [[
+reg [31:0] ]]..instance.name..[[_print_cycle_cnt;
+]]
 
+
+end
+
+function printModuleFunctions:instanceToVerilog( instance, fnname, datavar, validvar, cevar )
+  if fnname=="reset" then
+local decl = [[always @(posedge CLK) begin
+  if (]]..validvar..[[) begin
+    ]]..instance.name..[[_print_cycle_cnt <= 32'd0;
+  end else begin
+    ]]..instance.name..[[_print_cycle_cnt <= ]]..instance.name..[[_print_cycle_cnt + 32'd1;
+  end
+end
+]]
+
+    return "___NULL_PRINT_RESET_OUT", decl, true
+  else
+    
   local datalist = ""
   if self.type:isTuple() then
     local bit = 0
@@ -2598,13 +2618,16 @@ function printModuleFunctions:instanceToVerilog( instance, fnname, datavar, vali
 assign ]]..instance.name..[[ = ]]..datavar..[[;
 ]]
 
+  
   if self.showIfInvalid then
-    decl = decl..[[always @(posedge CLK) begin $display("%s(]]..validS..[[): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..datalist..[[); end]]
+    decl = decl..[[always @(posedge CLK) begin $display("%s(]]..validS..[[ cycle:%d): ]]..self.str..[[",INSTANCE_NAME,]]..validSS..instance.name.."_print_cycle_cnt,"..datalist..[[); end]]
   else
     decl = decl..[[always @(posedge CLK) begin if(]]..validvar..[[) begin $display("%s: ]]..self.str..[[",INSTANCE_NAME,]]..datalist..[[);end end]]
   end
 
   return "___NULL_PRINT_OUT", decl, true
+
+  end
 end
 
 function printModuleFunctions:toVerilog() return "" end
@@ -2612,19 +2635,25 @@ function printModuleFunctions:getDependenciesLL() return {} end
 function printModuleFunctions:getDelay(fnname) return 0 end
 
 -- showIfInvalid: should we display the print in invalid cycles? default true
-function systolic.module.print( ty, str, CE, showIfInvalid, X )
+function systolic.module.print( ty, str, CE, showIfInvalid, cycleCounter, X )
   assert(X==nil)
   err( types.isType(ty), "type input to print module should be type")
   err( type(str)=="string", "string input to print module should be string")
   err( CE==nil or type(CE)=="boolean", "CE must be bool")
   err( showIfInvalid==nil or type(showIfInvalid)=="boolean", "showIfInvalid should be nil or bool")
+  err( cycleCounter==nil or type(cycleCounter)=="boolean", "cycleCounter should be nil or bool")
   if CE==nil then CE=false end
   if showIfInvalid==nil then showIfInvalid=true end
-
-  local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid, externalInstances={}}
+  if cycleCounter==nil then cycleCounter=true end
+  
+  local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid, externalInstances={}, cycleCounter=cycleCounter}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
   res.functions.process.isPure = function() return false end
+
+  res.functions.reset = {name="reset",output={type=types.null()},inputParameter={name="input",type=types.null()},outputName="out",valid={name="reset_valid"}}
+  res.functions.reset.isPure = function() return false end
+
   return setmetatable(res, printModuleMT)
 end
 

@@ -470,7 +470,7 @@ end
 
 -- top level function that implements logic to convert a fn to a given type.
 -- If this fails, it just returns fn
-function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
+darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInputRate, X )
   assert( X==nil )
 
   assert( types.isType(targetInputType) )
@@ -648,7 +648,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
     local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
     return res
   end
-end
+end)
 
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!

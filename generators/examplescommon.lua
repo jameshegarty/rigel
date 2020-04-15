@@ -92,7 +92,7 @@ C.print = memoize(function(A,str)
     local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
-    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out",{printInst:reset()}) )
     return sm
   end
   
