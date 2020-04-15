@@ -147,7 +147,7 @@ local function typecheck_inner( ast, newNodeFn )
     err( ast.idyLow<=ast.idyHigh, "idyLow>idyHigh")
     
     if expr.type:isArray() then
-      err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, "..tostring(ast.idxLow).." but should be <"..tostring((expr.type:arrayLength())[1])..", ",ast.loc)
+      err( ast.idxLow < (expr.type:arrayLength())[1] and ast.idxLow>=0, "idxLow is out of bounds, is:",ast.idxLow," but should be <",(expr.type:arrayLength())[1],", for type:",expr.type, ast.loc )
       err( ast.idxHigh < (expr.type:arrayLength())[1] and ast.idxHigh>=0, "idxHigh is out of bounds, "..tostring(ast.idxHigh).." but should be <"..tostring((expr.type:arrayLength())[1])..", ",ast.loc)
       err( ast.idyLow==nil or ast.idyLow < (expr.type:arrayLength())[2] and ast.idyLow>=0, "idy is out of bounds, is "..tostring(ast.idyLow).." but should be <"..tostring((expr.type:arrayLength())[2]))
       err( ast.idyHigh==nil or ast.idyHigh < (expr.type:arrayLength())[2] and ast.idyHigh>=0, "idy is out of bounds, is "..tostring(ast.idyHigh).." but should be <"..tostring((expr.type:arrayLength())[2])..", ",ast.loc)
@@ -228,17 +228,12 @@ local function typecheck_inner( ast, newNodeFn )
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
       error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! ",ast.loc)
     end
-  elseif ast.kind=="readSideChannel" then
-    -- noop
-  elseif ast.kind=="writeSideChannel" then
-    err(ast.sideChannel.type==ast.inputs[1].type,"writeSideChannel: input type does not match type of side channel! Input Type:"..tostring(ast.inputs[1].type).." Side Channel Type:"..tostring(ast.sideChannel.type).." ",ast.loc)
-    ast.type = types.null()
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! ",ast.loc)
     return nil
   end
 
-  if types.isType(ast.type)==false then print("missing type",ast.kind) end
+  if types.isType(ast.type)==false then print("missing type, kind:",ast.kind) end
   assert(types.isType(ast.type))
   if type(ast.constLow_1)=="number" then assert(ast.constLow_1<=ast.constHigh_1) end
 

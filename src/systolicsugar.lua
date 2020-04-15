@@ -43,7 +43,7 @@ sugar.regByConstructor = moduleConstructor{
 new=function( ty, setby )
   assert( types.isType(ty) )
   if sugar.isModuleConstructor(setby) then setby=setby:complete() end
-  assert( systolic.isModule(setby) )
+  J.err( systolic.isModule(setby), "regBy: setby should be systolic module, but is: ",setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
@@ -98,6 +98,13 @@ end
 function systolicFunctionConstructor:getOutputName() return self.__outputName end
 function systolicFunctionConstructor:getOutput() return self.__output end
 
+-- sort of a hack? we override the :isPure function with whatever the user says...
+function systolicFunctionConstructor:setPure( pure )
+  err( self.isComplete==false, "function is already complete"); 
+  assert( type(pure)=="boolean" )
+  self.__pure = pure
+end
+
 function systolicFunctionConstructor:setCE( ce ) 
   err( self.isComplete==false, "function is already complete");
   if ce~=nil then
@@ -113,7 +120,7 @@ end
 
 function systolicFunctionConstructor:addPipeline( p ) 
   err( self.isComplete==false, "function is already complete"); 
-  err( systolic.isAST(p), "systolicFunctionConstructor:addPipeline(), input should be systolic AST, but is: "..tostring(p) )
+  err( systolic.isAST(p), "systolicFunctionConstructor:addPipeline(), input should be systolic AST, but is: ", p )
   table.insert( self.__pipelines, p )
 end
 
@@ -122,6 +129,9 @@ function systolicFunctionConstructor:clearPipelines() self.__pipelines={} end
 function systolicFunctionConstructor:complete()
   if self.isComplete==false then
     self.__fn = systolic.lambda( self.__name, self.__inputParameter, self.__output, self.__outputName, self.__pipelines, self.__validParameter, self.__CEparameter )
+    if self.__pure~=nil then -- dangerous hack?
+      function self.__fn.isPure(sf) return self.__pure end
+    end
     self.isComplete=true
   end
   return self.__fn
@@ -134,11 +144,13 @@ function systolicFunctionConstructor:isPure() self:complete(); return self.__fn:
 --------------------------------------------------------------------
 
 systolicModuleConstructor = {}
-systolicModuleConstructorMT={__index=systolicModuleConstructor}
+systolicModuleConstructorMT={__index=systolicModuleConstructor,
+__newindex = function( tab, key, value )
+  J.err(false,"You should not set values on a moduleConstructor directly! setting:",key," to:",value)
+end}
 
 function systolicModuleConstructorMT.__tostring(tab)
-  tab:complete()
-  return tostring(tab.module)
+  return "SystolicModuleConstructor "..tab.__name
 end
 
 function sugar.isModuleConstructor(I) return getmetatable(I)==systolicModuleConstructorMT end
@@ -268,7 +280,7 @@ function systolicModuleConstructor:parameters(p) err( self.isComplete==false, "m
 function systolicModuleConstructor:complete()
   if self.isComplete==false then
     local fns = J.map(self.__functions, function(f) if sugar.isFunctionConstructor(f) then return f:complete() else return f end end)
-    self.module = systolic.module.new( self.__name, fns, J.invertAndStripKeys(self.__instanceMap), self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__externalInstances, self.__providesMap )
+    rawset(self,"module", systolic.module.new( self.__name, fns, J.invertAndStripKeys(self.__instanceMap), self.__options.onlyWire, self.__options.parameters, self.__options.verilog, self.__options.verilogDelay, self.__externalInstances, self.__providesMap ) )
     self.isComplete = true
   end
   return self.module

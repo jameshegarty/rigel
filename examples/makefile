@@ -1,6 +1,8 @@
+# make sure we use bash shell - to make the hacky runtime timers work
+SHELL = /bin/bash
+
 BUILDDIR ?= out
 
-# soc_flipWrite.lua 
 SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua soc_convgenTaps_2096688.lua soc_convgenTaps_524172.lua soc_convgenTaps_1048344.lua soc_convgenTaps_4193376.lua
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
@@ -13,8 +15,9 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt,$(SRCS_SOC))
 
-# state_flowcontrol.t
 SRCS_STATE = state_simple.t
 
 STATE = $(patsubst %.t,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_STATE))
@@ -52,7 +55,7 @@ ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.regcorrect.txt,$(SRC
 
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_BJUMP) $(SRCS_PULPINO) $(SRCS_SOC),$(SRCS))
-METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
+#METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
@@ -87,12 +90,9 @@ SRCS_TERRA := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_TERRA))
 SRCS_TERRA += $(SRCS_SOC)
 
 TERRAOUT = $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
-#TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%_half.terra.correct.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
 SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_int_float.lua fixed_float_mult.lua fixed_float_add.lua  featuredescriptor.lua harris.lua harris_filterseq.lua harris_corner.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua, $(SRCS))
@@ -122,12 +122,9 @@ SRCS_VERILATOR := $(filter-out stereo_ov7660.lua stereo_tr_full_4.lua stereo_tr_
 
 VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
 VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.raw,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.bmp,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
-#VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%_half.correct.txt,$(SRCS_VERILATOR))
 
 # too slow
 SRCS_TERRA_ISIM = $(SRCS_TERRA)
@@ -281,8 +278,6 @@ all: $(RES)
 
 dups: $(DUPS)
 
-metadata: $(METADATA)
-
 verilog: $(VERILOG)
 	touch $(BUILDDIR)/verilog_done.txt
 	date
@@ -358,23 +353,15 @@ coverage: $(COVERAGE)
 clean:
 	rm -Rf $(BUILDDIR)/*
 
-$(BUILDDIR)/%.metadata.lua: %.lua
-	$(LUA) $< metadata
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
-
-$(BUILDDIR)/%.metadata.lua: %.t
-	$(TERRA) $< metadata
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_build
-
+# this crazyness is to be able to write the output (runtime from time) to a file AND to stdout, and exit correctly :o
 $(BUILDDIR)/%.v: %.lua
-	$(LUA) $< verilator
+	{ time -p $(LUA) $< verilator; } 2>&1 | tee $(BUILDDIR)/$*.compiletimeraw.txt; exit "$${PIPESTATUS[0]}"
+	printf '$*,' > $(BUILDDIR)/$*.compiletime.txt
+	cat $(BUILDDIR)/$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.compiletime.txt
+	rm $(BUILDDIR)/$*.compiletimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
-	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
+	cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
 
 $(BUILDDIR)/%.v: %.t
 	$(TERRA) $< verilator
@@ -382,7 +369,7 @@ $(BUILDDIR)/%.v: %.t
 	mkdir -p $(BUILDDIR)/$*_build
 	- cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
 
-$(BUILDDIR)/%.v.mpsocwrapper.v: $(BUILDDIR)/%.v $(BUILDDIR)/%.metadata.lua
+$(BUILDDIR)/%.v.mpsocwrapper.v: $(BUILDDIR)/%.v 
 	$(LUA) ../platform/axi/wrapper.lua $(BUILDDIR)/$*.v $(BUILDDIR)/$*.metadata.lua $@ ../platform/ mpsoc
 
 $(BUILDDIR)/%.coverage.txt: %.lua
@@ -390,8 +377,11 @@ $(BUILDDIR)/%.coverage.txt: %.lua
 	luacov-coveralls -v
 	touch $@
 
-$(BUILDDIR)/%.terra.raw $(BUILDDIR)/%_half.terra.raw: %.lua
-	$(TERRA) $< terra
+$(BUILDDIR)/%.terra.raw: %.lua
+	{ time -p $(TERRA) $< terra; } 2> $(BUILDDIR)/$*.terra.compiletimeraw.txt
+	printf '$*,' > $(BUILDDIR)/$*.terra.compiletime.txt
+	cat $(BUILDDIR)/$*.terra.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.compiletime.txt
+	rm $(BUILDDIR)/$*.terra.compiletimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
 	#- cp $(BUILDDIR)/$*.cycles.txt $(BUILDDIR)/build_$*
@@ -412,22 +402,12 @@ $(BUILDDIR)/%.axi.v: %.lua
 
 #/opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims
 #	verilator -cc -Mdir $(BUILDDIR)/$*_verilator  /opt/Xilinx/14.5/ISE_DS/ISE/verilog/src/unisims/RAMB16_S36_S36.v $(BUILDDIR)/$*.verilator.v
-$(BUILDDIR)/%.verilator: $(BUILDDIR)/%.v $(BUILDDIR)/%.metadata.lua ../platform/verilator/harness.cpp
+$(BUILDDIR)/%.verilator: $(BUILDDIR)/%.v ../platform/verilator/harness.cpp
 	../platform/verilator/compile $(BUILDDIR)/$*.v $(BUILDDIR)/$*.metadata.lua $(BUILDDIR)/$*_verilator $@
 
 $(BUILDDIR)/%.hz.txt: $(BUILDDIR)/%.axi.bit
 	$(eval $@_HZl := $(shell grep Maximum $(BUILDDIR)/build_$*/OUT_trce.txt  | grep -P -o "[0-9.]+" | tail -1 | tr -d '\n' | awk '{print $$1" * 1000000"}' | bc -l | xargs printf "%d"))
 	echo $($@_HZl) > $(BUILDDIR)/$*.hz.txt
-
-$(BUILDDIR)/%_half.terra.bmp: $(BUILDDIR)/%_half.terra.raw $(BUILDDIR)/%.metadata.lua
-	$(LUA) ../misc/raw2bmp.lua $(BUILDDIR)/$*_half.terra.raw $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/$*.metadata.lua 0
-	# keep copy for future reference
-	mkdir -p $(BUILDDIR)/build_$*
-	cp $(BUILDDIR)/$*_half.terra.bmp $(BUILDDIR)/build_$*
-
-$(BUILDDIR)/%_half.terra.correct.txt : $(BUILDDIR)/%_half.terra.bmp
-	diff $(BUILDDIR)/$*_half.terra.bmp gold/$*.bmp > $(BUILDDIR)/$*_half.terra.diff
-	test ! -s $(BUILDDIR)/$*_half.terra.diff && touch $@
 
 $(BUILDDIR)/%.raw.dup : %.raw
 	cat $*.raw > $@
@@ -488,5 +468,17 @@ $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt: $(BUILDDIR)/%.yosysSOC.bit
 
 $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt: $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAMB16_S9_S9.txt $@ 0.02 smallerIsBetter
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "RAMB16_S36_S36" | tail -n 1 | grep -Eo "[0-9]+" | tail -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt: $(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAMB16_S36_S36.txt $@ 0.02 smallerIsBetter
+
+$(BUILDDIR)/%.yosysSOC.RAM128X1D.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "RAM128X1D" | tail -n 1 | grep -Eo "[0-9]+" | tail -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt: $(BUILDDIR)/%.yosysSOC.RAM128X1D.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAM128X1D.txt $@ 0.02 smallerIsBetter
 
 include ../platform/platform.mk

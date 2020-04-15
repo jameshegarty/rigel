@@ -448,6 +448,7 @@ function(args)
                              args.rigelFunction.inputType:deInterface() ):complete(args)
 end)
 
+-- bool: allow stateful
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 

@@ -76,6 +76,14 @@ function RS.modules.downsampleSeq(t)
   return C.downsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
+function RS.modules.downsampleXSeq(t)
+  return RM.downsampleXSeq( t.type, t.size[1], t.size[2], t.V, t.scale )
+end
+
+function RS.modules.downsampleYSeq(t)
+  return RM.downsampleYSeq( t.type, t.size[1], t.size[2], t.V, t.scale )
+end
+
 function RS.modules.downsample(t)
   return RM.downsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
 end

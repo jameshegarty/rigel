@@ -15,11 +15,17 @@ OUTW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputWidth)
 OUTH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputHeight)
 OUTBPP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputBitsPerPixel)
 OUTP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE outputV)
+OUTN=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE sdfOutputN)
+OUTD=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE sdfOutputD)
 INW=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputWidth)
 INH=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputHeight)
 INBPP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputBitsPerPixel)
 INP=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE inputV)
+INN=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE sdfInputN)
+IND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE sdfInputD)
+DELAY=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE delay)
+MONITOR_FIFOS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE MONITOR_FIFOS)
 TAPBITS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE tapBits)
 TAPVALUE=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE tapValue)
 
-$BITFILE $INPUT $OUTFILE $INW $INH $INBPP $INP $OUTW $OUTH $OUTBPP $OUTP $TAPBITS $TAPVALUE
+$BITFILE $INPUT $OUTFILE $INW $INH $INBPP $INP $INN $IND $OUTW $OUTH $OUTBPP $OUTP $OUTN $OUTD $DELAY $MONITOR_FIFOS $TAPBITS $TAPVALUE

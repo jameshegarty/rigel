@@ -18,10 +18,10 @@ Zynq.SimpleNOC = J.memoize(function(readPorts,writePorts,slavePorts,X)
   local SimpleNOCFns = {}
 
   for i=1,readPorts do
-    SimpleNOCFns["read"..J.sel(i==1,"",tostring(i-1))] = R.newFunction{name="Read",inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+    SimpleNOCFns["read"..J.sel(i==1,"",tostring(i-1))] = R.newFunction{name="Read",inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, delay=1}
   end
   
-  SimpleNOCFns.write = R.newFunction{name="Write",inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false}
+  SimpleNOCFns.write = R.newFunction{name="Write",inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false, delay=0}
 
   local makeTerra
   if terralib~=nil then

@@ -19,6 +19,9 @@ local darkroom = {}
 darkroom.SDF = true
 darkroom.default_nettype_none = true
 
+darkroom.MONITOR_FIFOS = false
+darkroom.AUTO_FIFOS = true
+
 -- path to root of rigel repo
 darkroom.path = string.sub(debug.getinfo(1).source,2,#debug.getinfo(1).source-9)
 
@@ -82,7 +85,9 @@ function darkroom.Address(num)
   return setmetatable({num},AddressMT)
 end
 
-darkroom.Async={}
+-- generator flags
+darkroom.Async={} -- generate async (0 cycle delay) module
+darkroom.Unoptimized={} -- disable rate optimization (at the instance level, instead of globally)
 
 darkroom.Size = J.memoize(function( w, h, X )
   assert(X==nil)
@@ -188,6 +193,9 @@ local function typeToKey(t)
         outk="instanceList"
       elseif v==darkroom.Async then
         outk="async"
+        v = true
+      elseif v==darkroom.Unoptimized then
+        outk="unoptimized"
         v = true
       else
         J.err(false,"unknown type to key? "..tostring(v))
@@ -467,7 +475,7 @@ end
 
 -- top level function that implements logic to convert a fn to a given type.
 -- If this fails, it just returns fn
-function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
+darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInputRate, X )
   assert( X==nil )
 
   assert( types.isType(targetInputType) )
@@ -541,7 +549,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
           for k,v in ipairs(targetType.list) do
             local i = darkroom.selectStream( "str"..k, tmp, k-1 )
             i = RM.makeHandshake(C.index( targetType, k-1 ))(i)
-            i = C.fifo( v, 128, nil, nil, nil, nil, "convertInterface_"..tostring(k))(i)
+            i = C.fifo( v, 128, nil, nil, nil, nil, "fannedconvertInterface_"..tostring(k))(i)
 
             local rec = reshape( fnType.list[k], v )
 
@@ -645,7 +653,7 @@ function darkroom.convertInterface( fn, targetInputType, targetInputRate, X )
     local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
     return res
   end
-end
+end)
 
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
@@ -672,7 +680,7 @@ function functionGeneratorFunctions:complete( arglist, X )
     a[k] = v
   end
 
-  if self.optimized and arglist.rate~=nil and arglist.type~=nil then
+  if self.optimized and arglist.rate~=nil and arglist.type~=nil and arglist.unoptimized~=true then
     a.type, a.rate = arglist.type:optimize( arglist.rate )
     assert( types.isType(a.type) )
     assert( SDF.isSDF(a.rate) )
@@ -717,6 +725,7 @@ function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, in
   err( type(optArgs)=="table", "FunctionGenerator: requiredArgs must be table" )
   if J.keycount(optArgs)==#optArgs then optArgs = J.invertTable(optArgs) end -- convert array of names to set
   for k,v in pairs(optArgs) do J.err( type(k)=="string", "FunctionGenerator: optArgs must be set of strings" ) end
+  optArgs.unoptimized = 1
   err( type(completeFn)=="function", "FunctionGenerator: completeFn must be lua function" )
 
   if optimized==nil then optimized=true end
@@ -736,7 +745,7 @@ end
 
 function darkroom.isFunctionGenerator(t) return (getmetatable(t)==functionGeneratorMT) or darkroom.isModuleGeneratorInstanceCallsite(t) end
 
-local function buildAndCheckSystolicModule(tab, isModule)
+local function buildAndCheckSystolicModule( tab, isModule )
   if DARKROOM_VERBOSE then print("buildAndCheckSystolicModule",tab.name) end
   -- build the systolic module as needed
   err( rawget(tab, "makeSystolic")~=nil, "missing makeSystolic() for "..J.sel(isModule,"module","function").." '"..tab.name.."'" )
@@ -753,6 +762,8 @@ local function buildAndCheckSystolicModule(tab, isModule)
     rigelFns = {["process"]=tab}
   end
 
+  err( tab.name==sm.name, "systolic module name doesn't match rigel module name! rigelName:'",tab.name,"' systolicName:'",sm.name,"'")
+  
   for fnname,rigelFn in pairs(rigelFns) do
     local systolicFn = systolicFns[fnname]
 
@@ -788,9 +799,10 @@ local function buildAndCheckSystolicModule(tab, isModule)
       if rigelFn.outputType~=types.Interface() then
         err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
       end
-    elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false then
+      --elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false and rigelFn.outputType:isrv() then
+    elseif rigelFn.inputType~=types.Interface() or rigelFn.outputType~=types.Interface() then
       err( type(rigelFn.delay)=="number","Error, rigel module missing delay? fnname '",fnname,"' should have been caught earlier ",tab)
-      err( (sm:getDelay(fnname)>0)==(rigelFn.delay>0), "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is ",sm:getDelay(fnname),sm)      
+      err( sm:getDelay(fnname)==rigelFn.delay, "Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with delay=",rigelFn.delay," but systolic function delay is:",sm:getDelay(fnname)," Module ",sm)      
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
@@ -915,6 +927,8 @@ __tostring=function(mod)
 
   table.insert(res,"  Stateful: "..tostring(mod.stateful))
   table.insert(res,"  Delay: "..tostring(mod.delay))
+  table.insert(res,"  InputBurstiness: "..tostring(mod.inputBurstiness))
+  table.insert(res,"  OutputBurstiness: "..tostring(mod.outputBurstiness))
   
   table.insert(res,"  Metadata:")
   for k,v in pairs(mod.globalMetadata) do
@@ -1054,7 +1068,7 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     if fnname~="process" then readyName=fnname.."_ready_downstream" end
     
     table.insert(v,", output wire ["..(types.lower(self.outputType):verilogBits()-1)..":0] "..fnname.."_output, input wire ["..(types.extractReady(self.outputType):verilogBits()-1)..":0] "..readyName)
-  elseif (self.outputType:isrv() or self.outputType:isS()) and self.outputType:deInterface():isData() then
+  elseif (self.outputType:isrv() or self.outputType:isS()) then
     if self.outputType:lower():verilogBits()>0 then
       table.insert(v,", output wire ["..(self.outputType:lower():verilogBits()-1)..":0] "..fnname.."_output")
     end
@@ -1149,8 +1163,17 @@ parameter INSTANCE_NAME="INST";
 end
 
 -- verilog value of input data (if handshaked)
+function darkroomFunctionFunctions:vInput()
+  return "process_input"
+end
+
+function darkroomModuleFunctions:vInput( fnname )
+  return fnname.."_input"
+end
+
 function darkroomFunctionFunctions:vInputData()
   assert(types.isHandshakeAny(self.inputType))
+  assert( self.inputType~=types.HandshakeTrigger )
   return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
 end
 
@@ -1166,9 +1189,24 @@ function darkroomFunctionFunctions:vInputReady()
   return "ready"
 end
 
+function darkroomModuleFunctions:vInputReady( fnname )
+  assert( self.functions[fnname]~=nil )
+  assert( types.isHandshakeAny(self.functions[fnname].inputType) )
+  return fnname.."_ready"
+end
+
+function darkroomFunctionFunctions:vOutput()
+  return "process_output"
+end
+
+function darkroomModuleFunctions:vOutput( fnname )
+  return fnname.."_output"
+end
+
 -- verilog value of output data (if handshaked)
 function darkroomFunctionFunctions:vOutputData()
   assert(types.isHandshakeAny(self.outputType))
+  err( self.outputType~=types.HandshakeTrigger, "vOutputData(): attempting to get data channel of a HandshakeTrigger" )
   return "process_output["..(types.extractData(self.outputType):verilogBits()-1)..":0]"
 end
 
@@ -1182,6 +1220,12 @@ end
 function darkroomFunctionFunctions:vOutputReady()
   assert(types.isHandshakeAny(self.outputType))
   return "ready_downstream"
+end
+
+function darkroomModuleFunctions:vOutputReady( fnname )
+  assert( self.functions[fnname]~=nil )
+  assert( types.isHandshakeAny(self.functions[fnname].outputType))
+  return fnname.."_ready_downstream"
 end
 
 function darkroomFunctionFunctions:instantiate(name,X)
@@ -1246,14 +1290,20 @@ local function checkRigelFunction(tab)
   err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
   err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
 
-  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) or (tab.inputType==types.Interface() and tab.outputType==types.Interface()) then
-    -- no delay needed
-  else
-    err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
-  end
+  -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
+  -- expand this to a per-stream delay at some point, if needed
+  err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType," delay is: ",tab.delay )
+  err( tostring(tab.delay)~="inf","rigel.newFunction: delay is inf?")
+  err( tostring(tab.delay)~="nan","rigel.newFunction: delay is nan?")
   
-  --if tab.inputType:isArray() or tab.inputType:isTuple() then err(darkroom.isBasic(tab.inputType),"array/tup module input is not over a basic type?") end
-  --if tab.outputType:isArray() or tab.outputType:isTuple() then err(darkroom.isBasic(tab.outputType),"array/tup module output is not over a basic type? "..tostring(tab.outputType) ) end
+  if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
+  if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
+
+  if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
+    err( type(tab.inputBurstiness)=="number", "rigel.newFunction: missing inputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+    err( type(tab.outputBurstiness)=="number", "rigel.newFunction: missing outputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
+  end
+
   err( type(tab.stateful)=="boolean", "rigel.newFunction: stateful should be bool" )
 end
 
@@ -1273,7 +1323,6 @@ function darkroom.newFunction(tab,X)
     print("systolic module already exists?", tab.name, getmetatable(tab))
     assert(false)
   end
-
 
   if tab.requires==nil then tab.requires={} end
   if tab.provides==nil then tab.provides={} end
@@ -1411,6 +1460,7 @@ function darkroom.newModule( tab, X )
 
   for fnname,fn in pairs(tab.functions) do
     checkRigelFunction(fn)
+    err( darkroom.isPlainFunction(fn),"newModule error, function '"..fnname.."' is not a plain Rigel function? is: ", fn)
   end
   
   for instance,fnlist in pairs(tab.requires) do
@@ -1643,9 +1693,11 @@ darkroomInstanceFunctions.terraReference = J.memoize(function(tab,X)
   return MT.terraReference(tab)
 end)
 
-function darkroomInstanceFunctions:vInput()
+function darkroomInstanceFunctions:vInput( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_input"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_input"
   else
     assert(false)
   end
@@ -1667,17 +1719,21 @@ function darkroomInstanceFunctions:vInputValid()
   end
 end
 
-function darkroomInstanceFunctions:vInputReady()
+function darkroomInstanceFunctions:vInputReady( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_ready"
   else
     assert(false)
   end
 end
 
-function darkroomInstanceFunctions:vOutput()
+function darkroomInstanceFunctions:vOutput( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_output"    
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_output"
   else
     assert(false)
   end
@@ -1691,17 +1747,22 @@ function darkroomInstanceFunctions:vOutputData()
   end
 end
 
-function darkroomInstanceFunctions:vOutputValid()
+function darkroomInstanceFunctions:vOutputValid( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_process_output["..(types.lower(self.module.outputType):verilogBits()-1).."]"
+  elseif darkroom.isPlainModule(self.module) then
+    assert( self.module.functions[fnname] ~= nil )
+    return self.name.."_"..fnname.."_output["..( self.module.functions[fnname].outputType:lower():verilogBits()-1).."]"
   else
     assert(false)
   end
 end
 
-function darkroomInstanceFunctions:vOutputReady()
+function darkroomInstanceFunctions:vOutputReady( fnname )
   if darkroom.isPlainFunction(self.module) then
     return self.name.."_ready_downstream"
+  elseif darkroom.isPlainModule(self.module) then
+    return self.name.."_"..fnname.."_ready_downstream"
   else
     assert(false)
   end
@@ -1985,7 +2046,7 @@ function darkroomIRFunctions:typecheck()
     -- spaghetti code: see case in 'apply' above
     assert( darkroom.isModule(n.inst.module) )
           
-    err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, module does not have a method named '..n.fnname..'!")
+    err( darkroom.isPlainFunction(n.inst.module.functions[n.fnname]), "Error, instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' does not have a method named '",n.fnname,"'!")
     
     if n.inputs[1]==nil then
       err( n.inst.module.functions[n.fnname].inputType==types.Interface(), "Error, method '"..n.fnname.."' on instance '"..n.inst.name.."' of module '"..n.inst.module.name.."' was passed no input, but expected an input (of type "..tostring(n.inst.module.functions[n.fnname].inputType)..")")
@@ -2052,7 +2113,10 @@ function darkroomIRFunctions:typecheck()
   end
 end
 
-function darkroomIRFunctions:codegenSystolicReady( module )
+function darkroomIRFunctions:codegenSystolicReady( module, rateMonitors, X )
+  assert( type(rateMonitors)=="table" )
+  assert( X==nil )
+          
   local readyinp
   local readyout
 
@@ -2166,6 +2230,8 @@ function darkroomIRFunctions:codegenSystolicReady( module )
         assert(readyout==nil)
         readyout = input
       elseif n.kind=="apply" then
+        rateMonitors.dsReady[n.name] = input
+        
         res = {module:lookupInstance(n.name):ready(input)}
         if n.fn.inputType==types.Interface() then
           table.insert(readyPipelines, res[1])
@@ -2277,8 +2343,11 @@ function darkroomIRFunctions:codegenSystolicReady( module )
   return readyinp, readyout, readyPipelines
 end
 
-function darkroomIRFunctions:codegenSystolic( module )
-  assert(Ssugar.isModuleConstructor(module))
+function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
+  assert( Ssugar.isModuleConstructor(module) )
+  assert( type(rateMonitors) == "table" )
+  assert( X==nil )
+
   return self:visitEach(
     function(n, inputs)
       if n.kind=="input" then
@@ -2316,6 +2385,11 @@ function darkroomIRFunctions:codegenSystolic( module )
             module:lookupFunction("reset"):addPipeline( I:reset() )
           end
         end
+
+        -- this is a total hack, for the FIFO monitors: pass the start valid bit into them so they know when to start monitoring for tokens
+        if n.fn.systolicModule.functions.startMonitorTrigger~=nil then
+          module:lookupFunction("process"):addPipeline( I:startMonitorTrigger( S.index(module:lookupFunction("process"):getInput(),1) ) )
+        end
         
         if n.fn.inputType==types.Interface() then
           return { I:process() }
@@ -2326,8 +2400,19 @@ function darkroomIRFunctions:codegenSystolic( module )
         elseif n.type:isrRvV() then
           -- the strange basic->RV case
           err( false, "You shouldn't use Basic->RV directly, loc "..n.loc )
-        else
-          return {I:process(inputs[1][1])}
+        else -- RV
+          local ooo = I:process( inputs[1][1] )
+
+          if n.inputs[1].type:isRV() and n.fn.outputType:isRV() then
+            -- note: no Inils
+            rateMonitors.usValid[n.name] = S.index(inputs[1][1],1)
+            rateMonitors.dsValid[n.name] = S.index(ooo,1)
+            rateMonitors.rate[n.name] = n.rate
+            rateMonitors.delay[n.name] = n.fn.delay
+            rateMonitors.functionName[n.name] = n.fn.name
+          end
+          
+          return {ooo}
         end
       elseif n.kind=="constant" then
         return {S.constant( n.value, n.type:extractData() )}

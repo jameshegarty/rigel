@@ -123,43 +123,43 @@ function harnessTop(t)
     H.verilogOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif backend=="terra" then
     H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
-  elseif backend=="metadata" then
-    local tapValueString = "x"
-    local tapBits = 0
-    if t.tapType~=nil then
-      err(t.tapType:toCPUType()==t.tapType, "NYI - tap type must be a CPU type")
-      tapValueString = t.tapType:valueToHex(t.tapValue)
-      tapBits = t.tapType:verilogBits()
-    end
-
-    local harnessOption = t.harness
-    if harnessOption==nil then harnessOption=1 end
-
-    local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputV=inputP, outputV=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile, stateful=fn.stateful}
-
-    if fn.sdfInput~=nil then
-      assert(#fn.sdfInput==1)
-      MD.sdfInputN = Uniform(fn.sdfInput[1][1]):toUnescapedString()
-      MD.sdfInputD = Uniform(fn.sdfInput[1][2]):toUnescapedString()
-    end
-
-    if fn.sdfOutput~=nil then
-      assert(#fn.sdfOutput==1)
-      MD.sdfOutputN = Uniform(fn.sdfOutput[1][1]):toUnescapedString()
-      MD.sdfOutputD = Uniform(fn.sdfOutput[1][2]):toUnescapedString()
-    end
-    
-    MD.earlyOverride=t.earlyOverride
-    MD.underflowTest = t.underflowTest
-    
-    if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
-
-    writeMetadata(outDir.."/"..t.outFile..".metadata.lua", MD)
   else
-    print("unknown build target "..arg[1])
+    print("unknown build target ",backend)
     assert(false)
   end
 
+  -- write metadata
+  local tapValueString = "x"
+  local tapBits = 0
+  if t.tapType~=nil then
+    err(t.tapType:toCPUType()==t.tapType, "NYI - tap type must be a CPU type")
+    tapValueString = t.tapType:valueToHex(t.tapValue)
+    tapBits = t.tapType:verilogBits()
+  end
+  
+  local harnessOption = t.harness
+  if harnessOption==nil then harnessOption=1 end
+  
+  local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputV=inputP, outputV=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile, stateful=fn.stateful, delay=fn.delay, MONITOR_FIFOS=R.MONITOR_FIFOS}
+
+  if fn.sdfInput~=nil then
+    assert(#fn.sdfInput==1)
+    MD.sdfInputN = Uniform(fn.sdfInput[1][1]):toUnescapedString()
+    MD.sdfInputD = Uniform(fn.sdfInput[1][2]):toUnescapedString()
+  end
+  
+  if fn.sdfOutput~=nil then
+    assert(#fn.sdfOutput==1)
+    MD.sdfOutputN = Uniform(fn.sdfOutput[1][1]):toUnescapedString()
+    MD.sdfOutputD = Uniform(fn.sdfOutput[1][2]):toUnescapedString()
+  end
+  
+  MD.earlyOverride=t.earlyOverride
+  MD.underflowTest = t.underflowTest
+  
+  if t.ramType~=nil then MD.ramBits = t.ramType:verilogBits() end
+  
+  writeMetadata(outDir.."/"..t.outFile..".metadata.lua", MD)
 end
 
 return harnessTop

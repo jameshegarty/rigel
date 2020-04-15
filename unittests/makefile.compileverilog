@@ -4,10 +4,11 @@ SRCS = $(wildcard $(BUILDDIR)/*.terra.raw)
 SRCS := $(patsubst $(BUILDDIR)/%_half.terra.raw,,$(SRCS))
 
 TARGETS = $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.terra.bmp,$(SRCS))
-TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bit,$(SRCS))
-TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.raw,$(SRCS))
-TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bmp,$(SRCS))
 TARGETS += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS))
+
+VERILATOR = $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bit,$(SRCS))
+VERILATOR += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.raw,$(SRCS))
+VERILATOR += $(patsubst $(BUILDDIR)/%.terra.raw,$(BUILDDIR)/%.verilator.bmp,$(SRCS))
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)
@@ -16,8 +17,10 @@ LUA ?= ../rigelLuajit
 LUAJIT ?= ../rigelLuajit
 TERRA ?= ../rigelTerra
 
-all: $(TARGETS)
+all: $(TARGETS) $(VERILATOR)
 	touch $(BUILDDIR)/verilogcorrect.txt
+
+verilator: $(VERILATOR)
 
 $(BUILDDIR)/%.terra.raw: %.lua
 	$(TERRA) $< terra

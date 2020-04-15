@@ -87,9 +87,9 @@ Pulpino.AXIInterconnect = J.memoize(function( NMaster, NSlave, slavePorts, X )
   end]=]
 
   for i=0,NMaster-1 do
-    SimpleNOCFns["read"..J.sel(i==0,"",tostring(i))] = R.newFunction{name="Read"..J.sel(i==0,"",tostring(i)),inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false}
+    SimpleNOCFns["read"..J.sel(i==0,"",tostring(i))] = R.newFunction{name="Read"..J.sel(i==0,"",tostring(i)),inputType=AXI.ReadAddress,outputType=AXI.ReadData(64),sdfInput=SDF{1,1},sdfOutput=SDF{1,1}, stateful=false, delay=2}
 
-    SimpleNOCFns["write"..J.sel(i==0,"",tostring(i))] = R.newFunction{name="Write"..J.sel(i==0,"",tostring(i)),inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false}
+    SimpleNOCFns["write"..J.sel(i==0,"",tostring(i))] = R.newFunction{name="Write"..J.sel(i==0,"",tostring(i)),inputType=AXI.WriteIssue(64), outputType=AXI.WriteResponse(64), sdfInput=SDF{{1,1},{1,1}},sdfOutput=SDF{1,1}, stateful=false, delay=2}
   end
 
   local instanceList = {}
@@ -318,7 +318,7 @@ table.insert(vstr,[=[endmodule
 ]=])
 
     
-    s.verilog = table.concat(vstr,"")
+    s:verilog(table.concat(vstr,""))
     return s
   end
 

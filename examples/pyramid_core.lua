@@ -53,7 +53,7 @@ function P.pyramidIter(i,doDownsample,internalT,W,H,ConvWidth)
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
   local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
 
-  local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
+  local out = R.apply( "cs", CHS, out)
 
   local scaleX, scaleY = 2,2
 
@@ -113,7 +113,7 @@ P.pyramidIterTaps = J.memoize(function(i,doDownsample,internalT,W,H,ConvWidth,no
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
   local CHS = C.cropHelperSeq(st_type,internalW,internalH,internalT,8+PadExtra,PadExtra,8,0)
 
-  local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
+  local out = R.apply( "cs", CHS, out)
 
   local scaleX, scaleY = 2,2
 
@@ -175,7 +175,7 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
   local st_type = types.array2d(A,ConvWidth,ConvWidth)
   local CHS = C.cropHelperSeq(st_type,internalW,internalH,1,8,0,8,0)
 
-  local out = R.apply( "cs", RM.liftHandshake(RM.liftDecimate(CHS)), out)
+  local out = R.apply( "cs", CHS, out)
 
   local scaleX, scaleY = 2,2
 

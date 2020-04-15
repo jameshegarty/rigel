@@ -24,7 +24,7 @@ end
 
 hsfn = C.padcrop( types.uint(8), inputW, inputH, T, 4, 3, 4, 3, 0, conv )
 local scale = 2
-local downsample = RM.liftHandshake( C.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale) )
+local downsample = C.downsampleSeq( types.uint(8), inputW, inputH, T, scale, scale)
 hsfn = C.compose( "rhsfn", downsample, hsfn )
 -------------
 

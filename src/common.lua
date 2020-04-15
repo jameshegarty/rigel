@@ -808,5 +808,157 @@ function common.canonicalV( rate, size, X )
   end
 end
 
+function common.calcThrottle( N, D, delay, cycle )
+  assert( type(delay)=="number" )
+  assert( type(cycle)=="number" )
+  assert( delay>=0 )
+  assert( cycle>=0 )
+  
+  assert( type(N)=="number" )
+  assert( type(D)=="number" )
+
+  local vLastF = (N/D)*(cycle-delay)
+  local vLast = math.ceil(vLastF)
+  if vLast<0 then vLast=0 end
+
+  -- remember: we add 1 to the current time, b/c we want time 0 to be >0 (round over to 1 from ceil)
+  local vF = (N/D)*(cycle-delay+1)
+  local v = math.ceil(vF)
+  if v<0 then v=0 end
+
+  return v~=vLast
+end
+
+-- returns delay, burstiness
+-- on the output side (inputSide==false), the module should produce _more_ tokens than are required,
+--      and the extra tokens are put in the FIFO.
+--      so, the module's token count should be larger (above/to the left) of the reference line
+-- on the input side (inputSide==true), the module should consume _less_ tokens than required,
+--     and the extra tokens are held in reserve in the FIFO
+--     So, the modules token count should be lower (below/to the right) of the reference line.
+--     on the inputSide, we need to know how many inputs to expect at the end, which is passed as totalInputs
+function common.simulateFIFO( fn, rate, name, inputSide, totalInputs, X )
+  common.err( type(name)=="string", "simulateFIFO: name should be string, but is: ",name )
+  assert( type(inputSide)=="boolean" )
+  assert( X==nil )
+
+  local R = require "rigel"
+  if R.AUTO_FIFOS==false then
+    return nil,0
+  end
+  
+  local SDF = require "sdf"
+  local Uniform = require "uniform"
+  common.err( SDF.isSDF(rate), "simulateFIFO: expected SDFRate for first argument, but was: ", rate)
+
+  local N, D = Uniform(rate[1][1]):toNumber(),Uniform(rate[1][2]):toNumber()
+  
+  local function simulate(delay)
+    local file
+    --local file = io.open("out/"..name.."_"..delay..".csv","w")
+    
+    local tokenCount = 0
+    local tokenCountRef = 0
+    local FIFOSize = 0
+    local maxFIFOSize
+    local minFIFOSize
+    local cycle = 0
+
+    -- to find the delay, we need to invert the fn between cycles vs tokens
+    -- these tables hold the map from tokenCount->cycle
+    local tokenCountInv = {}
+    local tokenCountRefInv = {}
+    
+    local fnc = coroutine.create(fn)
+
+    local startupDelay = delay
+    while true do
+      if inputSide==false or startupDelay<=0 then
+
+        local status, valid = coroutine.resume( fnc )
+
+        if coroutine.status(fnc)~="dead" then
+          common.err(type(valid)=="boolean", "fifo sim function should have returned bool, but returned status: ",status," status:",coroutine.status(fnc)," valid: ",valid)
+          
+          if valid then
+            tokenCountInv[tokenCount] = cycle
+            tokenCount = tokenCount + 1
+            
+            if inputSide then
+              FIFOSize = FIFOSize - 1
+            else
+              FIFOSize = FIFOSize + 1
+            end
+          end
+        end
+      end
+
+      startupDelay = startupDelay - 1
+      if coroutine.status(fnc)=="dead" then
+        -- once fn is dead, we need to run out the clock and fill in the reference line until it matches expected total count
+        if tokenCount<=tokenCountRef then
+break
+        end
+      end
+      
+      local refValid = common.calcThrottle( N, D, common.sel(inputSide,0,delay), cycle )
+      if refValid and (inputSide==false or tokenCountRef<totalInputs) then
+        tokenCountRefInv[tokenCountRef] = cycle
+        
+        tokenCountRef = tokenCountRef + 1
+
+        if inputSide then
+          FIFOSize = FIFOSize + 1
+        else
+          FIFOSize = FIFOSize - 1
+        end
+      end
+
+      local diff = tokenCountRef - tokenCount
+
+      if maxFIFOSize==nil or FIFOSize > maxFIFOSize then maxFIFOSize = FIFOSize end
+      if minFIFOSize==nil or FIFOSize < minFIFOSize then minFIFOSize = FIFOSize end
+
+      if file~=nil then file:write(cycle..", "..tokenCount..", "..tokenCountRef..", "..FIFOSize.."\n") end
+      cycle = cycle + 1
+    end
+
+    common.err(tokenCountRef==tokenCount,"Number of output tokens was not as expected at end of time! expected:",tokenCountRef," seen:",tokenCount, name, " totalInputs:",totalInputs)
+
+    if file~=nil then file:close() end
+
+    local largestDelay = 0
+    
+    assert( common.keycount(tokenCountInv)==common.keycount(tokenCountRefInv) )
+    for tokenCount,cycle in pairs(tokenCountInv) do
+      common.err( tokenCountRefInv[tokenCount]~=nil, "token count ",tokenCount," was not found in ref" )
+      local diff
+
+      if inputSide then
+        diff = tokenCountRefInv[tokenCount]-cycle
+      else
+        diff = cycle-tokenCountRefInv[tokenCount]
+      end
+      
+      if diff>largestDelay then largestDelay = diff end
+    end
+
+    return maxFIFOSize, minFIFOSize, largestDelay
+  end
+
+  --print("Start simulate FIFO ",name)
+  local M1, minFIFOSize1, D1 = simulate( 0 )
+  --print("sim result, FIFOMax:",M1," Delay:",D1,name)
+  if D1==0 then
+    common.err( minFIFOSize1>=0, "min fifo size was <0! ", minFIFOSize1, " max:",M1," inputSide:",inputSide," rate:",rate," ",name )
+    return 0, M1
+  end
+
+  local M2, minFIFOSize2, D2 = simulate( D1 )
+  --print("sim result 2, FIFOMax:",M2," delay:",D2,name)
+  assert( D2==0 )
+  common.err( minFIFOSize2>=0, "min fifo size was <0! ", minFIFOSize1, name )
+  return D1, M2
+end
 
 return common

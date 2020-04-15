@@ -5,8 +5,9 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit time
       - run: cd examples; make wrapper verilog
+      - run: cat examples/out/*.compiletime.txt
       - run: test -e examples/out/verilog_done.txt || exit
       - run: test -e examples/out/wrapper_done.txt || exit
   verilator:
@@ -15,11 +16,14 @@ jobs:
     steps:
       - checkout
 #      - run: sudo apt-get install luajit verilator
-      - run: sudo apt-get install luajit
-      - run: sudo apt-get install luajit flex bison
+#      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit flex bison time
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: verilator --version
       - run: cd examples; make verilator
+      - run: cat examples/out/*.compiletime.txt
+      - run: echo "RUNTIME"
+      - run: cat examples/out/*.runtime.txt
       - run: test -e examples/out/verilator_done.txt || exit
   verilatorSOC:
     docker:
@@ -33,7 +37,7 @@ jobs:
       #- run: verilator --version
       #- run: which verilator
       #teswt
-      - run: sudo apt-get install luajit verilator z3
+      - run: sudo apt-get install luajit verilator z3 time
       - run: cd examples; make verilatorSOC
       - run: test -e examples/out/verilatorSOC_done.txt || exit      
   bjump:
@@ -42,7 +46,7 @@ jobs:
     steps:
       - checkout
       - run: git submodule update --init
-      - run: sudo apt-get install luajit flex bison
+      - run: sudo apt-get install luajit flex bison time
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
 #      - run: sudo apt-get install luajit verilator
       - run: cd examples; make bjump
@@ -53,7 +57,7 @@ jobs:
     steps:
       - checkout
       - run: git submodule update --init
-      - run: sudo apt-get install luajit verilator
+      - run: sudo apt-get install luajit verilator time
       - run: cd examples; make pulpino
       - run: test -e examples/out/pulpino_done.txt || exit      
   unit:
@@ -61,7 +65,7 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - checkout
-      - run: sudo apt-get install luajit
+      - run: sudo apt-get install luajit time
       - run: sudo apt-get install verilator
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
@@ -74,11 +78,12 @@ jobs:
       - checkout
       # updated needed for z3
       - run: sudo apt-get update
-      - run: sudo apt-get install z3 luajit
+      - run: sudo apt-get install z3 luajit time
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
       - run: cd examples; make terra
+      - run: cat examples/out/*.terra.compiletime.txt
       - run: test -e examples/out/terra_done.txt || exit
   yosysSOC:
     docker:
@@ -86,7 +91,7 @@ jobs:
     steps:
       - checkout
       - run: sudo apt-get update
-      - run: sudo apt-get install z3 luajit yosys
+      - run: sudo apt-get install z3 luajit yosys time
       - run: yosys -V
       - run: cd examples; make -k yosysSOC
       - run: test -e examples/out/yosysSOC_done.txt || exit   

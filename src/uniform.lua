@@ -490,12 +490,15 @@ UniformFunctions.assertAlways = J.memoize(function(self,alwaysTrue)
       --print("ASSERT_ALWAYS("..tostring(alwaysTrue)..") return true")
       return true
     else
-      print(":assertAlways() - "..tostring(self))
-      print("Z3CALL assertAlways()")
-      print(z3call)
-      print("Z3RESULT:"..res.."END")
-      print("ASSERT_ALWAYS("..tostring(alwaysTrue).." return false")
-      print(debug.traceback())
+      if DARKROOM_VERBOSE then
+        print(":assertAlways() - "..tostring(self))
+        print("Z3CALL assertAlways()")
+        print(z3call)
+        print("Z3RESULT:"..res.."END")
+        print("ASSERT_ALWAYS("..tostring(alwaysTrue).." return false")
+        print(debug.traceback())
+      end
+      
       return false
     end
   end

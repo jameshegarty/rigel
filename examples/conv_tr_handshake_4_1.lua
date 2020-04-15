@@ -6,6 +6,8 @@ local harness = require "generators.harness"
 local C = require "generators.examplescommon"
 local J = require "common"
 
+R.AUTO_FIFOS = false
+
 --T = 8 -- throughput
 function MAKE(T,ConvWidth,size1080p)
   assert(T>=1)
@@ -48,7 +50,7 @@ function MAKE(T,ConvWidth,size1080p)
   local out = R.apply( "convLB", C.stencilLinebufferPartial( types.uint(8), internalW, internalH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), out)
   local out = R.apply( "conv", RM.liftHandshake(convolve), out )
   
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0))), out)
+  local out = R.apply("crop", C.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0), out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,1,8)), out )
   local hsfn = RM.lambda("hsfn", hsfninp, out)
   

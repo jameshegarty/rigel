@@ -444,7 +444,7 @@ function LKTop(internalT,W,H,window,bits)
   local lkfn, lkcost = makeLK( internalT, internalW, internalH, window, bits )
   out = R.apply("LK", lkfn, out )
   local out = R.apply("pack", RM.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1)), out)
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0))), out)
+  local out = R.apply("crop",C.cropHelperSeq(ITYPE, internalW, internalH, 1, PadRadius*2, 0, PadRadius*2+1, 0), out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,4)), out )
   local hsfn = RM.lambda("hsfn", hsfninp, out)
   return hsfn, lkcost

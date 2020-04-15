@@ -1,3 +1,6 @@
+local rigel = require "rigel"
+rigel.AUTO_FIFOS = false
+
 local types = require("types")
 local C = require "generators.examplescommon"
 local harness = require "generators.harness"

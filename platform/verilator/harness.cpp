@@ -4,11 +4,30 @@
 #include "harness.h"
 #include VERILATORFILE
 
+bool calcThrottle( bool isInput, unsigned int N, unsigned int D, unsigned int delay, unsigned int cycles ){
+  float vLast = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)) );
+  if(vLast<0.f){vLast=0.f;}
+  float vf = (float(N)/float(D))*(float(cycles)-float(delay)+1.f);
+  float v = ceilf( vf );
+  if(v<0.f){v=0.f;}
+  
+  unsigned int viLast = vLast;
+  unsigned int vi = v;
+
+  if( isInput ){
+    //        printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f\n",N,D,cycles,v,vi,vf);
+  }else{
+    //        printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f delay:%d\n",N,D,cycles,v,vi,vf,delay);
+  }
+  
+  return vi != viLast;
+}
+
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  if(argc!=13 && argc!=14){
-    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP outW outH outputBitsPerPixel outP tapBits tapValue [simCycles]");
+  if(argc!=19 && argc!=20){
+    printf("Usage: XXX.verilator infile outfile inW inH inputBitsPerPixel inP inN inD outW outH outputBitsPerPixel outP outN outD delay MONITOR_FIFOS tapBits tapValue [simCycles]");
     exit(1);
   }
 
@@ -20,16 +39,26 @@ int main(int argc, char** argv) {
   unsigned int inH = atoi(argv[4]);
   unsigned int inbpp = atoi(argv[5]);
   unsigned int inP = atoi(argv[6]);
+  unsigned int inN = atoi(argv[7]);
+  unsigned int inD = atoi(argv[8]);
+      
+  unsigned int outW = atoi(argv[9]);
+  unsigned int outH = atoi(argv[10]);
+  unsigned int outbpp = atoi(argv[11]);
+  unsigned int outP = atoi(argv[12]);
+  unsigned int outN= atoi(argv[13]);
+  unsigned int outD = atoi(argv[14]);
 
-  unsigned int outW = atoi(argv[7]);
-  unsigned int outH = atoi(argv[8]);
-  unsigned int outbpp = atoi(argv[9]);
-  unsigned int outP = atoi(argv[10]);
+  unsigned int delay = atoi(argv[15]);
 
-  int tapBits = atoi(argv[11]);
+  char* MONITOR_FIFOS_STR = argv[16];
+  bool MONITOR_FIFOS = true;
+  if( strcmp(MONITOR_FIFOS_STR,"false")==0 ){MONITOR_FIFOS=false;}
+  
+  int tapBits = atoi(argv[17]);
 
   unsigned char* tapValue = (unsigned char*)malloc(tapBits/8);
-  char* pos = argv[12];
+  char* pos = argv[18];
 
   for(int count = 0; count < tapBits/8; count++) {
     sscanf(pos, "%2hhx", &tapValue[(tapBits/8)-count-1]);
@@ -37,7 +66,7 @@ int main(int argc, char** argv) {
   }
 
   int simCycles = 0;
-  if(argc==14){simCycles = atoi(argv[13]);}
+  if(argc==20){simCycles = atoi(argv[19]);}
   
   unsigned int inPackets = (inW*inH)/inP;
   unsigned int outPackets = (outW*outH)/outP;
@@ -45,9 +74,7 @@ int main(int argc, char** argv) {
   for(int i=0; i<100; i++){
     CLK = !CLK;
 
-    //#if INBPP>0
     setValid(&(top->process_input),inbpp*inP,false);
-    //#endif
 
     top->CLK = CLK;
 #if STATEFUL==true
@@ -91,23 +118,29 @@ int main(int argc, char** argv) {
   top->CLK = true;
   top->eval();
 
-  //  #if INBPP>0
   bool ready = top->ready;
-  //  #else
-  //  bool ready = true;
-  //  #endif
-  
-  while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
-    // posedge just occured
 
+  printf("Start Sim\n");
+
+  int kill = -1;
+  while (!Verilated::gotFinish() && (validcnt<outPackets || (simCycles!=0 && totalCycles<simCycles)) ) {
+    // posedge just occured, registers from last cycle were latched
+
+    bool iThrottle = calcThrottle( true, inN, inD, 0, totalCycles );
+    bool oThrottle = calcThrottle( false, outN, outD, delay, totalCycles );
+    
     // set all inputs. DO NOT READ OUTPUTS DIRECTLY. Imagine these inputs come from registers, which should happen _after_ the posedge.
 #if STATEFUL==true
     top->reset = false;
 #endif
-    top->ready_downstream = 1;
-    //#if INBPP>0
+    if( MONITOR_FIFOS ){
+      top->ready_downstream = oThrottle || (validcnt==0);
+    }else{
+      top->ready_downstream = 1;
+    }
+    
     if(ready){
-      if(validInCnt>=inPackets){
+      if( validInCnt>=inPackets || (iThrottle==false && MONITOR_FIFOS)){ // either we're done, or throttled
         setValid(&(top->process_input),inbpp*inP,false);
       }else{
         setData(&(top->process_input),inbpp*inP,infile);
@@ -115,23 +148,32 @@ int main(int argc, char** argv) {
         validInCnt++;
       }
     }
-    //#endif
-      
+
+    if( iThrottle != ready && MONITOR_FIFOS ){
+      printf("Error: DUT input ready wasn't as expected in cycle %lu. expected:%d ready:%d rate:%d/%d delay:%d\n", totalCycles, iThrottle,top->ready,inN, inD, delay);
+      kill = 2;
+    }
+
     top->eval();
 
-    // flip to negedge
+    // flip to negedge.
     top->CLK = false;
     top->eval();
 
     // read outputs
-    if(getValid( &(top->process_output), outbpp*outP ) ){
+    bool outValid = getValid( &(top->process_output), outbpp*outP );
+
+    if( outValid!=oThrottle && MONITOR_FIFOS ){
+      printf("Error: DUT output valid was not as expected! expected:%d valid:%d in cycle:%lu delay:%d validCount:%d/%d\n", oThrottle, outValid, totalCycles, delay, validcnt, outPackets );
+      kill = 2;
+    }
+    
+    if( outValid ){
       validcnt++;
       getData(&(top->process_output),outbpp*outP,outfile);
     }
 
-    //#if INBPP>0
     ready = top->ready;
-    //#endif
 
     // activate posedge
     top->CLK = true;
@@ -142,12 +184,30 @@ int main(int argc, char** argv) {
       printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
       exit(1);
     }
+
+    if(kill>0){
+      kill--;
+    }else if(kill==0){
+      exit(1);
+    }
   }
 
+  printf("Verilator Cycles: %d\n", (int)totalCycles);
+
+  // dumb hack: put it back into reset, to signal fifos to print errors on being too large
+  CLK = true;
+  for(int i=0; i<2; i++){
+    CLK = !CLK;
+    top->CLK = CLK;
+    
+#if STATEFUL==true
+    top->reset = true;
+#endif
+    top->eval();
+  }
+    
   top->final();
   delete top;
-
-  printf("Verilator Cycles: %d\n", (int)totalCycles);
 
   std::string cycfile = argv[2];
   cycfile = cycfile.substr(0,cycfile.size()-3)+std::string("cycles.txt");

@@ -1,4 +1,5 @@
 local R = require "rigel"
+R.AUTO_FIFOS = false
 local RM = require "generators.modules"
 local types = require("types")
 local S = require("systolic")

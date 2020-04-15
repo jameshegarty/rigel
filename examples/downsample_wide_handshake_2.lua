@@ -10,7 +10,7 @@ T = 8
 ------------
 function MAKE(scaleX)
   local ITYPE = types.array2d( types.uint(8), T ) -- always 8 for AXI
-  local hsfn = RM.liftHandshake( C.downsampleSeq( types.uint(8), W, H, T, scaleX, scaleX) )
+  local hsfn = C.downsampleSeq( types.uint(8), W, H, T, scaleX, scaleX)
 
   harness{ outFile="downsample_wide_handshake_"..scaleX, fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W/scaleX,H/scaleX} }
 end

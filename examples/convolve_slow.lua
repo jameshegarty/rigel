@@ -2,6 +2,9 @@ R = require "rigelSimple"
 local types = require "types"
 local G = require "generators.core"
 
+local rigel = require "rigel"
+rigel.AUTO_FIFOS = false
+
 P = 1/4
 inSize = { 1920, 1080 }
 padSize = { 1920+16, 1080+3 }

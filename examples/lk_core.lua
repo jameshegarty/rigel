@@ -380,7 +380,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
     out = C.fifo(types.array2d(ITYPE,T),sz,nostall)(out)
   end
 
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0))), out)
+  local out = R.apply("crop",C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0), out)
   if T~=4 then
     out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,4)), out )
   end

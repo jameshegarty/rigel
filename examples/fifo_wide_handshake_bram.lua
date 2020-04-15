@@ -5,6 +5,8 @@ local S = require("systolic")
 local harness = require "generators.harness"
 local C = require "generators.examplescommon"
 
+R.AUTO_FIFOS = false
+
 W = 128
 H = 64
 T = 8

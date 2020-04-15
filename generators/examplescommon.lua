@@ -92,7 +92,7 @@ C.print = memoize(function(A,str)
     local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
-    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out") )
+    sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out",{printInst:reset()}) )
     return sm
   end
   
@@ -215,10 +215,14 @@ end)
 -- returns something of type outputType
 C.multiply = memoize(function(A,B,outputType)
   err( types.isType(A), "C.multiply: A must be type")
+  assert( A:isData() )
   err( types.isType(B), "C.multiply: B must be type")
+  assert( B:isData() )
   err( types.isType(outputType), "C.multiply: outputType must be type")
-
-  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, 1,
+  assert( outputType:isData() )
+  
+  local bits 
+  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B).."_"..tostring(outputType)), types.tuple {A,B}, outputType, nil, --S.interp(S.delayTable["*"],outputType:verilogBits()),
     function(sinp) return S.cast(S.index(sinp,0),outputType)*S.cast(S.index(sinp,1),outputType) end,
     function() return CT.multiply(A,B,outputType) end,
     "C.multiply" )
@@ -234,7 +238,7 @@ C.multiplyConst = memoize(function( A, constValue, X )
   err( type(constValue)=="number","C.multiplyConst: value must be number, but is: "..tostring(constValue) )
   err(X==nil,"C.multiplyConst: too many arguments" )
   
-  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, 1,
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, nil,
     function(sinp) return sinp*S.constant(constValue,A) end,
     function() return CT.multiplyConst(A,constValue) end,
     "C.multiplyConst" )
@@ -656,7 +660,7 @@ C.absoluteDifference = memoize(function(A,outputType,X)
     assert(false)
   end
 
-  local partial = RM.lift( J.sanitize("absoluteDifference_"..tostring(A).."_"..tostring(outputType)), TY, outputType, 1,
+  local partial = RM.lift( J.sanitize("absoluteDifference_"..tostring(A).."_"..tostring(outputType)), TY, outputType, 2,
     function(sinp)
       local subabs = S.abs(S.cast(S.index(sinp,0),internalType)-S.cast(S.index(sinp,1),internalType))
       local out = S.cast(subabs, internalType_uint)
@@ -960,7 +964,7 @@ C.padcrop = memoize(function( A, W, H, T, L, Right, B, Top, borderValue, f, timi
   local padL = internalL-L
   local padR = internalR-Right
   local fnOutType = R.extractData(internalFn.outputType):arrayOver()
-  local out = R.apply("crop",RM.liftHandshake(RM.liftDecimate(C.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0))), out)
+  local out = R.apply("crop",C.cropHelperSeq(fnOutType, internalW, internalH, T, padL+Right+L, padR, B+Top, 0), out)
 
   if timingFifo then
     -- this FIFO is only for improving timing
@@ -1132,6 +1136,320 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
 end)
 
 -------------
+-- inputSide: if true, monitor the input interface. if false, monitor the output.
+C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inputSide, name, fnName, topFnName, X)
+  err( ty==nil or types.isType(ty), "C.fifoWithMonitor: type must be a type" )
+  err( ty==nil or ty:isData() or ty:isSchedule(), "C.fifoWithMonitor: type must be data type or schedule type, but is: "..tostring(ty) )
+  err( type(size)=="number" and size>=0, "C.fifoWithMonitor: size must be number >= 0" )
+  err( type(inputSide)=="boolean" )
+  err( SDF.isSDF(rate), "rateMonitor: rate must be SDF rate, but is: ", rate)
+  err( type(topFnName)=="string" )
+  err( type(fnName)=="string" )
+  err( type(name)=="string" )
+  err( X==nil, "C.fifo: too many arguments" )
+
+  local internalFIFOMod
+  local internalFIFO
+  local inst = {}
+
+  if size>0 then
+    internalFIFOMod = C.fifo( ty, size )
+    internalFIFO = internalFIFOMod:instantiate("internalFIFO")
+    inst[internalFIFO] = 1
+  end
+
+  local res = R.newFunction{ name=J.sanitize("FIFOWithMonitor_"..tostring(ty).."_size"..tostring(size).."_delay"..tostring(delay).."_rate"..tostring(rate).."_inputSide"..tostring(inputSide).."_"..name.."_"..fnName.."_"..topFnName), inputType = types.RV(ty), outputType=types.RV(ty), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    s.functions.startMonitorTrigger = S.lambdaTab{name="startMonitorTrigger", input=S.parameter("startMonitorTrigger",types.bool()) }
+                                             
+    local N = Uniform(rate[1][1]):toNumber()
+    local D = Uniform(rate[1][2]):toNumber()
+    
+    local verilog = "module "..res.name.." (input wire CLK, input wire reset"
+    verilog = verilog..res:vHeaderInOut()..", input startMonitorTrigger);\n"
+    verilog = verilog..[[parameter INSTANCE_NAME="INST";
+]]
+    verilog = verilog..res:vInstances()
+
+    verilog = verilog..[[reg monitorStarted;
+reg [31:0] cyclesSinceStart;
+reg signed [31:0] monitorNCountReg;
+wire signed [31:0] monitorNCount;
+assign monitorNCount = $signed(monitorNCountReg) + (( startMonitorTrigger || monitorStarted )?(32'd]]..N..[[):(32'd0));
+reg [31:0] monitorReferenceCountReg;
+wire [31:0] monitorReferenceCount;
+reg [31:0] monitorReferenceCountLast;
+assign monitorReferenceCount = monitorReferenceCountReg + (($signed(monitorNCount)>32'sd0)?( (($signed(monitorNCount)>32'sd]]..D..[[)?(32'd2):(32'd1)) ):(32'd0));
+reg [31:0] monitorOutputCountReg;
+wire [31:0] monitorOutputCount;
+reg [31:0] monitorInputCountReg;
+wire [31:0] monitorInputCount;
+assign monitorInputCount = monitorInputCountReg + (( ]]..res:vInputReady().." && "..res:vInputValid()..[[)?(32'd1):(32'd0));
+assign monitorOutputCount = monitorOutputCountReg + (( ]]..res:vOutputReady().." && "..res:vOutputValid()..[[)?(32'd1):(32'd0));
+
+reg [31:0] cyclesSinceValid = 32'd0;
+
+// hack: we don't know whether an error is a real error, or the end of time.
+// so: buffer errors, and don't print them until we see another input. If it's the last token, error is surpressed
+reg errorQ;
+reg [31:0] errorCyclesSinceStart = 32'd0;
+reg [31:0] errorMonitorReferenceCount = 32'd0;
+reg [31:0] errorMonitorOutputCount = 32'd0;
+reg [31:0] errorMonitorInputCount = 32'd0;
+reg [31:0] errorFifoSize = 32'd0;
+reg errorThrottle = 1'b0;
+reg errorThrottleLast = 1'b0;
+reg errorReadyDownstream = 1'b0;
+reg errorValidDownstream = 1'b0;
+reg signed [31:0] errorMonitorNCount;
+
+reg errorInputClogged;
+reg errorInputCloggedReadyDownstream;
+
+reg errorOutputClogged;
+reg errorOutputCloggedReadyDownstream;
+
+reg errorOutputDrained;
+reg [31:0] errorOutputDrainedFifoSize;
+reg [31:0] errorOutputDrainedMonitorReferenceCount;
+reg [31:0] errorOutputDrainedMonitorOutputCount;
+reg [31:0] errorOutputDrainedCyclesSinceStart;
+
+// hack: verilator won't write out all the errors if we do $finish, so delay calling $finish
+reg killNextCyc =  1'b0;
+
+reg [31:0] fifoSize;
+reg [31:0] fifoMax;
+reg anyValidsSeen = 1'b0;
+
+// we always start ready
+wire throttle;
+]]
+
+    if inputSide then
+      verilog = verilog.."assign throttle = (monitorReferenceCount!=monitorReferenceCountLast)  || monitorReferenceCount==32'd0;\n"
+    else
+      verilog = verilog.."assign throttle = monitorReferenceCount!=monitorReferenceCountLast;\n"
+    end
+
+    if size==0 then
+      verilog = verilog.."assign "..res:vInputReady().." = "..res:vOutputReady()..";\n"
+      verilog = verilog.."assign "..res:vOutput().." = "..res:vInput()..";\n"
+    else
+      if inputSide then
+        verilog = verilog.."assign "..internalFIFO:vOutputReady().." = "..res:vOutputReady()..";\n"
+        verilog = verilog.."assign "..res:vInputReady().." = "..internalFIFO:vInputReady().." && throttle;\n"
+        verilog = verilog.."assign "..res:vOutput().." = "..internalFIFO:vOutput()..";\n"
+        if ty~=types.Trigger then
+          verilog = verilog.."assign "..internalFIFO:vInputData().." = "..res:vInputData()..";\n"
+        end
+        verilog = verilog.."assign "..internalFIFO:vInputValid().." = "..res:vInputValid().." && throttle;\n"
+      else
+        verilog = verilog.."assign "..internalFIFO:vOutputReady().." = "..res:vOutputReady().." && throttle;\n"
+        verilog = verilog.."assign "..res:vInputReady().." = "..internalFIFO:vInputReady()..";\n"
+        if ty~=types.Trigger then
+          verilog = verilog.."assign "..res:vOutputData().." = "..internalFIFO:vOutputData()..";\n"
+          verilog = verilog.."assign "..internalFIFO:vInputData().." = "..res:vInputData()..";\n"
+        end
+        verilog = verilog.."assign "..res:vOutputValid().." = "..internalFIFO:vOutputValid().." && throttle;\n"
+        verilog = verilog.."assign "..internalFIFO:vInputValid().." = "..res:vInputValid()..";\n"
+      end
+    end
+    
+    verilog = verilog..[[
+always @(posedge CLK) begin
+  if (startMonitorTrigger) begin 
+    monitorStarted <= 1'b1; 
+  
+//    if( ]]..res:vInputReady()..[[==1'b0 ) begin
+//      $display("]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:%d/]]..size..[[ ready not true at start!\n",fifoSize);
+//      killNextCyc <= 1'b1;
+//    end
+  end
+
+//   $display("]]..J.sel(inputSide,"I","O")..[[ FIFO cyclesSinceStart:%0d MonitorReferenceCount:%0d monitor]]..J.sel(inputSide,"Input","Output")..[[Count:%0d MonitorNCount:%0d/]]..D..[[ throttle:%0d startMonitorTrigger:%0d fifoSz:%0d/]]..size..[[ iv:%0d ir:%0d ov:%0d or:%0d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"Input","Output")..[[Count, monitorNCount, throttle, startMonitorTrigger, fifoSize, ]]..res:vInputValid()..","..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[ );
+
+if (]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[) begin
+  monitorInputCountReg <= monitorInputCountReg+32'd1;
+end
+
+if (]]..res:vOutputValid()..[[ && ]]..res:vOutputReady()..[[) begin
+  monitorOutputCountReg <= monitorOutputCountReg+32'd1;
+end
+
+  if (monitorStarted || startMonitorTrigger) begin
+    if (monitorNCount>=32'sd]]..tostring(D)..[[ ) begin
+      monitorReferenceCountReg <= monitorReferenceCountReg + 32'd1;
+      monitorNCountReg <= $signed(monitorNCount)-32'sd]]..tostring(D)..[[;
+    end else begin
+      monitorNCountReg <= monitorNCount;
+    end
+  end
+
+  monitorReferenceCountLast <= monitorReferenceCount;
+]]
+
+if inputSide then
+  verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1) begin
+    errorInputClogged <= 1'b1;
+    errorInputCloggedReadyDownstream <= ]]..res:vOutputReady()..[[;
+  end
+
+  if (errorInputClogged && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, errorInputCloggedReadyDownstream );
+  end
+]]
+
+else
+  verilog = verilog..[[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vOutputReady()..[[==1'b0 && throttle==1'b1) begin
+    errorOutputClogged <= 1'b1; 
+    errorOutputCloggedReadyDownstream <= ]]..res:vOutputReady()..[[;
+  end
+
+  if (errorOutputClogged && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+    $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:%0d/]]..size..[[ output CLOGGED in cycle:%0d throttle:%0d dsReady:%0d expected:%0d inputsSeen:%0d outputsSeen:%0d\n", fifoSize, cyclesSinceStart, throttle, errorOutputCloggedReadyDownstream, monitorReferenceCount, monitorInputCount, monitorOutputCount );
+  end
+]]
+
+  if size>0 then
+    -- output side: check that the FIFO itself never stalls!
+  verilog = verilog..[[
+  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1) begin
+//    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO FULL? in cycle %d fifoSize:%d/]]..size..[[ expected:%d seen:%d\n", cyclesSinceStart, fifoSize, monitorReferenceCount, monitorOutputCount );
+//    killNextCyc <= 1'b1;
+  end
+]]
+
+    verilog = verilog..[[
+  if ( (monitorStarted || startMonitorTrigger) && ]]..internalFIFO:vOutputValid()..[[==1'b0 && throttle==1'b1) begin
+    errorOutputDrained <= 1'b1;
+    errorOutputDrainedFifoSize <= fifoSize;
+    errorOutputDrainedMonitorReferenceCount <= monitorReferenceCount;
+    errorOutputDrainedMonitorOutputCount <= monitorOutputCount;
+    errorOutputDrainedCyclesSinceStart <= cyclesSinceStart;
+  end
+
+  if (errorOutputDrained && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+    $display("\n* ]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ OUTPUT FIFO Drained? (probably means delay is too small!) in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[  expected:%d seen:%d\n",  errorOutputDrainedCyclesSinceStart,  errorOutputDrainedFifoSize,  errorOutputDrainedMonitorReferenceCount,  errorOutputDrainedMonitorOutputCount );
+  end
+]]
+  end
+end
+
+verilog = verilog..[[
+  if( killNextCyc ) begin $finish(); end
+
+  if( reset ) begin
+    monitorStarted <= 1'b0;
+    cyclesSinceStart <= 32'd0;
+    monitorNCountReg <= -32'sd]]..tostring(N*math.max(delay,0))..[[;
+    monitorReferenceCountReg <= 32'd0;
+    monitorOutputCountReg <= 32'd0;
+    monitorInputCountReg <= 32'd0;
+    cyclesSinceValid <= 32'd0;
+    errorQ <= 1'b0;
+    errorInputClogged <= 1'b0;
+    errorOutputClogged <= 1'b0;
+    errorOutputDrained <= 1'b0;
+    fifoSize <= 32'd0;
+    fifoMax <= 32'd0;
+//    $display("FIFOWithMonitor Reset");
+  end else begin
+    if( monitorStarted || startMonitorTrigger ) begin
+      cyclesSinceStart <= cyclesSinceStart+32'd1;
+    end
+  end
+
+  if (]]..res:vInputValid()..[[) begin
+    cyclesSinceValid <= 32'd0;
+  end else begin
+    cyclesSinceValid <= cyclesSinceValid + 32'd1;
+  end
+
+  if ( ]]..J.sel(inputSide,"monitorInputCount","monitorOutputCount")..[[ != monitorReferenceCount && errorQ==1'b0) begin
+    errorQ <= 1'b1;
+    errorMonitorOutputCount <= monitorOutputCount;
+    errorMonitorInputCount <= monitorInputCount;
+    errorMonitorReferenceCount <= monitorReferenceCount;
+    errorCyclesSinceStart <= cyclesSinceStart;
+    errorThrottle <= throttle;
+    errorFifoSize <= fifoSize;
+    errorMonitorNCount <= monitorNCount;
+    errorReadyDownstream <= ]]..res:vOutputReady()..[[;
+    errorValidDownstream <= ]]..res:vOutputValid()..[[;
+  end
+
+  if (errorQ && ]]..res:vInputValid()..[[) begin
+    $display("\n]]..J.sel(size>0,"* ","")..J.sel(inputSide,"I ","O ")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ didn't match expected number of ]]..J.sel(inputSide,"INPUTS","OUTPUTS")..[[! delay:]]..delay..[[ internalDelay:]]..internalDelay..[[ rate:]]..tostring(rate)..[[ fifoSz@error:%0d/]]..size..[[ expected:%0d outputCount:%0d inputCount:%0d validDownstream@error:%0d readyDownstream@error:%0d cyclesSinceStart@error:%0d cyclesSinceStartNow:%0d monitorNCount@error:%0d/]]..D..[[ throttle@error:%0d \n", errorFifoSize, errorMonitorReferenceCount, errorMonitorOutputCount, errorMonitorInputCount, errorValidDownstream, errorReadyDownstream, errorCyclesSinceStart, cyclesSinceStart,  errorMonitorNCount, errorThrottle );
+//    $finish();
+killNextCyc <= 1'b1;
+  end
+]]
+
+if inputSide and delay>0 and false then
+  verilog = verilog..[[  if (monitor_started && ]]..res:vInputReady()..[[==1'b0 && cyclesSinceStart>=]]..delay..[[) begin
+    $display("]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ input CLOGGED in cycle %d",cyclesSinceStart);
+    $finish();
+  end
+]]
+end
+
+
+
+verilog = verilog..[[
+
+  if( ]]..res:vInputReady().." && "..res:vInputValid().." && ("..res:vOutputReady().."==1'b0 || "..res:vOutputValid()..[[==1'b0) ) begin
+    fifoSize <= fifoSize + 32'd1;
+  end else if ( ]]..res:vOutputReady().." && "..res:vOutputValid().." && ("..res:vInputReady().."==1'b0 || "..res:vInputValid()..[[==1'b0) ) begin
+    fifoSize <= fifoSize - 32'd1;
+  end else if ( ]]..res:vOutputReady().." && "..res:vOutputValid().." && "..res:vInputReady().." && "..res:vInputValid()..[[ ) begin
+  end else if ( (]]..res:vOutputReady().."==1'b0 || "..res:vOutputValid().."==1'b0) && ("..res:vInputReady().."==1'b0 || "..res:vInputValid()..[[==1'b0) ) begin
+  end else begin
+    $display("FIFO INTERNAL ERROR! %d %d %d %d \n",]]..res:vInputValid()..","..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[);
+  end
+
+  if( fifoSize>fifoMax ) begin 
+    fifoMax<=fifoSize; 
+  end
+
+  if( reset==1'b0 && ]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[ ) begin anyValidsSeen<=1'b1; end
+]]
+if size>10 then
+  verilog = verilog..[[
+  if( reset && anyValidsSeen ) begin
+    if( fifoMax<]]..math.floor(size*0.9)..[[ ) begin
+      $display("\n]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ FIFO way too big! Max:%d/]]..size..[[\n",fifoMax);
+//      $stop();
+    end
+  end
+]]
+end
+
+verilog = verilog..[[
+end
+]]
+
+    verilog = verilog.."endmodule\n\n"
+    s:verilog(verilog)
+    return s
+  end
+
+
+  function res.makeTerra()
+    if size==0 then
+      local mod = RM.makeHandshake(C.identity(ty))
+      return mod.terraModule
+    else
+      return internalFIFOMod.terraModule
+    end
+  end
+  
+  return res
+end)
+
+-------------
 -- VRLoad: if true, make the load function be HandshakeVR
 -- includeSizeFn: should module have a size fn?
 C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, name, X)
@@ -1257,33 +1575,37 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     return C.identity(A)
   end
 
-  local inp = rigel.input( types.rV(types.Par(types.array2d(A,T))) )
+  local inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
   local out = inp
   if scaleY>1 then
-    out = rigel.apply("downsampleSeq_Y", modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY )), out)
+    out = rigel.apply("downsampleSeq_Y", modules.liftHandshake(modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY ))), out)
   end
   if scaleX>1 then
-    local mod = modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX ))
-
-    if scaleY>1 then mod=modules.RPassthrough(mod) end
+    local mod = modules.liftHandshake(modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX )))
 
     out = rigel.apply("downsampleSeq_X", mod, out)
     local downsampleT = math.max(T/scaleX,1)
     if downsampleT<T then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.RPassthrough(modules.changeRate(A,1,downsampleT,T)), out )
-    elseif downsampleT>T then assert(false) end
+      out = rigel.apply("downsampleSeq_incrate", modules.liftHandshake(modules.changeRate(A,1,downsampleT,T)), out )
+    elseif downsampleT>T then
+      assert(false)
+    end
   end
 
   local res = modules.lambda( J.sanitize("downsampleSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H_orig).."_T"..tostring(T).."_scaleX"..tostring(scaleX).."_scaleY"..tostring(scaleY).."_framed"..tostring(framed)), inp, out,nil,"C.downsampleSeq")
-
+  
   if framed then
     print("FRAMED",A,T,res.inputType,res.outputType)
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
-    res.inputType = types.rV(types.Array2d(A,W_orig,H_orig,T,1))
-    res.outputType = types.rRV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
-    --res.inputType = res.inputType:addDim(W,H,true)
-    --res.outputType = res.outputType:addDim(math.ceil(W/scaleX),math.ceil(H/scaleY),true)
+    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,1))
+    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
+
+    err( itype:lower()==res.inputType:lower(), "internal error, downsampleSeq framed. Module input type:",res.inputType, " lowered: ",res.inputType:lower()," framed type:",itype, " lowered:",itype:lower() )
+    err( otype:lower()==res.outputType:lower() )
+    
+    res.inputType = itype
+    res.outputType = otype
   end
 
   return res
@@ -1408,27 +1730,27 @@ C.cropHelperSeq = memoize(function( A, W_orig, H, T, L, R, B, Top, framed, X )
   err( type(B)=="number", "B must be number")
   err( type(Top)=="number", "Top must be number")
   
-  if T==0 or (L%T==0 and R%T==0) then return modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ) end
+  if T==0 or (L%T==0 and R%T==0) then return modules.liftHandshake(modules.liftDecimate(modules.cropSeq( A, W_orig, H, T, L, R, B, Top, framed ))) end
   if framed==nil then framed=false end
   
   err( T==0 or (W-L-R)%T==0, "cropSeqHelper, (W-L-R)%T~=0, W="..tostring(W)..", L="..tostring(L)..", R="..tostring(R)..", T="..tostring(T))
 
   local RResidual = R%T
-  local inp = rigel.input( types.rv(types.Par(types.array2d( A, T ))) )
-  local out = rigel.apply( "SSR", modules.SSR( A, T, -RResidual, 0 ), inp)
-  out = rigel.apply( "slice", C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0), out)
-  out = rigel.apply( "crop", modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top), out )
+  local inp = rigel.input( types.RV(types.array2d( A, T )) )
+  local out = rigel.apply( "SSR", modules.makeHandshake(modules.SSR( A, T, -RResidual, 0 )), inp)
+  out = rigel.apply( "slice", modules.makeHandshake(C.slice( types.array2d(A,T+RResidual), 0, T-1, 0, 0)), out)
+  out = rigel.apply( "crop", modules.liftHandshake(modules.liftDecimate(modules.cropSeq(A,W,H,T,L+RResidual,R-RResidual,B,Top))), out )
 
   local res = modules.lambda( J.sanitize("cropHelperSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..H.."_T"..T.."_L"..L.."_R"..R.."_B"..B.."_Top"..Top.."_framed"..tostring(framed)), inp, out )
 
   local niType, noType
   if framed then
     if T==0 then
-      niType = types.rv(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
-      noType = types.rvV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
+      niType = types.RV(types.Seq(types.Par(res.inputType:extractData()),W_orig,H))
+      noType = types.RV(types.Seq(types.Par(res.outputType:extractData()),W_orig-L-R,H-B-Top))
     else
-      niType = types.rv(types.ParSeq(res.inputType:extractData(),W_orig,H))
-      noType = types.rvV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
+      niType = types.RV(types.ParSeq(res.inputType:extractData(),W_orig,H))
+      noType = types.RV(types.ParSeq(res.outputType:extractData(),W_orig-L-R,H-B-Top))
     end
 
     assert(res.inputType:lower()==niType:lower())
@@ -1859,7 +2181,7 @@ C.plusConst = memoize(function( ty, value_orig, async)
 
   local instanceMap = value:getInstances()
   
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,10) ,
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,1) ,
                               function(plus100inp)
                                 local res = plus100inp + value:toSystolic(ty)
                                 if async==true then res = res:disablePipelining() end
@@ -2219,7 +2541,7 @@ function C.automaticSystolicStub( mod )
     if fn.outputType~=types.Interface() then
       fns[fnname]:setOutput(S.constant(types.lower(fn.outputType):fakeValue(),types.lower(fn.outputType)),fnname.."_output")
     end
-    delays[fnname]=0
+    delays[fnname]=fn.delay
 
 
     if types.isHandshakeAny(fn.inputType) or types.isHandshakeAny(fn.outputType) then
@@ -2253,6 +2575,8 @@ function C.automaticSystolicStub( mod )
         fns[fnname]:setValid(fnname.."_valid")
       end
     end
+
+    fns[fnname]:setPure( fn.stateful==false )
   end
   
   local res = Ssugar.moduleConstructor(mod.name)
@@ -2314,27 +2638,16 @@ function C.automaticSystolicStub( mod )
   
   if mod.stateful then
     fns.reset = Ssugar.lambdaConstructor("reset",types.null(),"rnil","reset")
+    fns.reset:setPure(false)
     delays.reset = 0
   end
-
 
   res:onlyWire(true)
   for inst,_ in pairs(instances) do res:add(inst) end
   for k,v in pairs(fns) do res:addFunction(v) end
   for k,v in pairs(delays) do res:setDelay(k,v) end
 
-  res = res:complete()
-  for fnname,fn in pairs(modFunctions) do
-    -- dangerous hack?
-    res.functions[fnname].isPure = function()
-      return not fn.stateful
-    end
-  end
-
-  if mod.stateful then
-    res.functions.reset.isPure = function() return false end
-  end
-  
+  assert( Ssugar.isModuleConstructor(res) )
   return res
 end
 
@@ -2358,7 +2671,7 @@ C.VerilogFile = J.memoize(function(filename,dependencyList)
     local verilog = J.fileToString(R.path..filename)
     verilog = verilog:gsub([[`include "[%w_\.]*"]],"")
     verilog = "/* verilator lint_off WIDTH */\n/* verilator lint_off CASEINCOMPLETE */\n"..verilog.."\n/* verilator lint_on CASEINCOMPLETE */\n/* verilator lint_on WIDTH */\n\n"
-    s.verilog = verilog
+    s:verilog(verilog)
     return s
   end
 
@@ -2368,7 +2681,7 @@ end)
 -- you should only use this if it's safe! (on the output of fns)
 C.VRtoRVRaw = J.memoize(function(A)
   err( types.isBasic(A), "expected basic type" )
-  local res = {inputType=types.HandshakeVR(A),outputType=types.Handshake(A),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=false}
+  local res = { inputType=types.HandshakeVR(A), outputType=types.Handshake(A), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   res.name = J.sanitize("VRtoRVRaw_"..tostring(A))
 
   function res.makeSystolic()

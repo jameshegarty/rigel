@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
     curArg+=2;
   }
 
+  int argBeforeInit = curArg;
+  
   SlaveState slaveState0;
   SlaveState slaveState1;
   initSlaveState(&slaveState0);
@@ -207,7 +209,8 @@ int main(int argc, char** argv) {
     
     if(verbose){printSlave(S0LIST);}
 
-    if(round==0){
+    if(true || round==0){
+      printf("DORESET\n");
       for(int i=0; i<100; i++){
         CLK = !CLK;
         
@@ -226,6 +229,7 @@ int main(int argc, char** argv) {
 
       top->IP_ARESET_N=true;
 
+      curArg = argBeforeInit;
       curArg++; // for "--registers"
       while(strcmp(argv[curArg],"--outputs")!=0){
         printf("PARSE ARG %s %s\n",argv[curArg],argv[curArg+1]);
@@ -253,7 +257,7 @@ int main(int argc, char** argv) {
 
           printf("STR %s\n",tmp);
           unsigned long data = strtoul(tmp,NULL,16);
-          printf("try to Set Reg addr:%x with data:%x\n",addr+numints*4-4-i*4,data);
+          printf("try to Set Reg addr:%x with data:%lx\n",addr+numints*4-4-i*4,data);
           setReg( top, verbose, addr+numints*4-4-i*4, data);
         }
         
@@ -364,7 +368,7 @@ int main(int argc, char** argv) {
       if(pct>lastPct){
         double t = CurrentTimeInSeconds() - startSec;
         setlocale(LC_NUMERIC,"");
-        printf("Sim round %d: %d %% complete! (%'d/%'d cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
+        printf("Sim round %d: %d %% complete! (%'lu/%'lu cycles) (%f sec elapsed, %f to go) (%d bytes read, %d bytes written)\n",round,pct,cycle,totalCycles,t,t*((float)(100-pct))/((float)(pct)),bytesRead(),bytesWritten());
         lastPct = pct;
       }
       

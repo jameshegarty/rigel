@@ -1,7 +1,11 @@
+local rigel = require "rigel"
+rigel.AUTO_FIFOS = false
+
 local R = require "rigelSimple"
 local harris = require "harris_core"
 local descriptor = require "descriptor_core"
 local G = require "generators.core"
+
 
 W, H = 256, 256
 TILES_X, TILES_Y = 4, 4

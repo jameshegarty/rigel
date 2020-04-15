@@ -255,15 +255,42 @@ function MT.RPassthrough(res,f)
 end
 
 function MT.liftHandshake(res,f,delay)
-  local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
-                              inner: f.terraModule, ready:bool, readyDownstream:bool}
-  terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
-  terra LiftHandshake:init() self.inner:init() end
-  terra LiftHandshake:free() self.inner:free() end
-  terra LiftHandshake:stats(name:&int8) 
---    cstdio.printf("LiftHandshake %s, Max input fifo size: %d\n", name, self.fifo:maxSizeSeen())
-    self.inner:stats(name) 
-  end
+  J.err(delay<20,"TOO BIG DELAY",delay,f)
+  
+  if delay==0 then
+    local struct LiftHandshake{ inner: f.terraModule, ready:bool, readyDownstream:bool}
+
+    terra LiftHandshake:reset() self.inner:reset() end
+    terra LiftHandshake:init() self.inner:init() end
+    terra LiftHandshake:free() self.inner:free() end
+    terra LiftHandshake:stats(name:&int8) self.inner:stats(name)  end
+
+    assert(rigel.isHandshakeTrigger(res.inputType)==false and rigel.isHandshakeTrigger(res.outputType)==false)
+
+    terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if self.readyDownstream then
+        self.inner:process(inp,out)
+      end
+    end
+
+    terra LiftHandshake:calculateReady(readyDownstream:bool) 
+      self.readyDownstream = readyDownstream
+      self.inner:calculateReady()
+      self.ready = readyDownstream and self.inner.ready 
+    end
+
+    return MT.new( LiftHandshake, res )
+
+  else
+    
+    local struct LiftHandshake{ delaysr: simmodules.fifo( rigel.lower(f.outputType):toTerraType(), delay, "liftHandshake("..f.name..")"),
+                                inner: f.terraModule, ready:bool, readyDownstream:bool}
+    terra LiftHandshake:reset() self.delaysr:reset(); self.inner:reset() end
+    terra LiftHandshake:init() self.inner:init() end
+    terra LiftHandshake:free() self.inner:free() end
+    terra LiftHandshake:stats(name:&int8) 
+      self.inner:stats(name) 
+    end
 
   if rigel.isHandshakeTrigger(res.inputType) and rigel.isHandshakeTrigger(res.outputType) then
     terra LiftHandshake:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
@@ -312,6 +339,7 @@ function MT.liftHandshake(res,f,delay)
   end
 
   return MT.new( LiftHandshake, res )
+end
 end
 
 
@@ -467,10 +495,10 @@ function MT.downsampleYSeqFn(innerInputType,outputType,scale)
   end
 end
 
-function MT.downsampleXSeqFn(innerInputType,outputType,scale)
+function MT.downsampleXSeqFn( innerInputType, outputType, scale )
   return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
     var x = (inp._0)[0]._0
-    data(out) = inp._1
+    data(out) = array(inp._1[0])
     valid(out) = (x%scale==0)
   end
 end
@@ -2351,6 +2379,23 @@ function MT.triggerFIFO( res, ty )
 
   return MT.new( TriggerFIFO, res )
 
+end
+
+function MT.shiftRegister( res, ty, N, X )
+  assert(X==nil)
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( N>0 )
+
+  local ShiftRegister = struct{SR:(ty:lower():toTerraType())[N]}
+
+  -- this is really confusing! Delays are provided by handshake wrapper in terra simulator, so this module actually becomes a noop!!
+  -- (IE statically timed modules actually always take 0 cycles)
+  terra ShiftRegister:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType() )
+    @out = @inp
+  end
+
+  return MT.new( ShiftRegister, res )
 end
         
 return MT

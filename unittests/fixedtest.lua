@@ -42,7 +42,7 @@ for k,v in pairs(configs) do
   local inputImageSize={64,32}
   local outputImageSize={64,32}
 
-  local targets = {"metadata","verilog","terra"}
+  local targets = {"verilog","terra"}
   
   for _,bk in pairs(targets) do
     R.harness{ outFile="fixed_test"..k, fn=mod, inFile="../examples/frame_64.raw", inSize=inputImageSize, outSize=outputImageSize, backend=bk }

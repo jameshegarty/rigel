@@ -1,4 +1,5 @@
 SRCS = $(wildcard *.lua)
+SRCS := $(filter-out moduleparams_core.lua,$(SRCS))
 
 BUILDDIR := out
 
@@ -33,6 +34,14 @@ $(BUILDDIR)/moduleparams.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	touch $(BUILDDIR)/moduleparams.correct.txt
 
 #################
+$(BUILDDIR)/moduleparams_downsample.compiles.txt: moduleparams_downsample.lua
+	../rigelTerra moduleparams_downsample.lua
+
+$(BUILDDIR)/moduleparams_downsample.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_downsample.correct.txt
+
+#################
 $(BUILDDIR)/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 
@@ -58,7 +67,6 @@ $(BUILDDIR)/fixedtest.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq.compiles.txt: fwriteseq.lua
 	../rigelTerra fwriteseq.lua terra
 	$(LUA) fwriteseq.lua verilog
-	$(LUA) fwriteseq.lua metadata
 
 $(BUILDDIR)/fwriteseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseqtest.raw $(BUILDDIR)/fwriteseqtestVerilog.raw > $(BUILDDIR)/fwriteseqtest.diff
@@ -67,7 +75,6 @@ $(BUILDDIR)/fwriteseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq16.compiles.txt: fwriteseq16.lua
 	../rigelTerra fwriteseq16.lua terra
 	$(LUA) fwriteseq16.lua verilog
-	$(LUA) fwriteseq16.lua metadata
 
 $(BUILDDIR)/fwriteseq16.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/fwriteseq16testVerilog.raw > $(BUILDDIR)/fwriteseq16test.diff
@@ -76,7 +83,6 @@ $(BUILDDIR)/fwriteseq16.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq12.compiles.txt: fwriteseq12.lua
 	../rigelTerra fwriteseq12.lua terra
 	$(LUA) fwriteseq12.lua verilog
-	$(LUA) fwriteseq12.lua metadata
 
 $(BUILDDIR)/fwriteseq12.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq16test.raw $(BUILDDIR)/fwriteseq12.terra.writePixels.raw > $(BUILDDIR)/fwriteseq12test.diff
@@ -86,7 +92,7 @@ $(BUILDDIR)/fwriteseq12.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq18.compiles.txt: fwriteseq18.lua
 	../rigelTerra fwriteseq18.lua terra
 	$(LUA) fwriteseq18.lua verilog
-	$(LUA) fwriteseq18.lua metadata
+#	$(LUA) fwriteseq18.lua metadata
 
 $(BUILDDIR)/fwriteseq18.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq18.terra.writePixels.raw $(BUILDDIR)/fwriteseq18.verilatorSOC.writePixels.raw > $(BUILDDIR)/fwriteseq18test.diff
@@ -95,7 +101,6 @@ $(BUILDDIR)/fwriteseq18.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq24.compiles.txt: fwriteseq24.lua
 	../rigelTerra fwriteseq24.lua terra
 	$(LUA) fwriteseq24.lua verilog
-	$(LUA) fwriteseq24.lua metadata
 
 $(BUILDDIR)/fwriteseq24.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq24.terra.writePixels.raw $(BUILDDIR)/fwriteseq24.verilatorSOC.writePixels.raw > $(BUILDDIR)/fwriteseq24test.diff
@@ -106,7 +111,6 @@ $(BUILDDIR)/fwriteseq24.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 $(BUILDDIR)/fwriteseq37.compiles.txt: fwriteseq37.lua
 	../rigelTerra fwriteseq37.lua terra
 	$(LUA) fwriteseq37.lua verilog
-	$(LUA) fwriteseq37.lua metadata
 
 $(BUILDDIR)/fwriteseq37.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	diff $(BUILDDIR)/fwriteseq37.terra.writePixels.raw $(BUILDDIR)/fwriteseq37.verilatorSOC.writePixels.raw > $(BUILDDIR)/fwriteseq37test.diff
