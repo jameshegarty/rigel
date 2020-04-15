@@ -23,7 +23,7 @@ jobs:
       - run: cd examples; make verilator
       - run: cat examples/out/*.compiletime.txt
       - run: echo "RUNTIME"
-      - run: cat out/*.runtime.txt
+      - run: cat examples/out/*.runtime.txt
       - run: test -e examples/out/verilator_done.txt || exit
   verilatorSOC:
     docker:

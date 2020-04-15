@@ -13,6 +13,8 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt,$(SRCS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt,$(SRCS_SOC))
 
 # state_flowcontrol.t
 SRCS_STATE = state_simple.t
@@ -494,5 +496,17 @@ $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt: $(BUILDDIR)/%.yosysSOC.bit
 
 $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt: $(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAMB16_S9_S9.txt $@ 0.02 smallerIsBetter
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "RAMB16_S36_S36" | tail -n 1 | grep -Eo "[0-9]+" | tail -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt: $(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAMB16_S36_S36.txt $@ 0.02 smallerIsBetter
+
+$(BUILDDIR)/%.yosysSOC.RAM128X1D.txt: $(BUILDDIR)/%.yosysSOC.bit
+	 cat $(BUILDDIR)/$*_yosysSOC/log.txt | grep "RAM128X1D" | tail -n 1 | grep -Eo "[0-9]+" | tail -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt: $(BUILDDIR)/%.yosysSOC.RAM128X1D.txt
+	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.yosysSOC.RAM128X1D.txt $@ 0.02 smallerIsBetter
 
 include ../platform/platform.mk
