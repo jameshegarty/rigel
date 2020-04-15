@@ -3774,7 +3774,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   end
 
   if size==1 and (csimOnly==false) then
-    local name = J.sanitize("OneElementFIFO_"..tostring(A).."_dbgname"..dbgname)
+    local name = J.sanitize("OneElementFIFO_"..tostring(A).."_dbgname"..tostring(dbgname))
     local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:lower():verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:lower():verilogBits())..[[:0] store_input);
   parameter INSTANCE_NAME="INST";
   reg hasItem;

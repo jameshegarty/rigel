@@ -86,6 +86,7 @@ function darkroom.Address(num)
 end
 
 darkroom.Async={}
+darkroom.Unoptimized={}
 
 darkroom.Size = J.memoize(function( w, h, X )
   assert(X==nil)
@@ -191,6 +192,9 @@ local function typeToKey(t)
         outk="instanceList"
       elseif v==darkroom.Async then
         outk="async"
+        v = true
+      elseif v==darkroom.Unoptimized then
+        outk="unoptimized"
         v = true
       else
         J.err(false,"unknown type to key? "..tostring(v))
@@ -675,7 +679,7 @@ function functionGeneratorFunctions:complete( arglist, X )
     a[k] = v
   end
 
-  if self.optimized and arglist.rate~=nil and arglist.type~=nil then
+  if self.optimized and arglist.rate~=nil and arglist.type~=nil and arglist.unoptimized~=true then
     a.type, a.rate = arglist.type:optimize( arglist.rate )
     assert( types.isType(a.type) )
     assert( SDF.isSDF(a.rate) )
@@ -720,6 +724,7 @@ function darkroom.FunctionGenerator( name, requiredArgs, optArgs, completeFn, in
   err( type(optArgs)=="table", "FunctionGenerator: requiredArgs must be table" )
   if J.keycount(optArgs)==#optArgs then optArgs = J.invertTable(optArgs) end -- convert array of names to set
   for k,v in pairs(optArgs) do J.err( type(k)=="string", "FunctionGenerator: optArgs must be set of strings" ) end
+  optArgs.unoptimized = 1
   err( type(completeFn)=="function", "FunctionGenerator: completeFn must be lua function" )
 
   if optimized==nil then optimized=true end
