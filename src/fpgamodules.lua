@@ -16,7 +16,6 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
   err( types.isType(ty), "sumwrap: type must be rigel type, but is: "..tostring(ty) )
   err( ty:isNumber(), "sumwrap: type must be numeric rigel type, but is "..tostring(ty))
   
-  --assert(type(limit)=="number")
   local limit = Uniform(limit_orig)
   assert(X==nil)
 
@@ -28,8 +27,7 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
                       S.constant(0,ty),
                       S.index(swinp,0)+S.index(swinp,1)):disablePipelining()
   mod:addFunction(S.lambda("process",swinp,ot,"process_output",nil,nil))
-  --return S.module.new( name, {process=S.lambda("process",swinp,ot,"process_output",nil,nil)},{})
-
+  return mod
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit

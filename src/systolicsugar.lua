@@ -43,7 +43,7 @@ sugar.regByConstructor = moduleConstructor{
 new=function( ty, setby )
   assert( types.isType(ty) )
   if sugar.isModuleConstructor(setby) then setby=setby:complete() end
-  assert( systolic.isModule(setby) )
+  J.err( systolic.isModule(setby), "regBy: setby should be systolic module, but is: ",setby )
   assert( setby:getDelay( "process" ) == 0 )
   return {type=ty, setby=setby}
 end,
